@@ -34,11 +34,16 @@ func namesNoBinary(v string) bool {
 }
 
 // releaseBinary is the streaming binary (version, sha256) a slot bound to a release
-// recording version rv and checksum rs runs: this binary's own (no checksum) when the
-// release names none or names this very version however it spells it, else the
-// release's.
+// recording version rv and checksum rs runs: none named ("", "") when the release names
+// none, so the supervisor runs what an unbound slot runs (the binary the live TV is held
+// on while it is held, else its own: a release naming no binary never moves a held TV);
+// this binary's own (no checksum) when the release names this very version however it
+// spells it; else the release's.
 func releaseBinary(rv, rs string) (string, string) {
-	if namesNoBinary(rv) || bareVersion(rv) == bareVersion(version.Version) {
+	switch {
+	case namesNoBinary(rv):
+		return "", ""
+	case bareVersion(rv) == bareVersion(version.Version):
 		return version.Version, ""
 	}
 	return rv, rs

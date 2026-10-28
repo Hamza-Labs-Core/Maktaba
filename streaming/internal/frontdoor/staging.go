@@ -18,7 +18,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/verify"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
-	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/version"
 )
 
 // Staging warm-up and verification (Epic 33 story 33.5, design §6). While a TV
@@ -249,10 +248,11 @@ func (s *Slots) StageStart(ctx context.Context, plan StagingPlan) (StagingView, 
 	if err := s.bindRelease(ctx, name, plan.ReleaseID); err != nil {
 		return failed(err)
 	}
-	// a release naming no binary runs this one (the supervisor finds none named 0.0.1)
+	// a release naming no binary (none, a source checkout's 0.0.1) names none to the
+	// supervisor: it runs what an unbound slot runs (the held TV's binary while it is held)
 	ver, sum := plan.Version, plan.SHA256
 	if namesNoBinary(ver) {
-		ver, sum = version.Version, ""
+		ver, sum = "", ""
 	}
 	body, _ := json.Marshal(map[string]string{"release_id": plan.ReleaseID, "version": ver, "sha256": sum})
 	if err := s.superviseWith(ctx, name, true, body); err != nil {

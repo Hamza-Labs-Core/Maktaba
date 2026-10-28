@@ -487,11 +487,26 @@ before its check ran): at the slots' first start the supervisor reads the live s
 report (`tv_slots.version`), and while it is an older release than the one starting, TV
 staging is on and the live TV release does not record the new release's streaming, every slot
 the front door has not bound to a release runs that older release's binary. It stays on it
-across every restart (a held change, a Drop) until a change swaps the slots (a Retry that
-passes, a later release's change: the front door binds them to the new release). A staging
-off, no TV release, or a launcher's fallback to an older release starts the release's own
-binary; a held release whose binary is nowhere is logged at error (`tv_held_binary_missing`)
-and the slots run the new one. `maktaba-streaming --version --json` says the front
+across every restart (a held change, a Drop) until a binary change passes its check and swaps
+the slots: the update's Retry, or a later release's own binary change. A change made
+meanwhile that brings no binary of its own (schedule, settings, lineup, art) never moves it
+(fixed 2026-10-28: 0.3.40's pipeline recorded its own `0.3.40` on every schedule release while
+the TV was held on v0.3.39, so its staging ran, and its swap would have aired, the software
+whose check had just failed). The pipeline records on such a release the streaming software
+the live TV runs (`tvrelease.snapshot.live_streaming`, read as the API's `liveStreaming` and
+`HeldStreamingVersion` read it: the live slot's own report, else the live release's version
+when it names a binary, else the pipeline's), with the checksum a release recorded for that
+version; its staging slot and its swap bind to that release, so they run the held binary from
+where the install keeps it, like the live slots. A release that names no binary (none, or a
+source checkout's placeholder `0.0.1`, as the owner's live release from 2026-10-22) is bound
+with no version, and a slot so bound runs what an unbound slot runs: the held binary while the
+TV is held, else the release's own. The supervisor refuses at once a binding whose binary is
+nowhere on the machine (409, logged at error and as `tv_held_binary_missing`): the change's
+staging fails with that reason ("the staging slot did not start: … not on this machine")
+instead of running other software. A staging off, no TV release, or a launcher's fallback to
+an older release starts the release's own binary; a held release whose binary is nowhere at
+the slots' first start is logged at error (`tv_held_binary_missing`) and the unbound slots run
+the new one. `maktaba-streaming --version --json` says the front
 door's `edge_protocol`, and the journal keeps the release's: the front door restarts only when they
 differ (`updater.FrontDoorRestarts`, the rule the TV handover asks before it lets the front door
 run on across the restart, story 35.7).

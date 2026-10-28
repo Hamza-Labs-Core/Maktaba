@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -258,6 +259,10 @@ func (s *Supervisor) Handler() http.Handler {
 			var b SlotBinding
 			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&b); err != nil {
 				http.Error(w, "bad body", http.StatusBadRequest)
+				return
+			}
+			if err := s.CheckBinding(parts[0], &b); errors.Is(err, ErrBindingBinary) {
+				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
 			if err := s.Bind(parts[0], &b); err != nil {
