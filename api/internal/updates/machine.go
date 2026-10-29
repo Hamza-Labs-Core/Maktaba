@@ -96,10 +96,24 @@ type MachineTV struct {
 	Outcome       string   `json:"outcome,omitempty"`
 	LiveStreaming string   `json:"live_streaming,omitempty"`
 	Failed        []string `json:"failed,omitempty"`
+	// StreamingVersion and StreamingSHA256: the binary the run's change carries, said when
+	// the change could not be had at all (held, Failed = [no_change], no ChangeID): a Retry
+	// asks for the change with them.
+	StreamingVersion string `json:"streaming_version,omitempty"`
+	StreamingSHA256  string `json:"streaming_sha256,omitempty"`
 }
+
+// TVNoChange is the failed check of a TV held with no change behind it (its change could
+// not be had at all).
+const TVNoChange = "no_change"
 
 // TVHeld is MachineTV.Outcome for a TV held on the streaming software it ran.
 const TVHeld = "held"
+
+// TVPending is MachineTV.Outcome for a release that committed while its TV change still
+// waited (an approval, a quiet window, a slow staging): the change goes on under the TV
+// change controller by itself, and never held the release up (the outage of 2026-10-28).
+const TVPending = "pending"
 
 // RunBackup is a dump of the home's database a run took (update_runs.backup).
 type RunBackup struct {

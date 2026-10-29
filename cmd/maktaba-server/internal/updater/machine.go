@@ -232,6 +232,14 @@ type Machine struct {
 	// TV moves the home's TV to the new release's streaming binary before the commit
 	// (story 35.6, tv.go); nil: no TV slots here (a node, a SQLite home), nothing to move.
 	TV TVSwapper
+	// RestoreBack puts the dump taken before the new release's migrations back with this
+	// release's own code before its rollback switches back (the record is marked restoring
+	// first): the database's roles stopped, the dump put back whole and checked, the record
+	// restored for the release before, which then starts on a finished database. The
+	// release before's own restore (code from before 2026-10-28: no lockout, its grants in
+	// parallel, nothing checked) is what failed on 2026-10-28. An error leaves the record
+	// restoring, and the release before puts it back at its start, as before (nil: always so).
+	RestoreBack func(ctx context.Context, j *Journal, reason string) error
 
 	mu      sync.Mutex
 	j       *Journal
@@ -1147,11 +1155,19 @@ func (m *Machine) beginWatch(note string) {
 }
 
 // watch checks the new release until it stayed healthy for the job's watch (commit) or
-// stayed unhealthy for its health limit, or failed fatally (roll back).
+// stayed unhealthy for its health limit, or failed fatally (roll back). It judges the
+// home's own health only: the TV step moves on meanwhile, and once the release passed its
+// watch it commits whatever the TV waits for (an approval, a quiet window, a slow
+// staging: the TV is pending, tv.go). Only a TV change that failed rolls it back. The
+// watch's bound counts the time with no verdict on the home, never the TV's waiting
+// (2026-10-28: a change that waited for an approval ran the watch out, watch_timeout).
 func (m *Machine) watch(ctx context.Context) {
 	j := m.Status().Journal
 	watch, limit, bound := j.Job.Watch(), j.Job.HealthLimit(), j.Job.WatchBound()
 	m.logf("watching %s: healthy for %s commits it", j.Job.Version, watch)
+	// passed: the home stayed healthy for its whole watch (it stays passed: a check that
+	// fails after it, the TV's own swap restarting a process, does not undo it)
+	passed, tvWaits := false, ""
 	var healthySince, unhealthySince, extended, progressAt time.Time
 	watched := time.Duration(j.WatchedSec) * time.Second
 	pending := time.Duration(j.PendingSec) * time.Second
@@ -1191,6 +1207,12 @@ func (m *Machine) watch(ctx context.Context) {
 			m.warnf("the new release fails: %s", v.Why)
 			m.rollback(v.Why)
 			return
+		case passed:
+			// the home passed its watch: only the installer's commit is left (tried again at
+			// every check while it cannot), whatever the TV waits for
+			if m.commitPassed(tvWaits) {
+				return
+			}
 		case v.Pending:
 			// starting (the database step): the watch's clock does not run while the step
 			// makes progress, within pendingCap; one that stalls or runs past it rolls back
@@ -1214,28 +1236,29 @@ func (m *Machine) watch(ctx context.Context) {
 				m.rollback("start_timeout")
 				return
 			}
-		case watched >= bound && !waitsForTV(v, healthySince, now, watch):
-			// neither healthy long enough nor unhealthy long enough: a flapping release
-			// (one healthy for its whole watch waits only for its TV step, whose own
-			// limits bound it)
-			m.logf("no verdict within %s of watching: %s", bound, v.Why)
-			m.rollback("watch_timeout")
-			return
 		case v.Healthy:
 			unhealthySince = time.Time{}
 			if healthySince.IsZero() {
 				healthySince = now
 			}
-			// the TV moves to the new streaming binary while the release is watched; the
-			// release commits once both are done
-			tvDone, code, detail := m.tvStep(ctx)
-			if code != "" {
-				m.failTV(code, detail)
+			// the TV moves to the new streaming binary while the release is watched
+			tv := m.tvStep(ctx)
+			if tv.code != "" {
+				m.failTV(tv.code, tv.detail)
 				return
 			}
-			if now.Sub(healthySince) >= watch && tvDone && m.commit() {
-				return
+			tvWaits = tv.waiting
+			if now.Sub(healthySince) >= watch {
+				passed = true
+				if m.commitPassed(tvWaits) {
+					return
+				}
 			}
+		case watched >= bound:
+			// neither healthy long enough nor unhealthy long enough: a flapping release
+			m.logf("no verdict within %s of watching: %s", bound, v.Why)
+			m.rollback("watch_timeout")
+			return
 		default:
 			healthySince = time.Time{}
 			if unhealthySince.IsZero() {
@@ -1259,6 +1282,23 @@ func (m *Machine) watch(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// commitPassed commits a release that passed its watch: a TV change that still waits
+// (why) leaves the TV step pending, never the release (tv.go).
+func (m *Machine) commitPassed(why string) bool {
+	if j := m.Status().Journal; j != nil && j.TV != nil && j.TV.Outcome == "" {
+		if why == "" {
+			why = "its TV change is not on the air yet"
+		}
+		if j.TV.ChangeID == "" {
+			// no change behind it to go on by itself: held, with Retry (review of #433)
+			m.tvHeldNoChange(why)
+		} else {
+			m.tvPending(why)
+		}
+	}
+	return m.commit()
 }
 
 // commit keeps the new release; false when the installer could not (the launcher's
@@ -1341,8 +1381,10 @@ func (m *Machine) replaceLauncher() {
 
 // rollback switches back to the release that ran before and restarts on it at once:
 // nothing is dumped first. Where the new release's migrations ran, the record is marked
-// for the dump taken before them to be put back by that start, before any role runs; a
-// release that added no migration left the database as the one before knows it.
+// for the dump taken before them to be put back by that start, before any role runs,
+// unless every one of them is rollback-safe and the release before runs on such a schema:
+// then the database stays as it is (keepSchema). A release that added no migration left
+// the database as the one before knows it.
 func (m *Machine) rollback(reason string) {
 	j := m.Status().Journal
 	if j.FromRef == "" && j.From == "" {
@@ -1377,9 +1419,22 @@ func (m *Machine) rollback(reason string) {
 	// the TV first (story 35.6 AC8): its change cancelled, or rolled back on the air
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
-	if migrated {
-		if _, err := m.Records.MarkRestore(j.Job.Version, j.From, reason); err != nil {
+	if migrated && !m.keepSchema(j, reason) {
+		marked, err := m.Records.MarkRestore(j.Job.Version, j.From, reason)
+		if err != nil {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
+		}
+		if marked && m.RestoreBack != nil {
+			// this release puts it back now, with its own code (review of #433)
+			m.logf("putting the database back as it was before %s's migrations, before switching back to %s",
+				j.Job.Version, orNone(j.From))
+			if err := m.RestoreBack(m.ctx(), j, reason); err != nil {
+				m.errorf("this release could not put the database back (%v): %s puts it back at its start", err,
+					orNone(j.From))
+			} else {
+				m.logf("the database is back as it was before %s's migrations: %s starts on it", j.Job.Version,
+					orNone(j.From))
+			}
 		}
 	}
 	// stopped before the switch back: a push after it would write back the guard the
@@ -1403,6 +1458,33 @@ func (m *Machine) rollback(reason string) {
 	if m.Exit != nil {
 		m.Exit(75)
 	}
+}
+
+// keepSchema marks the database's record kept for the release before when the rollback
+// may leave the database as the new release's migrations made it (schemakeep.go): every
+// one of them rollback-safe, and the release before runs on such a schema. It reports
+// whether it did; otherwise the dump goes back (MarkRestore), as before.
+func (m *Machine) keepSchema(j *Journal, reason string) bool {
+	k, ok := m.Installer.(SchemaKeeper)
+	kr, ok2 := m.Records.(KeptRecords)
+	if !ok || !ok2 || j.From == "" {
+		return false
+	}
+	safe, why := k.KeepsSchema(j)
+	if !safe {
+		m.logf("the database goes back to the dump taken before %s's migrations: %s", j.Job.Version, why)
+		return false
+	}
+	marked, err := kr.MarkKept(j.Job.Version, j.From, reason)
+	if err != nil {
+		m.errorf("cannot mark the database record kept for %s (the dump goes back instead): %v", j.From, err)
+		return false
+	}
+	if marked {
+		m.logf("the database stays as %s's migrations made it (%s): %s starts on it, nothing is put back",
+			j.Job.Version, why, j.From)
+	}
+	return marked
 }
 
 // tvHandover is TVHandover (false when there is none).

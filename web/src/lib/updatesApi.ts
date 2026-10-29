@@ -203,7 +203,15 @@ export interface TVCheck {
 /** What a TV held at an update is now: held (Retry or Drop), retrying (checked again),
  * live (a retry passed and swapped), dropped, replaced (a later release's change), failed
  * (a retry's swap failed), gone. */
-export type RunTVState = "held" | "retrying" | "live" | "dropped" | "replaced" | "failed" | "gone";
+export type RunTVState =
+  | "held"
+  | "retrying"
+  | "live"
+  | "dropped"
+  | "replaced"
+  | "failed"
+  | "gone"
+  | "pending";
 
 /** A TV held at the home's commit (the owner's decision, 2026-10-28): its change's check
  * failed before any swap, so the release installed and the live TV stayed on `held_on`. */

@@ -410,3 +410,13 @@ func (ri *RuntimeInstaller) Discard(_ context.Context, j *Journal) error {
 	}
 	return os.RemoveAll(filepath.Join(ri.Runtime.Root, j.Staged))
 }
+
+// KeepsSchema implements SchemaKeeper: the runtime directory of the release before
+// (FromRef) against the staged one this release runs from (schemakeep.go).
+func (ri *RuntimeInstaller) KeepsSchema(j *Journal) (bool, string) {
+	if j.FromRef == "" || j.Staged == "" {
+		return false, "the runtimes' migrations are not known"
+	}
+	return KeepsSchemaFrom(filepath.Join(ri.Runtime.Root, j.FromRef, "migrations"),
+		filepath.Join(ri.Runtime.Root, j.Staged, "migrations"))
+}

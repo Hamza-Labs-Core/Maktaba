@@ -10,6 +10,35 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An update is no longer rolled back because its TV change waits, a rollback no longer puts
+  the database back for additive migrations, and a restore that is needed is whole (the outage
+  of 2026-10-28).** The update to 0.3.42 passed every check, but its TV change waited half an
+  hour for an approval; the watch's bound ran out meanwhile (`watch_timeout`), the rollback put
+  the whole database back for one added row, and that restore failed part way (a joined machine
+  asking for its copy collided with the restore's grants: `tuple concurrently updated`), leaving
+  the library down for a quarter of an hour. Now: the watch judges the home's own health (a TV
+  slot starting or stopped by a swap is the TV step's; a live slot that crash-loops still rolls
+  back), and a release healthy for its whole watch commits at once with its TV change
+  **pending** (it goes on by itself; never `watch_timeout`, `tv_change_pending` or
+  `tv_timeout`), or **held** with Retry when no change could be had at all. A rollback whose
+  migrations are all rollback-safe keeps the schema and puts nothing back, for a previous
+  release that says it runs on a kept schema (`shared/db/migrations/meta/schema-keep.json`; its
+  api is told with `MAKTABA_SCHEMA_AHEAD_OK`); anything else that may break the previous
+  release (a drop of any kind, a rename, a retype, a constraint or unique index added, a
+  function's signature changed) puts the dump back. The new release puts it back itself before
+  it switches back, so the previous one starts on a finished database: into a database of its
+  own that nothing else reaches, the schema and the grants one at a time and the rows, vectors
+  and indexes in parallel, checked against the dump (every table, index, key, trigger,
+  function, grant and default privilege, and every table's rows: dumps now record them,
+  `counts.json`), then renamed into place in one transaction with the database's own grants
+  (the machines' CONNECT); a failure leaves the database as it was, retries with one worker,
+  and says exactly what is missing. The roles halted by the database step start again by
+  themselves once its record is put right (`migrated` or `restored`), a start gives the
+  machines their CONNECT back when a restore dropped it, and a restart written by hand
+  (`updates/restart`) is taken under the app's launcher too.
+
 ### Added
 
 - **A library's Series and Collections tabs (Epic 45 story 45.24).** A library's page is now

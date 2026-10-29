@@ -172,6 +172,19 @@ func (ai *AppInstaller) keptDir(version string) string {
 	return filepath.Join(ai.updatesDir(), "payloads", safeName(layout.NormalizeVersion(version)))
 }
 
+// KeepsSchema implements SchemaKeeper: the kept payload of the release before (the one a
+// rollback runs) against the payload this release runs from (schemakeep.go).
+func (ai *AppInstaller) KeepsSchema(j *Journal) (bool, string) {
+	from := j.FromRef
+	if from == "" && j.From != "" {
+		from = ai.keptDir(j.From)
+	}
+	if from == "" || ai.Payload == "" {
+		return false, "the payloads' migrations are not known"
+	}
+	return KeepsSchemaFrom(filepath.Join(from, "migrations"), filepath.Join(ai.Payload, "migrations"))
+}
+
 // Kind implements Installer.
 func (ai *AppInstaller) Kind() string { return "appbundle" }
 

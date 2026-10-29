@@ -89,6 +89,38 @@ func TestMachineHealthStartSteps(t *testing.T) {
 	}
 }
 
+// The home's watch judges the home's own processes: a TV slot (its change's staging slot
+// starting, a slot its swap stopped, one that crash-loops) is the TV step's, never the
+// home's verdict (2026-10-28: "tv-slot/amber is starting" counted against the watch).
+func TestMachineHealthLeavesTheTVSlotsToTheTVStep(t *testing.T) {
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	procs := []supervisor.ChildStatus{
+		{Role: supervisor.RoleStreaming, State: supervisor.StateRunning},
+		{Role: supervisor.RoleTVSlot, Instance: "amber", Wanted: true, State: supervisor.StateStarting},
+		{Role: supervisor.RoleTVSlot, Instance: "blue", Wanted: true, State: supervisor.StateBackoff, CrashLoop: true},
+	}
+	changing := true // the release's TV change under way: amber stages it, blue's crash its check's
+	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true },
+		tvChanging: func() bool { return changing }}
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Healthy || v.Fatal {
+		t.Fatalf("the TV's slots judged the home: %+v", v)
+	}
+	// the review of #433: with no TV change under way, a slot that crash-loops is the live
+	// TV off the air: fatal (a release that breaks the live slot does not commit)
+	changing = false
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Fatal || !strings.Contains(v.Why, "tv-slot/blue") {
+		t.Fatalf("a live slot crash-looping = %+v", v)
+	}
+	procs[2].CrashLoop, procs[2].DetailCode = false, "db_restore_failed" // a slot halted
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Fatal {
+		t.Fatalf("a halted live slot = %+v", v)
+	}
+	procs[2].DetailCode, procs[2].State = "", supervisor.StateStopped // stopped by a swap: not unhealthy
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Healthy {
+		t.Fatalf("a slot a swap stopped = %+v", v)
+	}
+}
+
 // an api that does not answer at all says why in the verdict (a rollback's reason): the
 // transport's error, not "answers 0"; one that answers says its status.
 func TestMachineHealthSaysWhyTheAPIDidNotAnswer(t *testing.T) {

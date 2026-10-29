@@ -3489,6 +3489,7 @@
   "updates.tv.state.replaced": "Installed. A later release's TV change replaced this one",
   "updates.tv.state.failed": "Installed. The TV change failed again after its retry: see TV changes",
   "updates.tv.state.gone": "Installed. The TV was held on {version}; its change is no longer there",
+  "updates.tv.state.pending": "Installed. The TV change goes on by itself (it waits for an approval or a quiet window); the TV runs {version} until it is on the air",
   "updates.code.tv_held": "The TV stayed on the previous version: its check failed",
   "notify.update.tv_held": "{version} is installed, but the TV stays on {held_on}: its check failed ({checks}). Retry or drop it on the Updates page",
   "updates.lastRun.retry": "Try {version} again now",

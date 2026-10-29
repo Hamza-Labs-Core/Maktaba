@@ -59,6 +59,38 @@ func readRecord(t *testing.T, path string) map[string]any {
 
 // A rollback after the migrations marks the record for the dump to be put back; a
 // switch back that failed takes the mark back (the new release keeps its database).
+// A rollback whose migrations are additive keeps the schema: the record keeps the failed
+// release's version (the schema the database holds) and names the older release that may
+// start on it; never over migrations cut short. Unmarked when the switch back failed.
+func TestRecordKeptMarkAndUnmark(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrating","dump":"/b/d.dump"}`), 0o644)
+	if ok, err := MarkRecordKept(path, "1.5.0", "1.4.0", "watch_timeout"); err != nil || ok {
+		t.Fatalf("migrations cut short kept: %v %v", ok, err)
+	}
+	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated","dump":"/b/d.dump","from":"1.4.0"}`), 0o644)
+	if ok, err := MarkRecordKept(path, "1.4.0", "1.3.0", "x"); err != nil || ok {
+		t.Fatalf("another release's record marked: %v %v", ok, err)
+	}
+	if ok, err := MarkRecordKept(path, "v1.5.0", "v1.4.0", "watch_timeout"); err != nil || !ok {
+		t.Fatalf("mark: %v %v", ok, err)
+	}
+	rec := readRecord(t, path)
+	if rec["version"] != "1.5.0" || rec["state"] != "migrated" || rec["kept_for"] != "1.4.0" ||
+		rec["kept_reason"] != "watch_timeout" || rec["dump"] != "/b/d.dump" {
+		t.Fatalf("kept record %v", rec)
+	}
+	if !RecordMigrated(path, "1.5.0") {
+		t.Fatal("the kept record no longer says 1.5.0's migrations ran")
+	}
+	if ok, err := UnmarkRecordKept(path, "1.5.0"); err != nil || !ok {
+		t.Fatalf("unmark: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["kept_for"] != nil || rec["kept_reason"] != nil || rec["state"] != "migrated" {
+		t.Fatalf("unmarked record %v", rec)
+	}
+}
+
 func TestRecordRestoringMarkAndUnmark(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "database.json")
 	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated","dump":"/b/pre-1.4.0-to-1.5.0.dump"}`), 0o644)

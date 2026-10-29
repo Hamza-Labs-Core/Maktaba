@@ -155,6 +155,8 @@ api/api
 api/bin/
 streaming/streaming
 streaming/bin/
+cmd/maktaba-server/maktaba-server
+cmd/maktaba-launcher/maktaba-launcher
 tools/migration-lint/migration-lint
 tools/log-lint/log-lint
 tools/coverage-floor/coverage-floor
