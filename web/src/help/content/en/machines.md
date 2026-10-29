@@ -73,7 +73,7 @@ Each machine has its own web address (linked on its card). Sign in there with yo
 
 ### The paused page {#paused-page}
 
-When a machine cannot serve the app, its web address shows a full page instead: **This machine is paused** (its version does not fit the home's) or **This machine cannot reach its home**. It names the reason, links to the home's address, and reloads by itself when the machine is ready. **Try again** reloads it now.
+When a machine cannot serve the app, its web address shows a full page instead. Its headline says why: **Paused until the main machine updates** (this machine runs a newer release than the home's library: the page names both releases, and the machine resumes by itself once the home updates), **This machine is catching up** (it updates itself to the home's release; nothing to do), or **This machine cannot reach its home**. **What is happening now** says whether the home or this machine is updating, and when the page last asked. **Use the library on …** opens the library on the home meanwhile, **Check again** asks at once, and the page reloads by itself when the machine is ready.
 
 ## What the states and messages mean {#states}
 

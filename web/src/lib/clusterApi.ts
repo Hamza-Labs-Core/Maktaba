@@ -193,6 +193,14 @@ export interface NodeVod {
 }
 
 /** GET /api/cluster/self (public, every machine): who this machine is and who its home is. */
+/** An update in flight: its release, where it is (a run's or a machine journal's state). */
+export interface SelfUpdate {
+  version: string;
+  state: string;
+  step?: string;
+  since?: string;
+}
+
 export interface ClusterSelf {
   role: "home" | "node";
   id: string;
@@ -207,9 +215,13 @@ export interface ClusterSelf {
     version?: string;
     reachable: boolean;
     failing_since?: string;
+    /** the home's update run in flight (absent: none) */
+    update?: SelfUpdate;
   };
   /** the schema guard's reason; non-empty: this node is paused */
   paused?: string;
+  /** an update in flight here: on a node its own part (its journal), on the home its run */
+  update?: SelfUpdate;
   agent_connected?: boolean;
   vod?: NodeVod & { checked_at: string };
   /** a full node's copy of its home's database (Epic 37) */

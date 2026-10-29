@@ -130,6 +130,9 @@ type nodeRuntime struct {
 	fatal chan error
 	// bg is the work whose last save the API waits for at shutdown
 	bg sync.WaitGroup
+	// ownUpdate is this machine's update in flight (its supervisor's journal), for
+	// /api/cluster/self and the paused page (nil: none read)
+	ownUpdate func(context.Context) *clusterauth.SelfUpdate
 }
 
 // homeDownAfter is how long the home must not answer before a video this machine
@@ -234,7 +237,9 @@ func boundNodeDatabaseURL(cfg nodemode.Config) {
 func startNode(ctx context.Context, cfg nodemode.Config, dbs nodeDBs, logger *slog.Logger) (*nodeRuntime, error) {
 	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	rt := &nodeRuntime{cfg: cfg, dbs: dbs, logger: logger, fatal: make(chan error, 1)}
+	rt := &nodeRuntime{cfg: cfg, dbs: dbs, logger: logger, fatal: make(chan error, 1),
+		ownUpdate: supervisorUpdate(&updates.SupervisorClient{BaseURL: os.Getenv("MAKTABA_SUPERVISOR_URL"),
+			TokenFile: os.Getenv("MAKTABA_SUPERVISOR_TOKEN_FILE")})}
 	if dir := nodeStateDir(); dir != "" {
 		rt.clock.keepAt(filepath.Join(dir, "home-clock.json"))
 	}
@@ -443,6 +448,7 @@ func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 	home := &clusterauth.SelfHome{Reachable: ok, FailingSince: since}
 	if hs, got := rt.home.Get(ctx); got {
 		home.InstanceID, home.Name, home.WebURL, home.Version = hs.ID, hs.Name, hs.WebURL, hs.Version
+		home.Update = hs.Update
 		info.Machines = hs.Machines
 		m := system.CurrentMachine()
 		if m.HomeInstanceID != hs.ID && hs.ID != "" {
@@ -451,6 +457,9 @@ func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 		}
 	}
 	info.Home = home
+	if rt.ownUpdate != nil {
+		info.Update = rt.ownUpdate(ctx)
+	}
 	if rt.feed != nil {
 		c := rt.feed.Connected.Load() && rt.link.HasKey()
 		info.AgentLink = &c
@@ -522,7 +531,8 @@ func homeAutoUpdates(db *sql.DB) func(context.Context) bool {
 // whether it installs releases by itself (autoUpdates; MountSelf says it to this machine
 // only).
 func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64,
-	offDB func() []agent.OffDatabase, autoUpdates func(context.Context) bool) clusterauth.SelfFunc {
+	offDB func() []agent.OffDatabase, autoUpdates func(context.Context) bool,
+	updateRun func(context.Context) *clusterauth.SelfUpdate) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
 			WebURL: webURL}
@@ -531,6 +541,9 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 		}
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
+		if updateRun != nil {
+			info.Update = updateRun(cctx)
+		}
 		if autoUpdates != nil {
 			on := autoUpdates(cctx)
 			info.UpdatesAuto = &on
@@ -774,7 +787,8 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logge
 		return nil
 	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
-		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }, offDB, homeAutoUpdates(db)),
+		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }, offDB, homeAutoUpdates(db),
+		homeUpdateRun(db)),
 		Moved: switchover.MovedHandler(db)})
 	// the machines' copies of this database (Epic 37): the beat, the CA, the cap, the
 	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule
