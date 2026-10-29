@@ -129,6 +129,10 @@ func runUpdate(ctx context.Context, cmd *cobra.Command, c *selfupdate.Client, se
 		fmt.Fprintln(out, "You are up to date.")
 		return nil
 	}
+	// a machine joined to a home never goes ahead of it (update_homecap.go)
+	if err := refuseAboveHome(ctx, rel.Tag); err != nil {
+		return err
+	}
 	fmt.Fprintln(out, "Downloading and verifying ...")
 	if l, ok := install.Root(self); ok {
 		return runLayoutUpdate(ctx, out, c, rel, l, check)

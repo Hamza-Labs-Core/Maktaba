@@ -448,7 +448,7 @@ func (rt *nodeRuntime) self(ctx context.Context) clusterauth.SelfInfo {
 	home := &clusterauth.SelfHome{Reachable: ok, FailingSince: since}
 	if hs, got := rt.home.Get(ctx); got {
 		home.InstanceID, home.Name, home.WebURL, home.Version = hs.ID, hs.Name, hs.WebURL, hs.Version
-		home.Update = hs.Update
+		home.Update, home.Committed = hs.Update, hs.Committed
 		info.Machines = hs.Machines
 		m := system.CurrentMachine()
 		if m.HomeInstanceID != hs.ID && hs.ID != "" {
@@ -532,7 +532,7 @@ func homeAutoUpdates(db *sql.DB) func(context.Context) bool {
 // only).
 func homeSelf(store cluster.Store, webURL string, term func(context.Context) int64,
 	offDB func() []agent.OffDatabase, autoUpdates func(context.Context) bool,
-	updateRun func(context.Context) *clusterauth.SelfUpdate) clusterauth.SelfFunc {
+	updateRun func(context.Context) *clusterauth.SelfUpdate, committed func(context.Context) string) clusterauth.SelfFunc {
 	return func(ctx context.Context) clusterauth.SelfInfo {
 		info := clusterauth.SelfInfo{Role: "home", Version: version.Version, SchemaRev: schemaguard.SchemaRev,
 			WebURL: webURL}
@@ -543,6 +543,9 @@ func homeSelf(store cluster.Store, webURL string, term func(context.Context) int
 		defer cancel()
 		if updateRun != nil {
 			info.Update = updateRun(cctx)
+		}
+		if committed != nil {
+			info.Committed = committed(cctx)
 		}
 		if autoUpdates != nil {
 			on := autoUpdates(cctx)
@@ -788,7 +791,7 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logge
 	}
 	router.MountNodeLocal(r, router.NodeLocalDeps{Self: homeSelf(&cluster.PGStore{DB: db}, webURL,
 		func(ctx context.Context) int64 { return switchover.TermOf(ctx, db) }, offDB, homeAutoUpdates(db),
-		homeUpdateRun(db)),
+		homeUpdateRun(db), homeCommitted(db)),
 		Moved: switchover.MovedHandler(db)})
 	// the machines' copies of this database (Epic 37): the beat, the CA, the cap, the
 	// slots guarded; on a database that is not Maktaba's own Postgres, none without the rule

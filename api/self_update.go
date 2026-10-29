@@ -53,6 +53,27 @@ func homeUpdateRun(db *sql.DB) func(context.Context) *clusterauth.SelfUpdate {
 	})
 }
 
+// homeCommitted is the release the home committed last (the update watermark), for its
+// /api/cluster/self: a joined machine's app and CLI install nothing newer (the owner's
+// rule, 2026-10-28). Read at most every selfUpdateEvery; a failed read keeps the last.
+func homeCommitted(db *sql.DB) func(context.Context) string {
+	var mu sync.Mutex
+	var at time.Time
+	var last string
+	return func(ctx context.Context) string {
+		mu.Lock()
+		defer mu.Unlock()
+		if db == nil || (!at.IsZero() && time.Since(at) < selfUpdateEvery) {
+			return last
+		}
+		if wm, err := (&updates.Store{DB: db}).Watermark(ctx); err == nil {
+			last = wm
+		}
+		at = time.Now()
+		return last
+	}
+}
+
 // supervisorUpdate is this machine's own update in flight, as its supervisor's journal
 // says it (nil when it has none, or the run is over).
 func supervisorUpdate(sup updates.HomeSupervisor) func(context.Context) *clusterauth.SelfUpdate {

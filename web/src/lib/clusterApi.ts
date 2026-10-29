@@ -217,7 +217,11 @@ export interface ClusterSelf {
     failing_since?: string;
     /** the home's update run in flight (absent: none) */
     update?: SelfUpdate;
+    /** the release the home committed last: this machine never goes past it */
+    committed?: string;
   };
+  /** on the home: the release it committed last (the update watermark) */
+  committed?: string;
   /** the schema guard's reason; non-empty: this node is paused */
   paused?: string;
   /** an update in flight here: on a node its own part (its journal), on the home its run */

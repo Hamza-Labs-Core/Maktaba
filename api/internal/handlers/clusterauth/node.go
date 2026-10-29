@@ -51,6 +51,9 @@ type SelfInfo struct {
 	// this machine's own part (its supervisor's journal). Absent when none is. The paused
 	// page says what is happening with it.
 	Update *SelfUpdate `json:"update,omitempty"`
+	// Committed is the release the home committed last (the update watermark; on the home
+	// only): a joined machine never installs a newer one (the owner's rule, 2026-10-28).
+	Committed string `json:"committed,omitempty"`
 }
 
 // SelfUpdate is an update in flight: its release, where it is (the run's state on the
@@ -80,6 +83,9 @@ type SelfHome struct {
 	FailingSince *time.Time `json:"failing_since,omitempty"`
 	// Update is the home's update run in flight, as its /api/cluster/self says it.
 	Update *SelfUpdate `json:"update,omitempty"`
+	// Committed is the release the home committed last: this machine's ceiling (the
+	// desktop app and `maktaba-server update` install nothing newer).
+	Committed string `json:"committed,omitempty"`
 }
 
 // SelfRow is one machine's address (the picker learns the cluster's other addresses

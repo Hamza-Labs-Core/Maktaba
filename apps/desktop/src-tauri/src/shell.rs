@@ -1245,6 +1245,22 @@ fn install_update_from(app: AppHandle, source: Source) {
                     attempts::set_to(p, id, &to);
                 }
             }
+            // a machine joined to a home never goes ahead of it (the owner's rule,
+            // 2026-10-28): what its server says of the home, asked before anything stops
+            let server_side = shell(&app).server_side();
+            let joined = local_web_url(&app).and_then(|u| status::joined(&u));
+            if let Some(why) = autoinstall::past_home(
+                &update.version,
+                joined.as_ref(),
+                server_side,
+                source.ordered().is_some(),
+            ) {
+                return Err(failed(Failure::new(
+                    attempts::STEP_CHECK,
+                    attempts::PAST_HOME,
+                    why,
+                )));
+            }
             // what was staged at the order (install checks it again), else downloaded now
             let bytes = match source.ordered().and_then(|o| std::fs::read(&o.staged).ok()) {
                 Some(b) => b,

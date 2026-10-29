@@ -111,6 +111,15 @@ on, and updates only go up: the machine stayed paused until the home's next rele
 are not rolled back with the home (out of scope, by the owner's choice): they are simply never
 ordered before its commit.
 
+**A joined machine never goes ahead of its home.** Its only source of a newer server release is
+the home's order, after the home commits. The home's `/api/cluster/self` says the release it
+committed last (`committed`, the watermark) and a node passes it on (`home.committed`). The
+desktop app installs nothing newer on a machine whose server is a node, whatever the source
+(its own feed, a catch-up, an order): `autoinstall::past_home` refuses it as the attempt's
+`past_home` failure before anything stops; when the home's committed release is not known,
+only the home's order goes. `maktaba-server update` (and the Linux runtime's) refuses the same
+on a joined machine (`update_homecap.go`). An app or server joined to no home updates as before.
+
 **What it replaced.** The first D1 (2026-10-23, "Ask first") kept the apps' "restart to
 install": the release was downloaded, verified and staged by itself, then installed only when
 someone clicked "Install … and restart" in that machine's tray or app (the supervisor's
