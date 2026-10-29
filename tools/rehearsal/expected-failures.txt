@@ -1,0 +1,11 @@
+# The update rehearsal's scenarios expected to fail until their fix merges
+# (.github/workflows/update-rehearsal.yml, docs/update-rehearsal.md).
+#
+#   <the scenario's test>  <the fix's PR number>  <why>
+#
+# While the PR is not merged into the commit rehearsed, the scenario still runs and its
+# failure is reported (the job's annotation, the run's summary) but not counted. Once the
+# PR's merge commit is in the commit rehearsed, the scenario is required: nothing here
+# needs editing for that. Remove a line once its PR merged, to keep the list short.
+TestUpdateRehearsal10aMachinesAfterHomeDriver 434 a joined machine is ordered before its home commits (fix/machines-after-home)
+TestUpdateRehearsal10bMachineOwnUpdater 434 a joined machine's own updater goes past its home's release (fix/machines-after-home)

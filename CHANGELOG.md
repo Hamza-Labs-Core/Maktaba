@@ -10,6 +10,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Added
+
+- **The update rehearsal: every update path of the Mac app is proven in CI before a release.**
+  A new workflow (`update-rehearsal`) updates a seeded home from the latest published release
+  to the commit, the way Maktaba.app does (its bundle, launcher, state folder, bundled Postgres,
+  and the app's install played by the test), and breaks it the ways it broke on 2026-10-28: a
+  TV change that waits, rollbacks after additive and destructive migrations, a restore while
+  machines log in and one killed part way, halted roles, no room, the owner's Mac's state, a
+  joined machine updating before its home. Each scenario reports its downtime against a
+  budget. It runs on pull requests that touch updates, on every push to main, nightly, and the
+  release's tag guard refuses a commit it did not pass on (`docs/update-rehearsal.md`).
+
 ### Fixed
 
 - **An update is no longer rolled back because its TV change waits, a rollback no longer puts

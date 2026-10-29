@@ -36,8 +36,8 @@ jobs:
   guard:
     name: tag guard
     runs-on: ubuntu-22.04
-    # waits for CI on the tagged commit when it still runs
-    timeout-minutes: 75
+    # waits for CI, then the update rehearsal, on the tagged commit when they still run
+    timeout-minutes: 135
     permissions:
       contents: write # create_draft: open the tag's release as a draft
       actions: read # CI's runs on the tagged commit
