@@ -15,8 +15,9 @@ import (
 const NoticeNodePausedSchema = "update.node_paused_schema"
 
 // clusterRelease is the release the cluster runs: the watermark, raised to the home's
-// running release when that is newer and one the catalog verified (a home installed by
-// hand: its machines are behind it, and caught up to it).
+// running release when that is newer, one the catalog verified, and one the home runs for
+// good (homeSettledOn: a home installed by hand: its machines are behind it, and caught up
+// to it; never a release the home still watches).
 func (d *Driver) clusterRelease(ctx context.Context) (string, error) {
 	wm, err := d.Store.Watermark(ctx)
 	if err != nil {
@@ -33,11 +34,42 @@ func (d *Driver) clusterRelease(ctx context.Context) (string, error) {
 	if err != nil || rel.VerifyState != VerifyVerified || rel.WithdrawnAt != nil {
 		return wm, nil
 	}
+	if !d.homeSettledOn(ctx, cur) {
+		// the home runs it but has not committed it (its watch goes on after its run gave
+		// up on it, home_timeout): the machines follow once it commits, never before (the
+		// owner's decision, 2026-10-28)
+		return wm, nil
+	}
 	if err := d.Store.RaiseWatermark(ctx, cur); err != nil {
 		return wm, err
 	}
 	d.Store.Audit(ctx, "", "system", "watermark_raised", cur, map[string]any{"from": wm, "why": "home_runs_it"})
 	return cur, nil
+}
+
+// homeSettledOn reports whether the home runs version for good: its supervisor has no
+// update of it in flight (none at all, one of another release that is over, or this one
+// committed). A supervisor that does not answer is not settled (asked again next time);
+// a home without one (a plain container) is.
+func (d *Driver) homeSettledOn(ctx context.Context, version string) bool {
+	if d.Home == nil {
+		return true
+	}
+	st, err := d.Home.Do(ctx, "status", nil)
+	if err != nil {
+		return false
+	}
+	if st == nil || st.Job == nil {
+		return true
+	}
+	switch st.State {
+	case MApplying, MRestarting, MWatching, MRollingBack:
+		return false // an update in flight, whichever release: it ends first
+	}
+	if NormalizeVersion(st.Job.Version) == NormalizeVersion(version) {
+		return st.State == MCommitted
+	}
+	return true
 }
 
 // heldBack reports whether a machine's last part in a run of version keeps it from being

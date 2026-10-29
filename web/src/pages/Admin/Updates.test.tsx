@@ -308,6 +308,46 @@ describe("Admin Updates", () => {
     );
   });
 
+  // The owner's decision, 2026-10-28: machines follow once the home commits.
+  it("while the home updates, its machines show waiting for it, with no order", async () => {
+    const watching = { ...liveRun, trigger: "manual", state: "home_applying", step: "watching" };
+    routes(overview({ run: watching }), {
+      ...runView,
+      ...watching,
+      detail: { waiting_home: [{ node_id: "n1", name: "windows-pc", version: "1.4.0" }] },
+    });
+    renderPage();
+    expect(await screen.findByTestId("updates-waiting-home")).toHaveTextContent(
+      "The machines update once the home has committed 1.5.0: they wait for the home to finish."
+    );
+    const row = screen.getByTestId("updates-waiting-home-n1");
+    expect(row).toHaveTextContent("windows-pc");
+    expect(row).toHaveTextContent("1.4.0 → 1.5.0");
+    expect(row).toHaveTextContent("Waiting for the home to finish");
+    expect(screen.queryByTestId("updates-targets")).toBeNull();
+  });
+
+  it("a home that rolled back ordered no machine: they keep their release", async () => {
+    const rolled = {
+      ...runView,
+      state: "rolled_back",
+      step: "",
+      finished_at: finishedAt,
+      error: { code: "rolled_back" },
+      detail: { waiting_home: [{ node_id: "n1", name: "windows-pc", version: "1.4.0" }] },
+    };
+    routes(
+      overview({ last_run: { ...liveRun, state: "rolled_back", finished_at: finishedAt } }),
+      rolled,
+      [rolled]
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-waiting-home")).toHaveTextContent(
+      "The home did not commit 1.5.0: no machine was ordered it, and each keeps its release."
+    );
+    expect(screen.getByTestId("updates-waiting-home-n1")).toHaveTextContent("Not ordered");
+  });
+
   it("a run from before the click was removed reads as one that installs by itself", async () => {
     const waiting = { ...liveRun, state: "rolling_out", step: "waiting_click" };
     routes(overview({ run: waiting }), {

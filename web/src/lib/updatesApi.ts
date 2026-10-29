@@ -217,10 +217,24 @@ export interface RunTV {
   checks?: TVCheck[];
 }
 
+/** A machine that waits for the home to commit the run's release before its order. */
+export interface WaitingMachine {
+  node_id: string;
+  name: string;
+  version?: string;
+}
+
 /** GET /api/cluster/updates/runs/{id}. */
 export interface UpdateRunView extends UpdateRun {
   install_kind: string;
-  detail: { waiting?: string; no_home?: boolean; home?: { state?: string }; tv?: RunTV };
+  detail: {
+    waiting?: string;
+    no_home?: boolean;
+    home?: { state?: string };
+    tv?: RunTV;
+    /** The machines that wait for the home to commit before their order (none ordered when it does not). */
+    waiting_home?: WaitingMachine[];
+  };
   steps: UpdateRunStep[];
   targets: UpdateTarget[];
 }
