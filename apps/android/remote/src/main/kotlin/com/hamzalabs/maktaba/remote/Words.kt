@@ -9,22 +9,34 @@ import com.hamzalabs.maktaba.core.api.StageHealth
 import com.hamzalabs.maktaba.core.api.TvCheck
 import com.hamzalabs.maktaba.core.api.UpdatesOverview
 import com.hamzalabs.maktaba.core.api.UpdatesStuck
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.Locale
+import java.time.format.DecimalStyle
 
 /**
- * What the status screens say, in the web admin's words (WebWords): a value the home sends that
- * has no words here is shown as sent, its underscores as spaces.
+ * What the status screens say, in the web admin's words (WebWords), in the [Lookup]'s language:
+ * a value the home sends that has no words here is shown as sent, its underscores as spaces.
  */
-internal object Say {
-    fun spaced(v: String): String = v.replace('_', ' ')
+internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.systemDefault()) {
+    /** One of the app's strings, in this language. */
+    fun t(id: Int, vararg args: Any): String = w.text(id, *args)
 
-    private fun word(words: Map<String, String>, v: String): String = words[v] ?: spaced(v)
+    /** One of the app's counted strings ("1 job", "3 jobs"), in this language. */
+    fun count(id: Int, n: Int): String = w.plural(id, n, n)
 
-    private fun fill(template: String, vararg vars: Pair<String, Any>): String =
-        vars.fold(template) { s, (k, v) -> s.replace("{$k}", v.toString()) }
+    /** A counted string with more values than its count. */
+    fun plural(id: Int, n: Int, vararg args: Any): String = w.plural(id, n, *args)
+
+    private fun word(words: Map<String, Int>, v: String): String = words[v]?.let { w.text(it) } ?: spaced(v)
+
+    /** A web template with the home's named values; a value it did not send reads as empty. */
+    private fun fill(template: Template, vars: Map<String, String>): String =
+        w.text(template.id, *template.args.map { vars[it].orEmpty() }.toTypedArray())
+
+    private fun labelled(label: String, value: String): String = w.text(R.string.say_label_value, label, value)
 
     // ---------- updates ----------
 
@@ -34,32 +46,32 @@ internal object Say {
 
     /** An error code's words, as the web's reason(): a step's failure the step's, else the code. */
     fun code(c: String): String {
-        WebWords.updateCode[c]?.let { return it }
-        if (c.startsWith("verify_")) return WebWords.updateCode.getValue("verify_failed")
+        WebWords.updateCode[c]?.let { return w.text(it) }
+        if (c.startsWith("verify_")) return w.text(WebWords.updateCode.getValue("verify_failed"))
         Regex("^([a-z]+)_failed$").matchEntire(c)?.let { m ->
-            WebWords.updateStep[m.groupValues[1]]?.let { return "$it: ${runState("failed")}" }
+            WebWords.updateStep[m.groupValues[1]]?.let { return labelled(w.text(it), runState("failed")) }
         }
         return spaced(c)
     }
 
     /** What the home does next about its update, as the web's "Next" says it. */
-    fun planNext(ov: UpdatesOverview, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String {
-        ov.activeRun?.let { return "Updating to ${it.version} now." }
+    fun planNext(ov: UpdatesOverview): String {
+        ov.activeRun?.let { return w.text(R.string.say_updating, it.version) }
         val plan = ov.plan
-        val version = plan.target?.version ?: return "Nothing to install: up to date."
-        if (plan.held) return fill("Version {version} waits for your approval (Live TV -> Changes).", "version" to version)
-        plan.nextRunAt?.let { at -> return fill("Version {version} installs on {at}.", "version" to version, "at" to whenText(at, zone, locale)) }
+        val version = plan.target?.version ?: return w.text(R.string.say_up_to_date)
+        if (plan.held) return w.text(R.string.say_plan_held, version)
+        plan.nextRunAt?.let { at -> return w.text(R.string.say_plan_at, version, whenText(at)) }
         return waiting(plan.waiting ?: "auto_install_off", version)
     }
 
     /** Why the planned [version] does not install now, as a sentence. */
-    fun waiting(w: String, version: String): String =
-        WebWords.planWaiting[w]?.let { fill(it, "version" to version) }
-            ?: WebWords.updateWaiting[w]
-            ?: "Version $version: ${spaced(w)}."
+    fun waiting(reason: String, version: String): String =
+        WebWords.planWaiting[reason]?.let { fill(it, mapOf("version" to version)) }
+            ?: WebWords.updateWaiting[reason]?.let { w.text(it) }
+            ?: w.text(R.string.say_plan_unknown, version, spaced(reason))
 
     /** A run's gate (detail.waiting): tv_busy, outside_window, tv_swapping, ... */
-    fun runWaiting(w: String): String = WebWords.updateWaiting[w] ?: spaced(w)
+    fun runWaiting(reason: String): String = word(WebWords.updateWaiting, reason)
 
     /** Why the scheduler did not start a due release (last_tick), or null when it says nothing. */
     fun tick(ov: UpdatesOverview): String? {
@@ -71,27 +83,27 @@ internal object Say {
             "none" -> runWaiting(reason)
             else -> return null
         }
-        return "Not started now: $why"
+        return w.text(R.string.say_not_started, why)
     }
 
     fun blocked(r: CatalogRelease): String =
-        "${r.version} is blocked: ${word(WebWords.blockedReason, r.blockedReason.orEmpty())}"
+        w.text(R.string.say_blocked, r.version, word(WebWords.blockedReason, r.blockedReason.orEmpty()))
 
-    fun stuck(s: UpdatesStuck): String = "${s.version} has not installed in ${s.windows} windows: ${code(s.code)}"
+    fun stuck(s: UpdatesStuck): String = w.plural(R.plurals.say_stuck, s.windows, s.version, s.windows, code(s.code))
 
     /** A held TV's line: held, or what became of it since. */
     fun tv(state: String?, heldOn: String?, release: String): String {
-        val on = heldOn?.takeIf { it.isNotEmpty() } ?: "the previous version"
+        val on = heldOn?.takeIf { it.isNotEmpty() } ?: w.text(R.string.say_tv_previous)
         return when (val s = state ?: "held") {
-            "held" -> "Installed. TV held on $on: its check failed"
-            "retrying" -> "Installed. The TV change is checked again; the TV runs $on until it passes"
-            "live" -> "Installed. The TV change passed on a retry: the TV runs $release"
-            "dropped" -> "Installed. The TV change was dropped: the TV stayed on $on"
-            "replaced" -> "Installed. A later release's TV change replaced this one"
-            "failed" -> "Installed. The TV change failed again after its retry: see TV changes"
-            "gone" -> "Installed. The TV was held on $on; its change is no longer there"
-            "pending" -> "Installed. The TV change goes on by itself (it waits for an approval or a quiet window); the TV runs $on until it is on the air"
-            else -> "TV: ${spaced(s)}"
+            "held" -> w.text(R.string.say_tv_held, on)
+            "retrying" -> w.text(R.string.say_tv_retrying, on)
+            "live" -> w.text(R.string.say_tv_live, release)
+            "dropped" -> w.text(R.string.say_tv_dropped, on)
+            "replaced" -> w.text(R.string.say_tv_replaced)
+            "failed" -> w.text(R.string.say_tv_failed)
+            "gone" -> w.text(R.string.say_tv_gone, on)
+            "pending" -> w.text(R.string.say_tv_pending, on)
+            else -> w.text(R.string.say_tv_other, spaced(s))
         }
     }
 
@@ -106,13 +118,13 @@ internal object Say {
 
     /** A process's name: its role's, and a TV slot's colour (blue, green, amber). */
     fun process(role: String, instance: String?): String {
-        val name = WebWords.processRole[role] ?: role
+        val name = WebWords.processRole[role]?.let { w.text(it) } ?: role
         return if (instance.isNullOrEmpty()) name else "$name · $instance"
     }
 
     fun process(p: ProcessStatus): String = process(p.role, p.instance)
 
-    fun processState(s: String): String = WebWords.processState[s] ?: spaced(s)
+    fun processState(s: String): String = word(WebWords.processState, s)
 
     /** A process's state as the web says it: a stopped one not wanted now is standing by. */
     fun processState(p: ProcessStatus): String = processState(if (p.wanted == false && p.state == "stopped") "standby" else p.state)
@@ -122,23 +134,20 @@ internal object Say {
         p.detailCode?.let { code ->
             WebWords.processDetail[code]?.let { template ->
                 val vars = p.detailParams.orEmpty().mapNotNull { (k, v) ->
-                    (v as? kotlinx.serialization.json.JsonPrimitive)?.takeUnless { it is kotlinx.serialization.json.JsonNull }?.let { k to it.content }
-                }
-                return fill(template, *vars.toTypedArray())
+                    (v as? JsonPrimitive)?.takeUnless { it is JsonNull }?.let { k to it.content }
+                }.toMap()
+                return fill(template, vars)
             }
         }
         return p.detail?.takeIf { it.isNotEmpty() }
     }
 
-    /** Exits worth calling a crash: not clean exits or shutdowns. */
-    val FAILURE_REASONS = setOf("crash", "hang", "start_failed")
-
     fun exit(reason: String, code: Int?, signal: String?): String = when {
-        reason == "hang" -> "stopped responding and was restarted"
-        reason == "start_failed" -> "could not start"
-        !signal.isNullOrEmpty() -> "killed by $signal"
-        reason == "crash" || reason.isEmpty() -> "exited with code ${code ?: -1}"
-        else -> spaced(reason) + (code?.takeIf { it != 0 }?.let { " ($it)" } ?: "")
+        reason == "hang" -> w.text(R.string.say_exit_hang)
+        reason == "start_failed" -> w.text(R.string.say_exit_start_failed)
+        !signal.isNullOrEmpty() -> w.text(R.string.say_exit_signal, signal)
+        reason == "crash" || reason.isEmpty() -> w.text(R.string.say_exit_code, code ?: -1)
+        else -> spaced(reason) + (code?.takeIf { it != 0 }?.let { " (${number(it)})" } ?: "")
     }
 
     fun exit(e: ProcessExit): String = exit(e.reason, e.code, e.signal)
@@ -147,35 +156,46 @@ internal object Say {
     fun event(e: ProcessEvent): String {
         val what = when (e.kind) {
             "exited" -> exit(e.reason.orEmpty(), e.code, e.signal)
-            "started" -> "started"
-            "restarting" -> "restarting"
-            "failed" -> "crash loop"
-            "hung" -> "stopped responding"
+            "started" -> w.text(R.string.say_event_started)
+            "restarting" -> w.text(R.string.say_event_restarting)
+            "failed" -> w.text(R.string.say_event_crash_loop)
+            "hung" -> w.text(R.string.say_event_hung)
             else -> spaced(e.kind)
         }
-        return "${process(e.role, e.instance)}: $what"
+        return labelled(process(e.role, e.instance), what)
     }
 
     fun duration(sec: Double): String {
         val s = maxOf(0L, sec.toLong())
-        val d = s / 86400
-        val h = s % 86400 / 3600
-        val m = s % 3600 / 60
+        val d = (s / 86400).toInt()
+        val h = (s % 86400 / 3600).toInt()
+        val m = (s % 3600 / 60).toInt()
         return when {
-            d > 0 -> "${d}d ${h}h"
-            h > 0 -> "${h}h ${m}m"
-            m > 0 -> "${m}m"
-            else -> "${s}s"
+            d > 0 -> w.text(R.string.say_dur_days, d, h)
+            h > 0 -> w.text(R.string.say_dur_hours, h, m)
+            m > 0 -> w.text(R.string.say_dur_minutes, m)
+            else -> w.text(R.string.say_dur_seconds, s.toInt())
         }
     }
+
+    /** A wait or an estimate: seconds, minutes, else hours. */
+    fun minutes(sec: Double): String = when {
+        sec < 90 -> w.text(R.string.say_seconds_short, sec.toInt())
+        sec < 5400 -> w.text(R.string.say_minutes_short, (sec / 60).toInt())
+        else -> w.text(R.string.say_hours_short, sec / 3600)
+    }
+
+    /** A number as this language writes it. */
+    fun number(n: Int): String = String.format(w.locale, "%d", n)
 
     // ---------- the queue ----------
 
     /** Why a stage's jobs wait (waiting_reason), or null when it runs. */
     fun queueWaiting(reason: String?, service: String?, stage: String): String? {
         val r = reason?.takeIf { it.isNotEmpty() } ?: return null
-        val w = WebWords.queueWaiting[r] ?: return spaced(r)
-        return fill(w, "service" to (service?.takeIf { it.isNotEmpty() }?.let(::serviceName) ?: "A service"), "stage" to stage)
+        val template = WebWords.queueWaiting[r] ?: return spaced(r)
+        val who = service?.takeIf { it.isNotEmpty() }?.let(::serviceName) ?: w.text(R.string.say_a_service)
+        return fill(template, mapOf("service" to who, "stage" to stage))
     }
 
     private fun serviceName(s: String): String = when (s) {
@@ -191,10 +211,10 @@ internal object Say {
         val kind = parts.getOrElse(1) { "" }
         val name = parts.drop(2).joinToString(":")
         return when {
-            head == "dependency" && kind == "model" -> "the model"
-            head == "dependency" && kind == "share" -> "the share $name"
-            head == "resource" && kind == "disk" -> "disk space"
-            head == "resource" && kind == "shm" -> "database memory"
+            head == "dependency" && kind == "model" -> w.text(R.string.say_on_model)
+            head == "dependency" && kind == "share" -> w.text(R.string.say_on_share, name)
+            head == "resource" && kind == "disk" -> w.text(R.string.say_on_disk)
+            head == "resource" && kind == "shm" -> w.text(R.string.say_on_shm)
             kind.isNotEmpty() -> if (name.isNotEmpty()) "$kind $name" else kind
             else -> on
         }
@@ -203,24 +223,39 @@ internal object Say {
     /** A stage's health as the web's queue card says it: failing, waiting, failed, needs you. */
     fun health(h: StageHealth?, failedOpen: Int): List<String> = buildList {
         if (h == null) {
-            if (failedOpen > 0) add("$failedOpen failing")
+            if (failedOpen > 0) add(w.text(R.string.say_health_failing_count, failedOpen))
             return@buildList
         }
         val f = h.failing
-        if (h.state == "failing" && f != null) add("${f.count} failing: ${f.signature}")
+        if (h.state == "failing" && f != null) add(w.text(R.string.say_health_failing, f.count, f.signature))
         val first: HealthWaiting? = h.waiting.firstOrNull()
         if (h.state == "waiting" && first != null) {
-            add("${h.waiting.sumOf { it.count }} waiting for ${waitingOn(first.on)}, resume by themselves")
+            add(w.text(R.string.say_health_waiting, h.waiting.sumOf { it.count }, waitingOn(first.on)))
         }
-        if (failedOpen > 0) add("$failedOpen failed")
-        if (h.needsYou > 0) add("${h.needsYou} need you")
+        if (failedOpen > 0) add(w.text(R.string.say_health_failed, failedOpen))
+        if (h.needsYou > 0) add(w.text(R.string.say_health_needs_you, h.needsYou))
     }
+
+    fun queueState(s: String): String = word(WebWords.queueState, s)
+
+    fun jobState(s: String): String = word(WebWords.jobState, s)
+
+    fun machineStatus(s: String): String = word(WebWords.machineStatus, s)
 
     // ---------- time ----------
 
-    /** A time the home sent (RFC 3339), in this device's zone; as sent when it is not one. */
-    fun whenText(iso: String, zone: ZoneId = ZoneId.systemDefault(), locale: Locale = Locale.getDefault()): String =
+    /** A time the home sent (RFC 3339), in this device's zone and language; as sent when it is not one. */
+    fun whenText(iso: String): String =
         runCatching {
-            OffsetDateTime.parse(iso).atZoneSameInstant(zone).format(DateTimeFormatter.ofPattern("EEE d MMM, HH:mm", locale))
+            OffsetDateTime.parse(iso).atZoneSameInstant(zone).format(
+                DateTimeFormatter.ofPattern("EEE d MMM, HH:mm", w.locale).withDecimalStyle(DecimalStyle.of(w.locale)),
+            )
         }.getOrElse { iso }
+
+    companion object {
+        fun spaced(v: String): String = v.replace('_', ' ')
+
+        /** Exits worth calling a crash: not clean exits or shutdowns. */
+        val FAILURE_REASONS = setOf("crash", "hang", "start_failed")
+    }
 }

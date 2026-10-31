@@ -100,7 +100,8 @@ class BrowserState(
     var loading by mutableStateOf(false)
     var loaded by mutableStateOf(false)
 
-    val title: String get() = libraries.firstOrNull { it.id == library }?.name ?: "All videos"
+    /** The chosen library's name; null for all videos. */
+    val title: String? get() = libraries.firstOrNull { it.id == library }?.name
 
     suspend fun loadLibraries() = guard { libraries = client.libraries() }
 
@@ -209,7 +210,7 @@ fun LibraryBrowser(
                     VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         val v = state.video
-                        if (v != null) VideoPage(client, v, onPlay = { playback.play(v) }) else Message("Choose a video")
+                        if (v != null) VideoPage(client, v, onPlay = { playback.play(v) }) else Message(stringResource(R.string.choose_video))
                     }
                 }
             } else {
@@ -283,9 +284,9 @@ private fun SplitBrowser(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LibraryChoices(state: BrowserState) {
-    Scaffold(topBar = { TopAppBar(title = { Text("Libraries") }) }) { padding ->
+    Scaffold(topBar = { TopAppBar(title = { Text(stringResource(R.string.libraries)) }) }) { padding ->
         LazyColumn(Modifier.padding(padding)) {
-            item { LibraryRow("All videos", Icons.Outlined.GridView, state.library == null) { state.library = null } }
+            item { LibraryRow(stringResource(R.string.all_videos), Icons.Outlined.GridView, state.library == null) { state.library = null } }
             items(state.libraries, key = { it.id }) { lib ->
                 LibraryRow(lib.name, Icons.Outlined.VideoLibrary, state.library == lib.id) { state.library = lib.id }
             }
@@ -327,18 +328,18 @@ private fun VideoList(
                     if (showLibraryMenu) {
                         Box {
                             Row(Modifier.clickable { menu = true }, verticalAlignment = Alignment.CenterVertically) {
-                                Text(state.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                Icon(Icons.Filled.ArrowDropDown, "Choose a library")
+                                Text(state.title ?: stringResource(R.string.all_videos), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Icon(Icons.Filled.ArrowDropDown, stringResource(R.string.choose_library))
                             }
                             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text("All videos") }, onClick = { state.library = null; menu = false })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.all_videos)) }, onClick = { state.library = null; menu = false })
                                 state.libraries.forEach { lib ->
                                     DropdownMenuItem(text = { Text(lib.name) }, onClick = { state.library = lib.id; menu = false })
                                 }
                             }
                         }
                     } else {
-                        Text(state.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(state.title ?: stringResource(R.string.all_videos), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 },
                 actions = { account() },
@@ -349,7 +350,7 @@ private fun VideoList(
             OutlinedTextField(
                 value = state.query,
                 onValueChange = { state.query = it },
-                placeholder = { Text("Search titles") },
+                placeholder = { Text(stringResource(R.string.search_titles)) },
                 leadingIcon = { Icon(Icons.Filled.Search, null) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -368,7 +369,7 @@ private fun VideoList(
                             onChooseHome = state.chooseHome,
                         )
                     }
-                    state.loaded && state.videos.isEmpty() -> Message("No videos")
+                    state.loaded && state.videos.isEmpty() -> Message(stringResource(R.string.no_videos))
                     !state.loaded && state.videos.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator()
                     }
@@ -426,5 +427,5 @@ private fun VideoRow(client: ApiClient, video: Video, chosen: Boolean, onClick: 
 /** A back arrow for a pane's title bar. */
 @Composable
 internal fun BackButton(onBack: () -> Unit) {
-    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.error_back)) }
 }

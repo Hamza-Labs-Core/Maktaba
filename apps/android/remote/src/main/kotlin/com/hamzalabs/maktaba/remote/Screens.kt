@@ -35,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ClusterOverview
@@ -112,14 +114,14 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
     val retryable = groups.orEmpty().filter { it.retryable }
     val group = groups?.firstOrNull { it.id == chosen }
     AdminScreen(
-        title = "Needs attention",
+        title = stringResource(R.string.place_attention),
         remote = remote,
         account = account,
         refreshing = refreshing,
         onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
         actions = {
             TextButton(onClick = { scope.launch { retry(retryable) } }, enabled = retryable.isNotEmpty() && busy == null) {
-                if (busy == "all") Busy() else Text("Retry all")
+                if (busy == "all") Busy() else Text(stringResource(R.string.retry_all))
             }
         },
         chosenTitle = group?.label,
@@ -127,19 +129,19 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
         detail = group?.let { g ->
             {
                 Detail {
-                    Text("${g.count} ${if (g.count == 1) "job" else "jobs"}", style = MaterialTheme.typography.headlineSmall)
-                    Fact("Stage", g.stage)
-                    Fact("Cause", g.cause)
+                    Text(pluralStringResource(R.plurals.jobs, g.count, g.count), style = MaterialTheme.typography.headlineSmall)
+                    Fact(stringResource(R.string.stage), g.stage)
+                    Fact(stringResource(R.string.cause), g.cause)
                     g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     if (g.retryable) {
                         Button(onClick = { scope.launch { retry(listOf(g)) } }, enabled = busy == null) {
-                            if (busy == g.id) Busy() else Text("Retry")
+                            if (busy == g.id) Busy() else Text(stringResource(R.string.retry))
                         }
                     } else {
                         Text(
-                            "This one is fixed from the home's web page (${g.action.replace('_', ' ')}).",
+                            stringResource(R.string.fixed_on_web, Say.spaced(g.action)),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -149,16 +151,16 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val gs = groups
         when {
-            gs == null -> item { if (!remote.hasProblem) Message("Loading…") }
+            gs == null -> item { if (!remote.hasProblem) Message(stringResource(R.string.loading)) }
             gs.isEmpty() -> item {
                 ListItem(
-                    headlineContent = { Text("Nothing needs attention") },
+                    headlineContent = { Text(stringResource(R.string.nothing_needs_attention)) },
                     leadingContent = { Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) },
                 )
             }
             else -> items(gs, key = { it.id }) { g ->
                 ListItem(
-                    headlineContent = { Text("${g.count}  ${g.label}") },
+                    headlineContent = { Text(stringResource(R.string.count_label, g.count, g.label)) },
                     supportingContent = {
                         Column {
                             Text(g.stage)
@@ -168,7 +170,7 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
                     trailingContent = {
                         if (g.retryable) {
                             OutlinedButton(onClick = { scope.launch { retry(listOf(g)) } }, enabled = busy == null) {
-                                if (busy == g.id) Busy() else Text("Retry")
+                                if (busy == g.id) Busy() else Text(stringResource(R.string.retry))
                             }
                         }
                     },
@@ -242,8 +244,9 @@ internal fun QueueContent(
     val row = snap?.rows?.firstOrNull { it.id == chosen }
     val job = running?.firstOrNull { "job:${it.id}" == chosen }
     val labelOf = { stage: String -> snap?.stages?.firstOrNull { it.stage == stage }?.label?.ifEmpty { null } ?: stage }
+    val say = rememberSay()
     AdminScreen(
-        title = "Queue",
+        title = stringResource(R.string.place_queue),
         remote = remote,
         account = account,
         refreshing = refreshing,
@@ -252,7 +255,7 @@ internal fun QueueContent(
             val s = snap
             if (s != null) {
                 TextButton(onClick = { act("all") { if (s.pausedAll) resumeAll() else pauseAll() } }, enabled = busy == null) {
-                    if (busy == "all") Busy() else Text(if (s.pausedAll) "Resume all" else "Pause all")
+                    if (busy == "all") Busy() else Text(stringResource(if (s.pausedAll) R.string.resume_all else R.string.pause_all))
                 }
             }
         },
@@ -266,35 +269,35 @@ internal fun QueueContent(
     ) {
         val s = snap
         when {
-            s == null -> item { if (!remote.hasProblem) Message("Loading…") }
+            s == null -> item { if (!remote.hasProblem) Message(stringResource(R.string.loading)) }
             else -> {
                 if (s.pausedAll) {
                     item {
                         Text(
-                            "All processing is paused.",
+                            stringResource(R.string.all_paused),
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(16.dp),
                         )
                     }
                 }
-                healthRow(s.health)
-                runningRows(running, labelOf, chosen) { choose(it) }
-                item { Header("Queues") }
+                healthRow(s.health, say)
+                runningRows(running, labelOf, chosen, say) { choose(it) }
+                item { Header(stringResource(R.string.queues)) }
                 items(s.rows, key = { it.id }) { r ->
                     val c = r.counts
-                    val health = Say.health(r.summary?.health, c.failedOpen)
+                    val health = say.health(r.summary?.health, c.failedOpen)
                     ListItem(
                         headlineContent = { Text(r.label) },
                         supportingContent = {
                             Column {
                                 Text(
-                                    buildString {
-                                        append("${c.ready} waiting · ${c.running} running")
-                                        if (r.stage.paused) append(" · paused")
-                                        if (!r.stage.enabled) append(" · off")
-                                    },
+                                    listOfNotNull(
+                                        stringResource(R.string.queue_counts, c.ready, c.running),
+                                        stringResource(R.string.flag_paused).takeIf { r.stage.paused },
+                                        stringResource(R.string.flag_off).takeIf { !r.stage.enabled },
+                                    ).joinToString(" · "),
                                 )
-                                waitingOf(r)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                waitingOf(r, say)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                                 if (health.isNotEmpty()) {
                                     Text(
                                         health.joinToString(" · "),
@@ -303,7 +306,7 @@ internal fun QueueContent(
                                 }
                             }
                         },
-                        trailingContent = { Text("${c.done24h} today", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                        trailingContent = { Text(stringResource(R.string.done_today, c.done24h), color = MaterialTheme.colorScheme.onSurfaceVariant) },
                         colors = chosenColors(r.id == chosen),
                         modifier = Modifier.clickable { choose(r.id) },
                     )
@@ -315,56 +318,51 @@ internal fun QueueContent(
 }
 
 /** Why the stage's jobs wait, in the web's words (none while it runs or has nothing waiting). */
-private fun waitingOf(r: StageRow): String? {
+private fun waitingOf(r: StageRow, say: Say): String? {
     val q = r.summary ?: return null
     if (q.waitingReason == "idle") return null
-    return Say.queueWaiting(q.waitingReason, q.retryingService, r.label)
+    return say.queueWaiting(q.waitingReason, q.retryingService, r.label)
 }
 
 @Composable
 private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolean, toggle: () -> Unit) {
     val c = r.counts
     val q = r.summary
+    val say = rememberSay()
     Detail {
-        waitingOf(r)?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
-        Fact("Waiting", "${c.ready}")
-        Fact("Running", "${c.running}")
-        Fact("Failed", "${c.failedOpen}")
-        Fact("Done in 24 h", "${c.done24h}")
+        waitingOf(r, say)?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+        Fact(stringResource(R.string.waiting), say.number(c.ready))
+        Fact(stringResource(R.string.running), say.number(c.running))
+        Fact(stringResource(R.string.failed), say.number(c.failedOpen))
+        Fact(stringResource(R.string.done_24h), say.number(c.done24h))
         q?.let {
-            Fact("Rate", "%.1f a minute".format(it.ratePerMin))
-            it.etaSec?.let { eta -> Fact("Done in", minutes(eta)) }
-            it.oldestWaitingSec?.let { w -> Fact("Oldest waiting", minutes(w)) }
-            if (it.servedBy.isNotEmpty()) Fact("Served by", it.servedBy.joinToString())
-            if (it.noWorker) Text("No machine serves this stage now.", color = MaterialTheme.colorScheme.error)
+            Fact(stringResource(R.string.rate), stringResource(R.string.rate_per_minute, it.ratePerMin))
+            it.etaSec?.let { eta -> Fact(stringResource(R.string.done_in), say.minutes(eta)) }
+            it.oldestWaitingSec?.let { w -> Fact(stringResource(R.string.oldest_waiting), say.minutes(w)) }
+            if (it.servedBy.isNotEmpty()) Fact(stringResource(R.string.served_by), it.servedBy.joinToString())
+            if (it.noWorker) Text(stringResource(R.string.no_worker), color = MaterialTheme.colorScheme.error)
         }
         q?.health?.let { h ->
-            Text("Health", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-            Fact("State", Say.spaced(h.state))
-            if (h.windowHours > 0) Fact("Failed in ${h.windowHours} h", "${h.failedWindow} of ${h.finishedWindow}")
-            Say.health(h, c.failedOpen).forEach { Text(it) }
+            Text(stringResource(R.string.health), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Fact(stringResource(R.string.state), say.queueState(h.state))
+            if (h.windowHours > 0) Fact(stringResource(R.string.failed_in_window, h.windowHours), stringResource(R.string.of_total, h.failedWindow, h.finishedWindow))
+            say.health(h, c.failedOpen).forEach { Text(it) }
             h.failing?.example?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             h.waiting.forEach { w ->
                 Text(
-                    "${w.count} waiting for ${Say.waitingOn(w.on)}" + (w.message?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""),
+                    stringResource(R.string.waiting_for, w.count, say.waitingOn(w.on)).let { line -> w.message?.takeIf { it.isNotEmpty() }?.let { say.t(R.string.say_label_value, line, it) } ?: line },
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
         }
         r.stage.disabledReason?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FilledTonalButton(onClick = toggle, enabled = !busy) {
-            if (busy) Busy() else Text(if (r.stage.paused) "Resume" else "Pause")
+            if (busy) Busy() else Text(stringResource(if (r.stage.paused) R.string.resume else R.string.pause))
         }
         StageFailures(failures)
     }
 }
 
-
-internal fun minutes(sec: Double): String = when {
-    sec < 90 -> "${sec.toInt()} s"
-    sec < 5400 -> "${(sec / 60).toInt()} min"
-    else -> "%.1f h".format(sec / 3600)
-}
 
 // ---------- Libraries ----------
 
@@ -391,7 +389,7 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
     LaunchedEffect(Unit) { load() }
     val lib = libraries?.firstOrNull { it.id == chosen }
     AdminScreen(
-        title = "Libraries",
+        title = stringResource(R.string.place_libraries),
         remote = remote,
         account = account,
         refreshing = refreshing,
@@ -401,27 +399,27 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
         detail = lib?.let { l ->
             {
                 Detail {
-                    Text("Folders", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    Text(stringResource(R.string.folders), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     l.roots.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
                     Button(onClick = { scan(l.id) }, enabled = busy == null) {
-                        if (busy == l.id) Busy() else Text(if (l.id in scanned) "Scan again" else "Scan for new files")
+                        if (busy == l.id) Busy() else Text(stringResource(if (l.id in scanned) R.string.scan_again else R.string.scan_new))
                     }
-                    if (l.id in scanned) Text("Scan queued.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (l.id in scanned) Text(stringResource(R.string.scan_queued), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },
     ) {
         val ls = libraries
         when {
-            ls == null -> item { if (!remote.hasProblem) Message("Loading…") }
-            ls.isEmpty() -> item { Message("No libraries yet", detail = "Add one from the home's web Settings.") }
+            ls == null -> item { if (!remote.hasProblem) Message(stringResource(R.string.loading)) }
+            ls.isEmpty() -> item { Message(stringResource(R.string.no_libraries), detail = stringResource(R.string.no_libraries_hint)) }
             else -> items(ls, key = { it.id }) { l ->
                 ListItem(
                     headlineContent = { Text(l.name) },
                     supportingContent = { if (l.roots.isNotEmpty()) Text(l.roots.joinToString(), maxLines = 2) },
                     trailingContent = {
                         androidx.compose.material3.IconButton(onClick = { scan(l.id) }, enabled = busy == null) {
-                            if (busy == l.id) Busy() else Icon(Icons.Filled.Refresh, "Scan ${l.name}")
+                            if (busy == l.id) Busy() else Icon(Icons.Filled.Refresh, stringResource(R.string.scan_named, l.name))
                         }
                     },
                     colors = chosenColors(l.id == chosen),
@@ -454,13 +452,14 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     Polling(15_000) { load() }
     val machine = overview?.nodes?.firstOrNull { it.id == chosen }
     val process = processes?.processes?.firstOrNull { "proc:${it.id}" == chosen }
+    val say = rememberSay()
     AdminScreen(
-        title = "Machines",
+        title = stringResource(R.string.place_machines),
         remote = remote,
         account = account,
         refreshing = refreshing,
         onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
-        chosenTitle = machine?.name ?: process?.let { Say.process(it) },
+        chosenTitle = machine?.name ?: process?.let { say.process(it) },
         onUnchoose = { chosen = null },
         detail = when {
             machine != null -> {
@@ -482,22 +481,22 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     ) {
         val o = overview
         when {
-            o == null -> item { if (!remote.hasProblem) Message("Loading…") }
+            o == null -> item { if (!remote.hasProblem) Message(stringResource(R.string.loading)) }
             else -> {
                 item {
                     ListItem(
-                        headlineContent = { Text(o.home.name.ifEmpty { "This home" }) },
-                        supportingContent = { Text(listOfNotNull(o.home.version.takeIf { it.isNotEmpty() }, "the home").joinToString(" · ")) },
+                        headlineContent = { Text(o.home.name.ifEmpty { stringResource(R.string.this_home) }) },
+                        supportingContent = { Text(listOfNotNull(o.home.version.takeIf { it.isNotEmpty() }, stringResource(R.string.the_home)).joinToString(" · ")) },
                     )
                     HorizontalDivider()
                 }
-                processRows(processes, chosen) { chosen = it }
-                item { Header("Other machines") }
-                if (o.nodes.isEmpty()) item { Message("No other machines", detail = "Join one from the home's web Settings.") }
+                processRows(processes, chosen, say) { chosen = it }
+                item { Header(stringResource(R.string.other_machines)) }
+                if (o.nodes.isEmpty()) item { Message(stringResource(R.string.no_other_machines), detail = stringResource(R.string.no_other_machines_hint)) }
                 items(o.nodes, key = { it.id }) { m ->
                     ListItem(
                         headlineContent = { Text(m.name.ifEmpty { m.id.take(8) }) },
-                        supportingContent = { Text(machineState(m)) },
+                        supportingContent = { Text(machineState(m, say)) },
                         leadingContent = { Dot(if (m.online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline) },
                         colors = chosenColors(m.id == chosen),
                         modifier = Modifier.clickable { chosen = m.id },
@@ -509,12 +508,12 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     }
 }
 
-private fun machineState(m: Machine): String = buildString {
-    append(if (m.online) "Online" else "Offline")
-    if (m.state != "approved") append(" · ${m.state}")
-    if (m.drain) append(" · draining")
-    listOfNotNull(m.os, m.arch).takeIf { it.isNotEmpty() }?.let { append(" · ${it.joinToString("/")}") }
-}
+private fun machineState(m: Machine, say: Say): String = listOfNotNull(
+    say.t(if (m.online) R.string.online else R.string.offline),
+    m.state.takeIf { it != "approved" }?.let(say::machineStatus),
+    say.t(R.string.flag_draining).takeIf { m.drain },
+    listOfNotNull(m.os, m.arch).takeIf { it.isNotEmpty() }?.joinToString("/"),
+).joinToString(" · ")
 
 @Composable
 internal fun Dot(color: Color) {
@@ -523,17 +522,18 @@ internal fun Dot(color: Color) {
 
 @Composable
 private fun MachineDetail(m: Machine, busy: Boolean, setDrain: (Boolean) -> Unit) {
+    val say = rememberSay()
     Detail {
-        Fact("State", m.state)
-        Fact("Online", if (m.online) "yes" else "no")
-        listOfNotNull(m.os, m.arch).takeIf { it.isNotEmpty() }?.let { Fact("System", it.joinToString("/")) }
-        m.lastSeenAt?.let { Fact("Last seen", it.replace('T', ' ').substringBefore('.')) }
+        Fact(stringResource(R.string.state), say.machineStatus(m.state))
+        Fact(stringResource(R.string.online), stringResource(if (m.online) R.string.yes else R.string.no))
+        listOfNotNull(m.os, m.arch).takeIf { it.isNotEmpty() }?.let { Fact(stringResource(R.string.system), it.joinToString("/")) }
+        m.lastSeenAt?.let { Fact(stringResource(R.string.last_seen), say.whenText(it)) }
         if (m.state == "approved") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Drain", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.drain), style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Finishes its jobs and takes no new ones.",
+                        stringResource(R.string.drain_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

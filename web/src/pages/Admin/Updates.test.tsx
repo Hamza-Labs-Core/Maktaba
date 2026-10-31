@@ -667,7 +667,7 @@ describe("Admin Updates", () => {
     routes(overview(), null);
     renderPage("ar");
     expect(await screen.findByRole("heading", { name: "التحديثات", level: 1 })).toBeInTheDocument();
-    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("الخادم الرئيسي");
+    expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("الجهاز الرئيسي");
   });
 
   // The owner's cluster on 2026-10-28: a run to 0.3.36 rolled back (failed_tv), 0.3.37 was
@@ -1309,7 +1309,7 @@ describe("Admin Updates: logs links and the home's database", () => {
     );
     renderPage("ar");
     expect(await screen.findByTestId("updates-machine-n1-home-db-answer")).toHaveTextContent(
-      "مجموعة الأجهزة غير موجودة في قاعدة بيانات الخادم الرئيسي"
+      "مجموعة الأجهزة غير موجودة في قاعدة بيانات الجهاز الرئيسي"
     );
   });
 
@@ -1324,7 +1324,7 @@ describe("Admin Updates: logs links and the home's database", () => {
     routes(machinesWith({}, { home_db: { ok: false, code: "no_hba" } }), null);
     renderPage("ar");
     expect(await screen.findByTestId("updates-machine-n1-home-db")).toHaveTextContent(
-      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الخادم الرئيسي"
+      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الجهاز الرئيسي"
     );
   });
 

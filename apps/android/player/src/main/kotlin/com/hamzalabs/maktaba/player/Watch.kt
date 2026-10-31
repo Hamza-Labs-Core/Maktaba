@@ -104,7 +104,7 @@ fun WatchScreen(playback: Playback, fullScreen: Boolean, onSignIn: () -> Unit, o
             IconButton(
                 onClick = playback::stop,
                 modifier = Modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
-            ) { Icon(Icons.Filled.Close, "Close", tint = Color.White) }
+            ) { Icon(Icons.Filled.Close, stringResource(CoreR.string.close), tint = Color.White) }
             Text(
                 playback.video?.displayTitle ?: "",
                 color = Color.White,
@@ -136,12 +136,13 @@ private fun ImmersiveWhileShown() {
 @kotlin.OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPage(client: ApiClient, video: Video, onPlay: () -> Unit, onBack: (() -> Unit)? = null) {
+    val playNamed = stringResource(R.string.play_named, video.displayTitle)
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(video.displayTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { if (onBack != null) BackButton(onBack) },
-                actions = { IconButton(onClick = onPlay) { Icon(Icons.Filled.PlayArrow, "Play") } },
+                actions = { IconButton(onClick = onPlay) { Icon(Icons.Filled.PlayArrow, stringResource(R.string.play)) } },
             )
         },
     ) { padding ->
@@ -152,7 +153,7 @@ fun VideoPage(client: ApiClient, video: Video, onPlay: () -> Unit, onBack: (() -
             ) {
                 Box(
                     Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onPlay)
-                        .semantics { contentDescription = "Play ${video.displayTitle}" },
+                        .semantics { contentDescription = playNamed },
                     contentAlignment = Alignment.Center,
                 ) {
                     Poster(client, video.id, Modifier.fillMaxWidth())
@@ -167,7 +168,7 @@ fun VideoPage(client: ApiClient, video: Video, onPlay: () -> Unit, onBack: (() -
                 }
                 Button(onClick = onPlay) {
                     Icon(Icons.Filled.PlayArrow, null)
-                    Text("Play", Modifier.padding(start = 8.dp))
+                    Text(stringResource(R.string.play), Modifier.padding(start = 8.dp))
                 }
             }
         }
