@@ -387,27 +387,29 @@ reached from the Mac (no SSH), so **this section is to be filled from the PC.**
 
 Traced on 2026-10-31 from the PC. Its Maktaba transcripts sit under `~/.claude/projects/E--tv`
 and `E--tv-dizquetv` (the checkouts live in `E:\tv`), not `*aktaba*`. Left out: `c58dc8c2` (an
-iperf question), `56a527d9` (another repo) and two empty transcripts.
+iperf question), `56a527d9` (another repo) and two empty transcripts. The 362 subagent
+transcripts were not traced one by one; their work is in the PRs cited.
 
 ### 2026-10-14 · PC · 89e92223 · dizqueTV on the PC, then mediaintel and Maktaba TV
 
 - Asked: Plex Live TV from the YouTube archive. dizqueTV 1.7.0 was built from source on the PC
   (port 8002, tuned by Plex on the NAS as an HDHomeRun), which is why Maktaba TV emulates an
   HDHomeRun with XMLTV. The owner then said "create tools for the work, don't do manually": that
-  became mediaintel ([#46]), then Maktaba's queues ([#47]), channel rules ([#48], [#52]) and
-  Maktaba TV ([#55] closed into [#57]).
-- Rules set here: "this should all be baseed on config with ui for that config" (rules are
+  became mediaintel ([#46], [#48]), then Maktaba's queues ([#47]), channel rules ([#52], [#55])
+  and Maktaba TV ([#57], which took in [#55]).
+- Owner rules set here: "this should all be baseed on config with ui for that config" (rules are
   settings, not code); "verify the claim" (a guess at failing NAS disks was wrong: SMB timeouts
-  from 32 parallel reads); never change security settings (the owner added the Defender
-  exclusion himself); never use `git stash` (a shared stash swapped two worktrees); no
-  placeholder features (a stub audit followed: [#123], [#128], [#130]–[#136]); tests bind
-  127.0.0.1 and build output is never committed (`api.exe` landed in [#119]; [#127]).
+  from 32 parallel reads); no placeholder features (a stub audit followed: [#123], [#128],
+  [#130]–[#136]). Claude's own working rules from it: never change security settings (the owner
+  added the Defender exclusion himself); never use `git stash` (a shared stash swapped two
+  worktrees); tests bind 127.0.0.1 and build output is never committed (`api.exe` landed in
+  [#119]; [#127]).
 - Decided: "windows will join mac and not the other way around". The PC's own home was retired
-  and the PC joined `Mahmouds-Mac-Studio` as node `windows-pc` on 2026-10-19, once [#75] let
-  the join's storage check accept files of unknown size. Paths are
-  canonical `smb://`, and nodes reach Plex through the home and never hold its token ([#81],
-  [#101], [#107]). The owner also asked for TV hot swap ([#97], [#104], [#108]) and automatic
-  updates.
+  and the PC joined `Mahmouds-Mac-Studio` as node `windows-pc` on 2026-10-19; [#75] then let its
+  storage check accept files of unknown size, so the worker took jobs. Paths are canonical
+  `smb://` ([#81], [#101], [#107]), and nodes reach Plex through the home and never hold its
+  token ([#73], [#78]). The owner also asked for TV hot swap ([#97], [#104], [#108]) and
+  automatic updates.
 - PC facts: 192.168.50.24, RTX 2080 SUPER. `O:` = `\\Home-NAS\Originals`, `Y:` =
   `\\Home-NAS\Originals\Backup\Youtube`. Splunk holds 8000 and 8088 and MiniTool ShadowMaker
   8080, so setup picks a free port from 8780 (v0.1.0, `6b88722f`). The mediaintel data and a
@@ -420,35 +422,39 @@ iperf question), `56a527d9` (another repo) and two empty transcripts.
 
 - Merged [#141] and, on the owner's "Why this one? Merge it", [#138]; tagged v0.2.0 on
   `e539c7af` ("Release tag no need for rc").
-- Every release leg failed: opened [#142] for the icons, the Android SDK and the relay deploy.
+- Four of the five release workflows failed (as on v0.1.0): opened [#142] for the icons, the
+  Android SDK and the relay deploy.
 - Ran the PC as a full node from source: opened [#143] so its API and pipeline reach the home's
   database.
 - The owner asked why the whole site goes blank when the node can't reach its home "instead of
-  working and showing popup and maybe all actions disabled": that became [#145] (later folded
+  working and showing popup and maybne all actions disabled": that became [#145] (later folded
   into [#178]).
 
 ### 2026-10-20 · PC · f43fad60 · "Maktaba worktree setup", the PC's coordinating session
 
 - 2026-10-20 → 10-31. Asked: keep the PC's node and dizqueTV running, and review, fix and merge
   every PR from this side. It ran the side sessions below (node copy, Windows and Linux apps,
-  updates), merged about 70 PRs and tagged v0.3.0-rc.1 → v0.3.33. On 10-31 it traced these PC
-  sessions.
-- Rules the owner set here (for §1): "review all prs from this side, then fix and merge" (a
-  merge commit on the exact reviewed head, `--match-head-commit` with the full sha, every check
-  green); "why you keep creating prs, fix and merge" (fold findings and new CI failures into PRs
-  already open); "why are you not polling it???" (wait on CI yourself, merge on green); "tag
-  every … merge" (the next patch tag at once, after main's `ci.yml` passes on the merge commit,
-  pushed with the owner's `gh` so the release builds start); "this is not a manual step, its a
-  feature of maktaba"; restart the PC's services only through their sign-in tasks, and never
-  touch the dizqueTV task.
+  updates), merged about 70 PRs and tagged about 17 releases between v0.3.0-rc.1 and v0.3.33
+  (the Mac tagged the rest). On 10-31 it traced these PC sessions.
+- Owner rules set here (for §1): "review all prs from this side, then fix and merge" (a merge
+  commit on the exact reviewed head, `--match-head-commit` with the full sha, every check green);
+  "why you keep creating prs, fix and merge" (fold findings and new CI failures into PRs already
+  open); "why are you not polling it???" (wait on CI yourself, merge on green); "tag every …
+  merge" (the next patch tag at once, after main's `ci.yml` passes on the merge commit, pushed
+  with the owner's `gh` so the release builds start; since 10-31, not while §3–§5 hold a
+  release); "this is not a manual step, its a feature of maktaba".
 - PC setup: the node and dizqueTV start from sign-in scheduled tasks (logon +30 s), because `O:`
-  and `Y:` exist only in the signed-in session. On 2026-10-25 the node moved from the hand-built
-  copy in `E:\tv\maktaba-local` into the Windows app ("Install the Windows app instead"):
+  and `Y:` exist only in the signed-in session. On 2026-10-25 the owner chose "Install the
+  Windows app instead": the node moved from the hand-built copy in `E:\tv\maktaba-local` to
   `%LOCALAPPDATA%\Maktaba`, task `Maktaba Server <SID>` running `Maktaba.exe --server-agent`.
-  `node.json` is in `%APPDATA%\Maktaba` (on `E:`); web 8780, API 8781, streaming 8782. To install
-  a release by hand: download `Maktaba_<v>_x64-setup.exe`, check its sha256 against the asset's
-  digest, run it with `/S`, and start `Maktaba.exe` if only the server agent runs.
-- Fixed one release at a time: a merge guard that let [#212] merge with a check still running;
+  `node.json` is in `%APPDATA%\Maktaba` (on `E:`); web 8780, API 8781, streaming 8782. Claude's
+  working rules on this PC: restart its services only through their sign-in tasks; never touch
+  the dizqueTV task; **never install Maktaba or start `Maktaba.exe` from Claude's shell**: the
+  Claude desktop app is an MSIX package, so registry writes from its shell land in Claude's
+  private copy (this broke `maktaba://` here, see `c17dd289`). Download the installer and check
+  its sha256 against the asset's digest, then the owner runs it or opens Maktaba from the Start
+  menu.
+- Fixes, each in its own release: a merge guard that let [#212] merge with a check still running;
   the Mac moving its Postgres without the node's role ([#276], [#307]); client certificates
   breaking the node's pipeline ([#349]); lib/pq ignoring the passfile on Windows, plus an
   inherited `PGPASSWORD` ([#362]); no local video on the node, because the API's check ignored
@@ -456,14 +462,14 @@ iperf question), `56a527d9` (another repo) and two empty transcripts.
   main's own runs before blaming a change ([#254] → [#259]); check remote tags before tagging (a
   v0.3.1 collision); scan any export for tokens (the dizqueTV export carried the Plex token in
   about 2,800 files; redacted).
-- Live state on 10-31 (updates §3): the PC fell behind because each update order from the Mac
-  waited for a click in the v0.3.33 app (three on 10-28, none installed), so v0.3.42 was
-  installed by hand. In the Mac's 10-28 rollback the PC's copy rebuild hung 15 min on a
-  table-sync worker with a dead connection, and with the Mac back at schema 167 the v0.3.42 node
-  paused its jobs and streaming. Now the Mac is on v0.3.44 and the PC on v0.3.42: the order waits
-  because no app window runs, and the `maktaba://install-update` link the server opens gets
-  Windows' "Get an app" popup (handed to `c17dd289`). Waiting on the owner: OK for a PR so the
-  copy notices a dead link and ends a stuck worker.
+- 10-28: each update order from the Mac waited for a click in the v0.3.33 app (three, none
+  installed), so v0.3.42 was installed by hand. In the Mac's rollback the PC's copy rebuild hung
+  15 min on a table-sync worker with a dead connection, and with the Mac back at schema 167 the
+  v0.3.42 node paused its jobs and streaming. 10-31 (updates §3): the Mac is on v0.3.44, the PC
+  on v0.3.42. The order waits because no app window runs and the server's
+  `maktaba://install-update` link gets Windows' "Get an app" popup: the link was registered only
+  in Claude's private registry copy. Handed to `c17dd289`, where the owner then answered both
+  open questions.
 
 ### 2026-10-20 · PC · ce7a4c40 · A node that loses its home, then its database copy (Epic 37)
 
@@ -512,8 +518,9 @@ iperf question), `56a527d9` (another repo) and two empty transcripts.
   NSIS installer, no admin, every download sha256-pinned ([#169], [#198]).
 - Windows lessons: `os.Rename` can't cross drives (`%APPDATA%` is on `E:`, `%LOCALAPPDATA%` on
   `C:`); CTRL_BREAK can't reach a child that has its own console, and sent to a pid that leads
-  no group it hits the whole console ([#205], [#222]); a runner's Visual Studio update broke the
-  VC++ runtime pin ([#212]); `postgres.exe` refuses an admin token ([#204]).
+  no group it hits the whole console ([#205], [#222]); the VC++ runtime pin ([#212]) must match
+  the runner's Visual Studio (14.51 on windows-2025-vs2026, not VS 2022's 14.44);
+  `postgres.exe` refuses an admin token ([#204]).
 - Decided: transcription stays the Mac's by default, and a machine that can't run the second
   listen doesn't claim it (this PC's 8 GB card can't) ([#201], [#221]). Adopting an existing
   install moves its task, keys and firewall rules (one UAC prompt) and never touches dizqueTV
@@ -563,17 +570,26 @@ iperf question), `56a527d9` (another repo) and two empty transcripts.
 
 ### 2026-10-31 · PC · c17dd289 · PC stuck on v0.3.42: the `maktaba://` link popup (in progress)
 
-- Handed off from `f43fad60`: get the PC onto v0.3.44, and find why the server's
-  `maktaba://install-update` link opens Windows' "Get an app" popup although the protocol is
-  registered for the user. The owner also asked why the server opens the app window to update at
-  all; that session weighs having the always-running server agent install it. Its outcome goes
-  in its own entry.
+- Handed off from `f43fad60`: get the PC onto v0.3.44 and stop Windows' "Get an app" popup for
+  the server's `maktaba://install-update` link.
+- Cause: the Claude desktop app is an MSIX package. The installs and app starts run from
+  Claude's shell (the hand-installs in `f43fad60`) registered `maktaba://` only in Claude's
+  private registry copy, so the server, outside it, can't open the link and the app never got
+  the v0.3.44 order. Claude's shell shows the key, so `reg query` there proves nothing. Rule:
+  never install or start Maktaba from Claude's shell on this PC; the owner runs the installer.
+- Owner decisions, 2026-10-31: "Agent installs (Recommended)": the always-running
+  `Maktaba.exe --server-agent` installs a node's update itself instead of waking the desktop
+  app (changes §2, Updates). "Yes, open it": a PR so the node's copy notices a dead link to the
+  home's database within about a minute and ends replication workers that won't stop. Both are
+  in progress there; their PRs go in its own later entry.
 
 [#48]: https://github.com/Hamza-Labs-Core/Maktaba/pull/48
 [#52]: https://github.com/Hamza-Labs-Core/Maktaba/pull/52
 [#55]: https://github.com/Hamza-Labs-Core/Maktaba/pull/55
 [#57]: https://github.com/Hamza-Labs-Core/Maktaba/pull/57
+[#73]: https://github.com/Hamza-Labs-Core/Maktaba/pull/73
 [#75]: https://github.com/Hamza-Labs-Core/Maktaba/pull/75
+[#78]: https://github.com/Hamza-Labs-Core/Maktaba/pull/78
 [#81]: https://github.com/Hamza-Labs-Core/Maktaba/pull/81
 [#101]: https://github.com/Hamza-Labs-Core/Maktaba/pull/101
 [#107]: https://github.com/Hamza-Labs-Core/Maktaba/pull/107
