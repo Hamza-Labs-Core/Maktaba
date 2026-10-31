@@ -790,10 +790,17 @@ func (g *migrationGate) record() (apppayload.Database, error) {
 }
 
 // keptFor reports whether the record keeps its newer schema for release cur (a rollback
-// with nothing put back, layout.MarkRecordKept).
+// with nothing put back, layout.MarkRecordKept): cur is the release it was kept for, or
+// one between it and the release whose migrations it holds. Those migrations are all
+// additive, and a release between knows a part of them (its own come before), so it runs
+// on that schema as the release kept for does. Without this, a rollback from 0.3.46 to
+// 0.3.43 refused 0.3.45, a good release, as older than the database (update rehearsal 10a).
 func keptFor(rec apppayload.Database, cur string) bool {
-	return rec.KeptFor != "" && (rec.State == apppayload.DatabaseMigrated || rec.State == apppayload.DatabaseRestored) &&
-		layout.NormalizeVersion(rec.KeptFor) == layout.NormalizeVersion(cur)
+	if rec.KeptFor == "" || (rec.State != apppayload.DatabaseMigrated && rec.State != apppayload.DatabaseRestored) {
+		return false
+	}
+	c, k := layout.NormalizeVersion(cur), layout.NormalizeVersion(rec.KeptFor)
+	return c == k || (apppayload.Older(k, c) && apppayload.Older(c, rec.Version))
 }
 
 // envSchemaAheadOK tells the api (its `migrate up` and its serve) that the database may

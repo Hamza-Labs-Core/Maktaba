@@ -24,6 +24,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **After a rollback that kept the newer schema, a release in between installs.** A rollback
+  from a release whose migrations are additive keeps its schema for the release it goes back
+  to; any release between the two was then refused as "older than the database", so the
+  next fix could not be installed (update rehearsal 10a, once v0.3.43 shipped the kept
+  schema). Every release from the one kept for up to the database's now starts on it.
+
 - **The TV's blue and green slots start again on a Mac that transcribes in parallel.** The
   transcription workers took ports 9111 and up, the same ports as the TV slots' (9111–9113):
   on the owner's Mac two workers held 9111 and 9112 from 2026-10-28, and the blue and green
