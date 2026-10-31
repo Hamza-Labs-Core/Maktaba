@@ -10,6 +10,11 @@ import (
 // MaxPipelineInstances bounds [pipeline] instances (the node installer's --instances).
 const MaxPipelineInstances = 16
 
+// PipelineInstanceLogsAddr is transcription worker i's logs and health port
+// (9131..9146). Never 9111..9113: those are the TV slots' (SlotAdminAddr), and a
+// worker that took one kept that slot from starting.
+func PipelineInstanceLogsAddr(i int) string { return "127.0.0.1:" + strconv.Itoa(9130+i) }
+
 // BuildPipelineInstances builds the transcription workers beside the main worker
 // (PlanFor): [pipeline] instances = N on a converted worker-only node (Epic 35 story
 // 35.8 AC7: the workers its installer ran, maktaba-node@1..N), or on Apple Silicon a
@@ -35,7 +40,7 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 	}
 	out := make([]Process, 0, n)
 	for i := 1; i <= n; i++ {
-		logs := "127.0.0.1:" + strconv.Itoa(9110+i)
+		logs := PipelineInstanceLogsAddr(i)
 		env := append(os.Environ(), base...)
 		env = append(env, plan.knobEnv()...)
 		env = setEnv(env, "MAKTABA_STT_SLOT", "stt-"+strconv.Itoa(i))

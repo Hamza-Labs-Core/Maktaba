@@ -143,6 +143,14 @@ func TestSchedulerBlockers(t *testing.T) {
 		if HomeBlocked([]ProcState{{Role: "tv-slot", Instance: "amber", State: "stopped"}}, nil, f.now) != "" {
 			t.Fatal("an on-demand slot nobody asked for blocked")
 		}
+		crashLooping := []ProcState{{Role: "tv-slot", Instance: "blue", Wanted: true, State: "failed", CrashLoop: true}}
+		slotCrash := []ProcEvent{{Role: "tv-slot", At: f.now.Add(-time.Minute), Reason: "crash"}}
+		if got := HomeBlocked(crashLooping, slotCrash, f.now); got != "" {
+			t.Fatalf("a crash-looping TV slot blocked the update (%s): TV never blocks one", got)
+		}
+		if HomeBlocked(nil, []ProcEvent{{Role: "api", At: f.now.Add(-time.Minute), Reason: "crash"}}, f.now) != BlockRecentCrash {
+			t.Fatal("a role's recent crash did not block")
+		}
 	})
 
 	t.Run("deferral", func(t *testing.T) {
