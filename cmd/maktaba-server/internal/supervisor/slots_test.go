@@ -306,3 +306,40 @@ func mustBin(t *testing.T, dir string) string {
 	}
 	return ents[0].Name()
 }
+
+// A running slot asked to start on another release is started again on it (else it
+// keeps answering for its old release); the same binding again leaves it running.
+func TestSlotStartOnAnotherReleaseRestartsIt(t *testing.T) {
+	green, _ := fakeProc(t, RoleTVSlot, "serve")
+	green.Instance = "green"
+	s := New([]Process{green}, testPolicy(), WithLog(&syncBuffer{}))
+	running(t, s)
+	srv := httptest.NewServer(s.Handler())
+	defer srv.Close()
+	start := func(release string) {
+		t.Helper()
+		resp, err := http.Post(srv.URL+"/slots/green/start", "application/json",
+			strings.NewReader(`{"release_id":"`+release+`"}`))
+		if err != nil || resp.StatusCode != 200 {
+			t.Fatalf("start green on %s: %v %v", release, resp, err)
+		}
+		resp.Body.Close()
+	}
+	pid := func(sn Snapshot) int {
+		for _, p := range sn.Processes {
+			if p.Instance == "green" && p.State == StateRunning {
+				return p.PID
+			}
+		}
+		return 0
+	}
+	start("r-old")
+	first := pid(waitFor(t, s, "green running", func(sn Snapshot) bool { return pid(sn) != 0 }))
+	start("r-old")
+	time.Sleep(200 * time.Millisecond)
+	if got := pid(s.Snapshot()); got != first {
+		t.Fatalf("the same binding restarted green: pid %d, was %d", got, first)
+	}
+	start("r-new")
+	waitFor(t, s, "green on the new release", func(sn Snapshot) bool { p := pid(sn); return p != 0 && p != first })
+}

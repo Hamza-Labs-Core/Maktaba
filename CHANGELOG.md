@@ -24,6 +24,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A TV slot that was already running is started again when it is asked to run another release.**
+  After the 0.3.44 update restarted the Mac, the green slot came back on the old TV software. The
+  TV change then bound green to 0.3.44, but the supervisor only uses a new binding at a slot's next
+  start, so green kept answering for its old release. The change's health check failed
+  (`slot.health`: `release_mismatch`) and the TV stayed on v0.3.39. Now a start that brings another
+  release restarts a running slot on it, and the same binding sent again changes nothing.
+
 - **The Updates page no longer says "blocked" when the next update only waits.** It listed
   every release ever blocked, among them ones a newer release had long replaced (0.3.42,
   rolled back, once 0.3.43 was out), so a page whose update was only waiting for its quiet
