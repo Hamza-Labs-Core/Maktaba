@@ -164,11 +164,14 @@ comparator), only from that release's feed in the pinned repository, signed with
 **On Windows the server agent installs it (owner, 2026-10-31).** An update must not wait for a
 window: the Windows app's always-running `Maktaba.exe --server-agent` (the sign-in task's)
 answers the order in the window app's place (`agent_orders.rs`, with the window app's own
-decisions, `autoinstall::decide`). It stages the release from its own feed (the installer
-checked with the app's key, and the file its signature names checked against the ordered
-version, since the feed itself is unsigned), keeps it with its signature in `updates/`, and
-answers `staged`; at the home's go it checks it again, answers `installing` and starts the
-installer (`/P /UPDATE`) out of its own kill-on-close job. The installer stops the agent
+decisions, `autoinstall::decide`). It stages the release from its own feed (a setup .exe on
+that release's page, checked with the app's key; its signature must carry the ordered version,
+as the updater's `requireSignedVersion`, and name that very file, since the feed itself is
+unsigned), keeps it with its name and signature in `updates/`, and answers `staged`; at the
+home's go it checks it again, answers `installing` and starts the installer (`/P /UPDATE`) out
+of its own kill-on-close job. Its answers `staged` and `installing` go in only while the order
+is still at the state it read (`autoinstall::advance`): a late answer never takes back the
+server's go. On Windows the window app neither stages nor settles the orders' attempts. The installer stops the agent
 (`--server-stop`), replaces the app and its payload and runs the sign-in task again
 (`--server-start`); the new agent settles the attempt. The agent tells the server so
 (`MAKTABA_AGENT_ORDERS=1`), and the server then sends no `maktaba://install-update` link: on

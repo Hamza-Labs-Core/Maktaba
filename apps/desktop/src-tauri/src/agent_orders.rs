@@ -2,8 +2,8 @@
 // not wait for the window app). The always-running `Maktaba.exe --server-agent` (the sign-in
 // task's) answers the order the server writes (updates/app-install.json, autoinstall.rs) in
 // the window app's place: ordered, it stages the release from the release's own feed
-// (latest.json: the installer, checked with this app's key, and the file its signature names
-// checked against the order's version) and says staged; at the home's go it says installing
+// (latest.json: the installer, checked with this app's key, the version its signature carries
+// and the file it names checked against the order) and says staged; at the home's go it says installing
 // and starts the installer out of its own kill-on-close job. The installer stops this agent
 // (--server-stop), replaces the app and its payload, and starts the server again
 // (--server-start); the new agent settles the attempt (attempts.rs). The decisions are
@@ -13,7 +13,7 @@
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 
@@ -26,6 +26,14 @@ pub const AGENT_ORDERS_ENV: &str = "MAKTABA_AGENT_ORDERS";
 
 /// How often the order is read.
 pub const EVERY: Duration = Duration::from_secs(2);
+
+/// How long after a failure that could not be said in the order the same run is tried
+/// again (never a download every look).
+const RETRY_AFTER: Duration = Duration::from_secs(60);
+
+/// The download's bounds, the window app's own (shell.rs DOWNLOAD_TIMEOUT, DOWNLOAD_STALL).
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(45 * 60);
+const DOWNLOAD_STALL: Duration = Duration::from_secs(120);
 
 /// The installer's arguments: passive (its progress shows, nothing to answer), as an update
 /// of this install (tauri's NSIS template keeps the state and the shortcuts). No restart of
@@ -44,6 +52,9 @@ pub struct Build {
     pub pubkey: Option<String>,
     /// The app's own repository (autoinstall::own_repo of the updater's endpoints).
     pub repo: String,
+    /// The updater refuses a signature that carries no version (requireSignedVersion), and
+    /// so does the agent.
+    pub require_signed_version: bool,
 }
 
 impl Build {
@@ -62,6 +73,7 @@ impl Build {
             version: c["version"].as_str().unwrap_or_default().to_string(),
             pubkey: updater["pubkey"].as_str().map(String::from),
             repo: autoinstall::own_repo(endpoints),
+            require_signed_version: updater["requireSignedVersion"].as_bool().unwrap_or(false),
         }
     }
 }
@@ -74,11 +86,24 @@ pub trait Io {
     fn start(&self, installer: &Path, args: &[&str]) -> Result<(), String>;
 }
 
-/// The feed's installer for version: its url and signature.
+/// The feed's installer for version: its url, its file's name on the release page, and its
+/// signature.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Installer {
     pub url: String,
+    pub name: String,
     pub signature: String,
+}
+
+/// A plain installer's file name: one path segment of letters, digits, '.', '_' and '-'
+/// (no "..", no %-escape a URL parser would turn into one), ending in -setup.exe.
+pub fn installer_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.ends_with("-setup.exe")
+        && !name.contains("..")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 /// installer_of reads the release's feed: it must offer exactly version, with the Windows
@@ -106,20 +131,33 @@ pub fn installer_of(feed: &[u8], version: &str, repo: &str) -> Result<Installer,
     let signature = entry["signature"].as_str().unwrap_or_default().to_string();
     let v = version.strip_prefix('v').unwrap_or(version);
     let release = format!("{repo}/releases/download/v{v}/");
-    if !url.starts_with(&release) || url.len() == release.len() || signature.is_empty() {
+    let name = url.strip_prefix(&release).unwrap_or_default().to_string();
+    if !installer_name(&name) || signature.is_empty() {
         return Err(bad(format!(
-            "the feed's installer {url:?} is not on the release's own page ({release})"
+            "the feed's installer {url:?} is not a setup .exe on the release's own page ({release})"
         )));
     }
-    Ok(Installer { url, signature })
+    Ok(Installer {
+        url,
+        name,
+        signature,
+    })
 }
 
 /// verify checks data against the feed's signature with this app's updater key, as the
 /// app's updater does (minisign), and that what was signed is this version's installer:
-/// the version its trusted comment carries, else the file it names (Maktaba_<v>_…): the
-/// feed itself is not signed, so a feed pairing a version with another release's signed
-/// installer is refused.
-pub fn verify(data: &[u8], signature: &str, pubkey: &str, version: &str) -> Result<(), Failure> {
+/// the version its trusted comment carries (required when the updater requires it), and
+/// the file it names, which must be `file` (the installer's name on the release page). The
+/// feed itself is not signed: a feed pairing a version with another release's signed
+/// file, or with another file of the release (the Player's .msi), is refused.
+pub fn verify(
+    data: &[u8],
+    signature: &str,
+    pubkey: &str,
+    version: &str,
+    file: &str,
+    require_version: bool,
+) -> Result<(), Failure> {
     let bad = |why: String| Failure::new(attempts::STEP_VERIFY, attempts::SIGNATURE_MISMATCH, why);
     let text = |b64: &str, what: &str| {
         base64::engine::general_purpose::STANDARD
@@ -134,6 +172,7 @@ pub fn verify(data: &[u8], signature: &str, pubkey: &str, version: &str) -> Resu
         .map_err(|e| bad(format!("the signature: {e}")))?;
     key.verify(data, &sig, true)
         .map_err(|e| bad(format!("the installer does not match its signature: {e}")))?;
+    // only now is the trusted comment the key's word
     let v = version.strip_prefix('v').unwrap_or(version);
     let comment = sig.trusted_comment();
     let field = |name: &str| {
@@ -142,20 +181,25 @@ pub fn verify(data: &[u8], signature: &str, pubkey: &str, version: &str) -> Resu
             .find_map(|f| f.strip_prefix(name))
             .map(str::to_string)
     };
-    if let Some(signed) = field("version:") {
-        if !autoinstall::same_version(&signed, v) {
+    match field("version:") {
+        Some(signed) if !autoinstall::same_version(&signed, v) => {
             return Err(bad(format!(
                 "the installer was signed for {signed}, not {v}"
             )));
         }
-    } else if let Some(file) = field("file:") {
-        if !file.contains(&format!("_{v}_")) {
-            return Err(bad(format!(
-                "the signature is {file}'s, not {v}'s installer"
-            )));
+        None if require_version => {
+            return Err(bad(format!("the signature of {file} carries no version")));
         }
-    } else {
-        return Err(bad("the signature names no version or file".into()));
+        _ => {}
+    }
+    match field("file:") {
+        Some(signed) if signed != file => {
+            return Err(bad(format!("the signature is {signed}'s, not {file}'s")));
+        }
+        None if field("version:").is_none() => {
+            return Err(bad("the signature names no version or file".into()));
+        }
+        _ => {}
     }
     Ok(())
 }
@@ -170,6 +214,8 @@ pub struct Orders<I: Io> {
     pub say: Box<dyn FnMut(&str) + Send>,
     /// the run whose installer this agent started: never started twice
     started: Option<String>,
+    /// the run that last failed here, and when (RETRY_AFTER)
+    failed_at: Option<(String, Instant)>,
 }
 
 impl<I: Io> Orders<I> {
@@ -187,6 +233,7 @@ impl<I: Io> Orders<I> {
             paused,
             say,
             started: None,
+            failed_at: None,
         }
     }
 
@@ -199,7 +246,19 @@ impl<I: Io> Orders<I> {
         }
     }
 
+    /// advance answers the order's next step (staged, installing) only while it is still
+    /// where it was read: a download's late "staged" never takes back the server's go.
+    fn advance(&mut self, path: &Path, req: &Request, state: &str) {
+        if let Err(e) = autoinstall::advance(path, req, state) {
+            (self.say)(&format!(
+                "the answer {state} to the order of {} could not be written: {e}",
+                req.version
+            ));
+        }
+    }
+
     fn failed(&mut self, path: &Path, req: &Request, f: &Failure) {
+        self.failed_at = Some((req.run_id.clone(), Instant::now()));
         (self.say)(&format!(
             "the update to {} failed at {} ({}): {}",
             req.version, f.step, f.code, f.detail
@@ -228,6 +287,11 @@ impl<I: Io> Orders<I> {
             // its installer runs: it stops this agent
             return;
         }
+        if let Some((run, at)) = &self.failed_at {
+            if *run == req.run_id && at.elapsed() < RETRY_AFTER {
+                return;
+            }
+        }
         let staged = autoinstall::staged_path(&self.root, &req.version);
         let decided = autoinstall::decide(
             Some(&req),
@@ -243,14 +307,14 @@ impl<I: Io> Orders<I> {
                 (self.say)(&format!("the order of {} is refused: {why}", req.version));
                 self.answer(&path, &req, autoinstall::FAILED, &why);
             }
-            Action::Show => self.answer(&path, &req, autoinstall::STAGED, ""),
+            Action::Show => self.advance(&path, &req, autoinstall::STAGED),
             Action::Stage { .. } => {
                 autoinstall::clean_staged(&self.root, Some(&staged));
                 let rec = attempts::path(&self.root);
                 match self.stage(&req, &staged) {
                     Ok(()) => {
                         (self.say)(&format!("staged {} for the home's go", req.version));
-                        self.answer(&path, &req, autoinstall::STAGED, "");
+                        self.advance(&path, &req, autoinstall::STAGED);
                     }
                     Err(f) => {
                         attempts::record_failed(
@@ -265,10 +329,13 @@ impl<I: Io> Orders<I> {
                 }
             }
             Action::Install { .. } => {
-                if !autoinstall::still_go(&path, &req.run_id) {
+                self.advance(&path, &req, autoinstall::INSTALLING);
+                let took = autoinstall::read(&path)
+                    .is_some_and(|r| r.run_id == req.run_id && r.state == autoinstall::INSTALLING);
+                if !took {
+                    // the order moved on meanwhile (withdrawn, replaced): looked at again
                     return;
                 }
-                self.answer(&path, &req, autoinstall::INSTALLING, "");
                 let rec = attempts::path(&self.root);
                 let id = attempts::begin(
                     &rec,
@@ -323,7 +390,14 @@ impl<I: Io> Orders<I> {
             .io
             .get(&inst.url)
             .map_err(|e| net_failure(attempts::STEP_DOWNLOAD, e, &ctx))?;
-        verify(&bytes, &inst.signature, &pubkey, &req.version)?;
+        verify(
+            &bytes,
+            &inst.signature,
+            &pubkey,
+            &req.version,
+            &inst.name,
+            self.build.require_signed_version,
+        )?;
         let io = |e: std::io::Error| {
             let mut f = Failure::new(
                 attempts::STEP_DOWNLOAD,
@@ -336,7 +410,8 @@ impl<I: Io> Orders<I> {
         };
         let part = staged.with_extension("part");
         std::fs::write(&part, &bytes).map_err(io)?;
-        std::fs::write(signature_of(staged), &inst.signature).map_err(io)?;
+        let sidecar = serde_json::json!({"name": inst.name, "signature": inst.signature});
+        std::fs::write(signature_of(staged), sidecar.to_string()).map_err(io)?;
         std::fs::rename(&part, staged).map_err(io)?;
         Ok(())
     }
@@ -350,21 +425,29 @@ impl<I: Io> Orders<I> {
         let pubkey = self.pubkey()?;
         let bytes = std::fs::read(staged)
             .map_err(|e| fail(attempts::INSTALL_FAILED, format!("the staged update: {e}")))?;
-        let signature = std::fs::read_to_string(signature_of(staged)).map_err(|e| {
-            fail(
+        let sidecar: serde_json::Value = std::fs::read(signature_of(staged))
+            .ok()
+            .and_then(|raw| serde_json::from_slice(&raw).ok())
+            .unwrap_or_default();
+        let (name, signature) = (
+            sidecar["name"].as_str().unwrap_or_default(),
+            sidecar["signature"].as_str().unwrap_or_default(),
+        );
+        if !installer_name(name) || signature.is_empty() {
+            return Err(fail(
                 attempts::INSTALL_FAILED,
-                format!("the staged signature: {e}"),
-            )
-        })?;
-        verify(&bytes, &signature, &pubkey, &req.version)?;
-        let v: String = req
-            .version
-            .strip_prefix('v')
-            .unwrap_or(&req.version)
-            .chars()
-            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
-            .collect();
-        let exe = staged.with_file_name(format!("Maktaba_{v}_x64-setup.exe"));
+                "the staged update's name and signature cannot be read".into(),
+            ));
+        }
+        verify(
+            &bytes,
+            signature,
+            &pubkey,
+            &req.version,
+            name,
+            self.build.require_signed_version,
+        )?;
+        let exe = staged.with_file_name(name);
         std::fs::write(&exe, &bytes).map_err(|e| {
             let code = attempts::classify_io(attempts::STEP_INSTALL, &e, &ctx);
             fail(code, format!("{}: {e}", exe.display()))
@@ -397,7 +480,7 @@ impl<I: Io> Orders<I> {
     }
 }
 
-/// The staged installer's signature, beside it.
+/// The staged installer's name and signature, beside it.
 pub fn signature_of(staged: &Path) -> PathBuf {
     staged.with_extension("sig")
 }
@@ -415,7 +498,7 @@ fn clean_installers(root: &Path) {
     };
     for e in dir.flatten() {
         let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with("Maktaba_") && name.ends_with("_x64-setup.exe") {
+        if installer_name(&name) {
             let _ = std::fs::remove_file(e.path());
         }
     }
@@ -428,9 +511,12 @@ pub fn settle(root: &Path, build: &Build) {
     let _ = attempts::settle_newest(&rec, &build.version, &attempts::Ctx::here(), None);
 }
 
-/// The network and the installer's start, for real.
+/// The network and the installer's start, for real. own_job: this agent holds its own
+/// kill-on-close job (start_detached).
 #[cfg(windows)]
-pub struct Net;
+pub struct Net {
+    pub own_job: bool,
+}
 
 #[cfg(windows)]
 impl Io for Net {
@@ -444,9 +530,9 @@ impl Io for Net {
             let client = reqwest::Client::builder()
                 .user_agent(concat!("Maktaba-agent/", env!("CARGO_PKG_VERSION")))
                 .connect_timeout(Duration::from_secs(30))
-                // a download that gets no byte for a minute has stalled
-                .read_timeout(Duration::from_secs(60))
-                .timeout(Duration::from_secs(30 * 60))
+                // a download that gets no byte for DOWNLOAD_STALL has stalled
+                .read_timeout(DOWNLOAD_STALL)
+                .timeout(DOWNLOAD_TIMEOUT)
                 .build()
                 .map_err(|e| e.to_string())?;
             let res = client
@@ -464,16 +550,18 @@ impl Io for Net {
     }
 
     fn start(&self, installer: &Path, args: &[&str]) -> Result<(), String> {
-        start_detached(installer, args)
+        start_detached(installer, args, self.own_job)
     }
 }
 
-/// start_detached starts exe out of this agent's kill-on-close job (which allows it): the
-/// installer stops this agent, and must not end with it. An agent that holds no job of its
-/// own (it could not make one) is only in a job that may refuse a breakaway (the sign-in
-/// task's): the installer starts there, where nothing ends it with the agent.
+/// start_detached starts exe out of this agent's kill-on-close job (own_job: which allows
+/// it): the installer stops this agent, and must not end with it. An agent that holds no
+/// job of its own (it could not make one) is only in a job that may refuse a breakaway (the
+/// sign-in task's): there the installer starts where it is, and nothing ends it with the
+/// agent. An agent in its own job never starts it inside that job (a refused breakaway
+/// there is something else: an antivirus on the new .exe).
 #[cfg(windows)]
-pub fn start_detached(exe: &Path, args: &[&str]) -> Result<(), String> {
+pub fn start_detached(exe: &Path, args: &[&str], own_job: bool) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
     const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
@@ -490,9 +578,11 @@ pub fn start_detached(exe: &Path, args: &[&str]) -> Result<(), String> {
     };
     match spawn(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP) {
         Ok(_) => Ok(()),
-        Err(e) if e.raw_os_error() == Some(ACCESS_DENIED) => spawn(CREATE_NEW_PROCESS_GROUP)
-            .map(|_| ())
-            .map_err(|e| format!("{}: {e}", exe.display())),
+        Err(e) if !own_job && e.raw_os_error() == Some(ACCESS_DENIED) => {
+            spawn(CREATE_NEW_PROCESS_GROUP)
+                .map(|_| ())
+                .map_err(|e| format!("{}: {e}", exe.display()))
+        }
         Err(e) => Err(format!("{}: {e}", exe.display())),
     }
 }
@@ -504,16 +594,21 @@ mod tests {
     use std::collections::HashMap;
     use std::rc::Rc;
 
-    // A throwaway minisign key (its secret thrown away) and signatures of BODY, made for
-    // these tests the way tauri's signer makes them (prehashed, "ED").
-    const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU0RUEyNjM4RkM3ODk5RDgKUldUWW1YajhPQ2JxNUxyYjlUeFh6M0QwdE5CK3BrZ25Iemd2NC9CWE1OODhoZjlxSTRjdE14dzQK";
+    // A throwaway minisign key (its secret thrown away), a second one, and signatures of BODY
+    // made for these tests the way tauri's signer makes them (prehashed, "ED"; the trusted
+    // comment as a release's: timestamp, file, version).
+    const PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU5MDVEQjhFQ0M3QzVDQUEKUldTcVhIek1qdHNGV2FwM0NpaVNOSE9Fb2lCSSt4WVdLUFZ2NW13OGhjelZZNWpJS2psc3JYc2kK";
+    const OTHER_KEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBCMUVCODJDOEUzNDVBOTEKUldTUldqU09MTGdlQzM1dzJLWWVKdk12MlFxUS95dHdEcmNCZURjNXhjbUJWS0U0Y1ZJbStNNzIK";
     const BODY: &[u8] = b"a stand-in installer for 0.9.1";
-    // trusted comment: timestamp:1793450056\tfile:Maktaba_0.9.1_x64-setup.exe
-    const SIG_OK: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWW1YajhPQ2JxNVBHVDV3OHlPSDZ2eW8rOHRMV0E3eUNTcE95UEFCajZXTXZlSmtvenVuKzdPSlZLc3VnYWVaaWFFVjNZV1c3SmwvYUMzK1YvR1AranNtNGhOem15V3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYV8wLjkuMV94NjQtc2V0dXAuZXhlClZmdEpsWDkraG9rRHRKNDNYOURpZzMvUVZIV0p1WjI3R3BYR2NmRXZlMDR5VndjUjBQSmZpRXBFeXRUL2F2eVJ6Um1SQnhmMWVLSVpQUTlCem9WaUFRPT0K";
-    // trusted comment: timestamp:1793450056\tfile:Maktaba_0.9.0_x64-setup.exe
-    const SIG_OLD_FILE: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWW1YajhPQ2JxNVBHVDV3OHlPSDZ2eW8rOHRMV0E3eUNTcE95UEFCajZXTXZlSmtvenVuKzdPSlZLc3VnYWVaaWFFVjNZV1c3SmwvYUMzK1YvR1AranNtNGhOem15V3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYV8wLjkuMF94NjQtc2V0dXAuZXhlCkFNTGR0WlpBNi9IMTlHL0N5R1loaEF5VmFWV3REeVVyNDBoR2toNnlqcFoyYTJGQWVtcmE5S0hYRnZhei9OT3NmMG1PME13amVISjZHSnpOYkc1cEJRPT0K";
-    // trusted comment: timestamp:1793450056\tfile:Maktaba_0.9.1_x64-setup.exe\tversion:0.9.0
-    const SIG_OLD_VERSION: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVUWW1YajhPQ2JxNVBHVDV3OHlPSDZ2eW8rOHRMV0E3eUNTcE95UEFCajZXTXZlSmtvenVuKzdPSlZLc3VnYWVaaWFFVjNZV1c3SmwvYUMzK1YvR1AranNtNGhOem15V3cwPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYV8wLjkuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246MC45LjAKNERSU0F5MzFtWEQwdm9SRnZRMVM5R21TN0pZcENralB5VlpZUjVuWVd5SE9WbDhzdzBjU1JJQ1Q3dzN4Yk9Hd1JKU05VMGF2aXczU2luaExadnhTREE9PQo=";
+    // file:Maktaba_0.9.1_x64-setup.exe version:0.9.1
+    const SIG_OK: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcVhIek1qdHNGV1lhaHNLSFdUKzZDNGR3MDFscU1uaGhhTjVtRHZmYUdpTjE2dGJTWjdSaXBzcnNzdktoNU9hYjArbTUxUC9yK2o0Rzg1dm9DRm1Zb0h1VFdNc2hWd3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYV8wLjkuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246MC45LjEKaDBnWXNYc1FjbWhxOFhOcUlLQW5YUzNLYk5yclpxb1B3R21uZm5Md3V5L09Gb0hLV3B0YnlPWVhuN0JUREExZ3FML0JRekRoNTFYeWN4bFY3MWpLQ0E9PQo=";
+    // file:Maktaba_0.9.1_x64-setup.exe version:0.9.0
+    const SIG_OLD_VERSION: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcVhIek1qdHNGV1lhaHNLSFdUKzZDNGR3MDFscU1uaGhhTjVtRHZmYUdpTjE2dGJTWjdSaXBzcnNzdktoNU9hYjArbTUxUC9yK2o0Rzg1dm9DRm1Zb0h1VFdNc2hWd3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYV8wLjkuMV94NjQtc2V0dXAuZXhlCXZlcnNpb246MC45LjAKMUtMaVp0QVFwd1RpSzF5SnlTWlJYdjNTWWc2dTdYell5MVlnOEx2dWlkcTFxQlRtZFFsSTVZK2xwRnc3MytzLyszWjI0eEwrV3RBMzBMdWxGN0FBQ3c9PQo=";
+    // file:Maktaba_0.9.1_x64-setup.exe, no version
+    const SIG_NO_VERSION: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcVhIek1qdHNGV1lhaHNLSFdUKzZDNGR3MDFscU1uaGhhTjVtRHZmYUdpTjE2dGJTWjdSaXBzcnNzdktoNU9hYjArbTUxUC9yK2o0Rzg1dm9DRm1Zb0h1VFdNc2hWd3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYV8wLjkuMV94NjQtc2V0dXAuZXhlCmc5cDJDVU4rclRveGxZVlV4Z0FyNjdJR2lxZHpRYVFjMEZrWmJIRUV2UUNHV0YxUHlKS0g1aEpnODZOM244VXgxcGs4WDc5ZlFXWFFPWmtZTExaNkJBPT0K";
+    // file:Maktaba-Player_0.9.1_x64.msi version:0.9.1 (another file of the release)
+    const SIG_PLAYER: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVTcVhIek1qdHNGV1lhaHNLSFdUKzZDNGR3MDFscU1uaGhhTjVtRHZmYUdpTjE2dGJTWjdSaXBzcnNzdktoNU9hYjArbTUxUC9yK2o0Rzg1dm9DRm1Zb0h1VFdNc2hWd3c0PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkzNDUwMDU2CWZpbGU6TWFrdGFiYS1QbGF5ZXJfMC45LjFfeDY0Lm1zaQl2ZXJzaW9uOjAuOS4xCjBtRURiTjRUdExEUUQ0empWRkd4Y0l3TVM4eDBwamNtSEJ5WURjcnZ1aFJJdVBQSWFjYlYyRFI4cTkrb0h3TUhWNTNhSXJHYkkzWHZ5NHBSc1lLWUJRPT0K";
+    const NAME: &str = "Maktaba_0.9.1_x64-setup.exe";
 
     const REPO: &str = "https://github.com/Hamza-Labs-Core/Maktaba";
     const FEED: &str =
@@ -591,6 +686,7 @@ mod tests {
             version: "0.9.0".into(),
             pubkey: pubkey.map(String::from),
             repo: REPO.into(),
+            require_signed_version: true,
         };
         let orders = Orders::new(
             dir.clone(),
@@ -632,22 +728,25 @@ mod tests {
     #[test]
     fn the_build_says_its_version_key_and_repository() {
         let b = Build::of(
-            r#"{"version":"0.3.45","plugins":{"updater":{"pubkey":"K",
+            r#"{"version":"0.3.45","plugins":{"updater":{"pubkey":"K","requireSignedVersion":true,
             "endpoints":["https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/latest.json"]}}}"#,
         );
         assert_eq!(b.version, "0.3.45");
         assert_eq!(b.pubkey.as_deref(), Some("K"));
         assert_eq!(b.repo, REPO);
-        // this build's own config parses (include_str!)
+        assert!(b.require_signed_version);
+        // this build's own config parses (include_str!), and requires the signed version
         let here = Build::here();
         assert!(!here.version.is_empty());
         assert_eq!(here.repo, REPO);
+        assert!(here.require_signed_version);
     }
 
     #[test]
     fn the_feed_must_offer_exactly_the_order_on_its_own_release() {
         let got = installer_of(&feed("0.9.1", URL, SIG_OK), "0.9.1", REPO).unwrap();
         assert_eq!(got.url, URL);
+        assert_eq!(got.name, NAME);
         assert_eq!(got.signature, SIG_OK);
         // the plain key when there is no NSIS one
         let plain = serde_json::json!({"version": "0.9.1",
@@ -667,6 +766,23 @@ mod tests {
         let older = URL.replace("v0.9.1/", "v0.9.0/");
         assert_eq!(code(&feed("0.9.1", &older, SIG_OK)), attempts::FEED_INVALID);
         assert_eq!(code(&feed("0.9.1", URL, "")), attempts::FEED_INVALID);
+        // only a plain setup .exe on that page: not the Player's .msi, not a path a URL
+        // parser would take elsewhere
+        for bad in [
+            "Maktaba-Player_0.9.1_x64.msi",
+            "../../../../someone/else/releases/download/v1/x-setup.exe",
+            "..%2F..%2Fx-setup.exe",
+            "sub/Maktaba_0.9.1_x64-setup.exe",
+            "Maktaba_0.9.1_x64-setup.exe?x=1",
+            "",
+        ] {
+            let url = format!("{REPO}/releases/download/v0.9.1/{bad}");
+            assert_eq!(
+                code(&feed("0.9.1", &url, SIG_OK)),
+                attempts::FEED_INVALID,
+                "{bad}"
+            );
+        }
         let mac = serde_json::json!({"version": "0.9.1",
             "platforms": {"darwin-aarch64": {"url": URL, "signature": SIG_OK}}});
         assert_eq!(code(mac.to_string().as_bytes()), attempts::ASSET_NOT_FOUND);
@@ -674,35 +790,51 @@ mod tests {
 
     #[test]
     fn the_installer_must_be_signed_with_this_apps_key_for_this_version() {
-        verify(BODY, SIG_OK, PUBKEY, "0.9.1").unwrap();
-        verify(BODY, SIG_OK, PUBKEY, "v0.9.1").unwrap();
-        let code = |data: &[u8], sig: &str, key: &str, v: &str| {
-            verify(data, sig, key, v).unwrap_err().code
+        verify(BODY, SIG_OK, PUBKEY, "0.9.1", NAME, true).unwrap();
+        verify(BODY, SIG_OK, PUBKEY, "v0.9.1", NAME, true).unwrap();
+        let code = |data: &[u8], sig: &str, key: &str, file: &str, require: bool| {
+            verify(data, sig, key, "0.9.1", file, require)
+                .unwrap_err()
+                .code
         };
+        let mismatch = attempts::SIGNATURE_MISMATCH;
         // another body
-        assert_eq!(
-            code(b"tampered", SIG_OK, PUBKEY, "0.9.1"),
-            attempts::SIGNATURE_MISMATCH
-        );
-        // the right body, signed as another release's installer
-        assert_eq!(
-            code(BODY, SIG_OLD_FILE, PUBKEY, "0.9.1"),
-            attempts::SIGNATURE_MISMATCH
-        );
-        assert_eq!(
-            code(BODY, SIG_OLD_VERSION, PUBKEY, "0.9.1"),
-            attempts::SIGNATURE_MISMATCH
-        );
-        // another key (a second throwaway one)
-        let other = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERGODM4QjZFNDY4MTAyM0EKUldRNkFvRkdib3VEMzhVaXJuNFMraVMxa2lkS0lSNmIxNmZoNzVzR20xd3pXOVN5UndzeTE2Q1kK";
-        assert_eq!(
-            code(BODY, SIG_OK, other, "0.9.1"),
-            attempts::SIGNATURE_MISMATCH
-        );
-        assert_eq!(
-            code(BODY, "not base64!", PUBKEY, "0.9.1"),
-            attempts::SIGNATURE_MISMATCH
-        );
+        assert_eq!(code(b"tampered", SIG_OK, PUBKEY, NAME, true), mismatch);
+        // the right body, signed for another version
+        assert_eq!(code(BODY, SIG_OLD_VERSION, PUBKEY, NAME, true), mismatch);
+        assert_eq!(code(BODY, SIG_OLD_VERSION, PUBKEY, NAME, false), mismatch);
+        // no version, where the updater requires one; accepted where it does not
+        assert_eq!(code(BODY, SIG_NO_VERSION, PUBKEY, NAME, true), mismatch);
+        verify(BODY, SIG_NO_VERSION, PUBKEY, "0.9.1", NAME, false).unwrap();
+        // another file of the release, signed with the same key (the Player's .msi)
+        assert_eq!(code(BODY, SIG_PLAYER, PUBKEY, NAME, true), mismatch);
+        // another key
+        assert_eq!(code(BODY, SIG_OK, OTHER_KEY, NAME, true), mismatch);
+        assert_eq!(code(BODY, "not base64!", PUBKEY, NAME, true), mismatch);
+    }
+
+    #[test]
+    fn a_late_answer_never_takes_back_the_servers_go() {
+        let r = rig("late", Some(PUBKEY));
+        r.order(autoinstall::ORDERED);
+        let read_then = r.state();
+        // the server's go came while the answer was on its way (a download)
+        r.order(autoinstall::GO);
+        autoinstall::advance(
+            &autoinstall::request_path(&r.dir),
+            &read_then,
+            autoinstall::STAGED,
+        )
+        .unwrap();
+        assert_eq!(r.state().state, autoinstall::GO);
+        // and an answer to the state it was read at goes in
+        autoinstall::advance(
+            &autoinstall::request_path(&r.dir),
+            &r.state(),
+            autoinstall::INSTALLING,
+        )
+        .unwrap();
+        assert_eq!(r.state().state, autoinstall::INSTALLING);
     }
 
     #[test]
@@ -718,9 +850,11 @@ mod tests {
         );
         let staged = autoinstall::staged_path(&r.dir, "0.9.1");
         assert_eq!(std::fs::read(&staged).unwrap(), BODY);
+        let sidecar: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(signature_of(&staged)).unwrap()).unwrap();
         assert_eq!(
-            std::fs::read_to_string(signature_of(&staged)).unwrap(),
-            SIG_OK
+            (sidecar["name"].as_str(), sidecar["signature"].as_str()),
+            (Some(NAME), Some(SIG_OK))
         );
         assert!(
             r.fake.started.borrow().is_empty(),
@@ -900,7 +1034,7 @@ mod tests {
                 "ping -n 4 127.0.0.1 >nul & echo outlived>{}",
                 marker.display()
             );
-            start_detached(Path::new(&cmd), &["/c", &script]).expect("start the installer");
+            start_detached(Path::new(&cmd), &["/c", &script], true).expect("start the installer");
             std::process::exit(0);
         }
         let dir = std::env::temp_dir().join(format!("maktaba-agent-spawn-{}", std::process::id()));

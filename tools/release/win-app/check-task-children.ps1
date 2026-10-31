@@ -39,7 +39,10 @@ $failed = $null
 try {
   Start-ScheduledTask -TaskName $name
   WaitFor 'the first run' 60 { (Lines $mainLog) -ge 1 }
-  Start-Sleep -Seconds 3
+  # its process gone (its child still running): what the agent's exit leaves
+  $first = [int]((Get-Content -LiteralPath $mainLog | Select-Object -First 1) -replace '^main ', '')
+  WaitFor 'the first run''s process to exit' 30 { -not (Get-Process -Id $first -ErrorAction SilentlyContinue) }
+  Start-Sleep -Seconds 1
   $state = (Get-ScheduledTask -TaskName $name).State
   Write-Host "after its process exited, with its child running, the task is: $state"
 

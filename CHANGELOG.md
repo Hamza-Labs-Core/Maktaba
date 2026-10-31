@@ -65,8 +65,8 @@ don't append a line here; docs-only PRs are exempt.
   to open this 'maktaba' link" every 90 seconds. Now the server agent that runs at sign-in
   (`Maktaba.exe --server-agent`) does it itself:
   - it downloads the release's installer from that release's own page;
-  - it checks the installer with the app's key, and checks that the signature names the
-    ordered version;
+  - it checks the installer with the app's key, and checks that the signature carries the
+    ordered version and names that very installer;
   - at the home's go, it runs the installer.
 
   The server no longer sends the link, and the window app only shows the update.
