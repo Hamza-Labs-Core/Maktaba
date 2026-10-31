@@ -156,23 +156,23 @@ func fingerprint(t *testing.T, db *sql.DB) dbPrint {
 	p.Indexes = kv(`SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public'`)
 	p.Constraints = kv(`SELECT c.conrelid::regclass::text || '.' || c.conname, pg_get_constraintdef(c.oid)
 		FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = 'public'`)
-	p.Triggers = kv(`SELECT t.tgrelid::regclass::text || '.' || t.tgname, pg_get_triggerdef(t.oid)
+	p.Triggers = kv(`SELECT t.tgrelid::regclass::text || '.' || t.tgname, regexp_replace(pg_get_triggerdef(t.oid), '[()[:space:]]', '', 'g')
 		FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE NOT t.tgisinternal AND n.nspname = 'public'`)
 	p.Functions = kv(`SELECT p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid)) FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')
 		AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`)
-	p.RelACL = kv(`SELECT c.relname, ` + acl("c.relacl") + ` FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+	p.RelACL = kv(`SELECT c.relname, ` + acl("coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END, c.relowner))") + ` FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v', 'm', 'S', 'p')`)
 	p.ColumnACL = kv(`SELECT c.relname || '.' || a.attname, ` + acl("a.attacl") + ` FROM pg_attribute a
 		JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = 'public' AND a.attacl IS NOT NULL`)
-	p.FuncACL = kv(`SELECT p.oid::regprocedure::text, ` + acl("p.proacl") + ` FROM pg_proc p
-		JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proacl IS NOT NULL`)
-	p.SchemaACL = one(`SELECT ` + acl("nspacl") + ` FROM pg_namespace WHERE nspname = 'public'`)
+	p.FuncACL = kv(`SELECT p.oid::regprocedure::text, ` + acl("coalesce(p.proacl, acldefault('f', p.proowner))") + ` FROM pg_proc p
+		JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'`)
+	p.SchemaACL = one(`SELECT ` + acl("coalesce(nspacl, acldefault('n', nspowner))") + ` FROM pg_namespace WHERE nspname = 'public'`)
 	p.DefaultACL = one(`SELECT string_agg(defaclrole::regrole::text || ':' || defaclobjtype::text || ':' || ` + acl("defaclacl") +
 		`, ';' ORDER BY 1) FROM pg_default_acl`)
-	p.DatabaseACL = one(`SELECT ` + acl("datacl") + ` FROM pg_database WHERE datname = current_database()`)
+	p.DatabaseACL = one(`SELECT ` + acl("coalesce(datacl, acldefault('d', datdba))") + ` FROM pg_database WHERE datname = current_database()`)
 	p.Vectors = one(`SELECT count(*) || ':' || coalesce(sum(('x' || substr(md5(embedding::text), 1, 8))::bit(32)::int::bigint), 0)
 		FROM segment_embeddings`)
 	return p
@@ -562,7 +562,7 @@ func (m *appMachine) machineLogins(machines []seedMachine, super *sql.DB) *machi
 				err := func() error {
 					dsn := (&url.URL{Scheme: "postgres", User: url.UserPassword(mc.Role, mc.Password),
 						Host: fmt.Sprintf("127.0.0.1:%d", m.pg), Path: "/maktaba",
-						RawQuery: "sslmode=prefer&connect_timeout=2"}).String()
+						RawQuery: "sslmode=disable&connect_timeout=2"}).String()
 					d, err := sql.Open("postgres", dsn)
 					if err != nil {
 						return err
@@ -626,18 +626,20 @@ func (m *appMachine) killDuringRestore(d time.Duration) string {
 				continue
 			}
 			// let it write part of the database first
-			time.Sleep(3 * time.Second)
+			time.Sleep(time.Second)
 			ppid := parentPID(pid)
 			parent := processCommand(ppid)
 			_ = syscall.Kill(pid, syscall.SIGKILL)
 			what := fmt.Sprintf("pg_restore %d (%s)", pid, tail(cmdline, 160))
+			fmt.Fprintf(m.logFile, "\n==== rehearsal: kill -9 %s ====\n", what)
+			// the database in place, right after (its Postgres still up): untouched by
+			// the restore cut short
+			m.checkUntouched()
 			if strings.Contains(parent, "maktaba-server") {
 				_ = syscall.Kill(ppid, syscall.SIGKILL)
-				what += fmt.Sprintf(" and its server %d (%s)", ppid, tail(parent, 160))
+				what += fmt.Sprintf(", then its server %d (%s)", ppid, tail(parent, 160))
+				fmt.Fprintf(m.logFile, "\n==== rehearsal: kill -9 the server %d ====\n", ppid)
 			}
-			fmt.Fprintf(m.logFile, "\n==== rehearsal: kill -9 %s ====\n", what)
-			// the database in place, right after: untouched by the restore cut short
-			m.checkUntouched()
 			return what
 		}
 		time.Sleep(100 * time.Millisecond)

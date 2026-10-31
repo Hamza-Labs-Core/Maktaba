@@ -1149,13 +1149,6 @@ func (s *stateLog) journalStates() []string {
 	return append([]string(nil), s.journal...)
 }
 
-func (s *stateLog) firstAt(state string) (time.Time, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	t, ok := s.at[state]
-	return t, ok
-}
-
 func contains(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {

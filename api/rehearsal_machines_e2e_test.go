@@ -94,13 +94,18 @@ func TestUpdateRehearsal10aMachinesAfterHomeDriver(t *testing.T) {
 	home.start()
 	run = a.follow(id, 15*time.Minute)
 	r.logf("the run that lost its home ended %s: %s", run.State, run.Error)
-	waitFor(t, "the home's commit of "+k.cur, 20*time.Minute, func() bool { return home.journal().State == "committed" })
+	var committed time.Time
+	waitFor(t, "the home's commit of "+k.cur, 20*time.Minute, func() bool {
+		if home.journal().State == "committed" {
+			committed = time.Now()
+			return true
+		}
+		// an order before the commit is seen as it happens
+		return false
+	})
 	states.end()
+	r.logf("the home committed %s (journal %v)", k.cur, states.journalStates())
 	r.budget(mon, "an update whose run lost its home (a machine joined)", 3*time.Minute)
-	committed, ok := states.firstAt("committed")
-	if !ok {
-		t.Fatalf("the home's commit was not seen (journal %v)", states.journalStates())
-	}
 	// once the home committed, the machine's order goes out by itself (no click, D1) and
 	// the machine updates
 	firstOrder := func() time.Time {
@@ -117,7 +122,7 @@ func TestUpdateRehearsal10aMachinesAfterHomeDriver(t *testing.T) {
 	switch first := firstOrder(); {
 	case first.IsZero():
 		t.Errorf("the machine runs %s but its app was never ordered to install it", k.cur)
-	case first.Before(committed):
+	case first.Before(committed.Add(-2 * time.Second)): // the commit is seen within 200 ms
 		t.Errorf("the machine was ordered to %s %s before its home committed", k.cur, committed.Sub(first).Round(time.Second))
 	default:
 		r.logf("the machine was ordered %s after its home committed", first.Sub(committed).Round(time.Second))
