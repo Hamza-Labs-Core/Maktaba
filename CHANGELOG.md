@@ -12,6 +12,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
+  lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
+  and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next
+  episode, tracks, PiP, AirPlay and Cast), Live TV for the TV apps, one design-token source,
+  four server gaps (a channel's stream must follow library access; signed stream URLs for
+  AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
+  checks, and the plan that runs them in parallel.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes
