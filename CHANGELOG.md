@@ -22,6 +22,10 @@ don't append a line here; docs-only PRs are exempt.
   standing rules, the decisions and why, failures and their fixes, the live state, the work in
   flight, what waits on the owner and the release history. `CLAUDE.md` tells every session to
   read it first and add to it before it ends.
+- **The trail's PC sessions.** `docs/claude-trail.md` §9 now holds the Windows PC's own Claude
+  sessions from 2026-10-14 to 2026-10-31: dizqueTV and the start of Maktaba TV, the node's
+  database copy, the Windows and Linux apps, automatic updates, and how this PC's node is set up
+  and kept running.
 - **Maktaba Remote (iPhone, iPad) shows the home's running work.** *Home* links to two new
   read-only pages: *Updates* (the running release and what is next, in the web's words: what
   the planned release waits for, a stepping stone or a held release, a stale check; the
