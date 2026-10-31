@@ -36,9 +36,13 @@ jobs:
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
 
+      # xcodebuild, not `swift test`: the runner's SwiftPM copies Localizable.xcstrings
+      # as-is instead of compiling it, so its Arabic and plural forms would not resolve
       - name: MaktabaKit tests
         working-directory: apps/apple/MaktabaKit
-        run: swift test
+        run: |
+          xcodebuild test -scheme MaktabaKit -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/maktabakit" CODE_SIGNING_ALLOWED=NO
 
       # unsigned simulator and Mac builds: compiling each app writes its .stringsdata
       - name: Build the apps
