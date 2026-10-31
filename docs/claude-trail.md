@@ -678,6 +678,19 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Epic 48 story 48.7 agent of `b743b7d4`: MaktabaKit's `Live.swift`: now, the
+  guide window, one channel's guide, the logo, `tv/info`, the LAN playlist, and remote tune,
+  heartbeat and end, as an `APIClient` extension. `LiveSource` picks LAN or relay from
+  `tv/info`, tunes through 202s, and heartbeats every 60 s. A new token is swapped in through
+  `rewrite(_:)`, with no new tune and no new player item.
+  - Premise gap: an extension in another file cannot POST or DELETE, because
+    `APIClient.send` and `sendRaw` were `private`. Made both internal (two words in
+    `APIClient.swift`). 48.6 (`Browse.swift`) needs the same change.
+  - Decided: the clock is an injected `sleep`, as `waitUntilPlayable` already does. The tests
+    use a hand-advanced `FakeClock` and a `FakeLiveAPI`. The HTTP tests use their own
+    `LiveStub`, separate from the shared `Stub` that other suites use.
+  - Left to 48.21: the encoder warm-up retry on the LAN path, and the AVPlayer side of
+    `rewrite(_:)` (a resource loader or proxy).
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
