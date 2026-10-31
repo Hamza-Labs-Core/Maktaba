@@ -18,6 +18,9 @@ type HomeHealth struct {
 	Now     func() time.Time
 }
 
+// roleTVSlot is the supervisor's role of a TV slot (blue, green, amber).
+const roleTVSlot = "tv-slot"
+
 // CrashQuiet is how long the home must have run without a crash before a run starts.
 const CrashQuiet = 10 * time.Minute
 
@@ -68,6 +71,7 @@ type ProcState struct {
 
 // ProcEvent is the part of a supervisor event the health blocker reads.
 type ProcEvent struct {
+	Role   string    `json:"role"`
 	At     time.Time `json:"at"`
 	Kind   string    `json:"kind"`
 	Reason string    `json:"reason"`
@@ -75,10 +79,12 @@ type ProcEvent struct {
 
 // HomeBlocked is the health rule on a supervisor snapshot: every role that should run
 // is running (an on-demand process nobody asked for is ignored), none is crash
-// looping, and no crash or hang in the last CrashQuiet.
+// looping, and no crash or hang in the last CrashQuiet. The TV slots are not judged:
+// TV never blocks an update (its own staging holds a TV that fails), and a slot that
+// cannot start is what an update may be the fix for.
 func HomeBlocked(procs []ProcState, events []ProcEvent, now time.Time) string {
 	for _, p := range procs {
-		if p.Instance != "" && !p.Wanted && p.State != "running" {
+		if p.Role == roleTVSlot || (p.Instance != "" && !p.Wanted && p.State != "running") {
 			continue
 		}
 		if p.CrashLoop || p.State != "running" {
@@ -86,7 +92,7 @@ func HomeBlocked(procs []ProcState, events []ProcEvent, now time.Time) string {
 		}
 	}
 	for _, e := range events {
-		if (e.Reason == "crash" || e.Reason == "hang") && now.Sub(e.At) < CrashQuiet {
+		if e.Role != roleTVSlot && (e.Reason == "crash" || e.Reason == "hang") && now.Sub(e.At) < CrashQuiet {
 			return BlockRecentCrash
 		}
 	}

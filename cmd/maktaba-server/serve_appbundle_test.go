@@ -648,6 +648,20 @@ func TestAppBundleRollbackKeepsAnAdditiveSchema(t *testing.T) {
 	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.Release != "" || rec.KeptFor != "0.2.0" {
 		t.Fatalf("record after v0.3.0 again = %+v", rec)
 	}
+	// a release between the one kept for and the database's (an update after the rollback,
+	// older than the release that failed): it starts on the kept schema too, nothing put back
+	newPayload(t, payload, "v0.2.5")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, KeptFor: "0.2.0"})
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("a release between the one kept for and the database's = %v", err)
+	}
+	if d, _, r := f.counts(); d != 0 || r != 0 {
+		t.Fatalf("%d dumps, %d restores for a release between", d, r)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.3.0" || rec.Release != "v0.2.5" || rec.KeptFor != "0.2.0" {
+		t.Fatalf("record after v0.2.5 = %+v", rec)
+	}
 	// a release older than the one kept for is still refused
 	newPayload(t, payload, "v0.1.0")
 	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated, KeptFor: "0.2.0"})

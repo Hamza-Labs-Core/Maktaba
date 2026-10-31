@@ -24,6 +24,20 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **After a rollback that kept the newer schema, a release in between installs.** A rollback
+  from a release whose migrations are additive keeps its schema for the release it goes back
+  to; any release between the two was then refused as "older than the database", so the
+  next fix could not be installed (update rehearsal 10a, once v0.3.43 shipped the kept
+  schema). Every release from the one kept for up to the database's now starts on it.
+
+- **The TV's blue and green slots start again on a Mac that transcribes in parallel.** The
+  transcription workers took ports 9111 and up, the same ports as the TV slots' (9111–9113):
+  on the owner's Mac two workers held 9111 and 9112 from 2026-10-28, and the blue and green
+  slots crash-looped on them (over 1,300 restarts), which also blocked every update. The
+  workers now use 9131–9146, and a test fails when any two processes' default ports match.
+  A TV slot that cannot run no longer blocks an update from starting: TV never blocks one,
+  and the update may be its fix.
+
 - **On a Mac, the site comes back by itself after the server is killed.** A `kill -9` (or a
   crash) of the server left its bundled Postgres running, adopted by the system; every next
   start then failed on its `postmaster.pid` and the site stayed down. The server now stops a
