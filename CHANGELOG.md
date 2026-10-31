@@ -12,6 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
+  serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
+  for an hour like the full one. A viewer without the video's library now gets 404 (as for a
+  missing video) instead of 403, for both sizes.
 - **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
   lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
   and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next

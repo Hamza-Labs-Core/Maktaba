@@ -678,6 +678,18 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Epic 48 story 48.5 agent of `b743b7d4`: `?size=small` on
+  `GET /api/videos/{id}/poster` (`api/internal/handlers/videos/poster.go`, tests in
+  `poster_size_test.go`).
+  - Decided: small = the pipeline's `thumb_small` copy (`<hash>/small.jpg`, then the import's
+    staged `imported/<id>.jpg`), else the full chain. The API generates nothing: the pipeline
+    makes each size once and keeps it in the thumbnail cache, and both sizes keep
+    `Cache-Control: private, max-age=3600`. An unknown `size` is a 400.
+  - Decided: the spec asks 404 for a viewer without the library, so the poster route now
+    answers a signed-in viewer without access exactly as a missing video (it said 403 before);
+    no one signed in still gets 403. The other video routes still say 403.
+  - Changed: the query reads `library_id` without `::text`, so the handler runs on the SQLite
+    test table too (lib/pq scans a uuid into a string either way, as `trickplay.go` does).
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
