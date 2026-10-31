@@ -233,26 +233,39 @@ func WithKeptStreaming(kept func(version string) []string) Option {
 	return func(s *Supervisor) { s.keptStreaming = kept }
 }
 
-// Bind sets (nil: clears) the TV release a slot instance runs from its next
-// start on.
+// Bind sets (nil: clears) the TV release a slot instance runs. One that runs, wanted,
+// on another release is started again on it (matchBinding).
 func (s *Supervisor) Bind(instance string, b *SlotBinding) error {
-	_, err := s.bind(instance, b)
-	return err
-}
-
-// bind is Bind that also says whether the instance runs now on another binding:
-// its process keeps the old release until it starts again.
-func (s *Supervisor) bind(instance string, b *SlotBinding) (stale bool, err error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	for _, c := range s.children {
-		if c.proc.Role == RoleTVSlot && c.proc.Instance == instance {
-			stale = c.cmd != nil && !sameBinding(c.binding, b)
-			c.binding = b
-			return stale, nil
+	var c *child
+	for _, ch := range s.children {
+		if ch.proc.Role == RoleTVSlot && ch.proc.Instance == instance {
+			c = ch
 		}
 	}
-	return false, fmt.Errorf("no %s process %q", RoleTVSlot, instance)
+	if c == nil {
+		s.mu.Unlock()
+		return fmt.Errorf("no %s process %q", RoleTVSlot, instance)
+	}
+	c.binding = b
+	s.mu.Unlock()
+	s.matchBinding(c)
+	return nil
+}
+
+// matchBinding starts a wanted slot again when its running process started on another
+// binding than the one it has now (a bind while it ran, an adopted process the record
+// bound otherwise): else it answers for its old release and the front door's checks
+// fail release_mismatch (2026-10-31: green, running since the update's restart, stayed
+// on v0.3.39 when the TV change bound it to 0.3.44).
+func (s *Supervisor) matchBinding(c *child) {
+	s.mu.Lock()
+	stale := c.proc.Role == RoleTVSlot && c.wanted && c.cmd != nil && !sameBinding(c.ranWith, c.binding)
+	s.mu.Unlock()
+	if stale {
+		s.logf("%s runs another TV release than it is bound to: starting it again", c.proc.Name())
+		_ = s.Restart(c.proc.Role, c.proc.Instance)
+	}
 }
 
 // sameBinding: a and b run the same release (nil and an empty binding are both unbound).

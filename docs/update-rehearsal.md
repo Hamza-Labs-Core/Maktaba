@@ -46,8 +46,9 @@ migrates, then refuses to run on what it migrated: the injected health failure),
 destructive.
 
 The pipeline is the end-to-end tests' stand-in (it answers its probes; no transcription or
-TV staging job ever runs). The web UI is not built in (the web answers with its placeholder
-page; the API through the web is checked).
+TV staging job ever runs: scenario 11 plays the `tv_stage` job's database writes itself). The
+streaming binary is built with `-tags tvstaging`, as the release builds it. The web UI is
+not built in (the web answers with its placeholder page; the API through the web is checked).
 
 ## The seeded home
 
@@ -60,7 +61,7 @@ definitions so the schema is the release's exactly:
 |---|---|---|---|
 | full | 150,000 | 2,000,000 | 01 |
 | restore | 150,000 | 300,000 | 02–06 (a restore rebuilds the HNSW index: minutes per million) |
-| small | 5,000 | 20,000 | 07–10 |
+| small | 5,000 | 20,000 | 07–11 |
 
 Every profile also has 2,000 series with 40,000 episodes, 600 collections with their items,
 three approved full machines (logins in `maktaba_worker`), and the first machine's copy
@@ -88,6 +89,7 @@ start to its end.
 | 09 | The owner's Mac's state: the previous release running from its kept copy (`payload-override`), the app's own payload a failed newer release (`payload-override.failed`), the record put right by hand | the update to this commit is `done`; the override gone; the app's payload this commit | 2 min |
 | 10a | A home and a joined full machine (a Mac app too): the home rolls back during its watch; then a run that gives up on its home mid-watch (`journal_lost`); then an update that passes | the machine is never ordered before the home commits, stays on its release, not paused, serving; in the passing run it is ordered only after the commit | 4 min, then 2 min |
 | 10b | The joined machine's own updater, a newer release published while the home stays on its release | the machine does not install it; it stays on its release, not paused, serving | — |
+| 11 | The home updates while its TV slots run (the live TV on the previous release's streaming; roles live blue, standby amber, so green, started with every server, is the free instance a staging takes); then the update's TV change is staged (the pipeline's `tv_stage` job played by the test: the stand-in runs no job) | the slot the staging takes was running before its bind; it is started again on the change's release (a new process, answering that release, no mismatch); the change moves to verifying on this commit's streaming, never back to a draft with `slot.health` (`release_mismatch`: change #58, 2026-10-31). Not covered: the change's soak and swap (no channel here airs real media) | 2 min |
 
 ### Expected failures
 
@@ -100,7 +102,7 @@ required, with no edit. None today: 10a and 10b were listed until #434
 ## Run it locally
 
 Never against a live install: every machine of the rehearsal has its own `HOME`, folders
-and free ports, and its `open`/`xdg-open` do nothing. Scenario 02 runs the TV slots, which
+and free ports, and its `open`/`xdg-open` do nothing. Scenarios 02 and 11 run the TV slots, which
 listen on fixed ports (8791–8793, 9111–9113): it refuses to run on a machine where another
 Maktaba airs TV (the owner's Mac). Scenario 08 needs a volume of its own
 (`MAKTABA_REHEARSAL_SMALL_VOLUME`) and is skipped without one.
@@ -149,6 +151,7 @@ A missing seed is made on the fly in `MAKTABA_REHEARSAL_SEEDS` (default
 | The seed | `api/rehearsal_seed_e2e_test.go` |
 | Scenarios 01–09, the database's fingerprint | `api/rehearsal_scenarios_e2e_test.go` |
 | Scenario 10 | `api/rehearsal_machines_e2e_test.go` |
+| Scenario 11 | `api/rehearsal_tv_e2e_test.go` |
 | Expected failures | `tools/rehearsal/expected-failures.txt` |
 | The release gate | `tools/release/tag-guard.sh` (`passed_on`), `tools/release/tag-guard-test.sh` |
 
