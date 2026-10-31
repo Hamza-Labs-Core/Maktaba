@@ -12,6 +12,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The Android apps speak Arabic.** Maktaba Remote (every screen: Needs attention, Queue,
+  Updates, Libraries, Machines and its processes), Maktaba Player and the account menu now ship
+  in English and Arabic, right to left, with numbers and dates in the device's language. The
+  Remote says what the web admin says, in the web's own Arabic for each state, step and code; a
+  value it has no words for is still shown as the home sent it. A unit test and lint now fail
+  any Android or Android TV string that has no Arabic.
 - **Maktaba Remote (iPhone, iPad) shows the home's running work.** *Home* links to two new
   read-only pages: *Updates* (the running release and what is next, in the web's words: what
   the planned release waits for, a stepping stone or a held release, a stale check; the

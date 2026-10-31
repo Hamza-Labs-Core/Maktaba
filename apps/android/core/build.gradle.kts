@@ -17,6 +17,11 @@ android {
         compose = true
     }
 
+    // English and Arabic ship together: a string with no Arabic fails lint (and TranslationsTest).
+    lint {
+        error += "MissingTranslation"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -24,6 +29,14 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        // TranslationsTest reads every Android module's strings (and the TV app's): it runs again
+        // whenever one of them changes, not only the core's
+        unitTests.all { test ->
+            test.inputs.files(
+                fileTree(projectDir.parentFile) { include("*/src/main/res/values*/strings.xml") },
+                fileTree(projectDir.resolve("../../tv/android/app/src/main/res")) { include("values*/strings.xml") },
+            ).withPropertyName("strings").withPathSensitivity(PathSensitivity.RELATIVE)
+        }
     }
 }
 
