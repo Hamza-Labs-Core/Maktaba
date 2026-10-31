@@ -13,7 +13,8 @@
 # commit; signed by a local fake Sigstore, published on a fake GitHub (-tags e2etrust).
 #
 # Jobs: kit (the binaries and the bundled Postgres), seed (the seeded homes, cached per
-# previous release: two million vectors take minutes to make), one job per scenario
+# previous release: two million vectors take minutes to make; each scenario takes its
+# seed from this run, as an artifact), one job per scenario
 # (api/rehearsal_*_e2e_test.go), and update-rehearsal, the verdict. A scenario whose fix
 # has not merged yet is expected to fail (tools/rehearsal/expected-failures.txt): its
 # failure is reported, not counted, until the fix's PR is in the commit rehearsed; from
@@ -222,7 +223,6 @@ jobs:
         with:
           path: ${{ env.SEEDS }}
           key: rehearsal-seed-${{ needs.kit.outputs.prev }}-${{ matrix.profile }}-${{ hashFiles('api/rehearsal_seed_e2e_test.go') }}
-          lookup-only: true
 
       - if: steps.cache.outputs.cache-hit != 'true'
         uses: actions/setup-go@v6.4.0
@@ -260,6 +260,21 @@ jobs:
         with:
           path: ${{ env.SEEDS }}
           key: rehearsal-seed-${{ needs.kit.outputs.prev }}-${{ matrix.profile }}-${{ hashFiles('api/rehearsal_seed_e2e_test.go') }}
+
+      # the scenarios take the seed from this run, not from the cache: the cache is the
+      # repository's 10 GB shared by every branch's builds, and GitHub evicts what was used
+      # least, so a seed saved here was gone by the time its scenarios ran (2026-10-31, the
+      # small seed on main and on #440). The cache only spares the seed's building; a tar
+      # keeps the seed's symlinks and modes, which an artifact's zip does not
+      - name: Hand the seed to the scenarios
+        run: tar -C "$SEEDS" -cf "$RUNNER_TEMP/rh-seed-${{ matrix.profile }}.tar" .
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-seed-${{ matrix.profile }}
+          path: ${{ runner.temp }}/rh-seed-${{ matrix.profile }}.tar
+          retention-days: 1
+          compression-level: 1
+          if-no-files-found: error
 
       - if: failure()
         uses: actions/upload-artifact@v7.0.1
@@ -303,16 +318,17 @@ jobs:
           name: rehearsal-kit
           path: ${{ runner.temp }}
 
-      - uses: actions/cache/restore@v4
+      - uses: actions/download-artifact@v8.0.1
         with:
-          path: ${{ env.SEEDS }}
-          key: rehearsal-seed-${{ needs.kit.outputs.prev }}-${{ matrix.profile }}-${{ hashFiles('api/rehearsal_seed_e2e_test.go') }}
-          fail-on-cache-miss: true
+          name: rehearsal-seed-${{ matrix.profile }}
+          path: ${{ runner.temp }}
 
-      - name: The kit, Python's venv
+      - name: The kit, the seed, Python's venv
         run: |
           set -euo pipefail
           mkdir -p "$KIT" && tar -C "$KIT/.." -xf "$RUNNER_TEMP/rh-kit.tar"
+          mkdir -p "$SEEDS" && tar -C "$SEEDS" -xf "$RUNNER_TEMP/rh-seed-${{ matrix.profile }}.tar"
+          rm -f "$RUNNER_TEMP/rh-seed-${{ matrix.profile }}.tar"
           cat "$KIT/versions.env"
           python3 -m venv --without-pip "$RUNNER_TEMP/venv-probe" 2>/dev/null || {
             sudo apt-get -o Acquire::Retries=3 update -qq
