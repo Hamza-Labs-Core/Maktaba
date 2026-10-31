@@ -248,12 +248,17 @@ impl<I: Io> Orders<I> {
 
     /// advance answers the order's next step (staged, installing) only while it is still
     /// where it was read: a download's late "staged" never takes back the server's go.
-    fn advance(&mut self, path: &Path, req: &Request, state: &str) {
-        if let Err(e) = autoinstall::advance(path, req, state) {
-            (self.say)(&format!(
-                "the answer {state} to the order of {} could not be written: {e}",
-                req.version
-            ));
+    /// Whether the answer went in.
+    fn advance(&mut self, path: &Path, req: &Request, state: &str) -> bool {
+        match autoinstall::advance(path, req, state) {
+            Ok(wrote) => wrote,
+            Err(e) => {
+                (self.say)(&format!(
+                    "the answer {state} to the order of {} could not be written: {e}",
+                    req.version
+                ));
+                false
+            }
         }
     }
 
@@ -307,7 +312,9 @@ impl<I: Io> Orders<I> {
                 (self.say)(&format!("the order of {} is refused: {why}", req.version));
                 self.answer(&path, &req, autoinstall::FAILED, &why);
             }
-            Action::Show => self.advance(&path, &req, autoinstall::STAGED),
+            Action::Show => {
+                self.advance(&path, &req, autoinstall::STAGED);
+            }
             Action::Stage { .. } => {
                 autoinstall::clean_staged(&self.root, Some(&staged));
                 let rec = attempts::path(&self.root);
@@ -329,11 +336,9 @@ impl<I: Io> Orders<I> {
                 }
             }
             Action::Install { .. } => {
-                self.advance(&path, &req, autoinstall::INSTALLING);
-                let took = autoinstall::read(&path)
-                    .is_some_and(|r| r.run_id == req.run_id && r.state == autoinstall::INSTALLING);
-                if !took {
-                    // the order moved on meanwhile (withdrawn, replaced): looked at again
+                if !self.advance(&path, &req, autoinstall::INSTALLING) {
+                    // the order moved on meanwhile (withdrawn, replaced), or the answer could
+                    // not be written (the go stays: looked at again)
                     return;
                 }
                 let rec = attempts::path(&self.root);
@@ -820,20 +825,22 @@ mod tests {
         let read_then = r.state();
         // the server's go came while the answer was on its way (a download)
         r.order(autoinstall::GO);
-        autoinstall::advance(
+        let wrote = autoinstall::advance(
             &autoinstall::request_path(&r.dir),
             &read_then,
             autoinstall::STAGED,
         )
         .unwrap();
+        assert!(!wrote);
         assert_eq!(r.state().state, autoinstall::GO);
         // and an answer to the state it was read at goes in
-        autoinstall::advance(
+        let wrote = autoinstall::advance(
             &autoinstall::request_path(&r.dir),
             &r.state(),
             autoinstall::INSTALLING,
         )
         .unwrap();
+        assert!(wrote);
         assert_eq!(r.state().state, autoinstall::INSTALLING);
     }
 

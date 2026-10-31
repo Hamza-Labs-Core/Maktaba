@@ -413,13 +413,14 @@ fn holds(path: &Path, run_id: &str, at: Option<&str>) -> std::io::Result<bool> {
 /// only that moment to cross it; a rename that fails (Windows: someone holds the file) is
 /// tried again a few times, briefly.
 pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std::io::Result<()> {
-    write_if(path, req, state, error, None)
+    write_if(path, req, state, error, None).map(|_| ())
 }
 
 /// advance writes the order's next state as write_state does, but only while the order is
 /// still at the state req was read at: an answer that took a while (a download) never takes
-/// back what the server wrote meanwhile (its go, a withdrawal).
-pub fn advance(path: &Path, req: &Request, state: &str) -> std::io::Result<()> {
+/// back what the server wrote meanwhile (its go, a withdrawal). Ok(true): it went in;
+/// Ok(false): the order had moved on, and was left as it is.
+pub fn advance(path: &Path, req: &Request, state: &str) -> std::io::Result<bool> {
     write_if(path, req, state, "", Some(&req.state))
 }
 
@@ -429,9 +430,9 @@ fn write_if(
     state: &str,
     error: &str,
     at: Option<&str>,
-) -> std::io::Result<()> {
+) -> std::io::Result<bool> {
     if !holds(path, &req.run_id, at).unwrap_or(true) {
-        return Ok(());
+        return Ok(false);
     }
     let mut r = req.clone();
     r.state = state.to_string();
@@ -455,7 +456,7 @@ fn write_if(
             // withdrawn or replaced meanwhile: left as it is
             Ok(false) => {
                 let _ = std::fs::remove_file(&tmp);
-                return Ok(());
+                return Ok(false);
             }
             Err(e) => {
                 last = Some(e);
@@ -463,7 +464,7 @@ fn write_if(
             }
         }
         match std::fs::rename(&tmp, path) {
-            Ok(()) => return Ok(()),
+            Ok(()) => return Ok(true),
             Err(e) => last = Some(e),
         }
     }
