@@ -162,17 +162,17 @@ func fingerprint(t *testing.T, db *sql.DB) dbPrint {
 	p.Functions = kv(`SELECT p.oid::regprocedure::text, md5(pg_get_functiondef(p.oid)) FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.prokind IN ('f', 'p')
 		AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')`)
-	p.RelACL = kv(`SELECT c.relname, ` + acl("coalesce(c.relacl, acldefault(CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END, c.relowner))") + ` FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+	p.RelACL = kv(`SELECT c.relname, ` + acl("coalesce(c.relacl, acldefault((CASE WHEN c.relkind = 'S' THEN 's' ELSE 'r' END)::\"char\", c.relowner))") + ` FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'v', 'm', 'S', 'p')`)
 	p.ColumnACL = kv(`SELECT c.relname || '.' || a.attname, ` + acl("a.attacl") + ` FROM pg_attribute a
 		JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace
 		WHERE n.nspname = 'public' AND a.attacl IS NOT NULL`)
-	p.FuncACL = kv(`SELECT p.oid::regprocedure::text, ` + acl("coalesce(p.proacl, acldefault('f', p.proowner))") + ` FROM pg_proc p
+	p.FuncACL = kv(`SELECT p.oid::regprocedure::text, ` + acl("coalesce(p.proacl, acldefault('f'::\"char\", p.proowner))") + ` FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'`)
-	p.SchemaACL = one(`SELECT ` + acl("coalesce(nspacl, acldefault('n', nspowner))") + ` FROM pg_namespace WHERE nspname = 'public'`)
+	p.SchemaACL = one(`SELECT ` + acl("coalesce(nspacl, acldefault('n'::\"char\", nspowner))") + ` FROM pg_namespace WHERE nspname = 'public'`)
 	p.DefaultACL = one(`SELECT string_agg(defaclrole::regrole::text || ':' || defaclobjtype::text || ':' || ` + acl("defaclacl") +
 		`, ';' ORDER BY 1) FROM pg_default_acl`)
-	p.DatabaseACL = one(`SELECT ` + acl("coalesce(datacl, acldefault('d', datdba))") + ` FROM pg_database WHERE datname = current_database()`)
+	p.DatabaseACL = one(`SELECT ` + acl("coalesce(datacl, acldefault('d'::\"char\", datdba))") + ` FROM pg_database WHERE datname = current_database()`)
 	p.Vectors = one(`SELECT count(*) || ':' || coalesce(sum(('x' || substr(md5(embedding::text), 1, 8))::bit(32)::int::bigint), 0)
 		FROM segment_embeddings`)
 	return p
