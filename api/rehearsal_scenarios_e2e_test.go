@@ -170,8 +170,8 @@ func fingerprint(t *testing.T, db *sql.DB) dbPrint {
 	p.FuncACL = kv(`SELECT p.oid::regprocedure::text, ` + acl("coalesce(p.proacl, acldefault('f'::\"char\", p.proowner))") + ` FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public'`)
 	p.SchemaACL = one(`SELECT ` + acl("coalesce(nspacl, acldefault('n'::\"char\", nspowner))") + ` FROM pg_namespace WHERE nspname = 'public'`)
-	p.DefaultACL = one(`SELECT string_agg(defaclrole::regrole::text || ':' || defaclobjtype::text || ':' || ` + acl("defaclacl") +
-		`, ';' ORDER BY 1) FROM pg_default_acl`)
+	p.DefaultACL = one(`SELECT string_agg(d, ';' ORDER BY d) FROM (SELECT defaclrole::regrole::text || ':' ||
+		defaclobjtype::text || ':' || ` + acl("defaclacl") + ` AS d FROM pg_default_acl) x`)
 	p.DatabaseACL = one(`SELECT ` + acl("coalesce(datacl, acldefault('d'::\"char\", datdba))") + ` FROM pg_database WHERE datname = current_database()`)
 	p.Vectors = one(`SELECT count(*) || ':' || coalesce(sum(('x' || substr(md5(embedding::text), 1, 8))::bit(32)::int::bigint), 0)
 		FROM segment_embeddings`)
