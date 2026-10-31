@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Sys is the outside world (tests replace it).
@@ -139,7 +141,7 @@ func plural(n int, what string) string {
 
 // StackPorts are the stack's public ports (api, streaming): nothing may listen
 // on them once it stopped (Maktaba.app's server takes the same ones).
-var StackPorts = []string{"8080", "8081"}
+var StackPorts = []string{ports.APIPublic.PortString(), ports.StreamingPublic.PortString()}
 
 // FindStack finds the running stack by command line. repo, when set, is the checkout to use.
 func FindStack(ctx context.Context, sys Sys, repo string) Stack {

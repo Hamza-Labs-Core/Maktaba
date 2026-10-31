@@ -1,7 +1,6 @@
 package supervisor
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,31 +182,5 @@ func TestNoIndexWorker(t *testing.T) {
 				t.Errorf("api search address = %q", v)
 			}
 		})
-	}
-}
-
-// TestEveryProcessHasAPortOfItsOwn: no two of the processes' default loopback ports
-// are the same (the roles, the index worker, every transcription worker, the TV
-// slots). On the owner's Mac two transcription workers held 9111 and 9112, and the
-// blue and green TV slots crash-looped on them for days, blocking every update.
-func TestEveryProcessHasAPortOfItsOwn(t *testing.T) {
-	ports := [][2]string{
-		{"127.0.0.1:9050", "streaming grpc"}, {"127.0.0.1:9090", "pipeline grpc"}, {"127.0.0.1:9100", "api admin"},
-		{"127.0.0.1:9101", "streaming admin"}, {"127.0.0.1:9102", "pipeline logs"}, {"127.0.0.1:9103", "supervisor"},
-		{"127.0.0.1:9091", "streaming metrics"},
-		{pipelineSearchAddr, "index search"}, {pipelineIndexLogsAddr, "index logs"},
-	}
-	for i := 1; i <= MaxPipelineInstances; i++ {
-		ports = append(ports, [2]string{PipelineInstanceLogsAddr(i), "stt-" + strconv.Itoa(i)})
-	}
-	for _, s := range SlotNames {
-		ports = append(ports, [2]string{SlotAdminAddr(s), "slot " + s})
-	}
-	taken := map[string]string{}
-	for _, p := range ports {
-		if who, ok := taken[p[0]]; ok {
-			t.Errorf("%s is both %s's and %s's", p[0], who, p[1])
-		}
-		taken[p[0]] = p[1]
 	}
 }

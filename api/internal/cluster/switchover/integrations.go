@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Integration states.
@@ -300,7 +301,7 @@ func youtube(ctx context.Context, db *sql.DB) Integration {
 func llm(ctx context.Context, db *sql.DB) Integration {
 	addr := strings.TrimPrefix(strings.TrimPrefix(os.Getenv("MAKTABA_OLLAMA_URL"), "http://"), "https://")
 	if addr == "" {
-		addr = "127.0.0.1:11434"
+		addr = ports.Ollama.Local()
 	}
 	addr = strings.TrimRight(addr, "/")
 	if i := strings.Index(addr, "/"); i > 0 {

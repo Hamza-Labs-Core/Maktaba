@@ -13,6 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // ChildEnv translates a Config into the environment variables a given
@@ -180,7 +181,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// its admin port (9101); the pipeline on its dedicated logs port
 		// (9102, set below). Without this the bundle would carry api logs
 		// only.
-		peers := "streaming=http://" + LocalAddr(streamingAdmin(cfg), "9101") + "/logs/recent," +
+		peers := "streaming=http://" + LocalAddr(streamingAdmin(cfg), ports.StreamingAdmin.PortString()) + "/logs/recent," +
 			"pipeline=http://" + pipelineLogs(cfg) + "/logs/recent"
 		if IndexWorkerOn(cfg, n) {
 			// the semantic search is the index worker's (BuildIndexWorker): the
@@ -207,7 +208,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		}
 		// Maktaba TV across the cluster (Epic 32): the api forwards move/stop/drain to
 		// the home streaming service's loopback internal routes.
-		add("MAKTABA_STREAMING_HTTP_URL", "http://"+LocalAddr(cfg.Server.StreamAddr, "8081"))
+		add("MAKTABA_STREAMING_HTTP_URL", "http://"+LocalAddr(cfg.Server.StreamAddr, ports.StreamingPublic.PortString()))
 		// Epic 35 story 35.11: this machine's own web address (the Machines page, the
 		// cluster sign-in)
 		add("MAKTABA_WEB_URL", cfg.PublicWebURL())
@@ -260,7 +261,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// story 35.16: the home's front door reads a machine's channel over that
 		// machine's cluster link, through this machine's api on loopback
 		if !n.Joined() || forcedHome(cfg) {
-			add("MAKTABA_LINK_PULL_URL", "http://"+LocalAddr(cfg.Server.Listen, "8080"))
+			add("MAKTABA_LINK_PULL_URL", "http://"+LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()))
 			add("MAKTABA_SUPERVISOR_TOKEN_FILE", LocalTokenPath(cfg))
 		}
 		// Epic 33 story 33.1: the streaming role is the front door of the TV
@@ -346,7 +347,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 // LocalAgentURL is a full node's loopback route to the home's channel over its cluster
 // link (the node api's /api/cluster/link/local/agent, story 35.16).
 func LocalAgentURL(cfg config.Config) string {
-	return "ws://" + LocalAddr(cfg.Server.Listen, "8080") + "/api/cluster/link/local/agent"
+	return "ws://" + LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()) + "/api/cluster/link/local/agent"
 }
 
 // nodeConfigDir is the folder of this machine's node.json (tests replace it).
@@ -506,7 +507,7 @@ func HomeStreamURL(n config.NodeConfig) string {
 	if err != nil || u.Host == "" {
 		return ""
 	}
-	return u.Scheme + "://" + net.JoinHostPort(u.Hostname(), "8081")
+	return u.Scheme + "://" + net.JoinHostPort(u.Hostname(), ports.StreamingPublic.PortString())
 }
 
 // LocalTokenPath is the per-boot token of the supervisor's loopback endpoints the
@@ -529,7 +530,7 @@ func streamingAdmin(cfg config.Config) string {
 	return orDefault(cfg.Server.StreamingAdminAddr, streamingAdminAddr)
 }
 func pipelineGRPC(cfg config.Config) string {
-	return orDefault(cfg.Server.PipelineGRPCAddr, "127.0.0.1:9090")
+	return orDefault(cfg.Server.PipelineGRPCAddr, ports.PipelineGRPC.Addr())
 }
 func pipelineLogs(cfg config.Config) string {
 	return orDefault(cfg.Server.PipelineLogsAddr, pipelineLogsAddr)
@@ -547,15 +548,15 @@ func setEnv(env []string, k, v string) []string {
 }
 
 // StreamingGRPCAddr is the streaming service's intra-host gRPC address.
-const StreamingGRPCAddr = "127.0.0.1:9050"
+var StreamingGRPCAddr = ports.StreamingGRPC.Addr()
 
-const (
+var (
 	// streamingAdminAddr is the streaming admin port (/healthz, /readyz,
 	// /logs/recent).
-	streamingAdminAddr = ":9101"
+	streamingAdminAddr = ports.StreamingAdmin.Addr()
 	// pipelineLogsAddr is the pipeline's HTTP port (/logs/recent,
 	// /healthz).
-	pipelineLogsAddr = "127.0.0.1:9102"
+	pipelineLogsAddr = ports.PipelineLogs.Addr()
 )
 
 // StateURL is the base URL of the supervisor's state endpoint, or
@@ -565,7 +566,7 @@ func StateURL(cfg config.Config) string {
 	if err != nil || p.AdminAddr == "" {
 		return ""
 	}
-	return "http://" + LocalAddr(p.AdminAddr, "9103")
+	return "http://" + LocalAddr(p.AdminAddr, ports.Supervisor.PortString())
 }
 
 // LocalAddr turns a bind spec like ":8081" or "0.0.0.0:8081" into a

@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // clusterTick is the Epic 31 housekeeping cadence: the accept-joins switch
@@ -61,7 +62,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	if pub != nil {
 		adv = &cluster.Advertiser{
 			Publisher: pub,
-			Port:      portOf(publicAddr, 8080),
+			Port:      portOf(publicAddr, ports.APIPublic.Port),
 			Version:   version.Version,
 			SchemaRev: schemaRev(db, driver),
 			Path:      webBasePath(os.Getenv("MAKTABA_WEB_URL")),

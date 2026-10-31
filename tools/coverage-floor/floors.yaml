@@ -33,6 +33,7 @@ shared/tracing/go:   71    # measured 71.3
 shared/errrpt/go:    85    # measured 85.8
 shared/testtier/go:  43    # measured 43.2
 shared/go/releaseverify: 50  # measured 50.9 (2026-10-19, story 35.1)
+shared/go/ports:     95    # measured 95.2 (2026-10-31, the port registry)
 
 # --- Go tooling modules ---
 tools/test-budget:   70    # measured 70.4

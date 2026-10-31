@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // The kinds of install the app finds.
@@ -346,7 +347,7 @@ func describe(sys Sys, s *Source) {
 	// the ports the app's server takes over: free before it starts
 	s.Ports = map[string]string{"web": cfg.Server.WebListen, "api": cfg.Server.Listen, "stream": cfg.Server.StreamAddr,
 		"admin": cfg.Server.AdminAddr, "supervisor": cfg.Supervisor.AdminAddr,
-		"pipeline": orDefault(cfg.Server.PipelineGRPCAddr, "127.0.0.1:9090")}
+		"pipeline": orDefault(cfg.Server.PipelineGRPCAddr, ports.PipelineGRPC.Addr())}
 	for k, v := range s.Ports {
 		if strings.TrimSpace(v) == "" {
 			delete(s.Ports, k)

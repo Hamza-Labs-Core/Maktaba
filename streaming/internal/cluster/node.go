@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 )
 
@@ -74,7 +75,7 @@ func StreamBaseURL(ip, listen string) string {
 	if ip == "" {
 		return ""
 	}
-	port := "8081"
+	port := ports.StreamingPublic.PortString()
 	if i := strings.LastIndexByte(listen, ':'); i >= 0 && i+1 < len(listen) {
 		if _, err := strconv.Atoi(listen[i+1:]); err == nil {
 			port = listen[i+1:]

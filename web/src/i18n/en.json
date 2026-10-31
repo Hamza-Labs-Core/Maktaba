@@ -5251,6 +5251,7 @@
   "setup.starting.detail.storage_waiting": "Waiting for the disk that holds Maktaba's data ({path}). Connect it; Maktaba starts as soon as it is there.",
   "setup.starting.detail.storage_moving": "Moving Maktaba's data to {to} ({percent}%).",
   "setup.starting.detail.storage_move_failed": "Could not move Maktaba's data to {to}: it keeps running from where it was.",
+  "setup.starting.detail.port_taken": "Port {port} ({addr}) is in use by another program, so a part of Maktaba is not started; it starts once the port is free.",
   "shortcuts.bigScreen": "Big screen",
   "big.enter": "Big screen: a full-screen view for the TV",
   "big.enter.short": "Big screen",

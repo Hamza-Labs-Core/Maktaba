@@ -33,6 +33,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // restorer restores the home's backups.
@@ -451,7 +452,7 @@ func apiRestoreNotice(cfg config.Config) func(ctx context.Context, pl restorePla
 			"running": pl.Running, "backup_at": pl.At, "by": by})
 		cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		url := "http://" + supervisor.LocalAddr(cfg.Server.Listen, "8080") + "/internal/updates/restored"
+		url := "http://" + supervisor.LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()) + "/internal/updates/restored"
 		req, err := http.NewRequestWithContext(cctx, http.MethodPost, url, bytes.NewReader(body))
 		if err != nil {
 			return err

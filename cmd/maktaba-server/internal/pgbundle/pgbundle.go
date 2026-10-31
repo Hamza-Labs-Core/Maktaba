@@ -24,12 +24,14 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
+// DefaultPort is the bundled Postgres's loopback port (ports.Postgres): off
+// 5432, so it never meets another Postgres on the Mac.
+var DefaultPort = ports.Postgres.Port
+
 const (
-	// DefaultPort is the bundled Postgres's loopback port: off 5432, so it never
-	// meets another Postgres on the Mac.
-	DefaultPort = 54329
 	// AppRole and AppDatabase are what every role connects as.
 	AppRole     = "maktaba"
 	AppDatabase = "maktaba"

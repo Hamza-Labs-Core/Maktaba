@@ -29,6 +29,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/grpc"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/auth"
@@ -136,15 +137,17 @@ func runServe() error {
 
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
 	if publicAddr == "" {
-		publicAddr = ":8081"
+		publicAddr = ports.StreamingPublic.Every()
 	}
 	adminAddr := os.Getenv("MAKTABA_ADMIN_ADDR")
 	if adminAddr == "" {
-		adminAddr = ":9101"
+		adminAddr = ports.StreamingAdmin.Every()
 	}
 	grpcAddr := os.Getenv("MAKTABA_STREAMING_GRPC_ADDR")
 	if grpcAddr == "" {
-		grpcAddr = ":9050"
+		// every interface when run on its own; the supervisor gives it loopback
+		// (ports.StreamingGRPC)
+		grpcAddr = ports.StreamingGRPC.Every()
 	}
 
 	// Liveness (Story 22.9): /healthz fails once the watchdog heartbeat

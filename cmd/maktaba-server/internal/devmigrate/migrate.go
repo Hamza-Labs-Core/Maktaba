@@ -16,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // DefaultContainer is the compose Postgres's container (deploy/compose).
@@ -625,7 +626,7 @@ func (m *Migration) Verify(ctx context.Context, wait time.Duration) error {
 
 func (m *Migration) verifyOnce(ctx context.Context, mk Marker) error {
 	t := m.Target
-	api := "http://" + supervisor.LocalAddr(t.Config.Server.Listen, "8080") + "/healthz"
+	api := "http://" + supervisor.LocalAddr(t.Config.Server.Listen, ports.APIPublic.PortString()) + "/healthz"
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, api, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

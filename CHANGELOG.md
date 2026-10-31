@@ -38,6 +38,15 @@ don't append a line here; docs-only PRs are exempt.
   A TV slot that cannot run no longer blocks an update from starting: TV never blocks one,
   and the update may be its fix.
 
+- **A port another program holds is named, not crash-looped on.** Every port Maktaba listens
+  on is now declared once, with its owner and what it is for (`shared/go/ports`), and every
+  part takes its default from there; a test fails when two of them share a port, every port of
+  a range included. At its start the server refuses addresses in `server.toml` that clash with
+  one another, naming both. Before it starts a part, the supervisor checks that part's ports
+  are free: one that is held leaves it not started, with `port_taken` in `/processes` saying
+  which port and who holds it (the program and its pid where the system shows them, or which
+  of Maktaba's own parts), and it tries again with the usual backoff.
+
 - **On a Mac, the site comes back by itself after the server is killed.** A `kill -9` (or a
   crash) of the server left its bundled Postgres running, adopted by the system; every next
   start then failed on its `postmaster.pid` and the site stayed down. The server now stops a

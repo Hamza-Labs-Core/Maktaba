@@ -1,5 +1,7 @@
 package config
 
+import "github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
+
 // SupervisorSection is the [supervisor] table: how `serve` restarts and
 // probes its child processes (Story 22.9). Durations are Go duration
 // strings ("1s", "5m"); the supervisor package parses and validates
@@ -45,6 +47,6 @@ func DefaultSupervisor() SupervisorSection {
 		ProbeTimeout:      "3s",
 		ProbeFailures:     3,
 		StartupGrace:      "60s",
-		AdminAddr:         "127.0.0.1:9103",
+		AdminAddr:         ports.Supervisor.Addr(),
 	}
 }

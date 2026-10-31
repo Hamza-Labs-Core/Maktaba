@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // The staging runtime (story 33.5): the home's front door runs a staged change's
@@ -151,7 +153,7 @@ type HTTPStaging struct {
 func NewHTTPStaging(db *sql.DB) *HTTPStaging {
 	u := strings.TrimRight(os.Getenv("MAKTABA_STREAMING_HTTP_URL"), "/")
 	if u == "" {
-		u = "http://127.0.0.1:8081"
+		u = "http://" + ports.StreamingPublic.Local()
 	}
 	return &HTTPStaging{DB: db, Base: u}
 }

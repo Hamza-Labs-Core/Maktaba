@@ -5,6 +5,8 @@ import (
 	"os"
 	"regexp"
 	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 )
 
 // detail_codes.json is the fixed list of the codes of every detail the app's
@@ -15,6 +17,14 @@ import (
 // test reads this file; the server embeds this file (#194) as the detailCodes
 // of story 38.12's start steps. One list, so the server and the screens
 // cannot drift.
+// TestPortTakenIsListed: the supervisor's port_taken (supervisor/portcheck.go) is a
+// code of the list, so the app's screens have words for it.
+func TestPortTakenIsListed(t *testing.T) {
+	if _, ok := detailCodes[supervisor.DetailPortTaken]; !ok {
+		t.Errorf("%s is not in detail_codes.json", supervisor.DetailPortTaken)
+	}
+}
+
 func TestDetailCodesFile(t *testing.T) {
 	raw, err := os.ReadFile("detail_codes.json")
 	if err != nil {

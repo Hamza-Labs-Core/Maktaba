@@ -3,6 +3,8 @@ package hdhr
 import (
 	"net"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Advertiser decides the http base (scheme://host:port) a LAN client is told
@@ -25,7 +27,7 @@ type Advertiser struct {
 }
 
 // DefaultHTTPPort is the streaming service's public port (main.go).
-const DefaultHTTPPort = "8081"
+var DefaultHTTPPort = ports.StreamingPublic.PortString()
 
 // port is the public HTTP port, and the listen host when it names one.
 func (a Advertiser) hostPort() (host, port string) {

@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // RolePostgres is the Postgres bundled with Maktaba.app (Epic 36 story 36.1):
@@ -42,6 +43,8 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 		// whether it listens beyond this machine, at each start (pgbundle.WatchReach)
 		Args:        b.ServerArgs,
 		BeforeStart: b.ClearStaleLock,
+		// checked after BeforeStart, which ends a postmaster a killed server left
+		Binds: []ports.Bind{{Addr: b.Addr(), What: "database port"}},
 	}
 	if runtime.GOOS == "windows" {
 		// no SIGINT for another process there: pg_ctl's fast shutdown, not a kill

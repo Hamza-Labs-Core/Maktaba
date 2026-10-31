@@ -16,6 +16,7 @@ require (
 )
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
@@ -26,3 +27,5 @@ require (
 replace github.com/Hamza-Labs-Core/Maktaba/shared/health/go => ../shared/health/go
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/log/go => ../shared/log/go
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/ports => ../shared/go/ports

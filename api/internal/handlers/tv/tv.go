@@ -44,6 +44,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // MaxTuners caps tuner_count (D8). A tuner is one client pull of a
@@ -311,7 +312,7 @@ func (h *Handler) info(r *http.Request) Info {
 		fromCfg = false
 		port := h.DefaultStreamPort
 		if port == "" {
-			port = "8081"
+			port = ports.StreamingPublic.PortString()
 		}
 		host := r.Host
 		if hn, _, err := net.SplitHostPort(host); err == nil {

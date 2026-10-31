@@ -15,6 +15,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/adopt"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // adoptSys is the machine the adopt step looks at (tests give it a fake).
@@ -141,7 +142,7 @@ func stepAdopt(s *setupRun, in json.RawMessage) (any, error) {
 		_ = os.Remove(s.pendingPath()) // what a fresh setup collected does not apply
 		return map[string]any{
 			"move":           rec,
-			"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
+			"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, ports.Web.PortString()),
 			"supervisor_url": supervisor.StateURL(cfg),
 		}, nil
 	case "undo":
