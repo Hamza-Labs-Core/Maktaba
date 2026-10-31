@@ -293,39 +293,147 @@ picking a number.
 
 ---
 
-## 8. PC sessions
+## 8. Session index (this Mac)
 
-The Windows PC has its own Claude sessions; their transcripts are on the PC, not here. To add
-them, a PC session reads this file on main, traces its own Maktaba sessions
-(`~/.claude/projects/*aktaba*/*.jsonl`) and appends entries below through a PR. Add only, one
-dated entry per decision or failure, real PR numbers only.
+Every Maktaba transcript on this Mac (`~/.claude/projects/*aktaba*/*.jsonl`, 190 folders, 697
+top-level transcripts plus 198 subagent ones), oldest first, traced on 2026-10-31. The ID is the
+first 8 characters of the transcript file name; the folder is the worktree under
+`.claude/worktrees/` ("main" = the main checkout). Decisions and failures from these are folded
+into §1–§7. The May 2026 work (project start, gap closure, [#1]–[#45]) ran before these
+transcripts begin; only git and the CHANGELOG record it.
+
+**Not listed one by one:** 642 automated security reviews of single changes ("Review this change
+for security vulnerabilities", 2026-10-16 → 10-31). Their findings went into the PRs they
+reviewed, for example [#109], [#137], [#328]. The 198 subagent transcripts were skimmed for
+failures; nothing in them is missing from the PRs and audit notes.
+
+| Date               | ID · folder                       | Topic                                                                                                                                  | Outcome                                            |
+| ------------------ | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| 2026-06-14         | 2cfad978 · main                   | Review four epic branches and merge in order                                                                                           | Merged and pushed to main                          |
+| 2026-06-14         | e24d1c34 · main                   | CI/CD for the Cloud Relay deploy                                                                                                       | `relay.yml` on `feat/relay-ci-cd`                  |
+| 2026-06-14         | 5809abe7 · main                   | Merge `feat/relay-ci-cd`                                                                                                               | Fast-forwarded main                                |
+| 2026-06-16         | c56306a8 · main                   | Audit: does CI build installable packages?                                                                                             | Report only                                        |
+| 2026-06-16         | 0542b5bf · main                   | CI packaging for the client apps                                                                                                       | `feat/client-packaging`                            |
+| 2026-06-16         | 625ca515 · main                   | CI packaging for the home server                                                                                                       | Branch pushed                                      |
+| 2026-06-17         | 4cd65216 · main                   | Merge both packaging branches                                                                                                          | main at `1def332`                                  |
+| 2026-06-17         | 3f498a8a · main                   | Epic 28 auto-update, spec and build                                                                                                    | `feat/auto-update`                                 |
+| 2026-06-18         | f72107a0 · main                   | Merge `feat/auto-update`                                                                                                               | Merged                                             |
+| 2026-06-18         | 48e4af64 · main                   | Epic 29 watch analytics                                                                                                                | `feat/analytics`                                   |
+| 2026-06-20         | 88512958 · main                   | Merge analytics plus two follow-ups                                                                                                    | Merged                                             |
+| 2026-06-20         | 220a9a86 · main                   | Merge `feat/analytics-followups`                                                                                                       | Merged                                             |
+| 2026-10-16         | 159c0553 · stupefied-blackwell    | Relay stream-delete race                                                                                                               | [#49]                                              |
+| 2026-10-16         | 0df6d103 · dazzling-jackson       | PR 46 mypy and CodeQL path-injection                                                                                                   | `acc0f94` on [#46]                                 |
+| 2026-10-16 → 10-31 | b743b7d4 · main                   | **The long working session** (11,366 messages, 16 compactions): NAS import, queues, transcription, cluster, TV, Mac app, updates, apps | Most PRs from [#46] to [#452]; the source of §1–§7 |
+| 2026-10-17         | 31fea266 · main                   | Chapters, topics and posters                                                                                                           | [#69] (`0689cd42`)                                 |
+| 2026-10-19         | 686204e0 · main                   | One design for the queue tiles                                                                                                         | [#110]                                             |
+| 2026-10-19         | f4fa9616 · main                   | Join a machine from a release                                                                                                          | [#70]                                              |
+| 2026-10-19         | c85ac965 · festive-rubin          | UI test cases become tests                                                                                                             | [#125]                                             |
+| 2026-10-19         | bc972219 · loving-babbage         | UI test cases for every page                                                                                                           | [#121]                                             |
+| 2026-10-19         | f506462b · wonderful-babbage      | Series-ends test in the unit budget                                                                                                    | [#72]                                              |
+| 2026-10-19         | 3b7b86b0 · main                   | Library ACL on collections                                                                                                             | [#62]                                              |
+| 2026-10-19         | 32155c41 · main                   | Streaming exits on SIGTERM                                                                                                             | [#122]                                             |
+| 2026-10-19         | 94a2eedf · main                   | Second-listen model from the share                                                                                                     | [#117], live                                       |
+| 2026-10-20         | 3209c448 · wonderful-babbage      | Epic 36 track A: server in the Mac app                                                                                                 | [#149], [#151], [#154], [#155]                     |
+| 2026-10-20         | 9d8cd5a5 · loving-babbage         | Epic 36 track B: venv and models                                                                                                       | [#150]                                             |
+| 2026-10-20         | ae7d8fb3 · trusting-dirac         | Maktaba.app carries the server                                                                                                         | [#152]                                             |
+| 2026-10-20         | 90ee705b · festive-rubin          | Epic 36 track C: login item, menu bar, setup                                                                                           | [#153]                                             |
+| 2026-10-20         | a42e7c51 · main                   | Channel plans pass verification                                                                                                        | [#146]                                             |
+| 2026-10-21         | 0e3476e1 · festive-rubin          | `migrate-from-dev` (36.9)                                                                                                              | [#158]                                             |
+| 2026-10-25         | 97939984 · happy-goldwasser       | Search index in its own worker, safe stop, throughput                                                                                  | [#290], [#296], [#300]                             |
+| 2026-10-25         | cdc7a582 · main                   | App icon                                                                                                                               | [#292]                                             |
+| 2026-10-25         | bde6d47f · main                   | Log the reason every operation fails                                                                                                   | [#291]                                             |
+| 2026-10-25         | 83883ea0 · main                   | A home has a name                                                                                                                      | [#317]                                             |
+| 2026-10-26         | 2a7e42e5 · cranky-banach          | Native Android Player and Remote                                                                                                       | [#321]                                             |
+| 2026-10-26         | 04beb6d6 · cool-elbakyan          | Maktaba Cloud accounts, Stripe test billing, service admin                                                                             | [#324]                                             |
+| 2026-10-26         | 8ed6fe72 · festive-diffie         | Apple TV app (blocked a while on test accounts)                                                                                        | [#325]                                             |
+| 2026-10-26         | 37d15153 · reverent-snyder        | Cloudflare TV end to end                                                                                                               | [#326]                                             |
+| 2026-10-26         | 66f668bd · gracious-austin        | Cloud relay and linked accounts                                                                                                        | [#327]                                             |
+| 2026-10-26         | 8193aee5 · main                   | Licensing end to end                                                                                                                   | [#334]                                             |
+| 2026-10-26         | 8fdb1558 · amazing-mendeleev      | Finish Apple Player iPad/Mac and Remote                                                                                                | [#335]                                             |
+| 2026-10-26         | 902d85fc · main                   | Permissions walkthrough                                                                                                                | [#336]                                             |
+| 2026-10-26         | 092f1a3a · competent-euler        | mDNS announces `<host>.local.`                                                                                                         | [#339]                                             |
+| 2026-10-26         | 9781c1aa · elastic-vaughan        | Android TV on the shared core                                                                                                          | [#342]                                             |
+| 2026-10-26         | e4b5eedf · main                   | Epic 45 libraries                                                                                                                      | [#345]                                             |
+| 2026-10-26         | 2f2efd80 · main                   | Usage data to Maktaba Cloud                                                                                                            | [#348]                                             |
+| 2026-10-27         | cfa09ec2 · main                   | Errors, logging and crashes audit                                                                                                      | [#378]–[#387]                                      |
+| 2026-10-27         | 27729aee · epic42-editions-tablet | Web editions, tablet and foldable layouts                                                                                              | [#367]                                             |
+| 2026-10-27         | c033af81 · epic42-tv-picker       | Home picker and code sign-in on TV                                                                                                     | [#369]                                             |
+| 2026-10-27         | 5a1ae995 · epic45-phase3          | Epic 45 phase 3                                                                                                                        | [#368] (with [#366])                               |
+| 2026-10-27         | 9a4a7cfe · main                   | Vertical video thumbnails                                                                                                              | [#374]                                             |
+| 2026-10-27         | 0427f3fc · main                   | Recently added first, enforced by the API                                                                                              | [#375]                                             |
+| 2026-10-27         | 8886cae6 · epic42-finish          | Finish Epic 42                                                                                                                         | [#372], [#377], [#388], [#390]                     |
+| 2026-10-28         | 75742ab6 · main                   | Epic 47 offline, MP4 and dedup                                                                                                         | [#412]–[#431]                                      |
+| 2026-10-31         | 3758cb4b · docs-claude-trail      | This file                                                                                                                              | [#453]                                             |
+
+---
+
+## 9. PC sessions
+
+The owner's Windows PC has its own Claude sessions. Their transcripts are on the PC and can't be
+reached from the Mac (no SSH), so **this section is to be filled from the PC.**
+
+**Append rules for a PC session** (so its PR never conflicts with the Mac's):
+
+1. Pull main and read this whole file first.
+2. Trace your own sessions (`%USERPROFILE%\.claude\projects\*aktaba*\*.jsonl`) oldest first,
+   with jq/grep in slices. Never load a file whole.
+3. Add **only inside this section**, at its end: one `###` heading per session, in date order:
+   `### YYYY-MM-DD · PC · <first 8 chars of the transcript id> · <topic>`. Under it, up to five
+   bullets: what was asked, what was decided and why, what failed and how it was fixed, PRs.
+4. Don't edit §1–§8 or anyone else's entry. If a PC entry changes a rule, decision or the live
+   state, say so in its bullets; a later Mac session folds it into the topic sections.
+5. Real PR numbers and shas only (`gh`, `git`). No secrets.
+6. Ship it as its own docs PR against main, with a CHANGELOG line under [Unreleased].
 
 _(none yet)_
 
 ---
 
-## 9. Session log
+## 10. Session log
 
 Append here: date, session, one to five lines on what changed. Newest last.
 
 - 2026-10-31 · docs-claude-trail: created this file, the `CLAUDE.md` rule and the memory
-  pointer.
+  pointer; traced all 697 Mac transcripts into §8.
 
+[#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
 [#41]: https://github.com/Hamza-Labs-Core/Maktaba/pull/41
+[#45]: https://github.com/Hamza-Labs-Core/Maktaba/pull/45
+[#46]: https://github.com/Hamza-Labs-Core/Maktaba/pull/46
 [#47]: https://github.com/Hamza-Labs-Core/Maktaba/pull/47
+[#49]: https://github.com/Hamza-Labs-Core/Maktaba/pull/49
 [#54]: https://github.com/Hamza-Labs-Core/Maktaba/pull/54
 [#56]: https://github.com/Hamza-Labs-Core/Maktaba/pull/56
 [#58]: https://github.com/Hamza-Labs-Core/Maktaba/pull/58
 [#61]: https://github.com/Hamza-Labs-Core/Maktaba/pull/61
+[#62]: https://github.com/Hamza-Labs-Core/Maktaba/pull/62
+[#69]: https://github.com/Hamza-Labs-Core/Maktaba/pull/69
+[#70]: https://github.com/Hamza-Labs-Core/Maktaba/pull/70
+[#72]: https://github.com/Hamza-Labs-Core/Maktaba/pull/72
 [#97]: https://github.com/Hamza-Labs-Core/Maktaba/pull/97
 [#104]: https://github.com/Hamza-Labs-Core/Maktaba/pull/104
 [#108]: https://github.com/Hamza-Labs-Core/Maktaba/pull/108
+[#109]: https://github.com/Hamza-Labs-Core/Maktaba/pull/109
+[#110]: https://github.com/Hamza-Labs-Core/Maktaba/pull/110
 [#113]: https://github.com/Hamza-Labs-Core/Maktaba/pull/113
+[#117]: https://github.com/Hamza-Labs-Core/Maktaba/pull/117
 [#119]: https://github.com/Hamza-Labs-Core/Maktaba/pull/119
+[#121]: https://github.com/Hamza-Labs-Core/Maktaba/pull/121
+[#122]: https://github.com/Hamza-Labs-Core/Maktaba/pull/122
+[#125]: https://github.com/Hamza-Labs-Core/Maktaba/pull/125
+[#137]: https://github.com/Hamza-Labs-Core/Maktaba/pull/137
 [#138]: https://github.com/Hamza-Labs-Core/Maktaba/pull/138
 [#139]: https://github.com/Hamza-Labs-Core/Maktaba/pull/139
+[#146]: https://github.com/Hamza-Labs-Core/Maktaba/pull/146
 [#148]: https://github.com/Hamza-Labs-Core/Maktaba/pull/148
+[#149]: https://github.com/Hamza-Labs-Core/Maktaba/pull/149
+[#150]: https://github.com/Hamza-Labs-Core/Maktaba/pull/150
+[#151]: https://github.com/Hamza-Labs-Core/Maktaba/pull/151
+[#152]: https://github.com/Hamza-Labs-Core/Maktaba/pull/152
+[#153]: https://github.com/Hamza-Labs-Core/Maktaba/pull/153
+[#154]: https://github.com/Hamza-Labs-Core/Maktaba/pull/154
+[#155]: https://github.com/Hamza-Labs-Core/Maktaba/pull/155
 [#158]: https://github.com/Hamza-Labs-Core/Maktaba/pull/158
 [#159]: https://github.com/Hamza-Labs-Core/Maktaba/pull/159
 [#165]: https://github.com/Hamza-Labs-Core/Maktaba/pull/165
@@ -348,7 +456,12 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#271]: https://github.com/Hamza-Labs-Core/Maktaba/pull/271
 [#287]: https://github.com/Hamza-Labs-Core/Maktaba/pull/287
 [#288]: https://github.com/Hamza-Labs-Core/Maktaba/pull/288
+[#290]: https://github.com/Hamza-Labs-Core/Maktaba/pull/290
+[#291]: https://github.com/Hamza-Labs-Core/Maktaba/pull/291
+[#292]: https://github.com/Hamza-Labs-Core/Maktaba/pull/292
 [#295]: https://github.com/Hamza-Labs-Core/Maktaba/pull/295
+[#296]: https://github.com/Hamza-Labs-Core/Maktaba/pull/296
+[#300]: https://github.com/Hamza-Labs-Core/Maktaba/pull/300
 [#304]: https://github.com/Hamza-Labs-Core/Maktaba/pull/304
 [#305]: https://github.com/Hamza-Labs-Core/Maktaba/pull/305
 [#306]: https://github.com/Hamza-Labs-Core/Maktaba/pull/306
@@ -356,18 +469,25 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#310]: https://github.com/Hamza-Labs-Core/Maktaba/pull/310
 [#313]: https://github.com/Hamza-Labs-Core/Maktaba/pull/313
 [#314]: https://github.com/Hamza-Labs-Core/Maktaba/pull/314
+[#317]: https://github.com/Hamza-Labs-Core/Maktaba/pull/317
 [#319]: https://github.com/Hamza-Labs-Core/Maktaba/pull/319
 [#321]: https://github.com/Hamza-Labs-Core/Maktaba/pull/321
+[#324]: https://github.com/Hamza-Labs-Core/Maktaba/pull/324
 [#325]: https://github.com/Hamza-Labs-Core/Maktaba/pull/325
+[#326]: https://github.com/Hamza-Labs-Core/Maktaba/pull/326
 [#327]: https://github.com/Hamza-Labs-Core/Maktaba/pull/327
 [#328]: https://github.com/Hamza-Labs-Core/Maktaba/pull/328
 [#329]: https://github.com/Hamza-Labs-Core/Maktaba/pull/329
 [#331]: https://github.com/Hamza-Labs-Core/Maktaba/pull/331
 [#334]: https://github.com/Hamza-Labs-Core/Maktaba/pull/334
+[#335]: https://github.com/Hamza-Labs-Core/Maktaba/pull/335
+[#336]: https://github.com/Hamza-Labs-Core/Maktaba/pull/336
+[#339]: https://github.com/Hamza-Labs-Core/Maktaba/pull/339
 [#340]: https://github.com/Hamza-Labs-Core/Maktaba/pull/340
 [#342]: https://github.com/Hamza-Labs-Core/Maktaba/pull/342
 [#343]: https://github.com/Hamza-Labs-Core/Maktaba/pull/343
 [#344]: https://github.com/Hamza-Labs-Core/Maktaba/pull/344
+[#345]: https://github.com/Hamza-Labs-Core/Maktaba/pull/345
 [#346]: https://github.com/Hamza-Labs-Core/Maktaba/pull/346
 [#348]: https://github.com/Hamza-Labs-Core/Maktaba/pull/348
 [#349]: https://github.com/Hamza-Labs-Core/Maktaba/pull/349
@@ -378,10 +498,20 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#358]: https://github.com/Hamza-Labs-Core/Maktaba/pull/358
 [#359]: https://github.com/Hamza-Labs-Core/Maktaba/pull/359
 [#364]: https://github.com/Hamza-Labs-Core/Maktaba/pull/364
+[#366]: https://github.com/Hamza-Labs-Core/Maktaba/pull/366
+[#367]: https://github.com/Hamza-Labs-Core/Maktaba/pull/367
+[#368]: https://github.com/Hamza-Labs-Core/Maktaba/pull/368
+[#369]: https://github.com/Hamza-Labs-Core/Maktaba/pull/369
+[#372]: https://github.com/Hamza-Labs-Core/Maktaba/pull/372
 [#373]: https://github.com/Hamza-Labs-Core/Maktaba/pull/373
+[#374]: https://github.com/Hamza-Labs-Core/Maktaba/pull/374
 [#375]: https://github.com/Hamza-Labs-Core/Maktaba/pull/375
+[#377]: https://github.com/Hamza-Labs-Core/Maktaba/pull/377
+[#378]: https://github.com/Hamza-Labs-Core/Maktaba/pull/378
+[#387]: https://github.com/Hamza-Labs-Core/Maktaba/pull/387
 [#388]: https://github.com/Hamza-Labs-Core/Maktaba/pull/388
 [#389]: https://github.com/Hamza-Labs-Core/Maktaba/pull/389
+[#390]: https://github.com/Hamza-Labs-Core/Maktaba/pull/390
 [#395]: https://github.com/Hamza-Labs-Core/Maktaba/pull/395
 [#397]: https://github.com/Hamza-Labs-Core/Maktaba/pull/397
 [#398]: https://github.com/Hamza-Labs-Core/Maktaba/pull/398
@@ -394,6 +524,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#425]: https://github.com/Hamza-Labs-Core/Maktaba/pull/425
 [#428]: https://github.com/Hamza-Labs-Core/Maktaba/pull/428
 [#429]: https://github.com/Hamza-Labs-Core/Maktaba/pull/429
+[#431]: https://github.com/Hamza-Labs-Core/Maktaba/pull/431
 [#433]: https://github.com/Hamza-Labs-Core/Maktaba/pull/433
 [#434]: https://github.com/Hamza-Labs-Core/Maktaba/pull/434
 [#435]: https://github.com/Hamza-Labs-Core/Maktaba/pull/435
@@ -410,3 +541,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#448]: https://github.com/Hamza-Labs-Core/Maktaba/pull/448
 [#451]: https://github.com/Hamza-Labs-Core/Maktaba/pull/451
 [#452]: https://github.com/Hamza-Labs-Core/Maktaba/pull/452
+[#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
