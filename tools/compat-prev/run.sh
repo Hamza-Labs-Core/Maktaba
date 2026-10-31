@@ -76,6 +76,26 @@ trap cleanup EXIT
 git -C "$ROOT" worktree add --detach --quiet "$WORK/prev" "$PREV"
 PREV_DIR="$WORK/prev"
 
+# The previous release's tests as they were fixed since (tools/compat-prev/testfixes/<tag>/
+# *.patch): a race a test of that release had, fixed on main after the tag, would fail this
+# check at random until the next release is tagged (2026-10-29: v0.3.42's
+# TestRowCacheInvalidationPostgres, fixed by 271f3962). Only tests: a patch that touches
+# anything but a _test.go file is refused, so the release's own code runs as it shipped.
+if [ -d "$ROOT/tools/compat-prev/testfixes/$PREV" ]; then
+  for p in "$ROOT/tools/compat-prev/testfixes/$PREV"/*.patch; do
+    [ -e "$p" ] || continue
+    if git -C "$PREV_DIR" apply --numstat "$p" | awk '{print $3}' | grep -vq '_test\.go$'; then
+      echo "compat-prev: $p touches more than tests: refused (the release's code runs as it shipped)" >&2
+      exit 2
+    fi
+    if ! git -C "$PREV_DIR" apply "$p"; then
+      echo "compat-prev: $p does not apply to $PREV" >&2
+      exit 2
+    fi
+    echo "compat-prev: $PREV's tests with the later fix $(basename "$p")"
+  done
+fi
+
 newest_slot() { # the newest Postgres migration slot of directory $1
   local s
   s=$(ls "$1" | grep -E '^[0-9]{4}_.*\.sql$' | grep -v '\.sqlite\.sql$' | cut -c1-4 | sort | tail -1)
