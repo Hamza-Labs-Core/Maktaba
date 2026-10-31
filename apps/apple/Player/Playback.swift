@@ -97,7 +97,7 @@ final class Playback {
         do {
             let s = try await client.openStream(video: video.id, startSec: Int(start))
             guard let url = s.playbackURL(home: client.home) else {
-                failure = HomeFailure(kind: .server, detail: "The home gave no address to play.")
+                failure = HomeFailure(kind: .server, detail: String(localized: "The home gave no address to play."))
                 return
             }
             let auth = try await client.playbackHeaders()
@@ -105,7 +105,7 @@ final class Playback {
             self.proxy = proxy
             try await proxy.start()
             guard let local = proxy.local(url) else {
-                failure = HomeFailure(kind: .server, detail: "Could not start playback on this device.")
+                failure = HomeFailure(kind: .server, detail: String(localized: "Could not start playback on this device."))
                 return
             }
             if let old = session, old != s.sessionID {
@@ -143,7 +143,7 @@ final class Playback {
             if failed, Date.now.timeIntervalSince(openedAt) < 30 {
                 p.pause()
                 player = nil
-                failure = p.currentItem?.error.map(HomeFailure.init) ?? HomeFailure(kind: .server, detail: "The video stopped playing.")
+                failure = p.currentItem?.error.map(HomeFailure.init) ?? HomeFailure(kind: .server, detail: String(localized: "The video stopped playing."))
                 return
             }
             if failed || Date.now >= renewAt {

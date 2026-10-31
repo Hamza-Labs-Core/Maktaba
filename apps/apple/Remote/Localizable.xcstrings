@@ -1,0 +1,1421 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ a minute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ في الدقيقة"
+          }
+        }
+      }
+    },
+    "%@ available" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار %@ متاح"
+          }
+        }
+      }
+    },
+    "%@ can watch with Maktaba Player. Maktaba Remote manages the home, and only its admins can use it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستطيع %@ المشاهدة بتطبيق Maktaba Player. يدير Maktaba Remote الجهاز الرئيسي، ولا يستخدمه إلا مسؤولوه."
+          }
+        }
+      }
+    },
+    "%@ channel" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قناة %@"
+          }
+        }
+      }
+    },
+    "%@ is blocked: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ محظور: %2$@"
+          }
+        }
+      }
+    },
+    "%lld blocked" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محظورة: %lld"
+          }
+        }
+      }
+    },
+    "%lld failed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل: %lld"
+          }
+        }
+      }
+    },
+    "%lld need attention" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحتاج إلى انتباه: %lld"
+          }
+        }
+      }
+    },
+    "%lld of %lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld من %2$lld"
+          }
+        }
+      }
+    },
+    "%lld restarts" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld restart"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld restarts"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مرات إعادة التشغيل: %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld running" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التشغيل: %lld"
+          }
+        }
+      }
+    },
+    "%lld waiting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار: %lld"
+          }
+        }
+      }
+    },
+    "123 456" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "123 456"
+          }
+        }
+      }
+    },
+    "A stepping stone: %@ cannot be installed from this version, so %@ comes first and the next window goes on from there." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إصدار وسيط: لا يمكن تثبيت %1$@ من هذا الإصدار، لذا يُثبَّت %2$@ أولًا وتكمل فترة الهدوء التالية من هناك."
+          }
+        }
+      }
+    },
+    "Account" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحساب"
+          }
+        }
+      }
+    },
+    "Address" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العنوان"
+          }
+        }
+      }
+    },
+    "And %lld more; the oldest are shown first." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "و%lld غيرها؛ تظهر الأقدم أولًا."
+          }
+        }
+      }
+    },
+    "Apply on the web" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طبّقه من صفحات الويب"
+          }
+        }
+      }
+    },
+    "Approve" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "موافقة"
+          }
+        }
+      }
+    },
+    "Approve %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموافقة على %@"
+          }
+        }
+      }
+    },
+    "Approve only a machine you are setting up: it will read the home's libraries and run its jobs." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توافق إلا على جهاز تُعدّه أنت: سيقرأ مكتبات الجهاز الرئيسي ويشغّل مهامه."
+          }
+        }
+      }
+    },
+    "Approve…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "موافقة…"
+          }
+        }
+      }
+    },
+    "Asking to join" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلبات الانضمام"
+          }
+        }
+      }
+    },
+    "Automatic updates" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التحديثات التلقائية"
+          }
+        }
+      }
+    },
+    "CPU" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المعالج"
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء"
+          }
+        }
+      }
+    },
+    "Choose a stage" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر مرحلة"
+          }
+        }
+      }
+    },
+    "Crash loop: it keeps exiting soon after it starts. The other processes keep running, and this one is retried slowly." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعطّل متكرر: تتوقف العملية بعد وقت قصير من تشغيلها. تستمر العمليات الأخرى في العمل، وتُعاد محاولة تشغيل هذه العملية ببطء."
+          }
+        }
+      }
+    },
+    "Done in 24 h" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُنجز خلال 24 ساعة"
+          }
+        }
+      }
+    },
+    "Ended" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الانتهاء"
+          }
+        }
+      }
+    },
+    "Every stage is paused. Running jobs finish; nothing new starts." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل المراحل متوقفة مؤقتًا. تكتمل المهام الجارية، ولا يبدأ شيء جديد."
+          }
+        }
+      }
+    },
+    "Failed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل"
+          }
+        }
+      }
+    },
+    "Failures" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإخفاقات"
+          }
+        }
+      }
+    },
+    "Fix in Settings" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أصلحه من الإعدادات"
+          }
+        }
+      }
+    },
+    "For the home's admins" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لمسؤولي الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "Health check failing (%lld in a row)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فحص السلامة يفشل (%lld مرات متتالية)"
+          }
+        }
+      }
+    },
+    "Held: it waits for your approval." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معلّق: ينتظر موافقتك."
+          }
+        }
+      }
+    },
+    "Home" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "It stops working for the home at once; its jobs go back to the queue. To use it again it must ask to join again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتوقف عن العمل للجهاز الرئيسي فورًا، وتعود مهامه إلى الطابور. ولاستخدامه مجددًا عليه أن يطلب الانضمام من جديد."
+          }
+        }
+      }
+    },
+    "Last checked" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر فحص"
+          }
+        }
+      }
+    },
+    "Last exit: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر خروج: %@"
+          }
+        }
+      }
+    },
+    "Last exit: %@, %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر خروج: %1$@، %2$@"
+          }
+        }
+      }
+    },
+    "Last update" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر تحديث"
+          }
+        }
+      }
+    },
+    "Last update: %@, %@ (%@)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر تحديث: %1$@، %2$@ (%3$@)"
+          }
+        }
+      }
+    },
+    "Let %@ go?" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء صلاحية %@؟"
+          }
+        }
+      }
+    },
+    "Libraries" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبات"
+          }
+        }
+      }
+    },
+    "Machines" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأجهزة"
+          }
+        }
+      }
+    },
+    "Machines in this update" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأجهزة في هذا التحديث"
+          }
+        }
+      }
+    },
+    "Machines may ask to join" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يمكن للأجهزة طلب الانضمام"
+          }
+        }
+      }
+    },
+    "Name" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاسم"
+          }
+        }
+      }
+    },
+    "Needs a worker" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاج إلى عامل"
+          }
+        }
+      }
+    },
+    "Needs attention" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما يحتاج إلى انتباه"
+          }
+        }
+      }
+    },
+    "Next" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي"
+          }
+        }
+      }
+    },
+    "No events recorded." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تُسجَّل أي أحداث."
+          }
+        }
+      }
+    },
+    "No failures" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا إخفاقات"
+          }
+        }
+      }
+    },
+    "No libraries yet. Add one in the home's web pages." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مكتبات بعد. أضف واحدة من صفحات الويب في الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "No machines. This home works alone." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا أجهزة. يعمل هذا الجهاز الرئيسي وحده."
+          }
+        }
+      }
+    },
+    "No successful update check for 14 days. Check the network or GitHub access." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح أي تحقق من التحديثات منذ 14 يومًا. تحقق من الشبكة أو الوصول إلى GitHub."
+          }
+        }
+      }
+    },
+    "Not available" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متاح"
+          }
+        }
+      }
+    },
+    "Nothing needs attention" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء يحتاج إلى انتباه"
+          }
+        }
+      }
+    },
+    "Offline" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متصل"
+          }
+        }
+      }
+    },
+    "Old enough on" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبلغ العمر المطلوب في"
+          }
+        }
+      }
+    },
+    "On %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "على %@"
+          }
+        }
+      }
+    },
+    "Online" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متصل"
+          }
+        }
+      }
+    },
+    "Open until %@. Each machine shows a six-digit code to approve it with." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مفتوح حتى %@. يعرض كل جهاز رمزًا من ستة أرقام للموافقة عليه."
+          }
+        }
+      }
+    },
+    "Pause" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Pause all" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف الكل مؤقتًا"
+          }
+        }
+      }
+    },
+    "Paused" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف مؤقتًا"
+          }
+        }
+      }
+    },
+    "Paused stages" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المراحل المتوقفة مؤقتًا"
+          }
+        }
+      }
+    },
+    "Paused, the stage's running jobs finish and nothing new starts." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عند الإيقاف المؤقت تكتمل مهام المرحلة الجارية ولا يبدأ شيء جديد."
+          }
+        }
+      }
+    },
+    "Processes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العمليات"
+          }
+        }
+      }
+    },
+    "Processing" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المعالجة"
+          }
+        }
+      }
+    },
+    "Queue" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الطابور"
+          }
+        }
+      }
+    },
+    "Rate" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المعدل"
+          }
+        }
+      }
+    },
+    "Recent events" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأحداث الأخيرة"
+          }
+        }
+      }
+    },
+    "Release" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار"
+          }
+        }
+      }
+    },
+    "Resume" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استئناف"
+          }
+        }
+      }
+    },
+    "Resume all" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استئناف الكل"
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة المحاولة"
+          }
+        }
+      }
+    },
+    "Retry all" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة محاولة الكل"
+          }
+        }
+      }
+    },
+    "Revoke" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء الصلاحية"
+          }
+        }
+      }
+    },
+    "Running" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التشغيل"
+          }
+        }
+      }
+    },
+    "Running now (%lld)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التشغيل الآن (%lld)"
+          }
+        }
+      }
+    },
+    "Running work" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العمل الجاري"
+          }
+        }
+      }
+    },
+    "Scan" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افحص"
+          }
+        }
+      }
+    },
+    "Scan started" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدأ الفحص"
+          }
+        }
+      }
+    },
+    "Sign out" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الخروج"
+          }
+        }
+      }
+    },
+    "Signed in as" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الدخول باسم"
+          }
+        }
+      }
+    },
+    "Started" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البدء"
+          }
+        }
+      }
+    },
+    "State" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحالة"
+          }
+        }
+      }
+    },
+    "Step" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخطوة"
+          }
+        }
+      }
+    },
+    "Steps" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخطوات"
+          }
+        }
+      }
+    },
+    "Supervisor not reachable" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراقب العمليات لا يجيب"
+          }
+        }
+      }
+    },
+    "Switch home" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبديل الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "TV change #%lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيير التلفاز رقم %lld"
+          }
+        }
+      }
+    },
+    "Target" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار المستهدف"
+          }
+        }
+      }
+    },
+    "The code %@ shows" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز الظاهر على %@"
+          }
+        }
+      }
+    },
+    "The home's supervisor isn't reachable, so its processes can't be shown. The home may not be running under maktaba-server." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراقب العمليات في الجهاز الرئيسي لا يجيب، لذا لا يمكن عرض عملياته. ربما لا يعمل الجهاز الرئيسي تحت maktaba-server."
+          }
+        }
+      }
+    },
+    "The last update check did not work." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح آخر تحقق من التحديثات."
+          }
+        }
+      }
+    },
+    "The machines update once the home has committed %@: they wait for the home to finish." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُحدَّث الأجهزة بعد أن يعتمد الجهاز الرئيسي %@: إنها تنتظر أن ينتهي."
+          }
+        }
+      }
+    },
+    "This home" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "Time left" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوقت المتبقي"
+          }
+        }
+      }
+    },
+    "To %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلى %@"
+          }
+        }
+      }
+    },
+    "Try again" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة المحاولة"
+          }
+        }
+      }
+    },
+    "Turn down" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض"
+          }
+        }
+      }
+    },
+    "Turn on, then run the installer on the new machine. It opens for an hour." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فعّله، ثم شغّل المثبّت على الجهاز الجديد. يبقى مفتوحًا ساعة."
+          }
+        }
+      }
+    },
+    "Turned down or let go" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المرفوضة أو الملغاة صلاحيتها"
+          }
+        }
+      }
+    },
+    "Up to date" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محدَّث"
+          }
+        }
+      }
+    },
+    "Update" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث"
+          }
+        }
+      }
+    },
+    "Update under way" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث جارٍ"
+          }
+        }
+      }
+    },
+    "Updates" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التحديثات"
+          }
+        }
+      }
+    },
+    "Updating to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ التحديث إلى %@"
+          }
+        }
+      }
+    },
+    "Waiting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار"
+          }
+        }
+      }
+    },
+    "Waiting for the home to finish" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار أن ينتهي الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "asks until %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يطلب حتى %@"
+          }
+        }
+      }
+    },
+    "attempt %lld of %lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المحاولة %1$lld من %2$lld"
+          }
+        }
+      }
+    },
+    "from %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من %@"
+          }
+        }
+      }
+    },
+    "kept across a restart" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بقي عبر إعادة التشغيل"
+          }
+        }
+      }
+    },
+    "let go" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُلغيت صلاحيته"
+          }
+        }
+      }
+    },
+    "next restart %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل التالية %@"
+          }
+        }
+      }
+    },
+    "offline" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متصل"
+          }
+        }
+      }
+    },
+    "online" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متصل"
+          }
+        }
+      }
+    },
+    "quiet window %@–%@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فترة الهدوء %1$@–%2$@"
+          }
+        }
+      }
+    },
+    "request expired" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت صلاحية الطلب"
+          }
+        }
+      }
+    },
+    "seen %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد %@"
+          }
+        }
+      }
+    },
+    "starting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبدأ"
+          }
+        }
+      }
+    },
+    "the machine" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز"
+          }
+        }
+      }
+    },
+    "the newest release" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أحدث إصدار"
+          }
+        }
+      }
+    },
+    "to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلى %@"
+          }
+        }
+      }
+    },
+    "turned down" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رُفض"
+          }
+        }
+      }
+    },
+    "up for %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل منذ %@"
+          }
+        }
+      }
+    },
+    "updates.home.autoOn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مفعَّلة"
+          }
+        }
+      }
+    },
+    "updates.home.autoPaused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paused"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقفة مؤقتًا"
+          }
+        }
+      }
+    },
+    "updates.home.version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل بالإصدار"
+          }
+        }
+      }
+    },
+    "updating to %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التحديث إلى %@"
+          }
+        }
+      }
+    },
+    "version unknown" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار غير معروف"
+          }
+        }
+      }
+    },
+    "wanted" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مطلوب"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

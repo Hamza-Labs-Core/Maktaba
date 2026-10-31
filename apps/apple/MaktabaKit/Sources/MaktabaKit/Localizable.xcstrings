@@ -1,0 +1,4834 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ has not installed in %lld windows: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُثبَّت %1$@ في %2$lld نوافذ: %3$@"
+          }
+        }
+      }
+    },
+    "%@ installs %@ at %@ (%@)." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُثبَّت %1$@ %2$@ عند %3$@ (%4$@)."
+          }
+        }
+      }
+    },
+    "%@ installs %@ between %@ and %@ (%@)." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُثبَّت %1$@ %2$@ بين %3$@ و%4$@ (%5$@)."
+          }
+        }
+      }
+    },
+    "%lld days" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld day"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld days"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "يوم واحد"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "يومين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld أيام"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld يومًا"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld يوم"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld hours" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld hour"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld hours"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ساعة واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "ساعتين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ساعات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ساعة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld ساعة"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld minutes" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minute"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld minutes"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دقيقة واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دقيقتين"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld دقائق"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld دقيقة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld دقيقة"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lldd %lldh" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld ي %2$lld س"
+          }
+        }
+      }
+    },
+    "%lldh %lldm" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$lld س %2$lld د"
+          }
+        }
+      }
+    },
+    "%lldm" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld د"
+          }
+        }
+      }
+    },
+    "%llds" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld ث"
+          }
+        }
+      }
+    },
+    "Awaiting review" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار المراجعة"
+          }
+        }
+      }
+    },
+    "Dark" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "داكن"
+          }
+        }
+      }
+    },
+    "Idle" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خامل"
+          }
+        }
+      }
+    },
+    "Installed. A later release's TV change replaced this one" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. حلّ محلّ هذا التغيير تغييرُ تلفاز لإصدار لاحق"
+          }
+        }
+      }
+    },
+    "Installed. TV held on %@: its check failed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. بقي التلفاز على %@: فشل فحصه"
+          }
+        }
+      }
+    },
+    "Installed. TV on %@: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. التلفاز على %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "Installed. The TV change failed again after its retry: see TV changes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. فشل تغيير التلفاز مرة أخرى بعد إعادة المحاولة: انظر تغييرات التلفاز"
+          }
+        }
+      }
+    },
+    "Installed. The TV change goes on by itself (it waits for an approval or a quiet window); the TV runs %@ until it is on the air" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. يمضي تغيير التلفاز وحده (ينتظر موافقة أو فترة هادئة)؛ ويبقى التلفاز على %@ حتى يُبَثّ"
+          }
+        }
+      }
+    },
+    "Installed. The TV change is checked again; the TV runs %@ until it passes" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. يُفحص تغيير التلفاز من جديد؛ ويبقى التلفاز على %@ حتى ينجح"
+          }
+        }
+      }
+    },
+    "Installed. The TV change passed on a retry: the TV runs %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. نجح تغيير التلفاز عند إعادة المحاولة: يعمل التلفاز بالإصدار %@"
+          }
+        }
+      }
+    },
+    "Installed. The TV change was dropped: the TV stayed on %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. أُسقط تغيير التلفاز: بقي التلفاز على %@"
+          }
+        }
+      }
+    },
+    "Installed. The TV was held on %@; its change is no longer there" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت التحديث. بقي التلفاز على %@؛ ولم يعد تغييره موجوداً"
+          }
+        }
+      }
+    },
+    "Light" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فاتح"
+          }
+        }
+      }
+    },
+    "No release can be installed from this version." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن تثبيت أي إصدار من هذا الإصدار."
+          }
+        }
+      }
+    },
+    "No worker" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا عامل"
+          }
+        }
+      }
+    },
+    "Not set up" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير مُعدّ"
+          }
+        }
+      }
+    },
+    "Nothing to install: up to date." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء للتثبيت: محدَّث."
+          }
+        }
+      }
+    },
+    "Off" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف"
+          }
+        }
+      }
+    },
+    "Paused" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف مؤقتًا"
+          }
+        }
+      }
+    },
+    "Paused (all)" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف مؤقتًا (الكل)"
+          }
+        }
+      }
+    },
+    "Reaches the home's database." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يصل إلى قاعدة بيانات الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "Retrying" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُعاد المحاولة"
+          }
+        }
+      }
+    },
+    "Running" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التشغيل"
+          }
+        }
+      }
+    },
+    "Stopped at: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقّف عند: %@"
+          }
+        }
+      }
+    },
+    "System" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "النظام"
+          }
+        }
+      }
+    },
+    "That is not the code the machine shows." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا ليس الرمز الذي يعرضه الجهاز."
+          }
+        }
+      }
+    },
+    "That is not the code the machine shows. %lld tries left." : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "That is not the code the machine shows. %lld try left."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "That is not the code the machine shows. %lld tries left."
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "هذا ليس الرمز الذي يعرضه الجهاز. المحاولات المتبقية: %lld."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "The TV stays on %@: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبقى التلفاز على %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "The TV stays on %@: its check failed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبقى التلفاز على %@: فشل فحصه"
+          }
+        }
+      }
+    },
+    "The home gave it new access; it is following it." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منحه الجهاز الرئيسي وصولاً جديداً، وهو يتّبعه."
+          }
+        }
+      }
+    },
+    "The new server, web app and pipeline are installed. The TV keeps running the streaming software of %@ until its change passes its check." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت الخادم وتطبيق الويب وخط المعالجة الجديدة. ويبقى التلفاز على برنامج البث في %@ حتى ينجح فحص تغييره."
+          }
+        }
+      }
+    },
+    "The release waits for your approval." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ينتظر الإصدار موافقتك."
+          }
+        }
+      }
+    },
+    "The request has expired. Ask again from the machine." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت صلاحية هذا الطلب. أعد الطلب من الجهاز."
+          }
+        }
+      }
+    },
+    "Theme" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "السمة"
+          }
+        }
+      }
+    },
+    "This machine can't reach the home's database: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الجهاز الرئيسي: %@"
+          }
+        }
+      }
+    },
+    "Too many wrong codes: the request was turned down. Ask again from the machine." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رموز خاطئة كثيرة: رُفض الطلب. أعد الطلب من الجهاز."
+          }
+        }
+      }
+    },
+    "Updating to %@ now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يجري التحديث إلى %@ الآن."
+          }
+        }
+      }
+    },
+    "Version %@ is available: %@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار %1$@ متاح: %2$@."
+          }
+        }
+      }
+    },
+    "Version %@ waits for your approval (Live TV -> Changes)." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار %@ ينتظر موافقتك (البث المباشر -> التغييرات)."
+          }
+        }
+      }
+    },
+    "Waiting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار"
+          }
+        }
+      }
+    },
+    "an update run" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عبر تشغيل تحديث"
+          }
+        }
+      }
+    },
+    "by the desktop app" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عبر تطبيق سطح المكتب"
+          }
+        }
+      }
+    },
+    "check %@ failed" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل الفحص %@"
+          }
+        }
+      }
+    },
+    "check %@ failed: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل الفحص %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "could not start" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تشغيله"
+          }
+        }
+      }
+    },
+    "crash loop: retried slowly" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعطّل متكرر: تُعاد المحاولة ببطء"
+          }
+        }
+      }
+    },
+    "exited on its own" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خرج من تلقاء نفسه"
+          }
+        }
+      }
+    },
+    "exited with code %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف برمز الخروج %@"
+          }
+        }
+      }
+    },
+    "health.processes.role.api" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "API"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الواجهة البرمجية"
+          }
+        }
+      }
+    },
+    "health.processes.role.pipeline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Processing pipeline"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خط المعالجة"
+          }
+        }
+      }
+    },
+    "health.processes.role.streaming" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live TV and streaming"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث والتلفاز المباشر"
+          }
+        }
+      }
+    },
+    "health.processes.role.tv-slot" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TV slot"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "منفذ البث التلفزيوني"
+          }
+        }
+      }
+    },
+    "health.processes.state.backoff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restarting"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُعاد إعادة تشغيله"
+          }
+        }
+      }
+    },
+    "health.processes.state.exited" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف"
+          }
+        }
+      }
+    },
+    "health.processes.state.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متعطّل"
+          }
+        }
+      }
+    },
+    "health.processes.state.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Running"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل"
+          }
+        }
+      }
+    },
+    "health.processes.state.starting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التشغيل"
+          }
+        }
+      }
+    },
+    "health.processes.state.stopped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopped"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف"
+          }
+        }
+      }
+    },
+    "health.processes.state.unhealthy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not responding"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستجيب"
+          }
+        }
+      }
+    },
+    "in %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بعد %@"
+          }
+        }
+      }
+    },
+    "in %@ %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بعد %1$@ و%2$@"
+          }
+        }
+      }
+    },
+    "in less than a minute" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بعد أقل من دقيقة"
+          }
+        }
+      }
+    },
+    "installed by hand" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبِّت يدويًا"
+          }
+        }
+      }
+    },
+    "killed by %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُنهي بالإشارة %@"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.auth_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home's database refused its password"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفضت قاعدة بيانات الجهاز الرئيسي كلمة مروره"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.cert_mismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its certificate is for another database role than its login's"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شهادته لدور قاعدة بيانات غير الدور الذي يسجّل الدخول به"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.no_database" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the library database is missing on the home"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قاعدة بيانات المكتبة غير موجودة على الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.no_hba" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home's database does not let this machine in (no rule for its address)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تسمح قاعدة بيانات الجهاز الرئيسي لهذا الجهاز بالدخول (لا قاعدة لعنوانه)"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.other" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "an error the details say"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خطأ تذكره التفاصيل"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home's database refused the connection"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفضت قاعدة بيانات الجهاز الرئيسي الاتصال"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.tls" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the secure connection to the home's database failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل الاتصال الآمن بقاعدة بيانات الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "machines.homeDb.code.unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home's database could not be reached over the network"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الوصول إلى قاعدة بيانات الجهاز الرئيسي عبر الشبكة"
+          }
+        }
+      }
+    },
+    "now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الآن"
+          }
+        }
+      }
+    },
+    "restarted" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُعيد تشغيله"
+          }
+        }
+      }
+    },
+    "restarting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُعاد تشغيله"
+          }
+        }
+      }
+    },
+    "running for %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل منذ %@"
+          }
+        }
+      }
+    },
+    "started" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدأ"
+          }
+        }
+      }
+    },
+    "stopped by the server's shutdown" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أوقفه إيقاف الخادم"
+          }
+        }
+      }
+    },
+    "stopped on request" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُوقف بطلب"
+          }
+        }
+      }
+    },
+    "stopped responding" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف عن الاستجابة"
+          }
+        }
+      }
+    },
+    "stopped responding and was restarted" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف عن الاستجابة فأُعيد تشغيله"
+          }
+        }
+      }
+    },
+    "the previous version" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار السابق"
+          }
+        }
+      }
+    },
+    "today" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اليوم"
+          }
+        }
+      }
+    },
+    "tomorrow" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غدًا"
+          }
+        }
+      }
+    },
+    "tvchanges.slots.color.amber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "amber"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كهرماني"
+          }
+        }
+      }
+    },
+    "tvchanges.slots.color.blue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "blue"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أزرق"
+          }
+        }
+      }
+    },
+    "tvchanges.slots.color.green" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "green"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أخضر"
+          }
+        }
+      }
+    },
+    "updates.blocked.reason.attempts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it failed in three windows"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل في ثلاث نوافذ"
+          }
+        }
+      }
+    },
+    "updates.blocked.reason.failed_tv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the TV could not move to it"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يستطع التلفاز الانتقال إليه"
+          }
+        }
+      }
+    },
+    "updates.blocked.reason.older_build" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "an older build than the one running here: it is passed by"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إصدار بُني قبل الإصدار الذي يعمل هنا: يتم تجاوزه"
+          }
+        }
+      }
+    },
+    "updates.blocked.reason.rehearsal" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its migrations failed on a copy of the database"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشلت ترحيلاته على نسخة من قاعدة البيانات"
+          }
+        }
+      }
+    },
+    "updates.blocked.reason.rolled_back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "it was rolled back on the home"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرجع على المنزل"
+          }
+        }
+      }
+    },
+    "updates.blocked.reason.verify" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its signature or identity was refused"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رُفض توقيعه أو هويته"
+          }
+        }
+      }
+    },
+    "updates.code.admin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An admin rolled the update back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تراجع مسؤول عن التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.admin_rollback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An admin rolled it back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أرجعه مشرف"
+          }
+        }
+      }
+    },
+    "updates.code.app_did_not_install" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app did not install the update in time"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يثبّت تطبيق سطح المكتب التحديث في الوقت المحدد"
+          }
+        }
+      }
+    },
+    "updates.code.app_install_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app could not install the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر على تطبيق سطح المكتب تثبيت التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.app_management" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS does not let Maktaba replace itself: it needs App Management permission, or the app's files are locked"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يسمح macOS لـ Maktaba باستبدال نفسه: يحتاج إذن «إدارة التطبيقات»، أو ملفات التطبيق مقفلة"
+          }
+        }
+      }
+    },
+    "updates.code.app_not_started" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app could not be started"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تشغيل تطبيق سطح المكتب"
+          }
+        }
+      }
+    },
+    "updates.code.app_order_gone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app's install order was withdrawn or replaced"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سُحب طلب التثبيت من تطبيق سطح المكتب أو استُبدل"
+          }
+        }
+      }
+    },
+    "updates.code.app_request_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app could not be reached"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الوصول إلى تطبيق سطح المكتب"
+          }
+        }
+      }
+    },
+    "updates.code.apply_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It could not be installed; the previous release runs"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تثبيته؛ يعمل الإصدار السابق"
+          }
+        }
+      }
+    },
+    "updates.code.apply_refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine refused to install it"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض الجهاز تثبيته"
+          }
+        }
+      }
+    },
+    "updates.code.asset_not_found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update's download was not found"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُعثر على ملف تنزيل التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.bad_job" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update order was not valid"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلب التحديث غير صالح"
+          }
+        }
+      }
+    },
+    "updates.code.boot_loop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release kept stopping as it started: the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ظلّ الإصدار الجديد يتوقف عند بدئه: يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.cancelled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An admin cancelled it"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ألغاه مشرف"
+          }
+        }
+      }
+    },
+    "updates.code.check_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app could not check for the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر على التطبيق البحث عن التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.checksums_changed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release's checksums changed after it was verified"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيّرت المجاميع الاختبارية للإصدار بعد التحقق منه"
+          }
+        }
+      }
+    },
+    "updates.code.convert_refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine's worker refused to become a full node (the detail says why)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض عامل الجهاز أن يصير جهازًا كاملًا (التفاصيل تذكر السبب)"
+          }
+        }
+      }
+    },
+    "updates.code.convert_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine did not come back as a full node on the release in time (2 hours)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يعد الجهاز جهازًا كاملًا على الإصدار في الوقت المحدد (ساعتان)"
+          }
+        }
+      }
+    },
+    "updates.code.database" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database could not be prepared for the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تجهيز قاعدة بيانات المكتبة للتحديث"
+          }
+        }
+      }
+    },
+    "updates.code.db_ahead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database was changed by a newer Maktaba than this one"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غيّرت قاعدةَ بيانات المكتبة نسخةٌ أحدث من مكتبة من هذه"
+          }
+        }
+      }
+    },
+    "updates.code.db_dump_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database could not be saved before the update, so nothing was changed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر حفظ قاعدة بيانات المكتبة قبل التحديث، فلم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.code.db_migrate_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database could not be brought up to date for the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحديث قاعدة بيانات المكتبة للإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.code.db_refused_older" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This release is older than the library database: install the newer release again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الإصدار أقدم من قاعدة بيانات المكتبة: ثبّت الإصدار الأحدث مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.db_restore_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database could not be put back as it was before the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.did_not_start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release did not start"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يبدأ الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.code.did_not_stay_up" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release did not stay running"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يستمر الإصدار الجديد في العمل"
+          }
+        }
+      }
+    },
+    "updates.code.disk_full" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There is no room on the disk to download or unpack the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مساحة على القرص لتنزيل التحديث أو فكّه"
+          }
+        }
+      }
+    },
+    "updates.code.disk_space" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not enough free disk space"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مساحة كافية على القرص"
+          }
+        }
+      }
+    },
+    "updates.code.download_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release could not be downloaded"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تنزيل الإصدار"
+          }
+        }
+      }
+    },
+    "updates.code.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.failed_prepare" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine could not get the release ready (its download, check or unpacking failed)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يستطع الجهاز تجهيز الإصدار (فشل تنزيله أو فحصه أو فكّه)"
+          }
+        }
+      }
+    },
+    "updates.code.failed_tv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The TV could not move to the new release (its swap failed, or it failed on the air after it switched): the previous release runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر نقل التلفاز إلى الإصدار الجديد (فشل تبديله، أو تعطّل على الهواء بعد انتقاله): عاد الإصدار السابق للعمل"
+          }
+        }
+      }
+    },
+    "updates.code.feed_invalid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release's update feed could not be read"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت قراءة مصدر تحديثات الإصدار"
+          }
+        }
+      }
+    },
+    "updates.code.feed_not_found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release's update feed was not found"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُعثر على مصدر تحديثات الإصدار"
+          }
+        }
+      }
+    },
+    "updates.code.held" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Held: a machine on the same platform failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معلّق: فشل جهاز على المنصّة نفسها"
+          }
+        }
+      }
+    },
+    "updates.code.home_not_prepared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The home was not ready to install it"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يكن الجهاز الرئيسي جاهزاً لتثبيته"
+          }
+        }
+      }
+    },
+    "updates.code.home_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The home took too long to update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استغرق الجهاز الرئيسي وقتاً طويلاً في التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.install_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release could not be installed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تثبيت الإصدار"
+          }
+        }
+      }
+    },
+    "updates.code.installer_exit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The system's package installer failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل مثبِّت الحزم في النظام"
+          }
+        }
+      }
+    },
+    "updates.code.installer_not_finished" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Windows installer did not finish after the app closed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يكتمل مثبّت Windows بعد إغلاق التطبيق"
+          }
+        }
+      }
+    },
+    "updates.code.interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update was interrupted; the previous release runs"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقطع التحديث؛ يعمل الإصدار السابق"
+          }
+        }
+      }
+    },
+    "updates.code.journal_lost" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The home lost track of this update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فقد الجهاز الرئيسي أثر هذا التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.keep_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A copy of the running release could not be kept"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الاحتفاظ بنسخة من الإصدار العامل"
+          }
+        }
+      }
+    },
+    "updates.code.launcher_boot_loop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release kept stopping as it started: the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ظلّ الإصدار الجديد يتوقف عند بدئه: يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.launcher_pending_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release did not confirm it was running in time: the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يؤكد الإصدار الجديد أنه يعمل في الوقت المحدد: يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.launcher_protocol" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release needs a newer launcher than this machine has"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاج الإصدار إلى مشغّل أحدث من الذي على هذا الجهاز"
+          }
+        }
+      }
+    },
+    "updates.code.launcher_refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The launcher refused the new release (its files did not check out): the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض المشغّل الإصدار الجديد (لم تجتز ملفاته الفحص): يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.local_build" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This app was built locally and can't update itself: install the release by hand once"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بُني هذا التطبيق محلياً ولا يستطيع تحديث نفسه: ثبّت الإصدار يدوياً مرة واحدة"
+          }
+        }
+      }
+    },
+    "updates.code.login_item_unsigned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS would not start the server's login item: this copy of Maktaba is not code-signed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض macOS تشغيل عنصر تسجيل الدخول الخاص بالخادم: هذه النسخة من مكتبة غير موقّعة برمجياً"
+          }
+        }
+      }
+    },
+    "updates.code.needs_admin" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app cannot be replaced without an administrator's password: move it to a folder this user can change, or have an administrator install the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن استبدال تطبيق سطح المكتب دون كلمة مرور المسؤول: انقله إلى مجلد يستطيع هذا المستخدم تغييره، أو اطلب من المسؤول تثبيت التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.needs_person" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This machine can't update itself as it is installed: it needs a person"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع هذا الجهاز تحديث نفسه كما هو مثبّت: يحتاج إلى شخص"
+          }
+        }
+      }
+    },
+    "updates.code.no_app" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app is not where it was installed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تطبيق سطح المكتب ليس حيث ثُبّت"
+          }
+        }
+      }
+    },
+    "updates.code.no_app_update" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release has no desktop app update for this machine"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يتضمن الإصدار تحديثاً لتطبيق سطح المكتب لهذا الجهاز"
+          }
+        }
+      }
+    },
+    "updates.code.no_network" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update could not be reached: this machine has no network connection, or the address could not be found"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الوصول إلى التحديث: لا يوجد اتصال بالشبكة على هذا الجهاز، أو تعذّر العثور على العنوان"
+          }
+        }
+      }
+    },
+    "updates.code.no_previous" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "There is no previous release to go back to"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد إصدار سابق للرجوع إليه"
+          }
+        }
+      }
+    },
+    "updates.code.no_python" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Python 3.12 for the pipeline on this machine: install one, or name one in MAKTABA_PIPELINE_PYTHON"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد Python 3.12 لخط المعالجة على هذا الجهاز: ثبّت واحداً، أو حدّده في MAKTABA_PIPELINE_PYTHON"
+          }
+        }
+      }
+    },
+    "updates.code.no_release" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release could not be found"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر العثور على الإصدار"
+          }
+        }
+      }
+    },
+    "updates.code.no_runtime" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This install has no current runtime"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد بيئة تشغيل حالية لهذا التثبيت"
+          }
+        }
+      }
+    },
+    "updates.code.no_trust_root" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This build cannot verify releases"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا تستطيع هذه النسخة التحقق من الإصدارات"
+          }
+        }
+      }
+    },
+    "updates.code.node_health_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine did not come back healthy in time"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يَعُد الجهاز سليماً في الوقت المحدد"
+          }
+        }
+      }
+    },
+    "updates.code.not_self_managed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This install cannot update itself yet"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع هذا التثبيت تحديث نفسه بعد"
+          }
+        }
+      }
+    },
+    "updates.code.not_writable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The install folder cannot be written to"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتعذّر الكتابة في مجلد التثبيت"
+          }
+        }
+      }
+    },
+    "updates.code.old_launcher" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Its launcher is older than automatic updates: update it once by hand"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشغّله أقدم من التحديثات التلقائية: حدّثه يدوياً مرة واحدة"
+          }
+        }
+      }
+    },
+    "updates.code.older_build" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "an older build than the one running here (a release made before it, though numbered higher): passed by, nothing changed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إصدار بُني قبل الإصدار الذي يعمل هنا (وإن كان رقمه أعلى): تم تجاوزه، ولم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.code.orchestrator_unavailable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This server does not install updates by itself"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يثبّت هذا الخادم التحديثات بنفسه"
+          }
+        }
+      }
+    },
+    "updates.code.outside_window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The quiet window ended before it could start"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت النافذة الهادئة قبل أن يبدأ"
+          }
+        }
+      }
+    },
+    "updates.code.payload_invalid" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The downloaded release is damaged"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار المنزَّل تالف"
+          }
+        }
+      }
+    },
+    "updates.code.pending_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release did not confirm it was running in time: the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يؤكد الإصدار الجديد أنه يعمل في الوقت المحدد: يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.pg_major_change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the new release bundles another major version of PostgreSQL, and this machine's library database cannot move to it by itself: nothing was changed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحمل الإصدار الجديد إصدارًا رئيسيًا آخر من PostgreSQL، ولا تستطيع قاعدة بيانات المكتبة على هذا الجهاز الانتقال إليه وحدها: لم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.code.prepare_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It could not be prepared; nothing changed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحضيره؛ لم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.code.prepare_refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine refused to prepare it"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض الجهاز تحضيره"
+          }
+        }
+      }
+    },
+    "updates.code.prepare_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The machine took too long to prepare it"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استغرق الجهاز وقتاً طويلاً في تحضيره"
+          }
+        }
+      }
+    },
+    "updates.code.previous_app_not_restored" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update failed and the app could not be put back in its folder"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل التحديث وتعذّرت إعادة التطبيق إلى مجلده"
+          }
+        }
+      }
+    },
+    "updates.code.python_store_stub" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The only Python on this machine is the Microsoft Store's alias, which runs no Python"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بايثون الوحيد على هذا الجهاز هو اختصار متجر Microsoft، وهو لا يشغّل بايثون"
+          }
+        }
+      }
+    },
+    "updates.code.quarantined" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS still marks Maktaba as downloaded from the internet and unchecked: open it once from Applications (Control-click, then Open) and try again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما زال macOS يعلّم مكتبة بأنها نُزِّلت من الإنترنت ولم تُفحص: افتحها مرة من مجلد التطبيقات (انقر مع Control ثم فتح) وحاول مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The home refused the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رفض الجهاز الرئيسي التحديث"
+          }
+        }
+      }
+    },
+    "updates.code.rehearsal_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The database changes failed when rehearsed on a copy; nothing changed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشلت تغييرات قاعدة البيانات عند تجربتها على نسخة؛ لم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.code.relaunch_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The app did not come back on the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يعد التطبيق للعمل على الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.code.release_incomplete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release lacks a file this machine needs"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ينقص الإصدارَ ملفٌّ يحتاجه هذا الجهاز"
+          }
+        }
+      }
+    },
+    "updates.code.replaced_by_newer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A newer release was installed on this machine meanwhile"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ثُبّت إصدار أحدث على هذا الجهاز في أثناء ذلك"
+          }
+        }
+      }
+    },
+    "updates.code.restarts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release restarted too often: the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُعيد تشغيل الإصدار الجديد مرات كثيرة: يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.rollback_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It could not go back to the previous release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الرجوع إلى الإصدار السابق"
+          }
+        }
+      }
+    },
+    "updates.code.rollback_loop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Going back to the previous release did not take"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح الرجوع إلى الإصدار السابق"
+          }
+        }
+      }
+    },
+    "updates.code.rolled_back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release did not hold: the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يصمد الإصدار الجديد: يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.server_stop_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server could not be stopped for the install"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر إيقاف الخادم من أجل التثبيت"
+          }
+        }
+      }
+    },
+    "updates.code.signature_mismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The download's signature does not match this app's key, so it was not installed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقيع الملف المنزَّل لا يطابق مفتاح هذا التطبيق، فلم يُثبَّت"
+          }
+        }
+      }
+    },
+    "updates.code.smoke_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release failed its test run"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل الإصدار الجديد في تشغيله التجريبي"
+          }
+        }
+      }
+    },
+    "updates.code.smoke_missing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release's program is missing"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "برنامج الإصدار الجديد مفقود"
+          }
+        }
+      }
+    },
+    "updates.code.smoke_version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release reports another version"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُبلغ الإصدار الجديد عن إصدار آخر"
+          }
+        }
+      }
+    },
+    "updates.code.start_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release did not start (the detail says why): the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يبدأ الإصدار الجديد (التفاصيل تذكر السبب): يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.start_interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release's start never finished: the server or the machine stopped, or the launcher stopped it and went back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يكتمل بدء الإصدار الجديد: توقّف الخادم أو الجهاز، أو أوقفه المشغّل وعاد إلى السابق"
+          }
+        }
+      }
+    },
+    "updates.code.start_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release took too long to start (its database step or its Python environment did not finish in time): the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استغرق بدء الإصدار الجديد وقتاً أطول من اللازم (لم تنتهِ خطوة قاعدة البيانات أو بيئة Python في الوقت المحدد): يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.superseded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A newer release took its place"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حلّ محلّه إصدار أحدث"
+          }
+        }
+      }
+    },
+    "updates.code.switch_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The switch to the new release failed; the previous release runs"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل التبديل إلى الإصدار الجديد؛ يعمل الإصدار السابق"
+          }
+        }
+      }
+    },
+    "updates.code.switchover" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A switch of the home began while this update waited for Maktaba to download it: its orders were withdrawn, and the new home orders them again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدأ نقل الجهاز الرئيسي بينما كان هذا التحديث ينتظر أن تُنزّله مكتبة: سُحبت طلباته، ويطلبها الجهاز الرئيسي الجديد من جديد"
+          }
+        }
+      }
+    },
+    "updates.code.switchover_open" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A change of home is under way"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغيير الجهاز الرئيسي جارٍ"
+          }
+        }
+      }
+    },
+    "updates.code.translocated" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "macOS runs this copy of Maktaba from a temporary read-only place (it was opened from Downloads or the disk image): move Maktaba to Applications and open it from there"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يشغّل macOS هذه النسخة من مكتبة من مكان مؤقت للقراءة فقط (فُتحت من التنزيلات أو من صورة القرص): انقل مكتبة إلى مجلد التطبيقات وافتحها من هناك"
+          }
+        }
+      }
+    },
+    "updates.code.trust_root" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The keys to verify releases could not be read"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت قراءة مفاتيح التحقق من الإصدارات"
+          }
+        }
+      }
+    },
+    "updates.code.turned_prerelease" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release became a pre-release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صار الإصدار إصداراً تجريبياً"
+          }
+        }
+      }
+    },
+    "updates.code.tv_busy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Someone watched TV until the quiet window ended"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ظلّ أحدهم يشاهد التلفاز حتى انتهت النافذة الهادئة"
+          }
+        }
+      }
+    },
+    "updates.code.tv_change_cancelled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An admin cancelled the TV change of this update: the previous release runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ألغى أحد المشرفين تغيير التلفاز في هذا التحديث: عاد الإصدار السابق للعمل"
+          }
+        }
+      }
+    },
+    "updates.code.tv_change_pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The TV change waited behind another change awaiting approval until the quiet window ended"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتظر تغيير التلفاز خلف تغيير آخر ينتظر الموافقة حتى انتهت النافذة الهادئة"
+          }
+        }
+      }
+    },
+    "updates.code.tv_held" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The TV stayed on the previous version: its check failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بقي التلفاز على الإصدار السابق: فشل فحصه"
+          }
+        }
+      }
+    },
+    "updates.code.tv_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The TV did not move to the new release in time: the previous release runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينتقل التلفاز إلى الإصدار الجديد في الوقت المحدد: عاد الإصدار السابق للعمل"
+          }
+        }
+      }
+    },
+    "updates.code.venv_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pipeline's Python environment could not be built"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر بناء بيئة Python الخاصة بخط المعالجة"
+          }
+        }
+      }
+    },
+    "updates.code.venv_interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Building the pipeline's Python environment was cut short: it goes on at the next start"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انقطع بناء بيئة Python لخط المعالجة: يُستكمل عند التشغيل التالي"
+          }
+        }
+      }
+    },
+    "updates.code.venv_network" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The pipeline's Python packages could not be downloaded: this machine cannot reach PyPI"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تنزيل حزم Python الخاصة بخط المعالجة: لا يصل هذا الجهاز إلى PyPI"
+          }
+        }
+      }
+    },
+    "updates.code.venv_python_unsupported" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This machine's Python is not one the release's pipeline packages are made for: install the Python the detail names, or name one in MAKTABA_PIPELINE_PYTHON"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إصدار Python على هذا الجهاز ليس مما صُنعت له حزم خط المعالجة في هذا الإصدار: ثبّت إصدار Python المذكور في التفاصيل، أو حدّد واحداً في MAKTABA_PIPELINE_PYTHON"
+          }
+        }
+      }
+    },
+    "updates.code.verify_checksum" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A file of the release does not match its checksum"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أحد ملفات الإصدار لا يطابق مجموعه الاختباري"
+          }
+        }
+      }
+    },
+    "updates.code.verify_downgrade" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release is older than the one installed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار أقدم من المثبَّت"
+          }
+        }
+      }
+    },
+    "updates.code.verify_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release could not be verified"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر التحقق من الإصدار"
+          }
+        }
+      }
+    },
+    "updates.code.verify_identity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release was signed by someone other than Maktaba's builds"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "وقّع الإصدارَ طرفٌ غير نظام بناء مكتبة"
+          }
+        }
+      }
+    },
+    "updates.code.verify_manifest" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release's manifest is not valid"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بيان الإصدار غير صالح"
+          }
+        }
+      }
+    },
+    "updates.code.verify_replay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An old signed release was offered as a new one"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قُدّم إصدار موقّع قديم على أنه جديد"
+          }
+        }
+      }
+    },
+    "updates.code.verify_signature" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release's signature is not valid"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقيع الإصدار غير صالح"
+          }
+        }
+      }
+    },
+    "updates.code.verify_transparency_log" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release's signature is not in the public transparency log"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقيع الإصدار غير مسجّل في سجل الشفافية العام"
+          }
+        }
+      }
+    },
+    "updates.code.verify_trust_root_expired" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This build's keys to verify releases have expired: update Maktaba once by hand"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت صلاحية مفاتيح التحقق في هذه النسخة: حدّث مكتبة يدوياً مرة واحدة"
+          }
+        }
+      }
+    },
+    "updates.code.verify_unhashed_dependencies" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release has dependencies without checksums"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الإصدار تبعيات بلا مجاميع اختبارية"
+          }
+        }
+      }
+    },
+    "updates.code.version_mismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The downloaded release is not the version asked for"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار المنزَّل ليس الإصدار المطلوب"
+          }
+        }
+      }
+    },
+    "updates.code.watch_timeout" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new release never settled (neither healthy nor failing for long enough): the previous one runs again"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يستقر الإصدار الجديد (لم يبقَ سليماً ولا متعطلاً مدة كافية): يعمل السابق مجدداً"
+          }
+        }
+      }
+    },
+    "updates.code.window_over" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The quiet window ended before its turn"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت النافذة الهادئة قبل أن يحين دوره"
+          }
+        }
+      }
+    },
+    "updates.code.withdrawn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The release was withdrawn"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سُحب الإصدار"
+          }
+        }
+      }
+    },
+    "updates.plan.waiting.auto_install_off" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version {version} is available; automatic install is off."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار {version} متاح؛ التثبيت التلقائي متوقف."
+          }
+        }
+      }
+    },
+    "updates.plan.waiting.automatic_installs_not_built" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version {version} is available."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار {version} متاح."
+          }
+        }
+      }
+    },
+    "updates.plan.waiting.deferred" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version {version} is deferred."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصدار {version} مؤجَّل."
+          }
+        }
+      }
+    },
+    "updates.plan.waiting.no_upgrade_path" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version {version} cannot be installed from this version."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن تثبيت الإصدار {version} من هذا الإصدار."
+          }
+        }
+      }
+    },
+    "updates.plan.waiting.outside_window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version {version} installs in the next quiet window."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُثبَّت الإصدار {version} في فترة الهدوء القادمة."
+          }
+        }
+      }
+    },
+    "updates.plan.waiting.release_age" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Version {version} installs once it is old enough."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُثبَّت الإصدار {version} عندما يمضي عليه الوقت الكافي."
+          }
+        }
+      }
+    },
+    "updates.state.aborted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "stopped; nothing changed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقّف؛ لم يتغيّر شيء"
+          }
+        }
+      }
+    },
+    "updates.state.ahead_of_home" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ahead of the home"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أحدث من الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "updates.state.app_staged" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ready: installs at its turn"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جاهز: يُثبَّت عند دوره"
+          }
+        }
+      }
+    },
+    "updates.state.apply_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "could not update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر التحديث"
+          }
+        }
+      }
+    },
+    "updates.state.applying" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "updating"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التحديث"
+          }
+        }
+      }
+    },
+    "updates.state.awaiting_click" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "downloading the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُنزَّل التحديث"
+          }
+        }
+      }
+    },
+    "updates.state.behind" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "behind"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متأخر"
+          }
+        }
+      }
+    },
+    "updates.state.cancelled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cancelled"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُلغي"
+          }
+        }
+      }
+    },
+    "updates.state.clicked" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ready: installs at its turn"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جاهز: يُثبَّت عند دوره"
+          }
+        }
+      }
+    },
+    "updates.state.committed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "kept the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُبقي على الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.state.converting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "becoming a full node"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يصير جهازًا كاملًا"
+          }
+        }
+      }
+    },
+    "updates.state.done" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "done"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم"
+          }
+        }
+      }
+    },
+    "updates.state.done_needs_person" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "done, machines need you"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم، وأجهزة تحتاجك"
+          }
+        }
+      }
+    },
+    "updates.state.done_with_failures" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "done, with failures"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم مع إخفاقات"
+          }
+        }
+      }
+    },
+    "updates.state.draining" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "finishing running jobs"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إنهاء المهام الجارية"
+          }
+        }
+      }
+    },
+    "updates.state.failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "failed"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشل"
+          }
+        }
+      }
+    },
+    "updates.state.failed_prepare" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "could not prepare"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر التحضير"
+          }
+        }
+      }
+    },
+    "updates.state.failed_rollback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "needs you: could not go back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاجك: تعذّر الرجوع"
+          }
+        }
+      }
+    },
+    "updates.state.healthy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "updated"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حُدِّث"
+          }
+        }
+      }
+    },
+    "updates.state.held" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "held"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "معلّق"
+          }
+        }
+      }
+    },
+    "updates.state.home_applying" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home updates"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز الرئيسي يتحدّث"
+          }
+        }
+      }
+    },
+    "updates.state.home_committed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home is updated"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حُدِّث الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "updates.state.home_prepared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home is ready"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز الرئيسي جاهز"
+          }
+        }
+      }
+    },
+    "updates.state.home_preparing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home prepares"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز الرئيسي يتحضّر"
+          }
+        }
+      }
+    },
+    "updates.state.needs_person" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "needs you"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحتاجك"
+          }
+        }
+      }
+    },
+    "updates.state.offline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "offline"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متصل"
+          }
+        }
+      }
+    },
+    "updates.state.ordered" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "downloading the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُنزَّل التحديث"
+          }
+        }
+      }
+    },
+    "updates.state.pending" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "waiting"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بالانتظار"
+          }
+        }
+      }
+    },
+    "updates.state.planned" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "planned"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مخطَّط"
+          }
+        }
+      }
+    },
+    "updates.state.prepare_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "could not prepare"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر التحضير"
+          }
+        }
+      }
+    },
+    "updates.state.prepared" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "prepared"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جاهز"
+          }
+        }
+      }
+    },
+    "updates.state.preparing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "preparing"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التحضير"
+          }
+        }
+      }
+    },
+    "updates.state.restarting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "restarting"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُعاد تشغيله"
+          }
+        }
+      }
+    },
+    "updates.state.rolled_back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "rolled back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُرجع"
+          }
+        }
+      }
+    },
+    "updates.state.rolling_back" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "going back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ الرجوع"
+          }
+        }
+      }
+    },
+    "updates.state.rolling_out" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "updating the machines"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث الأجهزة"
+          }
+        }
+      }
+    },
+    "updates.state.running" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "running"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يعمل"
+          }
+        }
+      }
+    },
+    "updates.state.skipped" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "skipped"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تُخطّي"
+          }
+        }
+      }
+    },
+    "updates.state.superseded" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "replaced by a newer release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حلّ محلّه إصدار أحدث"
+          }
+        }
+      }
+    },
+    "updates.state.up_to_date" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "up to date"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محدَّث"
+          }
+        }
+      }
+    },
+    "updates.state.updating" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "updating"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قيد التحديث"
+          }
+        }
+      }
+    },
+    "updates.state.waiting_click" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "downloading the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُنزَّل التحديث"
+          }
+        }
+      }
+    },
+    "updates.state.watching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "watching the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مراقبة الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.state.worker_only" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "worker only"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عامل فقط"
+          }
+        }
+      }
+    },
+    "updates.step.ask" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba on this machine downloads and checks the release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبة على هذا الجهاز تُنزّل الإصدار وتتحقق منه"
+          }
+        }
+      }
+    },
+    "updates.step.backup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back up the library database (it keeps serving)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخ قاعدة بيانات المكتبة احتياطيًا (وهي تواصل العمل)"
+          }
+        }
+      }
+    },
+    "updates.step.check" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Check for the update"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث عن التحديث"
+          }
+        }
+      }
+    },
+    "updates.step.commit" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keep"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإبقاء"
+          }
+        }
+      }
+    },
+    "updates.step.download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التنزيل"
+          }
+        }
+      }
+    },
+    "updates.step.dump" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save the library database"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حفظ قاعدة بيانات المكتبة"
+          }
+        }
+      }
+    },
+    "updates.step.install" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Install"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التثبيت"
+          }
+        }
+      }
+    },
+    "updates.step.launcher" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Replace the launcher"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استبدال المشغّل"
+          }
+        }
+      }
+    },
+    "updates.step.migrate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update the library database"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث قاعدة بيانات المكتبة"
+          }
+        }
+      }
+    },
+    "updates.step.order" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba on this machine downloads and checks the release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبة على هذا الجهاز تُنزّل الإصدار وتتحقق منه"
+          }
+        }
+      }
+    },
+    "updates.step.preflight" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checks"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفحوص"
+          }
+        }
+      }
+    },
+    "updates.step.rehearse" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rehearse the database changes"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجربة تغييرات قاعدة البيانات"
+          }
+        }
+      }
+    },
+    "updates.step.relaunch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start again on the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل على الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.step.restart" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restart"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل"
+          }
+        }
+      }
+    },
+    "updates.step.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Put the library database back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة قاعدة بيانات المكتبة كما كانت"
+          }
+        }
+      }
+    },
+    "updates.step.rollback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Roll back"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرجوع"
+          }
+        }
+      }
+    },
+    "updates.step.smoke" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test run"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل تجريبي"
+          }
+        }
+      }
+    },
+    "updates.step.stage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download and verify"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التنزيل والتحقق"
+          }
+        }
+      }
+    },
+    "updates.step.start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدء الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.step.switch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التبديل"
+          }
+        }
+      }
+    },
+    "updates.step.tv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move the TV to the new release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نقل التلفاز إلى الإصدار الجديد"
+          }
+        }
+      }
+    },
+    "updates.step.venv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Build the pipeline's Python environment"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بناء بيئة Python لخط المعالجة"
+          }
+        }
+      }
+    },
+    "updates.step.verify" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify the signature"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التحقق من التوقيع"
+          }
+        }
+      }
+    },
+    "updates.step.watch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watch"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المراقبة"
+          }
+        }
+      }
+    },
+    "updates.waiting.needs_person" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last try needs you (see its reason): the next window tries again, or Update now."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المحاولة الأخيرة تحتاجك (انظر سببها): النافذة التالية تحاول مجدداً، أو «حدّث الآن»."
+          }
+        }
+      }
+    },
+    "updates.waiting.outside_window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the quiet window."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار النافذة الهادئة."
+          }
+        }
+      }
+    },
+    "updates.waiting.retry_backoff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last try failed: the next one in a few minutes."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشلت المحاولة الأخيرة: المحاولة التالية بعد دقائق."
+          }
+        }
+      }
+    },
+    "updates.waiting.retry_next_window" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tried enough in this window: the next window tries again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جُرّب بما يكفي في هذه النافذة: النافذة التالية تحاول مجدداً."
+          }
+        }
+      }
+    },
+    "updates.waiting.tv_busy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting until nobody watches TV."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار ألّا يشاهد أحد التلفاز."
+          }
+        }
+      }
+    },
+    "updates.waiting.tv_swapping" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The restart waits for a TV change to finish switching channels (two minutes at most)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل تنتظر انتهاء تغيير في التلفاز من تبديل القنوات (دقيقتان على الأكثر)."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

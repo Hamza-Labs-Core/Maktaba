@@ -3,7 +3,9 @@ import Foundation
 // The words Maktaba Remote shows for what a home reports about its running work: the
 // web's English (web/src/i18n/en.json), so the apps and the web read the same. Generated
 // from en.json's keys named beside each table; a value with no words here shows raw, its
-// underscores as spaces (a newer home's value).
+// underscores as spaces (a newer home's value). The Arabic is the web's ar.json, in
+// MaktabaKit's catalog under the same keys (`updates.state.done`); these tables are the
+// English and the list of values that have words.
 
 public enum StatusWords {
     /// A run's, a machine's or a target's state (`updates.state.*`)
@@ -266,50 +268,101 @@ public enum StatusWords {
         "api": "API",
         "pipeline": "Processing pipeline",
         "streaming": "Live TV and streaming",
+        "tv-slot": "TV slot",
+    ]
+
+    /// A TV slot's colour, its instance (`tvchanges.slots.color.*`)
+    public static let slotColors: [String: String] = [
+        "amber": "amber",
+        "blue": "blue",
+        "green": "green",
+    ]
+
+    /// A process's name: its role's words, a TV slot with its colour ("TV slot blue").
+    static func processName(role: String, instance: String?, locale: Locale = AppLanguage.locale) -> String {
+        let base = words(processRoles, "health.processes.role.", role, locale)
+        guard let instance else { return base }
+        let i = role == "tv-slot" ? words(slotColors, "tvchanges.slots.color.", instance, locale) : instance
+        return "\(base) \(i)"
+    }
+}
+
+/// A value's words from `table`, whose catalog keys are `prefix` + the value, in `locale`'s
+/// language; a value with no words shows as sent, its underscores as spaces.
+func words(_ table: [String: String], _ prefix: String, _ value: String, _ locale: Locale = AppLanguage.locale) -> String {
+    guard let en = table[value] else { return value.replacingOccurrences(of: "_", with: " ") }
+    return kitWord(prefix + value, locale) ?? en
+}
+
+extension StatusWords {
+    /// Each table with the web's key its values are under (en.json, ar.json and the catalog).
+    public static let tables: [(prefix: String, words: [String: String])] = [
+        ("updates.state.", states), ("updates.step.", steps), ("updates.code.", codes),
+        ("updates.waiting.", waiting), ("updates.plan.waiting.", planWaitingTable),
+        ("updates.blocked.reason.", blockedReasons), ("machines.homeDb.code.", homeDBCodes),
+        ("health.processes.state.", processStates), ("health.processes.role.", processRoles),
+        ("tvchanges.slots.color.", slotColors),
     ]
 }
 
-/// The sentences of the Updates screen, from the web's words.
+/// The sentences of the Updates screen, from the web's words, in the app's language (or
+/// `locale`'s).
 public enum UpdateWords {
-    public static func state(_ s: String) -> String { words(StatusWords.states, s) }
-    public static func step(_ s: String) -> String { words(StatusWords.steps, s) }
-    public static func waiting(_ s: String) -> String { words(StatusWords.waiting, s) }
-    public static func blocked(_ reason: String) -> String { words(StatusWords.blockedReasons, reason) }
+    public static func state(_ s: String, locale: Locale = AppLanguage.locale) -> String {
+        words(StatusWords.states, "updates.state.", s, locale)
+    }
+
+    public static func step(_ s: String, locale: Locale = AppLanguage.locale) -> String {
+        words(StatusWords.steps, "updates.step.", s, locale)
+    }
+
+    public static func waiting(_ s: String, locale: Locale = AppLanguage.locale) -> String {
+        words(StatusWords.waiting, "updates.waiting.", s, locale)
+    }
+
+    public static func blocked(_ reason: String, locale: Locale = AppLanguage.locale) -> String {
+        words(StatusWords.blockedReasons, "updates.blocked.reason.", reason, locale)
+    }
 
     /// An error code's words: its own, a check of the release's verification, a step's
     /// failure ("stage_failed": "Download and verify: failed"), else "Stopped at: <code>".
-    public static func code(_ c: String) -> String {
-        if let w = StatusWords.codes[c] { return w }
-        if c.hasPrefix("verify_"), let w = StatusWords.codes["verify_failed"] { return w }
+    public static func code(_ c: String, locale: Locale = AppLanguage.locale) -> String {
+        known(c, locale) ?? kit("Stopped at: \(c)", locale)
+    }
+
+    /// code()'s words when the code has some (not "Stopped at:").
+    private static func known(_ c: String, _ locale: Locale) -> String? {
+        if StatusWords.codes[c] != nil { return words(StatusWords.codes, "updates.code.", c, locale) }
+        if c.hasPrefix("verify_") { return words(StatusWords.codes, "updates.code.", "verify_failed", locale) }
         if c.hasSuffix("_failed") {
             let step = String(c.dropLast("_failed".count))
             if !step.isEmpty, step.allSatisfy({ $0.isASCII && $0.isLowercase }), StatusWords.steps[step] != nil {
-                return "\(self.step(step)): \(state("failed"))"
+                return "\(self.step(step, locale: locale)): \(state("failed", locale: locale))"
             }
         }
-        return "Stopped at: \(c)"
+        return nil
     }
 
     /// A reason's words as code() has them, else the code with its underscores as spaces.
-    public static func reason(_ c: String) -> String {
-        let w = code(c)
-        return w == "Stopped at: \(c)" ? c.replacingOccurrences(of: "_", with: " ") : w
+    public static func reason(_ c: String, locale: Locale = AppLanguage.locale) -> String {
+        known(c, locale) ?? c.replacingOccurrences(of: "_", with: " ")
     }
 
     /// The planned release's wait in a sentence.
-    public static func planWaiting(_ waiting: String, version: String) -> String {
-        guard let w = StatusWords.planWaitingTable[waiting] else {
-            return "Version \(version) is available: \(waiting.replacingOccurrences(of: "_", with: " "))."
+    public static func planWaiting(_ waiting: String, version: String, locale: Locale = AppLanguage.locale) -> String {
+        guard StatusWords.planWaitingTable[waiting] != nil else {
+            return kit("Version \(version) is available: \(waiting.replacingOccurrences(of: "_", with: " ")).", locale)
         }
-        return w.replacingOccurrences(of: "{version}", with: version)
+        return words(StatusWords.planWaitingTable, "updates.plan.waiting.", waiting, locale)
+            .replacingOccurrences(of: "{version}", with: version)
     }
 
     /// The plan's reason (up_to_date, no_upgrade_path, needs_approval) in a sentence.
-    public static func planReason(_ reason: String) -> String {
+    public static func planReason(_ reason: String, locale: Locale = AppLanguage.locale) -> String {
         switch reason {
-        case "up_to_date": "Nothing to install: up to date."
-        case "no_upgrade_path": "No release can be installed from this version."
-        case "needs_approval": "The release waits for your approval."
+        case "up_to_date": kit("Nothing to install: up to date.", locale)
+        case "no_upgrade_path": kit("No release can be installed from this version.", locale)
+        case "needs_approval": kit("The release waits for your approval.", locale)
         default: reason.replacingOccurrences(of: "_", with: " ")
         }
     }
@@ -322,23 +375,27 @@ public enum UpdateWords {
     }
 
     /// today, tomorrow, else its weekday and date.
-    public static func day(_ at: Date, now: Date, calendar: Calendar = .current) -> String {
+    public static func day(_ at: Date, now: Date, calendar: Calendar = .current, locale: Locale = AppLanguage.locale) -> String {
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: at)).day ?? 0
-        if days == 0 { return "today" }
-        if days == 1 { return "tomorrow" }
-        return at.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+        if days == 0 { return kit("today", locale) }
+        if days == 1 { return kit("tomorrow", locale) }
+        var style = Date.FormatStyle.dateTime.weekday(.wide).month(.abbreviated).day().locale(locale)
+        style.calendar = calendar
+        style.timeZone = calendar.timeZone
+        return at.formatted(style)
     }
 
     /// "in 2 hours 15 minutes", or "now" when it is due.
-    public static func span(until at: Date, now: Date) -> String {
+    public static func span(until at: Date, now: Date, locale: Locale = AppLanguage.locale) -> String {
         let secs = at.timeIntervalSince(now)
-        if secs <= 30 { return "now" }
+        if secs <= 30 { return kit("now", locale) }
         let mins = Int((secs / 60).rounded())
-        if mins < 1 { return "in less than a minute" }
-        func unit(_ n: Int, _ u: String) -> String { "\(n) \(u)\(n == 1 ? "" : "s")" }
+        if mins < 1 { return kit("in less than a minute", locale) }
         let d = mins / 1440, h = (mins % 1440) / 60, m = mins % 60
-        if d > 0 { return "in " + (h > 0 ? "\(unit(d, "day")) \(unit(h, "hour"))" : unit(d, "day")) }
-        if h > 0 { return "in " + (m > 0 ? "\(unit(h, "hour")) \(unit(m, "minute"))" : unit(h, "hour")) }
-        return "in " + unit(m, "minute")
+        let days = kit("\(d) days", locale), hours = kit("\(h) hours", locale), minutes = kit("\(m) minutes", locale)
+        if d > 0 { return h > 0 ? kit("in \(days) \(hours)", locale) : kit("in \(days)", locale) }
+        if h > 0 { return m > 0 ? kit("in \(hours) \(minutes)", locale) : kit("in \(hours)", locale) }
+        return kit("in \(minutes)", locale)
     }
 }
+

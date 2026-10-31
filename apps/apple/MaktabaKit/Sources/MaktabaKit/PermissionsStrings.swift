@@ -2,8 +2,8 @@ import Foundation
 
 /// The walkthrough's words in English and Arabic, with the web's terms (web/src/i18n: a home
 /// is "الجهاز الرئيسي", Settings "الإعدادات", Required "مطلوب"). Kept here rather than in a
-/// string catalog: a package's catalog is only used in the languages the app itself lists,
-/// and the apps are English otherwise.
+/// string catalog: they were written before the apps listed Arabic, which a package's
+/// catalog needs (MaktabaKit's other words are in its Localizable.xcstrings now).
 public struct PermissionsStrings: Sendable {
     public enum Language: String, Sendable { case en, ar }
 

@@ -18,7 +18,7 @@ struct ProcessesView: View {
                 if !doc.available {
                     Section {
                         Callout(systemImage: "bolt.horizontal.circle", tint: .brass,
-                                title: "The home's supervisor isn't reachable, so its processes can't be shown. The home may not be running under maktaba-server.",
+                                title: String(localized: "The home's supervisor isn't reachable, so its processes can't be shown. The home may not be running under maktaba-server."),
                                 detail: doc.reason)
                             .accessibilityIdentifier("processes.unavailable")
                     }
@@ -26,7 +26,7 @@ struct ProcessesView: View {
                     Section {
                         ForEach(doc.processes) { ProcessRow(process: $0) }
                     } header: {
-                        Text(doc.host.map { "On \($0)" } ?? "Processes")
+                        if let host = doc.host { Text("On \(host)") } else { Text("Processes") }
                     }
                     let events = doc.recentEvents()
                     Section("Recent events") {
@@ -73,7 +73,13 @@ private struct ProcessRow: View {
                     .foregroundStyle(.red)
             }
             if let exit = process.lastExit, exit.failed {
-                Text("Last exit: \(exit.sentence)\(exit.at.map { ", \($0.formatted(.relative(presentation: .named)))" } ?? "")")
+                Group {
+                    if let at = exit.at {
+                        Text("Last exit: \(exit.sentence), \(at.formatted(.relative(presentation: .named)))")
+                    } else {
+                        Text("Last exit: \(exit.sentence)")
+                    }
+                }
                     .font(.callout)
                     .foregroundStyle(.red)
                 if let error = exit.error, !error.isEmpty {
@@ -98,10 +104,12 @@ private struct ProcessRow: View {
 
     private var facts: String {
         var parts: [String] = []
-        parts.append(process.restarts == 1 ? "1 restart" : "\(process.restarts) restarts")
-        if process.pid != nil, let up = process.uptimeSec { parts.append("up for \(shortDuration(up))") }
-        if let next = process.nextRestartAt { parts.append("next restart \(next.formatted(date: .omitted, time: .shortened))") }
-        if process.adopted { parts.append("kept across a restart") }
+        parts.append(String(localized: "\(process.restarts) restarts"))
+        if process.pid != nil, let up = process.uptimeSec { parts.append(String(localized: "up for \(shortDuration(up))")) }
+        if let next = process.nextRestartAt {
+            parts.append(String(localized: "next restart \(next.formatted(date: .omitted, time: .shortened))"))
+        }
+        if process.adopted { parts.append(String(localized: "kept across a restart")) }
         return parts.joined(separator: " · ")
     }
 

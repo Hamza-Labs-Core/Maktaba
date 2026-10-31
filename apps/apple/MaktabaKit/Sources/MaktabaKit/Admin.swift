@@ -103,20 +103,40 @@ public struct QueueRow: Identifiable, Hashable, Sendable {
     public var running: Int { summary?.counts.running ?? 0 }
     public var failed: Int { summary?.counts.failedOpen ?? 0 }
 
-    /// What the row says about the stage, in a few words.
-    public var state: String {
-        if !info.enabled { return "Off" }
-        if info.paused { return "Paused" }
+    /// The stage's state, for its colour.
+    public enum Status: Sendable {
+        case off, paused, pausedAll, noWorker, notSetUp, awaitingReview, retrying, running, waiting, idle
+    }
+
+    public var status: Status {
+        if !info.enabled { return .off }
+        if info.paused { return .paused }
         switch summary?.waitingReason {
-        case "paused_all": return "Paused (all)"
-        case "no_worker": return "No worker"
-        case "not_configured": return "Not set up"
-        case "awaiting_review": return "Awaiting review"
-        case "backoff", "service_retrying": return "Retrying"
+        case "paused_all": return .pausedAll
+        case "no_worker": return .noWorker
+        case "not_configured": return .notSetUp
+        case "awaiting_review": return .awaitingReview
+        case "backoff", "service_retrying": return .retrying
         default: break
         }
-        if running > 0 { return "Running" }
-        return waiting > 0 ? "Waiting" : "Idle"
+        if running > 0 { return .running }
+        return waiting > 0 ? .waiting : .idle
+    }
+
+    /// What the row says about the stage, in a few words.
+    public var state: String {
+        switch status {
+        case .off: kit("Off")
+        case .paused: kit("Paused")
+        case .pausedAll: kit("Paused (all)")
+        case .noWorker: kit("No worker")
+        case .notSetUp: kit("Not set up")
+        case .awaitingReview: kit("Awaiting review")
+        case .retrying: kit("Retrying")
+        case .running: kit("Running")
+        case .waiting: kit("Waiting")
+        case .idle: kit("Idle")
+        }
     }
 }
 
@@ -232,10 +252,10 @@ public enum ApproveFailure: Equatable, Sendable {
     public var message: String {
         switch self {
         case let .wrongCode(left?) where left > 0:
-            "That is not the code the machine shows. \(left) \(left == 1 ? "try" : "tries") left."
-        case .wrongCode(0): "Too many wrong codes: the request was turned down. Ask again from the machine."
-        case .wrongCode: "That is not the code the machine shows."
-        case .expired: "The request has expired. Ask again from the machine."
+            kit("That is not the code the machine shows. \(left) tries left.")
+        case .wrongCode(0): kit("Too many wrong codes: the request was turned down. Ask again from the machine.")
+        case .wrongCode: kit("That is not the code the machine shows.")
+        case .expired: kit("The request has expired. Ask again from the machine.")
         case let .other(why): why
         }
     }

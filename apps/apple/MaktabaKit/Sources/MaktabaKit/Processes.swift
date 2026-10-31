@@ -92,12 +92,9 @@ public struct ProcessStatus: Decodable, Identifiable, Sendable {
     }
 
     /// Its name: the web's for the role, a TV slot by its colour ("TV slot blue").
-    public var name: String {
-        let base = role == "tv-slot" ? "TV slot" : words(StatusWords.processRoles, role)
-        return instance.map { "\(base) \($0)" } ?? base
-    }
+    public var name: String { StatusWords.processName(role: role, instance: instance) }
 
-    public var stateText: String { words(StatusWords.processStates, state) }
+    public var stateText: String { words(StatusWords.processStates, "health.processes.state.", state) }
 
     /// Its detail in words: the English the supervisor wrote, else its code.
     public var detailText: String? {
@@ -140,15 +137,16 @@ public struct ProcessExit: Decodable, Sendable {
 
     static func sentence(reason: String, code: Int, signal: String?) -> String {
         switch reason {
-        case "hang": return "stopped responding and was restarted"
-        case "start_failed": return "could not start"
-        case "clean": return "exited on its own"
-        case "shutdown": return "stopped by the server's shutdown"
-        case "stopped": return "stopped on request"
-        case "restarted": return "restarted"
+        case "hang": return kit("stopped responding and was restarted")
+        case "start_failed": return kit("could not start")
+        case "clean": return kit("exited on its own")
+        case "shutdown": return kit("stopped by the server's shutdown")
+        case "stopped": return kit("stopped on request")
+        case "restarted": return kit("restarted")
         default:
-            if let signal, !signal.isEmpty { return "killed by \(signal)" }
-            if reason == "crash" || reason.isEmpty { return "exited with code \(code)" }
+            if let signal, !signal.isEmpty { return kit("killed by \(signal)") }
+            // the exit code as the process gave it (no digit grouping)
+            if reason == "crash" || reason.isEmpty { return kit("exited with code \(String(code))") }
             return reason.replacingOccurrences(of: "_", with: " ")
         }
     }
@@ -206,19 +204,16 @@ public struct ProcessEvent: Decodable, Identifiable, Sendable {
         message = c.lenient(.message)
     }
 
-    public var processName: String {
-        let base = role == "tv-slot" ? "TV slot" : words(StatusWords.processRoles, role)
-        return instance.map { "\(base) \($0)" } ?? base
-    }
+    public var processName: String { StatusWords.processName(role: role, instance: instance) }
 
     /// What happened, in a few words.
     public var sentence: String {
         switch kind {
-        case "started": return "started"
+        case "started": return kit("started")
         case "exited": return ProcessExit.sentence(reason: reason ?? "", code: code ?? -1, signal: signal)
-        case "restarting": return "restarting"
-        case "failed": return "crash loop: retried slowly"
-        case "hung": return "stopped responding"
+        case "restarting": return kit("restarting")
+        case "failed": return kit("crash loop: retried slowly")
+        case "hung": return kit("stopped responding")
         default: return message ?? kind.replacingOccurrences(of: "_", with: " ")
         }
     }
@@ -318,16 +313,16 @@ public struct RunningJob: Decodable, Identifiable, Sendable {
 }
 
 /// "running for 1h 5m" (the web's queue.running.for with health.processes.dur.*).
-public func runningText(_ secs: TimeInterval) -> String {
-    "running for \(shortDuration(secs))"
+public func runningText(_ secs: TimeInterval, locale: Locale = AppLanguage.locale) -> String {
+    kit("running for \(shortDuration(secs, locale: locale))", locale)
 }
 
 /// 2d 3h, 1h 5m, 12m, 40s (the web's health.processes.dur.*).
-public func shortDuration(_ secs: TimeInterval) -> String {
+public func shortDuration(_ secs: TimeInterval, locale: Locale = AppLanguage.locale) -> String {
     let s = max(0, Int(secs))
     let d = s / 86400, h = (s % 86400) / 3600, m = (s % 3600) / 60
-    if d > 0 { return "\(d)d \(h)h" }
-    if h > 0 { return "\(h)h \(m)m" }
-    if m > 0 { return "\(m)m" }
-    return "\(s)s"
+    if d > 0 { return kit("\(d)d \(h)h", locale) }
+    if h > 0 { return kit("\(h)h \(m)m", locale) }
+    if m > 0 { return kit("\(m)m", locale) }
+    return kit("\(s)s", locale)
 }

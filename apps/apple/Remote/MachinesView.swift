@@ -43,7 +43,7 @@ struct MachinesView: View {
         .refreshable { await model.load() }
         .toolbar { AccountMenu() }
         .sheet(item: $approving) { ApproveSheet(machine: $0) }
-        .confirmationDialog("Let \(revoking?.name ?? "the machine") go?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
+        .confirmationDialog("Let \(revoking?.name ?? String(localized: "the machine")) go?", isPresented: Binding(get: { revoking != nil }, set: { if !$0 { revoking = nil } }),
                             titleVisibility: .visible, presenting: revoking) { m in
             Button("Revoke", role: .destructive) { Task { await model.revoke(m) } }
         } message: { _ in
@@ -51,7 +51,7 @@ struct MachinesView: View {
         }
     }
 
-    @ViewBuilder private func section(_ title: String, _ machines: [Machine]) -> some View {
+    @ViewBuilder private func section(_ title: LocalizedStringKey, _ machines: [Machine]) -> some View {
         if !machines.isEmpty {
             Section(title) {
                 ForEach(machines) { m in
@@ -90,7 +90,7 @@ struct MachineRow: View {
             Image(systemName: "circle.fill")
                 .font(.caption2)
                 .foregroundStyle(dot)
-                .accessibilityLabel(machine.online ? "Online" : "Offline")
+                .accessibilityLabel(machine.online ? Text("Online") : Text("Offline"))
             VStack(alignment: .leading, spacing: 4) {
                 Text(machine.name).font(.headline)
                 Text(details).font(.caption).foregroundStyle(.secondary)
@@ -112,17 +112,28 @@ struct MachineRow: View {
         var parts: [String] = []
         switch machine.group {
         case .asking:
-            if let a = machine.remoteAddr { parts.append("from \(a)") }
-            if let e = machine.expiresAt { parts.append("asks until \(e.formatted(date: .omitted, time: .shortened))") }
+            if let a = machine.remoteAddr { parts.append(String(localized: "from \(a)")) }
+            if let e = machine.expiresAt { parts.append(String(localized: "asks until \(e.formatted(date: .omitted, time: .shortened))")) }
         case .approved:
-            parts.append(machine.online ? "online" : "offline")
-            if !machine.online, let seen = machine.lastSeenAt { parts.append("seen \(seen.formatted(.relative(presentation: .named)))") }
+            parts.append(machine.online ? String(localized: "online") : String(localized: "offline"))
+            if !machine.online, let seen = machine.lastSeenAt {
+                parts.append(String(localized: "seen \(seen.formatted(.relative(presentation: .named)))"))
+            }
         case .other:
-            parts.append(machine.expired && machine.state == "pending" ? "request expired" : machine.state)
+            parts.append(machine.expired && machine.state == "pending" ? String(localized: "request expired") : stateWords)
         }
         if let p = machine.platform { parts.append(p) }
         if let v = machine.version { parts.append(v) }
         return parts.joined(separator: " · ")
+    }
+
+    /// A machine turned down or let go; a state the app does not know as the home sent it.
+    private var stateWords: String {
+        switch machine.state {
+        case "rejected": String(localized: "turned down")
+        case "revoked": String(localized: "let go")
+        default: machine.state.replacingOccurrences(of: "_", with: " ")
+        }
     }
 }
 

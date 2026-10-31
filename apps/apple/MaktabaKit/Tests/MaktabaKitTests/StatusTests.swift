@@ -87,6 +87,38 @@ import Testing
         #expect(o.next(now: now, calendar: cal) == "0.3.43 installs tomorrow between 03:00 and 05:00 (in 9 hours 15 minutes).")
     }
 
+    /// In Arabic the Remote says what the web's ar.json says: the plan's sentence (its
+    /// counts in Arabic plurals) and a run's state, from MaktabaKit's catalog.
+    @Test func saysTheNextUpdateAndARunsStateInArabic() throws {
+        let ar = Locale(identifier: "ar")
+        // the system sets each argument apart (U+2068 ... U+2069) for right-to-left text
+        func plain(_ s: String) -> String { s.filter { $0 != "\u{2068}" && $0 != "\u{2069}" } }
+        let o: UpdatesOverview = try Self.decode(Self.overview)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1793502000 - 9 * 3600 - 15 * 60)
+        #expect(plain(o.next(now: now, calendar: cal, locale: ar)) == "يُثبَّت 0.3.43 غدًا بين 03:00 و05:00 (بعد 9 ساعات و15 دقيقة).")
+        #expect(plain(UpdateWords.span(until: now.addingTimeInterval(2 * 3600), now: now, locale: ar)) == "بعد ساعتين")
+        #expect(UpdateWords.state("rolling_out", locale: ar) == "تحديث الأجهزة")
+        #expect(UpdateWords.code("stage_failed", locale: ar) == "التنزيل والتحقق: فشل")
+        #expect(UpdateWords.blocked("verify", locale: ar) == "رُفض توقيعه أو هويته")
+        #expect(UpdateWords.planWaiting("outside_window", version: "1.0.0", locale: ar) == "يُثبَّت الإصدار 1.0.0 في فترة الهدوء القادمة.")
+        // a value with no words shows as the home sent it, in Arabic too
+        #expect(UpdateWords.state("quantum_superposition", locale: ar) == "quantum superposition")
+        #expect(UpdateWords.state("rolling_out", locale: Locale(identifier: "en")) == "updating the machines")
+    }
+
+    /// Every word of the home's values has its Arabic in the catalog (the web's ar.json).
+    @Test func everyStatusWordIsInArabic() {
+        let ar = Locale(identifier: "ar")
+        for (prefix, table) in StatusWords.tables {
+            for value in table.keys {
+                let arabic = words(table, prefix, value, ar)
+                #expect(arabic.unicodeScalars.contains { (0x0600...0x06FF).contains($0.value) }, "\(prefix)\(value): \(arabic)")
+            }
+        }
+    }
+
     @Test(arguments: [
         ("outside_window", "Version 1.0.0 installs in the next quiet window."),
         ("release_age", "Version 1.0.0 installs once it is old enough."),
@@ -140,7 +172,7 @@ import Testing
         let v: UpdateRunView = try Self.decode(Self.run)
         #expect(v.run.id == "r10" && v.run.state == "rolling_out" && !v.run.ended)
         #expect(UpdateWords.state(v.run.state) == "updating the machines")
-        #expect(v.waiting.map(UpdateWords.waiting) == "Waiting until nobody watches TV.")
+        #expect(v.waiting.map { UpdateWords.waiting($0) } == "Waiting until nobody watches TV.")
         #expect(v.installKind == "appbundle" && v.waitingHome.map(\.name) == ["Laptop"])
         #expect(v.tv?.failedChecks.map(\.check) == ["no_change"])
         // a step whose seq is not a number still shows; a newer step and state show raw
