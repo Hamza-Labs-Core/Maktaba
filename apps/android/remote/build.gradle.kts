@@ -62,4 +62,6 @@ android {
 dependencies {
     implementation(project(":core"))
     implementation(libs.adaptive.navigation.suite)
+
+    testImplementation(libs.junit)
 }

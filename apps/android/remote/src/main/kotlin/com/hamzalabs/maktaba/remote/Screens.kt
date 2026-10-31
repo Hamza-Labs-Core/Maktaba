@@ -39,6 +39,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ClusterOverview
 import com.hamzalabs.maktaba.core.api.FailureGroup
+import com.hamzalabs.maktaba.core.api.JobRef
+import com.hamzalabs.maktaba.core.api.ProcessesDoc
 import com.hamzalabs.maktaba.core.api.Library
 import com.hamzalabs.maktaba.core.api.Machine
 import com.hamzalabs.maktaba.core.api.QueueSnapshot
@@ -49,7 +51,7 @@ import kotlinx.coroutines.launch
 
 /** Loads now and again every [everyMs] while the screen is up; [refreshing] while it runs. */
 @Composable
-private fun Polling(everyMs: Long, load: suspend () -> Unit) {
+internal fun Polling(everyMs: Long, load: suspend () -> Unit) {
     LaunchedEffect(Unit) {
         while (true) {
             load()
@@ -59,12 +61,12 @@ private fun Polling(everyMs: Long, load: suspend () -> Unit) {
 }
 
 @Composable
-private fun chosenColors(chosen: Boolean) = ListItemDefaults.colors(
+internal fun chosenColors(chosen: Boolean) = ListItemDefaults.colors(
     containerColor = if (chosen) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
 )
 
 @Composable
-private fun Detail(content: @Composable () -> Unit) {
+internal fun Detail(content: @Composable () -> Unit) {
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -72,7 +74,7 @@ private fun Detail(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Fact(label: String, value: String) {
+internal fun Fact(label: String, value: String) {
     // the label keeps its width; a long value wraps beside it
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -81,7 +83,7 @@ private fun Fact(label: String, value: String) {
 }
 
 @Composable
-private fun Busy() = CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+internal fun Busy() = CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
 
 // ---------- Needs attention ----------
 
@@ -181,16 +183,22 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
 
 // ---------- Queue ----------
 
-/** The processing stages with their counts; pause and resume one, or all of them. */
+/**
+ * The processing stages with their counts, why each waits and its health; the jobs running
+ * now; pause and resume one stage, or all of them. A chosen stage shows its failures by cause.
+ */
 @Composable
 fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
     var snap by remember { mutableStateOf<QueueSnapshot?>(null) }
+    var running by remember { mutableStateOf<List<JobRef>?>(null) }
+    var failures by remember { mutableStateOf<Pair<String, List<FailureGroup>>?>(null) }
     var chosen by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
         remote.load { queues() }?.let { snap = it }
+        remote.load { runningJobs() }?.let { running = it }
     }
     fun act(id: String, block: suspend com.hamzalabs.maktaba.core.api.ApiClient.() -> Unit) {
         scope.launch {
@@ -203,13 +211,43 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
     }
     // the snapshot counts every job: a busy home takes seconds to answer, so not too often
     Polling(30_000) { load() }
+    // the chosen stage's failures, read when it is chosen
+    LaunchedEffect(chosen) {
+        val stage = chosen?.takeUnless { it.startsWith("job:") } ?: return@LaunchedEffect
+        if (failures?.first != stage) failures = null
+        remote.load { stageFailures(stage) }?.let { failures = stage to it }
+    }
+    QueueContent(
+        snap, running, failures, chosen, { chosen = it }, busy, remote, account, refreshing,
+        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
+        act = ::act,
+    )
+}
+
+/** The Queue screen for [snap] and the [running] jobs, apart from how they are read. */
+@Composable
+internal fun QueueContent(
+    snap: QueueSnapshot?,
+    running: List<JobRef>?,
+    failures: Pair<String, List<FailureGroup>>?,
+    chosen: String?,
+    choose: (String?) -> Unit,
+    busy: String?,
+    remote: Remote,
+    account: @Composable () -> Unit,
+    refreshing: Boolean,
+    onRefresh: suspend () -> Unit,
+    act: (String, suspend com.hamzalabs.maktaba.core.api.ApiClient.() -> Unit) -> Unit,
+) {
     val row = snap?.rows?.firstOrNull { it.id == chosen }
+    val job = running?.firstOrNull { "job:${it.id}" == chosen }
+    val labelOf = { stage: String -> snap?.stages?.firstOrNull { it.stage == stage }?.label?.ifEmpty { null } ?: stage }
     AdminScreen(
         title = "Queue",
         remote = remote,
         account = account,
         refreshing = refreshing,
-        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
+        onRefresh = onRefresh,
         actions = {
             val s = snap
             if (s != null) {
@@ -218,9 +256,13 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
                 }
             }
         },
-        chosenTitle = row?.label,
-        onUnchoose = { chosen = null },
-        detail = row?.let { r -> { StageDetail(r, busy == r.id) { act(r.id) { if (r.stage.paused) resumeStage(r.id) else pauseStage(r.id) } } } },
+        chosenTitle = row?.label ?: job?.let { it.subjectLabel.ifEmpty { it.subjectId } },
+        onUnchoose = { choose(null) },
+        detail = when {
+            row != null -> { { StageDetail(row, failures?.takeIf { it.first == row.id }?.second, busy == row.id) { act(row.id) { if (row.stage.paused) resumeStage(row.id) else pauseStage(row.id) } } } }
+            job != null -> { { JobDetail(job, labelOf(job.stage)) } }
+            else -> null
+        },
     ) {
         val s = snap
         when {
@@ -235,23 +277,35 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
                         )
                     }
                 }
+                healthRow(s.health)
+                runningRows(running, labelOf, chosen) { choose(it) }
+                item { Header("Queues") }
                 items(s.rows, key = { it.id }) { r ->
                     val c = r.counts
+                    val health = Say.health(r.summary?.health, c.failedOpen)
                     ListItem(
                         headlineContent = { Text(r.label) },
                         supportingContent = {
-                            Text(
-                                buildString {
-                                    append("${c.ready} waiting · ${c.running} running")
-                                    if (c.failedOpen > 0) append(" · ${c.failedOpen} failed")
-                                    if (r.stage.paused) append(" · paused")
-                                    if (!r.stage.enabled) append(" · off")
-                                },
-                            )
+                            Column {
+                                Text(
+                                    buildString {
+                                        append("${c.ready} waiting · ${c.running} running")
+                                        if (r.stage.paused) append(" · paused")
+                                        if (!r.stage.enabled) append(" · off")
+                                    },
+                                )
+                                waitingOf(r)?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                if (health.isNotEmpty()) {
+                                    Text(
+                                        health.joinToString(" · "),
+                                        color = if (r.summary?.health?.state == "failing" || (r.summary?.health == null && c.failedOpen > 0)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                                    )
+                                }
+                            }
                         },
                         trailingContent = { Text("${c.done24h} today", color = MaterialTheme.colorScheme.onSurfaceVariant) },
                         colors = chosenColors(r.id == chosen),
-                        modifier = Modifier.clickable { chosen = r.id },
+                        modifier = Modifier.clickable { choose(r.id) },
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 }
@@ -260,11 +314,19 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
     }
 }
 
+/** Why the stage's jobs wait, in the web's words (none while it runs or has nothing waiting). */
+private fun waitingOf(r: StageRow): String? {
+    val q = r.summary ?: return null
+    if (q.waitingReason == "idle") return null
+    return Say.queueWaiting(q.waitingReason, q.retryingService, r.label)
+}
+
 @Composable
-private fun StageDetail(r: StageRow, busy: Boolean, toggle: () -> Unit) {
+private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolean, toggle: () -> Unit) {
     val c = r.counts
     val q = r.summary
     Detail {
+        waitingOf(r)?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
         Fact("Waiting", "${c.ready}")
         Fact("Running", "${c.running}")
         Fact("Failed", "${c.failedOpen}")
@@ -276,14 +338,29 @@ private fun StageDetail(r: StageRow, busy: Boolean, toggle: () -> Unit) {
             if (it.servedBy.isNotEmpty()) Fact("Served by", it.servedBy.joinToString())
             if (it.noWorker) Text("No machine serves this stage now.", color = MaterialTheme.colorScheme.error)
         }
+        q?.health?.let { h ->
+            Text("Health", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+            Fact("State", Say.spaced(h.state))
+            if (h.windowHours > 0) Fact("Failed in ${h.windowHours} h", "${h.failedWindow} of ${h.finishedWindow}")
+            Say.health(h, c.failedOpen).forEach { Text(it) }
+            h.failing?.example?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            h.waiting.forEach { w ->
+                Text(
+                    "${w.count} waiting for ${Say.waitingOn(w.on)}" + (w.message?.takeIf { it.isNotEmpty() }?.let { ": $it" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
         r.stage.disabledReason?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FilledTonalButton(onClick = toggle, enabled = !busy) {
             if (busy) Busy() else Text(if (r.stage.paused) "Resume" else "Pause")
         }
+        StageFailures(failures)
     }
 }
 
-private fun minutes(sec: Double): String = when {
+
+internal fun minutes(sec: Double): String = when {
     sec < 90 -> "${sec.toInt()} s"
     sec < 5400 -> "${(sec / 60).toInt()} min"
     else -> "%.1f h".format(sec / 3600)
@@ -358,39 +435,49 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
 
 // ---------- Machines ----------
 
-/** This home and the machines that work for it; drain one (it finishes its jobs, takes no new ones). */
+/**
+ * This home, the processes its supervisor runs, and the machines that work for it; drain one
+ * (it finishes its jobs, takes no new ones).
+ */
 @Composable
 fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     var overview by remember { mutableStateOf<ClusterOverview?>(null) }
+    var processes by remember { mutableStateOf<ProcessesDoc?>(null) }
     var chosen by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
         remote.load { machines() }?.let { overview = it }
+        remote.load { processes() }?.let { processes = it }
     }
     Polling(15_000) { load() }
     val machine = overview?.nodes?.firstOrNull { it.id == chosen }
+    val process = processes?.processes?.firstOrNull { "proc:${it.id}" == chosen }
     AdminScreen(
         title = "Machines",
         remote = remote,
         account = account,
         refreshing = refreshing,
         onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
-        chosenTitle = machine?.name,
+        chosenTitle = machine?.name ?: process?.let { Say.process(it) },
         onUnchoose = { chosen = null },
-        detail = machine?.let { m ->
-            {
-                MachineDetail(m, busy == m.id) { drain ->
-                    scope.launch {
-                        busy = m.id
-                        remote.startAction()
-                        remote.act { setDrain(m.id, drain) }
-                        busy = null
-                        load()
+        detail = when {
+            machine != null -> {
+                {
+                    MachineDetail(machine, busy == machine.id) { drain ->
+                        scope.launch {
+                            busy = machine.id
+                            remote.startAction()
+                            remote.act { setDrain(machine.id, drain) }
+                            busy = null
+                            load()
+                        }
                     }
                 }
             }
+            process != null -> { { ProcessDetail(process, processes?.events.orEmpty()) } }
+            else -> null
         },
     ) {
         val o = overview
@@ -404,6 +491,8 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
                     )
                     HorizontalDivider()
                 }
+                processRows(processes, chosen) { chosen = it }
+                item { Header("Other machines") }
                 if (o.nodes.isEmpty()) item { Message("No other machines", detail = "Join one from the home's web Settings.") }
                 items(o.nodes, key = { it.id }) { m ->
                     ListItem(
@@ -428,7 +517,7 @@ private fun machineState(m: Machine): String = buildString {
 }
 
 @Composable
-private fun Dot(color: Color) {
+internal fun Dot(color: Color) {
     androidx.compose.foundation.Canvas(Modifier.size(10.dp)) { drawCircle(color) }
 }
 

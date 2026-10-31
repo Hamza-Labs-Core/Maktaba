@@ -1,0 +1,12 @@
+{"host": "", "jobs": [
+  {"id": 9001, "stage": "transcribe", "state": "running", "subject_kind": "video", "subject_id": "v1",
+    "subject_label": "Lecture 4: Fiqh of prayer", "library_id": "l1", "priority": 0, "attempts": 1, "max_attempts": 3,
+    "outcome": null, "error_cause": null, "created_at": "2026-10-31T07:00:00Z", "started_at": "2026-10-31T07:55:00Z",
+    "finished_at": null,
+    "progress": {"step": "whisper", "steps": ["extract", "whisper"], "done_units": 30, "total_units": 120,
+      "message": "chunk 3 of 12"},
+    "claimed_by": "w-home-1"},
+  {"id": 9002, "stage": "thumbnails", "state": "superposed", "subject_kind": "video", "subject_id": "v2",
+    "subject_label": "Clip", "library_id": null, "priority": 5, "attempts": 1, "max_attempts": 3,
+    "created_at": "2026-10-31T07:00:00Z", "started_at": null, "progress": null, "claimed_by": null}
+]}

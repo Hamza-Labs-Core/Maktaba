@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material.icons.outlined.Sync
+import androidx.compose.material.icons.outlined.SystemUpdate
 import androidx.compose.material.icons.outlined.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,10 +56,14 @@ import com.hamzalabs.maktaba.core.ui.sentence
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-/** The Remote's places: what needs attention first, as on the web's queue page. */
+/**
+ * The Remote's places: what needs attention first, as on the web's queue page. The home's
+ * processes are on Machines, the jobs running now on Queue.
+ */
 enum class Place(val label: String, val icon: ImageVector) {
     Attention("Needs attention", Icons.Outlined.ReportProblem),
     Queue("Queue", Icons.Outlined.Sync),
+    Updates("Updates", Icons.Outlined.SystemUpdate),
     Libraries("Libraries", Icons.Outlined.VideoLibrary),
     Machines("Machines", Icons.Outlined.Dns),
 }
@@ -148,6 +153,7 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
         when (place) {
             Place.Attention -> AttentionScreen(remote, account)
             Place.Queue -> QueueScreen(remote, account)
+            Place.Updates -> UpdatesScreen(remote, account)
             Place.Libraries -> LibrariesScreen(remote, account)
             Place.Machines -> MachinesScreen(remote, account)
         }

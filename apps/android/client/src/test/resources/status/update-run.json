@@ -1,0 +1,27 @@
+{
+  "id": "8d7c1f1e-5b8a-4c1e-9d0e-0a1b2c3d4e5f", "version": "0.3.44", "from_version": "0.3.41", "trigger": "manual",
+  "state": "rolling_out", "step": "rollout", "started_at": "2026-10-31T08:00:00Z",
+  "install_kind": "appbundle",
+  "detail": {"waiting": "tv_busy", "home": {"state": "committed"}, "prior_drain": {"x": false},
+    "tv": {"outcome": "held", "number": 13, "held_on": "0.3.41", "failed": ["audio"], "state": "retrying",
+      "checks": [{"check": "audio", "result": "fail", "value": "-70 dB"}]},
+    "waiting_home": [{"node_id": "n2", "name": "pi", "version": "0.3.40"}]},
+  "steps": [
+    {"seq": 1, "host": "home", "step": "preflight", "state": "done", "started_at": "2026-10-31T08:00:00Z",
+      "finished_at": "2026-10-31T08:00:05Z"},
+    {"seq": 2, "host": "home", "step": "stage", "state": "done", "started_at": "2026-10-31T08:00:05Z",
+      "detail": {"detail": "downloaded 212 MB"}},
+    {"seq": 3, "host": "nas-box", "step": "warp_drive", "state": "running", "started_at": "2026-10-31T08:05:00Z",
+      "detail": "a plain string a newer home might send"}
+  ],
+  "targets": [
+    {"run_id": "8d7c1f1e-5b8a-4c1e-9d0e-0a1b2c3d4e5f", "node_id": "n1", "name": "nas-box", "ord": 1,
+      "platform": "linux-amd64", "kind": "layout", "state": "watching", "from_version": "0.3.41", "to_version": "0.3.44",
+      "attempts": 1, "applied_at": "2026-10-31T08:06:00Z"},
+    {"run_id": "8d7c1f1e-5b8a-4c1e-9d0e-0a1b2c3d4e5f", "node_id": "n3", "name": "studio", "ord": 2,
+      "platform": "windows-amd64", "kind": "appbundle", "state": "needs_person", "from_version": "0.3.41",
+      "to_version": "0.3.44", "attempts": 1,
+      "error": {"code": "needs_admin", "detail": "Move Maktaba to a folder this user can change"}},
+    {"node_id": "n4", "name": "attic", "state": "teleporting", "attempts": 0}
+  ]
+}
