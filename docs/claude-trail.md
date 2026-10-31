@@ -678,6 +678,18 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Epic 48 story 48.8 agent of `b743b7d4`: [#464] adds the Android client's
+  browse calls (`apps/android/client/…/core/api/Browse.kt`): Home, recommendations, libraries
+  and pins, hub, grid, facets, series, a video's page, marks, search.
+  - Decided: calls are `ApiClient` extensions in their own file. To make that possible,
+    `ApiClient.get`/`decode`/`send` went from `private` to `internal`; 48.9 needs the same edit.
+    A 404 is `NotAvailable`, a new `ApiException` subclass whose cause is the `Status`, so
+    `errorKind()` and Details work without touching `HomeError.kt`. Lists decode through
+    `LenientList`, which drops elements it cannot read.
+  - Fixtures are hand-made from the Go structs, not recorded from a branch stack. To keep them
+    honest, `api/internal/handlers/browse/native_fixtures_test.go` decodes each one into the
+    handlers' types with unknown fields refused.
+  - Left out: the Profile routes (48.31's).
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
@@ -828,3 +840,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#464]: https://github.com/Hamza-Labs-Core/Maktaba/pull/464
