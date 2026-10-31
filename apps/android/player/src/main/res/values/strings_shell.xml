@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's shell (Epic 48.15): the sections' names and what a screen not built yet says.
+     Its Arabic is in values-ar/strings_shell.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="section_home">Home</string>
+    <string name="section_live_tv">Live TV</string>
+    <string name="section_search">Search</string>
+    <string name="section_profile">Profile</string>
+    <string name="shell_video">Video</string>
+    <string name="shell_not_ready">Not available yet</string>
+</resources>

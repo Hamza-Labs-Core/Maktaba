@@ -12,6 +12,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
+  Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
+  a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,
+  Live TV, Search and Profile, each keeping its own screens and scroll position. A section
+  appears only once its screen is built, so for now the app opens on today's Libraries as
+  before. CI now runs the Player's unit and UI tests on a fake home, with dark English and
+  Arabic screenshots checked against references.
 - **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
   lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
   and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next

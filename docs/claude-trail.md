@@ -679,6 +679,27 @@ Append here: date, session, one to five lines on what changed. Newest last.
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
 
+- 2026-10-31 · Epic 48.15 agent of `b743b7d4`: the Android Player shell. `player/…/shell/`:
+  `PlayerShell` (Material's `NavigationSuiteScaffold`: bar compact or tabletop, rail medium,
+  permanent drawer expanded with medium height; a phone on its side keeps the rail), one
+  Navigation Compose `NavHost` per section kept by a `SaveableStateHolder` (each section's stack
+  and scroll survive switching; re-select pops to root; Back at another section's root goes to
+  the first), typed `Route`s (`video`, `series`, `library`, `channel`, `watch` as on Apple), and
+  `PlayerSection.enabled` = Libraries only. `LibraryBrowser.kt` moved to `libraries/`; the
+  Libraries section is that browser until 48.27. Placeholder screens live in each screen's own
+  folder (`home/`, `video/`, `search/`, `live/`, `profile/`, `watch/`) so the screen stories
+  only replace their own file.
+  - Decided: one reachable section shows no navigation at all (a bar of one is no choice), so
+    the shipped app looks as before until a second screen merges.
+  - Harness: Robolectric 4.17 + Compose UI tests + Roborazzi on the JVM, a `FakeHome`
+    (MockWebServer) in `player/src/test/…/harness/`. CI runs `:player:testPhoneDebugUnitTest`
+    and `:player:verifyRoborazziPhoneDebug`; references in `player/src/test/screenshots/`.
+  - Gotcha: Robolectric's SDK 36 needs Java 21; CI builds with 17, so `robolectric.properties`
+    pins `sdk=35`. The references were recorded on the Mac (2 % pixel tolerance for Linux text).
+  - Gotcha: core's `TranslationsTest` reads only `strings.xml`; the per-screen
+    `strings_<screen>.xml` tables are checked by the new `PlayerTranslationsTest` (and lint).
+  - Gotcha: with many agents building at once the Gradle daemon died of GC thrashing; pass
+    `-Dorg.gradle.jvmargs=-Xmx6g`.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
