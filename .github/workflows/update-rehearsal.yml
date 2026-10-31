@@ -207,7 +207,7 @@ jobs:
     name: seed (${{ matrix.profile }})
     needs: [kit]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75 # a cold full seed: 2M vectors and their HNSW index on 4 vCPUs
     strategy:
       fail-fast: false
       matrix:
@@ -249,7 +249,7 @@ jobs:
           }
           MAKTABA_REHEARSAL_KIT="$KIT" MAKTABA_REHEARSAL_PG_HOME="$KIT/pg" MAKTABA_REHEARSAL_SEEDS="$SEEDS" \
             MAKTABA_REHEARSAL_WORK="$RUNNER_TEMP/rh-work" MAKTABA_E2E_LOG_DIR="$RUNNER_TEMP/rh-logs" \
-            go test -count=1 -timeout 40m -run '^TestUpdateRehearsalSeed$' -v . 2>&1 | tee "$RUNNER_TEMP/seed.out"
+            go test -count=1 -timeout 70m -run '^TestUpdateRehearsalSeed$' -v . 2>&1 | tee "$RUNNER_TEMP/seed.out"
           grep -q -- '--- PASS: TestUpdateRehearsalSeed ' "$RUNNER_TEMP/seed.out" || { echo "::error::the seed did not run"; exit 1; }
           du -sh "$SEEDS"/* || true
 

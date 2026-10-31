@@ -36,7 +36,7 @@ import (
 )
 
 // seedVersion changes whenever the seed below does: the cached seeds are keyed on it.
-const seedVersion = "3"
+const seedVersion = "4"
 
 type seedProfile struct {
 	Name     string
@@ -195,7 +195,7 @@ func seedDatabase(t *testing.T, db *sql.DB, p seedProfile, logf func(string, ...
 		logf("seed: %s (%s)", what, time.Since(start).Round(100*time.Millisecond))
 	}
 	exec("session", `SET session_replication_role = replica; SET synchronous_commit = off;
-		SET maintenance_work_mem = '1GB'; SET max_parallel_maintenance_workers = 3; SET statement_timeout = 0`)
+		SET maintenance_work_mem = '4GB'; SET max_parallel_maintenance_workers = 3; SET statement_timeout = 0`)
 	// the semantic store (pgvector's extension is the superuser's to make; the table the
 	// app role's, as its own function makes it)
 	exec("the semantic store", `CREATE EXTENSION IF NOT EXISTS vector; SET ROLE maktaba;
@@ -248,11 +248,18 @@ func seedDatabase(t *testing.T, db *sql.DB, p seedProfile, logf func(string, ...
 			(ARRAY['old','new','long','short','quiet','bright','far','near','lost','found'])[1 + (g / 7) % 10] || ' ' ||
 			'segment ' || g || ' ' || substr(md5(g::text), 1, 12), 0.9
 		FROM generate_series(1, $1) g`, s, v)
+	// the vectors: the sum of one of 1009 random vectors and one of 997 (about a million
+	// distinct vectors, cheap to make: 384 random numbers per row took most of the seed)
+	exec("vector pools", `CREATE TEMP TABLE pool_a AS SELECT i,
+			(SELECT array_agg(random()::real - 0.5) FROM generate_series(1, 384) WHERE i >= 0)::halfvec(384) AS v
+			FROM generate_series(0, 1008) i;
+		CREATE TEMP TABLE pool_b AS SELECT i,
+			(SELECT array_agg(random()::real - 0.5) FROM generate_series(1, 384) WHERE i >= 0)::halfvec(384) AS v
+			FROM generate_series(0, 996) i`)
 	exec(fmt.Sprintf("%d vectors (halfvec 384)", s), `INSERT INTO segment_embeddings (segment_id, video_id, library_id, language, model, embedding)
 		SELECT g, md5('video' || (1 + (g - 1) % $2))::uuid, md5('library' || (1 + ((g - 1) % $2 + 1) % 3))::uuid,
-			CASE WHEN ((g - 1) % $2 + 1) % 3 = 0 THEN 'en' ELSE 'ar' END, 'multilingual-e5-small',
-			(SELECT array_agg(random()::real - 0.5) FROM generate_series(1, 384) WHERE g > 0)::halfvec(384)
-		FROM generate_series(1, $1) g`, s, v)
+			CASE WHEN ((g - 1) % $2 + 1) % 3 = 0 THEN 'en' ELSE 'ar' END, 'multilingual-e5-small', a.v + b.v
+		FROM generate_series(1, $1) g JOIN pool_a a ON a.i = g % 1009 JOIN pool_b b ON b.i = g % 997`, s, v)
 	exec("sequences", `SELECT setval('transcript_segments_id_seq', $1)`, s)
 	exec("sequences", `SELECT setval('audio_tracks_id_seq', $1)`, v)
 	exec("series", `INSERT INTO series (id, library_id, name, year, numbering)
