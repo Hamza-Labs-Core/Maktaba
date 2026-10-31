@@ -972,17 +972,22 @@ func (c Copy) Pause(ctx context.Context) error {
 
 // Quiesce pauses the subscription and waits (up to wait) until its workers have
 // stopped: the home's slot is free then (a fresh copy drops it, which the home refuses
-// while a subscription streams from it).
+// while a subscription streams from it). A worker still there after wait is ended, and
+// has wait again to go: one waiting on a home that sends nothing (a table's first copy
+// whose server on the home hangs while its connection lives on) never sees the
+// subscription off, and nothing starts a worker of a subscription that is off. The
+// switch-off itself waits at most wait for the subscription's lock: a table's copy that
+// ends while its home hangs holds it until the home answers, and is ended for it.
 func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
-	if err := c.Pause(ctx); err != nil {
-		return err
-	}
 	db, err := c.super()
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	end := time.Now().Add(wait)
+	if err := c.disableWithin(ctx, db, wait); err != nil {
+		return err
+	}
+	end, ended := time.Now().Add(wait), false
 	for {
 		var live int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_subscription
@@ -993,7 +998,13 @@ func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
 			return nil
 		}
 		if time.Now().After(end) {
-			return fmt.Errorf("nodecopy: the subscription's workers did not stop within %s", wait)
+			if ended {
+				return fmt.Errorf("nodecopy: the subscription's workers did not stop within %s, nor once ended", wait)
+			}
+			if err := endWorkers(ctx, db); err != nil {
+				return err
+			}
+			end, ended = time.Now().Add(wait), true
 		}
 		select {
 		case <-ctx.Done():
@@ -1001,6 +1012,53 @@ func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+}
+
+// disableWithin disables the subscription (as Pause), its lock waited for at most wait;
+// a wait that runs out ends the subscription's workers (the lock's holder waits on the
+// home) and tries once more.
+func (c Copy) disableWithin(ctx context.Context, db *sql.DB, wait time.Duration) error {
+	for try := 0; ; try++ {
+		s, err := c.subscription(ctx, db)
+		if err != nil || !s.exists || !s.enabled {
+			return err
+		}
+		err = disableOnce(ctx, db, wait)
+		var pqErr *pq.Error
+		if err == nil || try > 0 || !errors.As(err, &pqErr) || pqErr.Code != "55P03" {
+			if err != nil {
+				return fmt.Errorf("nodecopy: switching the copy off: %w", err)
+			}
+			return nil
+		}
+		if err := endWorkers(ctx, db); err != nil {
+			return err
+		}
+	}
+}
+
+func disableOnce(ctx context.Context, db *sql.DB, wait time.Duration) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`SET LOCAL lock_timeout = %d`, max(wait.Milliseconds(), 1))); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER SUBSCRIPTION `+pq.QuoteIdentifier(Subscription)+` DISABLE`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// endWorkers ends the subscription's workers (pg_terminate_backend).
+func endWorkers(ctx context.Context, db *sql.DB) error {
+	if _, err := db.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_subscription
+	    WHERE subname = $1 AND pid IS NOT NULL`, Subscription); err != nil {
+		return fmt.Errorf("nodecopy: ending the subscription's workers: %w", err)
+	}
+	return nil
 }
 
 // Receiving reports whether the subscription's worker receives from its home (its home's
