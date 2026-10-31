@@ -168,6 +168,36 @@ func TestDumpVerifiedAndRestoredInPlace(t *testing.T) {
 // from a dump, in place and bundled. Their slots go (DROP DATABASE refuses to outlive
 // them, and they would stream what the dump replaced), so each machine copies the
 // restored database anew; the dump's publications do not collide with those still there.
+// The review of #433: a database a release before 2026-10-28 put back lost the workers'
+// CONNECT (a dump never holds a database's grants); a start gives it back, once.
+func TestGrantWorkersConnect(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	has := func() bool {
+		var ok bool
+		if err := r.db.QueryRow(`SELECT coalesce(datacl::text, '') LIKE '%maktaba_worker=c/%' FROM pg_database
+			WHERE datname = current_database()`).Scan(&ok); err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	if _, err := r.db.Exec(`DO $$ BEGIN EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM maktaba_worker',
+		current_database()); END $$`); err != nil {
+		t.Fatal(err)
+	}
+	if has() {
+		t.Fatal("the workers' CONNECT is still there")
+	}
+	for i := 0; i < 2; i++ {
+		if err := r.t.GrantWorkersConnect(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if !has() {
+		t.Fatal("the workers' CONNECT is not back")
+	}
+}
+
 func TestRestoreWithMachineCopies(t *testing.T) {
 	r := newPGRig(t)
 	ctx := context.Background()
@@ -445,7 +475,25 @@ func TestRestoreFailingLeavesTheDatabase(t *testing.T) {
 	raw, _ := os.ReadFile(old)
 	badOld := filepath.Join(r.t.Backups, "bad-old.dump")
 	_ = os.WriteFile(badOld, raw[:len(raw)*2/3], 0o600)
+	// a dump whose rows' counts are cut: refused before anything changes
+	badCounts := filepath.Join(r.t.Backups, "bad-counts.dump")
+	if raw, err := os.ReadFile(filepath.Join(dump, pgbundle.CountsFile)); err != nil {
+		t.Fatalf("the dump has no counts: %v", err)
+	} else {
+		if err := os.MkdirAll(badCounts, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		ents, _ := os.ReadDir(dump)
+		for _, e := range ents {
+			b, _ := os.ReadFile(filepath.Join(dump, e.Name()))
+			_ = os.WriteFile(filepath.Join(badCounts, e.Name()), b, 0o600)
+		}
+		_ = os.WriteFile(filepath.Join(badCounts, pgbundle.CountsFile), raw[:len(raw)*2/3], 0o600)
+	}
 	var log bytes.Buffer
+	if err := r.t.Restore(ctx, badCounts, &log); err == nil || !strings.Contains(err.Error(), "damaged") {
+		t.Fatalf("a dump with damaged counts = %v", err)
+	}
 	for _, d := range []string{bad, badOld} {
 		if err := r.t.Restore(ctx, d, &log); err == nil {
 			t.Fatalf("a cut dump restored: %s", d)
@@ -484,7 +532,9 @@ func cutDump(t *testing.T, src, dst string) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if e.Name() != "toc.dat" && int64(len(raw)) > size {
+		// a table's file: not the table of contents, nor the rows' counts (counts.json,
+		// which a small database's dump can make its largest file)
+		if e.Name() != "toc.dat" && e.Name() != pgbundle.CountsFile && int64(len(raw)) > size {
 			largest, size = e.Name(), int64(len(raw))
 		}
 		_ = os.WriteFile(filepath.Join(dst, e.Name()), raw, 0o600)

@@ -534,7 +534,7 @@ func TestVectorOnlyWhenAvailable(t *testing.T) {
 	if vectorSQL != want {
 		t.Fatalf("vectorSQL = %q, want %q", vectorSQL, want)
 	}
-	for name, sql := range map[string]string{"bootstrap": bootstrapSQL("pw"), "restore": recreateSQL(RestoreOptions{}),
+	for name, sql := range map[string]string{"bootstrap": bootstrapSQL("pw"), "restore": recreateSQL(RestoreOptions{}, AppDatabase),
 		"cluster": clusterSQL} {
 		if !strings.Contains(sql, vectorSQL) {
 			t.Errorf("%s SQL lacks pgvector:\n%s", name, sql)

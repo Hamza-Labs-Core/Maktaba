@@ -103,6 +103,44 @@ func exportSnapshot(ctx context.Context, opts DumpOptions) (*snapshot, error) {
 
 func quoteIdent(s string) string { return `"` + strings.ReplaceAll(s, `"`, `""`) + `"` }
 
+// counts counts every table's rows of the public schema in the dump's snapshot (its own
+// session, which pg_dump and the chunks' sessions only read the snapshot of): what a
+// restore of the dump must hold (CountsFile, VerifyRestore). nil when it has no snapshot
+// or a count fails (the restore then checks what it can without them).
+func (s *snapshot) counts(ctx context.Context) map[string]int64 {
+	if s.tx == nil {
+		return nil
+	}
+	rows, err := s.tx.QueryContext(ctx, `SELECT format('%I.%I', n.nspname, c.relname), n.nspname, c.relname
+		FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relkind = 'r' ORDER BY 1`)
+	if err != nil {
+		return nil
+	}
+	type table struct{ key, sql string }
+	var tables []table
+	for rows.Next() {
+		var q, schema, name string
+		if err := rows.Scan(&q, &schema, &name); err != nil {
+			_ = rows.Close()
+			return nil
+		}
+		tables = append(tables, table{key: schema + "." + name, sql: "SELECT count(*) FROM " + q})
+	}
+	if rows.Close() != nil || rows.Err() != nil {
+		return nil
+	}
+	out := make(map[string]int64, len(tables))
+	for _, t := range tables {
+		var n int64
+		if err := s.tx.QueryRowContext(ctx, t.sql).Scan(&n); err != nil {
+			return nil
+		}
+		out[t.key] = n
+	}
+	return out
+}
+
 // dumpChunks writes each chunked table in jobs ranges of its key, all at once, into dir.
 func dumpChunks(ctx context.Context, psql string, conn, env []string, dir string, s *snapshot, jobs int) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {

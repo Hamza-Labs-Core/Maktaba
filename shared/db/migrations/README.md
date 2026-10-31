@@ -78,6 +78,13 @@ DATABASE_URL=... make migrate-status
    (Epic 35 design §6.3). `make compat-prev` runs the previous release's
    repository tests against a database these migrations made, and fails
    the build when they break it without this marker (story 35.5 AC6).
+   An update rolled back after additive migrations keeps them (2026-10-28): the
+   previous release starts on the newer schema with nothing put back, when no
+   migration since it carries either "Breaking for …" marker or drops, renames,
+   retypes, sets NOT NULL or truncates in its Up section
+   (`cmd/maktaba-server/internal/updater/schemakeep.go`); any of those puts the
+   pre-update dump back. `meta/schema-keep.json` says this release starts on
+   such a kept schema (keep it in the folder).
 11. **A NO TRANSACTION file runs again whole.** A crash part way through a
    file goose runs without a transaction leaves it unapplied, and the next
    start runs it again from the top: every statement of its Up section is

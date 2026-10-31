@@ -1,0 +1,4 @@
+{
+  "protocol": 1,
+  "about": "This release starts on a newer schema that a rollback kept for it: every migration since its own is rollback-safe (no 'Breaking for the previous release' or 'Breaking for older nodes' row, nothing dropped, renamed, retyped or tightened), the database record's kept_for names it, and its api is told so (MAKTABA_SCHEMA_AHEAD_OK). A rollback to a release without this file puts the pre-update dump back. See cmd/maktaba-server/internal/updater/schemakeep.go."
+}

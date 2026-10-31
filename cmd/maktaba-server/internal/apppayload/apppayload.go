@@ -118,8 +118,18 @@ type Database struct {
 	// or the command line): restoring, then restored, with no failed release; Version is
 	// then the release whose database is replaced and From the one the dump is put back
 	// for.
-	By string    `json:"by,omitempty"`
-	At time.Time `json:"at"`
+	By string `json:"by,omitempty"`
+	// KeptFor is the older release a rollback left this database for with nothing put
+	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
+	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and
+	// KeptReason is why the newer release rolled back. Version stays the schema's release.
+	KeptFor    string `json:"kept_for,omitempty"`
+	KeptReason string `json:"kept_reason,omitempty"`
+	// DumpKeptFor is KeptFor of the database Dump was taken of (an update from a release
+	// running on a kept, newer schema): a restore of Dump is again that schema, kept for
+	// that release, and says so (KeptFor of the restored record).
+	DumpKeptFor string    `json:"dump_kept_for,omitempty"`
+	At          time.Time `json:"at"`
 }
 
 // Ran is the release that last started on the database: Release, else Version.

@@ -3,6 +3,7 @@ package pgbundle
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -95,6 +96,14 @@ func PgDump(ctx context.Context, bin string, conn, env []string, path string, op
 	} else {
 		chunkErr <- nil
 	}
+	// and every table's rows are counted in the same snapshot meanwhile (CountsFile: what a
+	// restore of it is checked against)
+	var counts map[string]int64
+	countCtx, stopCounting := context.WithCancel(ctx)
+	counted := make(chan struct{})
+	go func() { defer close(counted); counts = snap.counts(countCtx) }()
+	// a dump that fails stops the counts; the snapshot's session is closed once they end
+	defer func() { stopCounting(); <-counted }()
 	first := 0
 	if v, ok := compressionOf.Load(bin); ok {
 		first = v.(int)
@@ -146,6 +155,12 @@ func PgDump(ctx context.Context, bin string, conn, env []string, path string, op
 				_ = os.RemoveAll(part)
 				return err
 			}
+		}
+	}
+	<-counted
+	if counts != nil {
+		if b, err := json.Marshal(counts); err == nil {
+			_ = os.WriteFile(filepath.Join(part, CountsFile), b, 0o600) // best effort: the restore checks without it
 		}
 	}
 	if opts.Check != nil {

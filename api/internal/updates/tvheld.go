@@ -38,12 +38,17 @@ const (
 	TVStateReplaced = "replaced" // a later release's change replaced it
 	TVStateFailed   = "failed"   // a retry's swap failed, or it was rolled back on the air
 	TVStateGone     = "gone"     // the change is no longer there (a database put back)
+	// TVStatePending: the release committed while its change still waited (an approval,
+	// a quiet window, a slow staging); it goes on by itself
+	TVStatePending = "pending"
 )
 
 // TVChanges is the TV change controller as a run's TV step needs it (tvchange.Controller).
 type TVChanges interface {
 	AutoUpdate(ctx context.Context, runID string) (tvchange.AutoUpdateStatus, error)
 	RetryAutoUpdate(ctx context.Context, runID string, actor *string) (tvchange.AutoUpdateStatus, error)
+	// BeginAutoUpdate makes the run's change (a Retry of a TV held with no change behind it)
+	BeginAutoUpdate(ctx context.Context, runID, version, sha256 string) (tvchange.AutoUpdateStatus, error)
 	DropAutoUpdate(ctx context.Context, runID string, actor *string) (tvchange.AutoUpdateStatus, error)
 	ReplaceOlderAutoUpdates(ctx context.Context, runID string) error
 }
@@ -64,7 +69,16 @@ type RunTV struct {
 	// Checks are the failed checks with their channel and value (the report's summary;
 	// set when the run is read while held).
 	Checks []tvchange.Check `json:"checks,omitempty"`
+	// StreamingVersion and StreamingSHA256: the binary the change carries, for a TV held
+	// with no change behind it (Failed = [no_change]): its Retry makes the change with them.
+	StreamingVersion string `json:"streaming_version,omitempty"`
+	StreamingSHA256  string `json:"streaming_sha256,omitempty"`
+	// Dropped: an admin dropped a TV held with no change behind it (nothing to cancel).
+	Dropped bool `json:"dropped,omitempty"`
 }
+
+// noChange reports whether the run's TV was held with no change behind it.
+func (t *RunTV) noChange() bool { return t.ChangeID == "" && t.Outcome == TVHeld }
 
 // TVHeldNow is the run whose TV is held now (GET /api/cluster/updates: tv_held).
 type TVHeldNow struct {
@@ -107,7 +121,18 @@ func (t *RunTV) fill(ctx context.Context, tv TVChanges, runID string) {
 	if err != nil {
 		return
 	}
+	if t.noChange() && st.Outcome == tvchange.AutoOutcomeNone {
+		// held with no change behind it: Retry makes it, Drop leaves the TV as it is
+		t.State = TVStateHeld
+		if t.Dropped {
+			t.State = TVStateDropped
+		}
+		return
+	}
 	t.State = tvState(st)
+	if t.Outcome == TVPending && t.State == TVStateRetrying {
+		t.State = TVStatePending // still on its first way to the air, not a retry
+	}
 	if t.State == TVStateHeld {
 		t.Failed, t.Checks = st.Failed, st.FailedChecks
 		if st.LiveStreaming != "" {
@@ -119,11 +144,23 @@ func (t *RunTV) fill(ctx context.Context, tv TVChanges, runID string) {
 // tvHeldAtCommit records a TV held at the home's commit: the run's detail, the admin's
 // notice (Retry and Drop are on the Updates page), the audit. The release is not blocked.
 func (d *Driver) tvHeldAtCommit(ctx context.Context, run Run, det *RunDetail, st *MachineStatus) {
+	if st != nil && st.TV != nil && st.TV.Outcome == TVPending && det.TV == nil {
+		// committed while its change still waited: the run says so (an admin may drop the
+		// change from the Updates page); nothing is held, nobody is warned
+		det.TV = &RunTV{Outcome: TVPending, ChangeID: st.TV.ChangeID, Number: st.TV.Number, HeldOn: st.TV.LiveStreaming,
+			State: TVStatePending}
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+		d.audit(ctx, run, "tv_pending", map[string]any{"change_id": st.TV.ChangeID, "live_streaming": st.TV.LiveStreaming})
+		d.log().Info("update installed with its TV change still waiting", "event", "update_tv_pending",
+			"run_id", run.ID, "version", run.Version, "change_id", st.TV.ChangeID)
+		return
+	}
 	if st == nil || st.TV == nil || st.TV.Outcome != TVHeld || det.TV != nil {
 		return
 	}
 	det.TV = &RunTV{Outcome: TVHeld, ChangeID: st.TV.ChangeID, Number: st.TV.Number,
-		HeldOn: st.TV.LiveStreaming, Failed: st.TV.Failed}
+		HeldOn: st.TV.LiveStreaming, Failed: st.TV.Failed,
+		StreamingVersion: st.TV.StreamingVersion, StreamingSHA256: st.TV.StreamingSHA256}
 	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
 	d.audit(ctx, run, "tv_held", map[string]any{"change_id": st.TV.ChangeID, "held_on": st.TV.LiveStreaming,
 		"failed": st.TV.Failed})
@@ -166,8 +203,31 @@ func (d *Driver) TVAction(ctx context.Context, runID, action, actor string) (Run
 		} else if active != nil {
 			return RunTV{}, ErrRunActive
 		}
+		if det.TV.noChange() {
+			// held with no change behind it (it could not be had at the update): Retry makes
+			// it now, with the binary the home said; it is staged and checked as any
+			if det.TV.Dropped || det.TV.StreamingVersion == "" || det.TV.StreamingSHA256 == "" {
+				return RunTV{}, ErrTVNotHeld
+			}
+			st, err = d.TV.BeginAutoUpdate(ctx, runID, det.TV.StreamingVersion, det.TV.StreamingSHA256)
+			if err == nil && st.ChangeID != "" {
+				det.TV.ChangeID, det.TV.Number = st.ChangeID, st.Number
+				noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, runID, "", det), "run_id", runID)
+			}
+			break
+		}
 		st, err = d.TV.RetryAutoUpdate(ctx, runID, who)
 	case "drop":
+		if det.TV.noChange() {
+			// nothing to cancel: the TV stays on the software it runs until a later release
+			if det.TV.Dropped {
+				return RunTV{}, ErrTVNotHeld
+			}
+			det.TV.Dropped = true
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, runID, "", det), "run_id", runID)
+			st = tvchange.AutoUpdateStatus{Outcome: tvchange.AutoOutcomeCancelled, EndReason: tvchange.EndDropped}
+			break
+		}
 		st, err = d.TV.DropAutoUpdate(ctx, runID, who)
 	default:
 		return RunTV{}, errors.New("unknown action")
@@ -208,8 +268,8 @@ func (d *Driver) TVHeld(ctx context.Context) *TVHeldNow {
 	}
 	for _, r := range runs {
 		_, det, err := d.Store.RunDetailOf(ctx, r.ID)
-		if err != nil || det.TV == nil {
-			continue
+		if err != nil || det.TV == nil || det.TV.Outcome == TVPending {
+			continue // (a TV pending at the commit was never held)
 		}
 		det.TV.fill(ctx, d.TV, r.ID)
 		if det.TV.State != TVStateHeld && det.TV.State != TVStateRetrying {

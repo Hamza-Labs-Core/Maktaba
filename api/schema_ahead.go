@@ -28,9 +28,28 @@ var errSchemaAhead = errors.New("the database holds migrations newer than this M
 // nothing to put back; cmd/maktaba-server/serve_appbundle.go).
 const exitSchemaAhead = 3
 
-// schemaAhead is errSchemaAhead with both versions when applied is above known.
+// envSchemaAheadOK is set by the server's database step when the database's record keeps
+// a newer schema for this release: a rollback whose migrations were all rollback-safe
+// (additive) left the database as the newer release made it, with nothing put back
+// (cmd/maktaba-server/internal/updater/schemakeep.go). The migrations' own rules (a
+// "Breaking for the previous release" migration is never kept) make that schema one this
+// code runs on. The file shared/db/migrations/meta/schema-keep.json says this release
+// honours it.
+const envSchemaAheadOK = "MAKTABA_SCHEMA_AHEAD_OK"
+
+// schemaAheadOK reports whether envSchemaAheadOK is set.
+func schemaAheadOK() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(envSchemaAheadOK))) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
+}
+
+// schemaAhead is errSchemaAhead with both versions when applied is above known (none
+// when the server's database step kept that newer schema for this release).
 func schemaAhead(applied, known int64) error {
-	if applied <= known {
+	if applied <= known || schemaAheadOK() {
 		return nil
 	}
 	return fmt.Errorf("%w: the database's schema is at %04d and this maktaba-api knows migrations up to %04d. "+

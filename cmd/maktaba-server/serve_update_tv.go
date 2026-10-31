@@ -43,6 +43,16 @@ func (t *apiTV) base() string {
 
 // Begin implements updater.TVSwapper: the run's change of this release's streaming binary.
 func (t *apiTV) Begin(ctx context.Context, j *updater.Journal) (updater.TVStatus, error) {
+	v, sum, err := t.Binary(j)
+	if err != nil {
+		return updater.TVStatus{}, err
+	}
+	return t.do(ctx, http.MethodPost, "", map[string]string{"run_id": j.Job.RunID, "version": v, "sha256": sum})
+}
+
+// Binary implements updater.TVBinary: the release's streaming binary, as the change carries
+// it.
+func (t *apiTV) Binary(j *updater.Journal) (string, string, error) {
 	// the binary's own spelling of its version (a release build says "v1.5.0"): what the
 	// front door and the slots compare a TV release's binary with
 	v := j.Job.Version
@@ -51,9 +61,9 @@ func (t *apiTV) Begin(ctx context.Context, j *updater.Journal) (updater.TVStatus
 	}
 	rb, err := supervisor.ReleaseStreaming(supervisor.Options{Config: t.cfg, ReleaseDir: t.releaseDir}, v)
 	if err != nil {
-		return updater.TVStatus{}, fmt.Errorf("the release's streaming binary: %w", err)
+		return "", "", fmt.Errorf("the release's streaming binary: %w", err)
 	}
-	return t.do(ctx, http.MethodPost, "", map[string]string{"run_id": j.Job.RunID, "version": v, "sha256": rb.SHA256})
+	return v, rb.SHA256, nil
 }
 
 // Status implements updater.TVSwapper.

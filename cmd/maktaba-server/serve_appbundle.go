@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -248,6 +250,9 @@ func (s *sharedStep) prepare(ctx context.Context, report func(supervisor.Detail)
 		s.mu.Unlock()
 		return nil
 	}
+	if s.halt != nil && supervisor.HaltCleared(s.halt) {
+		s.halt = nil // its way out came (the database record put right): the step runs again
+	}
 	if s.halt != nil {
 		s.mu.Unlock()
 		return s.halt
@@ -426,6 +431,14 @@ var (
 	// how many of the payload's migrations the database lacks (known false: that cannot be
 	// told, and the update dumps as before)
 	pendingMigrations = func(ctx context.Context, g *migrationGate) (int, bool) { return g.pendingNow(ctx) }
+	// the workers' group's CONNECT on the database, given when it lacks it
+	grantWorkersConnect = func(ctx context.Context, g *migrationGate) error {
+		t, err := g.target()
+		if err != nil {
+			return err
+		}
+		return t.GrantWorkersConnect(ctx)
+	}
 	// how often the dump's size is said while it is taken
 	dumpReportEvery = time.Minute
 )
@@ -776,6 +789,53 @@ func (g *migrationGate) record() (apppayload.Database, error) {
 	return apppayload.Database{}, nil
 }
 
+// keptFor reports whether the record keeps its newer schema for release cur (a rollback
+// with nothing put back, layout.MarkRecordKept).
+func keptFor(rec apppayload.Database, cur string) bool {
+	return rec.KeptFor != "" && (rec.State == apppayload.DatabaseMigrated || rec.State == apppayload.DatabaseRestored) &&
+		layout.NormalizeVersion(rec.KeptFor) == layout.NormalizeVersion(cur)
+}
+
+// envSchemaAheadOK tells the api (its `migrate up` and its serve) that the database may
+// hold migrations newer than its own: the record keeps them for this release.
+const envSchemaAheadOK = "MAKTABA_SCHEMA_AHEAD_OK"
+
+// allowSchemaAhead sets envSchemaAheadOK in the api's environment (its command is the
+// template every start of the api clones, and the database step's migrations run it).
+func (g *migrationGate) allowSchemaAhead() {
+	if g.api == nil || slices.Contains(g.api.Env, envSchemaAheadOK+"=1") {
+		return
+	}
+	if g.api.Env == nil {
+		g.api.Env = os.Environ()
+	}
+	g.api.Env = append(g.api.Env, envSchemaAheadOK+"=1")
+}
+
+// recordChanges reports, from now on, whether the database's record differs from what
+// it says now (a halt's way out: it is read every few seconds while the roles wait).
+func (g *migrationGate) recordChanges() func() bool {
+	path := apppayload.DatabasePath(g.stateDir)
+	then, err := os.ReadFile(path)
+	if err != nil {
+		then = nil
+	}
+	return func() bool {
+		now, err := os.ReadFile(path)
+		if err != nil || bytes.Equal(now, then) {
+			return false
+		}
+		// put right: the database is one a release runs on. Not a restore a person asked
+		// for (restoring, by): `maktaba-server restore` restarts the server for it, and a
+		// step run again meanwhile would race that restart
+		var rec apppayload.Database
+		if json.Unmarshal(now, &rec) != nil {
+			return false
+		}
+		return rec.State == apppayload.DatabaseMigrated || rec.State == apppayload.DatabaseRestored
+	}
+}
+
 func (g *migrationGate) save(rec apppayload.Database) error {
 	if err := apppayload.WriteDatabase(g.stateDir, rec); err != nil {
 		return detailErr("db_record_failed", fmt.Sprintf("the library database's record (%s) cannot be saved: %v",
@@ -785,8 +845,16 @@ func (g *migrationGate) save(rec apppayload.Database) error {
 }
 
 // run is the database step (the package comment); a failure that no retry in
-// this run can mend is a supervisor.Halt.
-func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail)) error {
+// this run can mend is a supervisor.Halt, which lasts until the database's record
+// changes (put right by hand, or by `maktaba-server restore`): then the step runs again
+// and the roles start, with no restart of the server (the outage of 2026-10-28 stayed
+// down after the record said restored, until a full restart).
+func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail)) (err error) {
+	defer func() {
+		if supervisor.Halted(err) {
+			err = supervisor.HaltUntil(err, g.recordChanges())
+		}
+	}()
 	// a restart of Postgres (the machines' reach changed) would cut the dump, the
 	// migrations or a restore short: it waits until this step is done
 	defer pgbundle.Hold()()
@@ -805,7 +873,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 			return supervisor.Halt(detailErr("db_restore_unfinished", fmt.Sprintf("the library database is being put "+
 				"back as it was before the update to %s (from %s): start the whole server (`maktaba-server serve`) to "+
 				"finish it", rec.Failed, rec.Dump), rec.Failed, rec.Dump))
-		case held != "" && held != cur && apppayload.Older(cur, held):
+		case held != "" && held != cur && apppayload.Older(cur, held) && !keptFor(rec, cur):
 			return supervisor.Halt(downgrade(cur, rec))
 		}
 		return nil
@@ -827,7 +895,15 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		}
 		held = rec.Version
 	}
-	if held != "" && held != cur && apppayload.Older(cur, held) {
+	// a rollback that kept the newer, rollback-safe schema for this release (nothing put
+	// back: updater/schemakeep.go): it starts on it, its api told it may
+	kept := keptFor(rec, cur)
+	if kept {
+		g.allowSchemaAhead()
+		fmt.Fprintf(g.log, "[serve] the library database holds %s's migrations, kept for %s by its rollback (%s): "+
+			"they are additive, nothing was put back\n", rec.Version, cur, orUnknown(rec.KeptReason))
+	}
+	if held != "" && held != cur && apppayload.Older(cur, held) && !kept {
 		err := downgrade(cur, rec)
 		g.failAttempt(held, "start", "db_refused_older", err)
 		return supervisor.Halt(err)
@@ -842,19 +918,23 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	case rec.State == apppayload.DatabaseMigrating:
 		// a start that did not finish migrating (stopped, cut off, its putting
 		// back failed): go on; the dump is still the one from before it all
-		update.From, update.Dump = rec.From, rec.Dump
+		update.From, update.Dump, update.DumpKeptFor = rec.From, rec.Dump, rec.DumpKeptFor
 	case ran != "" && ran == cur: // the same release: nothing to update
 		update = apppayload.Database{}
 	default:
-		update.From = ran
+		// the dump is of this database: of a kept schema, when it is one
+		update.From, update.DumpKeptFor = ran, rec.KeptFor
 		back = ran != "" && apppayload.Older(cur, ran)
-		if n, known := pendingMigrations(ctx, g); known && n == 0 {
+		if n, known := pendingMigrations(ctx, g); kept || (known && n == 0) {
 			// no migration to run: no dump, and Version stays (the release before knows
-			// the database as well); the start is a restart
+			// the database as well); the start is a restart. A kept schema is newer than
+			// this release's migrations, so none can be missing from it.
 			update.Version, update.State, update.Release = held, apppayload.DatabaseMigrated, cur
 			if held == "" || held == cur {
 				update.Version, update.Release = cur, ""
 			}
+			// the schema does not change: whom it is kept for neither
+			update.KeptFor, update.KeptReason, update.DumpKeptFor = rec.KeptFor, rec.KeptReason, ""
 			if !back {
 				fmt.Fprintf(g.log, "[serve] update %s -> %s: no migration to run, so no dump: the switch is a restart\n",
 					orUnknown(ran), cur)
@@ -925,12 +1005,21 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	}
 	switch {
 	case err == nil:
+		// the database is one this release runs on (migrated, or restored): the machines'
+		// way in is there (a restore by a release before 2026-10-28 dropped it)
+		if g.keeps() {
+			if gerr := grantWorkersConnect(ctx, g); gerr != nil {
+				fmt.Fprintf(g.log, "[serve] level=warn the machines' CONNECT on the library database could not be "+
+					"checked: %v\n", gerr)
+			}
+		}
 		switch {
 		case update.State == "":
 			if rec.State == apppayload.DatabaseMigrated {
 				return nil
 			}
-			update = apppayload.Database{Version: cur} // restored, and this is the release from before
+			// restored, and this is the release from before (on the kept schema it was put back to)
+			update = apppayload.Database{Version: cur, KeptFor: rec.KeptFor, KeptReason: rec.KeptReason}
 		case !back:
 			g.attempt(update.From, func(a *attempts.Attempt) { a.Step, a.Code, a.Detail = "migrate", "", ""; a.Ended(attempts.Installed) })
 		}
@@ -1015,8 +1104,9 @@ func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, re
 			"its next start tries to put it back again", rec.Failed, rec.Error, rec.Dump, err),
 			rec.Failed, rec.Error, rec.Dump, err.Error()))
 	}
+	// the dump of a schema kept for a release is that schema again, kept for it
 	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From, Dump: rec.Dump,
-		Failed: rec.Failed, Error: rec.Error}
+		Failed: rec.Failed, Error: rec.Error, KeptFor: rec.DumpKeptFor}
 	if err := g.save(done); err != nil {
 		return rec, err
 	}

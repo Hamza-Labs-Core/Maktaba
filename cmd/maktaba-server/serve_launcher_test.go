@@ -68,6 +68,37 @@ func TestHealthyFor(t *testing.T) {
 	}
 }
 
+// An app's launcher (or a runtime copy's) sets no release directory, only its state root:
+// a restart request written there (by hand after a payload-override, 2026-10-28) is taken
+// all the same, and serve exits 75 for the launcher.
+func TestRestartRequestUnderAnAppLauncher(t *testing.T) {
+	stopFilePoll = 10 * time.Millisecond
+	t.Setenv(envStopFile, "")
+	root := t.TempDir()
+	t.Setenv(envLauncherRoot, root)
+	l := layout.New(root)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	restart := watchLauncher(ctx, cancel, "")
+	if err := os.MkdirAll(l.UpdatesDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(l.RestartRequestPath(), []byte("by hand\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("a restart request under an app's launcher did not stop serve")
+	}
+	if !restart.Load() {
+		t.Fatal("restart not reported")
+	}
+	if _, err := os.Stat(l.RestartRequestPath()); err == nil {
+		t.Fatal("the request was not consumed")
+	}
+}
+
 func TestRestartRequestExits75(t *testing.T) {
 	stopFilePoll = 10 * time.Millisecond
 	t.Setenv(envStopFile, "")

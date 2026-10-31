@@ -246,6 +246,93 @@ updated its runtime) offers its own update for its window and tray.
    home's apply until it commits — and the failed state, which is not kept (releases before
    this rule dumped it aside first, `backups/failed-<new>-<utc>.dump`, which kept the library
    down for as long as a whole dump takes).
+
+   **An additive rollback keeps the schema (2026-10-28).** The outage of 2026-10-28 put the
+   whole database back for one migration that added a row (0168), and that restore failed. The
+   migrations are additive by rule (`shared/db/migrations/README.md` rules 9 and 10, `make
+   compat-prev`): the release before runs on the schema the new one made. So the rollback (the
+   new release's watch, `updater.Machine.rollback`) puts the dump back only when a migration
+   since the release before is not rollback-safe (`updater/schemakeep.go`): its MANIFEST row says
+   "Breaking for the previous release" or "Breaking for older nodes", or its Up section drops
+   anything (a table, a column with or without the `COLUMN` keyword, a default, an index, a
+   constraint, a view, a type…), renames, retypes (with or without `COLUMN`), sets NOT NULL,
+   adds a constraint (CHECK, UNIQUE, a key) or a unique index, adds a NOT NULL column with no
+   default or a column with a constraint, or truncates. Only two drops are not destructive by
+   themselves: `DROP NOT NULL`, and a trigger or a function dropped and made again in the same
+   file (the same trigger on the same table; the same function with exactly the same
+   parameter list: another signature is another function). Anything uncertain counts as
+   destructive (review of #433: the cost is only a restore); a DROP in the Down section or in
+   a comment is not read. By that rule 0168 keeps the schema and 0169 (its CHECK) does not.
+   Otherwise the record stays `migrated` with `kept_for` =
+   the release before (`layout.MarkRecordKept`), nothing is put back and nothing is lost: that
+   release's database step accepts the newer schema for itself (no `db_refused_older`, no
+   migration to run, `kept_for` carried until another release migrates) and tells its api so
+   (`MAKTABA_SCHEMA_AHEAD_OK=1`: `migrate up` and `serve` accept a schema ahead of their own).
+   The release before must say it does this (its migrations' `meta/schema-keep.json`, protocol
+   1, shipped from this release on, in the app payloads and the runtime copies); a rollback to a
+   release without it, a plain server's layout (its migrations archive carries no `meta/`), and
+   the launcher's own guard (the new release is not up to judge) put the dump back as before.
+   Installing the newer release again finds its migrations there: a restart, no dump.
+   `kept_for` follows the schema: a start with no migration keeps it; an update that migrates
+   notes it on its dump (`dump_kept_for`), and a restore of that dump says it again
+   (`kept_for` of the `restored` record, which the database step accepts as it accepts
+   `migrated`): the release a schema was kept for starts on it after a later rollback too.
+
+   **A restore that is needed is whole, or says what it lacks (2026-10-28).** The outage's
+   restore failed part way (`tuple concurrently updated`, then "a worker process died"): a joined
+   machine kept logging in to the home's database while it was put back, and as soon as its
+   functions were back asked for its copy (`cluster_node_replica_grant` →
+   `cluster_copy_publication`), whose `GRANT SELECT ON <every table> TO maktaba_replicas` and
+   `ALTER PUBLICATION … ADD TABLE` met pg_restore's own grants and trigger builds on the same
+   `pg_class` rows (reproduced on a scratch cluster: five tries out of five). It left every
+   table's rows but no vectors, none of the 630 post-data items and none of the 286 grants, and
+   the database's own `GRANT CONNECT … TO maktaba_worker` (a dump never holds a database's
+   grants) was gone too. And 0.3.41's own code did that restore: the rollback marked the record
+   and the release before put the dump back at its start.
+
+   Now **the new release puts the dump back itself, before it switches back** (review of #433:
+   `updater.Machine.RestoreBack`, after the TV change is taken back): the record marked
+   `restoring` first, the roles that use the database stopped (the api, the pipeline, the
+   streaming role; the TV slots run on, on the database being replaced), the dump put back
+   with this release's restore, and the record `restored` for the release before, which then
+   starts on a finished database (a release from before 2026-10-28 reads `restored` as it
+   always did). A restore that fails there leaves the record `restoring` and the switch back
+   goes on: the release before puts it back at its start, as before. Putting a dump back into
+   the bundled Postgres (`pgbundle.restoreInto`): into a database of its own
+   (`maktaba_restoring`, `REVOKE ALL … FROM PUBLIC`), whose name no client knows, so nothing
+   but the restore reaches it — not a machine's login, nor a process that runs on across the
+   restart as the database's owner (the TV slots handed over), which taking CONNECT from PUBLIC
+   never stopped; whatever they write meanwhile goes to the database being replaced, as before
+   the rollback. Once whole and checked it is renamed into place in one transaction with the
+   grants of the database it replaces (read from it then; the machines' CONNECT), which is
+   renamed `maktaba_replaced` in that transaction (closed to new sessions, its sessions and its
+   copies' slots ended first) and dropped after. A restore that fails leaves the app database
+   as it was (the scratch database dropped); one with no room for both drops the old one first
+   (logged). It restores pre-data with one worker, the rows in parallel, the chunks in parallel, post-data in
+   parallel, then the grants and default privileges alone, last, with one worker (every object
+   they name is there); checks the result against the dump (`pgbundle.VerifyRestore`: every
+   table, view, sequence, index, constraint, trigger and function of `public`, every grant
+   (table, column, function, schema) and default privilege, and every table's rows against the
+   dump's `counts.json`, counted in the dump's own snapshot while it is taken; a dump from
+   before it: the chunked tables at least hold rows when their chunks do; a `counts.json` there
+   but damaged refuses the dump before anything changes); runs `ANALYZE`; and only then renames
+   it into place. A parallel try that fails or comes out
+   incomplete is done again whole with one worker; one that fails again halts with what failed
+   or exactly what is missing (`the restored database is not whole: missing 3 indexes (…); 1
+   tables without all their rows (public.segment_embeddings: 0 of 17000000 rows)`), the record
+   still `restoring`, and the record is set `restored` only after the check. The in-place
+   restore of another Postgres (`dbsafe.Target.Restore`, one transaction: nothing outside it
+   sees the restored objects before its commit) is checked the same way. Every start that finds
+   the record `migrated` or `restored` gives the workers' group its CONNECT back when the
+   database lacks it (`pgbundle.GrantWorkersConnectSQL`: a restore of a release from before
+   dropped it with the database).
+
+   **A halt has a way out (2026-10-28).** The database step's halts (`db_restore_failed`,
+   `db_restored`, `db_refused_older`, `db_ahead`, …) last until the database's record changes
+   to `migrated` or `restored` (`supervisor.HaltUntil`, looked at every 5 s): put right by hand
+   (as the owner did: the record set `restored`), the step runs again and every role that
+   waits on it starts, with no restart of the server. A restore a person asks for (`restoring`
+   with `by`) is not a way out: `maktaba-server restore` restarts the server for it.
 4. **The dumps' format** (`pgbundle/dumpfmt.go`). Every dump is a directory-format dump
    (`pg_dump -Fd`, still named `*.dump`): one file per table, written by `DumpJobs` workers (half
    the cores, 2 to 8) in one snapshot and put back by as many `pg_restore` workers; each file
@@ -306,8 +393,22 @@ updated its runtime) offers its own update for its window and tray.
   catch up to its release. A watch has a bound of its own (3 × the watch + the health limit,
   outside the start steps): a release whose health keeps flapping is rolled back
   (`watch_timeout`); the start steps have theirs ("The database" step 2, `start_timeout`).
+  The watch judges the home's own health only (2026-10-28): a TV slot starting, stopped or
+  between two starts (a staging slot starting, a slot a swap stops) is never the home
+  unhealthy, but a slot that crash-loops or cannot start is the live TV off the air: fatal,
+  unless the release's TV change is under way (its staging slot runs the new binary: its check
+  failing holds the TV, its swap failing rolls back; the TV step's). A release that stayed healthy for its
+  whole watch has passed: it commits at once, whatever its TV change waits for (the TV step
+  ends `pending`, "The TV step" item 3), and no later check undoes the pass. The bound never
+  counts the TV's waiting: a healthy check never times the watch out.
   For the whole watch the launcher's guard is kept 15 minutes ahead, every minute: it catches
   only a supervisor that died or hangs, never a watch still going.
+- **A restart asked by hand** (`<launcher root>/updates/restart`, e.g. after writing
+  `updates/payload-override` to run a kept payload): every serve under a launcher takes it and
+  exits 75 for its launcher, which starts the payload (or release) it runs next. Until
+  2026-10-28 only a plain server's layout watched the file (the API wrote it after a
+  self-update); an app's or a runtime copy's serve, which has no release directory, never took
+  it, and a restart written by hand during the outage did nothing.
 - **A switch of the home** (Epic 37): no run starts while one is open, and no switch starts
   while a run is past its plan (`update_under_way`); a home already drained waits to switch. A
   run that only waits for desktop apps to stage their orders (step `waiting_app`, or an older
@@ -470,9 +571,27 @@ its watch, where the new streaming binary never meets an older schema:
    does not apply to it). While another change is in flight it waits as a draft (README R9.4); the
    controller stages it when its turn comes. Rule: `immediate` only for source `auto_update` with
    kinds exactly `[binary]` (a binary change by hand, or one with another kind, keeps its rules).
-3. The release commits once it was healthy for its watch **and** its change is live (or there was
-   nothing to swap: TV staging off, no TV release yet, the binary live already), or its change is
-   held (item 4).
+3. The release commits once it was healthy for its watch. Its change is then live (or there was
+   nothing to swap: TV staging off, no TV release yet, the binary live already), held (item 4),
+   or still on its way: **pending** (2026-10-28). The outage of 2026-10-28: 0.3.42's change #57
+   passed every check but sat in `ready` for half an hour waiting for an approval (the old
+   `auto_max_channels` rule), the watch's bound ran on meanwhile, the approval's swap stopped a
+   slot and a transcription worker failed its probes once, and the watch rolled the release back
+   (`watch_timeout`), its restore failing after. Now the TV never holds the release: a change
+   that waits (for an approval, a quiet window, behind another change, a slow staging, an API
+   that does not answer) leaves the release committed with the TV step `pending` and the
+   journal's `tv.outcome = pending`; the change is not taken back and goes on under the TV
+   change controller by itself (an admin approves it, its window comes). The run is `done`
+   with `update_runs.detail.tv = {outcome: pending, change_id, number}` (audited `tv_pending`;
+   no notice, nothing blocked or counted; the Updates page says the change goes on by itself,
+   with Drop); the release the live TV runs is kept from pruning meanwhile. The home's health
+   leaves the TV slots to the TV step (a staging slot starting is not the home starting).
+   A change that could not be had at all (the API never answered: no change behind the step)
+   has nothing to go on by itself: the TV step ends **held** instead (review of #433), with
+   the check `no_change` and the binary the change would carry (`streaming_version`,
+   `streaming_sha256`); the Updates page's **Retry** makes the change with them (then it is
+   staged and checked as any), and **Drop** leaves the TV on its software with nothing to
+   cancel.
 4. **The owner's decision (2026-10-28):** *"when only the TV test fails, keep the update
    installed, leave TV on the old version, and notify me with Retry / Drop. Undo everything only
    if TV breaks after it has switched."*
@@ -491,10 +610,11 @@ its watch, where the new streaming binary never meets an older schema:
      fails on the air is an Epic 33.9 rollback of the TV alone: the run committed long before.
    - **Full rollback stays only for** a failure of the swap itself, and the live TV failing after
      it switched (Epic 33.9 rolled it back): `failed_tv` (the release blocked, the admin told).
-   - The other ends roll back as before: `tv_change_pending` (still behind a change awaiting
-     approval at the window's end and overrun, which the apply passes: a gate like `tv_busy`, no
-     attempt counted), `tv_timeout` (not on the air within `boundary_max_wait_minutes` + 10 of its
-     stage: an attempt), `tv_change_cancelled` (an admin cancelled it: blocked until a retry).
+   - `tv_change_cancelled` (an admin cancelled it: blocked until a retry) rolls back as before.
+     `tv_change_pending` (behind a change awaiting approval past the window's end) and
+     `tv_timeout` (not on the air within `boundary_max_wait_minutes` + 10 of its stage, or the API
+     silent for 10 minutes) no longer roll back (2026-10-28): they only say why the TV is
+     pending at the commit (item 3). The API still reads them from a home from before.
 5. A rollback for any reason takes the change back first: cancelled before the air (a held one
    too), rolled back (Epic 33.9, warm while the previous slot is warm, else cold) once live, and
    rolled back by the controller when a swap under way ends.

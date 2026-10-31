@@ -444,7 +444,13 @@ func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated
 func (r recordFile) NoteNext(running, next, dump string) error {
 	return layout.NoteRecordNext(string(r), running, next, dump, time.Now())
 }
+func (r recordFile) MarkKept(version, from, reason string) (bool, error) {
+	return layout.MarkRecordKept(string(r), version, from, reason)
+}
 func (r recordFile) Unmark(version string) error {
+	if _, err := layout.UnmarkRecordKept(string(r), version); err != nil {
+		return err
+	}
 	_, err := layout.UnmarkRecordRestoring(string(r), version)
 	return err
 }
@@ -482,6 +488,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	m.TVHandover = u.tvHandover
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
+		m.RestoreBack = u.restoreBack(cfg, releaseDir, pg)
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
@@ -493,7 +500,11 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 			}()
 		}
 	}
-	m.Health = &machineHealth{cfg: cfg, home: home, node: node, releaseDir: releaseDir, snap: u.snapshot}
+	m.Health = &machineHealth{cfg: cfg, home: home, node: node, releaseDir: releaseDir, snap: u.snapshot,
+		tvChanging: func() bool {
+			j := m.Status().Journal
+			return j != nil && j.TV != nil && j.TV.Outcome == "" && j.TV.ChangeID != ""
+		}}
 	m.TVOnAir = func() bool {
 		snap, ok := u.snapshot()
 		if !ok {
@@ -527,6 +538,85 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	m.Resume()
 	fmt.Fprintf(os.Stderr, "[serve] updates: %s install (%s)\n", inst.Kind(), dir)
 	return u
+}
+
+// restoreBack is updater.Machine.RestoreBack for this home: its database step's restore
+// (the bundled Postgres, or the plain server's own), run by this release before its
+// rollback switches back, once the roles that use the database are stopped.
+func (u *updates) restoreBack(cfg config.Config, releaseDir string, pg *pgbundle.Bundle) func(context.Context,
+	*updater.Journal, string) error {
+	return func(ctx context.Context, j *updater.Journal, _ string) error {
+		g := &migrationGate{stateDir: cfg.StateDir(), version: j.From, pg: pg, log: os.Stderr,
+			updates: updatesDirOf(cfg, releaseDir), keep: updateKeep(cfg), room: roomOf(cfg)}
+		if pg == nil {
+			g.ext = homeDatabase(cfg, nil)
+		}
+		rec, err := g.record()
+		if err != nil {
+			return err
+		}
+		if rec.State != apppayload.DatabaseRestoring || rec.By != "" ||
+			layout.NormalizeVersion(rec.Failed) != layout.NormalizeVersion(j.Job.Version) {
+			return fmt.Errorf("the database record is %s, not marked for %s's dump to be put back", rec.State, j.Job.Version)
+		}
+		if err := u.stopDatabaseRoles(ctx); err != nil {
+			return err
+		}
+		_, err = restoreBackWith(ctx, g, rec)
+		return err
+	}
+}
+
+// restoreBackWith is the database step's restore (tests replace it).
+var restoreBackWith = func(ctx context.Context, g *migrationGate, rec apppayload.Database) (apppayload.Database, error) {
+	return g.restore(ctx, rec, func(supervisor.Detail) {})
+}
+
+// databaseStopWait is how long the roles that use the database get to stop before a
+// rollback puts the dump back.
+var databaseStopWait = 2 * time.Minute
+
+// stopDatabaseRoles stops every process that uses the database but the TV's (the api, the
+// pipeline, the streaming role: their writes would be lost with the database they write
+// to): the TV slots run on, on the database being replaced (the restore never touches it
+// until it renames the one it put back into place). Postgres and the model server stay.
+func (u *updates) stopDatabaseRoles(ctx context.Context) error {
+	u.mu.Lock()
+	snap, want := u.snap, u.want
+	u.mu.Unlock()
+	if snap == nil || want == nil {
+		return nil
+	}
+	uses := func(p supervisor.ChildStatus) bool {
+		return p.Role == supervisor.RoleAPI || p.Role == supervisor.RolePipeline || p.Role == supervisor.RoleStreaming
+	}
+	for _, p := range snap().Processes {
+		if uses(p) && p.Wanted {
+			if err := want(p.Role, p.Instance, false); err != nil {
+				return err
+			}
+		}
+	}
+	deadline := time.Now().Add(databaseStopWait)
+	for {
+		running := ""
+		for _, p := range snap().Processes {
+			if uses(p) && p.PID != 0 {
+				running = childName(p)
+			}
+		}
+		if running == "" {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("%s still runs after %s", running, databaseStopWait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
 }
 
 func (u *updates) setSupervisor(sup *supervisor.Supervisor) {
@@ -726,6 +816,9 @@ type machineHealth struct {
 	node       *nodeServices
 	releaseDir string // the running release's (a plain server's bin/releases/<v>)
 	snap       func() (supervisor.Snapshot, bool)
+	// tvChanging reports whether the release's TV change is under way (its TV step began
+	// and has no outcome yet): its slots are the TV step's to judge then (nil: never)
+	tvChanging func() bool
 	http       *http.Client
 	// offSince is when each machine first said it cannot log in to this home's database
 	// in this watch (kept when it is back meanwhile: a machine that starts again, or
@@ -840,6 +933,18 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		}
 		if p.Instance != "" && !p.Wanted {
 			continue // an on-demand process nobody asked for
+		}
+		if p.Role == supervisor.RoleTVSlot {
+			// a slot starting, stopped or between two starts is the TV's doing (its change's
+			// staging slot starts, its swap stops a slot: 2026-10-28, "tv-slot/amber is
+			// starting" counted against the watch), never the home unhealthy. A slot that
+			// crash-loops or cannot start at all is the live TV off the air: fatal, but while
+			// the release's TV change is under way, whose staging slot runs the new binary
+			// (its check failing holds the TV, its swap failing rolls back: the TV step's)
+			if (p.CrashLoop || haltCodes[p.DetailCode]) && (h.tvChanging == nil || !h.tvChanging()) {
+				return updater.Verdict{Fatal: true, Why: childName(p) + " cannot run (it crash-loops or cannot start): the TV is off the air"}
+			}
+			continue
 		}
 		if haltCodes[p.DetailCode] {
 			return updater.Verdict{Fatal: true, Why: fmt.Sprintf("%s: %s", childName(p), p.Detail)}

@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 	"sync"
 	"time"
@@ -48,8 +47,7 @@ func newConfigAdmin(cfg config.Config, token, releaseDir string) *configAdmin {
 	bk := cfg.Backups.Settings()
 	c.runningBackups = &bk
 	if os.Getenv(layout.EnvLauncher) == "1" && releaseDir != "" {
-		l := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir)))))
-		c.restart = l.RequestRestart
+		c.restart = restartLayout(releaseDir).RequestRestart
 	}
 	return c
 }
