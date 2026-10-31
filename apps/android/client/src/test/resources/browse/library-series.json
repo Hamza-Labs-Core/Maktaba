@@ -1,0 +1,21 @@
+{
+  "library": {
+    "id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "name": "دروس"
+  },
+  "sort": "name",
+  "items": [
+    {
+      "id": "bbbbbbbb-0000-4000-8000-000000000001",
+      "name": "سيرة ابن هشام",
+      "poster_video_id": "11111111-0000-4000-8000-000000000001",
+      "episodes": 24,
+      "watched": 2,
+      "in_progress": 1,
+      "latest_added_at": "2026-10-20T09:00:00Z",
+      "last_watched_at": "2026-10-30T20:15:00Z"
+    }
+  ],
+  "total": 61,
+  "next": 60
+}

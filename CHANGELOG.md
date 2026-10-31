@@ -19,6 +19,12 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **The Android client can browse (Epic 48, story 48.8).** `apps/android/client`'s new
+  `Browse.kt` reads Home's rails and recommendations, the libraries and their pins, a library's
+  hub, grid, facets and series, the series and their episodes, a video's page (its state,
+  chapters, transcript, marks) and search (results, pages, suggestions, recent), tolerantly: a
+  missing row is empty and an unreadable card is left out. A 404 is `NotAvailable`. The test
+  fixtures are checked against the API's own response types by a Go test.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes

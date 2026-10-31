@@ -1,0 +1,54 @@
+{
+  "search_id": "ffffffff-0000-4000-8000-000000000001",
+  "expires_at": "2026-10-31T10:00:00Z",
+  "q": "الطهارة",
+  "mode": "hybrid",
+  "filters": {},
+  "took_ms": {
+    "fts": 12,
+    "semantic": 40,
+    "fusion": 1
+  },
+  "degraded": true,
+  "page_size": 24,
+  "passages_page_size": 5,
+  "videos": [
+    {
+      "video_id": "11111111-0000-4000-8000-000000000002",
+      "title": "الفقه ٧",
+      "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "library_name": "دروس",
+      "poster_url": "/api/videos/11111111-0000-4000-8000-000000000002/poster",
+      "score": 0.61,
+      "in_transcripts": true,
+      "title_snippet": "<mark>الطهارة</mark>",
+      "duration_sec": 2400
+    }
+  ],
+  "videos_total": 1,
+  "transcript_videos": [
+    {
+      "video_id": "11111111-0000-4000-8000-000000000002",
+      "title": "الفقه ٧",
+      "duration_sec": 2400,
+      "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "library_name": "دروس",
+      "poster_url": "/api/videos/11111111-0000-4000-8000-000000000002/poster",
+      "best_score": 0.9,
+      "matches": 7,
+      "passages": [
+        {
+          "segment_id": 10,
+          "start_sec": 1200.5,
+          "end_sec": 1206,
+          "snippet": "باب <mark>الطهارة</mark>",
+          "score": 0.9
+        }
+      ],
+      "in_title": true
+    }
+  ],
+  "transcript_total": 31,
+  "hits": [],
+  "total": 0
+}

@@ -1,0 +1,22 @@
+{
+  "search_id": "ffffffff-0000-4000-8000-000000000001",
+  "expires_at": "2026-10-31T10:00:00Z",
+  "q": "الطهارة",
+  "mode": "hybrid",
+  "list": "titles",
+  "offset": 24,
+  "limit": 24,
+  "total": 25,
+  "items": [
+    {
+      "video_id": "11111111-0000-4000-8000-000000000006",
+      "title": "Purity",
+      "library_id": "aaaaaaaa-0000-4000-8000-000000000002",
+      "library_name": "Talks",
+      "poster_url": "/api/videos/11111111-0000-4000-8000-000000000006/poster",
+      "score": 0.3,
+      "in_transcripts": false,
+      "title_snippet": "Purity"
+    }
+  ]
+}

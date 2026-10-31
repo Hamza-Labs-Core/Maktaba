@@ -1,0 +1,39 @@
+{
+  "rails": [
+    {
+      "id": "for-you",
+      "title": "For You",
+      "reason_kind": "for_you",
+      "items": [
+        {
+          "video_id": "11111111-0000-4000-8000-000000000004",
+          "duration_sec": 900,
+          "poster_url": "/api/videos/11111111-0000-4000-8000-000000000004/poster",
+          "score": 0.82
+        }
+      ]
+    },
+    {
+      "id": "because-seerah",
+      "title": "Because you watched Seerah",
+      "reason_kind": "because_watched",
+      "reason_args": {
+        "video_id": "11111111-0000-4000-8000-000000000001",
+        "title": "سيرة ابن هشام ١"
+      },
+      "items": [
+        {
+          "video_id": "11111111-0000-4000-8000-000000000002",
+          "position_sec": 600,
+          "duration_sec": 2400,
+          "remaining_sec": 1800,
+          "last_watched_at": "2026-10-30T20:15:00Z",
+          "poster_url": "/api/videos/11111111-0000-4000-8000-000000000002/poster"
+        }
+      ]
+    }
+  ],
+  "generated_at": "2026-10-31T08:00:00Z",
+  "expires_at": "2026-10-31T09:00:00Z",
+  "cache_hit": true
+}
