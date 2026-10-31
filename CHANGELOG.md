@@ -24,6 +24,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The Updates page no longer says "blocked" when the next update only waits.** It listed
+  every release ever blocked, among them ones a newer release had long replaced (0.3.42,
+  rolled back, once 0.3.43 was out), so a page whose update was only waiting for its quiet
+  window read as blocked. A blocked release is now shown only while it is still the one to
+  come. A release the TV could not move to has its own reason.
+
 - **After a rollback that kept the newer schema, a release in between installs.** A rollback
   from a release whose migrations are additive keeps its schema for the release it goes back
   to; any release between the two was then refused as "older than the database", so the

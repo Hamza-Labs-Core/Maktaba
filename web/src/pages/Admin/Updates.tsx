@@ -293,7 +293,27 @@ export function AdminUpdates() {
         ? w.word("blocker", tick.reason)
         : w.waiting(tick.reason)
       : "";
-  const blocked = ov.catalog.filter((r) => r.blocked_reason && !r.withdrawn_at);
+  // a blocked release is shown only while it is still the one to come: newer than what
+  // runs, and no newer release passes it by. One a newer release replaced (0.3.42, rolled
+  // back, once 0.3.43 was out) is history: shown, it read as "updates are blocked" while
+  // the next one only waited for its window
+  const current = ov.watermark || ov.current_version;
+  const blocked = ov.catalog.filter(
+    (r) =>
+      r.blocked_reason &&
+      !r.withdrawn_at &&
+      (!validVersion(current) ||
+        !validVersion(r.version) ||
+        compareVersions(r.version, current) > 0) &&
+      !ov.catalog.some(
+        (o) =>
+          !o.blocked_reason &&
+          !o.withdrawn_at &&
+          validVersion(o.version) &&
+          validVersion(r.version) &&
+          compareVersions(o.version, r.version) > 0
+      )
+  );
   const last = ov.last_run;
   // a failed run is worth trying again only while the home is still below its release (a
   // home that reached it, or a later one, another way has nothing to retry)
