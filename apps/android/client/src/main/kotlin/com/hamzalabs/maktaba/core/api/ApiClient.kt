@@ -291,7 +291,31 @@ class ApiClient(
         send(request("PUT", "/api/cluster/nodes/$machine", body = buildJsonObject { put("drain", drain) }))
     }
 
+    // ---------- the state of running work (home admins; read only) ----------
+
+    /** The stage's failed jobs grouped by cause (`GET /api/queues/{stage}/failures`). */
+    suspend fun stageFailures(stage: String): List<FailureGroup> =
+        get<FailureGroups>("/api/queues/${segment(stage)}/failures").groups
+
+    /** The jobs running now across every queue; [host] narrows them ("home" or a machine's id). */
+    suspend fun runningJobs(host: String? = null): List<JobRef> =
+        get<RunningJobs>("/api/queues/running", if (host != null) mapOf("host" to host) else emptyMap()).jobs
+
+    /** The home's updates: the plan, the catalog, the runs, the machines. */
+    suspend fun updates(): UpdatesOverview = get("/api/cluster/updates")
+
+    /** An update run with its steps and its machines. */
+    suspend fun updateRun(id: String): UpdateRunView = get("/api/cluster/updates/runs/${segment(id)}")
+
+    /** The supervisor's processes and their recent events. */
+    suspend fun processes(): ProcessesDoc = get("/api/system/processes")
+
     // ---------- plumbing ----------
+
+    /** [s] as one encoded path segment. */
+    private fun segment(s: String): String =
+        java.net.URLEncoder.encode(s, Charsets.UTF_8.name()).replace("+", "%20")
+
 
     private suspend inline fun <reified T> get(path: String, query: Map<String, String> = emptyMap()): T =
         decode(send(request("GET", path, query)))

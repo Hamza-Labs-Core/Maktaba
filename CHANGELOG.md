@@ -22,6 +22,18 @@ don't append a line here; docs-only PRs are exempt.
   port taken; the supervisor's recent events; or that the supervisor is not reachable). The
   *Queue* lists the jobs running now with how long each has run. An older or newer home's
   missing fields and unknown states are shown as they come instead of breaking the page.
+- **The iPhone apps on TestFlight.** Every release tag builds Maktaba Player and Maktaba Remote
+  for iPhone, signs them with Xcode's cloud signing (the App Store Connect API key) and uploads
+  them to TestFlight (`testflight.yml`, `docs/testflight.md`). The apps' version is the tag's,
+  and every upload gets a new build number.
+
+- **Maktaba Remote for Android shows the home's running work, as the web admin does.** A new
+  Updates tab: the version running, what the next update waits for, blocked releases (only the
+  one still to come), a held TV and its failed checks, the run under way or the last one with
+  its steps and each machine's state and error, and every machine's version. Machines lists the
+  home's processes (TV slots by colour, crash loops, restarts, last exit, recent crashes; it
+  says so when the supervisor is not reachable). Queue shows the jobs running now, the health
+  strip, why each stage waits, its health, and a chosen stage's failures by cause. Read only.
 
 - **The update rehearsal: every update path of the Mac app is proven in CI before a release.**
   A new workflow (`update-rehearsal`) updates a seeded home from the latest published release
@@ -33,7 +45,29 @@ don't append a line here; docs-only PRs are exempt.
   budget. It runs on pull requests that touch updates, on every push to main, nightly, and the
   release's tag guard refuses a commit it did not pass on (`docs/update-rehearsal.md`).
 
+- **The update rehearsal covers a TV change staged on a slot that runs the old release.**
+  Scenario 11 updates a home while its TV slots run, with a non-live slot (green) running the
+  old streaming software across the restart. The update's TV change is then staged on it: the
+  slot must start again on the new release and the change must reach verifying, never be held
+  with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
+  builds its streaming binary with TV staging, as the release does.
+
 ### Fixed
+
+- **CI runs the Android Remote's unit tests.** The Android job ran the shared client's and
+  core's tests but not the Remote's own (`:remote:testPhoneDebugUnitTest`), so the Remote's
+  wording tests (`SayTest`) never ran in CI.
+
+- **The supervisor keeps every TV slot on the release it is bound to.** It now records the
+  binding each slot's process started with. Whenever a slot is bound (by any caller, not only the
+  front door's start) or adopted after a restart, a wanted slot that runs another release is
+  started again on its own. This extends the fix for change #58, which the TV held on 2026-10-31
+  with `release_mismatch`.
+- **The Processes card names each TV slot and says why one is not running.** The three TV slots
+  (and several pipeline workers) were keyed and labelled by role alone, so they rendered as
+  identical "tv-slot" cards. Each one is now named by its instance ("TV slot · blue"). A slot
+  that isn't needed now says *Standing by*, not *Stopped*. A process held back by something
+  (e.g. its port in use by another program) says what, in the app's words.
 
 - **A Windows node mid-write of its node config is no longer read as never joined.** The
   streaming server's reader saw `node.json` missing during a write's swap, then looked for the

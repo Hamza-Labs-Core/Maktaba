@@ -57,7 +57,7 @@ jobs:
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace \
-            :client:test :core:testDebugUnitTest \
+            :client:test :core:testDebugUnitTest :remote:testPhoneDebugUnitTest \
             :core:lintDebug :player:lintPhoneDebug :remote:lintPhoneDebug \
             assembleDebug
 

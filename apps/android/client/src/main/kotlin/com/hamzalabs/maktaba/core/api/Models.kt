@@ -107,6 +107,8 @@ data class FailureGroup(
     /** "retry", "apply", "open_settings" or "show_workers". */
     val action: String,
     @SerialName("sample_message") val sampleMessage: String? = null,
+    @SerialName("first_at") val firstAt: String? = null,
+    @SerialName("last_at") val lastAt: String? = null,
 ) {
     val id: String get() = "$stage:$cause"
     val retryable: Boolean get() = action == "retry"
@@ -122,6 +124,8 @@ data class QueueSnapshot(
     val stages: List<Stage> = emptyList(),
     val queues: List<QueueSummary> = emptyList(),
     @SerialName("issues_count") val issuesCount: Int = 0,
+    /** the health strip: the NAS, the CPU, the backlog */
+    val health: HealthNow? = null,
 ) {
     /** The stages a person sees (not hidden), each with its counts. */
     val rows: List<StageRow>
@@ -151,6 +155,14 @@ data class QueueSummary(
     @SerialName("oldest_waiting_sec") val oldestWaitingSec: Double? = null,
     @SerialName("served_by") val servedBy: List<String> = emptyList(),
     @SerialName("no_worker") val noWorker: Boolean = false,
+    /**
+     * Why nothing runs: paused, paused_all, pool_full, debouncing, backoff, service_retrying,
+     * upstream, disabled, not_configured, awaiting_review, no_worker, idle (null: it runs).
+     */
+    @SerialName("waiting_reason") val waitingReason: String? = null,
+    /** the outside service ("plex", "dizquetv") whose failures put waiting jobs into backoff */
+    @SerialName("retrying_service") val retryingService: String? = null,
+    val health: StageHealth? = null,
 )
 
 @Serializable

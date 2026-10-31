@@ -306,6 +306,7 @@ jobs:
           - { id: '09', name: from the owner's Mac's live state, test: TestUpdateRehearsal09FromTheLiveState, profile: small }
           - { id: '10a', name: machines after the home (the driver), test: TestUpdateRehearsal10aMachinesAfterHomeDriver, profile: small }
           - { id: '10b', name: machines after the home (their own updater), test: TestUpdateRehearsal10bMachineOwnUpdater, profile: small }
+          - { id: '11', name: the TV's change restarts a slot left on the old release, test: TestUpdateRehearsal11TVChangeRestartsARunningSlot, profile: small }
     steps:
       - uses: actions/checkout@v6.0.2
 

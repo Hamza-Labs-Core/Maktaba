@@ -661,6 +661,8 @@
   "health.processes.role.api": "API",
   "health.processes.role.streaming": "Live TV and streaming",
   "health.processes.role.pipeline": "Processing pipeline",
+  "health.processes.role.tv-slot": "TV slot",
+  "health.processes.state.standby": "Standing by",
   "health.processes.state.running": "Running",
   "health.processes.state.starting": "Starting",
   "health.processes.state.unhealthy": "Not responding",

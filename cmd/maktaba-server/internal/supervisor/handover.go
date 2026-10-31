@@ -333,6 +333,7 @@ func (s *Supervisor) adoptRun(ctx context.Context, c *child, a layout.HandoverCh
 	s.mu.Lock()
 	c.cmd, c.tree, c.ident, c.job, c.detached, c.login = cmd, tree, a.Start, a.Job, true, a.Login
 	c.killReason = ""
+	c.ranWith = binding
 	if binding != nil {
 		c.binding = binding
 	}
@@ -349,6 +350,7 @@ func (s *Supervisor) adoptRun(ctx context.Context, c *child, a layout.HandoverCh
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventAdopted, PID: a.PID,
 		Message: "adopted from the supervisor before (it kept running across the restart)"})
 	s.logf("adopted %s (pid %d): it kept running across the supervisor's restart", c.proc.Name(), a.PID)
+	s.matchBinding(c)
 	s.saveRecord(false)
 
 	probeCtx, stopProbe := context.WithCancel(ctx)
