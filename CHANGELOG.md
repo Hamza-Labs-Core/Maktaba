@@ -16,6 +16,15 @@ don't append a line here; docs-only PRs are exempt.
   for iPhone, signs them with Xcode's cloud signing (the App Store Connect API key) and uploads
   them to TestFlight (`testflight.yml`, `docs/testflight.md`). The apps' version is the tag's,
   and every upload gets a new build number.
+
+- **Maktaba Remote for Android shows the home's running work, as the web admin does.** A new
+  Updates tab: the version running, what the next update waits for, blocked releases (only the
+  one still to come), a held TV and its failed checks, the run under way or the last one with
+  its steps and each machine's state and error, and every machine's version. Machines lists the
+  home's processes (TV slots by colour, crash loops, restarts, last exit, recent crashes; it
+  says so when the supervisor is not reachable). Queue shows the jobs running now, the health
+  strip, why each stage waits, its health, and a chosen stage's failures by cause. Read only.
+
 - **The update rehearsal: every update path of the Mac app is proven in CI before a release.**
   A new workflow (`update-rehearsal`) updates a seeded home from the latest published release
   to the commit, the way Maktaba.app does (its bundle, launcher, state folder, bundled Postgres,

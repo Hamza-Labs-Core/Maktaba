@@ -1,0 +1,32 @@
+{
+  "available": true,
+  "host": "mac-mini.local",
+  "started_at": "2026-10-31T06:00:00Z",
+  "policy": {"restart": "always", "backoff_initial_sec": 1, "backoff_max_sec": 60, "max_restarts": 5,
+    "max_restarts_window_sec": 300, "probe_interval_sec": 10, "probe_failures": 3},
+  "processes": [
+    {"role": "api", "wanted": false, "state": "running", "pid": 4120, "restarts": 0, "crash_loop": false,
+      "started_at": "2026-10-31T06:00:01Z", "uptime_sec": 7200.5,
+      "last_probe": {"at": "2026-10-31T08:00:00Z", "ok": true, "consecutive_failures": 0}},
+    {"role": "tv-slot", "instance": "blue", "wanted": false, "state": "running", "pid": 4200, "restarts": 1,
+      "crash_loop": false, "uptime_sec": 3600,
+      "last_exit": {"at": "2026-10-31T07:00:00Z", "pid": 4100, "code": -1, "signal": "killed", "reason": "crash",
+        "uptime_sec": 50}},
+    {"role": "tv-slot", "instance": "amber", "wanted": true, "state": "starting", "restarts": 0, "crash_loop": false,
+      "uptime_sec": 0, "detail": "Building the pipeline's Python environment", "detail_code": "venv_build",
+      "detail_params": {"bytes": 1024}},
+    {"role": "pipeline", "state": "failed", "restarts": 6, "crash_loop": true, "uptime_sec": 0,
+      "next_restart_at": "2026-10-31T08:10:00Z",
+      "last_exit": {"at": "2026-10-31T08:00:00Z", "code": 1, "reason": "crash", "error": "exit status 1", "uptime_sec": 2},
+      "last_probe": {"at": "2026-10-31T08:00:00Z", "ok": false, "error": "connection refused", "consecutive_failures": 4}},
+    {"role": "hyperdrive", "state": "levitating", "restarts": 0, "crash_loop": false, "uptime_sec": 0}
+  ],
+  "events": [
+    {"seq": 41, "at": "2026-10-31T07:00:00Z", "role": "tv-slot", "instance": "blue", "kind": "exited", "pid": 4100,
+      "code": -1, "signal": "killed", "reason": "crash", "uptime_sec": 50},
+    {"seq": 42, "at": "2026-10-31T07:00:01Z", "role": "tv-slot", "instance": "blue", "kind": "restarting", "delay_sec": 1},
+    {"seq": 43, "at": "2026-10-31T08:00:00Z", "role": "pipeline", "kind": "failed", "message": "crash loop"},
+    {"seq": 44, "at": "2026-10-31T08:00:02Z", "role": "pipeline", "kind": "wormhole"}
+  ],
+  "ffmpeg": {"ffmpeg": "/usr/bin/ffmpeg", "ffprobe": "/usr/bin/ffprobe", "source": "bundled", "ok": true}
+}

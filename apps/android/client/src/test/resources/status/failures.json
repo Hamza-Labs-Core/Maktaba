@@ -1,0 +1,4 @@
+{"groups": [{"stage": "transcribe", "cause": "oom", "label": "Out of memory", "count": 3,
+  "first_at": "2026-10-31T06:00:00Z", "last_at": "2026-10-31T07:50:00Z", "sample_message": "CUDA out of memory",
+  "sample_subjects": [{"kind": "video", "id": "v1", "label": "Lecture 4"}], "action": "retry"},
+ {"stage": "transcribe", "cause": "flux", "label": "Something new", "count": 1, "action": "call_a_wizard"}]}
