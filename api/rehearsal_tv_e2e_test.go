@@ -304,7 +304,13 @@ func TestUpdateRehearsal11TVChangeRestartsARunningSlot(t *testing.T) {
 		t.Fatalf("the staging slot %s was not running before its bind (slots %v): the case of 2026-10-31 (a running "+
 			"slot bound to another release) did not happen here", verify.Slot, pidsBefore)
 	}
-	now := home.slotPIDs()[verify.Slot]
+	// the supervisor lists it running again once its probe answers (a moment after the
+	// controller saw it healthy)
+	now := 0
+	waitFor(t, "the staging slot "+verify.Slot+" running again", time.Minute, func() bool {
+		now = home.slotPIDs()[verify.Slot]
+		return now != 0
+	})
 	if now == was {
 		t.Errorf("the staging slot %s kept its process (pid %d) across its bind to %s", verify.Slot, was, newRel)
 	}
