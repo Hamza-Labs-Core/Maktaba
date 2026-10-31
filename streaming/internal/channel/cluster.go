@@ -392,6 +392,9 @@ func heldNodeConfig(path string) string {
 		}
 		underWay := writeUnderWay(path, fs.ErrNotExist)
 		if held == path && !underWay {
+			if isFile(path) {
+				continue // a write ended between the two looks: its node.json is back
+			}
 			return ""
 		}
 		if !time.Now().Before(deadline) {
