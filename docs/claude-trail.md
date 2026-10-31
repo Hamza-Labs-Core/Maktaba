@@ -395,6 +395,18 @@ Append here: date, session, one to five lines on what changed. Newest last.
 
 - 2026-10-31 · docs-claude-trail: created this file, the `CLAUDE.md` rule and the memory
   pointer; traced all 697 Mac transcripts into §8.
+- 2026-10-31 · Apple Arabic agent of `b743b7d4`: [#454] gives Remote, Player (iOS, Mac) and TV
+  English and Arabic String Catalogs, with MaktabaKit's own via `Bundle.module`. "The home" is
+  «الجهاز الرئيسي». The guard `tools/apple/check-string-catalogs.py` runs in the new
+  `apple-apps` CI job. Kept: the hand-rolled Arabic in `ConnectStrings`, `PermissionsStrings`,
+  `ErrorStrings` and `TVConnectStrings`.
+  - Gotcha: `String(localized:bundle:locale:)` does not pick the language. Build a
+    `LocalizedStringResource` with `.locale` (see `kit()` in `Localization.swift`).
+  - Gotcha: the shared iPhone 17 simulator crashed SpringBoard repeatedly, so this work used a
+    throwaway `maktaba-ar-test` on iOS 27.0 (iOS 27.1 is not compatible with that device type)
+    and deleted it afterwards.
+  - Known, unrelated failures: run on iOS, MaktabaKit's `thisPlatformAsksForLocalNetwork`
+    expects the Mac's list; an unsigned run fails the Mac Player keychain test.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -542,3 +554,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#451]: https://github.com/Hamza-Labs-Core/Maktaba/pull/451
 [#452]: https://github.com/Hamza-Labs-Core/Maktaba/pull/452
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
+[#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
