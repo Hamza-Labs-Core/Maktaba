@@ -88,8 +88,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  KIT: ${{ github.workspace }}/../rh-kit
-  SEEDS: ${{ github.workspace }}/../rh-seeds
+  # the same absolute paths in every job (a seeded machine links its payload's Postgres by
+  # path), outside the checkout; actions/cache takes no '..' in a path
+  KIT: /home/runner/rh-kit
+  SEEDS: /home/runner/rh-seeds
 
 jobs:
   kit:
