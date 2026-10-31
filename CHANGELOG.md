@@ -19,6 +19,13 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **One design-token source for web, Apple and Android (Story 48.2).**
+  `web/design-system/tokens/` now holds the shipped Ink & Brass (dark: ink `#0B111C`, brass
+  `#E3B252`) and its light set, plus the apps' surfaces (`raised`, `nav`, `scrim`, `chosen`).
+  `make build-tokens` also writes MaktabaKit's `Tokens.swift` and Android core's `Tokens.kt`
+  (colour pairs, spacing, radii, type sizes). `make test-tokens`, now run by CI's unit job,
+  fails when they are stale, when `web/src/styles/tokens.css` drifts from the JSON, or when a
+  text colour is under 4.5:1 on its surface in light or dark. No screen reads them yet.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes

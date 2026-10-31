@@ -16,23 +16,28 @@
 //   - tokens.json  — canonical re-emission with refs resolved and a stable
 //                    key order so downstream tools have a deterministic shape.
 //
-// The existing hand-written `web/src/styles/tokens.css` is intentionally
-// untouched — replacing it is a follow-up that needs designer buy-in (the
-// hand-written file has curated values that don't 1:1 mirror tokens.json
-// today). Components can opt into the generated CSS via `@ds/tokens` once
-// the swap is reviewed.
+// Story 48.2 adds the apps' committed token files, from the same trees:
 //
-// `make build-tokens` calls this script; `verify-tokens.mjs` invokes it as
-// part of `make test-tokens` and asserts the outputs parse and contain the
-// expected token paths.
+//   - apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift
+//   - apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt
+//
+// (see native.mjs). The hand-written `web/src/styles/tokens.css` is what the
+// web ships; `make test-tokens` fails when its semantic colours, palette or
+// scales drift from the JSON (checks.mjs), when a text/background pair is
+// under AA, or when a committed native file is stale (`--check`).
+//
+// `make build-tokens` calls this script; `verify-tokens.mjs` runs it with
+// `--check` as part of `make test-tokens`.
 
 import { readFile, mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { emitKotlin, emitSwift, KOTLIN_PATH, nativeModel, SWIFT_PATH } from "./native.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const tokensDir = join(here, "..", "tokens");
 const outDir = join(here, "dist");
+const repoRoot = resolve(here, "..", "..", "..");
 
 const SOURCES = {
   base: "tokens.json",
@@ -242,16 +247,32 @@ function emitJson({ base, themes }) {
 }
 
 // ---------------------------------------------------------------------------
-// Entry point
+// Loading and resolving (shared with verify-tokens.mjs)
 // ---------------------------------------------------------------------------
 
-async function main() {
-  const base = await loadJson(join(tokensDir, SOURCES.base));
-  const themes = {
-    dark: await loadJson(join(tokensDir, SOURCES.dark)),
-    "high-contrast": await loadJson(join(tokensDir, SOURCES.highContrast)),
-  };
+function deepMerge(base, overrides) {
+  const out = { ...base };
+  for (const [key, child] of Object.entries(overrides)) {
+    if (key.startsWith("$")) continue;
+    const prev = base[key];
+    const bothGroups =
+      prev &&
+      typeof prev === "object" &&
+      !isLeaf(prev) &&
+      typeof child === "object" &&
+      !isLeaf(child);
+    out[key] = bothGroups ? deepMerge(prev, child) : child;
+  }
+  return out;
+}
 
+/** The source trees, validated: every reference resolves. */
+export async function loadTokens(dir = tokensDir) {
+  const base = await loadJson(join(dir, SOURCES.base));
+  const themes = {
+    dark: await loadJson(join(dir, SOURCES.dark)),
+    "high-contrast": await loadJson(join(dir, SOURCES.highContrast)),
+  };
   // Validation pass — resolving every reference up front catches typos in
   // the source JSON before we write a partially-good output.
   for (const { value } of walk(base)) {
@@ -262,21 +283,82 @@ async function main() {
       resolveConcrete(base, value);
     }
   }
+  return { base, themes };
+}
+
+/** Concrete light and dark trees: the base, and the base with the dark overrides on top. */
+export function resolvedThemes({ base, themes }) {
+  const dark = deepMerge(base, themes.dark);
+  return {
+    light: buildTreeOfResolvedValues(base),
+    dark: buildTreeOfResolvedValues(dark, dark),
+  };
+}
+
+/** Repo-relative path → contents of every committed, generated native file. */
+export function nativeFiles(tokens) {
+  const { light, dark } = resolvedThemes(tokens);
+  const descriptions = Object.fromEntries(
+    Object.entries(tokens.base.color.semantic)
+      .filter(([, leaf]) => leaf.description)
+      .map(([key, leaf]) => [key, leaf.description])
+  );
+  const model = nativeModel({ light, dark, descriptions });
+  return { [SWIFT_PATH]: emitSwift(model), [KOTLIN_PATH]: emitKotlin(model) };
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+//
+//   node build-tokens.mjs                    write dist/ and the native files
+//   node build-tokens.mjs --check            write dist/; fail if a native file is stale
+//   node build-tokens.mjs --out-root <dir>   where the native files live (default: the repo)
+
+async function main(argv) {
+  const check = argv.includes("--check");
+  const rootAt = argv.indexOf("--out-root");
+  const outRoot = rootAt >= 0 ? resolve(argv[rootAt + 1]) : repoRoot;
+
+  const tokens = await loadTokens();
+  const { base, themes } = tokens;
 
   await mkdir(outDir, { recursive: true });
   await writeFile(join(outDir, "tokens.css"), emitCss({ base, themes }), "utf8");
   await writeFile(join(outDir, "tokens.ts"), emitTs({ base, themes }), "utf8");
   await writeFile(join(outDir, "tokens.json"), emitJson({ base, themes }), "utf8");
 
+  const stale = [];
+  for (const [rel, contents] of Object.entries(nativeFiles(tokens))) {
+    const path = join(outRoot, rel);
+    if (check) {
+      const current = await readFile(path, "utf8").catch(() => null);
+      if (current !== contents) stale.push(rel);
+    } else {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, contents, "utf8");
+    }
+  }
+
   const leafCount = [...walk(base)].length;
   const themeCount = Object.keys(themes).length;
   console.log(
     `build-tokens: emitted ${leafCount} tokens + ${themeCount} theme overrides ` +
-      `→ ${outDir}/{tokens.css,tokens.ts,tokens.json}`
+      `→ ${outDir}/{tokens.css,tokens.ts,tokens.json}` +
+      (check ? "; native files checked" : `; wrote ${SWIFT_PATH}, ${KOTLIN_PATH}`)
   );
+  if (stale.length > 0) {
+    console.error(
+      `build-tokens: stale generated files (run \`make build-tokens\` and commit):\n` +
+        stale.map((p) => `  ${p}`).join("\n")
+    );
+    process.exit(1);
+  }
 }
 
-main().catch((err) => {
-  console.error(`build-tokens: ${err.stack || err.message}`);
-  process.exit(1);
-});
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main(process.argv.slice(2)).catch((err) => {
+    console.error(`build-tokens: ${err.stack || err.message}`);
+    process.exit(1);
+  });
+}

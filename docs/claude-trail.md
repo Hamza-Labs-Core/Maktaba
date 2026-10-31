@@ -678,6 +678,22 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Story 48.2 agent of `b743b7d4`: one token source. `tokens.json` /
+  `tokens.dark.json` now hold the shipped Ink & Brass (values copied from
+  `web/src/styles/tokens.css`, which stays hand-written and is what the web ships), plus
+  `accent-fg`, `accent-text`, `accent-soft`, `border`, `running`, `info`, `type.size.*`,
+  `spacing.5`, and the apps-only `raised`, `nav`, `scrim`, `chosen`. `build-tokens.mjs` also
+  writes `MaktabaKit/Tokens.swift` (`MaktabaTokens.Colors.*` as 0xRRGGBBAA light/dark pairs
+  with a dynamic SwiftUI `.color`) and core's `ui/Tokens.kt` (`MaktabaTokens.Light/Dark`,
+  Compose `Color`/`dp`/`sp`). CI's unit job runs `make test-tokens`: `--check` stale test,
+  CSS parity, contrast on 70 text/surface pairs, and self-tests that each check catches a bad
+  input.
+  - Decided: generate, not replace, `tokens.css` (its glass/art/shadow values are web-only
+    and a swap would touch every screen); light `raised` is `#FFFDF8`, because `#F8EFDB` put
+    light `running` text at 4.38:1. `scrim` is not contrast-checked: its text sits on the
+    library art, which 48.10 / 48.11 check in screenshots.
+  - Gotcha: a MaktabaKit test suite named `Tokens` clashes with an existing one (keychain
+    tests); it is `DesignTokens`.
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
