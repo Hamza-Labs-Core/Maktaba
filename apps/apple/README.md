@@ -63,6 +63,22 @@ calls the Remote makes (`Admin.swift`).
   enforces every one of these for its admins (403 to anyone else); a non-admin who signs in
   sees "For the home's admins".
 
+## English and Arabic
+
+Every app ships in English (the development language) and Arabic, right to left. Each has a
+String Catalog (`Remote/`, `Player/` and `../tv/tvos/MaktabaTV/` `Localizable.xcstrings`,
+and `InfoPlist.xcstrings` for the permission prompts); MaktabaKit has its own for the words
+it makes (`Sources/MaktabaKit/Localizable.xcstrings`, read from `Bundle.module`): the plan's
+sentence and the processes' and queue's words, and the home's values (states, steps, codes)
+under the web's keys (`updates.state.done`). The Arabic is the web's (`web/src/i18n/ar.json`)
+wherever the web says the same thing. A SwiftUI `Text("…")` is localized by itself; a
+sentence built in code uses `String(localized:)` (MaktabaKit: `kit("…")`). A new string needs
+its Arabic, state *translated*, or CI fails:
+`tools/apple/check-string-catalogs.py [--stringsdata <DerivedData>]` (the second form reads
+the strings Xcode extracted as it built, `SWIFT_EMIT_LOC_STRINGS`). The connect, sign-in,
+permission and error screens keep their own English and Arabic tables in MaktabaKit
+(`ConnectStrings`, `PermissionsStrings`, `ErrorStrings`, `TVConnectStrings`).
+
 ## Open and run
 
 ```bash

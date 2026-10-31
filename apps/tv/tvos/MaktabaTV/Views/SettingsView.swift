@@ -13,7 +13,7 @@ struct SettingsView: View {
                 Section("Account") {
                     LabeledContent("Signed in as", value: user.username)
                     if let home = session.current {
-                        LabeledContent("Home", value: home.name)
+                        LabeledContent(String(localized: "settings.home", defaultValue: "Home"), value: home.name)
                         LabeledContent("Address", value: home.url.absoluteString)
                     }
                 }

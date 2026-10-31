@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Maktaba Player in Arabic, in the web's words (web/src/i18n/ar.json) where it has them. -->
+<resources>
+    <string name="libraries">المكتبات</string>
+    <string name="all_videos">كل المقاطع</string>
+    <string name="choose_library">اختر مكتبة</string>
+    <string name="search_titles">ابحث في العناوين</string>
+    <string name="no_videos">لا توجد مقاطع</string>
+    <string name="choose_video">اختر مقطعًا</string>
+    <string name="play">تشغيل</string>
+    <string name="play_named">تشغيل %1$s</string>
+</resources>

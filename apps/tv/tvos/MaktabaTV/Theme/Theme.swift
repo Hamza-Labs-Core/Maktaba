@@ -217,7 +217,7 @@ struct SectionTitle: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 16) {
-            Text("۞")
+            Text(verbatim: "۞")
                 .font(Theme.heading(size))
                 .foregroundStyle(Theme.goldText)
                 .accessibilityHidden(true)

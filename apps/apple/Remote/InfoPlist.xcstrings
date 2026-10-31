@@ -1,0 +1,40 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSCameraUsageDescription" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يمسح Maktaba رمز QR لجهازك الرئيسي ليتصل به، ورمز QR لتسجيل دخول جهاز آخر ليوافق عليه."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba connects to your home server on this network."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتصل Maktaba بجهازك الرئيسي على هذه الشبكة."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

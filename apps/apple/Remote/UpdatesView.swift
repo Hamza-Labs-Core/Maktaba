@@ -44,7 +44,7 @@ struct UpdatesView: View {
             Section {
                 if o.checkStale {
                     Callout(systemImage: "wifi.exclamationmark", tint: .red,
-                            title: "No successful update check for 14 days. Check the network or GitHub access.",
+                            title: String(localized: "No successful update check for 14 days. Check the network or GitHub access."),
                             detail: o.lastCheckError)
                 }
                 if let stuck = o.stuck, o.activeRun == nil {
@@ -55,14 +55,14 @@ struct UpdatesView: View {
                 }
                 ForEach(o.blockedReleases) { r in
                     Callout(systemImage: "nosign", tint: .red,
-                            title: "\(r.version) is blocked: \(UpdateWords.blocked(r.blockedReason ?? ""))",
+                            title: String(localized: "\(r.version) is blocked: \(UpdateWords.blocked(r.blockedReason ?? ""))"),
                             detail: nil)
                         .accessibilityIdentifier("updates.blocked.\(r.version)")
                 }
             }
         } else if o.lastCheckError.map({ !$0.isEmpty }) == true {
             Section {
-                Callout(systemImage: "exclamationmark.icloud", tint: .secondary, title: "The last update check did not work.",
+                Callout(systemImage: "exclamationmark.icloud", tint: .secondary, title: String(localized: "The last update check did not work."),
                         detail: o.lastCheckError)
             }
         }
@@ -71,7 +71,7 @@ struct UpdatesView: View {
     @ViewBuilder private func homeSection(_ o: UpdatesOverview) -> some View {
         Section("This home") {
             let home = o.machines.first { $0.role == "home" }
-            LabeledContent("Running", value: (home?.version).flatMap { $0.isEmpty ? nil : $0 } ?? o.currentVersion)
+            LabeledContent(String(localized: "updates.home.version", defaultValue: "Running"), value: (home?.version).flatMap { $0.isEmpty ? nil : $0 } ?? o.currentVersion)
             VStack(alignment: .leading, spacing: 4) {
                 Text("Next").font(.subheadline).foregroundStyle(.secondary)
                 Text(o.next())
@@ -102,17 +102,15 @@ struct UpdatesView: View {
     }
 
     private func autoText(_ o: UpdatesOverview) -> String {
-        guard o.autoInstall else { return "Paused" }
-        let channel = o.channel.map { "\($0) channel" }
-        if let (from, to) = UpdateWords.windowEnds(o.window) {
-            return ["On", channel, "quiet window \(from)–\(to)"].compactMap { $0 }.joined(separator: " · ")
-        }
-        return ["On", channel].compactMap { $0 }.joined(separator: " · ")
+        guard o.autoInstall else { return String(localized: "updates.home.autoPaused", defaultValue: "Paused") }
+        let channel = o.channel.map { String(localized: "\($0) channel") }
+        let window = UpdateWords.windowEnds(o.window).map { String(localized: "quiet window \($0.0)–\($0.1)") }
+        return [String(localized: "updates.home.autoOn", defaultValue: "On"), channel, window].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func steppingStone(_ o: UpdatesOverview, target: CatalogRelease) -> String {
-        let newest = o.plan.newest?.version ?? "the newest release"
-        return "A stepping stone: \(newest) cannot be installed from this version, so \(target.version) comes first and the next window goes on from there."
+        let newest = o.plan.newest?.version ?? String(localized: "the newest release")
+        return String(localized: "A stepping stone: \(newest) cannot be installed from this version, so \(target.version) comes first and the next window goes on from there.")
     }
 }
 
@@ -124,9 +122,9 @@ private struct RunSections: View {
     let problem: String?
 
     var body: some View {
-        Section(active ? "Update under way" : "Last update") {
+        Section(active ? LocalizedStringKey("Update under way") : LocalizedStringKey("Last update")) {
             HStack {
-                Text(run.version.isEmpty ? "Update" : "To \(run.version)").font(.headline)
+                (run.version.isEmpty ? Text("Update") : Text("To \(run.version)")).font(.headline)
                 if let from = run.fromVersion, !from.isEmpty {
                     Text("from \(from)").foregroundStyle(.secondary)
                 }
@@ -200,7 +198,7 @@ private struct RunSections: View {
         } else if let view, !view.waitingHome.isEmpty {
             Section {
                 ForEach(view.waitingHome) { m in
-                    LabeledContent(m.name, value: "Waiting for the home to finish")
+                    LabeledContent(m.name, value: String(localized: "Waiting for the home to finish"))
                 }
             } header: {
                 Text("Machines")
@@ -213,7 +211,7 @@ private struct RunSections: View {
     private func versions(_ t: UpdateTarget) -> String? {
         switch (t.fromVersion, t.toVersion) {
         case let (from?, to?) where !from.isEmpty && !to.isEmpty: "\(from) → \(to)"
-        case let (_, to?) where !to.isEmpty: "to \(to)"
+        case let (_, to?) where !to.isEmpty: String(localized: "to \(to)")
         default: nil
         }
     }
@@ -279,8 +277,8 @@ private struct UpdateMachineRow: View {
     }
 
     private var facts: String {
-        var parts = [machine.version.isEmpty ? "version unknown" : machine.version]
-        if let target = machine.target, !target.isEmpty, target != machine.version { parts.append("updating to \(target)") }
+        var parts = [machine.version.isEmpty ? String(localized: "version unknown") : machine.version]
+        if let target = machine.target, !target.isEmpty, target != machine.version { parts.append(String(localized: "updating to \(target)")) }
         if let p = machine.platform, !p.isEmpty { parts.append(p) }
         return parts.joined(separator: " · ")
     }

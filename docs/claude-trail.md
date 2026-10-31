@@ -385,7 +385,262 @@ reached from the Mac (no SSH), so **this section is to be filled from the PC.**
 5. Real PR numbers and shas only (`gh`, `git`). No secrets.
 6. Ship it as its own docs PR against main, with a CHANGELOG line under [Unreleased].
 
-_(none yet)_
+Traced on 2026-10-31 from the PC. Its Maktaba transcripts sit under `~/.claude/projects/E--tv`
+and `E--tv-dizquetv` (the checkouts live in `E:\tv`), not `*aktaba*`. Left out: `c58dc8c2` (an
+iperf question), `56a527d9` (another repo) and two empty transcripts. The 362 subagent
+transcripts were not traced one by one; their work is in the PRs cited.
+
+### 2026-10-14 · PC · 89e92223 · dizqueTV on the PC, then mediaintel and Maktaba TV
+
+- Asked: Plex Live TV from the YouTube archive. dizqueTV 1.7.0 was built from source on the PC
+  (port 8002, tuned by Plex on the NAS as an HDHomeRun), which is why Maktaba TV emulates an
+  HDHomeRun with XMLTV. The owner then said "create tools for the work, don't do manually": that
+  became mediaintel ([#46], [#48]), then Maktaba's queues ([#47]), channel rules ([#52], [#55])
+  and Maktaba TV ([#57], which took in [#55]).
+- Owner rules set here: "this should all be baseed on config with ui for that config" (rules are
+  settings, not code); "verify the claim" (a guess at failing NAS disks was wrong: SMB timeouts
+  from 32 parallel reads); no placeholder features (a stub audit followed: [#123], [#128],
+  [#130]–[#136]). Claude's own working rules from it: never change security settings (the owner
+  added the Defender exclusion himself); never use `git stash` (a shared stash swapped two
+  worktrees); tests bind 127.0.0.1 and build output is never committed (`api.exe` landed in
+  [#119]; [#127]).
+- Decided: "windows will join mac and not the other way around". The PC's own home was retired
+  and the PC joined `Mahmouds-Mac-Studio` as node `windows-pc` on 2026-10-19; [#75] then let its
+  storage check accept files of unknown size, so the worker took jobs. Paths are canonical
+  `smb://` ([#81], [#101], [#107]), and nodes reach Plex through the home and never hold its
+  token ([#73], [#78]). The owner also asked for TV hot swap ([#97], [#104], [#108]) and
+  automatic updates.
+- PC facts: 192.168.50.24, RTX 2080 SUPER. `O:` = `\\Home-NAS\Originals`, `Y:` =
+  `\\Home-NAS\Originals\Backup\Youtube`. Splunk holds 8000 and 8088 and MiniTool ShadowMaker
+  8080, so setup picks a free port from 8780 (v0.1.0, `6b88722f`). The mediaintel data and a
+  hand-over README for the Mac are in `Y:\.maktaba`.
+- Ended with the Plex discovery fix ([#139]: relative SSDP location, no UDP 65001, a device ID
+  that failed its check digit) and v0.2.0 ([#138]) waiting on [#141], which the classifier
+  would not merge without a human review.
+
+### 2026-10-20 · PC · 798feb8d · v0.2.0 and the first node PRs
+
+- Merged [#141] and, on the owner's "Why this one? Merge it", [#138]; tagged v0.2.0 on
+  `e539c7af` ("Release tag no need for rc").
+- Four of the five release workflows failed (as on v0.1.0): opened [#142] for the icons, the
+  Android SDK and the relay deploy.
+- Ran the PC as a full node from source: opened [#143] so its API and pipeline reach the home's
+  database.
+- The owner asked why the whole site goes blank when the node can't reach its home "instead of
+  working and showing popup and maybne all actions disabled": that became [#145] (later folded
+  into [#178]).
+
+### 2026-10-20 · PC · f43fad60 · "Maktaba worktree setup", the PC's coordinating session
+
+- 2026-10-20 → 10-31. Asked: keep the PC's node and dizqueTV running, and review, fix and merge
+  every PR from this side. It ran the side sessions below (node copy, Windows and Linux apps,
+  updates), merged about 70 PRs and tagged about 17 releases between v0.3.0-rc.1 and v0.3.33
+  (the Mac tagged the rest). On 10-31 it traced these PC sessions.
+- Owner rules set here (for §1): "review all prs from this side, then fix and merge" (a merge
+  commit on the exact reviewed head, `--match-head-commit` with the full sha, every check green);
+  "why you keep creating prs, fix and merge" (fold findings and new CI failures into PRs already
+  open); "why are you not polling it???" (wait on CI yourself, merge on green); "tag every …
+  merge" (the next patch tag at once, after main's `ci.yml` passes on the merge commit, pushed
+  with the owner's `gh` so the release builds start; since 10-31, not while §3–§5 hold a
+  release); "this is not a manual step, its a feature of maktaba".
+- PC setup: the node and dizqueTV start from sign-in scheduled tasks (logon +30 s), because `O:`
+  and `Y:` exist only in the signed-in session. On 2026-10-25 the owner chose "Install the
+  Windows app instead": the node moved from the hand-built copy in `E:\tv\maktaba-local` to
+  `%LOCALAPPDATA%\Maktaba`, task `Maktaba Server <SID>` running `Maktaba.exe --server-agent`.
+  `node.json` is in `%APPDATA%\Maktaba` (on `E:`); web 8780, API 8781, streaming 8782. Claude's
+  working rules on this PC: restart its services only through their sign-in tasks; never touch
+  the dizqueTV task; **never install Maktaba or start `Maktaba.exe` from Claude's shell**: the
+  Claude desktop app is an MSIX package, so registry writes from its shell land in Claude's
+  private copy (this broke `maktaba://` here, see `c17dd289`). Download the installer and check
+  its sha256 against the asset's digest, then the owner runs it or opens Maktaba from the Start
+  menu.
+- Fixes, each in its own release: a merge guard that let [#212] merge with a check still running;
+  the Mac moving its Postgres without the node's role ([#276], [#307]); client certificates
+  breaking the node's pipeline ([#349]); lib/pq ignoring the passfile on Windows, plus an
+  inherited `PGPASSWORD` ([#362]); no local video on the node, because the API's check ignored
+  its inferred path map `/Volumes/Originals/` → `O:/` ([#366], v0.3.33). Lessons: compare with
+  main's own runs before blaming a change ([#254] → [#259]); check remote tags before tagging (a
+  v0.3.1 collision); scan any export for tokens (the dizqueTV export carried the Plex token in
+  about 2,800 files; redacted).
+- 10-28: each update order from the Mac waited for a click in the v0.3.33 app (three, none
+  installed), so v0.3.42 was installed by hand. In the Mac's rollback the PC's copy rebuild hung
+  15 min on a table-sync worker with a dead connection, and with the Mac back at schema 167 the
+  v0.3.42 node paused its jobs and streaming. 10-31 (updates §3): the Mac is on v0.3.44, the PC
+  on v0.3.42. The order waits because no app window runs and the server's
+  `maktaba://install-update` link gets Windows' "Get an app" popup: the link was registered only
+  in Claude's private registry copy. Handed to `c17dd289`, where the owner then answered both
+  open questions.
+
+### 2026-10-20 · PC · ce7a4c40 · A node that loses its home, then its database copy (Epic 37)
+
+- Asked: fix [#145]'s review findings. The owner's outage rules: "no sign in when in outage,
+  videos should play if you have path, jobs should pause". Playback with the home's database
+  down became [#157].
+- Then the owner changed the design: every joined node keeps the home's whole database,
+  read-only, "so it can function as read only"; sign-in works offline; "all in a feature branch
+  with everything and merge once". [#145] and [#157] closed into [#178].
+- Why logical replication: Postgres can't stream physically from an arm64 Mac to an x86 PC, and
+  a physical copy would carry every secret and session id. One slot per node; the copy pauses
+  while the home's schema is ahead; secrets and other machines' rows stay out. Pinned Postgres
+  went into [#196] (`postgres.exe` needs a restricted, non-admin token).
+- Also built: switching the home, Plex and Cloudflare included ("credentials through the
+  encrypted handoff, never the replica"). Owner decisions: standby homes only, late writes kept
+  aside with an apply, the supervisor runs the cloud relay.
+- Failures: a node's replication role could read every table through `test_decoding` (only
+  `pgoutput` ships now, foreign slots are dropped); the freeze wasn't a fence (lib/pq's
+  `BEGIN READ WRITE` beats `default_transaction_read_only`); a stream-key race ([#234]). [#178]
+  merged 2026-10-22 after five reviews; [#240] took two lows.
+
+### 2026-10-20 · PC · 2356e2cd · [#143] review items
+
+- Fixed a start-up probe that could hang and home-only database loops running on nodes (the
+  node's role is limited on purpose, so those loops stay on the home), then a `make lint-log`
+  failure (runtime data goes in log fields, not the message). [#143] merged 2026-10-21.
+
+### 2026-10-20 · PC · e7913aa5 · Release blockers left after [#142]
+
+- Every tag up to v0.2.0 had failed in several legs. Fixed what [#142] reached once it got
+  further, merged main after Maktaba.app's own icons landed, and matched the Windows binary name
+  `Maktaba.exe` (`mainBinaryName`). [#142] merged 2026-10-21.
+
+### 2026-10-20 · PC · c8ac551a · Rework [#145] (stopped)
+
+- Stopped at once by the owner; the work went on in `ce7a4c40`.
+
+### 2026-10-21 · PC · 295d4839 · Windows one-app install (Epic 38)
+
+- Asked (relayed): "also need the same one app setup on windows similar to mac". About 30 PRs,
+  spec [#165] and stories 38.1–38.14, reviewed and merged by `f43fad60`.
+- Why a sign-in task, not a service: `O:` and `Y:` exist only in the user's session. The task
+  `\Maktaba Server <SID>` runs `Maktaba.exe --server-agent` 30 s after sign-in, with a 5-minute
+  time trigger as the watchdog, because Task Scheduler's restart-on-failure never retries a
+  crash ([#170], [#175]). All state is per user in `%LOCALAPPDATA%\Maktaba`; one current-user
+  NSIS installer, no admin, every download sha256-pinned ([#169], [#198]).
+- Windows lessons: `os.Rename` can't cross drives (`%APPDATA%` is on `E:`, `%LOCALAPPDATA%` on
+  `C:`); CTRL_BREAK can't reach a child that has its own console, and sent to a pid that leads
+  no group it hits the whole console ([#205], [#222]); the VC++ runtime pin ([#212]) must match
+  the runner's Visual Studio (14.51 on windows-2025-vs2026, not VS 2022's 14.44);
+  `postgres.exe` refuses an admin token ([#204]).
+- Decided: transcription stays the Mac's by default, and a machine that can't run the second
+  listen doesn't claim it (this PC's 8 GB card can't) ([#201], [#221]). Adopting an existing
+  install moves its task, keys and firewall rules (one UAC prompt) and never touches dizqueTV
+  ([#200], [#230]); `node.json` is never copied, and only the PC that owns it uses it ([#217]).
+- CI: the docs-only filter never fired ([#211]); a shutdown flake went to 0 in 600 runs
+  ([#223]); `node.json` writes got a lock, ACLs and encodings ([#227], [#231], [#239], [#243]).
+  v0.3.0-rc.1 was tagged on [#243].
+
+### 2026-10-21 · PC · 454c33cb · Linux one-app install (Epic 39)
+
+- Asked (relayed): "and another for linux". Spec [#166] and the story PRs, merged by
+  `f43fad60`.
+- Why: the AppImage is the main download, with .deb and .rpm from the same build, all updated by
+  the Tauri updater; no apt/dnf repo (a second updater and trust root, hosting, root for every
+  update). The server runs from a per-user runtime copy with a `current` link and rollback
+  ([#174]), as a systemd user service with linger ([#173]).
+- Owner decision "Use the distro's ffmpeg": the pinned Linux ffmpeg builds were
+  `--enable-nonfree`, so not redistributable. Linux bundles none and the packages depend on
+  ffmpeg ([#229]); the approved mirror ([#220]) was closed unpublished.
+- Lessons: curl's `--retry` doesn't retry a Cloudflare 521 (an ffmpeg host outage, [#216]);
+  `find | head` under pipefail exits 141; a plain CI re-run reuses the old merge ref, so merge
+  main and push instead; rpm takes no `-` in a version (v0.3.0-rc.1's Linux legs, [#258]).
+- Side fixes: one version order ([#218], [#226]); VOD on NVIDIA used a nonexistent
+  `-hwaccel nvenc` ([#232]); VOD shares the GPU with TV without starving the hot standby
+  ([#237]); VOD playlists list every segment ([#244]).
+
+### 2026-10-23 · PC · 9bd8e01c · Automatic updates (Epic 35) and what broke live
+
+- Asked: "shouldn't it update automaticly? what?", then "build it". [#271] (v0.3.0): one update
+  path per install kind, the home's run drives the nodes, and each machine's journal finishes a
+  run whichever release starts next.
+- Owner decisions: D1 "Ask first" (desktop apps stage the home's order and install on a click;
+  reversed to no click on 2026-10-27, [#389]); D2 a rollback restores the pre-update dump; D3 the
+  Linux app updates itself without root. The order file `updates/app-install.json` goes ordered
+  → staged → go → installing; on Windows the app the server starts must break away from the
+  launcher's kill-on-close job.
+- "it tried to update and failed and it didn't say why": every attempt shows its reason and
+  links the logs ([#276]). The rest of the spec was built by ten parallel worktree agents
+  ([#287]).
+- Live failures fixed: the Mac moved its Postgres without the node's role, so a node now gets
+  its access back by itself ([#276], [#307]: "it should just try to rejoin"); Mac notarization
+  broke on empty `APPLE_*` variables ([#276]); "remove the stupid continue with mac", the tray at
+  sign-in and the blank window after updates ([#320]); client certificates on the home's
+  database ([#349]).
+- Lessons: Go on Windows ignores `TZ`; `go test … | tail` hides a failing exit code; Defender
+  slows tests that start fresh executables; never raise a test tier's cap.
+
+### 2026-10-31 · PC · c17dd289 · PC stuck on v0.3.42: the `maktaba://` link popup (in progress)
+
+- Handed off from `f43fad60`: get the PC onto v0.3.44 and stop Windows' "Get an app" popup for
+  the server's `maktaba://install-update` link.
+- Cause: the Claude desktop app is an MSIX package. The installs and app starts run from
+  Claude's shell (the hand-installs in `f43fad60`) registered `maktaba://` only in Claude's
+  private registry copy, so the server, outside it, can't open the link and the app never got
+  the v0.3.44 order. Claude's shell shows the key, so `reg query` there proves nothing. Rule:
+  never install or start Maktaba from Claude's shell on this PC; the owner runs the installer.
+- Owner decisions, 2026-10-31: "Agent installs (Recommended)": the always-running
+  `Maktaba.exe --server-agent` installs a node's update itself instead of waking the desktop
+  app (changes §2, Updates). "Yes, open it": a PR so the node's copy notices a dead link to the
+  home's database within about a minute and ends replication workers that won't stop. Both are
+  in progress there; their PRs go in its own later entry.
+
+[#48]: https://github.com/Hamza-Labs-Core/Maktaba/pull/48
+[#52]: https://github.com/Hamza-Labs-Core/Maktaba/pull/52
+[#55]: https://github.com/Hamza-Labs-Core/Maktaba/pull/55
+[#57]: https://github.com/Hamza-Labs-Core/Maktaba/pull/57
+[#73]: https://github.com/Hamza-Labs-Core/Maktaba/pull/73
+[#75]: https://github.com/Hamza-Labs-Core/Maktaba/pull/75
+[#78]: https://github.com/Hamza-Labs-Core/Maktaba/pull/78
+[#81]: https://github.com/Hamza-Labs-Core/Maktaba/pull/81
+[#101]: https://github.com/Hamza-Labs-Core/Maktaba/pull/101
+[#107]: https://github.com/Hamza-Labs-Core/Maktaba/pull/107
+[#123]: https://github.com/Hamza-Labs-Core/Maktaba/pull/123
+[#127]: https://github.com/Hamza-Labs-Core/Maktaba/pull/127
+[#128]: https://github.com/Hamza-Labs-Core/Maktaba/pull/128
+[#130]: https://github.com/Hamza-Labs-Core/Maktaba/pull/130
+[#136]: https://github.com/Hamza-Labs-Core/Maktaba/pull/136
+[#141]: https://github.com/Hamza-Labs-Core/Maktaba/pull/141
+[#142]: https://github.com/Hamza-Labs-Core/Maktaba/pull/142
+[#143]: https://github.com/Hamza-Labs-Core/Maktaba/pull/143
+[#145]: https://github.com/Hamza-Labs-Core/Maktaba/pull/145
+[#157]: https://github.com/Hamza-Labs-Core/Maktaba/pull/157
+[#169]: https://github.com/Hamza-Labs-Core/Maktaba/pull/169
+[#170]: https://github.com/Hamza-Labs-Core/Maktaba/pull/170
+[#173]: https://github.com/Hamza-Labs-Core/Maktaba/pull/173
+[#174]: https://github.com/Hamza-Labs-Core/Maktaba/pull/174
+[#175]: https://github.com/Hamza-Labs-Core/Maktaba/pull/175
+[#196]: https://github.com/Hamza-Labs-Core/Maktaba/pull/196
+[#198]: https://github.com/Hamza-Labs-Core/Maktaba/pull/198
+[#200]: https://github.com/Hamza-Labs-Core/Maktaba/pull/200
+[#201]: https://github.com/Hamza-Labs-Core/Maktaba/pull/201
+[#204]: https://github.com/Hamza-Labs-Core/Maktaba/pull/204
+[#205]: https://github.com/Hamza-Labs-Core/Maktaba/pull/205
+[#212]: https://github.com/Hamza-Labs-Core/Maktaba/pull/212
+[#216]: https://github.com/Hamza-Labs-Core/Maktaba/pull/216
+[#217]: https://github.com/Hamza-Labs-Core/Maktaba/pull/217
+[#218]: https://github.com/Hamza-Labs-Core/Maktaba/pull/218
+[#220]: https://github.com/Hamza-Labs-Core/Maktaba/pull/220
+[#221]: https://github.com/Hamza-Labs-Core/Maktaba/pull/221
+[#222]: https://github.com/Hamza-Labs-Core/Maktaba/pull/222
+[#223]: https://github.com/Hamza-Labs-Core/Maktaba/pull/223
+[#226]: https://github.com/Hamza-Labs-Core/Maktaba/pull/226
+[#227]: https://github.com/Hamza-Labs-Core/Maktaba/pull/227
+[#229]: https://github.com/Hamza-Labs-Core/Maktaba/pull/229
+[#230]: https://github.com/Hamza-Labs-Core/Maktaba/pull/230
+[#231]: https://github.com/Hamza-Labs-Core/Maktaba/pull/231
+[#232]: https://github.com/Hamza-Labs-Core/Maktaba/pull/232
+[#234]: https://github.com/Hamza-Labs-Core/Maktaba/pull/234
+[#237]: https://github.com/Hamza-Labs-Core/Maktaba/pull/237
+[#239]: https://github.com/Hamza-Labs-Core/Maktaba/pull/239
+[#240]: https://github.com/Hamza-Labs-Core/Maktaba/pull/240
+[#243]: https://github.com/Hamza-Labs-Core/Maktaba/pull/243
+[#244]: https://github.com/Hamza-Labs-Core/Maktaba/pull/244
+[#254]: https://github.com/Hamza-Labs-Core/Maktaba/pull/254
+[#258]: https://github.com/Hamza-Labs-Core/Maktaba/pull/258
+[#259]: https://github.com/Hamza-Labs-Core/Maktaba/pull/259
+[#276]: https://github.com/Hamza-Labs-Core/Maktaba/pull/276
+[#307]: https://github.com/Hamza-Labs-Core/Maktaba/pull/307
+[#320]: https://github.com/Hamza-Labs-Core/Maktaba/pull/320
+[#362]: https://github.com/Hamza-Labs-Core/Maktaba/pull/362
 
 ---
 
@@ -395,6 +650,18 @@ Append here: date, session, one to five lines on what changed. Newest last.
 
 - 2026-10-31 · docs-claude-trail: created this file, the `CLAUDE.md` rule and the memory
   pointer; traced all 697 Mac transcripts into §8.
+- 2026-10-31 · Apple Arabic agent of `b743b7d4`: [#454] gives Remote, Player (iOS, Mac) and TV
+  English and Arabic String Catalogs, with MaktabaKit's own via `Bundle.module`. "The home" is
+  «الجهاز الرئيسي». The guard `tools/apple/check-string-catalogs.py` runs in the new
+  `apple-apps` CI job. Kept: the hand-rolled Arabic in `ConnectStrings`, `PermissionsStrings`,
+  `ErrorStrings` and `TVConnectStrings`.
+  - Gotcha: `String(localized:bundle:locale:)` does not pick the language. Build a
+    `LocalizedStringResource` with `.locale` (see `kit()` in `Localization.swift`).
+  - Gotcha: the shared iPhone 17 simulator crashed SpringBoard repeatedly, so this work used a
+    throwaway `maktaba-ar-test` on iOS 27.0 (iOS 27.1 is not compatible with that device type)
+    and deleted it afterwards.
+  - Known, unrelated failures: run on iOS, MaktabaKit's `thisPlatformAsksForLocalNetwork`
+    expects the Mac's list; an unsigned run fails the Mac Player keychain test.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -542,3 +809,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#451]: https://github.com/Hamza-Labs-Core/Maktaba/pull/451
 [#452]: https://github.com/Hamza-Labs-Core/Maktaba/pull/452
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
+[#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454

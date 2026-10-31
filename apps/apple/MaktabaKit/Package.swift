@@ -13,7 +13,7 @@ let package = Package(
         .library(name: "MaktabaKit", targets: ["MaktabaKit"]),
     ],
     targets: [
-        .target(name: "MaktabaKit"),
+        .target(name: "MaktabaKit", resources: [.process("Localizable.xcstrings")]),
         .testTarget(name: "MaktabaKitTests", dependencies: ["MaktabaKit"]),
     ]
 )

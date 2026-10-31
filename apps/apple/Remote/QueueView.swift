@@ -146,10 +146,10 @@ struct RunningJobRow: View {
         if let secs = job.runningFor(now: now) {
             parts.append(runningText(secs))
         } else {
-            parts.append(job.state == "claimed" ? "starting" : job.state.replacingOccurrences(of: "_", with: " "))
+            parts.append(job.state == "claimed" ? String(localized: "starting") : job.state.replacingOccurrences(of: "_", with: " "))
         }
         if let step = job.progressStep, !step.isEmpty { parts.append(step.replacingOccurrences(of: "_", with: " ")) }
-        if job.attempts > 1, job.maxAttempts > 0 { parts.append("attempt \(job.attempts) of \(job.maxAttempts)") }
+        if job.attempts > 1, job.maxAttempts > 0 { parts.append(String(localized: "attempt \(job.attempts) of \(job.maxAttempts)")) }
         return parts.joined(separator: " · ")
     }
 }
@@ -163,10 +163,10 @@ struct StageRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.info.label).font(.headline)
                 HStack(spacing: 12) {
-                    Counter(value: row.waiting, label: "waiting", systemImage: "hourglass")
-                    Counter(value: row.running, label: "running", systemImage: "gearshape.2")
+                    Counter(text: Text("\(row.waiting) waiting"), systemImage: "hourglass")
+                    Counter(text: Text("\(row.running) running"), systemImage: "gearshape.2")
                     if row.failed > 0 {
-                        Counter(value: row.failed, label: "failed", systemImage: "xmark.octagon")
+                        Counter(text: Text("\(row.failed) failed"), systemImage: "xmark.octagon")
                             .foregroundStyle(.red)
                     }
                 }
@@ -185,13 +185,12 @@ struct StageRow: View {
 }
 
 struct Counter: View {
-    let value: Int
-    let label: String
+    let text: Text
     let systemImage: String
 
     var body: some View {
         Label {
-            Text("\(value, format: .number) \(label)").monospacedDigit()
+            text.monospacedDigit()
         } icon: {
             Image(systemName: systemImage)
         }
@@ -212,11 +211,10 @@ struct StateBadge: View {
     }
 
     private var color: Color {
-        switch row.state {
-        case "Running": .green
-        case "Paused", "Paused (all)": .brass
-        case "No worker", "Not set up": .red
-        case "Off": .secondary
+        switch row.status {
+        case .running: .green
+        case .paused, .pausedAll: .brass
+        case .noWorker, .notSetUp: .red
         default: .secondary
         }
     }
@@ -245,7 +243,7 @@ struct StageView: View {
                     if let s = row.summary {
                         LabeledContent("Done in 24 h", value: s.counts.done24h, format: .number)
                         if s.ratePerMin > 0 {
-                            LabeledContent("Rate", value: "\(s.ratePerMin.formatted(.number.precision(.fractionLength(0...1)))) a minute")
+                            LabeledContent("Rate", value: String(localized: "\(s.ratePerMin.formatted(.number.precision(.fractionLength(0...1)))) a minute"))
                         }
                         if let eta = s.etaSec, eta > 0 {
                             LabeledContent("Time left", value: Duration.seconds(eta).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))

@@ -95,6 +95,13 @@
     <string name="code_unsupported">%1$s cannot sign in with a code. Use your username and password.</string>
 
     <string name="account_approve">Approve a sign-in</string>
+    <string name="account">Account</string>
+    <string name="theme_mode">Theme: %1$s</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="switch_home">Switch home</string>
+    <string name="sign_out">Sign out</string>
     <string name="approve_title">Approve a sign-in</string>
     <string name="approve_intro">A device asking to sign in shows a code. Enter it, or scan its QR code.</string>
     <string name="approve_code_label">Code, like ABCD-1234</string>

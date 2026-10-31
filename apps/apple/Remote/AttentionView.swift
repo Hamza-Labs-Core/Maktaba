@@ -75,9 +75,9 @@ struct GroupRow: View {
     /// What fixes a group that retrying alone does not (done in the home's web pages).
     static func hint(_ action: String) -> String {
         switch action {
-        case "open_settings": "Fix in Settings"
-        case "show_workers": "Needs a worker"
-        case "apply": "Apply on the web"
+        case "open_settings": String(localized: "Fix in Settings")
+        case "show_workers": String(localized: "Needs a worker")
+        case "apply": String(localized: "Apply on the web")
         default: ""
         }
     }

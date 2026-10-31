@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.remote
 
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -55,17 +56,18 @@ import com.hamzalabs.maktaba.core.ui.ThemeStore
 import com.hamzalabs.maktaba.core.ui.sentence
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
  * The Remote's places: what needs attention first, as on the web's queue page. The home's
  * processes are on Machines, the jobs running now on Queue.
  */
-enum class Place(val label: String, val icon: ImageVector) {
-    Attention("Needs attention", Icons.Outlined.ReportProblem),
-    Queue("Queue", Icons.Outlined.Sync),
-    Updates("Updates", Icons.Outlined.SystemUpdate),
-    Libraries("Libraries", Icons.Outlined.VideoLibrary),
-    Machines("Machines", Icons.Outlined.Dns),
+enum class Place(@StringRes val label: Int, val icon: ImageVector) {
+    Attention(R.string.place_attention, Icons.Outlined.ReportProblem),
+    Queue(R.string.place_queue, Icons.Outlined.Sync),
+    Updates(R.string.place_updates, Icons.Outlined.SystemUpdate),
+    Libraries(R.string.place_libraries, Icons.Outlined.VideoLibrary),
+    Machines(R.string.place_machines, Icons.Outlined.Dns),
 }
 
 /**
@@ -145,7 +147,7 @@ fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: Theme
                     selected = p == place,
                     onClick = { place = p; remote.clear() },
                     icon = { Icon(p.icon, null) },
-                    label = { Text(p.label) },
+                    label = { Text(stringResource(p.label)) },
                 )
             }
         },
@@ -197,7 +199,7 @@ fun AdminScreen(
                             Text(
                                 remote.problems.map { p ->
                                     val why = stringResource(p.failure.kind.sentence())
-                                    if (p.what != null) "${p.what}: $why" else why
+                                    if (p.what != null) stringResource(R.string.say_label_value, p.what, why) else why
                                 }.joinToString("\n"),
                                 color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -215,13 +217,13 @@ fun AdminScreen(
                 TopAppBar(
                     title = { Text(chosenTitle ?: "") },
                     navigationIcon = {
-                        if (back) IconButton(onClick = onUnchoose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                        if (back) IconButton(onClick = onUnchoose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.error_back)) }
                     },
                 )
             },
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) {
-                if (detail != null) detail() else Message("Choose one to see it here")
+                if (detail != null) detail() else Message(stringResource(R.string.choose_one))
             }
         }
     }

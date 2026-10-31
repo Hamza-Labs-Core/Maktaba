@@ -12,10 +12,28 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
+  iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
+  screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes
+  (the updates', processes' and queue's states, steps and reasons, the plan's sentence), in
+  the web's Arabic (`ar.json`) wherever the web says the same thing. Counts take Arabic plurals;
+  numbers and dates follow the locale; a value the home sends with no words is still shown as
+  sent. CI's new *Apple apps* gate runs MaktabaKit's tests, builds the apps, and fails on a
+  string without its Arabic or missing from its catalog (`tools/apple/check-string-catalogs.py`).
+- **The Android apps speak Arabic.** Maktaba Remote (every screen: Needs attention, Queue,
+  Updates, Libraries, Machines and its processes), Maktaba Player and the account menu now ship
+  in English and Arabic, right to left, with numbers and dates in the device's language. The
+  Remote says what the web admin says, in the web's own Arabic for each state, step and code; a
+  value it has no words for is still shown as the home sent it. A unit test and lint now fail
+  any Android or Android TV string that has no Arabic.
 - **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the owner's
   standing rules, the decisions and why, failures and their fixes, the live state, the work in
   flight, what waits on the owner and the release history. `CLAUDE.md` tells every session to
   read it first and add to it before it ends.
+- **The trail's PC sessions.** `docs/claude-trail.md` §9 now holds the Windows PC's own Claude
+  sessions from 2026-10-14 to 2026-10-31: dizqueTV and the start of Maktaba TV, the node's
+  database copy, the Windows and Linux apps, automatic updates, and how this PC's node is set up
+  and kept running.
 - **Maktaba Remote (iPhone, iPad) shows the home's running work.** *Home* links to two new
   read-only pages: *Updates* (the running release and what is next, in the web's words: what
   the planned release waits for, a stepping stone or a held release, a stale check; the
@@ -70,6 +88,12 @@ don't append a line here; docs-only PRs are exempt.
   - at the home's go, it runs the installer.
 
   The server no longer sends the link, and the window app only shows the update.
+- **A full node's copy of the home's database starts afresh even when a worker hangs.** On
+  2026-10-28 a table's first copy was mid-way when the home's database restarted. Its
+  connection never dropped, so the worker waited 15 minutes for rows that never came, and
+  every fresh copy failed with "the subscription's workers did not stop within 30s". Now a
+  worker still there 30 seconds after the copy was switched off is ended. Nothing restarts a
+  worker of a copy that is off, so the fresh copy goes ahead.
 - **The api and streaming integration tests no longer collide on a port.** Both started their
   server on the fixed ports 18081/19101. When CI ran the two packages at once, the streaming
   test could reach the api's server: "admin /readyz service = api, want streaming", which

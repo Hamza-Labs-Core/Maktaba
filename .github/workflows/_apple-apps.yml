@@ -1,0 +1,64 @@
+# Reusable gate for the native Apple apps (Epic 42, `apps/apple` and the Apple TV app in
+# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote, Maktaba Player
+# for iPhone and the Mac, Maktaba TV), and their String Catalogs in English and Arabic.
+#
+# The catalogs: tools/apple/check-string-catalogs.py fails on a key without its Arabic
+# (state "translated") and, reading the .stringsdata the builds write (project.yml sets
+# SWIFT_EMIT_LOC_STRINGS), on a string the code uses that is not in its app's catalog.
+
+name: Apple apps
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  apple-apps:
+    name: Apple apps (Remote, Player, TV)
+    # the newest Xcode is on macos-26 (as testflight.yml)
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DERIVED: ${{ github.workspace }}/build/apple-derived
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # every key has its Arabic: seconds, before anything is built
+      - name: String Catalogs have their Arabic
+        run: python3 tools/apple/check-string-catalogs.py
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      # xcodebuild, not `swift test`: the runner's SwiftPM copies Localizable.xcstrings
+      # as-is instead of compiling it, so its Arabic and plural forms would not resolve
+      - name: MaktabaKit tests
+        working-directory: apps/apple/MaktabaKit
+        run: |
+          xcodebuild test -scheme MaktabaKit -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/maktabakit" CODE_SIGNING_ALLOWED=NO
+
+      # unsigned simulator and Mac builds: compiling each app writes its .stringsdata
+      - name: Build the apps
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          build() {
+            echo "::group::$1"
+            xcodebuild build -project Maktaba.xcodeproj -scheme "$1" -destination "$2" \
+              -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO -quiet
+            echo "::endgroup::"
+          }
+          build "Maktaba Remote" "generic/platform=iOS Simulator"
+          build "Maktaba Player" "generic/platform=iOS Simulator"
+          build "Maktaba Player Mac" "platform=macOS"
+          build "Maktaba TV" "generic/platform=tvOS Simulator"
+
+      - name: Every string the code uses is in its catalog
+        run: python3 tools/apple/check-string-catalogs.py --stringsdata "$DERIVED"
