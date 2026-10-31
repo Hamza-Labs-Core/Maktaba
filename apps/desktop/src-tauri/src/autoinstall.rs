@@ -419,7 +419,9 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
 /// advance writes the order's next state as write_state does, but only while the order is
 /// still at the state req was read at: an answer that took a while (a download) never takes
 /// back what the server wrote meanwhile (its go, a withdrawal). Ok(true): it went in;
-/// Ok(false): the order had moved on, and was left as it is.
+/// Ok(false): the order had moved on, and was left as it is. (The Windows agent's:
+/// agent_orders.rs.)
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn advance(path: &Path, req: &Request, state: &str) -> std::io::Result<bool> {
     write_if(path, req, state, "", Some(&req.state))
 }
