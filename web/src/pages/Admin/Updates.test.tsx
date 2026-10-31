@@ -1364,6 +1364,40 @@ describe("Admin Updates: blocked, stuck and waiting releases", () => {
     expect(await screen.findByTestId("updates-tick")).toHaveTextContent("The last try needs you");
   });
 
+  it("a blocked release a newer one passed by, or one older than what runs, is not shown", async () => {
+    routes(
+      overview({
+        catalog: [
+          { ...target, version: "1.5.0" },
+          { ...target, version: "1.4.5", blocked_reason: "rolled_back", attempts: 1 },
+          { ...target, version: "1.3.0", blocked_reason: "failed_tv", attempts: 1 },
+        ],
+        last_tick: { action: "none", reason: "outside_window", version: "1.5.0", at: finishedAt },
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-tick")).toHaveTextContent(
+      "Waiting for the quiet window"
+    );
+    expect(screen.queryByTestId("updates-blocked-1.4.5")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("updates-blocked-1.3.0")).not.toBeInTheDocument();
+    expect(screen.queryByText(/is blocked/)).not.toBeInTheDocument();
+  });
+
+  it("a blocked release the TV could not move to says so", async () => {
+    routes(
+      overview({
+        catalog: [{ ...target, version: "1.4.5", blocked_reason: "failed_tv", attempts: 1 }],
+      }),
+      null
+    );
+    renderPage();
+    expect(await screen.findByTestId("updates-blocked-1.4.5")).toHaveTextContent(
+      "1.4.5 is blocked: the TV could not move to it"
+    );
+  });
+
   it("a blocked release is tried again, or installed now", async () => {
     routes(
       overview({

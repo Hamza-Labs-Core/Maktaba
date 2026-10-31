@@ -3467,6 +3467,7 @@
   "updates.blocked.reason.verify": "its signature or identity was refused",
   "updates.blocked.reason.older_build": "an older build than the one running here: it is passed by",
   "updates.blocked.reason.rehearsal": "its migrations failed on a copy of the database",
+  "updates.blocked.reason.failed_tv": "the TV could not move to it",
   "updates.blocked.unblock": "Try it again",
   "updates.blocked.install": "Install now",
   "updates.blocked.unblocked": "{version} is tried again in the next window",

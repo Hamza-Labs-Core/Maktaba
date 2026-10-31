@@ -3467,6 +3467,7 @@
   "updates.blocked.reason.verify": "رُفض توقيعه أو هويته",
   "updates.blocked.reason.older_build": "إصدار بُني قبل الإصدار الذي يعمل هنا: يتم تجاوزه",
   "updates.blocked.reason.rehearsal": "فشلت ترحيلاته على نسخة من قاعدة البيانات",
+  "updates.blocked.reason.failed_tv": "لم يستطع التلفاز الانتقال إليه",
   "updates.blocked.unblock": "جرّبه مجدداً",
   "updates.blocked.install": "ثبّت الآن",
   "updates.blocked.unblocked": "سيُجرَّب {version} مجدداً في النافذة التالية",
