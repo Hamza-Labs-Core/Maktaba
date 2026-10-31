@@ -661,6 +661,8 @@
   "health.processes.role.api": "الواجهة البرمجية",
   "health.processes.role.streaming": "البث والتلفاز المباشر",
   "health.processes.role.pipeline": "خط المعالجة",
+  "health.processes.role.tv-slot": "منفذ البث التلفزيوني",
+  "health.processes.state.standby": "في الانتظار",
   "health.processes.state.running": "يعمل",
   "health.processes.state.starting": "قيد التشغيل",
   "health.processes.state.unhealthy": "لا يستجيب",
