@@ -58,6 +58,46 @@ function renderCard() {
 describe("ProcessesCard", () => {
   afterEach(() => vi.clearAllMocks());
 
+  it("names each TV slot, says a slot not needed now stands by, and why one is not started", async () => {
+    get.mockResolvedValue({
+      available: true,
+      processes: [
+        {
+          role: "tv-slot",
+          instance: "blue",
+          wanted: true,
+          state: "running",
+          pid: 5,
+          restarts: 0,
+          uptime_sec: 60,
+        },
+        { role: "tv-slot", instance: "green", wanted: false, state: "stopped", restarts: 0 },
+        {
+          role: "tv-slot",
+          instance: "amber",
+          wanted: true,
+          state: "backoff",
+          restarts: 1,
+          detail_code: "port_taken",
+          detail_params: { port: 9113, addr: "127.0.0.1:9113" },
+          detail: "port 9113 is taken",
+        },
+      ],
+      events: [],
+    } satisfies ProcessesDoc);
+    renderCard();
+    await waitFor(() => expect(screen.getByTestId("process-tv-slot-blue")).toBeInTheDocument());
+    expect(
+      within(screen.getByTestId("process-tv-slot-blue")).getByText("TV slot · blue")
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("process-tv-slot-green")).getByText("Standing by")
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("process-tv-slot-amber")).getByText(/Port 9113 .* is in use/)
+    ).toBeInTheDocument();
+  });
+
   it("shows each process with its state, restarts and last crash", async () => {
     get.mockResolvedValue(doc);
     renderCard();

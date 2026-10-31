@@ -24,6 +24,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The Processes card names each TV slot and says why one is not running.** The three TV slots
+  (and several pipeline workers) were keyed and labelled by role alone, so they rendered as
+  identical "tv-slot" cards. Each one is now named by its instance ("TV slot · blue"). A slot
+  that isn't needed now says *Standing by*, not *Stopped*. A process held back by something
+  (e.g. its port in use by another program) says what, in the app's words.
+
 - **A Windows node mid-write of its node config is no longer read as never joined.** The
   streaming server's reader saw `node.json` missing during a write's swap, then looked for the
   write's lock after the write had ended, and took the two together for "not joined". It now
