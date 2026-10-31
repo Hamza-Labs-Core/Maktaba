@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Maktaba Player's words, in English and Arabic (values-ar), with the web's terms
+     (web/src/i18n). A string added here needs its Arabic too: TranslationsTest (core) and lint's
+     MissingTranslation fail without it. -->
+<resources>
+    <string name="libraries">Libraries</string>
+    <string name="all_videos">All videos</string>
+    <string name="choose_library">Choose a library</string>
+    <string name="search_titles">Search titles</string>
+    <string name="no_videos">No videos</string>
+    <string name="choose_video">Choose a video</string>
+    <string name="play">Play</string>
+    <string name="play_named">Play %1$s</string>
+</resources>

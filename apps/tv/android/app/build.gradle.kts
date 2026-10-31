@@ -35,6 +35,11 @@ android {
         compose = true
     }
 
+    // English and Arabic ship together: a string with no Arabic fails lint (and TranslationsTest).
+    lint {
+        error += "MissingTranslation"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

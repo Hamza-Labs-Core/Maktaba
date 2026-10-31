@@ -119,7 +119,7 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
         }
     }
     Box {
-        IconButton(onClick = { open = true }) { Icon(Icons.Filled.AccountCircle, "Account") }
+        IconButton(onClick = { open = true }) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account)) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             DropdownMenuItem(text = { Text(user.username, style = MaterialTheme.typography.titleSmall) }, onClick = {}, enabled = false)
             home?.let { DropdownMenuItem(text = { Text(it.label) }, onClick = {}, enabled = false) }
@@ -133,14 +133,14 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
             HorizontalDivider()
             ThemeMode.entries.forEach { m ->
                 DropdownMenuItem(
-                    text = { Text("Theme: ${m.label}") },
+                    text = { Text(stringResource(R.string.theme_mode, stringResource(m.label))) },
                     leadingIcon = { if (m == mode) Icon(Icons.Filled.Check, null) else Box(Modifier.size(24.dp)) },
                     onClick = { themes.set(m); open = false },
                 )
             }
             HorizontalDivider()
-            DropdownMenuItem(text = { Text("Switch home") }, onClick = { open = false; session.switchHome() })
-            DropdownMenuItem(text = { Text("Sign out") }, onClick = { open = false; session.signOut() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.switch_home)) }, onClick = { open = false; session.switchHome() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.sign_out)) }, onClick = { open = false; session.signOut() })
         }
     }
 }

@@ -20,6 +20,12 @@ don't append a line here; docs-only PRs are exempt.
   numbers and dates follow the locale; a value the home sends with no words is still shown as
   sent. CI's new *Apple apps* gate runs MaktabaKit's tests, builds the apps, and fails on a
   string without its Arabic or missing from its catalog (`tools/apple/check-string-catalogs.py`).
+- **The Android apps speak Arabic.** Maktaba Remote (every screen: Needs attention, Queue,
+  Updates, Libraries, Machines and its processes), Maktaba Player and the account menu now ship
+  in English and Arabic, right to left, with numbers and dates in the device's language. The
+  Remote says what the web admin says, in the web's own Arabic for each state, step and code; a
+  value it has no words for is still shown as the home sent it. A unit test and lint now fail
+  any Android or Android TV string that has no Arabic.
 - **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the owner's
   standing rules, the decisions and why, failures and their fixes, the live state, the work in
   flight, what waits on the owner and the release history. `CLAUDE.md` tells every session to

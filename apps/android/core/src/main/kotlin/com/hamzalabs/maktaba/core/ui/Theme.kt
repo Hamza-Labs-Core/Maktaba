@@ -19,8 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /** The theme a person picks, as on the web (`web/src/lib/theme.ts`): light, dark, or the system's. */
-enum class ThemeMode(val label: String) {
-    System("System"), Light("Light"), Dark("Dark");
+enum class ThemeMode(@androidx.annotation.StringRes val label: Int) {
+    System(R.string.theme_system), Light(R.string.theme_light), Dark(R.string.theme_dark);
 
     companion object {
         const val STORAGE_KEY = "theme"

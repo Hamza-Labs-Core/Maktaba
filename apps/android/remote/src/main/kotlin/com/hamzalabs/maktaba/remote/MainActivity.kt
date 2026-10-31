@@ -21,6 +21,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.User
@@ -30,6 +31,7 @@ import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
+import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
  * Maktaba Remote: run a home from a phone, a foldable or a tablet (its admins only; the home
@@ -72,12 +74,12 @@ fun NotAnAdmin(session: AppSession, user: User) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary)
-        Text("For the home's admins", style = MaterialTheme.typography.titleLarge)
+        Text(stringResource(R.string.not_admin_title), style = MaterialTheme.typography.titleLarge)
         Text(
-            "${user.username} can watch with Maktaba Player. Maktaba Remote manages the home, and only its admins can use it.",
+            stringResource(R.string.not_admin_body, user.username),
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Button(onClick = session::signOut) { Text("Sign out") }
+        Button(onClick = session::signOut) { Text(stringResource(CoreR.string.sign_out)) }
     }
 }

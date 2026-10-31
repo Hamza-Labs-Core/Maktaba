@@ -93,6 +93,13 @@
     <string name="code_unsupported">لا يدعم %1$s تسجيل الدخول برمز. استخدم اسم المستخدم وكلمة المرور.</string>
 
     <string name="account_approve">الموافقة على تسجيل دخول</string>
+    <string name="account">الحساب</string>
+    <string name="theme_mode">السمة: %1$s</string>
+    <string name="theme_system">النظام</string>
+    <string name="theme_light">فاتح</string>
+    <string name="theme_dark">داكن</string>
+    <string name="switch_home">تبديل الجهاز الرئيسي</string>
+    <string name="sign_out">تسجيل الخروج</string>
     <string name="approve_title">الموافقة على تسجيل دخول</string>
     <string name="approve_intro">يعرض الجهاز الذي يطلب تسجيل الدخول رمزًا. أدخله أو امسح رمز QR الخاص به.</string>
     <string name="approve_code_label">الرمز، مثل ABCD-1234</string>
