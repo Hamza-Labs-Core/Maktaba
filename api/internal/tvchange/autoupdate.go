@@ -290,6 +290,17 @@ func failedCheckList(report map[string]any) []Check {
 		c.Check, _ = m["check"].(string)
 		c.ChannelID, _ = m["channel_id"].(string)
 		c.Value, _ = m["value"].(string)
+		c.Code, _ = m["code"].(string)
+		if p, ok := m["params"].(map[string]any); ok && len(p) > 0 {
+			c.Params = make(map[string]string, len(p))
+			for k, v := range p {
+				if s, ok := v.(string); ok {
+					c.Params[k] = s
+				} else if v != nil {
+					c.Params[k] = fmt.Sprint(v)
+				}
+			}
+		}
 		if out = append(out, c); len(out) == 20 {
 			break
 		}

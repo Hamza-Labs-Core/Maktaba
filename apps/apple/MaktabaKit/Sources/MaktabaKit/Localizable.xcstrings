@@ -986,6 +986,74 @@
         }
       }
     },
+    "machines.home.reason.cannot_create_roles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The database user cannot create roles."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مستخدم قاعدة البيانات لا يستطيع إنشاء أدوار."
+          }
+        }
+      }
+    },
+    "machines.home.reason.check_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cannot check the database user's privileges: {error}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر فحص صلاحيات مستخدم قاعدة البيانات: {error}"
+          }
+        }
+      }
+    },
+    "machines.home.reason.no_worker_group" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The maktaba_worker role is missing (run the migrations as a user that may create roles)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدور maktaba_worker غير موجود (شغّل الترحيلات بمستخدم يستطيع إنشاء أدوار)."
+          }
+        }
+      }
+    },
+    "machines.home.reason.sqlite" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Joining machines needs a Postgres home (this home runs on SQLite)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ضمّ الأجهزة يحتاج جهازًا رئيسيًا يعمل بـ Postgres (هذا الجهاز الرئيسي يعمل بـ SQLite)."
+          }
+        }
+      }
+    },
     "machines.homeDb.code.auth_failed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1162,6 +1230,465 @@
         }
       }
     },
+    "setup.starting.detail.db_ahead" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database was changed by a newer Maktaba than this one ({release}): install that newer version again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عدّلت قاعدةَ بيانات المكتبة نسخةٌ من مكتبة أحدث من هذه ({release}): ثبّت تلك النسخة الأحدث مجددًا."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_checking" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Checking the library database."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ فحص قاعدة بيانات المكتبة."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_dump_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database could not be saved before the update to {to}, so the update waits (nothing was changed)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر حفظ قاعدة بيانات المكتبة قبل التحديث إلى {to}، لذا ينتظر التحديث (لم يتغير شيء)."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_dumping" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saving the library database before the update to {to}."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ حفظ قاعدة بيانات المكتبة قبل التحديث إلى {to}."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_migrate_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database could not be brought up to date for {release}."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحديث قاعدة بيانات المكتبة لتوافق {release}."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_migrating" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Updating the library database for {to}."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ تحديث قاعدة بيانات المكتبة للإصدار {to}."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_no_cluster" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} could not change the library database, and this Maktaba runs no database of its own to put {dump} back into."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة، ولا تشغّل هذه النسخة من مكتبة قاعدة بيانات خاصة بها لإعادة {dump} إليها."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_record_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database's record ({path}) cannot be read or saved."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتعذّر قراءة سجل قاعدة بيانات المكتبة ({path}) أو حفظه."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_refused_older" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Maktaba ({release}) is older than the one whose changes the library database holds ({needed}): install {needed} or later."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذه النسخة من مكتبة ({release}) أقدم من النسخة التي تحمل قاعدة بيانات المكتبة تغييراتها ({needed}): ثبّت {needed} أو أحدث."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_refused_older.dump" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Maktaba ({release}) is older than the one whose changes the library database holds ({needed}): install {needed} or later (the database from before the update to {needed} is in {dump})."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذه النسخة من مكتبة ({release}) أقدم من النسخة التي تحمل قاعدة بيانات المكتبة تغييراتها ({needed}): ثبّت {needed} أو أحدث (قاعدة البيانات كما كانت قبل التحديث إلى {needed} محفوظة في {dump})."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restore_backup_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putting the library database back from the backup {dump} failed. Nothing was changed; Maktaba stays stopped and its next start tries again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}. لم يتغيّر شيء؛ تبقى مكتبة متوقفة ويعيد تشغيلها التالي المحاولة."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restore_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} could not change the library database, and putting it back from {dump} failed too. Maktaba stays stopped; its next start tries again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة، وفشلت إعادتها من {dump} أيضًا. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restore_unfinished" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database is being put back as it was before the update to {failed} (from {dump}): start the whole server to finish it."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث إلى {failed} (من {dump}): شغّل الخادم كاملًا لإتمام ذلك."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restored" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} could not change the library database. It is back as it was before the update (restored from {dump}), and Maktaba stays stopped: install {release} again to go on as before, or an update that fixes this; starting Maktaba again tries the update again."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة. أُعيدت كما كانت قبل التحديث (استُعيدت من {dump})، وتبقى مكتبة متوقفة: ثبّت {release} مجددًا لتتابع كما كنت، أو تحديثًا يصلح هذا؛ وتشغيل مكتبة مجددًا يعيد محاولة التحديث."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restoring" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} could not change the library database: putting it back as it was."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يتمكن التحديث إلى {failed} من تعديل قاعدة بيانات المكتبة: جارٍ إعادتها كما كانت."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restoring_backup" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Putting the library database back from the backup {dump}, as {by} asked."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}، بطلب من {by}."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the library database."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار قاعدة بيانات المكتبة."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.pg_major" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database was made by PostgreSQL {cluster} and this Maktaba carries PostgreSQL {payload}: it needs an upgrade between the two, which no update does yet."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُنشئت قاعدة بيانات المكتبة بـ PostgreSQL {cluster} وتحمل هذه النسخة من مكتبة PostgreSQL {payload}: تحتاج إلى ترقية بين الإصدارين، ولا يجريها أي تحديث بعد."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.pg_unreadable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The library database ({path}) cannot be read."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتعذّر قراءة قاعدة بيانات المكتبة ({path})."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.port_taken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port {port} ({addr}) is in use by another program, so a part of Maktaba is not started; it starts once the port is free."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المنفذ {port} ({addr}) يشغله برنامج آخر، فلا يبدأ جزء من مكتبة؛ يبدأ حين يصير المنفذ متاحًا."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.storage_move_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not move Maktaba's data to {to}: it keeps running from where it was."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر نقل بيانات مكتبة إلى {to}: تواصل مكتبة العمل من مكانها السابق."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.storage_moving" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moving Maktaba's data to {to} ({percent}%)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ نقل بيانات مكتبة إلى {to} ({percent}%)."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.storage_waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the disk that holds Maktaba's data ({path}). Connect it; Maktaba starts as soon as it is there."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في انتظار القرص الذي يحمل بيانات مكتبة ({path}). صِله، وستبدأ مكتبة فور وجوده."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.venv_building" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Installing the transcription tools ({percent}%)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ تثبيت أدوات التفريغ ({percent}%)."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.venv_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The transcription tools could not be installed."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تثبيت أدوات التفريغ."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.venv_interrupted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The transcription tools' install was stopped; it goes on from where it was next time."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف تثبيت أدوات التفريغ، ويُستأنف من حيث توقف في المرة القادمة."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.venv_waiting" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for the transcription tools."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بانتظار أدوات التفريغ."
+          }
+        }
+      }
+    },
     "started" : {
       "localizations" : {
         "ar" : {
@@ -1242,6 +1769,397 @@
         }
       }
     },
+    "tvchanges.check.channel.block" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Programme on the air kept"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البرنامج على الهواء محفوظ"
+          }
+        }
+      }
+    },
+    "tvchanges.check.channel.cadence" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Segment cadence"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتظام المقاطع"
+          }
+        }
+      }
+    },
+    "tvchanges.check.channel.first_segment" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "First segment"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أول مقطع"
+          }
+        }
+      }
+    },
+    "tvchanges.check.channel.position" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position against the clock"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموضع مقارنة بالساعة"
+          }
+        }
+      }
+    },
+    "tvchanges.check.channel.wallclock" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wall clock"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقيت الساعة"
+          }
+        }
+      }
+    },
+    "tvchanges.check.cloudflare.ingest" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cloudflare ingest"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استقبال Cloudflare"
+          }
+        }
+      }
+    },
+    "tvchanges.check.encoders" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encoders"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المُرمِّزات"
+          }
+        }
+      }
+    },
+    "tvchanges.check.encoders.budget" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encoder budget"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ميزانية المُرمِّزات"
+          }
+        }
+      }
+    },
+    "tvchanges.check.guide.coverage" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guide coverage"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تغطية الدليل"
+          }
+        }
+      }
+    },
+    "tvchanges.check.guide.vs_stream" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guide matches the stream"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدليل يطابق البث"
+          }
+        }
+      }
+    },
+    "tvchanges.check.hls.conformity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "HLS stream"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بث HLS"
+          }
+        }
+      }
+    },
+    "tvchanges.check.lineup.sanity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lineup"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القنوات"
+          }
+        }
+      }
+    },
+    "tvchanges.check.push.continuity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote pushes"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث عن بُعد"
+          }
+        }
+      }
+    },
+    "tvchanges.check.schedule.boundary" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Programme on the air kept (schedule)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البرنامج على الهواء محفوظ (الجدول)"
+          }
+        }
+      }
+    },
+    "tvchanges.check.slot.health" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Staging process"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عملية التجهيز"
+          }
+        }
+      }
+    },
+    "tvchanges.check.soak" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Soak"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختبار الثبات"
+          }
+        }
+      }
+    },
+    "tvchanges.check.splice.align" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Splice alignment with live"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "محاذاة الوصل مع المباشر"
+          }
+        }
+      }
+    },
+    "tvchanges.check.splice.compat" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seamless switch"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبديل سلس"
+          }
+        }
+      }
+    },
+    "tvchanges.check.ts.conformity" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "TS stream"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بث TS"
+          }
+        }
+      }
+    },
+    "tvchanges.result.fail" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "fail"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فاشل"
+          }
+        }
+      }
+    },
+    "tvchanges.result.pass" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "pass"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ناجح"
+          }
+        }
+      }
+    },
+    "tvchanges.result.skip" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "skipped"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مُتجاوز"
+          }
+        }
+      }
+    },
+    "tvchanges.result.warn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "warn"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحذير"
+          }
+        }
+      }
+    },
     "tvchanges.slots.color.amber" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1289,6 +2207,822 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "أخضر"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.boundary_passed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The planned boundary {boundary} has passed: the switch starts the new schedule when it happens"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مضى الحدّ المخطط {boundary}: التبديل يبدأ الجدول الجديد لحظة حدوثه"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.cut" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The new schedule would cut the programme on the air"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجدول الجديد سيقطع البرنامج على الهواء"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.differs_from_live" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "An unchanged channel airs “{title}” on staging, “{live}” on live"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قناة لم تتغير تبث «{title}» في التجهيز و«{live}» على البث المباشر"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.ends_early" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The programme on the air ends early, at {at} (the longest wait for a boundary); it was to end at {was}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البرنامج على الهواء ينتهي مبكرًا عند {at} (أطول انتظار للحدّ)؛ كان سينتهي عند {was}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.instead_of_live" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Airs “{title}” in place of “{scheduled}”, whose file the live TV reads"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبث «{title}» مكان «{scheduled}» الذي يقرأ البث المباشر ملفه"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.kept" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The programme on the air is kept"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البرنامج على الهواء محفوظ"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.mismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Airs “{title}” ({start}–{end}); schedule generation {gen} has “{scheduled}” ({scheduled_start}–{scheduled_end})"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبث «{title}» ({start}–{end})؛ وفي جيل الجدول {gen} «{scheduled}» ({scheduled_start}–{scheduled_end})"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.nothing_scheduled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Airs “{title}” but schedule generation {gen} has nothing at {at}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبث «{title}» لكن جيل الجدول {gen} ليس فيه شيء عند {at}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.same_as_live" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The item of schedule generation {gen} at this moment (item {seq}), the same as live"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فقرة جيل الجدول {gen} في هذه اللحظة (الفقرة {seq})، نفسها على البث المباشر"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.scheduled" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The item of schedule generation {gen} at this moment (item {seq})"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فقرة جيل الجدول {gen} في هذه اللحظة (الفقرة {seq})"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.slate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A slate, as scheduled"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شاشة انتظار، كما في الجدول"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.slate_empty" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A slate, where schedule generation {gen} has nothing"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شاشة انتظار، حيث لا شيء في جيل الجدول {gen}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.block.unreadable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The file of “{title}” (item {seq}, generation {gen}) cannot be read on this machine: “{filler}” airs in its place"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ملف «{title}» (الفقرة {seq}، الجيل {gen}) لا يُقرأ على هذا الجهاز: يُبث «{filler}» مكانه"
+          }
+        }
+      }
+    },
+    "tvchanges.value.budget.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No encoder left for staging: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby})"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مُرمِّز متبقٍ للتجهيز: التجهيز {staging} من {budget} (السعة {capacity}: المباشر {live}، الاحتياطي {standby})"
+          }
+        }
+      }
+    },
+    "tvchanges.value.budget.none_rolling" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No encoder left for staging: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby}); {waiting} channels wait for an encoder (in turn)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مُرمِّز متبقٍ للتجهيز: التجهيز {staging} من {budget} (السعة {capacity}: المباشر {live}، الاحتياطي {standby})؛ {waiting} قنوات تنتظر مُرمِّزًا (بالتناوب)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.budget.ok" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby})"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التجهيز {staging} من {budget} (السعة {capacity}: المباشر {live}، الاحتياطي {standby})"
+          }
+        }
+      }
+    },
+    "tvchanges.value.budget.ok_rolling" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby}); {waiting} channels wait for an encoder (in turn)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التجهيز {staging} من {budget} (السعة {capacity}: المباشر {live}، الاحتياطي {standby})؛ {waiting} قنوات تنتظر مُرمِّزًا (بالتناوب)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.budget.over" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Over budget: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby})"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فوق الميزانية: التجهيز {staging} من {budget} (السعة {capacity}: المباشر {live}، الاحتياطي {standby})"
+          }
+        }
+      }
+    },
+    "tvchanges.value.budget.over_rolling" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Over budget: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby}); {waiting} channels wait for an encoder (in turn)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فوق الميزانية: التجهيز {staging} من {budget} (السعة {capacity}: المباشر {live}، الاحتياطي {standby})؛ {waiting} قنوات تنتظر مُرمِّزًا (بالتناوب)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.cloudflare.issues" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Problems: {issues}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشكلات: {issues}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.cloudflare.ok" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "H.264, AAC, closed GOP 2–10 s, 2–14 Mb/s"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "H.264 وAAC، مجموعة صور مغلقة 2–10 ث، 2–14 ميغابت/ث"
+          }
+        }
+      }
+    },
+    "tvchanges.value.encoders.ok" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{encoder}, no muxer restart, no fallback"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{encoder}، دون إعادة تشغيل للمُجمِّع ودون بديل"
+          }
+        }
+      }
+    },
+    "tvchanges.value.encoders.restarts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{encoder}, {restarts} muxer restarts, {fallbacks} hardware fallbacks"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{encoder}، {restarts} إعادات تشغيل للمُجمِّع، {fallbacks} مرات رجوع عن العتاد"
+          }
+        }
+      }
+    },
+    "tvchanges.value.guide.covered" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The next 24 hours are covered"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الساعات الـ24 القادمة مغطّاة"
+          }
+        }
+      }
+    },
+    "tvchanges.value.guide.gaps" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{gaps} gaps in the next 24 hours"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "{gaps} فجوات في الساعات الـ24 القادمة"
+          }
+        }
+      }
+    },
+    "tvchanges.value.guide.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No programmes"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا برامج"
+          }
+        }
+      }
+    },
+    "tvchanges.value.guide.until" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Covered until {until}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مغطّى حتى {until}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.guide.vs_stream" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guide “{guide}” = stream “{stream}”"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدليل «{guide}» = البث «{stream}»"
+          }
+        }
+      }
+    },
+    "tvchanges.value.lineup.missing_from_release" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On the air for viewers but missing from the release (the change does not remove it)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "على الهواء للمشاهدين لكنها ليست في الإصدار (التغيير لا يحذفها)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.lineup.no_logo" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No logo"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بلا شعار"
+          }
+        }
+      }
+    },
+    "tvchanges.value.lineup.number_taken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Number {number} is also on {other}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرقم {number} مستخدم أيضًا في {other}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.lineup.slug_taken" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slug {slug} is also on {other}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المعرّف {slug} مستخدم أيضًا في {other}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.position.offset" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Output at {seconds} s from the wall clock"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المخرج على بُعد {seconds} ث من الساعة"
+          }
+        }
+      }
+    },
+    "tvchanges.value.position.offset_settling" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Output at {seconds} s from the wall clock (settling: {settle} s after the first segment)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المخرج على بُعد {seconds} ث من الساعة (يستقر: {settle} ث بعد أول مقطع)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.push.param_change" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stream settings change: {params} (simulcast outputs may reconnect: accept it when you approve)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتغير إعدادات البث: {params} (قد تعيد المخرجات المتزامنة الاتصال: اقبل ذلك عند الاعتماد)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.push.param_change_deferred" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stream settings change: {params} (waits until the push ends)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تتغير إعدادات البث: {params} (ينتظر حتى ينتهي البث عن بُعد)"
+          }
+        }
+      }
+    },
+    "tvchanges.value.push.seamless" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seamless: the push keeps its session"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سلس: البث عن بُعد يحتفظ بجلسته"
+          }
+        }
+      }
+    },
+    "tvchanges.value.segment.none" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No segment {seconds} s after the warm-up began"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مقطع بعد {seconds} ث من بدء التحضير"
+          }
+        }
+      }
+    },
+    "tvchanges.value.segment.not_measured" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not measured {seconds} s after the warm-up began"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُقَس بعد {seconds} ث من بدء التحضير"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.down" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The staging slot is down"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خانة التجهيز متوقفة"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.healthy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slot {slot} is healthy on release {release}, version {version}, process {pid}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخانة {slot} سليمة على الإصدار {release}، النسخة {version}، العملية {pid}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.interim" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No staging slot here: checked on the database"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد خانة تجهيز هنا: فُحص على قاعدة البيانات"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.interim_why" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No staging slot ({why}): checked on the database"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد خانة تجهيز ({why}): فُحص على قاعدة البيانات"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.not_healthy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The staging slot did not become healthy on the release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تصبح خانة التجهيز سليمة على الإصدار"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.release_mismatch" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The staging slot runs another release"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خانة التجهيز تشغّل إصدارًا آخر"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.restarted" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The staging slot restarted {count} times during the check"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أُعيد تشغيل خانة التجهيز {count} مرات أثناء الفحص"
+          }
+        }
+      }
+    },
+    "tvchanges.value.slot.start_failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The staging slot did not start: {error}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تبدأ خانة التجهيز: {error}"
+          }
+        }
+      }
+    },
+    "tvchanges.value.soak.unfinished" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The check did not finish: still measuring {pending}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينتهِ الفحص: ما زال يقيس {pending}"
           }
         }
       }
@@ -4723,6 +6457,142 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "المراقبة"
+          }
+        }
+      }
+    },
+    "updates.trigger.auto" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the quiet window"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "النافذة الهادئة"
+          }
+        }
+      }
+    },
+    "updates.trigger.badge" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its update badge"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شارة التحديث فيه"
+          }
+        }
+      }
+    },
+    "updates.trigger.catch_up" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a machine catching up"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جهاز يلحق بالبقية"
+          }
+        }
+      }
+    },
+    "updates.trigger.manual" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "an admin"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشرف"
+          }
+        }
+      }
+    },
+    "updates.trigger.menu" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its menu"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قائمته"
+          }
+        }
+      }
+    },
+    "updates.trigger.order" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "the home's order"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلب الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "updates.trigger.retry" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "a retry"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة محاولة"
+          }
+        }
+      }
+    },
+    "updates.trigger.start" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "its first start"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيله الأول"
           }
         }
       }

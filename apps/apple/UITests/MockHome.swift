@@ -140,7 +140,8 @@ final class MockHome: @unchecked Sendable {
            {"id":"n2","name":"Attic","role":"node","version":"0.3.40","state":"needs_person","target":"0.3.43","platform":"linux/amd64",
             "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf has no entry for host 192.168.1.20"}}],
          "tv_held":{"run_id":"r9","version":"0.3.40","outcome":"held","number":12,"held_on":"0.3.39","state":"held",
-                    "failed":["slot.health"],"checks":[{"check":"slot.health","result":"fail","value":"the staging slot runs another release"}]}}
+                    "failed":["slot.health"],"checks":[{"check":"slot.health","result":"fail","code":"slot.release_mismatch",
+                              "value":"the staging slot runs another release (release_mismatch)"}]}}
         """#
     }
 

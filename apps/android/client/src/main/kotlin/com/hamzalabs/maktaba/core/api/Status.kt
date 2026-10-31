@@ -254,13 +254,18 @@ data class TvHeldNow(
     val checks: List<TvCheck> = emptyList(),
 )
 
-/** A failed check of a TV change's report. */
+/**
+ * A failed check of a TV change's report. [value] is the home's English; [code] names it and
+ * [params] fill it (the web's `tvchanges.value.<code>`), so the app says it in its own language.
+ */
 @Serializable
 data class TvCheck(
     val check: String = "",
     @SerialName("channel_id") val channelId: String? = null,
     val result: String = "",
     val value: String? = null,
+    val code: String? = null,
+    val params: JsonObject? = null,
 )
 
 /** A text field of a loose JSON object the home keeps (an error's `code`, a step's `detail`). */

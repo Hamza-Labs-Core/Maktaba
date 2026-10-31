@@ -915,6 +915,16 @@
         }
       }
     },
+    "Started by" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدأه"
+          }
+        }
+      }
+    },
     "State" : {
       "localizations" : {
         "ar" : {

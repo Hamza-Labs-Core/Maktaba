@@ -12,6 +12,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The server sends codes, not English, for what the admin screens say.** Each TV change
+  check now carries a `code` and `params` beside its English `value` (for example
+  `slot.release_mismatch` for "the staging slot runs another release"), and the move that
+  fails a change carries `report_code`/`report_params`. The home's "cannot take machines"
+  reason carries `roles_reason_code`/`roles_reason_params`. The web, Android Remote and Apple
+  apps say these in English and Arabic, and show the English when they don't know a code
+  (older apps keep reading `value`). Who started an update (`auto`, `manual`, `catch_up`,
+  `retry`) now has words on Android and iPhone, the TV check names have words on the
+  Updates page and in the apps, and the iPhone's Processes screen says the supervisor's
+  `detail_code` in words instead of its English. Only fields were added: TV staging behaves
+  as before.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes

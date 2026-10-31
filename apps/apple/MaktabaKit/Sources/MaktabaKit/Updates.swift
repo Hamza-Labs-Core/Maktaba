@@ -539,23 +539,29 @@ public struct RunTV: Decodable, Sendable {
     }
 }
 
-/// A failed check of a TV change's report (its channel and value).
+/// A failed check of a TV change's report (its channel and value). `value` is the home's
+/// English; `code` names it and `params` fill it (the web's `tvchanges.value.<code>`), so
+/// the app says it in its own language.
 public struct TVCheck: Decodable, Sendable, Hashable {
     public let check: String
     public let channelID: String?
     public let result: String?
     public let value: String?
+    public let code: String?
+    public let params: [String: String]
 
     enum CodingKeys: String, CodingKey {
-        case check, result, value
+        case check, result, value, code, params
         case channelID = "channel_id"
     }
 
-    init(check: String) {
+    init(check: String, value: String? = nil, code: String? = nil, params: [String: String] = [:]) {
         self.check = check
         channelID = nil
         result = nil
-        value = nil
+        self.value = value
+        self.code = code
+        self.params = params
     }
 
     public init(from decoder: Decoder) throws {
@@ -564,13 +570,33 @@ public struct TVCheck: Decodable, Sendable, Hashable {
         channelID = c.lenient(.channelID)
         result = c.lenient(.result)
         value = c.lenient(.value)
+        code = c.lenient(.code)
+        params = c.lenientFields(.params)
     }
 
-    /// "check slot.health failed: the staging slot runs another release".
-    public var sentence: String {
-        guard let value, !value.isEmpty else { return kit("check \(check) failed") }
-        return kit("check \(check) failed: \(value)")
+    /// The check's name ("Staging process"), else as sent.
+    public func name(locale: Locale = AppLanguage.locale) -> String {
+        guard StatusWords.checkNames[check] != nil else { return check }
+        return words(StatusWords.checkNames, "tvchanges.check.", check, locale)
     }
+
+    /// The value in words: its code's with its params, else the home's English.
+    public func valueText(locale: Locale = AppLanguage.locale) -> String? {
+        if let code, StatusWords.checkValues[code] != nil {
+            return filled(StatusWords.checkValues, "tvchanges.value.", code, params, locale)
+        }
+        guard let value, !value.isEmpty else { return nil }
+        return value
+    }
+
+    /// "check Staging process failed: The staging slot runs another release".
+    public func sentence(locale: Locale = AppLanguage.locale) -> String {
+        let name = name(locale: locale)
+        guard let value = valueText(locale: locale) else { return kit("check \(name) failed", locale) }
+        return kit("check \(name) failed: \(value)", locale)
+    }
+
+    public var sentence: String { sentence() }
 }
 
 /// The run whose TV is held now.
