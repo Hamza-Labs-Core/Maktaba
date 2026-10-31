@@ -584,6 +584,12 @@ pub fn install_requested(app: &AppHandle) {
     };
     let staged = autoinstall::staged_path(&root, &r.version);
     let server_side = matches!(sh.mode(), Some(AppMode::Server { .. }));
+    // Windows: the server agent answers the order and installs it (agent_orders.rs: an
+    // update never waits for this window); the window only says it
+    if cfg!(windows) && server_side {
+        notify_ready(app, &r);
+        return;
+    }
     // a locally built app can take no release: the order says so at once (a machine that
     // needs a person: its release installed by hand once), recorded once per order
     if server_side

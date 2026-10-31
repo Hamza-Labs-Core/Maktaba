@@ -42,7 +42,7 @@ run.**
 | Install kind | How the supervisor tells | Prepare (nothing changes) | Apply | Roll back |
 |---|---|---|---|---|
 | **Maktaba.app** (Mac, Epic 36) | `MAKTABA_APP_BUNDLE` inside `*.app/Contents/Resources/server` | verify `release.json`; check the app feed (`latest.json`) of that release lists this platform; keep a copy of the running payload (`<state>/updates/payloads/<v>`, an APFS clone); rehearse (home) | **order** the release from the app (`<state>/updates/app-install.json`; start it with `maktaba://install-update` when it does not answer): it downloads and checks its update and says when it installs; **at the home's go** (no click), the app's updater swaps the bundle (from what it staged, checked again) and restarts the server | `<state>/updates/payload-override` names the kept payload; the launcher runs it |
-| **Windows app** (Epic 38) | `MAKTABA_APP_BUNDLE` in `<install>\server` beside `Maktaba.exe` | same (a plain copy) | same; the NSIS installer's hooks stop and start the server | same |
+| **Windows app** (Epic 38) | `MAKTABA_APP_BUNDLE` in `<install>\server` beside `Maktaba.exe` | same (a plain copy) | same, except that the server agent (`Maktaba.exe --server-agent`) answers the order, not the window app, and no `maktaba://` link is sent (see "On Windows the server agent installs it"); the NSIS installer's hooks stop and start the server | same |
 | **Linux app** (Epic 39; `MAKTABA_RUNTIME_OWNER=app`) | the launcher runs from a runtime copy | download the release's `maktaba-linux-payload-<v>-<arch>.tar.gz`, verified against the signed `checksums.txt`, installed as a new runtime directory; rehearse (home) | order it from the app (nothing for it to fetch: it says when it installs); at the home's go (no click), `runtime/current` → the new directory, `previous` → the old; exit 75 (the launcher starts `runtime/current` again) | `current` → `previous`; exit 75 |
 | **Headless** (`install.sh --app`; `MAKTABA_RUNTIME_OWNER=headless`) | the same runtime copy | the same | by itself, in the window: the switch above, no order | the same |
 | **Docker** (`ghcr.io/hamza-labs-core/maktaba-server`; `MAKTABA_CONTAINER=docker`, owner headless) | the same runtime copy, on the image's volume; kind `docker` | the same | the same as headless: the server switches the volume's runtime by itself and exits 75; the launcher (run by the image's entrypoint, `maktaba-server container`, behind tini) starts it | the same |
@@ -160,6 +160,23 @@ order (`kind: server`): at the go the server starts the app's own payload again,
 guard. The app stages and installs only the exact ordered version (its updater's version
 comparator), only from that release's feed in the pinned repository, signed with the version
 (`requireSignedVersion`), and re-reads the order right before it installs.
+
+**On Windows the server agent installs it (owner, 2026-10-31).** An update must not wait for a
+window: the Windows app's always-running `Maktaba.exe --server-agent` (the sign-in task's)
+answers the order in the window app's place (`agent_orders.rs`, with the window app's own
+decisions, `autoinstall::decide`). It stages the release from its own feed (the installer
+checked with the app's key, and the file its signature names checked against the ordered
+version, since the feed itself is unsigned), keeps it with its signature in `updates/`, and
+answers `staged`; at the home's go it checks it again, answers `installing` and starts the
+installer (`/P /UPDATE`) out of its own kill-on-close job. The installer stops the agent
+(`--server-stop`), replaces the app and its payload and runs the sign-in task again
+(`--server-start`); the new agent settles the attempt. The agent tells the server so
+(`MAKTABA_AGENT_ORDERS=1`), and the server then sends no `maktaba://install-update` link: on
+2026-10-31 windows-pc's window app was not running, the link reached a Windows where it was not
+registered, and the order sat `ordered` for eight hours while Windows showed "Get an app to
+open this link" every 90 seconds. The window app only shows the order. What an installer
+started this way rests on (a sign-in task's child outlives the task's process, and the task
+runs again meanwhile) is checked on CI's Windows runner (`check-task-children.ps1`).
 
 **The run** (`driver.go`):
 

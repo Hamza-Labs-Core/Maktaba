@@ -58,6 +58,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node installs the home's updates even when the Maktaba window is closed.** Until
+  now the window app downloaded and installed each update. The server only tried to open it
+  with a `maktaba://` link, so an update waited until a window could be opened. On 2026-10-31
+  windows-pc's update to v0.3.44 sat waiting for eight hours, while Windows showed "Get an app
+  to open this 'maktaba' link" every 90 seconds. Now the server agent that runs at sign-in
+  (`Maktaba.exe --server-agent`) does it itself:
+  - it downloads the release's installer from that release's own page;
+  - it checks the installer with the app's key, and checks that the signature names the
+    ordered version;
+  - at the home's go, it runs the installer.
+
+  The server no longer sends the link, and the window app only shows the update.
 - **The api and streaming integration tests no longer collide on a port.** Both started their
   server on the fixed ports 18081/19101. When CI ran the two packages at once, the streaming
   test could reach the api's server: "admin /readyz service = api, want streaming", which

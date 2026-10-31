@@ -148,3 +148,18 @@ func TestMachineHealthSaysWhyTheAPIDidNotAnswer(t *testing.T) {
 		t.Fatalf("api not ready: %+v", v)
 	}
 }
+
+// A server whose agent answers the home's update orders (the Windows app's, which says so
+// in MAKTABA_AGENT_ORDERS) opens no window app for an order: no maktaba:// link, which a
+// Windows without the app's link registered answers with "Get an app to open this link"
+// every 90 seconds. Any other server still starts the app.
+func TestNoAppLinkWhenTheAgentAnswersTheOrders(t *testing.T) {
+	t.Setenv(envAgentOrders, "1")
+	if appOpener() != nil {
+		t.Fatal("the agent answers the orders, yet the server would open the app")
+	}
+	t.Setenv(envAgentOrders, "")
+	if appOpener() == nil {
+		t.Fatal("no agent answers the orders, yet the server would not start the app")
+	}
+}
