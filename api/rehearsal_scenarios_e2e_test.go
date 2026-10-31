@@ -257,7 +257,7 @@ func (r *rehearsal) noRestore(m *appMachine, states *stateLog) {
 	}
 }
 
-func tableExists(t *testing.T, db *sql.DB, name string) bool {
+func rehearsalTableExists(t *testing.T, db *sql.DB, name string) bool {
 	t.Helper()
 	var s sql.NullString
 	if err := db.QueryRow(`SELECT to_regclass($1)::text`, name).Scan(&s); err != nil {
@@ -306,7 +306,7 @@ func TestUpdateRehearsal01NormalUpdate(t *testing.T) {
 	if rec.State != "migrated" || rec.Version != k.cur {
 		t.Errorf("the database's record is %+v, want migrated for %s", rec, k.cur)
 	}
-	if !tableExists(t, db, "rehearsal_probe") {
+	if !rehearsalTableExists(t, db, "rehearsal_probe") {
 		t.Error("the update's migration did not run (no rehearsal_probe)")
 	}
 	if n := queryInt(t, db, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`); n != int64(k.rev+1) {
@@ -415,7 +415,7 @@ func TestUpdateRehearsal03RollbackAdditive(t *testing.T) {
 	if rec.KeptFor != k.cur {
 		t.Errorf("the database's record is %+v: not kept for %s", rec, k.cur)
 	}
-	if !tableExists(t, db, "rehearsal_probe_next") {
+	if !rehearsalTableExists(t, db, "rehearsal_probe_next") {
 		t.Error("the newer release's schema was not kept (rehearsal_probe_next is gone: the dump was put back)")
 	}
 	r.countsUnchanged(before, seedCounts(t, db))
@@ -525,7 +525,7 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if d := before.diff(after); len(d) > 0 {
 		t.Errorf("the database put back is not as it was:\n  %s", strings.Join(d, "\n  "))
 	}
-	if tableExists(t, db, "rehearsal_probe") {
+	if rehearsalTableExists(t, db, "rehearsal_probe") {
 		t.Error("the failed release's migrations are still there after the restore (rehearsal_probe)")
 	}
 	r.logf("the record went %v", states.recordStates())
