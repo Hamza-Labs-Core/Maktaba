@@ -493,14 +493,11 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	}
 	// the site comes back by itself, on the previous release, with the dump put back
 	// (the record says restored once the dump is back, then migrated once the previous
-	// release's database step checked it)
-	sawRestored := contains(states.recordStates(), "restored")
+	// release's database step checked it; a release from before 2026-10-28 goes from
+	// restoring to migrated): whether the dump came back whole, the fingerprint says
 	waitFor(t, "the home back on "+k.prev+" with the dump put back", 30*time.Minute, func() bool {
 		rec, _ := home.record()
-		if rec.State == "restored" {
-			sawRestored = true
-		}
-		return home.selfVersion() == k.prev && home.ready() && sawRestored && rec.Version == k.prev &&
+		return home.selfVersion() == k.prev && home.ready() && rec.Version == k.prev &&
 			(rec.State == "restored" || rec.State == "migrated")
 	})
 	budget := 10 * time.Minute
@@ -607,6 +604,19 @@ func (l *machineLogins) end(r *rehearsal) {
 	r.logf("the machines' logins: %d asked for their copy, %d failed (%s)", l.ok.Load(), l.fail.Load(), strings.Join(errs, "; "))
 	if l.ok.Load() == 0 {
 		r.t.Error("no machine ever logged in: the logins did not run")
+	}
+	// the outage's mechanism: a machine's login reached the library database while it was
+	// put back, and its grants met pg_restore's. A restore that keeps every other login out
+	// until it is whole leaves no machine a database without its tables or functions.
+	half := 0
+	for msg, n := range l.errs {
+		if strings.Contains(msg, "does not exist") && !strings.Contains(msg, "pq: database ") {
+			half += n
+		}
+	}
+	if half > 0 {
+		r.t.Errorf("%d machine logins reached the library database while it was being put back (its tables or "+
+			"functions not there yet): the restore did not keep the other logins out", half)
 	}
 }
 

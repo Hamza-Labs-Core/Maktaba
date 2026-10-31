@@ -1149,15 +1149,6 @@ func (s *stateLog) journalStates() []string {
 	return append([]string(nil), s.journal...)
 }
 
-func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
 // ---- the site serves ----
 
 // assertServing checks the site the way a person would reach it: the API's own port and
