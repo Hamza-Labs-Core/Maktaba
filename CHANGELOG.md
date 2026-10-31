@@ -44,6 +44,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The api and streaming integration tests no longer collide on a port.** Both started their
+  server on the fixed ports 18081/19101. When CI ran the two packages at once, the streaming
+  test could reach the api's server: "admin /readyz service = api, want streaming", which
+  failed #450. Each test now takes free ports from the OS.
+
 - **CI runs the Android Remote's unit tests.** The Android job ran the shared client's and
   core's tests but not the Remote's own (`:remote:testPhoneDebugUnitTest`), so the Remote's
   wording tests (`SayTest`) never ran in CI.
