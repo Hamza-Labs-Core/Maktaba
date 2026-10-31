@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // IndexStages are the stages that open the search index (Chroma): index writes the
@@ -28,11 +29,11 @@ const (
 	IndexStopGrace = 45 * time.Second
 )
 
-const (
+var (
 	// pipelineSearchAddr is the index worker's gRPC port (the semantic search).
-	pipelineSearchAddr = "127.0.0.1:9093"
+	pipelineSearchAddr = ports.IndexSearch.Addr()
 	// pipelineIndexLogsAddr is the index worker's HTTP port (/logs/recent, /healthz).
-	pipelineIndexLogsAddr = "127.0.0.1:9104"
+	pipelineIndexLogsAddr = ports.IndexLogs.Addr()
 )
 
 func pipelineSearch(cfg config.Config) string {
@@ -91,8 +92,9 @@ func BuildIndexWorker(opts Options) ([]Process, error) {
 	cmd.Env = env
 	wire(cmd)
 	return []Process{{Role: RolePipeline, Instance: IndexInstance, Cmd: cmd,
-		Probe: "http://" + LocalAddr(logs, "9104") + "/healthz", ProbeTimeout: PythonProbeTimeout,
-		StopGrace: IndexStopGrace}}, nil
+		Probe: "http://" + LocalAddr(logs, ports.IndexLogs.PortString()) + "/healthz", ProbeTimeout: PythonProbeTimeout,
+		StopGrace: IndexStopGrace,
+		Binds:     []ports.Bind{{Addr: pipelineSearch(opts.Config), What: "search port"}, {Addr: logs, What: "logs port"}}}}, nil
 }
 
 // indexMainEnv is the main worker's side of the index worker: it leaves IndexStages

@@ -30,6 +30,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // nodeServices is what the supervisor runs for node mode (nil on the home).
@@ -292,8 +293,8 @@ func advertiseMachine(ctx context.Context, cfg config.Config, ns *nodeServices) 
 	if v == "0" || v == "false" || v == "off" {
 		return
 	}
-	apiPort := mdns.PortFromListen(cfg.Server.Listen, 8080)
-	webPort := mdns.PortFromListen(cfg.Server.WebListen, 8088)
+	apiPort := mdns.PortFromListen(cfg.Server.Listen, ports.APIPublic.Port)
+	webPort := mdns.PortFromListen(cfg.Server.WebListen, ports.Web.Port)
 	host, _ := os.Hostname()
 	m := mdns.Machine{Role: "home", Name: host, WebPort: webPort, Version: version.Version}
 	// the web base path (Epic 42 story 42.2: TXT path, sent only when it is not "/")

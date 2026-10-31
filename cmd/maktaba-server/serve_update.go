@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
@@ -465,7 +466,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		mirror = homeMirrorClient(node.agent)
 		// story 35.16: over the machine's cluster link first (the node API's loopback fetch);
 		// the signed path while the link is not up and the home does not require it
-		mirror.Link = &homemirror.LocalLink{API: "http://" + supervisor.LocalAddr(cfg.Server.Listen, "8080"),
+		mirror.Link = &homemirror.LocalLink{API: "http://" + supervisor.LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()),
 			TokenFile: supervisor.LocalTokenPath(cfg)}
 		tufMirror = &releaseverify.TUFMirror{BaseURL: strings.TrimRight(mirror.Home, "/") + "/api/cluster/updates/tuf",
 			Transport: mirror.SignedTransport(nil)}
@@ -983,7 +984,7 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 	if !hasAPI {
 		return updater.Verdict{Healthy: true}
 	}
-	admin := "http://" + supervisor.LocalAddr(h.cfg.Server.AdminAddr, "9100")
+	admin := "http://" + supervisor.LocalAddr(h.cfg.Server.AdminAddr, ports.APIAdmin.PortString())
 	if code, err := h.get(ctx, admin+"/readyz", nil); code != http.StatusOK {
 		return updater.Verdict{Why: answers("api /readyz", code, err)}
 	}
@@ -992,7 +993,7 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		Paused     string          `json:"paused"`
 		MachinesDB []selfMachineDB `json:"machines_db"`
 	}
-	api := "http://" + supervisor.LocalAddr(h.cfg.Server.Listen, "8080")
+	api := "http://" + supervisor.LocalAddr(h.cfg.Server.Listen, ports.APIPublic.PortString())
 	if code, err := h.getSelf(ctx, api+"/api/cluster/self", &self); code != http.StatusOK {
 		return updater.Verdict{Why: answers("api /api/cluster/self", code, err)}
 	}

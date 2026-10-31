@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Config is the resolved runtime config.
@@ -78,14 +80,14 @@ type DatabaseConfig struct {
 func Load() Config {
 	return Config{
 		Server: ServerConfig{
-			Addr:         envStr("MAKTABA_HTTP_ADDR", ":8081"),
+			Addr:         envStr("MAKTABA_HTTP_ADDR", ports.StreamingPublic.Every()),
 			ReadHeaderMS: envInt("MAKTABA_READ_HEADER_MS", 5000),
 			WriteMS:      envInt("MAKTABA_WRITE_MS", 0),
 			ShutdownMS:   envInt("MAKTABA_SHUTDOWN_MS", 30000),
 		},
 		Admin: AdminConfig{
-			Addr:        envStr("MAKTABA_ADMIN_ADDR", ":9101"),
-			MetricsAddr: envStr("MAKTABA_METRICS_ADDR", ":9091"),
+			Addr:        envStr("MAKTABA_ADMIN_ADDR", ports.StreamingAdmin.Every()),
+			MetricsAddr: envStr("MAKTABA_METRICS_ADDR", ports.StreamingMetrics.Every()),
 		},
 		JWT: JWTConfig{
 			JWKSURL:            envStr("MAKTABA_JWKS_URL", ""),

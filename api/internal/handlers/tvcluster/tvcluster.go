@@ -38,6 +38,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // ProtocolVersion mirrors the streaming cluster protocol (streaming/internal/cluster).
@@ -56,7 +57,7 @@ type Handler struct {
 func New(db *sql.DB) *Handler {
 	u := strings.TrimRight(os.Getenv("MAKTABA_STREAMING_HTTP_URL"), "/")
 	if u == "" {
-		u = "http://127.0.0.1:8081"
+		u = "http://" + ports.StreamingPublic.Local()
 	}
 	return &Handler{DB: db, StreamingURL: u}
 }

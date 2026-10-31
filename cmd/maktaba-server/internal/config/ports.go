@@ -23,15 +23,18 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
-const (
-	// FallbackPortLow and FallbackPortHigh bound the ports a taken bind moves to.
-	FallbackPortLow  = 8780
-	FallbackPortHigh = 8790
+var (
+	// FallbackPortLow and FallbackPortHigh bound the ports a taken bind moves to
+	// (ports.PortFallback).
+	FallbackPortLow  = ports.PortFallback.Port
+	FallbackPortHigh = ports.PortFallback.Last()
 	// WindowsNodeWebPort is the web port a Windows full node prefers: 8088 is
 	// Splunk's HTTP Event Collector on many Windows desktops.
-	WindowsNodeWebPort = 8780
+	WindowsNodeWebPort = ports.PortFallback.Port
 )
 
 // PortChange is one bind moved by ReconcilePorts.
@@ -100,9 +103,9 @@ func (c *Config) ReconcilePorts(p PortProbe, o PortOptions) ([]PortChange, error
 		p.Ours = func(int) bool { return false }
 	}
 	binds := []bind{
-		{"web_listen", &c.Server.WebListen, 8088, FallbackPortLow},
-		{"stream_addr", &c.Server.StreamAddr, 8081, FallbackPortLow + 1},
-		{"listen", &c.Server.Listen, 8080, FallbackPortLow + 2},
+		{"web_listen", &c.Server.WebListen, ports.Web.Port, ports.PortFallback.At(0)},
+		{"stream_addr", &c.Server.StreamAddr, ports.StreamingPublic.Port, ports.PortFallback.At(1)},
+		{"listen", &c.Server.Listen, ports.APIPublic.Port, ports.PortFallback.At(2)},
 	}
 	used := map[int]bool{}
 	for _, b := range binds {
@@ -116,7 +119,7 @@ func (c *Config) ReconcilePorts(p PortProbe, o PortOptions) ([]PortChange, error
 		addr := strings.TrimSpace(*b.ptr)
 		host, port := splitBind(addr, b.defPort)
 
-		if b.key == "web_listen" && o.PreferWeb > 0 && port == 8088 && o.PreferWeb != port &&
+		if b.key == "web_listen" && o.PreferWeb > 0 && port == ports.Web.Port && o.PreferWeb != port &&
 			!used[o.PreferWeb] && p.Free(joinBind(host, o.PreferWeb)) {
 			to := joinBind(host, o.PreferWeb)
 			changes = append(changes, c.move(b, addr, to, port, o.PreferWeb, "preferred web port on this platform"))

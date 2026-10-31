@@ -165,6 +165,7 @@ takes a new code.
 | `storage_waiting` | `path` | Waiting for the disk that holds Maktaba's data (`path`): the data folder the owner chose (story 36.15) is not there; nothing starts and no database is made in its place until it is |
 | `storage_moving` | `to`, `done` (number), `total` (number), `percent` (number) | Moving Maktaba's data to `to` (`percent`%): `done` of `total` bytes copied (story 36.15) |
 | `storage_move_failed` | `to`, `error` | Maktaba's data could not be moved to `to`: `error`. Nothing was changed: Maktaba starts from where it was |
+| `port_taken` | `port` (number), `addr`, `holder_pid` (number), `holder_command`, `holder_role`, `error` | A process is not started: its port `port` (`addr`) is held. `holder_pid` and `holder_command` name the holder when the OS lets the server see it, `holder_role` when it is one of the server's own processes (`pipeline/stt-1`); `error` is the whole English. Tried again with the crash loop's backoff (supervisor/portcheck.go) |
 
 ### The rest
 

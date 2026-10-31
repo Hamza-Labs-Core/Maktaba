@@ -5264,6 +5264,7 @@
   "setup.starting.detail.storage_waiting": "في انتظار القرص الذي يحمل بيانات مكتبة ({path}). صِله، وستبدأ مكتبة فور وجوده.",
   "setup.starting.detail.storage_moving": "جارٍ نقل بيانات مكتبة إلى {to} ({percent}%).",
   "setup.starting.detail.storage_move_failed": "تعذّر نقل بيانات مكتبة إلى {to}: تواصل مكتبة العمل من مكانها السابق.",
+  "setup.starting.detail.port_taken": "المنفذ {port} ({addr}) يشغله برنامج آخر، فلا يبدأ جزء من مكتبة؛ يبدأ حين يصير المنفذ متاحًا.",
   "shortcuts.bigScreen": "الشاشة الكبيرة",
   "big.enter": "الشاشة الكبيرة: عرض بملء الشاشة للتلفاز",
   "big.enter.short": "الشاشة الكبيرة",

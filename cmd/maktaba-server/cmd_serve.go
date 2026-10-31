@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // allRoles is the default set started by a bare `serve`.
@@ -374,6 +375,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if err != nil {
 		return err
 	}
+	// The addresses in effect (the defaults and server.toml's) must not clash among
+	// themselves: refused here, naming both owners, before any child starts into
+	// "address already in use" and crash-loops on it.
+	if err := supervisor.CheckBinds(procs, serveBinds(cfg, webSrv != nil, policy.AdminAddr)...); err != nil {
+		return err
+	}
 	supOpts := []supervisor.Option{
 		supervisor.WithEventSink(supervisor.NewFileSink(filepath.Join(cfg.Server.DataDir, "supervisor", "events.jsonl"), 0)),
 		supervisor.WithExitHook(supervisor.SlotExitReporter(cfg.Server.StreamAddr)),
@@ -606,7 +613,7 @@ func webHandler(cfg config.Config, node *nodeServices) http.Handler {
 		home := homeStreamProxy(supervisor.HomeStreamURL(node.node))
 		publicProxy = home
 		// story 35.16 AC14: the VOD fallback on the machine's cluster link when it is up
-		gated = nodeStreamRouter(streamProxy, home, node.HomeAway, vodOverLink("http://"+supervisor.LocalAddr(cfg.Server.Listen, "8080"),
+		gated = nodeStreamRouter(streamProxy, home, node.HomeAway, vodOverLink("http://"+supervisor.LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()),
 			supervisor.LocalTokenPath(cfg), home))
 		allow = allowedNodeStreamPath
 	}
@@ -633,7 +640,7 @@ var publicStreamPaths = []string{"/xmltv.xml", "/lineup.m3u"}
 // FlushInterval -1 flushes every write: live playlists and MPEG-TS must
 // not sit in a buffer.
 func newStreamProxy(streamAddr string) http.Handler {
-	target := &url.URL{Scheme: "http", Host: supervisor.LocalAddr(streamAddr, "8081")}
+	target := &url.URL{Scheme: "http", Host: supervisor.LocalAddr(streamAddr, ports.StreamingPublic.PortString())}
 	proxy := httputil.NewSingleHostReverseProxy(target)
 	director := proxy.Director
 	proxy.Director = func(r *http.Request) {
@@ -710,7 +717,7 @@ func apiUnreachable(w http.ResponseWriter, r *http.Request, err error) {
 // apiOrigin turns the API bind spec into a dialable loopback URL for the
 // reverse proxy (a 0.0.0.0 bind is reachable via 127.0.0.1 on-host).
 func apiOrigin(listen string) *url.URL {
-	port := mdns.PortFromListen(listen, 8080)
+	port := mdns.PortFromListen(listen, ports.APIPublic.Port)
 	u, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
 	if err != nil {
 		return nil

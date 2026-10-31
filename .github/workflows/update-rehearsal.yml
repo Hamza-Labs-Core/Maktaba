@@ -57,6 +57,7 @@ on:
       - 'api/self_update*.go'
       - 'api/go.mod'
       - 'shared/go/layout/**'
+      - 'shared/go/ports/**'
       - 'shared/go/releaseverify/**'
       - 'shared/db/migrations/**'
       # the rehearsal itself

@@ -23,5 +23,6 @@
   "venv_failed": ["error", "log"],
   "storage_waiting": ["path"],
   "storage_moving": ["to", "done", "total", "percent"],
-  "storage_move_failed": ["to", "error"]
+  "storage_move_failed": ["to", "error"],
+  "port_taken": ["port", "addr", "holder_pid", "holder_command", "holder_role", "error"]
 }

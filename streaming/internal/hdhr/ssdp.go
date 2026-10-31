@@ -8,11 +8,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"golang.org/x/net/ipv4"
 )
 
-// ssdpAddr is the standard UPnP multicast group/port.
-const ssdpAddr = "239.255.255.250:1900"
+// ssdpAddr is the standard UPnP multicast group and port (ports.SSDP).
+var ssdpAddr = "239.255.255.250:" + ports.SSDP.PortString()
 
 // ssdpST is the device type a real HDHomeRun announces.
 const ssdpST = "urn:schemas-upnp-org:device:MediaServer:1"

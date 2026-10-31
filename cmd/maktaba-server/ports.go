@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // portProbe is the probe setup and serve check binds with (tests replace it).
@@ -38,6 +39,21 @@ func nodeWebPreference() int {
 		return config.WindowsNodeWebPort
 	}
 	return 0
+}
+
+// serveBinds are the addresses serve listens on itself, for CheckBinds: the web port
+// and its HTTPS twin when it serves the web, and the supervisor's endpoint when it
+// is on.
+func serveBinds(cfg config.Config, web bool, supervisorAddr string) []ports.Bind {
+	var out []ports.Bind
+	if web {
+		out = append(out, ports.Bind{Addr: cfg.Server.WebListen, Owner: "serve", What: "web port"},
+			ports.Bind{Addr: httpsAddr, Owner: "serve", What: "HTTPS port"})
+	}
+	if supervisorAddr != "" {
+		out = append(out, ports.Bind{Addr: supervisorAddr, Owner: "serve", What: "supervisor port"})
+	}
+	return out
 }
 
 // servePortWait is how long serve waits for a taken port before moving it (a

@@ -19,6 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // setup --json --step <name> (Epic 36 story 36.6, Epic 38 story 38.6;
@@ -232,7 +233,7 @@ func setupStatus() (map[string]any, error) {
 	return map[string]any{
 		"storage_missing": missing,
 		"configured":      configured,
-		"web_url":         "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
+		"web_url":         "http://" + supervisor.LocalAddr(cfg.Server.WebListen, ports.Web.PortString()),
 		"supervisor_url":  supervisor.StateURL(cfg),
 	}, nil
 }

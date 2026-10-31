@@ -64,6 +64,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	health "github.com/Hamza-Labs-Core/Maktaba/shared/health/go"
 	mlog "github.com/Hamza-Labs-Core/Maktaba/shared/log/go"
@@ -248,11 +249,13 @@ func runServe() error {
 
 	publicAddr := os.Getenv("MAKTABA_HTTP_ADDR")
 	if publicAddr == "" {
-		publicAddr = ":8080"
+		publicAddr = ports.APIPublic.Every()
 	}
 	adminAddr := os.Getenv("MAKTABA_ADMIN_ADDR")
 	if adminAddr == "" {
-		adminAddr = ":9100"
+		// every interface when run on its own; the supervisor gives it loopback
+		// (ports.APIAdmin)
+		adminAddr = ports.APIAdmin.Every()
 	}
 
 	// OTel tracing — opt-in. Empty endpoint = noop tracer (no outbound

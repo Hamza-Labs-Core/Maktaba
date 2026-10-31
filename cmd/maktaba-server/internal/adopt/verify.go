@@ -12,6 +12,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Verify checks the app's server after a move, with the app's settings cfg:
@@ -146,7 +147,7 @@ func sameHost(a, b string) bool {
 var verifyClient = &http.Client{Timeout: 5 * time.Second}
 
 func serverUp(ctx context.Context, cfg config.Config) error {
-	api := "http://" + supervisor.LocalAddr(cfg.Server.Listen, "8080") + "/healthz"
+	api := "http://" + supervisor.LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()) + "/healthz"
 	if err := get(ctx, api, nil); err != nil {
 		return fmt.Errorf("the API does not answer: %w", err)
 	}
@@ -156,7 +157,7 @@ func serverUp(ctx context.Context, cfg config.Config) error {
 	var snap struct {
 		Processes []supervisor.ChildStatus `json:"processes"`
 	}
-	if err := get(ctx, "http://"+supervisor.LocalAddr(cfg.Supervisor.AdminAddr, "9103")+"/processes", &snap); err != nil {
+	if err := get(ctx, "http://"+supervisor.LocalAddr(cfg.Supervisor.AdminAddr, ports.Supervisor.PortString())+"/processes", &snap); err != nil {
 		return fmt.Errorf("the supervisor does not answer: %w", err)
 	}
 	var down []string

@@ -430,6 +430,16 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.Role == RoleTVSlot {
 			held = s.heldFor(ctx, c) // once: a database query, outside the lock
 		}
+		// its ports, before it is started blind into "address already in use"
+		// (portcheck.go); outside the lock: naming the holder runs lsof or netstat
+		if len(c.proc.Binds) > 0 && s.wantedNow(c) {
+			if d := s.portTaken(c); d != nil {
+				if s.notStarted(ctx, c, *d, &backoff) {
+					return
+				}
+				continue
+			}
+		}
 
 		s.mu.Lock()
 		if s.stopping {
@@ -440,6 +450,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if !c.wanted {
 			// an on-demand process (or one stopped on request): wait to be asked
 			c.status.State = StateStopped
+			clearPortTaken(c)
 			s.mu.Unlock()
 			select {
 			case <-ctx.Done():
@@ -451,6 +462,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			continue
 		}
 		startedAt := s.now()
+		clearPortTaken(c) // its ports were free a moment ago
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		startErr := applyBindingKept(cmd, c.binding, c.basePath, s.keptStreaming)

@@ -22,12 +22,14 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
+// DefaultPort is the bundled server's loopback port (ports.LLM): off Ollama's
+// 11434, so a user's own Ollama and Maktaba's never meet.
+var DefaultPort = ports.LLM.Port
+
 const (
-	// DefaultPort is the bundled server's loopback port: off Ollama's 11434, so
-	// a user's own Ollama and Maktaba's never meet.
-	DefaultPort = 11533
 	// DefaultModel is the tag check's model (pipeline rules.tagcheck.model).
 	DefaultModel = "qwen2.5:7b"
 	// LogName is the server's log file in the logs directory.

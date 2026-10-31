@@ -5,15 +5,18 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
-// MaxPipelineInstances bounds [pipeline] instances (the node installer's --instances).
-const MaxPipelineInstances = 16
+// MaxPipelineInstances bounds [pipeline] instances (the node installer's --instances):
+// as many as ports.TranscriptionLogs has ports.
+const MaxPipelineInstances = ports.TranscriptionWorkers
 
-// PipelineInstanceLogsAddr is transcription worker i's logs and health port
-// (9131..9146). Never 9111..9113: those are the TV slots' (SlotAdminAddr), and a
-// worker that took one kept that slot from starting.
-func PipelineInstanceLogsAddr(i int) string { return "127.0.0.1:" + strconv.Itoa(9130+i) }
+// PipelineInstanceLogsAddr is transcription worker i's logs and health port, from 1
+// (ports.TranscriptionLogs: 9131..9146). It was 9110+i, the TV slots' admin ports
+// for i 1..3, and a worker that took one kept that slot from starting.
+func PipelineInstanceLogsAddr(i int) string { return ports.TranscriptionLogs.AddrAt(i - 1) }
 
 // BuildPipelineInstances builds the transcription workers beside the main worker
 // (PlanFor): [pipeline] instances = N on a converted worker-only node (Epic 35 story
@@ -51,7 +54,8 @@ func BuildPipelineInstances(opts Options) ([]Process, error) {
 		cmd.Env = env
 		wire(cmd)
 		out = append(out, Process{Role: RolePipeline, Instance: "stt-" + strconv.Itoa(i), Cmd: cmd,
-			Probe: "http://" + logs + "/healthz", ProbeTimeout: PythonProbeTimeout})
+			Probe: "http://" + logs + "/healthz", ProbeTimeout: PythonProbeTimeout,
+			Binds: []ports.Bind{{Addr: logs, What: "logs port"}}})
 	}
 	return out, nil
 }

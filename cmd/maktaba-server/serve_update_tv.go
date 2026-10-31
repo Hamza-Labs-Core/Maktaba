@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // apiTV is updater.TVSwapper over this machine's API.
@@ -38,7 +39,7 @@ func (t *apiTV) client() *http.Client {
 }
 
 func (t *apiTV) base() string {
-	return "http://" + supervisor.LocalAddr(t.cfg.Server.Listen, "8080") + "/internal/updates/tv-change"
+	return "http://" + supervisor.LocalAddr(t.cfg.Server.Listen, ports.APIPublic.PortString()) + "/internal/updates/tv-change"
 }
 
 // Begin implements updater.TVSwapper: the run's change of this release's streaming binary.

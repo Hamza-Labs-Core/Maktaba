@@ -20,11 +20,14 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
-// HTTPS port and the web certificate's files.
+// httpsAddr is the HTTPS port (ports.WebHTTPS).
+var httpsAddr = ports.WebHTTPS.Addr()
+
+// The web certificate's files.
 const (
-	httpsAddr   = ":8443"
 	webCertFile = "cluster-web.crt"
 	webKeyFile  = "cluster-web.key"
 )

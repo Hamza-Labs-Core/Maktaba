@@ -13,11 +13,11 @@ package slot
 
 import (
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/google/uuid"
 )
 
@@ -60,15 +60,16 @@ func index(name string) int {
 	return -1
 }
 
-// DefaultAddr is an instance's loopback public address (8791, 8792, 8793).
+// DefaultAddr is an instance's loopback public address (ports.TVSlotPublic: 8791,
+// 8792, 8793), the supervisor's SlotAddr.
 func DefaultAddr(name string) string {
-	return "127.0.0.1:" + strconv.Itoa(8791+index(name))
+	return ports.TVSlotPublic.AddrAt(index(name))
 }
 
-// DefaultAdminAddr is an instance's loopback admin address (9111, 9112, 9113):
-// /healthz and /readyz for the process watchdog.
+// DefaultAdminAddr is an instance's loopback admin address (ports.TVSlotAdmin:
+// 9111, 9112, 9113): /healthz and /readyz for the process watchdog.
 func DefaultAdminAddr(name string) string {
-	return "127.0.0.1:" + strconv.Itoa(9111+index(name))
+	return ports.TVSlotAdmin.AddrAt(index(name))
 }
 
 // EnvSlots is how the supervisor tells the front door where its slots listen:

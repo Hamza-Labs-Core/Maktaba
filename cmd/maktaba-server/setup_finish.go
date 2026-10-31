@@ -13,6 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // setupDatabase runs fn against this install's database: the bundled
@@ -99,7 +100,7 @@ func stepFinish(s *setupRun, _ json.RawMessage) (any, error) {
 	}
 	s.cfg = cfg
 	result := map[string]any{
-		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, "8088"),
+		"web_url":        "http://" + supervisor.LocalAddr(cfg.Server.WebListen, ports.Web.PortString()),
 		"supervisor_url": supervisor.StateURL(cfg),
 	}
 

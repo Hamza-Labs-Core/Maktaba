@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Role identifies one supervised service.
@@ -110,6 +111,12 @@ type Process struct {
 	// is not: held.go): asked once, at the first slot's start; while it is held the
 	// slots the front door has not bound run that release's binary.
 	Held func(ctx context.Context) (string, error)
+	// Binds are the TCP addresses the process listens on (their Owner left empty: the
+	// process's name is it). Before each start the supervisor checks they are free
+	// (portcheck.go): a port another program holds leaves the process not started,
+	// its detail naming the port and the holder; serve checks them against one
+	// another at its start (CheckBinds).
+	Binds []ports.Bind
 }
 
 // graceFor is how long p has to stop once asked: grace, or its own StopGrace when
@@ -236,11 +243,27 @@ func Build(role Role, opts Options) (Process, error) {
 	wire(cmd)
 	// the streaming role keeps TV on air (the front door): it outlives a supervisor
 	// restart (story 35.7)
-	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config), Survives: role == RoleStreaming}
+	p := Process{Role: role, Cmd: cmd, Probe: ProbeURL(role, opts.Config), Survives: role == RoleStreaming,
+		Binds: roleBinds(role, opts.Config)}
 	if role == RolePipeline {
 		p.ProbeTimeout = PythonProbeTimeout
 	}
 	return p, nil
+}
+
+// roleBinds are the addresses a role listens on, as its environment tells it
+// (ChildEnv): checked free before each start (portcheck.go).
+func roleBinds(role Role, cfg config.Config) []ports.Bind {
+	switch role {
+	case RoleAPI:
+		return []ports.Bind{{Addr: cfg.Server.Listen, What: "API port"}, {Addr: cfg.Server.AdminAddr, What: "admin port"}}
+	case RoleStreaming:
+		return []ports.Bind{{Addr: cfg.Server.StreamAddr, What: "streaming port"},
+			{Addr: streamingAdmin(cfg), What: "admin port"}, {Addr: streamingGRPC(cfg), What: "gRPC port"}}
+	case RolePipeline:
+		return []ports.Bind{{Addr: pipelineGRPC(cfg), What: "gRPC port"}, {Addr: pipelineLogs(cfg), What: "logs port"}}
+	}
+	return nil
 }
 
 // EnvWheelhousePython names, for the api, the Python its release mirror downloads the
@@ -258,9 +281,9 @@ const PythonProbeTimeout = 30 * time.Second
 func ProbeURL(role Role, cfg config.Config) string {
 	switch role {
 	case RoleAPI:
-		return "http://" + LocalAddr(cfg.Server.AdminAddr, "9100") + "/healthz"
+		return "http://" + LocalAddr(cfg.Server.AdminAddr, ports.APIAdmin.PortString()) + "/healthz"
 	case RoleStreaming:
-		return "http://" + LocalAddr(streamingAdmin(cfg), "9101") + "/healthz"
+		return "http://" + LocalAddr(streamingAdmin(cfg), ports.StreamingAdmin.PortString()) + "/healthz"
 	case RolePipeline:
 		return "http://" + pipelineLogs(cfg) + "/healthz"
 	}

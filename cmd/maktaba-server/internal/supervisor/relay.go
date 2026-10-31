@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // RoleRelay is the cloud relay agent (maktaba-cloudlink, Epic 25): it keeps the home's
@@ -36,7 +37,7 @@ const (
 )
 
 // RelayAdminDefault is the agent's loopback status address ([cloud] admin_addr).
-const RelayAdminDefault = "127.0.0.1:8765"
+var RelayAdminDefault = ports.RelayAdmin.Addr()
 
 // RelayCredPath and RelayKeyPath are the agent's files.
 func RelayCredPath() string { return filepath.Join(config.KeysDir(), RelayCredFile) }
@@ -105,9 +106,9 @@ func relayKey() (string, error) {
 // the API port when this machine runs no web UI.
 func relayLocal(cfg config.Config) string {
 	if strings.TrimSpace(cfg.Server.WebListen) != "" {
-		return "http://" + LocalAddr(cfg.Server.WebListen, "8088")
+		return "http://" + LocalAddr(cfg.Server.WebListen, ports.Web.PortString())
 	}
-	return "http://" + LocalAddr(cfg.Server.Listen, "8080")
+	return "http://" + LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString())
 }
 
 // relayEnv is the agent's environment: this machine's web port on loopback, its
@@ -154,6 +155,7 @@ func BuildRelay(opts Options) (Process, error) {
 		Role:  RoleRelay,
 		Cmd:   cmd,
 		Probe: "http://" + addr + "/admin/cloud-link",
+		Binds: []ports.Bind{{Addr: addr, What: "status port"}},
 		Check: func(ctx context.Context) error {
 			d := net.Dialer{Timeout: 2 * time.Second}
 			c, err := d.DialContext(ctx, "tcp", addr)

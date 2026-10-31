@@ -26,6 +26,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // Config mirrors the server.toml schema documented in the task. Every
@@ -385,11 +386,11 @@ func Defaults() Config {
 	data := defaultDataDir()
 	return Config{
 		Server: ServerSection{
-			Listen:     "0.0.0.0:8080",
+			Listen:     ports.APIPublic.Addr(),
 			DataDir:    data,
-			WebListen:  "0.0.0.0:8088",
-			AdminAddr:  "127.0.0.1:9100", // logs and metrics: this machine only
-			StreamAddr: ":8081",
+			WebListen:  ports.Web.Addr(),
+			AdminAddr:  ports.APIAdmin.Addr(), // logs and metrics: this machine only
+			StreamAddr: ports.StreamingPublic.Addr(),
 		},
 		Database: DatabaseSection{
 			URL: "sqlite://" + filepath.Join(data, "maktaba.db"),
@@ -456,7 +457,7 @@ func LoadFrom(path string) (Config, bool, error) {
 }
 
 // legacyAdminAddr is the api admin port's old default, on every interface.
-const legacyAdminAddr = ":9100"
+var legacyAdminAddr = ports.APIAdmin.Every()
 
 // Save atomically writes cfg to Path(), creating the parent directory.
 func (c Config) Save() error {

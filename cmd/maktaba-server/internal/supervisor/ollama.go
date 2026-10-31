@@ -10,6 +10,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // RoleOllama is the language model server bundled with Maktaba.app: `ollama
@@ -41,7 +42,8 @@ func BuildOllama(s llmserver.Server) (Process, error) {
 		// kept open for the supervisor's life: every restart appends to it
 		cmd.Stdout, cmd.Stderr = f, f
 	}
-	return Process{Role: RoleOllama, Cmd: cmd, Probe: s.URL() + "/api/version"}, nil
+	return Process{Role: RoleOllama, Cmd: cmd, Probe: s.URL() + "/api/version",
+		Binds: []ports.Bind{{Addr: s.Addr(), What: "model server port"}}}, nil
 }
 
 // LLMURL is the language model server this machine's roles use: the bundled

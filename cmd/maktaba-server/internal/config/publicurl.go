@@ -3,6 +3,8 @@ package config
 import (
 	"net"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // lanIP returns this machine's LAN address. A package var so tests can
@@ -22,7 +24,7 @@ func (c Config) PublicStreamURL() string {
 	}
 	host, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.StreamAddr))
 	if err != nil || port == "" {
-		host, port = "", "8081"
+		host, port = "", ports.StreamingPublic.PortString()
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" || host == "[::]" {
 		host = lanIP()
@@ -70,7 +72,7 @@ func (c Config) PublicWebURL() string {
 	}
 	_, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.WebListen))
 	if err != nil || port == "" {
-		port = "8088"
+		port = ports.Web.PortString()
 	}
 	stream := c.PublicStreamURL()
 	host := strings.TrimPrefix(strings.TrimPrefix(stream, "http://"), "https://")
@@ -86,7 +88,7 @@ func (c Config) PublicWebURL() string {
 func (c Config) PublicAPIURL() string {
 	_, port, err := net.SplitHostPort(strings.TrimSpace(c.Server.Listen))
 	if err != nil || port == "" {
-		port = "8080"
+		port = ports.APIPublic.PortString()
 	}
 	web := strings.TrimPrefix(strings.TrimPrefix(c.PublicWebURL(), "http://"), "https://")
 	host := web

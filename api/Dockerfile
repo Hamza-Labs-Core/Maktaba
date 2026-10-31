@@ -41,6 +41,7 @@ COPY tools/healthcheck/go.mod ./tools/healthcheck/
 COPY shared/errrpt/go/go.mod  ./shared/errrpt/go/
 COPY shared/go/layout/go.mod ./shared/go/layout/
 COPY shared/go/pagetheme/go.mod ./shared/go/pagetheme/
+COPY shared/go/ports/go.mod ./shared/go/ports/
 COPY shared/go/releaseverify/go.mod ./shared/go/releaseverify/
 COPY shared/health/go/go.mod  ./shared/health/go/
 COPY shared/log/go/go.mod     ./shared/log/go/

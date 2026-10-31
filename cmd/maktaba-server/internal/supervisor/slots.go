@@ -6,12 +6,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // The tv-slot role (Epic 33 story 33.1): the channel engine runs in up to three
@@ -44,11 +44,13 @@ func slotIndex(name string) int {
 // ValidSlot reports a slot instance name.
 func ValidSlot(name string) bool { return slotIndex(name) >= 0 }
 
-// SlotAddr is an instance's loopback public address (8791/8792/8793).
-func SlotAddr(name string) string { return "127.0.0.1:" + strconv.Itoa(8791+slotIndex(name)) }
+// SlotAddr is an instance's loopback public address (ports.TVSlotPublic:
+// 8791/8792/8793).
+func SlotAddr(name string) string { return ports.TVSlotPublic.AddrAt(slotIndex(name)) }
 
-// SlotAdminAddr is an instance's loopback admin address (9111/9112/9113).
-func SlotAdminAddr(name string) string { return "127.0.0.1:" + strconv.Itoa(9111+slotIndex(name)) }
+// SlotAdminAddr is an instance's loopback admin address (ports.TVSlotAdmin:
+// 9111/9112/9113).
+func SlotAdminAddr(name string) string { return ports.TVSlotAdmin.AddrAt(slotIndex(name)) }
 
 // SlotsEnv is the front door's MAKTABA_TV_SLOTS value.
 func SlotsEnv() string {
@@ -94,7 +96,8 @@ func BuildSlot(name string, opts Options) (Process, error) {
 	wire(cmd)
 	return Process{Role: RoleTVSlot, Instance: name, OnDemand: slotOnDemand[name], Cmd: cmd,
 		Probe: "http://" + SlotAdminAddr(name) + "/healthz", Survives: true,
-		Held: heldQuery(opts.Config.Database.URL)}, nil
+		Held:  heldQuery(opts.Config.Database.URL),
+		Binds: []ports.Bind{{Addr: SlotAddr(name), What: "channel port"}, {Addr: SlotAdminAddr(name), What: "admin port"}}}, nil
 }
 
 // BuildSlots is every slot instance.
@@ -113,7 +116,7 @@ func BuildSlots(opts Options) ([]Process, error) {
 // SlotExitReporter tells the front door at once that a slot process ended
 // (faster than its next probe): POST <stream>/internal/tv/slot-exited/<name>.
 func SlotExitReporter(streamAddr string) func(Process, ExitInfo) {
-	base := "http://" + LocalAddr(streamAddr, "8081")
+	base := "http://" + LocalAddr(streamAddr, ports.StreamingPublic.PortString())
 	client := &http.Client{Timeout: 2 * time.Second}
 	return func(p Process, _ ExitInfo) {
 		if p.Role != RoleTVSlot {

@@ -7,6 +7,8 @@ import (
 	"hash/crc32"
 	"strconv"
 	"strings"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 // The SiliconDust HDHomeRun discovery protocol, the one Plex's "scan for
@@ -34,8 +36,8 @@ import (
 //     (BASE_URL, LINEUP_URL, DEVICE_AUTH_STR) are read for their TLV length
 //     with no NUL needed; unknown tags are skipped.
 
-// HDHRDiscoverPort is HDHOMERUN_DISCOVER_UDP_PORT (hdhomerun_pkt.h).
-const HDHRDiscoverPort = 65001
+// HDHRDiscoverPort is HDHOMERUN_DISCOVER_UDP_PORT (hdhomerun_pkt.h; ports.HDHomeRunDiscover).
+var HDHRDiscoverPort = ports.HDHomeRunDiscover.Port
 
 // Packet types and tags (hdhomerun_pkt.h).
 const (
