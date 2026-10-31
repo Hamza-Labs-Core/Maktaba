@@ -44,6 +44,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **CI runs the Android Remote's unit tests.** The Android job ran the shared client's and
+  core's tests but not the Remote's own (`:remote:testPhoneDebugUnitTest`), so the Remote's
+  wording tests (`SayTest`) never ran in CI.
+
 - **The supervisor keeps every TV slot on the release it is bound to.** It now records the
   binding each slot's process started with. Whenever a slot is bound (by any caller, not only the
   front door's start) or adopted after a restart, a wanted slot that runs another release is
