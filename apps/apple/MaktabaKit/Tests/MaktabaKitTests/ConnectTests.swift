@@ -547,7 +547,9 @@ extension RouteStub.Answer {
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set(true, forKey: "permissions.walkthroughSeen")
         defaults.set(true, forKey: "permissions.localNetwork.asked")
-        let quick = PermissionsModel.Timing(check: LocalNetworkVerdict(grace: .milliseconds(50), timeout: .milliseconds(500)), request: .milliseconds(500))
+        // the scripted results give the verdict at once; the timeout only has to outlast a
+        // busy runner (500 ms did not on CI, 2026-10-31)
+        let quick = PermissionsModel.Timing(check: LocalNetworkVerdict(grace: .milliseconds(50), timeout: .seconds(10)), request: .seconds(10))
         let m = PermissionsModel(kinds: [.localNetwork, .camera], defaults: defaults,
                                  probe: ScriptedProbe([.ready, .results(1)]), camera: FakeCamera(.denied), timing: quick)
         await m.refresh()
