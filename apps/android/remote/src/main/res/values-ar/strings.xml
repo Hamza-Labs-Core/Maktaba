@@ -3,7 +3,7 @@
 <resources>
     <string name="w_updates_state_up_to_date">محدَّث</string>
     <string name="w_updates_state_behind">متأخر</string>
-    <string name="w_updates_state_ahead_of_home">أحدث من الخادم الرئيسي</string>
+    <string name="w_updates_state_ahead_of_home">أحدث من الجهاز الرئيسي</string>
     <string name="w_updates_state_offline">غير متصل</string>
     <string name="w_updates_state_worker_only">عامل فقط</string>
     <string name="w_updates_state_converting">يصير جهازًا كاملًا</string>
@@ -18,11 +18,11 @@
     <string name="w_updates_state_held">معلّق</string>
     <string name="w_updates_state_skipped">تُخطّي</string>
     <string name="w_updates_state_planned">مخطَّط</string>
-    <string name="w_updates_state_home_preparing">الخادم الرئيسي يتحضّر</string>
-    <string name="w_updates_state_home_prepared">الخادم الرئيسي جاهز</string>
+    <string name="w_updates_state_home_preparing">الجهاز الرئيسي يتحضّر</string>
+    <string name="w_updates_state_home_prepared">الجهاز الرئيسي جاهز</string>
     <string name="w_updates_state_draining">إنهاء المهام الجارية</string>
-    <string name="w_updates_state_home_applying">الخادم الرئيسي يتحدّث</string>
-    <string name="w_updates_state_home_committed">حُدِّث الخادم الرئيسي</string>
+    <string name="w_updates_state_home_applying">الجهاز الرئيسي يتحدّث</string>
+    <string name="w_updates_state_home_committed">حُدِّث الجهاز الرئيسي</string>
     <string name="w_updates_state_rolling_out">تحديث الأجهزة</string>
     <string name="w_updates_state_done">تم</string>
     <string name="w_updates_state_done_with_failures">تم مع إخفاقات</string>
@@ -91,12 +91,12 @@
     <string name="w_updates_code_venv_interrupted">انقطع بناء بيئة Python لخط المعالجة: يُستكمل عند التشغيل التالي</string>
     <string name="w_updates_code_cancelled">ألغاه مشرف</string>
     <string name="w_updates_code_superseded">حلّ محلّه إصدار أحدث</string>
-    <string name="w_updates_code_home_timeout">استغرق الخادم الرئيسي وقتاً طويلاً في التحديث</string>
-    <string name="w_updates_code_home_not_prepared">لم يكن الخادم الرئيسي جاهزاً لتثبيته</string>
-    <string name="w_updates_code_journal_lost">فقد الخادم الرئيسي أثر هذا التحديث</string>
+    <string name="w_updates_code_home_timeout">استغرق الجهاز الرئيسي وقتاً طويلاً في التحديث</string>
+    <string name="w_updates_code_home_not_prepared">لم يكن الجهاز الرئيسي جاهزاً لتثبيته</string>
+    <string name="w_updates_code_journal_lost">فقد الجهاز الرئيسي أثر هذا التحديث</string>
     <string name="w_updates_code_no_release">تعذّر العثور على الإصدار</string>
     <string name="w_updates_code_orchestrator_unavailable">لا يثبّت هذا الخادم التحديثات بنفسه</string>
-    <string name="w_updates_code_refused">رفض الخادم الرئيسي التحديث</string>
+    <string name="w_updates_code_refused">رفض الجهاز الرئيسي التحديث</string>
     <string name="w_updates_code_tv_busy">ظلّ أحدهم يشاهد التلفاز حتى انتهت النافذة الهادئة</string>
     <string name="w_updates_code_failed_tv">تعذّر نقل التلفاز إلى الإصدار الجديد (فشل تبديله، أو تعطّل على الهواء بعد انتقاله): عاد الإصدار السابق للعمل</string>
     <string name="w_updates_code_tv_change_pending">انتظر تغيير التلفاز خلف تغيير آخر ينتظر الموافقة حتى انتهت النافذة الهادئة</string>
@@ -104,9 +104,9 @@
     <string name="w_updates_code_tv_change_cancelled">ألغى أحد المشرفين تغيير التلفاز في هذا التحديث: عاد الإصدار السابق للعمل</string>
     <string name="w_updates_code_outside_window">انتهت النافذة الهادئة قبل أن يبدأ</string>
     <string name="w_updates_code_window_over">انتهت النافذة الهادئة قبل أن يحين دوره</string>
-    <string name="w_updates_code_switchover_open">تغيير الخادم الرئيسي جارٍ</string>
+    <string name="w_updates_code_switchover_open">تغيير الجهاز الرئيسي جارٍ</string>
     <string name="w_updates_code_withdrawn">سُحب الإصدار</string>
-    <string name="w_updates_code_switchover">بدأ نقل الخادم الرئيسي بينما كان هذا التحديث ينتظر أن تُنزّله مكتبة: سُحبت طلباته، ويطلبها الخادم الرئيسي الجديد من جديد</string>
+    <string name="w_updates_code_switchover">بدأ نقل الجهاز الرئيسي بينما كان هذا التحديث ينتظر أن تُنزّله مكتبة: سُحبت طلباته، ويطلبها الجهاز الرئيسي الجديد من جديد</string>
     <string name="w_updates_code_turned_prerelease">صار الإصدار إصداراً تجريبياً</string>
     <string name="w_updates_code_checksums_changed">تغيّرت المجاميع الاختبارية للإصدار بعد التحقق منه</string>
     <string name="w_updates_code_held">معلّق: فشل جهاز على المنصّة نفسها</string>
@@ -279,7 +279,7 @@
     <string name="w_queue_jobstate_cancelled">أُلغي</string>
     <string name="w_machines_status_online">متصل</string>
     <string name="w_machines_status_offline">غير متصل</string>
-    <string name="w_machines_status_no_home_db">لا يصل إلى قاعدة بيانات الخادم الرئيسي</string>
+    <string name="w_machines_status_no_home_db">لا يصل إلى قاعدة بيانات الجهاز الرئيسي</string>
     <string name="w_machines_status_draining">يُنهي أعماله</string>
     <string name="w_machines_status_revoked">أُلغيت صلاحيته</string>
     <string name="w_machines_status_rejected">مرفوض</string>
@@ -433,7 +433,7 @@
     <string name="check_stale">لم ينجح أي تحقق من التحديثات منذ 14 يومًا. تحقق من الشبكة أو الوصول إلى GitHub.</string>
     <string name="check_failed">فشل آخر تحقق من التحديثات</string>
     <string name="stuck_body">ثبّته الآن: يتوقف التلفاز والواجهة مؤقتاً ريثما يُعاد تشغيل المنزل.</string>
-    <string name="updates_this_home">هذا الخادم الرئيسي</string>
+    <string name="updates_this_home">هذا الجهاز الرئيسي</string>
     <string name="running_version">يعمل بالإصدار</string>
     <string name="next">التالي</string>
     <string name="target">الهدف</string>
@@ -452,7 +452,7 @@
     <string name="version">الإصدار</string>
     <string name="started_by">بدأه</string>
     <string name="ended">الانتهاء</string>
-    <string name="waiting_for_home">بانتظار أن ينتهي الخادم الرئيسي</string>
+    <string name="waiting_for_home">بانتظار أن ينتهي الجهاز الرئيسي</string>
     <string name="steps">الخطوات</string>
     <string name="on_machines">على الأجهزة، واحداً بعد الآخر</string>
     <string name="install">التثبيت</string>

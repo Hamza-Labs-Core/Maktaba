@@ -651,7 +651,7 @@ describe("Machines admin page: the home's database", () => {
     renderPage();
     const ar = await screen.findByRole("article", { name: "Studio Mac" });
     expect(within(ar).getByTestId("machine-home-db-answer")).toHaveTextContent(
-      "لا يستطيع الخادم الرئيسي منح هذا الجهاز تسجيل دخول جديداً"
+      "لا يستطيع الجهاز الرئيسي منح هذا الجهاز تسجيل دخول جديداً"
     );
   });
 
@@ -668,7 +668,7 @@ describe("Machines admin page: the home's database", () => {
     renderPage();
     const ar = await screen.findByRole("article", { name: "Studio Mac" });
     expect(within(ar).getByTestId("machine-home-db")).toHaveTextContent(
-      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الخادم الرئيسي"
+      "لا يستطيع هذا الجهاز الوصول إلى قاعدة بيانات الجهاز الرئيسي"
     );
   });
 });
