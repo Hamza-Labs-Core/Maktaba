@@ -24,6 +24,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **On a Mac, the site comes back by itself after the server is killed.** A `kill -9` (or a
+  crash) of the server left its bundled Postgres running, adopted by the system; every next
+  start then failed on its `postmaster.pid` and the site stayed down. The server now stops a
+  postmaster of its own cluster that nothing runs any more (fast shutdown, killed after 30 s)
+  before it starts Postgres. Linux already did this through the launcher.
+
 - **An update is no longer rolled back because its TV change waits, a rollback no longer puts
   the database back for additive migrations, and a restore that is needed is whole (the outage
   of 2026-10-28).** The update to 0.3.42 passed every check, but its TV change waited half an

@@ -32,3 +32,14 @@ func processName(pid int) (name string, alive bool) {
 	}
 	return string(comm), true
 }
+
+// parentPID is a running process's parent, from the kernel's process table.
+func parentPID(pid int) (int, bool) {
+	kp, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
+	if err != nil || kp.Proc.P_pid == 0 {
+		return 0, false
+	}
+	return int(kp.Eproc.Ppid), true
+}
+
+func signalProcess(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }

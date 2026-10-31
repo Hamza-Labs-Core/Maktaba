@@ -22,3 +22,9 @@ func processName(pid int) (name string, alive bool) {
 	}
 	return strings.TrimSpace(string(b)), true
 }
+
+// parentPID: not looked at here. On Linux the launcher, a child subreaper, stops
+// what a killed server left before it starts the next one.
+func parentPID(int) (int, bool) { return 0, false }
+
+func signalProcess(pid int, sig syscall.Signal) error { return syscall.Kill(pid, sig) }
