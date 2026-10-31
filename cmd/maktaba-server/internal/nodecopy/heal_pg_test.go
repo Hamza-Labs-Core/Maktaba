@@ -486,6 +486,45 @@ func TestCopyQuiesceEndsAWorkerStuckOnTheHome(t *testing.T) {
 	}
 }
 
+// The copy's switch-off waits for the subscription's lock at most its wait: whatever holds
+// it (here a session of the test's; a table's copy that ended while its home hung holds it
+// until the home answers) never keeps a fresh copy waiting for ever.
+func TestCopyQuiesceWaitsBoundedForTheSubscriptionsLock(t *testing.T) {
+	r := newRig(t)
+	r.following("the first copy")
+	r.stopManager()
+	db, err := r.c.super()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	hold, err := db.BeginTx(r.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback() }()
+	if _, err := hold.ExecContext(r.ctx, `ALTER SUBSCRIPTION `+Subscription+` SET (synchronous_commit = 'off')`); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- r.c.Quiesce(r.ctx, time.Second) }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "switching the copy off") {
+			t.Fatalf("Quiesce with the subscription's lock held: %v, want its switch-off refused", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatalf("Quiesce waited for the subscription's lock past its wait\n%s", r.dump())
+	}
+	_ = hold.Rollback()
+	if err := r.c.Quiesce(r.ctx, time.Second); err != nil {
+		t.Fatalf("Quiesce once the lock is free: %v", err)
+	}
+	if r.subEnabled() {
+		t.Fatal("the subscription is on after Quiesce")
+	}
+}
+
 // A table's first copy is stranded: copied, but the table-sync slot it resumes from is
 // gone from the home (Postgres's table-sync worker drops it on the home before it commits
 // the table done, and was stopped in between). Its worker would ask the home for that
