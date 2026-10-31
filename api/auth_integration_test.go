@@ -43,11 +43,7 @@ func TestServeWithAuth_JWKSAndHeaders(t *testing.T) {
 		t.Skip("integration: skipping under -short")
 	}
 
-	const publicAddr = "127.0.0.1:18081"
-	const adminAddr = "127.0.0.1:19101"
-	if !portFree(t, publicAddr) || !portFree(t, adminAddr) {
-		t.Skipf("integration: %s or %s in use", publicAddr, adminAddr)
-	}
+	publicAddr, adminAddr := freeAddr(t), freeAddr(t)
 
 	priv, pub := mustPEMPair(t)
 	t.Setenv("MAKTABA_HTTP_ADDR", publicAddr)

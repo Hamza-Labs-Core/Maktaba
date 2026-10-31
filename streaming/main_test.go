@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
-	"strings"
 	"testing"
 	"time"
 )
@@ -51,12 +51,7 @@ func TestServeIntegration(t *testing.T) {
 		t.Skip("integration: skipping under -short")
 	}
 
-	const publicAddr = "127.0.0.1:18081"
-	const adminAddr = "127.0.0.1:19101"
-
-	if !portFree(t, publicAddr) || !portFree(t, adminAddr) {
-		t.Skipf("integration: %s or %s in use", publicAddr, adminAddr)
-	}
+	publicAddr, adminAddr := freeAddr(t), freeAddr(t)
 
 	t.Setenv("MAKTABA_HTTP_ADDR", publicAddr)
 	t.Setenv("MAKTABA_ADMIN_ADDR", adminAddr)
@@ -98,14 +93,18 @@ func TestServeIntegration(t *testing.T) {
 	}
 }
 
-func portFree(t *testing.T, addr string) bool {
+// freeAddr is a loopback address nothing listens on now, its port picked by the OS:
+// fixed ports collide when two packages' integration tests run at once (go test runs
+// packages in parallel; api's and streaming's both took 18081/19101).
+func freeAddr(t *testing.T) string {
 	t.Helper()
-	conn, err := (&http.Client{Timeout: 100 * time.Millisecond}).Get("http://" + addr + "/")
-	if err == nil {
-		_ = conn.Body.Close()
-		return false
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
 	}
-	return strings.Contains(err.Error(), "refused") || strings.Contains(err.Error(), "EOF") || strings.Contains(err.Error(), "reset")
+	addr := l.Addr().String()
+	_ = l.Close()
+	return addr
 }
 
 func waitForPort(addr string, budget time.Duration) error {
