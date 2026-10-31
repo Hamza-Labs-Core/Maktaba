@@ -24,6 +24,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **CI builds on macOS 15.** GitHub retires its macOS 14 runners on 2026-11-02 and has started
+  switching them off for hours at a time, which failed every darwin build and macOS installer job
+  in about a second. The build, node packaging and release workflows now run on `macos-15`, as the
+  Mac app and desktop release workflows already did.
+
 - **A TV slot that was already running is started again when it is asked to run another release.**
   After the 0.3.44 update restarted the Mac, the green slot came back on the old TV software. The
   TV change then bound green to 0.3.44, but the supervisor only uses a new binding at a slot's next
