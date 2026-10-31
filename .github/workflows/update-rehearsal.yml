@@ -1,0 +1,391 @@
+# The update rehearsal (docs/update-rehearsal.md): every update path the owner's Mac app
+# runs, rehearsed on a Linux runner before any release. The owner, 2026-10-28, after two
+# outages in one day: "THIS NEED TO BE ON CI".
+#
+# The Mac app's install kind is driven through the same code on Linux: the app bundle's
+# layout (Maktaba.app/Contents/Resources/server, the launcher run from its bin/, which
+# finds the bundle by its path on any OS), its state root (the launcher's guard,
+# payload-override, the kept payloads, state/database.json, app-install.json, the restart
+# file), the bundled Postgres of a published release's Linux payload (PostgreSQL 16 with
+# pgvector), and the desktop app's part of an update played by the test (it stages what
+# the home orders, and at the home's go stops the server, swaps the bundle, starts it).
+# Two releases' real binaries: the latest published release, built from its tag, and this
+# commit; signed by a local fake Sigstore, published on a fake GitHub (-tags e2etrust).
+#
+# Jobs: kit (the binaries and the bundled Postgres), seed (the seeded homes, cached per
+# previous release: two million vectors take minutes to make), one job per scenario
+# (api/rehearsal_*_e2e_test.go), and update-rehearsal, the verdict. A scenario whose fix
+# has not merged yet is expected to fail (tools/rehearsal/expected-failures.txt): its
+# failure is reported, not counted, until the fix's PR is in the commit rehearsed; from
+# then on it is required. The release's tag guard (tools/release/tag-guard.sh) refuses to
+# release a commit this workflow did not pass on.
+
+name: Update rehearsal
+
+on:
+  pull_request:
+    branches: [main, 'release/**']
+    paths:
+      # the update, the restore, the migrations, the supervisor, the launcher, TV staging,
+      # the schema
+      - 'cmd/maktaba-server/internal/updater/**'
+      - 'cmd/maktaba-server/internal/dbsafe/**'
+      - 'cmd/maktaba-server/internal/pgbundle/**'
+      - 'cmd/maktaba-server/internal/apppayload/**'
+      - 'cmd/maktaba-server/internal/appruntime/**'
+      - 'cmd/maktaba-server/internal/supervisor/**'
+      - 'cmd/maktaba-server/internal/attempts/**'
+      - 'cmd/maktaba-server/internal/config/**'
+      - 'cmd/maktaba-server/internal/devmigrate/**'
+      - 'cmd/maktaba-server/internal/nodecopy/**'
+      - 'cmd/maktaba-server/internal/selfupdate/**'
+      - 'cmd/maktaba-server/internal/machineagent/**'
+      - 'cmd/maktaba-server/serve*.go'
+      - 'cmd/maktaba-server/cmd_serve.go'
+      - 'cmd/maktaba-server/cmd_update*.go'
+      - 'cmd/maktaba-server/cmd_restore.go'
+      - 'cmd/maktaba-server/go.mod'
+      - 'cmd/maktaba-launcher/**'
+      - 'api/internal/updates/**'
+      - 'api/internal/tvchange/**'
+      - 'api/internal/cluster/**'
+      - 'api/internal/handlers/clusterauth/**'
+      - 'api/migrate*.go'
+      - 'api/schema_ahead*.go'
+      - 'api/node_*.go'
+      - 'api/self_update*.go'
+      - 'api/go.mod'
+      - 'shared/go/layout/**'
+      - 'shared/go/releaseverify/**'
+      - 'shared/db/migrations/**'
+      # the rehearsal itself
+      - 'api/rehearsal_*_e2e_test.go'
+      - 'api/autoupdate_*e2e_test.go'
+      - 'api/twomachine_e2e_test.go'
+      - 'tools/rehearsal/**'
+      - 'tools/release/linux-app/pins.env'
+      - '.github/workflows/update-rehearsal.yml'
+  push:
+    branches: [main, 'release/**']
+  schedule:
+    - cron: '17 6 * * *' # nightly, 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      prev_tag:
+        description: "the previous release to update from (default: the latest published stable release below this commit)"
+        required: false
+        default: ''
+      cur_ref:
+        description: "rehearse this ref's code as 'this commit' (default: the checkout); the harness stays the checkout's"
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-rehearsal-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # the same absolute paths in every job (a seeded machine links its payload's Postgres by
+  # path), outside the checkout; actions/cache takes no '..' in a path
+  KIT: /home/runner/rh-kit
+  SEEDS: /home/runner/rh-seeds
+
+jobs:
+  kit:
+    name: kit (two releases' binaries, the bundled Postgres)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    outputs:
+      prev: ${{ steps.prev.outputs.tag }}
+      expect_fail: ${{ steps.expected.outputs.list }}
+      expected_notes: ${{ steps.expected.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            api/go.sum
+            streaming/go.sum
+            cmd/maktaba-server/go.sum
+            cmd/maktaba-launcher/go.sum
+
+      - name: The previous release
+        id: prev
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WANT: ${{ inputs.prev_tag }}
+        run: |
+          set -euo pipefail
+          if [ -n "${WANT}" ]; then
+            tag="${WANT}"
+          else
+            # the latest published stable release that is not this commit's own tag
+            head="$(git rev-parse HEAD)"
+            tag=""
+            for t in $(gh release list --exclude-drafts --exclude-pre-releases --limit 100 --json tagName --jq '.[].tagName' | sort -rV); do
+              git rev-parse -q --verify "refs/tags/$t" >/dev/null || git fetch -q origin "+refs/tags/$t:refs/tags/$t"
+              [ "$(git rev-list -n1 "$t")" = "$head" ] && continue
+              tag="$t"; break
+            done
+          fi
+          [ -n "${tag}" ] || { echo "::error::no published release to update from"; exit 1; }
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "the previous release: ${tag} ($(git rev-list -n1 "${tag}"))"
+
+      - name: The scenarios expected to fail until their fix merges
+        id: expected
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          list='[]' notes=''
+          while read -r scenario pr why; do
+            case "${scenario}" in ''|'#'*) continue ;; esac
+            merge="$(gh pr view "${pr}" --json state,mergeCommit --jq 'select(.state == "MERGED") | .mergeCommit.oid' </dev/null 2>/dev/null || true)"
+            if [ -n "${merge}" ] && git merge-base --is-ancestor "${merge}" HEAD 2>/dev/null; then
+              echo "${scenario}: #${pr} is in this commit: required"
+              continue
+            fi
+            echo "${scenario}: expected to fail until #${pr} merges (${why})"
+            list="$(jq -c --arg s "${scenario}" '. + [$s]' <<<"${list}")"
+            notes="${notes}${scenario}: #${pr}; "
+          done < tools/rehearsal/expected-failures.txt
+          echo "list=${list}" >> "$GITHUB_OUTPUT"
+          echo "notes=${notes}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the two releases
+        env:
+          PREV: ${{ steps.prev.outputs.tag }}
+          # PROOF ONLY (#436): the pull request's head (main before #433 and #434), not
+          # GitHub's merge of it with today's main, which has both fixes
+          CUR_REF: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/src-prev"
+          git archive "${PREV}" | tar -x -C "$RUNNER_TEMP/src-prev"
+          cur="$GITHUB_WORKSPACE"
+          if [ -n "${CUR_REF}" ]; then
+            git fetch -q origin "${CUR_REF}" || true
+            mkdir -p "$RUNNER_TEMP/src-cur"
+            git archive "$(git rev-parse "${CUR_REF}" 2>/dev/null || git rev-parse FETCH_HEAD)" | tar -x -C "$RUNNER_TEMP/src-cur"
+            cur="$RUNNER_TEMP/src-cur"
+            echo "::notice::rehearsing ${CUR_REF} as this commit (the harness is the checkout's)"
+          fi
+          tools/rehearsal/build.sh --prev-src "$RUNNER_TEMP/src-prev" --prev-version "${PREV#v}" --cur-src "${cur}" --out "$KIT"
+          {
+            echo "### Update rehearsal: the kit"
+            echo '```'
+            cat "$KIT/versions.env"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.KIT }}/pg
+          key: rehearsal-pg-${{ steps.prev.outputs.tag }}-${{ runner.arch }}
+
+      - name: The bundled Postgres (the previous release's Linux payload)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREV: ${{ steps.prev.outputs.tag }}
+        run: tools/rehearsal/postgres.sh --tag "${PREV}" --out "$KIT/pg"
+
+      - name: Pack the kit
+        run: tar -C "$KIT/.." -cf "$RUNNER_TEMP/rh-kit.tar" "$(basename "$KIT")"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-kit
+          path: ${{ runner.temp }}/rh-kit.tar
+          retention-days: 3
+          compression-level: 6
+
+  seed:
+    name: seed (${{ matrix.profile }})
+    needs: [kit]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75 # a cold full seed: 2M vectors and their HNSW index on 4 vCPUs
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [full, restore, small]
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SEEDS }}
+          key: rehearsal-seed-${{ needs.kit.outputs.prev }}-${{ matrix.profile }}-${{ hashFiles('api/rehearsal_seed_e2e_test.go') }}
+          lookup-only: true
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-kit
+          path: ${{ runner.temp }}
+
+      - name: Seed the home (${{ matrix.profile }})
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: api
+        env:
+          MAKTABA_E2E_REHEARSAL: '1'
+          MAKTABA_REHEARSAL_PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$KIT" && tar -C "$KIT/.." -xf "$RUNNER_TEMP/rh-kit.tar"
+          python3 -m venv --without-pip "$RUNNER_TEMP/venv-probe" 2>/dev/null || {
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends python3-venv >/dev/null
+          }
+          MAKTABA_REHEARSAL_KIT="$KIT" MAKTABA_REHEARSAL_PG_HOME="$KIT/pg" MAKTABA_REHEARSAL_SEEDS="$SEEDS" \
+            MAKTABA_REHEARSAL_WORK="$RUNNER_TEMP/rh-work" MAKTABA_E2E_LOG_DIR="$RUNNER_TEMP/rh-logs" \
+            go test -count=1 -timeout 70m -run '^TestUpdateRehearsalSeed$' -v . 2>&1 | tee "$RUNNER_TEMP/seed.out"
+          grep -q -- '--- PASS: TestUpdateRehearsalSeed ' "$RUNNER_TEMP/seed.out" || { echo "::error::the seed did not run"; exit 1; }
+          du -sh "$SEEDS"/* || true
+
+      - if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SEEDS }}
+          key: rehearsal-seed-${{ needs.kit.outputs.prev }}-${{ matrix.profile }}-${{ hashFiles('api/rehearsal_seed_e2e_test.go') }}
+
+      - if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-seed-logs-${{ matrix.profile }}
+          path: ${{ runner.temp }}/rh-logs
+          if-no-files-found: ignore
+
+  scenario:
+    name: ${{ matrix.id }} ${{ matrix.name }}
+    needs: [kit, seed]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    # a scenario whose fix has not merged yet is expected to fail: reported, not counted
+    continue-on-error: ${{ contains(fromJSON(needs.kit.outputs.expect_fail), matrix.test) }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { id: '01', name: normal update with migrations (full seed), test: TestUpdateRehearsal01NormalUpdate, profile: full }
+          - { id: '02', name: the TV's change waits during the watch, test: TestUpdateRehearsal02WatchWithTVWaiting, profile: restore }
+          - { id: '03', name: rollback after additive migrations, test: TestUpdateRehearsal03RollbackAdditive, profile: restore }
+          - { id: '04', name: rollback after a destructive migration, test: TestUpdateRehearsal04RollbackDestructive, profile: restore }
+          - { id: '05', name: the restore under concurrent logins, test: TestUpdateRehearsal05RestoreUnderLogins, profile: restore }
+          - { id: '06', name: the restore killed part way, test: TestUpdateRehearsal06RestoreKilled, profile: restore }
+          - { id: '07', name: halted roles recover by themselves, test: TestUpdateRehearsal07HaltRecovers, profile: small }
+          - { id: '08', name: no room for two copies, test: TestUpdateRehearsal08NoRoom, profile: small }
+          - { id: '09', name: from the owner's Mac's live state, test: TestUpdateRehearsal09FromTheLiveState, profile: small }
+          - { id: '10a', name: machines after the home (the driver), test: TestUpdateRehearsal10aMachinesAfterHomeDriver, profile: small }
+          - { id: '10b', name: machines after the home (their own updater), test: TestUpdateRehearsal10bMachineOwnUpdater, profile: small }
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: rehearsal-kit
+          path: ${{ runner.temp }}
+
+      - uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.SEEDS }}
+          key: rehearsal-seed-${{ needs.kit.outputs.prev }}-${{ matrix.profile }}-${{ hashFiles('api/rehearsal_seed_e2e_test.go') }}
+          fail-on-cache-miss: true
+
+      - name: The kit, Python's venv
+        run: |
+          set -euo pipefail
+          mkdir -p "$KIT" && tar -C "$KIT/.." -xf "$RUNNER_TEMP/rh-kit.tar"
+          cat "$KIT/versions.env"
+          python3 -m venv --without-pip "$RUNNER_TEMP/venv-probe" 2>/dev/null || {
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends python3-venv >/dev/null
+          }
+
+      - name: A small volume of its own (no room for two copies)
+        if: matrix.id == '08'
+        run: |
+          set -euo pipefail
+          truncate -s 6G "$RUNNER_TEMP/small.img"
+          mkfs.ext4 -q -F "$RUNNER_TEMP/small.img"
+          sudo mkdir -p /mnt/rh-small
+          sudo mount -o loop "$RUNNER_TEMP/small.img" /mnt/rh-small
+          sudo chown "$(id -u):$(id -g)" /mnt/rh-small
+          df -h /mnt/rh-small
+          echo "MAKTABA_REHEARSAL_SMALL_VOLUME=/mnt/rh-small" >> "$GITHUB_ENV"
+
+      - name: ${{ matrix.id }} ${{ matrix.name }}
+        working-directory: api
+        env:
+          MAKTABA_E2E_REHEARSAL: '1'
+          MAKTABA_REHEARSAL_REQUIRE_ALL: '1'
+          TEST: ${{ matrix.test }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### ${{ matrix.id }} ${{ matrix.name }}"
+            echo "| test | what | downtime | budget |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          MAKTABA_REHEARSAL_KIT="$KIT" MAKTABA_REHEARSAL_PG_HOME="$KIT/pg" MAKTABA_REHEARSAL_SEEDS="$SEEDS" \
+            MAKTABA_REHEARSAL_WORK="$RUNNER_TEMP/rh-work" MAKTABA_E2E_LOG_DIR="$RUNNER_TEMP/rh-logs" \
+            go test -count=1 -timeout 45m -run "^${TEST}\$" -v . 2>&1 | tee "$RUNNER_TEMP/scenario.out"
+          grep -q -- "--- PASS: ${TEST} " "$RUNNER_TEMP/scenario.out" || { echo "::error::${TEST} did not pass"; exit 1; }
+
+      - name: What failed
+        if: failure()
+        run: |
+          grep -E '^\s+rehearsal_.*(Error|error|want|not |FAIL|timed out)' "$RUNNER_TEMP/scenario.out" | head -40 || true
+          ls -la "$RUNNER_TEMP/rh-logs" 2>/dev/null || true
+
+      - name: Keep the servers' logs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rehearsal-logs-${{ matrix.id }}
+          path: |
+            ${{ runner.temp }}/rh-logs
+            ${{ runner.temp }}/scenario.out
+          if-no-files-found: ignore
+
+  update-rehearsal:
+    name: update-rehearsal
+    needs: [kit, seed, scenario]
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: The verdict
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EXPECTED: ${{ needs.kit.outputs.expected_notes }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'
+          if [ -n "${EXPECTED}" ]; then
+            echo "::notice::expected to fail until their fix merges (reported, not counted): ${EXPECTED}"
+            echo "Expected to fail until their fix merges (not counted): ${EXPECTED}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          fail=0
+          for j in kit seed scenario; do
+            r="$(echo "$RESULTS" | jq -r ".\"$j\".result")"
+            [ "$r" = success ] || { echo "::error::$j: $r"; fail=1; }
+          done
+          exit $fail
