@@ -24,6 +24,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **The supervisor keeps every TV slot on the release it is bound to.** It now records the
+  binding each slot's process started with. Whenever a slot is bound (by any caller, not only the
+  front door's start) or adopted after a restart, a wanted slot that runs another release is
+  started again on its own. This extends the fix for change #58, which the TV held on 2026-10-31
+  with `release_mismatch`.
+
 - **A Windows node mid-write of its node config is no longer read as never joined.** The
   streaming server's reader saw `node.json` missing during a write's swap, then looked for the
   write's lock after the write had ended, and took the two together for "not joined". It now

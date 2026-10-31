@@ -78,6 +78,7 @@ type child struct {
 	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
 	binding    *SlotBinding // tv-slot: the TV release it runs (nil: the current binary)
+	ranWith    *SlotBinding // tv-slot: the binding its running process started with
 	basePath   string       // the binary the process was built with
 	wake       chan struct{}
 	done       chan struct{} // closed when its loop ends (or it never runs one)
@@ -465,7 +466,8 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		clearPortTaken(c) // its ports were free a moment ago
 		var info ExitInfo
 		survive := s.survivalLocked(c)
-		startErr := applyBindingKept(cmd, c.binding, c.basePath, s.keptStreaming)
+		ranWith := c.binding
+		startErr := applyBindingKept(cmd, ranWith, c.basePath, s.keptStreaming)
 		switch {
 		case startErr != nil || held.path == "":
 		case c.binding == nil || c.binding.ReleaseID == "":
@@ -530,6 +532,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			}
 			c.cmd = cmd
 			c.tree = tree
+			c.ranWith = ranWith
 			c.killReason = ""
 			c.status.PID = pid
 			c.status.StartedAt = &startedAt

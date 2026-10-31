@@ -343,3 +343,34 @@ func TestSlotStartOnAnotherReleaseRestartsIt(t *testing.T) {
 	start("r-new")
 	waitFor(t, s, "green on the new release", func(sn Snapshot) bool { p := pid(sn); return p != 0 && p != first })
 }
+
+// Any bind, not only the front door's start, starts a running slot again on its new
+// release; a slot that is not wanted is bound for its next start and left stopped.
+func TestBindMatchesTheRunningRelease(t *testing.T) {
+	blue, _ := fakeProc(t, RoleTVSlot, "serve")
+	blue.Instance = "blue"
+	amber, _ := fakeProc(t, RoleTVSlot, "serve")
+	amber.Instance, amber.OnDemand = "amber", true
+	s := New([]Process{blue, amber}, testPolicy(), WithLog(&syncBuffer{}))
+	running(t, s)
+	pid := func(sn Snapshot, name string) int {
+		for _, p := range sn.Processes {
+			if p.Instance == name && p.State == StateRunning {
+				return p.PID
+			}
+		}
+		return 0
+	}
+	first := pid(waitFor(t, s, "blue running", func(sn Snapshot) bool { return pid(sn, "blue") != 0 }), "blue")
+	if err := s.Bind("blue", &SlotBinding{ReleaseID: "r-new"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, s, "blue on r-new", func(sn Snapshot) bool { p := pid(sn, "blue"); return p != 0 && p != first })
+	if err := s.Bind("amber", &SlotBinding{ReleaseID: "r-new"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(200 * time.Millisecond)
+	if p := pid(s.Snapshot(), "amber"); p != 0 {
+		t.Fatalf("a bind started amber, which nobody wants: pid %d", p)
+	}
+}
