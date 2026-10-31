@@ -193,6 +193,8 @@ and `docs/`.
 - **Epic 45 duplicates:** three duplicate libraries await the owner's Merge in Manage libraries
   (as of 2026-10-27).
 - **Shelved:** Epic 45 stories 45.22 and 45.23 ([#399]).
+- **Epic 48 spec** ([#458], 2026-10-31): review it, and answer its five open questions
+  (downloads, hiding Live TV, Chromecast, the Windows/Linux player, keeping Light).
 
 ---
 
@@ -681,6 +683,21 @@ Append here: date, session, one to five lines on what changed. Newest last.
     `TEST_RUNNER_MAKTABA_SHOTS` to pass `MAKTABA_SHOTS` to UI tests. The Android Remote has
     flavors: run `:remote:testPhoneDebugUnitTest`, not `testDebugUnitTest`. The web uses pnpm
     (`pnpm install --frozen-lockfile`); `npm ci` fails, because there is no npm lockfile.
+- 2026-10-31 · Epic 48 spec agent of `b743b7d4`: [#458] writes `specs/epics/48-native-players/`
+  after the owner found the Players thin ("is that epic really DONE???"). Epic 42 asked only for
+  libraries and playback, so its checks passed with no Home, nav, Live TV or brand.
+  - Decided: Live TV for the TV apps is *in* 48 (own track, files disjoint); downloads, the
+    Remote's screens and the Windows/Linux player are follow-ups; one token source in
+    `web/design-system/tokens/` generating Swift and Kotlin (its dark set is stale grey today:
+    the shipped values are in `web/src/styles/tokens.css`).
+  - Found, a live security gap (G1): the web port's `/stream/channel/{id}` gate checks sign-in
+    only, not the channel's library (`cmd/maktaba-server/stream_gate.go`). Story 48.3 fixes it
+    first, with role tests.
+  - Also found: both apps default `ThemeMode` to System (so a light phone starts light); the
+    Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
+    runs no UI tests, and runs no Android Player tests.
+  - Waiting on the owner: review [#458] (not merged), and its five open questions.
+
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -830,3 +847,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#460]: https://github.com/Hamza-Labs-Core/Maktaba/pull/460
+[#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458

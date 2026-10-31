@@ -5,6 +5,11 @@
 > `web/` (the SPA every web-based app shows), `cloud/` (Epic 25: the hosted service and its relay),
 > [Epic 36 — Maktaba.app](../36-mac-app/README.md), [Epic 38 — Windows app](../38-windows-app/README.md),
 > [Epic 39 — Linux app](../39-linux-app/README.md).
+>
+> **Player scope continues in [Epic 48](../48-native-players/README.md)** (2026-10-31): stories
+> 42.1, 42.3 and 42.8 delivered connect, sign-in, libraries and playback, but not the screens a
+> player needs (Home, Series, Search, Live TV, Profile, the brand, a full player). Epic 48 lists
+> them with testable checks.
 
 ## Goal
 
