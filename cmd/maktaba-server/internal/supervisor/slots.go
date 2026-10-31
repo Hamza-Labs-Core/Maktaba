@@ -236,13 +236,33 @@ func WithKeptStreaming(kept func(version string) []string) Option {
 // Bind sets (nil: clears) the TV release a slot instance runs from its next
 // start on.
 func (s *Supervisor) Bind(instance string, b *SlotBinding) error {
+	_, err := s.bind(instance, b)
+	return err
+}
+
+// bind is Bind that also says whether the instance runs now on another binding:
+// its process keeps the old release until it starts again.
+func (s *Supervisor) bind(instance string, b *SlotBinding) (stale bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, c := range s.children {
 		if c.proc.Role == RoleTVSlot && c.proc.Instance == instance {
+			stale = c.cmd != nil && !sameBinding(c.binding, b)
 			c.binding = b
-			return nil
+			return stale, nil
 		}
 	}
-	return fmt.Errorf("no %s process %q", RoleTVSlot, instance)
+	return false, fmt.Errorf("no %s process %q", RoleTVSlot, instance)
+}
+
+// sameBinding: a and b run the same release (nil and an empty binding are both unbound).
+func sameBinding(a, b *SlotBinding) bool {
+	var x, y SlotBinding
+	if a != nil {
+		x = *a
+	}
+	if b != nil {
+		y = *b
+	}
+	return x == y
 }

@@ -254,6 +254,7 @@ func (s *Supervisor) Handler() http.Handler {
 			http.Error(w, "POST /slots/{instance}/start|stop", http.StatusBadRequest)
 			return
 		}
+		rebound := false
 		if parts[1] == "start" && r.ContentLength > 0 {
 			// {release_id, version, sha256}: the TV release the slot runs (story 33.2)
 			var b SlotBinding
@@ -265,14 +266,24 @@ func (s *Supervisor) Handler() http.Handler {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			if err := s.Bind(parts[0], &b); err != nil {
+			stale, err := s.bind(parts[0], &b)
+			if err != nil {
 				http.Error(w, err.Error(), http.StatusNotFound)
 				return
 			}
+			rebound = stale
 		}
 		if err := s.Want(RoleTVSlot, parts[0], parts[1] == "start"); err != nil {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
+		}
+		if rebound {
+			// running on another release: started again on the new one (else the slot
+			// answers for its old release and the change's checks fail release_mismatch)
+			if err := s.Restart(RoleTVSlot, parts[0]); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(s.Snapshot())
