@@ -381,6 +381,111 @@ func TestCopyRebuildsALostSlot(t *testing.T) {
 	}
 }
 
+// rows is q's rows, one line each (its columns text), for a failure's message.
+func rows(ctx context.Context, db *sql.DB, q string) string {
+	rs, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return err.Error()
+	}
+	defer rs.Close()
+	cols, _ := rs.Columns()
+	var b strings.Builder
+	for rs.Next() {
+		vals := make([]sql.NullString, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if err := rs.Scan(ptrs...); err != nil {
+			return err.Error()
+		}
+		for i, v := range vals {
+			if i > 0 {
+				b.WriteString(" | ")
+			}
+			b.WriteString(v.String)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// A table's first copy waits on a home that sends nothing (2026-10-28: the home's
+// server hung mid-copy while the connection lived on). Its worker never sees the
+// subscription off, so stopping the copy before a fresh one ends it rather than failing
+// every turn for as long as the home hangs.
+func TestCopyQuiesceEndsAWorkerStuckOnTheHome(t *testing.T) {
+	r := newRig(t)
+	r.following("the first copy")
+	r.follows("the first copy", "one")
+	r.stopManager()
+	db, err := r.c.super()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err := r.c.Pause(r.ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// the home's copy of app_settings waits on a lock held there: its worker here waits
+	// for rows that do not come
+	hold, err := r.super.BeginTx(r.ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback() }()
+	if _, err := hold.ExecContext(r.ctx, `LOCK TABLE public.app_settings IN ACCESS EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(r.ctx, `TRUNCATE public.app_settings`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(r.ctx, `UPDATE pg_subscription_rel SET srsubstate = 'i', srsublsn = NULL
+	    WHERE srrelid = 'public.app_settings'::regclass`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(r.ctx, `ALTER SUBSCRIPTION `+Subscription+` ENABLE`); err != nil {
+		t.Fatal(err)
+	}
+	end := time.Now().Add(2 * time.Minute)
+	for {
+		var n int
+		// (its sync slot waits for the transaction holding the lock, or its COPY for the lock)
+		_ = r.super.QueryRowContext(r.ctx, `SELECT count(*) FROM pg_stat_activity
+		    WHERE backend_type = 'walsender' AND wait_event_type = 'Lock'`).Scan(&n)
+		if n > 0 {
+			break
+		}
+		if time.Now().After(end) {
+			t.Fatalf("the table's copy never waited on the home\nhome:\n%s\ncopy:\n%s\n%s", rows(r.ctx, r.super,
+				`SELECT backend_type, coalesce(wait_event_type, ''), coalesce(wait_event, ''), left(query, 120)
+				 FROM pg_stat_activity WHERE pid <> pg_backend_pid()`),
+				rows(r.ctx, db, `SELECT coalesce(pid::text, '-'), coalesce(relid::regclass::text, 'apply'),
+				 (SELECT string_agg(srrelid::regclass::text || ':' || srsubstate::text, ' ') FROM pg_subscription_rel WHERE srsubstate <> 'r')
+				 FROM pg_stat_subscription`), r.dump())
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+	var worker int
+	if err := db.QueryRowContext(r.ctx, `SELECT count(*) FROM pg_stat_subscription
+	    WHERE subname = $1 AND relid = 'public.app_settings'::regclass AND pid IS NOT NULL`, Subscription).Scan(&worker); err != nil || worker != 1 {
+		t.Fatalf("the table's worker: %d %v", worker, err)
+	}
+
+	if err := r.c.Quiesce(r.ctx, 2*time.Second); err != nil {
+		t.Fatalf("Quiesce: %v\n%s", err, r.dump())
+	}
+	var live int
+	if err := db.QueryRowContext(r.ctx, `SELECT count(*) FROM pg_stat_subscription
+	    WHERE subname = $1 AND pid IS NOT NULL`, Subscription).Scan(&live); err != nil || live != 0 {
+		t.Fatalf("workers after Quiesce: %d %v", live, err)
+	}
+	if r.subEnabled() {
+		t.Fatal("the subscription is on after Quiesce")
+	}
+}
+
 // A table's first copy is stranded: copied, but the table-sync slot it resumes from is
 // gone from the home (Postgres's table-sync worker drops it on the home before it commits
 // the table done, and was stopped in between). Its worker would ask the home for that

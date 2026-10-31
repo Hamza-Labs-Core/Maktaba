@@ -972,7 +972,10 @@ func (c Copy) Pause(ctx context.Context) error {
 
 // Quiesce pauses the subscription and waits (up to wait) until its workers have
 // stopped: the home's slot is free then (a fresh copy drops it, which the home refuses
-// while a subscription streams from it).
+// while a subscription streams from it). A worker still there after wait is ended, and
+// has wait again to go: one waiting on a home that sends nothing (a table's first copy
+// whose server on the home hangs while its connection lives on) never sees the
+// subscription off, and nothing starts a worker of a subscription that is off.
 func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
 	if err := c.Pause(ctx); err != nil {
 		return err
@@ -982,7 +985,7 @@ func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
 		return err
 	}
 	defer db.Close()
-	end := time.Now().Add(wait)
+	end, ended := time.Now().Add(wait), false
 	for {
 		var live int
 		if err := db.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_subscription
@@ -993,7 +996,14 @@ func (c Copy) Quiesce(ctx context.Context, wait time.Duration) error {
 			return nil
 		}
 		if time.Now().After(end) {
-			return fmt.Errorf("nodecopy: the subscription's workers did not stop within %s", wait)
+			if ended {
+				return fmt.Errorf("nodecopy: the subscription's workers did not stop within %s, nor once ended", wait)
+			}
+			if _, err := db.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_subscription
+			    WHERE subname = $1 AND pid IS NOT NULL`, Subscription); err != nil {
+				return fmt.Errorf("nodecopy: ending the subscription's workers: %w", err)
+			}
+			end, ended = time.Now().Add(wait), true
 		}
 		select {
 		case <-ctx.Done():

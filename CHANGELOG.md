@@ -58,6 +58,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A full node's copy of the home's database starts afresh even when a worker hangs.** On
+  2026-10-28 a table's first copy was mid-way when the home's database restarted. Its
+  connection never dropped, so the worker waited 15 minutes for rows that never came, and
+  every fresh copy failed with "the subscription's workers did not stop within 30s". Now a
+  worker still there 30 seconds after the copy was switched off is ended. Nothing restarts a
+  worker of a copy that is off, so the fresh copy goes ahead.
 - **The api and streaming integration tests no longer collide on a port.** Both started their
   server on the fixed ports 18081/19101. When CI ran the two packages at once, the streaming
   test could reach the api's server: "admin /readyz service = api, want streaming", which
