@@ -12,6 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the owner's
+  standing rules, the decisions and why, failures and their fixes, the live state, the work in
+  flight, what waits on the owner and the release history. `CLAUDE.md` tells every session to
+  read it first and add to it before it ends.
 - **Maktaba Remote (iPhone, iPad) shows the home's running work.** *Home* links to two new
   read-only pages: *Updates* (the running release and what is next, in the web's words: what
   the planned release waits for, a stepping stone or a held release, a stale check; the
