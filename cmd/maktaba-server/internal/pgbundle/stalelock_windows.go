@@ -3,6 +3,9 @@
 package pgbundle
 
 import (
+	"errors"
+	"syscall"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -26,3 +29,9 @@ func processName(pid int) (name string, alive bool) {
 	}
 	return windows.UTF16ToString(buf[:n]), true
 }
+
+// parentPID: not looked at here (the launcher's job object ends what the server
+// started with it).
+func parentPID(int) (int, bool) { return 0, false }
+
+func signalProcess(int, syscall.Signal) error { return errors.New("no signals on Windows") }
