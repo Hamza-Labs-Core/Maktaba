@@ -2,7 +2,9 @@
 # The update rehearsal's kit (docs/update-rehearsal.md): the real binaries of two
 # releases, built the way the end-to-end update test builds them (-tags e2etrust: the
 # trust root and the GitHub API come from the test's fake Sigstore and fake GitHub; every
-# other line of code is the release's own), plus each tree's migrations.
+# other line of code is the release's own), plus each tree's migrations. The streaming
+# binary also takes the release's -tags tvstaging (release.yml's STREAMING_TAGS): TV
+# staging compiled in, as on every release (scenario 11 stages a TV change on it).
 #
 #   prev/   the previous release, built from its tag (version PREV, the tag's own schema)
 #   cur/    this commit as the next release (version PREV+2; its API takes the rehearsal's
@@ -58,7 +60,7 @@ out="$(cd "$out" && pwd)"
 
 # build SRC DST VERSION SCHEMA_REV(0: the tree's own)
 build() {
-    local src="$1" dst="$2" version="$3" schema="$4" name dir ldflag ld
+    local src="$1" dst="$2" version="$3" schema="$4" name dir ldflag ld tags
     rm -rf "$dst"
     mkdir -p "$dst"
     for spec in \
@@ -68,11 +70,15 @@ build() {
         "maktaba-launcher:cmd/maktaba-launcher:main.Version"; do
         IFS=: read -r name dir ldflag <<<"$spec"
         ld="-X $ldflag=$version"
+        tags=e2etrust
+        if [ "$name" = maktaba-streaming ]; then
+            tags="e2etrust tvstaging" # as the release builds it (Makefile STREAMING_TAGS)
+        fi
         if [ "$name" = maktaba-api ] && [ "$schema" -gt 0 ]; then
             ld="$ld -X main.e2eSchemaRev=$schema"
         fi
         echo "build.sh: $name $version (from $src)"
-        (cd "$src/$dir" && CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -tags e2etrust -ldflags "$ld" \
+        (cd "$src/$dir" && CGO_ENABLED=0 GOTOOLCHAIN=local go build -trimpath -tags "$tags" -ldflags "$ld" \
             -o "$dst/$name" .)
     done
     cp -R "$src/shared/db/migrations" "$dst/migrations"

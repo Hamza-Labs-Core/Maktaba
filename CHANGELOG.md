@@ -22,6 +22,13 @@ don't append a line here; docs-only PRs are exempt.
   budget. It runs on pull requests that touch updates, on every push to main, nightly, and the
   release's tag guard refuses a commit it did not pass on (`docs/update-rehearsal.md`).
 
+- **The update rehearsal covers a TV change staged on a slot that runs the old release.**
+  Scenario 11 updates a home while its TV slots run, with a non-live slot (green) running the
+  old streaming software across the restart. The update's TV change is then staged on it: the
+  slot must start again on the new release and the change must reach verifying, never be held
+  with `slot.health` / `release_mismatch` as change #58 was on 2026-10-31. The rehearsal now
+  builds its streaming binary with TV staging, as the release does.
+
 ### Fixed
 
 - **The supervisor keeps every TV slot on the release it is bound to.** It now records the
