@@ -12,6 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The iPhone apps on TestFlight.** Every release tag builds Maktaba Player and Maktaba Remote
+  for iPhone, signs them with Xcode's cloud signing (the App Store Connect API key) and uploads
+  them to TestFlight (`testflight.yml`, `docs/testflight.md`). The apps' version is the tag's,
+  and every upload gets a new build number.
 - **The update rehearsal: every update path of the Mac app is proven in CI before a release.**
   A new workflow (`update-rehearsal`) updates a seeded home from the latest published release
   to the commit, the way Maktaba.app does (its bundle, launcher, state folder, bundled Postgres,

@@ -1,0 +1,160 @@
+# The native iPhone apps to TestFlight (docs/testflight.md).
+#
+# On every `v*` tag (and by hand, workflow_dispatch) the iPhone schemes of
+# apps/apple/Maktaba.xcodeproj are archived, signed and uploaded to App Store Connect, where
+# they show up in TestFlight for the team's internal testers:
+#
+#   Maktaba Player   com.hamzalabs.maktaba.player
+#   Maktaba Remote   com.hamzalabs.maktaba.remote
+#
+# SIGNING: Xcode's automatic, cloud-managed signing with the App Store Connect API key
+# (APPLE_API_KEY_P8 / APPLE_API_KEY_ID / APPLE_API_ISSUER, the key desktop-release.yml
+# notarizes with) and the team APPLE_TEAM_ID. No certificate or profile is kept in the
+# repository's secrets: the archive is built unsigned, and the export signs it with Apple's
+# cloud-managed distribution certificate and an App Store profile that Xcode makes or fetches
+# (-allowProvisioningUpdates), then uploads it (ExportOptions destination: upload). The key
+# needs the Admin role (or App Manager with access to certificates) for that.
+#
+# VERSIONS: the tag's version is the app's version (v0.3.45 -> 0.3.45; a pre-release suffix
+# is dropped, App Store versions are numbers only), by hand the latest tag's. Every upload
+# gets a new, higher build number: the UTC date and time (YYYYMMDD.HHMMSS).
+#
+# One-time, by the owner: the two apps' records in App Store Connect (an app record cannot be
+# made through the API), and the owner as an internal tester. See docs/testflight.md.
+name: TestFlight
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One run per ref at a time, never cancelled (an upload half done is left to finish).
+concurrency:
+  group: testflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # the tag-order guard, as every tag workflow (a hand run skips it)
+  guard:
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: ./.github/workflows/_tag-guard.yml
+    permissions:
+      contents: write
+      actions: read
+
+  upload:
+    name: testflight (${{ matrix.scheme }})
+    needs: [guard]
+    # a hand run has no guard; a re-run of a published tag uploads nothing again
+    if: always() && (needs.guard.result == 'skipped' || (needs.guard.result == 'success' && needs.guard.outputs.published != 'true'))
+    # the newest Xcode is on macos-26 (macos-15 stops at Xcode 26.3)
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        scheme: [Maktaba Player, Maktaba Remote]
+    env:
+      SCHEME: ${{ matrix.scheme }}
+      PROJECT: apps/apple/Maktaba.xcodeproj
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0 # the tags, for a hand run's version
+
+      # The newest Xcode on the runner: 27.x once the image has it (the iPhone Duo's
+      # arrangement needs its iOS 27.1 SDK; with Xcode 26 the Player builds without it).
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Versions
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tag="${GITHUB_REF#refs/tags/}"
+          else
+            tag=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
+          fi
+          marketing="${tag#v}"
+          marketing="${marketing%%-*}"
+          [[ "$marketing" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "::error::no app version in tag $tag"; exit 1; }
+          build="$(date -u +%Y%m%d.%H%M%S)"
+          echo "marketing=$marketing" >>"$GITHUB_OUTPUT"
+          echo "build=$build" >>"$GITHUB_OUTPUT"
+          echo "::notice::$SCHEME $marketing ($build)"
+
+      - name: App Store Connect API key
+        env:
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+        run: |
+          set -euo pipefail
+          [ -n "$APPLE_API_KEY_P8" ] || { echo "::error::APPLE_API_KEY_P8 is not set"; exit 1; }
+          key="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" >"$key"
+          chmod 600 "$key"
+          echo "API_KEY_PATH=$key" >>"$GITHUB_ENV"
+
+      # Unsigned: the export below signs it for distribution (no development certificate
+      # is made on every run).
+      - name: Archive
+        env:
+          MARKETING: ${{ steps.version.outputs.marketing }}
+          BUILD: ${{ steps.version.outputs.build }}
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcodebuild archive \
+            -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
+            -destination generic/platform=iOS \
+            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            MARKETING_VERSION="$MARKETING" CURRENT_PROJECT_VERSION="$BUILD" \
+            | tee "$RUNNER_TEMP/archive.log" | grep -E '(error|warning: .*sign|\*\* ARCHIVE)' || true
+          test -d "$RUNNER_TEMP/app.xcarchive/Products/Applications" || { tail -n 80 "$RUNNER_TEMP/archive.log"; exit 1; }
+
+      - name: Sign and upload to TestFlight
+        env:
+          TEAM: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+          cat >"$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+            <key>testFlightInternalTestingOnly</key><false/>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$API_KEY_PATH" \
+            -authenticationKeyID "$APPLE_API_KEY_ID" \
+            -authenticationKeyIssuerID "$APPLE_API_ISSUER"
+          echo "::notice::$SCHEME ${{ steps.version.outputs.marketing }} (${{ steps.version.outputs.build }}) uploaded: it shows in TestFlight once App Store Connect has processed it"
+
+      - name: Remove the API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8

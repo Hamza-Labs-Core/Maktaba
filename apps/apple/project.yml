@@ -46,6 +46,10 @@ targetTemplates:
           NSAllowsLocalNetworking: true
         # browsed by HomeBrowser and by the permissions walkthrough's Local Network check
         NSBonjourServices: ["_maktaba._tcp"]
+        # the build settings' versions (CI sets them per upload: the tag's version and a new
+        # build number every time, which TestFlight requires)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
   # a home's connect link and QR code (Epic 42 story 42.2): maktaba://connect?id=&n=&u=
   # (the Player and the Remote; not the TV app, whose Info.plist lives in apps/tv)
   OpensConnectLinks:
@@ -63,6 +67,8 @@ targetTemplates:
         # scanning a home's QR code, or a device's sign-in QR code to approve it
         INFOPLIST_KEY_NSCameraUsageDescription: "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it."
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # only the system's HTTPS: no export-compliance question on every TestFlight build
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown"
