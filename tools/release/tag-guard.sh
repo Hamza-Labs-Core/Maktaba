@@ -8,14 +8,18 @@
 #     and release.yml then builds and signs nothing again: only a draft is rebuilt);
 #   - its commit is on main, and the newest published release's commit is in its history
 #     (a tag cut from a branch that missed what the newest release carried would undo it);
-#   - CI passed on that commit (the CI workflow's run for it; a run still going is waited for).
+#   - CI passed on that commit (the CI workflow's run for it; a run still going is waited for);
+#   - the update rehearsal passed on that exact commit (update-rehearsal.yml: every update
+#     path of the Mac app, from the latest published release to this commit; waited for
+#     likewise). The owner, 2026-10-28: no release before its updates are proven in CI.
 # A deliberate maintenance release of an older line (story 22.5 EC1) is named in the
 # repository variable MAKTABA_RELEASE_ALLOW_TAG: its commit is on main or a release/*
 # branch (ci.yml runs on those), it skips the history check, and it never becomes the
 # latest (publish: releaseorder.Latest; its images' :latest and the relay stay as they are).
 #
 # Env: TAG, SHA, GH_TOKEN, GITHUB_REPOSITORY; ALLOW_TAG (the variable); CI_WORKFLOW
-# (default ci.yml); CI_WAIT_SECONDS (default 3600). Writes maintenance=, published=,
+# (default ci.yml); REHEARSAL_WORKFLOW (default update-rehearsal.yml); CI_WAIT_SECONDS
+# (default 3600, for each). Writes maintenance=, published=,
 # latest= (true|false) and newest= to $GITHUB_OUTPUT when set.
 set -euo pipefail
 
@@ -63,23 +67,30 @@ if [ "${maintenance}" != true ] && [ "${is_published}" != true ] && [ -n "${newe
 fi
 
 # 3. CI passed on the commit: its run for it (a push to main, or the pull request's head),
-# waited for while it runs
-deadline=$(( $(date +%s) + wait_s ))
-while :; do
-    runs="$(gh run list --workflow "${ci}" --commit "${SHA}" --limit 50 --json status,conclusion \
-        --jq '[.[] | "\(.status) \(.conclusion)"] | .[]' 2>/dev/null || true)"
-    if grep -q '^completed success$' <<<"${runs}"; then
-        echo "tag guard: CI passed on ${SHA}"
-        break
-    fi
-    if [ -n "${runs}" ] && ! grep -qv '^completed ' <<<"${runs}"; then
-        err "CI did not pass on ${SHA} ($(tr '\n' ',' <<<"${runs}" | sed 's/,$//')): fix main, then tag the commit CI passed on"
-    fi
-    [ "$(date +%s)" -lt "${deadline}" ] \
-        || err "no finished CI run on ${SHA} after ${wait_s}s (${runs:-none started}): tag a commit CI passed on"
-    echo "tag guard: waiting for CI on ${SHA} (${runs:-not started yet})"
-    sleep 30
-done
+# waited for while it runs; and 4. the update rehearsal passed on that exact commit
+# (update-rehearsal.yml, docs/update-rehearsal.md: every update path of the owner's Mac
+# app, rehearsed; it runs on every push to main and release/*)
+passed_on() { # passed_on WORKFLOW WHAT
+    local workflow="$1" what="$2" runs
+    local deadline=$(( $(date +%s) + wait_s ))
+    while :; do
+        runs="$(gh run list --workflow "${workflow}" --commit "${SHA}" --limit 50 --json status,conclusion \
+            --jq '[.[] | "\(.status) \(.conclusion)"] | .[]' 2>/dev/null || true)"
+        if grep -q '^completed success$' <<<"${runs}"; then
+            echo "tag guard: ${what} passed on ${SHA}"
+            return 0
+        fi
+        if [ -n "${runs}" ] && ! grep -qv '^completed ' <<<"${runs}"; then
+            err "${what} did not pass on ${SHA} ($(tr '\n' ',' <<<"${runs}" | sed 's/,$//')): fix main, then tag the commit ${what} passed on"
+        fi
+        [ "$(date +%s)" -lt "${deadline}" ] \
+            || err "no finished run of ${what} on ${SHA} after ${wait_s}s (${runs:-none started}): tag a commit ${what} passed on"
+        echo "tag guard: waiting for ${what} on ${SHA} (${runs:-not started yet})"
+        sleep 30
+    done
+}
+passed_on "${ci}" "CI"
+passed_on "${REHEARSAL_WORKFLOW:-update-rehearsal.yml}" "the update rehearsal"
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {

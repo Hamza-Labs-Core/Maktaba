@@ -484,3 +484,11 @@ TV during updates also reads `tv_staging.quiet_max_viewers` (0) and
 | `MAKTABA_DATA_DIR` | `maktaba-server`'s `data_dir` | The Sigstore trusted root (`sigstore/`), the mirror (`updates/mirror/`), the backups (`backups/`). |
 | `MAKTABA_GITHUB_TOKEN` | unset | Optional; raises the GitHub API rate limit. |
 | `MAKTABA_PIPELINE_PYTHON` | the machine's Python 3.12 | The Python a layout install builds the pipeline's environment with. |
+
+## Proven before every release
+
+Every release's update paths are rehearsed in CI first: [update-rehearsal.md](update-rehearsal.md)
+(the latest published release updated to the commit being released, the way the Mac app
+does it: migrations, a TV change that waits, rollbacks with and without a restore, a
+restore under logins and killed part way, halted roles, no room, a joined machine). The
+release's tag guard refuses a commit the rehearsal did not pass on.

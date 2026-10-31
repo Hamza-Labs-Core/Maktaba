@@ -15,13 +15,14 @@ fails=0
 ok()   { printf '  ok    %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 
-# the stubbed gh: the published releases (PUBLISHED, one tag per line) and a passed CI run
+# the stubbed gh: the published releases (PUBLISHED, one tag per line), a passed CI run and
+# an update rehearsal run (REHEARSAL: its status and conclusion, default passed)
 mkdir -p "${work}/stubs"
 cat >"${work}/stubs/gh" <<'EOF'
 #!/usr/bin/env bash
 case "$1 $2" in
     "release list") printf '%s\n' "${PUBLISHED}" ;;
-    "run list") echo "completed success" ;;
+    "run list") if [[ "$*" == *update-rehearsal* ]]; then echo "${REHEARSAL-completed success}"; else echo "completed success"; fi ;;
     *) echo "gh stub: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -87,6 +88,13 @@ expect_pass "a maintenance release from release/0.2: never the latest" v0.2.5 "$
 expect_refused "a maintenance release on no branch" v0.2.6 "${o1}" v0.2.6 "on neither main nor a release/"
 expect_refused "a pre-release of a version already out" v0.3.0-rc.7 "${c3}" "" "pre-release below"
 expect_refused "a tag that is not on main" v0.3.2 "${m1}" "" "not on main"
+# the update rehearsal (update-rehearsal.yml) must have passed on the very commit
+REHEARSAL="completed failure" expect_refused "a commit the update rehearsal failed on" v0.3.2 "${c3}" "" \
+    "the update rehearsal did not pass"
+REHEARSAL="" expect_refused "a commit the update rehearsal never ran on" v0.3.2 "${c3}" "" \
+    "no finished run of the update rehearsal"
+REHEARSAL=$'completed failure\ncompleted success' expect_pass "a commit the update rehearsal passed on at its re-run" \
+    v0.3.2 "${c3}" "" false true false
 
 if [ "${fails}" -gt 0 ]; then
     echo "tag-guard-test: ${fails} failed"

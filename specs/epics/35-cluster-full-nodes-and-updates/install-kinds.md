@@ -480,6 +480,24 @@ new release; "The database" step 4). Apply = switch, restart, watch (schema guar
 switches back (binaries only). A node is never ordered to a version the home has not committed, and a node
 that comes back behind the watermark gets a `catch_up` run of its own.
 
+## Proven in CI: the update rehearsal (2026-10-28)
+
+The owner, after the two outages of 2026-10-28: "THIS NEED TO BE ON CI". Every path of
+this page that ran only on the owner's Mac runs in CI before any release:
+`.github/workflows/update-rehearsal.yml` (verdict job `update-rehearsal`;
+[docs/update-rehearsal.md](../../../docs/update-rehearsal.md)). The Mac app's install kind is
+driven on Linux through the same code (the bundle's layout under a `Maktaba.app` path, the
+launcher run from it, its state root, `payload-override`, `state/database.json`, the app's
+order played by the test, the bundled Postgres of a published Linux payload), from the latest
+published release, built from its tag, to the commit. Its scenarios: a normal update with
+migrations on a seeded home (150,000 videos, 2 million vectors); a TV change that waits
+through the watch; rollbacks after additive (schema kept) and destructive migrations (the
+restore's safe path, checked whole against the database before); that restore while machines
+log in and ask for their copy, and killed (`kill -9`) part way; halted roles starting by
+themselves once the record is right; no room for two copies; the owner's Mac's state of that
+evening; a joined machine never updating before its home commits. Each reports its downtime
+against a budget. The tag guard refuses a tag on a commit the rehearsal did not pass on.
+
 ## What still needs a person
 
 - Nothing on a desktop app that runs the server (owner decision D1, 2026-10-27): it installs
