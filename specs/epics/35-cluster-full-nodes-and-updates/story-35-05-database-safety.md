@@ -3,7 +3,10 @@
 > **Status:** built. AC5 is migration-lint's rules 5 and 6 (`tools/migration-lint/rules35.go`);
 > AC6 is `make compat-prev` (`tools/compat-prev/run.sh`, CI job `integration / compat-prev`),
 > which also checks the nodes' schema guard both ways (an old node against a new home at the
-> schema level: the old release's code and guard on the new database, not an old node process); AC8 is `maktaba-server restore` and the
+> schema level: the old release's code and guard on the new database, not an old node process). Its
+> tests are the release's own, with the race fixes made to them since (`tools/compat-prev/testfixes/<tag>/`:
+> test files only, refused otherwise, so the release's code runs as it shipped; 2026-10-29: v0.3.42's
+> row-cache test); AC8 is `maktaba-server restore` and the
 > Updates page's *Backups* (`serve_restore.go`, `api/internal/updates/backups.go`). One change
 > to AC8: the page restores itself, behind a dialog where the backup's name is typed, instead of
 > showing the command (the owner's rule: a behaviour is a feature, never a manual step); the
