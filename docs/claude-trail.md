@@ -678,6 +678,21 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Story 48.9 agent of `b743b7d4`: Android client Live (`apps/android/client/…/api/Live.kt`):
+  now, guide, one channel's guide, logo / poster / stream URLs, `tv/info`, tune, heartbeat, end,
+  and `LiveSource` (LAN or relay from `tv/info.remote.via_relay`).
+  - Decided: a `LiveApi(client)` wrapper, as Android TV's `TvApi` does, not new methods in
+    `ApiClient.kt` (its `send` is private and the file is no story's). It reuses
+    `ApiClient.request` (internal: base path and headers), `playbackToken` and `refreshAfter`.
+  - Decided: a heartbeat's new token does not change `LiveSource.stream`, so the player is not
+    reopened. Only `token` changes, and `LiveSource.interceptor` writes it into each Cloudflare
+    request, as hls.js does on the web. Opening a new channel ends the old session first, so
+    the per-user stream limit never trips.
+  - Tested: JVM tests (`LiveApiTest` on MockWebServer, `LiveSourceTest` on virtual time with a
+    fake home). Ran once against a branch stack (scratch Postgres, branch API): every route
+    decoded. The stack has no Cloudflare, so tune answered 503 `remote_unavailable` as expected.
+  - Surprise: on a fresh DB, `POST /api/channels` answered 201 but wrote no `channels` row (TV
+    staging, it seems). The stack check seeded a channel by SQL.
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1

@@ -12,6 +12,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Android client: Live TV.** `apps/android/client` gains `Live.kt`: what is on now, the guide
+  and one channel's guide, channel logos, a channel's stream URL, `GET /api/tv/info`, and away
+  from home the remote session (tune, heartbeat every 60 s, end). `LiveSource` picks between
+  the home's stream and the relay, and swaps a heartbeat's new token without reopening the
+  player. The Android Player and Android TV both build on it (story 48.9).
 - **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
   lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
   and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next
