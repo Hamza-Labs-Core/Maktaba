@@ -7,7 +7,7 @@ SwiftUI apps that talk to a home's REST API, like the TV apps.
 | Maktaba Player | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.player` | browse and watch |
 | Maktaba Player iPad | iPad | `com.hamzalabs.maktaba.player.tablet` | browse and watch |
 | Maktaba Player Mac | macOS 15+, Apple silicon | `com.hamzalabs.maktaba.player.mac` | browse and watch |
-| Maktaba Remote | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.remote` | run a home (its admins only): needs attention, the queue, libraries, machines, the home's state |
+| Maktaba Remote | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.remote` | run a home (its admins only): needs attention, the queue and its running jobs, libraries, machines, the home's state, its updates and processes |
 | Maktaba Remote iPad | iPad | `com.hamzalabs.maktaba.remote.tablet` | the same, on iPad |
 | Maktaba TV | Apple TV (tvOS 26) | `com.hamzalabs.maktaba.tv` | browse and watch on the television; sources in [`apps/tv/tvos`](../tv/tvos/) |
 
@@ -55,7 +55,11 @@ calls the Remote makes (`Admin.swift`).
   swipe or its page, pause/resume all; a stage's failures; on a wide window, an iPad full
   screen or in a wide Split View, the stages beside the chosen stage's page, story 42.8), *Libraries* (scan), *Machines*
   (let machines ask to join, approve one with the six-digit code it shows, turn one down,
-  revoke an approved one), *Home* (name, release, queue state, machines online). The home
+  revoke an approved one), *Home* (name, release, queue state, machines online, and two
+  read-only pages: *Updates*, the plan and what holds it, blocked releases, a TV held, the run
+  under way or the last with its steps and machines, every machine's release; *Processes*,
+  the supervised processes and their recent events). The queue also lists the jobs running
+  now and how long each has run. The home
   enforces every one of these for its admins (403 to anyone else); a non-admin who signs in
   sees "For the home's admins".
 

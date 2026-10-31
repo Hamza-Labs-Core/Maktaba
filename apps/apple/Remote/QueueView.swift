@@ -53,6 +53,19 @@ struct QueueView: View {
                     .foregroundStyle(Color.brass)
             }
         }
+        if !model.running.isEmpty {
+            Section {
+                ForEach(model.running.prefix(Self.runningShown)) { job in
+                    RunningJobRow(job: job, stageLabel: label(job.stage))
+                }
+            } header: {
+                Text("Running now (\(model.running.count))")
+            } footer: {
+                if model.running.count > Self.runningShown {
+                    Text("And \(model.running.count - Self.runningShown) more; the oldest are shown first.")
+                }
+            }
+        }
         Section {
             ForEach(model.queue?.rows ?? []) { row in
                 NavigationLink(value: row.id) {
@@ -69,6 +82,12 @@ struct QueueView: View {
                 }
             }
         }
+    }
+
+    static let runningShown = 20
+
+    private func label(_ stage: String) -> String {
+        model.queue?.stages.first { $0.stage == stage }?.label ?? stage
     }
 
     private func decorated(_ list: some View) -> some View {
@@ -94,6 +113,44 @@ struct QueueView: View {
                 }
                 AccountMenu()
             }
+    }
+}
+
+/// A job running now: its stage, its subject, how long it has run, its progress.
+struct RunningJobRow: View {
+    let job: RunningJob
+    let stageLabel: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(job.subjectLabel).font(.subheadline.bold()).lineLimit(1)
+                Spacer()
+                Text(stageLabel).font(.caption.bold()).foregroundStyle(Color.brass)
+            }
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(details(now: context.date))
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            if let f = job.fraction {
+                ProgressView(value: f).tint(Color.brass)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func details(now: Date) -> String {
+        var parts: [String] = []
+        if let secs = job.runningFor(now: now) {
+            parts.append(runningText(secs))
+        } else {
+            parts.append(job.state == "claimed" ? "starting" : job.state.replacingOccurrences(of: "_", with: " "))
+        }
+        if let step = job.progressStep, !step.isEmpty { parts.append(step.replacingOccurrences(of: "_", with: " ")) }
+        if job.attempts > 1, job.maxAttempts > 0 { parts.append("attempt \(job.attempts) of \(job.maxAttempts)") }
+        return parts.joined(separator: " · ")
     }
 }
 
