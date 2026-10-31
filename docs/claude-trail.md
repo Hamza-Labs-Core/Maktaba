@@ -662,6 +662,25 @@ Append here: date, session, one to five lines on what changed. Newest last.
     and deleted it afterwards.
   - Known, unrelated failures: run on iOS, MaktabaKit's `thisPlatformAsksForLocalNetwork`
     expects the Mac's list; an unsigned run fails the Mac Player keychain test.
+- 2026-10-31 · server-words-as-codes agent of `b743b7d4`: [#460] (not merged; the owner's
+  session merges it). Server texts the admin screens show now go out as **code + params beside
+  the English**: every TV check (`Check.Code`/`Params`, 48 codes, web key
+  `tvchanges.value.<code>`), the failing move (`report_code`), the home's `roles_reason_code`.
+  Web, Android and Apple render the code and fall back to the English. Triggers and check names
+  got words on Android and iPhone; the iPhone now uses the supervisor's `detail_code`.
+  - Decided: params are strings (`map[string]string`), already formatted by Go, so no client
+    has to format numbers. The English `value` stays for older apps. A settling position check
+    becomes `<code>_settling`; a budget with channels waiting becomes `<code>_rolling`.
+  - Rule for new codes: `TestEveryCheckCodeHasItsWords` fails when a code in
+    `verify.go`/`streamverify.go` has no en/ar words in `web/src/i18n`.
+  - Left alone, see the PR: the streaming binary's own check values, update `error.detail` / step
+    details (machine-written), `copy.detail`, `last_check_error`, events' `message`.
+  - TV-staging code, additive only: `update-rehearsal` must pass on the exact commit before a
+    release carries it.
+  - Tooling: throwaway sim `maktaba-codes-throwaway` (iOS 27.0), deleted. `xcodebuild` needs
+    `TEST_RUNNER_MAKTABA_SHOTS` to pass `MAKTABA_SHOTS` to UI tests. The Android Remote has
+    flavors: run `:remote:testPhoneDebugUnitTest`, not `testDebugUnitTest`. The web uses pnpm
+    (`pnpm install --frozen-lockfile`); `npm ci` fails, because there is no npm lockfile.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -810,3 +829,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#452]: https://github.com/Hamza-Labs-Core/Maktaba/pull/452
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
+[#460]: https://github.com/Hamza-Labs-Core/Maktaba/pull/460
