@@ -28,6 +28,14 @@ export interface ProcessExit {
 
 export interface ProcessStatus {
   role: string;
+  /** One of several of a role (the TV slots blue/green/amber, pipeline workers). */
+  instance?: string;
+  /** false: on demand and not asked for now (a TV slot standing by). */
+  wanted?: boolean;
+  /** Why it is not started (setup.starting.detail.<detail_code>, else detail). */
+  detail?: string;
+  detail_code?: string;
+  detail_params?: Record<string, unknown>;
   state: string;
   pid?: number;
   restarts: number;
@@ -43,6 +51,7 @@ export interface ProcessEvent {
   seq: number;
   at: string;
   role: string;
+  instance?: string;
   kind: string;
   reason?: string;
   code?: number;
@@ -133,7 +142,7 @@ export function ProcessesCard() {
         <>
           <div className="mkt-stage-cards">
             {(doc.processes ?? []).map((p) => (
-              <ProcessRow key={p.role} p={p} />
+              <ProcessRow key={processKey(p)} p={p} />
             ))}
             {doc.ffmpeg && <FFmpegRow r={doc.ffmpeg} />}
           </div>
@@ -153,22 +162,47 @@ export function ProcessesCard() {
   );
 }
 
-function roleName(t: (k: string) => string, role: string): string {
+function roleName(t: (k: string) => string, role: string, instance?: string): string {
   const key = `health.processes.role.${role}`;
   const v = t(key);
-  return v === key ? role : v;
+  const name = v === key ? role : v;
+  return instance ? `${name} · ${instance}` : name;
+}
+
+/** A process's identity: its role, and its instance when the role has several. */
+export function processKey(p: { role: string; instance?: string }): string {
+  return p.instance ? `${p.role}-${p.instance}` : p.role;
+}
+
+/** Why a process is not started, in the app's words (setup.starting.detail.<code>). */
+function detailText(
+  t: (k: string, v?: Record<string, string | number>) => string,
+  p: ProcessStatus
+): string | null {
+  if (p.detail_code) {
+    const key = `setup.starting.detail.${p.detail_code}`;
+    const vars: Record<string, string | number> = {};
+    for (const [k, v] of Object.entries(p.detail_params ?? {})) {
+      if (v !== null && v !== undefined) vars[k] = typeof v === "number" ? v : String(v);
+    }
+    const text = t(key, vars);
+    if (text !== key) return text;
+  }
+  return p.detail || null;
 }
 
 function ProcessRow({ p }: { p: ProcessStatus }) {
   const { t, n, formatDate } = useI18n();
-  const stateKey = `health.processes.state.${p.state}`;
+  const standby = p.wanted === false && p.state === "stopped";
+  const stateKey = standby ? "health.processes.state.standby" : `health.processes.state.${p.state}`;
   const stateLabel = t(stateKey) === stateKey ? p.state : t(stateKey);
+  const detail = detailText(t, p);
   const failed = p.last_exit && FAILURE_REASONS.has(p.last_exit.reason) ? p.last_exit : null;
   return (
-    <Card className="mkt-service-card" data-testid={`process-${p.role}`}>
+    <Card className="mkt-service-card" data-testid={`process-${processKey(p)}`}>
       <div className="mkt-service-card__head">
-        <strong>{roleName(t, p.role)}</strong>
-        <Badge tone={STATE_TONE[p.state] ?? "neutral"}>{stateLabel}</Badge>
+        <strong>{roleName(t, p.role, p.instance)}</strong>
+        <Badge tone={standby ? "neutral" : (STATE_TONE[p.state] ?? "neutral")}>{stateLabel}</Badge>
       </div>
       <ul className="mkt-kv">
         <li>
@@ -202,6 +236,7 @@ function ProcessRow({ p }: { p: ProcessStatus }) {
           </li>
         )}
       </ul>
+      {detail && <p>{detail}</p>}
       {p.crash_loop && <p className="mkt-muted">{t("health.processes.crashLoop")}</p>}
     </Card>
   );
@@ -262,7 +297,7 @@ function CrashLine({ e }: { e: ProcessEvent }) {
     <li>
       <span className="mkt-muted">{formatDate(e.at)}</span>
       <span>
-        {roleName(t, e.role)} —{" "}
+        {roleName(t, e.role, e.instance)} —{" "}
         {exitReason(t, { reason: e.reason ?? "crash", code: e.code ?? -1, signal: e.signal })}
       </span>
     </li>

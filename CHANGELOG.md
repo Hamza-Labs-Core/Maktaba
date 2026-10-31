@@ -36,6 +36,11 @@ don't append a line here; docs-only PRs are exempt.
   front door's start) or adopted after a restart, a wanted slot that runs another release is
   started again on its own. This extends the fix for change #58, which the TV held on 2026-10-31
   with `release_mismatch`.
+- **The Processes card names each TV slot and says why one is not running.** The three TV slots
+  (and several pipeline workers) were keyed and labelled by role alone, so they rendered as
+  identical "tv-slot" cards. Each one is now named by its instance ("TV slot · blue"). A slot
+  that isn't needed now says *Standing by*, not *Stopped*. A process held back by something
+  (e.g. its port in use by another program) says what, in the app's words.
 
 - **A Windows node mid-write of its node config is no longer read as never joined.** The
   streaming server's reader saw `node.json` missing during a write's swap, then looked for the
