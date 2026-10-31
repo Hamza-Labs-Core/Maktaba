@@ -52,7 +52,9 @@ struct LibraryBrowser: View {
     }
 
     @ViewBuilder private var layout: some View {
-        #if os(iOS)
+        // the iPhone Duo's arrangement needs the iOS 27.1 SDK (Xcode 27, Swift 6.4); an older
+        // Xcode (CI's runners until they carry Xcode 27) builds the three columns alone
+        #if os(iOS) && compiler(>=6.4)
         if #available(iOS 27.1, *) {
             Group {
                 if halfFolded { split } else { columns }
@@ -114,7 +116,7 @@ struct LibraryBrowser: View {
         #endif
     }
 
-    #if os(iOS)
+    #if os(iOS) && compiler(>=6.4)
     /// Half folded: every half used. The first half (the upright one when the Duo stands
     /// like a laptop) holds what is looked at, the second what is touched:
     /// - nothing chosen: the libraries | their videos;
