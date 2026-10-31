@@ -24,6 +24,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node mid-write of its node config is no longer read as never joined.** The
+  streaming server's reader saw `node.json` missing during a write's swap, then looked for the
+  write's lock after the write had ended, and took the two together for "not joined". It now
+  looks at `node.json` once more before it decides, and reads it again if it is back. This was
+  `TestNodeConfigPathWaitsOutAWrite` failing about once in 744 reads in CI.
+
 - **CI builds on macOS 15.** GitHub retires its macOS 14 runners on 2026-11-02 and has started
   switching them off for hours at a time, which failed every darwin build and macOS installer job
   in about a second. The build, node packaging and release workflows now run on `macos-15`, as the
