@@ -47,6 +47,22 @@ type SelfInfo struct {
 	// newer payload to the home's run when it does. Said to a program on this machine (the
 	// app asks over loopback) or its supervisor only, never to the LAN.
 	UpdatesAuto *bool `json:"updates_auto,omitempty"`
+	// Update is an update in flight here: on the home, the cluster's update run; on a node,
+	// this machine's own part (its supervisor's journal). Absent when none is. The paused
+	// page says what is happening with it.
+	Update *SelfUpdate `json:"update,omitempty"`
+	// Committed is the release the home committed last (the update watermark; on the home
+	// only): a joined machine never installs a newer one (the owner's rule, 2026-10-28).
+	Committed string `json:"committed,omitempty"`
+}
+
+// SelfUpdate is an update in flight: its release, where it is (the run's state on the
+// home, the machine's journal state on a node) and since when. Never a person's name.
+type SelfUpdate struct {
+	Version string     `json:"version"`
+	State   string     `json:"state"`
+	Step    string     `json:"step,omitempty"`
+	Since   *time.Time `json:"since,omitempty"`
 }
 
 // SelfMachineDB is a machine that cannot log in to its home's database.
@@ -65,6 +81,11 @@ type SelfHome struct {
 	Version      string     `json:"version,omitempty"`
 	Reachable    bool       `json:"reachable"`
 	FailingSince *time.Time `json:"failing_since,omitempty"`
+	// Update is the home's update run in flight, as its /api/cluster/self says it.
+	Update *SelfUpdate `json:"update,omitempty"`
+	// Committed is the release the home committed last: this machine's ceiling (the
+	// desktop app and `maktaba-server update` install nothing newer).
+	Committed string `json:"committed,omitempty"`
 }
 
 // SelfRow is one machine's address (the picker learns the cluster's other addresses

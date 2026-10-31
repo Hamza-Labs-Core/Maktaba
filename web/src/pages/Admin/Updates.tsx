@@ -1355,6 +1355,33 @@ function RunPanel({ view, live, busy, onCancel, onResume, onTarget, onTV }: RunP
           </ol>
         </>
       )}
+      {view.targets.length === 0 && (view.detail?.waiting_home?.length ?? 0) > 0 && (
+        <>
+          <h3>{t("updates.page.targets")}</h3>
+          <p className="mkt-muted" data-testid="updates-waiting-home">
+            {ended
+              ? t("updates.page.waitingHome.notOrdered", { version: view.version })
+              : t("updates.page.waitingHome.live", { version: view.version })}
+          </p>
+          <table className="mkt-table mkt-updates__table" data-testid="updates-waiting-home-list">
+            <tbody>
+              {(view.detail?.waiting_home ?? []).map((m) => (
+                <tr key={m.node_id} data-testid={`updates-waiting-home-${m.node_id}`}>
+                  <td>{m.name}</td>
+                  <td dir="ltr">{m.version ? `${m.version} → ${view.version}` : view.version}</td>
+                  <td>
+                    <Badge tone={ended ? "neutral" : "accent"}>
+                      {ended
+                        ? t("updates.page.waitingHome.stateNotOrdered")
+                        : t("updates.page.waitingHome.state")}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
       {view.targets.length > 0 && (
         <>
           <h3>{t("updates.page.targets")}</h3>

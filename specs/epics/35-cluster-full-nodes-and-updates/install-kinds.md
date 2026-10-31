@@ -16,7 +16,7 @@
 | design.md | Now |
 |---|---|
 | Every machine runs a launcher over `bin/releases/<v>` (§2). | Four kinds of install (below). Only plain server installs use `bin/releases`. The apps run a payload inside the app (Mac, Windows) or a runtime copy of it (Linux). |
-| The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **at the home's go, by itself** (owner decision D1, "No click" below); the app's updater still does the swap for Mac and Windows. Every install updates by itself: an admin's run at once, an automatic one in the window. |
+| The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **at the home's go, by itself** (owner decision D1, "No click" below); the app's updater still does the swap for Mac and Windows. Every install updates by itself: an admin's run at once, an automatic one in the window; the machines follow once the home commits (2026-10-28). |
 | Rollback replaces binaries; the schema stays (migrations are additive). | Every installed release (38.12) refuses a database a newer release migrated (`migrate up` exits 3, `serve` refuses). So a rollback after a migration also **puts back the dump taken before it**. |
 | The orchestrator backs up and migrates before restarting the roles (§5.3 steps 6–9). | Every home migrates at the new release's start, through the 38.12 database step (dump, migrate, put back on failure), whatever the install kind. The orchestrator rehearses the migrations on a scratch copy before anything is installed. |
 | TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | A plain server install (the launcher over `bin/releases`) hands its TV processes over across the restart (§8.1, story 35.7, "TV handover" below): the front door and the slots keep serving while every other process restarts on the new release, and the new supervisor adopts them, so the run waits for no quiet TV (the machine's prepared report says `hands_over`). Where they cannot run on (another install kind, a front door the new release's `edge_protocol` does not match, a Linux launcher from before the handover, a Windows server whose job lets no child leave it under a launcher from before it), the fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. Then the Epic 33 binary swap (story 35.6): once the new release runs, its supervisor asks the TV change controller for a change of the streaming binary alone (`source.kind = auto_update`), promoted without an approval at programme boundaries, and commits only once it is live (below, "The TV step"). |
@@ -90,10 +90,35 @@ container of the stack built from source (`deploy/compose`, the development and 
 
 **Decision.** A desktop app that runs the server — the home's, or a full node's: Maktaba.app,
 the Windows app, the Linux app — installs what the home orders by itself, as headless and
-plain server installs do. An update an admin starts from the Updates page installs everywhere
-at once (the home, then each machine, one at a time); an automatic one installs inside the
-policy's window, with only a notice on the machine beforehand. Nobody clicks anything on the
-machine.
+plain server installs do. An update an admin starts from the Updates page runs at once, and
+**the machines follow once the home commits**: the home goes first (stage, migrations,
+restart, watch, commit), and only its commit sends the machines their orders, by themselves,
+one machine at a time; an automatic one does the same inside the policy's window, with only a
+notice on the machine beforehand. Nobody clicks anything on the machine.
+
+**Machines follow once the home commits (the owner's decision, 2026-10-28).** No machine is
+ordered a release before the home has committed it (its watch passed): while the home
+prepares, restarts and watches, the run lists the machines as waiting for the home to finish
+(`update_runs.detail.waiting_home`); its commit orders them with no click. A home that rolls
+back or fails orders nothing: the machines stay on their release, with no order to withdraw.
+The rule holds for an admin's **Update now**, an automatic window's run, and every
+machines-only run (a catch-up, a Retry): each needs the watermark — the home's commit — at its
+release, and a home that runs a release it has not committed (its watch going on after its
+run gave up on it, `home_timeout`) raises no watermark until its supervisor reports the
+commit. **Why:** on 2026-10-28 windows-pc took v0.3.42 while the home still watched it; the
+home rolled back to v0.3.41 and put its database back to schema 167, which v0.3.42 cannot run
+on, and updates only go up: the machine stayed paused until the home's next release. Machines
+are not rolled back with the home (out of scope, by the owner's choice): they are simply never
+ordered before its commit.
+
+**A joined machine never goes ahead of its home.** Its only source of a newer server release is
+the home's order, after the home commits. The home's `/api/cluster/self` says the release it
+committed last (`committed`, the watermark) and a node passes it on (`home.committed`). The
+desktop app installs nothing newer on a machine whose server is a node, whatever the source
+(its own feed, a catch-up, an order): `autoinstall::past_home` refuses it as the attempt's
+`past_home` failure before anything stops; when the home's committed release is not known,
+only the home's order goes. `maktaba-server update` (and the Linux runtime's) refuses the same
+on a joined machine (`update_homecap.go`). An app or server joined to no home updates as before.
 
 **What it replaced.** The first D1 (2026-10-23, "Ask first") kept the apps' "restart to
 install": the release was downloaded, verified and staged by itself, then installed only when

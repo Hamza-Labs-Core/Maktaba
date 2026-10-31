@@ -60,6 +60,9 @@ pub const PREVIOUS_APP_NOT_RESTORED: &str = "previous_app_not_restored";
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const SERVER_STOP_FAILED: &str = "server_stop_failed";
 pub const RELAUNCH_FAILED: &str = "relaunch_failed";
+/// A machine joined to a home was offered a release newer than the one its home committed
+/// (autoinstall::past_home): it never goes ahead of its home, and updates once the home has.
+pub const PAST_HOME: &str = "past_home";
 pub const LOGIN_ITEM_UNSIGNED: &str = "login_item_unsigned";
 /// macOS: the app may not replace itself without a person: System Settings' App Management
 /// refuses this app changing another app's bundle (an app not signed by a Developer ID), or
@@ -995,6 +998,7 @@ pub fn fix_for(code: &str) -> String {
         SIGNATURE_MISMATCH => "install the update by hand from the release page; tell the Maktaba team",
         FEED_NOT_FOUND | ASSET_NOT_FOUND => "try again later, or install the update by hand from the release page",
         RELAUNCH_FAILED => "open Maktaba again; if it still runs the old release, install the update by hand",
+        PAST_HOME => "update the home first (its Updates page): this machine follows it by itself",
         PREVIOUS_APP_NOT_RESTORED => {
             "install Maktaba again from the release's disk image (.dmg); the previous app was kept \
              at the place the error names"

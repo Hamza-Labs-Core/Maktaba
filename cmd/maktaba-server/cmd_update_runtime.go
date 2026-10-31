@@ -74,6 +74,15 @@ func runRuntimeUpdate(ctx context.Context, out io.Writer, d runtimeDeps, src rel
 		fmt.Fprintln(out, "You are up to date.")
 		return nil
 	}
+	// a machine joined to a home never goes ahead of it (update_homecap.go)
+	ceilingOf := d.homeCeiling
+	if ceilingOf == nil {
+		ceilingOf = homeCeilingOf
+	}
+	ceiling, joined, cerr := ceilingOf(ctx)
+	if err := checkHomeCeiling(rel.Tag, ceiling, joined, cerr); err != nil {
+		return err
+	}
 	// beside the runtime, on its disk; Install and prune remove one an update left
 	dl, err := os.MkdirTemp(d.rt.Root, appruntime.DownloadPrefix)
 	if err != nil {

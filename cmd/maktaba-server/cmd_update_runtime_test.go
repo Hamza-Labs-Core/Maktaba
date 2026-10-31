@@ -98,7 +98,7 @@ func TestRuntimeUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := filepath.Base(res.Dir)
-	d := runtimeDeps{rt: rt, service: svc}
+	d := runtimeDeps{rt: rt, service: svc, homeCeiling: notJoined}
 	src := &fakeReleases{tag: "v0.4.0", tarball: packPayload(t, onePayload(t, "v0.4.0"))}
 	var out bytes.Buffer
 

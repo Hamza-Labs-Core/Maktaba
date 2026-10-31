@@ -453,6 +453,44 @@ pub fn updates_auto_of_response(raw: &[u8]) -> Option<bool> {
     v.get("updates_auto")?.as_bool()
 }
 
+/// Whether this machine's server follows a home (a joined machine), and the release that
+/// home committed last, as its /api/cluster/self says (the owner's rule, 2026-10-28: a
+/// joined machine never goes ahead of its home).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Joined {
+    /// The server is a home, or joined to none: the app updates as it always did.
+    Not,
+    /// The server is a node of a home; `committed` is the home's committed release when
+    /// the server knows it.
+    Node { committed: Option<String> },
+}
+
+/// What this machine's server at web_url says of its home; None when it does not answer.
+pub fn joined(web_url: &str) -> Option<Joined> {
+    let raw = get_loopback(&addr_of(web_url)?, "/api/cluster/self")?;
+    joined_of_response(&raw)
+}
+
+/// Joined in a raw HTTP/1.x response carrying /api/cluster/self's JSON.
+pub fn joined_of_response(raw: &[u8]) -> Option<Joined> {
+    let text = std::str::from_utf8(raw).ok()?;
+    let (head, body) = text.split_once("\r\n\r\n")?;
+    if head.lines().next()?.split_whitespace().nth(1)? != "200" {
+        return None;
+    }
+    let v: Value = serde_json::from_str(body).ok()?;
+    if v.get("role").and_then(Value::as_str) != Some("node") {
+        return Some(Joined::Not);
+    }
+    let committed = v
+        .get("home")
+        .and_then(|h| h.get("committed"))
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string);
+    Some(Joined::Node { committed })
+}
+
 /// The version in a raw HTTP/1.x response carrying /api/system/version's JSON.
 pub fn version_of_response(raw: &[u8]) -> Option<String> {
     let text = std::str::from_utf8(raw).ok()?;
@@ -1267,6 +1305,32 @@ mod tests {
 
     /// Whether the local server's own automatic updates are on: its /api/cluster/self says,
     /// or nothing is known (an older server, a node, an error, no answer).
+    #[test]
+    fn whether_the_server_follows_a_home() {
+        assert_eq!(
+            joined_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"node\",\"home\":{\"version\":\"v0.3.41\",\"committed\":\"0.3.41\",\"reachable\":true}}"
+            ),
+            Some(Joined::Node {
+                committed: Some("0.3.41".into())
+            })
+        );
+        assert_eq!(
+            joined_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"node\",\"home\":{\"reachable\":false}}"
+            ),
+            Some(Joined::Node { committed: None })
+        );
+        assert_eq!(
+            joined_of_response(
+                b"HTTP/1.1 200 OK\r\n\r\n{\"role\":\"home\",\"committed\":\"0.3.41\"}"
+            ),
+            Some(Joined::Not)
+        );
+        assert_eq!(joined_of_response(b"HTTP/1.1 503 Paused\r\n\r\n{}"), None);
+        assert_eq!(joined("http://10.255.255.1:8080"), None);
+    }
+
     #[test]
     fn whether_the_servers_updates_are_automatic() {
         assert_eq!(

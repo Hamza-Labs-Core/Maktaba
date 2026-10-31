@@ -81,8 +81,10 @@ describe("NodeGuard", () => {
     window.removeEventListener(NODE_UNAVAILABLE_EVENT, listen);
     expect(seen).toEqual([{ code: "paused", reason: why }]);
     expect(screen.queryByText("the app")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "This machine is paused" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(why);
+    expect(
+      screen.getByRole("heading", { name: "Paused until the main machine updates" })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("paused-detail")).toHaveTextContent(why);
   });
 
   it("keeps the app readable under a notice when the home is unreachable", async () => {

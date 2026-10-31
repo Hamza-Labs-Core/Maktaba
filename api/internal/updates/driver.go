@@ -457,12 +457,50 @@ func (d *Driver) advance(ctx context.Context, run Run) error {
 		return d.draining(ctx, run, det)
 	case RunHomeApplying:
 		return d.homeApplying(ctx, run, det)
-	case RunHomeCommitted:
-		return d.planTargets(ctx, run, det)
-	case RunRollingOut:
+	case RunHomeCommitted, RunRollingOut:
+		// no machine is ordered anything before the home committed the release (the
+		// owner's decision, 2026-10-28): the watermark is the home's commit
+		if !d.homeCommittedTo(ctx, run.Version) {
+			d.audit(ctx, run, "machines_without_home_commit", nil)
+			return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_not_committed",
+				"detail": "the home has not committed " + run.Version + ": no machine is ordered it"})
+		}
+		if run.State == RunHomeCommitted {
+			return d.planTargets(ctx, run, det)
+		}
 		return d.rollOut(ctx, run, det)
 	}
 	return nil
+}
+
+// homeCommittedTo reports whether the home committed version (or a later release): the
+// watermark, which only a home's commit raises (homeCommitted, reconcileHome, and
+// clusterRelease for a home that runs a release for good).
+func (d *Driver) homeCommittedTo(ctx context.Context, version string) bool {
+	wm, err := d.Store.Watermark(ctx)
+	return err == nil && wm != "" && CompareVersions(wm, version) >= 0
+}
+
+// waitingForHome are the machines behind a run's release as it begins: they wait for the
+// home to commit it (the Updates page says so), and are ordered only then.
+func (d *Driver) waitingForHome(ctx context.Context, run Run) []WaitingMachine {
+	nodes, err := d.nodes(ctx)
+	if err != nil {
+		return nil
+	}
+	_, states := d.agentStates()
+	out := []WaitingMachine{}
+	for _, n := range nodes {
+		ver := n.version
+		if s, ok := states[n.id]; ok && s.Version != "" {
+			ver = s.Version
+		}
+		if ver != "" && CompareVersions(ver, run.Version) >= 0 {
+			continue
+		}
+		out = append(out, WaitingMachine{NodeID: n.id, Name: n.name, Version: NormalizeVersion(ver)})
+	}
+	return out
 }
 
 // homeCeiling is how long the home may take from its switch to its commit (or its
@@ -550,6 +588,9 @@ func (d *Driver) homePrepare(ctx context.Context, run Run, det RunDetail) error 
 	}
 	now := d.now()
 	det.HomeSince, det.Home = &now, st
+	if det.WaitingHome == nil {
+		det.WaitingHome = d.waitingForHome(ctx, run)
+	}
 	kind := ""
 	if st != nil {
 		kind = st.Installer
@@ -1219,6 +1260,11 @@ func (d *Driver) tvRolledBack(ctx context.Context, run Run, det RunDetail, code 
 func (d *Driver) homeCommitted(ctx context.Context, run Run, det RunDetail) error {
 	if err := d.Store.RaiseWatermark(ctx, run.Version); err != nil {
 		return err
+	}
+	// the machines wait no more: their orders go now, by themselves (planTargets)
+	if det.WaitingHome != nil {
+		det.WaitingHome = nil
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 	}
 	d.undrain(ctx, run, &det)
 	// the release committed: its streaming software is the one the TV moves to now, and an

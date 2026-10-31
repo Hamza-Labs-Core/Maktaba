@@ -27,6 +27,9 @@ import (
 type runtimeDeps struct {
 	rt      appruntime.Runtime
 	service appruntime.Service // nil: no unit to stop and start
+	// homeCeiling is the release this machine's home committed last, and whether it
+	// follows a home (update_homecap.go; nil: homeCeilingOf)
+	homeCeiling func(ctx context.Context) (string, bool, error)
 }
 
 var newRuntimeDeps = func() runtimeDeps {

@@ -282,6 +282,45 @@ pub fn catch_up(app: &str, running: &str, watermark: &str) -> Option<String> {
     (valid_version(v) && !same_version(app, v)).then(|| v.strip_prefix('v').unwrap_or(v).into())
 }
 
+/// Why this app may not install `version`, or None when it may (the owner's rule,
+/// 2026-10-28: a machine joined to a home never goes ahead of it; on that day windows-pc
+/// ran 0.3.42 while its home rolled back to 0.3.41, paused until the home's next release).
+/// `joined` is what this machine's server says of its home: None when the app runs no
+/// server here (a client: it updates as it always did) or the server did not answer.
+/// `server_side`: this app runs the server. `ordered`: the release is the home's order,
+/// which comes only after the home committed it.
+///
+/// - not joined: any release, as today;
+/// - joined: never above the release its home committed; an order is the home's word when
+///   the committed release is not known here, anything else waits until it is;
+/// - a server here that does not answer: only the home's order goes.
+pub fn past_home(
+    version: &str,
+    joined: Option<&crate::status::Joined>,
+    server_side: bool,
+    ordered: bool,
+) -> Option<String> {
+    use crate::status::Joined;
+    match joined {
+        Some(Joined::Not) => None,
+        None if !server_side || ordered => None,
+        None => Some(format!(
+            "this machine's server did not say whether it follows a home: {version} waits until it does"
+        )),
+        Some(Joined::Node { committed: None }) if ordered => None,
+        Some(Joined::Node { committed: None }) => Some(format!(
+            "this machine follows a home whose committed release is not known yet: {version} waits for the home"
+        )),
+        Some(Joined::Node {
+            committed: Some(c),
+        }) => (!crate::attempts::at_least(c, version)).then(|| {
+            format!(
+                "this machine follows a home that committed {c}: {version} is newer, and a joined machine never goes ahead of its home (it updates once the home has)"
+            )
+        }),
+    }
+}
+
 /// A plain release version (1.2.3, 1.2.3-rc.1), with or without its v.
 pub fn valid_version(v: &str) -> bool {
     let v = v.strip_prefix('v').unwrap_or(v);
@@ -632,6 +671,44 @@ pub fn writable(dir: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A machine joined to a home never updates past the release its home committed (the
+    /// owner's rule, 2026-10-28: windows-pc ran 0.3.42 while its home went back to 0.3.41).
+    #[test]
+    fn a_joined_machine_never_updates_past_its_home() {
+        use crate::status::Joined;
+        let node = |c: Option<&str>| Joined::Node {
+            committed: c.map(str::to_string),
+        };
+        let on_041 = node(Some("0.3.41"));
+        // its own updater (the app's feed, a catch-up): never above the home's commit
+        let why = past_home("0.3.42", Some(&on_041), true, false).expect("refused");
+        assert!(why.contains("0.3.41") && why.contains("0.3.42"), "{why}");
+        assert!(past_home("v0.3.42", Some(&node(Some("v0.3.41"))), true, false).is_some());
+        assert!(past_home("0.3.42-rc.1", Some(&on_041), true, false).is_some());
+        // an order is the home's word, but still never past what the home committed
+        assert!(past_home("0.3.42", Some(&on_041), true, true).is_some());
+        // the home's release or an older one goes
+        assert_eq!(past_home("0.3.41", Some(&on_041), true, false), None);
+        assert_eq!(past_home("0.3.41", Some(&on_041), true, true), None);
+        assert_eq!(past_home("0.3.40", Some(&on_041), true, false), None);
+        // the home's commit not known here: only its order goes
+        assert!(past_home("0.3.42", Some(&node(None)), true, false).is_some());
+        assert_eq!(past_home("0.3.42", Some(&node(None)), true, true), None);
+        // a server here that does not answer: only the home's order
+        assert!(past_home("0.3.42", None, true, false).is_some());
+        assert_eq!(past_home("0.3.42", None, true, true), None);
+    }
+
+    /// An app joined to no home updates as it always did.
+    #[test]
+    fn an_app_joined_to_no_home_still_updates() {
+        use crate::status::Joined;
+        // a home's own app, or a server joined to none
+        assert_eq!(past_home("9.9.9", Some(&Joined::Not), true, false), None);
+        // a client: no server here
+        assert_eq!(past_home("9.9.9", None, false, false), None);
+    }
 
     fn probe() -> Probe {
         Probe {

@@ -129,6 +129,18 @@ type RunDetail struct {
 	// TV is the TV held at the home's commit: its change's check failed before any swap,
 	// so the live TV stayed on its streaming software (tvheld.go; nil: not held).
 	TV *RunTV `json:"tv,omitempty"`
+	// WaitingHome are the machines behind the run's release when it began: they wait for
+	// the home to finish (its commit orders them; its rollback or failure orders none),
+	// and stay listed on a run that ended before the home committed (none was ordered).
+	// Cleared at the home's commit: the targets are the machines from then on.
+	WaitingHome []WaitingMachine `json:"waiting_home,omitempty"`
+}
+
+// WaitingMachine is a machine that waits for the home to commit before its order.
+type WaitingMachine struct {
+	NodeID  string `json:"node_id"`
+	Name    string `json:"name"`
+	Version string `json:"version,omitempty"`
 }
 
 // NodeDrain is a machine drained for its own apply.
