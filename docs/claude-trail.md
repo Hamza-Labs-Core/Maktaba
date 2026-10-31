@@ -678,7 +678,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
-- 2026-10-31 · Story 48.2 agent of `b743b7d4`: one token source. `tokens.json` /
+- 2026-10-31 · Story 48.2 agent of `b743b7d4`: [#462], one token source. `tokens.json` /
   `tokens.dark.json` now hold the shipped Ink & Brass (values copied from
   `web/src/styles/tokens.css`, which stays hand-written and is what the web ships), plus
   `accent-fg`, `accent-text`, `accent-soft`, `border`, `running`, `info`, `type.size.*`,
@@ -844,3 +844,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#462]: https://github.com/Hamza-Labs-Core/Maktaba/pull/462
