@@ -94,7 +94,8 @@ start to its end.
 `tools/rehearsal/expected-failures.txt` lists scenarios whose fix is not merged yet, with the
 fix's PR. Such a scenario still runs; its failure is reported (annotation, run summary) but
 not counted, until the PR's merge commit is in the commit rehearsed: from then on it is
-required, with no edit. Today: 10a and 10b, until #434 (`fix/machines-after-home`).
+required, with no edit. None today: 10a and 10b were listed until #434
+(`fix/machines-after-home`) merged on 2026-10-31.
 
 ## Run it locally
 

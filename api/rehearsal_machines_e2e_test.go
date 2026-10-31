@@ -10,8 +10,9 @@ package main
 //	    up on its home mid-watch (journal_lost) included
 //	10b the machine's own updater never goes past its home's committed release
 //
-// Both are expected to fail until #434 (fix/machines-after-home) merges
-// (tools/rehearsal/expected-failures.txt): the CI's rollup then requires them.
+// 10a fails on the code before #434 (fix/machines-after-home, merged 2026-10-31): the machine
+// was ordered while its home still watched, after a run that lost its home. Both are
+// required since #434 merged (tools/rehearsal/expected-failures.txt lists none).
 
 import (
 	"encoding/json"
