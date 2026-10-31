@@ -346,6 +346,30 @@ public actor APIClient {
         _ = try await sendRaw(request("POST", "/api/cluster/nodes/\(Self.segment(machine))/revoke"))
     }
 
+    // MARK: running work (read only)
+
+    /// The home's updates: the plan, blocked releases, the run under way or the last, the
+    /// machines' releases, a TV held.
+    public func updates() async throws -> UpdatesOverview {
+        try await get("/api/cluster/updates")
+    }
+
+    /// An update run with its steps and machines.
+    public func updateRun(_ id: String) async throws -> UpdateRunView {
+        try await get("/api/cluster/updates/runs/\(Self.segment(id))")
+    }
+
+    /// The processes the home's supervisor runs, and its recent events.
+    public func processes() async throws -> ProcessesDoc {
+        try await get("/api/system/processes")
+    }
+
+    /// The jobs running now, oldest first.
+    public func runningJobs() async throws -> [RunningJob] {
+        let r: RunningJobs = try await get("/api/queues/running")
+        return r.jobs
+    }
+
     // MARK: plumbing
 
     /// An id or stage name as one path segment (a "/" in it cannot reach another route).

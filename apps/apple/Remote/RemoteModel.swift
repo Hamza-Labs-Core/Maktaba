@@ -2,8 +2,8 @@ import MaktabaKit
 import SwiftUI
 
 /// The home as the Remote sees it, for every screen: what needs attention, the processing
-/// queue, the libraries, the machines. Read every 15 s while the app is open and after each
-/// action. Each action is one the home checks itself (its admins only): the app hides
+/// queue and its running jobs, the libraries, the machines, the updates, the processes.
+/// Read every 15 s while the app is open and after each action. Each action is one the home checks itself (its admins only): the app hides
 /// nothing as a guard.
 @MainActor @Observable
 final class RemoteModel {
@@ -14,6 +14,14 @@ final class RemoteModel {
     private(set) var queue: QueueSnapshot?
     private(set) var libraries: [Library] = []
     private(set) var cluster: ClusterOverview?
+    private(set) var running: [RunningJob] = []
+    private(set) var updates: UpdatesOverview?
+    /// The run the Updates screen shows (the one under way, else the last), with its steps.
+    private(set) var updateRun: UpdateRunView?
+    private(set) var processes: ProcessesDoc?
+    /// Why the running work (updates, processes, running jobs) could not be read, by part:
+    /// an older home may not have one; the other screens are not held up by it.
+    private(set) var statusProblems: [StatusPart: String] = [:]
     private(set) var loaded = false
     /// Why the last read or action did not work (nil once one works again).
     var problem: String?
@@ -44,7 +52,45 @@ final class RemoteModel {
         if let libraries { self.libraries = libraries }
         if let cluster { self.cluster = cluster }
         if attention != nil, queue != nil, libraries != nil, cluster != nil { problem = nil }
+        await loadStatus()
         loaded = true
+    }
+
+    /// The running work: updates (and the run they show), processes, running jobs.
+    private func loadStatus() async {
+        async let u = readPart(.updates) { try await self.client.updates() }
+        async let p = readPart(.processes) { try await self.client.processes() }
+        async let r = readPart(.running) { try await self.client.runningJobs() }
+        let (updates, processes, running) = await (u, p, r)
+        if let updates {
+            self.updates = updates
+            if let shown = updates.shownRun {
+                if let view = await readPart(.updateRun, { try await self.client.updateRun(shown.id) }) {
+                    updateRun = view
+                }
+            } else {
+                updateRun = nil
+                statusProblems[.updateRun] = nil
+            }
+        }
+        if let processes { self.processes = processes }
+        if let running { self.running = running }
+    }
+
+    private func readPart<T>(_ part: StatusPart, _ f: @escaping () async throws -> T) async -> T? {
+        do {
+            let v = try await f()
+            statusProblems[part] = nil
+            return v
+        } catch APIError.signedOut {
+            session.signedOut()
+            return nil
+        } catch {
+            guard !Log.isCancellation(error) else { return nil }
+            Log.failure("remote status read", error)
+            statusProblems[part] = HomeFailure(error).message()
+            return nil
+        }
     }
 
     /// Reads every 15 s until the task ends.
@@ -150,4 +196,9 @@ final class RemoteModel {
     func revoke(_ machine: Machine) async {
         await act(machine.id) { try await client.revoke(machine: machine.id) }
     }
+}
+
+/// A part of the running work the Remote reads on its own.
+enum StatusPart: String, Sendable {
+    case updates, updateRun, processes, running
 }

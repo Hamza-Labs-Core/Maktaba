@@ -12,6 +12,17 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Maktaba Remote (iPhone, iPad) shows the home's running work.** *Home* links to two new
+  read-only pages: *Updates* (the running release and what is next, in the web's words: what
+  the planned release waits for, a stepping stone or a held release, a stale check; the
+  releases still blocked; a TV held at an update with its failed checks; the run under way or
+  the last one with its steps and every machine's state and error; each machine's release,
+  last update and reach to the home's database) and *Processes* (each supervised process by
+  role and TV slot, its state, restarts, last exit, crash loop and what it waits on, such as a
+  port taken; the supervisor's recent events; or that the supervisor is not reachable). The
+  *Queue* lists the jobs running now with how long each has run. An older or newer home's
+  missing fields and unknown states are shown as they come instead of breaking the page.
+
 - **The update rehearsal: every update path of the Mac app is proven in CI before a release.**
   A new workflow (`update-rehearsal`) updates a seeded home from the latest published release
   to the commit, the way Maktaba.app does (its bundle, launcher, state folder, bundled Postgres,
