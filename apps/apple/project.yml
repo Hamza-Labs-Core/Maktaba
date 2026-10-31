@@ -5,6 +5,8 @@
 name: Maktaba
 options:
   bundleIdPrefix: com.hamzalabs.maktaba
+  # the apps ship in English (the development language) and Arabic
+  developmentLanguage: en
   deploymentTarget:
     iOS: "26.0"
     macOS: "15.0"
@@ -26,7 +28,12 @@ settings:
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
+    # English and Arabic: each app's Localizable.xcstrings (Remote/, Player/,
+    # ../tv/tvos/MaktabaTV/) and MaktabaKit's own (Bundle.module). Xcode extracts every
+    # localizable string it builds (.stringsdata); tools/apple/check-string-catalogs.py
+    # fails CI on a key missing from a catalog or without its Arabic.
     LOCALIZATION_PREFERS_STRING_CATALOGS: YES
+    SWIFT_EMIT_LOC_STRINGS: YES
 
 targetTemplates:
   # every app: plain http to a home on the local network is allowed (a self-hosted home is

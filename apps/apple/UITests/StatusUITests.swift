@@ -13,8 +13,12 @@ final class StatusUITests: XCTestCase {
         home = try MockHome()
         try home.start()
         app = XCUIApplication()
+    }
+
+    /// Opens the app in `language` (the walkthrough passed with its permissions faked).
+    private func launch(_ language: String = "en", locale: String = "en_US") {
         app.launchArguments = ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
-                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+                               "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
         app.launch()
         let walkthrough = app.descendants(matching: .any)["permissions.walkthrough"].firstMatch
         if walkthrough.waitForExistence(timeout: 10) {
@@ -30,6 +34,7 @@ final class StatusUITests: XCTestCase {
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
     func testRunningWork() throws {
+        launch()
         signInByCode()
         let homeTab = app.buttons["Home"].firstMatch
         try XCTSkipUnless(app.buttons["Queue"].firstMatch.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
@@ -63,13 +68,34 @@ final class StatusUITests: XCTestCase {
         shot("processes-events")
     }
 
-    private func signInByCode() {
+    /// The same screens in Arabic, right to left: the Home tab's running work and the
+    /// Updates page say what the web's ar.json says.
+    func testRunningWorkInArabic() throws {
+        launch("ar", locale: "ar_JO")
+        signInByCode(byCode: "برمز")
+        let homeTab = app.buttons["الجهاز الرئيسي"].firstMatch
+        try XCTSkipUnless(homeTab.waitForExistence(timeout: 10), "the Remote's screens (the Player has none)")
+        homeTab.tap()
+        let updates = element("home.updates")
+        XCTAssertTrue(updates.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["العمل الجاري"].waitForExistence(timeout: 10), "the Running work section in Arabic")
+        shot("ar-home")
+        updates.tap()
+        XCTAssertTrue(element("updates.blocked.0.3.45").waitForExistence(timeout: 10))
+        // the plan's sentence and the run's state from MaktabaKit's catalog
+        XCTAssertTrue(app.staticTexts["التحديثات"].exists || app.navigationBars["التحديثات"].exists, "the Updates title in Arabic")
+        shot("ar-updates")
+        app.swipeUp()
+        shot("ar-updates-run")
+    }
+
+    private func signInByCode(byCode label: String = "With a code") {
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         field.typeText(home.url)
         app.buttons["picker.connect"].tap()
-        let byCode = app.buttons["With a code"]
+        let byCode = app.buttons[label]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10))
         byCode.tap()
         home.approve()

@@ -15,9 +15,9 @@ public enum ThemeMode: String, CaseIterable, Identifiable, Sendable {
 
     public var label: String {
         switch self {
-        case .system: "System"
-        case .light: "Light"
-        case .dark: "Dark"
+        case .system: kit("System")
+        case .light: kit("Light")
+        case .dark: kit("Dark")
         }
     }
 
@@ -108,7 +108,7 @@ public struct ThemePicker: View {
     }
 
     public var body: some View {
-        Picker("Theme", systemImage: mode.systemImage, selection: $mode) {
+        Picker(kit("Theme"), systemImage: mode.systemImage, selection: $mode) {
             ForEach(ThemeMode.allCases) { m in
                 Label(m.label, systemImage: m.systemImage).tag(m)
             }

@@ -12,6 +12,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
+  iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
+  screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes
+  (the updates', processes' and queue's states, steps and reasons, the plan's sentence), in
+  the web's Arabic (`ar.json`) wherever the web says the same thing. Counts take Arabic plurals;
+  numbers and dates follow the locale; a value the home sends with no words is still shown as
+  sent. CI's new *Apple apps* gate runs MaktabaKit's tests, builds the apps, and fails on a
+  string without its Arabic or missing from its catalog (`tools/apple/check-string-catalogs.py`).
 - **Maktaba Remote (iPhone, iPad) shows the home's running work.** *Home* links to two new
   read-only pages: *Updates* (the running release and what is next, in the web's words: what
   the planned release waits for, a stepping stone or a held release, a stale check; the

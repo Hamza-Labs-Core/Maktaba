@@ -48,7 +48,7 @@ struct HomeStatusView: View {
             if let q = model.queue {
                 Section("Processing") {
                     LabeledContent("Queue") {
-                        Text(q.pausedAll ? "Paused" : "Running")
+                        (q.pausedAll ? Text("Paused") : Text("Running"))
                             .foregroundStyle(q.pausedAll ? Color.brass : .green)
                     }
                     LabeledContent("Waiting", value: q.rows.reduce(0) { $0 + $1.waiting }, format: .number)
@@ -56,7 +56,7 @@ struct HomeStatusView: View {
                     LabeledContent("Needs attention", value: model.attentionCount, format: .number)
                     let paused = q.rows.filter(\.info.paused)
                     if !paused.isEmpty {
-                        LabeledContent("Paused stages", value: paused.map(\.info.label).joined(separator: ", "))
+                        LabeledContent("Paused stages", value: paused.map(\.info.label).formatted(.list(type: .and)))
                     }
                     if let cpu = q.health?.cpu?.pct {
                         LabeledContent("CPU", value: (cpu / 100).formatted(.percent.precision(.fractionLength(0))))
@@ -66,7 +66,7 @@ struct HomeStatusView: View {
             if let c = model.cluster {
                 Section("Machines") {
                     let approved = c.nodes.filter { $0.group == .approved }
-                    LabeledContent("Online", value: "\(approved.filter(\.online).count) of \(approved.count)")
+                    LabeledContent("Online", value: String(localized: "\(approved.filter(\.online).count) of \(approved.count)"))
                     if !model.asking.isEmpty {
                         LabeledContent("Asking to join", value: model.asking.count, format: .number)
                     }
@@ -77,24 +77,24 @@ struct HomeStatusView: View {
         .overlay {
             if !model.loaded { ProgressView() }
         }
-        .navigationTitle(model.session.current?.name ?? "Home")
+        .navigationTitle(model.session.current?.name ?? String(localized: "Home"))
         .refreshable { await model.load() }
         .toolbar { AccountMenu() }
     }
 
     private var updatesSummary: String {
-        guard let o = model.updates else { return model.statusProblems[.updates] == nil ? "…" : "Not available" }
-        if let run = o.activeRun { return "Updating to \(run.version)" }
-        if !o.blockedReleases.isEmpty { return "\(o.blockedReleases.count) blocked" }
-        if let target = o.plan.target { return "\(target.version) available" }
-        return "Up to date"
+        guard let o = model.updates else { return model.statusProblems[.updates] == nil ? "…" : String(localized: "Not available") }
+        if let run = o.activeRun { return String(localized: "Updating to \(run.version)") }
+        if !o.blockedReleases.isEmpty { return String(localized: "\(o.blockedReleases.count) blocked") }
+        if let target = o.plan.target { return String(localized: "\(target.version) available") }
+        return String(localized: "Up to date")
     }
 
     private var processesSummary: String {
-        guard let doc = model.processes else { return model.statusProblems[.processes] == nil ? "…" : "Not available" }
-        guard doc.available else { return "Supervisor not reachable" }
+        guard let doc = model.processes else { return model.statusProblems[.processes] == nil ? "…" : String(localized: "Not available") }
+        guard doc.available else { return String(localized: "Supervisor not reachable") }
         let troubled = doc.processes.filter { $0.crashLoop || ["failed", "backoff", "unhealthy"].contains($0.state) }
         let running = doc.processes.filter { $0.state == "running" }.count
-        return troubled.isEmpty ? "\(running) running" : "\(troubled.count) need attention"
+        return troubled.isEmpty ? String(localized: "\(running) running") : String(localized: "\(troubled.count) need attention")
     }
 }

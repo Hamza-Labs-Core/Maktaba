@@ -93,7 +93,7 @@ struct ProblemSection: View {
 
 /// A button whose action runs on the home: a spinner while it does.
 struct BusyButton: View {
-    let title: String
+    let title: LocalizedStringKey
     let systemImage: String
     let busy: Bool
     var role: ButtonRole?

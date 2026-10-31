@@ -16,7 +16,7 @@ struct HomeView: View {
             LibraryBackdrop()
             ScrollView {
                 VStack(alignment: .leading, spacing: 40) {
-                    SectionTitle("Your library", size: 52)
+                    SectionTitle(String(localized: "Your library"), size: 52)
                         .readingPanel(padding: 28)
                         .padding(.top, 160)
 
@@ -29,7 +29,7 @@ struct HomeView: View {
                             ContentUnavailableView("Nothing to watch yet", systemImage: "books.vertical",
                                                    description: Text("Videos appear here once this home shares a library with you."))
                         } else if rails.isEmpty {
-                            VideoRow(title: "Newly added", items: newest.map { RowItem(id: $0.id, title: $0.displayTitle) })
+                            VideoRow(title: String(localized: "Newly added"), items: newest.map { RowItem(id: $0.id, title: $0.displayTitle) })
                         } else {
                             VStack(alignment: .leading, spacing: 48) {
                                 ForEach(rails) { rail in
@@ -53,12 +53,12 @@ struct HomeView: View {
     /// A rail's title is the app's to say (the home sends a kind, not words).
     static func title(of rail: Rail) -> String {
         switch rail.reasonKind {
-        case "continue_watching": "Continue watching"
-        case "for_you": "For you"
-        case "from_library": "From your libraries"
-        case "newly_added": "Newly added"
-        case "editor_picks": "Picks"
-        default: "More to watch"
+        case "continue_watching": String(localized: "Continue watching")
+        case "for_you": String(localized: "For you")
+        case "from_library": String(localized: "From your libraries")
+        case "newly_added": String(localized: "Newly added")
+        case "editor_picks": String(localized: "Picks")
+        default: String(localized: "More to watch")
         }
     }
 

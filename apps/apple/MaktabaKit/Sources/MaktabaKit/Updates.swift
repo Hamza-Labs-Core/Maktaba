@@ -97,20 +97,22 @@ public struct UpdatesOverview: Decodable, Sendable {
     }
 
     /// What happens next to the home, in a sentence (the web's `homeNext`).
-    public func next(now: Date = Date(), calendar: Calendar = .current) -> String {
-        if let run = activeRun { return "Updating to \(run.version) now." }
-        guard let target = plan.target else { return "Nothing to install: up to date." }
+    public func next(now: Date = Date(), calendar: Calendar = .current, locale: Locale = AppLanguage.locale) -> String {
+        if let run = activeRun { return kit("Updating to \(run.version) now.", locale) }
+        guard let target = plan.target else { return kit("Nothing to install: up to date.", locale) }
         let version = target.version
-        if plan.held { return "Version \(version) waits for your approval (Live TV -> Changes)." }
+        if plan.held { return kit("Version \(version) waits for your approval (Live TV -> Changes).", locale) }
         if let at = plan.nextRunAt {
-            let day = UpdateWords.day(at, now: now, calendar: calendar)
-            let span = UpdateWords.span(until: at, now: now)
+            let day = UpdateWords.day(at, now: now, calendar: calendar, locale: locale)
+            let span = UpdateWords.span(until: at, now: now, locale: locale)
             if let (from, to) = UpdateWords.windowEnds(window) {
-                return "\(version) installs \(day) between \(from) and \(to) (\(span))."
+                return kit("\(version) installs \(day) between \(from) and \(to) (\(span)).", locale)
             }
-            return "\(version) installs \(day) at \(at.formatted(date: .omitted, time: .shortened)) (\(span))."
+            var time = Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)
+            time.timeZone = calendar.timeZone
+            return kit("\(version) installs \(day) at \(at.formatted(time)) (\(span)).", locale)
         }
-        return UpdateWords.planWaiting(plan.waiting ?? "auto_install_off", version: version)
+        return UpdateWords.planWaiting(plan.waiting ?? "auto_install_off", version: version, locale: locale)
     }
 }
 
@@ -440,9 +442,9 @@ public struct UpdateAttempt: Decodable, Sendable {
     /// How it came (the web's updates.last.how).
     public var how: String {
         switch source {
-        case "run": "an update run"
-        case "app": "by the desktop app"
-        default: "installed by hand"
+        case "run": kit("an update run")
+        case "app": kit("by the desktop app")
+        default: kit("installed by hand")
         }
     }
 }
@@ -471,9 +473,9 @@ public struct HomeDB: Decodable, Sendable {
 
     /// The web's machines.homeDb words.
     public var sentence: String {
-        if ok { return "Reaches the home's database." }
-        if healing { return "The home gave it new access; it is following it." }
-        return "This machine can't reach the home's database: \(words(StatusWords.homeDBCodes, code ?? "other"))"
+        if ok { return kit("Reaches the home's database.") }
+        if healing { return kit("The home gave it new access; it is following it.") }
+        return kit("This machine can't reach the home's database: \(words(StatusWords.homeDBCodes, "machines.homeDb.code.", code ?? "other"))")
     }
 }
 
@@ -510,26 +512,30 @@ public struct RunTV: Decodable, Sendable {
 
     /// The TV's state in a sentence (the web's updates.tv.*), `release` the run's.
     public func title(release: String) -> String {
-        let on = (heldOn ?? "").isEmpty ? "the previous version" : heldOn!
+        let on = heldOnWords
         switch state {
-        case "held": return "Installed. TV held on \(on): its check failed"
-        case "retrying": return "Installed. The TV change is checked again; the TV runs \(on) until it passes"
-        case "live": return "Installed. The TV change passed on a retry: the TV runs \(release)"
-        case "dropped": return "Installed. The TV change was dropped: the TV stayed on \(on)"
-        case "replaced": return "Installed. A later release's TV change replaced this one"
-        case "failed": return "Installed. The TV change failed again after its retry: see TV changes"
-        case "gone": return "Installed. The TV was held on \(on); its change is no longer there"
+        case "held": return kit("Installed. TV held on \(on): its check failed")
+        case "retrying": return kit("Installed. The TV change is checked again; the TV runs \(on) until it passes")
+        case "live": return kit("Installed. The TV change passed on a retry: the TV runs \(release)")
+        case "dropped": return kit("Installed. The TV change was dropped: the TV stayed on \(on)")
+        case "replaced": return kit("Installed. A later release's TV change replaced this one")
+        case "failed": return kit("Installed. The TV change failed again after its retry: see TV changes")
+        case "gone": return kit("Installed. The TV was held on \(on); its change is no longer there")
         case "pending":
-            return "Installed. The TV change goes on by itself (it waits for an approval or a quiet window); the TV runs \(on) until it is on the air"
-        default: return "Installed. TV on \(on): \(words([:], state))"
+            return kit("Installed. The TV change goes on by itself (it waits for an approval or a quiet window); the TV runs \(on) until it is on the air")
+        default: return kit("Installed. TV on \(on): \(words([:], state))")
         }
+    }
+
+    /// The release the TV stays on: its version, else "the previous version".
+    var heldOnWords: String {
+        (heldOn ?? "").isEmpty ? kit("the previous version") : heldOn!
     }
 
     /// What a held TV means, for the screen below its title.
     public var heldBody: String? {
         guard held else { return nil }
-        let on = (heldOn ?? "").isEmpty ? "the previous version" : heldOn!
-        return "The new server, web app and pipeline are installed. The TV keeps running the streaming software of \(on) until its change passes its check."
+        return kit("The new server, web app and pipeline are installed. The TV keeps running the streaming software of \(heldOnWords) until its change passes its check.")
     }
 }
 
@@ -562,8 +568,8 @@ public struct TVCheck: Decodable, Sendable, Hashable {
 
     /// "check slot.health failed: the staging slot runs another release".
     public var sentence: String {
-        let v = (value ?? "").isEmpty ? "" : ": \(value!)"
-        return "check \(check) failed\(v)"
+        guard let value, !value.isEmpty else { return kit("check \(check) failed") }
+        return kit("check \(check) failed: \(value)")
     }
 }
 
@@ -588,10 +594,10 @@ public struct TVHeldNow: Decodable, Sendable {
     /// "The TV stays on 0.3.39: check slot.health failed: the staging slot runs another
     /// release" (the first failed check; the screen lists them all).
     public var summary: String {
-        let on = (tv.heldOn ?? "").isEmpty ? "the previous version" : tv.heldOn!
+        let on = tv.heldOnWords
         guard tv.held else { return tv.title(release: version) }
-        guard let first = tv.failedChecks.first else { return "The TV stays on \(on): its check failed" }
-        return "The TV stays on \(on): \(first.sentence)"
+        guard let first = tv.failedChecks.first else { return kit("The TV stays on \(on): its check failed") }
+        return kit("The TV stays on \(on): \(first.sentence)")
     }
 }
 
@@ -616,7 +622,7 @@ public struct UpdatesStuck: Decodable, Sendable {
 
     /// The web's updates.stuck.title.
     public var sentence: String {
-        "\(version) has not installed in \(windows) windows: \(UpdateWords.reason(code))"
+        kit("\(version) has not installed in \(windows) windows: \(UpdateWords.reason(code))")
     }
 }
 

@@ -139,7 +139,7 @@ struct LibraryBrowser: View {
             } else {
                 NavigationStack {
                     List {
-                        ForEach([LibraryChoice(id: Self.all, name: "All videos")] + libraries.map { LibraryChoice(id: $0.id, name: $0.name) }) { lib in
+                        ForEach([LibraryChoice(id: Self.all, name: String(localized: "All videos"))] + libraries.map { LibraryChoice(id: $0.id, name: $0.name) }) { lib in
                             Button { library = lib.id } label: {
                                 Label {
                                     Text(lib.name).foregroundStyle(Color.primary)
@@ -222,7 +222,7 @@ struct LibraryBrowser: View {
     }
 
     private var title: String {
-        libraries.first { $0.id == library }?.name ?? "All videos"
+        libraries.first { $0.id == library }?.name ?? String(localized: "All videos")
     }
 
     private var accountMenu: some ToolbarContent {
