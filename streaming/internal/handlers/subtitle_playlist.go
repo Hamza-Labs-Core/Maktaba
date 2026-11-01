@@ -172,36 +172,91 @@ const hlsTimestampBase = 126000
 // every cue 1.4 s early (AVPlayer and hls.js both, measured).
 const hlsTimestampQuery = "hls"
 
-// WithTimestampMap puts X-TIMESTAMP-MAP (cue time 0 at hlsTimestampBase) in a
-// WebVTT file's header, right after its WEBVTT line; a file that has one, or
-// is no WebVTT, is returned as it is.
+// WithTimestampMap gives a WebVTT file the session's X-TIMESTAMP-MAP, right
+// after its WEBVTT line, so a player places its cues on the session's
+// timestamps (time t of the video at hlsTimestampBase + t\u00D790000). A file that
+// is no WebVTT is returned as it is.
+//
+// A map the file already has is rebased, not kept: its MPEGTS was some other
+// packaging's timestamps (MPEGTS:900000 would put the cues 8.6 s late here),
+// so it becomes hlsTimestampBase. Its LOCAL is kept: it says which cue time is
+// the video's start (a file whose cues count from 01:00:00.000 says
+// LOCAL:01:00:00.000), so with the map rebased, cue time c plays at video time
+// c \u2212 LOCAL. A LOCAL that is no WebVTT timestamp counts as 00:00:00.000.
+//
+// Lines may end in CR, LF or CRLF (WebVTT allows all three): the header is
+// read with any of them, the map line takes the WEBVTT line's ending, and the
+// rest of the file is left as it is.
 func WithTimestampMap(vtt []byte) []byte {
 	body := bytes.TrimPrefix(vtt, []byte("\uFEFF"))
 	if !bytes.HasPrefix(body, []byte("WEBVTT")) {
 		return vtt
 	}
-	for _, line := range bytes.Split(body, []byte("\n")) { // the header: up to its blank line
-		line = bytes.TrimRight(line, "\r")
-		if len(line) == 0 {
+	first, nl, rest := vttLine(body)
+	if len(nl) == 0 {
+		nl = []byte("\n")
+	}
+	local := "00:00:00.000"
+	var header []byte // the header's other lines, each with its own ending
+	for len(rest) > 0 {
+		line, end, after := vttLine(rest)
+		if len(line) == 0 { // the blank line that ends the header
 			break
 		}
-		if bytes.HasPrefix(line, []byte("X-TIMESTAMP-MAP")) {
-			return vtt
+		if v, ok := bytes.CutPrefix(line, []byte("X-TIMESTAMP-MAP=")); ok {
+			if l := mapLocal(string(v)); l != "" {
+				local = l
+			}
+		} else {
+			header = append(append(header, line...), end...)
 		}
+		rest = after
 	}
-	first, rest, ok := bytes.Cut(body, []byte("\n"))
-	nl := "\n"
-	if bytes.HasSuffix(first, []byte("\r")) {
-		nl = "\r\n"
-	}
-	first = bytes.TrimRight(first, "\r")
 	out := make([]byte, 0, len(body)+64)
 	out = append(out, first...)
-	out = fmt.Appendf(out, "%sX-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:00:00:00.000%s", nl, hlsTimestampBase, nl)
-	if ok {
-		out = append(out, rest...)
+	out = fmt.Appendf(out, "%sX-TIMESTAMP-MAP=MPEGTS:%d,LOCAL:%s%s", nl, hlsTimestampBase, local, nl)
+	out = append(out, header...)
+	return append(out, rest...)
+}
+
+// vttLine splits off data's first line: the line, its ending (CRLF, CR, LF,
+// or none at the end of data) and what follows.
+func vttLine(data []byte) (line, end, rest []byte) {
+	i := bytes.IndexAny(data, "\r\n")
+	if i < 0 {
+		return data, nil, nil
 	}
-	return out
+	n := 1
+	if data[i] == '\r' && i+1 < len(data) && data[i+1] == '\n' {
+		n = 2
+	}
+	return data[:i], data[i : i+n], data[i+n:]
+}
+
+// vttTimestamp is a WebVTT timestamp: (hh:)mm:ss.ttt, the hours two digits or
+// more.
+var vttTimestamp = regexp.MustCompile(`^(?:(\d{2,}):)?([0-5]\d):([0-5]\d)\.(\d{3})$`)
+
+// mapLocal is the LOCAL of an X-TIMESTAMP-MAP value (MPEGTS:\u2026 and LOCAL:\u2026 in
+// either order) as hh:mm:ss.ttt; "" when it has none that is a WebVTT
+// timestamp.
+func mapLocal(v string) string {
+	for _, part := range strings.Split(v, ",") {
+		l, ok := strings.CutPrefix(strings.TrimSpace(part), "LOCAL:")
+		if !ok {
+			continue
+		}
+		m := vttTimestamp.FindStringSubmatch(l)
+		if m == nil {
+			return ""
+		}
+		h := m[1]
+		if h == "" {
+			h = "00"
+		}
+		return h + ":" + m[2] + ":" + m[3] + "." + m[4]
+	}
+	return ""
 }
 
 // SubtitlePlaylist is a subtitle rendition's media playlist: one WebVTT
