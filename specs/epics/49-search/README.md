@@ -54,11 +54,12 @@ The plan is a plain index scan (`Order By: body <@> bm25query`, 377 buffers). At
    with phrase and proximity preferred; within a video, passages are ranked and timed for the
    jump.
 3. Arabic spelling variants match: hamza forms, alef maqsura and ya, ta marbuta and ha, harakat
-   and tatweel, and Arabic-Indic digits.
+   and tatweel, and Arabic-Indic digits. Word forms match too: الصابرين, صبروا and يصبر find الصبر,
+   with the exact word ranked above its other forms.
 4. Google-like help: suggestions as you type (under 50 ms), did-you-mean on a misspelling, and
    facets (library, language, speaker, year, duration) with counts.
-5. Hybrid keeps working: BM25 and meaning search (pgvector) fused by RRF, with a local-LLM
-   re-rank of the top results as an opt-in.
+5. Hybrid keeps working: BM25 and meaning search (pgvector) fused by RRF, then the home's local
+   language model re-orders the top results by how well their passages answer the query.
 6. Indexing goes through the queue: a `keyword_index` stage after transcription; the existing
    videos are backfilled through the queue at low priority, one at a time.
 7. PostgreSQL 18 everywhere, upgraded in place by the updater, proven in update-rehearsal first.
@@ -106,7 +107,18 @@ suggestions):
 Implemented as a custom `unaccent` rules file (`maktaba_arabic.rules`, shipped with the bundle) in
 front of `simple`, so it is a dictionary change, not code. Changing the config rebuilds the
 generated `search_tsv` and the indexes once (a migration, run in the queue's quiet hours on the home).
-No stemming in v1: Arabic stemmers (light10, ISRI) are an open question for the owner.
+
+**Word forms (stemming).** A second configuration, `maktaba_stem`, runs the same normalisation and
+then PostgreSQL's built-in Snowball Arabic stemmer (`arabic_stem`; English words through
+`english_stem`). Checked on the home: صبروا, يصبر and الصبر all become صبر; المسلم and المسلمون become
+مسلم. It is not perfect (الصابرين becomes صابر, and a prefixed و is not always stripped: والصابرات
+becomes والصابرا), so:
+
+- the per-video document is indexed twice, exact (`maktaba_search`) and stemmed (`maktaba_stem`);
+- a query scores against both, the exact score weighted higher, so the word as typed ranks first and
+  its other forms follow;
+- a small prefix rule list (و ف ب ك ل ال وال بال فال كال لل) is stripped before the stemmer in
+  `maktaba_stem`, and the relevance check (49.9) measures whether a better stemmer is needed.
 
 ### 5.4 One search document per video
 
@@ -154,9 +166,10 @@ CREATE INDEX ON video_search_docs (library_id);
 - **Passages:** the top passages per shown video from their lines (GIN, `video_id = ANY`), with
   `<mark>` and times, as today.
 - **Hybrid:** BM25 videos and meaning-search videos fused by RRF (k=60, today's weights).
-- **Re-rank (opt-in):** the local LLM (Epic 36.11) re-orders the top 20 by the query and their
-  best passages; off by default, per home setting, with a 300 ms budget, falling back to the
-  fused order.
+- **Re-rank:** the home's local language model (Epic 36.11) reads the query and the best passage
+  of each of the top 20 videos, and re-orders them by how well each answers it. It runs when the
+  model is available and answers within 300 ms; otherwise the fused order is shown as it is (never
+  a slower search). A home setting can turn it off.
 
 ### 5.7 Google-like help
 
@@ -183,15 +196,15 @@ CREATE INDEX ON video_search_docs (library_id);
 | 49.1 | **PostgreSQL 18 + pg_textsearch in every bundle** (mac, linux x86_64/aarch64, windows, Docker, CI, deb/rpm) | Each payload's `postgres --version` is 18.x; `CREATE EXTENSION pg_textsearch` works; the bundle's start flags preload it; licences shipped |
 | 49.2 | **Major upgrade in the updater (16 → 18)** with backup first and restore on failure | update-rehearsal upgrades a 16 home with data to 18 and rolls back, green on the exact commit before any live update |
 | 49.3 | **Cluster: machines upgrade after the home**; a 16 machine keeps serving | two-machine e2e: home on 18, node on 16 replicating, then the node upgrades |
-| 49.4 | **Arabic normalisation (`maktaba_search` v2)** | اسلام finds إسلام, هدي finds هدى, مدرسه finds مدرسة, الله finds اللَّهُ; tests on Postgres and SQLite; the migration rebuilds `search_tsv` |
-| 49.5 | **`video_search_docs` + BM25 index** (migration, SQLite twin with FTS5) | schema up/down on scratch PG and SQLite; index uses `maktaba_search` |
+| 49.4 | **Arabic normalisation (`maktaba_search` v2) and word forms (`maktaba_stem`)** | اسلام finds إسلام, هدي finds هدى, مدرسه finds مدرسة, الله finds اللَّهُ; يصبر and صبروا find الصبر with the exact word first; tests on Postgres and SQLite; the migration rebuilds `search_tsv` |
+| 49.5 | **`video_search_docs` + BM25 indexes, exact and stemmed** (migration, SQLite twin with FTS5) | schema up/down on scratch PG and SQLite; one index on `maktaba_search`, one on `maktaba_stem` |
 | 49.6 | **`keyword_index` queue stage** and backfill through the queue | a new transcript queues it; a title change queues it; a version bump queues every video at priority 10; shown on the Queues page; one item at a time |
 | 49.7 | **The query: BM25 videos, phrase boost, passages, hybrid** | p95 < 50 ms on a 45 k-document fixture; الله, a sentence and a rare word; ACL filter test for a limited user; hybrid order unchanged where BM25 and today agree on the obvious case |
 | 49.8 | **Suggestions, did-you-mean, facets, sort** (API) | suggest < 50 ms on the fixture; a misspelled Arabic word gets the right did-you-mean; facet counts match the result set; role tests |
-| 49.9 | **Relevance check on the owner's queries** | a list of 30 owner queries (Arabic and English) with expected top results; field weights and phrase boost tuned until they pass; kept as a regression test |
+| 49.9 | **Relevance check** | 30 test searches (Arabic and English) drafted from the home's most searched words and the library's topics, each with the videos that should come first; the owner reviews the list once; field weights, the exact/stem balance and the phrase boost tuned until they pass; kept as a regression test |
 | 49.10 | **Web search page**: suggestions, did-you-mean, facets, sort | English and Arabic; axe; screenshots dark |
 | 49.11 | **Apple and Android apps, TV, big screen** | same features; UI tests on a throwaway simulator / emulator |
-| 49.12 | **LLM re-rank (opt-in)** | off by default; on, it re-orders the top 20 within 300 ms or falls back; a home setting with help text |
+| 49.12 | **Language-model re-rank** | re-orders the top 20 within 300 ms or shows the fused order; measured on the home Mac; a home setting to turn it off, with help text |
 | 49.13 | **Remove the stopgap** | the 5,000 cap and the per-line ranking path are gone once every video has a document; help pages and docs updated |
 
 ## 7. Acceptance
@@ -202,10 +215,7 @@ CREATE INDEX ON video_search_docs (library_id);
 - Typing three letters shows suggestions; a misspelling shows did-you-mean.
 - The update to 18 went through update-rehearsal on the exact commit before the live home.
 
-## 8. Open questions for the owner
+## 8. Decisions
 
-1. Arabic stemming (light10 or ISRI) so that الصابرين finds الصبر: wanted in v1, or after the
-   relevance check (49.9)?
-2. The LLM re-rank: worth the latency on the home Mac, or keep it off until asked?
-3. The 30 relevance queries (49.9): will you write them, or should we draft them from the most
-   searched terms for your review?
+- One delivery, no phases: word forms, re-rank and every client are in this epic (owner, 2026-11-01).
+- The relevance list is drafted by us and reviewed once by the owner (49.9).
