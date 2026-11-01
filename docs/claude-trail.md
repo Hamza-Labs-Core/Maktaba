@@ -678,6 +678,19 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Epic 48 story 48.3 agent of `b743b7d4`: closes G1. `stream_gate.go` asks
+  `GET /api/channels/{id}` (the channels handler's `canRead`, the same rule as the guide's
+  `visibleChannels`) for every non-admin `/stream/channel/{id}/…` and
+  `/stream/via-home/channel/{id}/…`, caching allowed and refused verdicts per credential hash
+  and channel for `streamAuthTTL` (30 s).
+  - Decided: 404 and 403 from the API both become a 403, so the gate does not tell which ids
+    exist. A 401 from the channel check drops the cached session too. A 5xx is a 502 and is
+    never cached. Admins skip the check: the admin's staging `Get` reads draft rows, and
+    admins see everything anyway.
+  - Added an API role test (`api/internal/handlers/channels/get_access_test.go`). Before it,
+    nothing tested `Get`'s library rule, and the gate now depends on it.
+  - Needs the update-rehearsal CI green on its exact commit before merge, because it changes
+    the front door.
 - 2026-10-31 · Story 48.13 agent of `b743b7d4`: the Apple Player shell and its UI-test harness
   (branch `feat/48.13-apple-player-shell`).
   - Built: `Player/Shell/` holds `PlayerShell` (a `TabView` with `.sidebarAdaptable`, one
