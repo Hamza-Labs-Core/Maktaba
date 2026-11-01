@@ -6,9 +6,9 @@
 
 | Concern | Decision |
 |---|---|
-| Host | `admin.maktaba.app` — separate Cloudflare zone with stricter WAF rules, separate React app in `web/admin/`. |
+| Host | `admin.maktaba.tv` — separate Cloudflare zone with stricter WAF rules, separate React app in `web/admin/`. |
 | Auth | Google Workspace OIDC via `cloud/internal/admin/sso.go`. Only `@hamzalabs.com` allowed. ACR freshness ≤ 5 min for sensitive ops. |
-| Router | Separate chi router `cloud/internal/admin/router.go` mounted at `admin.maktaba.app`; not exposed under `/api`. |
+| Router | Separate chi router `cloud/internal/admin/router.go` mounted at `admin.maktaba.tv`; not exposed under `/api`. |
 | Pages | Users, User detail, Servers, Server detail, Audit, Abuse events. |
 | Cross-pod registry RPC | `POST /internal/registry/has`, `POST /internal/registry/force-disconnect` between relay pods; mTLS in cluster network. |
 | Out of scope | Role hierarchy (admin vs support) — v1 single role. |

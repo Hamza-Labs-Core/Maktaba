@@ -20,7 +20,7 @@ import Testing
         let suite = "maktabakit.test.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        #expect(CloudAddress.current(defaults) == URL(string: "https://api.maktaba.app")!)
+        #expect(CloudAddress.current(defaults) == URL(string: "https://api.maktaba.tv")!)
         #expect(CloudAddress.set("staging-api.maktaba.test/", in: defaults))
         #expect(CloudAddress.current(defaults).absoluteString == "https://staging-api.maktaba.test")
         #expect(!CloudAddress.set("ftp://x", in: defaults))

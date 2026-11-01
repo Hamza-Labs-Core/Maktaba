@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// The refresh cookie is host-only: a Domain=.maktaba.app cookie would
+// The refresh cookie is host-only: a Domain=.maktaba.tv cookie would
 // reach every home server behind the relay's subdomains.
 func TestRefreshCookieIsHostOnly(t *testing.T) {
 	e := newEnv(t)

@@ -11,9 +11,9 @@ native update path; this story unifies them under one model:
 
 Release manifest:
 
-- Hosted at `https://releases.maktaba.app/manifest.json`,
+- Hosted at `https://releases.maktaba.tv/manifest.json`,
   CDN-cached, ECDSA-signed (sig at
-  `https://releases.maktaba.app/manifest.json.sig`).
+  `https://releases.maktaba.tv/manifest.json.sig`).
 - Schema:
   ```json
   {
@@ -25,7 +25,7 @@ Release manifest:
       {
         "version": "1.4.2",
         "released_at": "2026-04-22T...",
-        "notes_url": "https://releases.maktaba.app/notes/1.4.2.html",
+        "notes_url": "https://releases.maktaba.tv/notes/1.4.2.html",
         "breaking": false,
         "artifacts": {
           "macos-arm64-dmg":   { "url": "...", "sha256": "...", "size": 78234234 },
@@ -67,7 +67,7 @@ Channels:
 Update workflow inside the running server:
 
 1. **Daily check.** Cron (or per-platform timer) hits
-   `releases.maktaba.app/manifest.json`, validates signature,
+   `releases.maktaba.tv/manifest.json`, validates signature,
    reads channel.
 2. **Compare.** If `manifest.channels[user_channel].version >
    current_version`, surface a notification in the local UI
@@ -162,7 +162,7 @@ Rollback:
   to `stable` does NOT auto-downgrade; user must wait
   for stable to surpass their installed version.
 - **GitHub Releases as alternate channel.** We mirror
-  artifacts to GitHub Releases; `releases.maktaba.app`
+  artifacts to GitHub Releases; `releases.maktaba.tv`
   is canonical.
 
 ## Files / packages

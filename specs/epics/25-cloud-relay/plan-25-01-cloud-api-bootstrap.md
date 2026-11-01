@@ -74,7 +74,7 @@ The migration filename convention is `00<slot><seq>_<topic>.sql`; the leading 4 
 ```toml
 [server]
 listen_addr = "0.0.0.0:8080"
-public_url  = "https://api.maktaba.app"
+public_url  = "https://api.maktaba.tv"
 read_timeout  = "30s"
 write_timeout = "60s"
 shutdown_grace = "20s"
@@ -153,7 +153,7 @@ recover → requestid → logging → metrics → cors → routes
 - `requestid`: read `X-Request-Id`; if missing or malformed (must be UUIDv7-shaped, 36 chars, hex+hyphens), mint a new one. Set on `r.Context` via typed key; mirror to response header.
 - `logging`: structured slog access log. Fields: `request_id`, `method`, `path`, `status`, `bytes`, `latency_ms`, `remote_ip`. Sampled to 10% on 2xx after 7d (per `[telemetry]`).
 - `metrics`: `http_requests_total{role,route,code}` counter, `http_request_duration_seconds` histogram with default buckets (50ms..10s).
-- `cors`: allow `Origin` ∈ {`https://app.maktaba.app`, `https://web.maktaba.app`, `https://admin.maktaba.app`, `https://maktaba.app`} only; preflight cached 600s.
+- `cors`: allow `Origin` ∈ {`https://app.maktaba.tv`, `https://web.maktaba.tv`, `https://admin.maktaba.tv`, `https://maktaba.tv`} only; preflight cached 600s.
 
 ## 5. Migrator
 
@@ -218,8 +218,8 @@ CLI subcommand:
 
 ### 7.3 Smoke (post-deploy)
 
-- `curl https://api.maktaba.app/healthz` → 200 + valid TLS chain.
-- `curl -H 'Host: cloud.maktaba.app' https://<lb-ip>/healthz` → 200.
+- `curl https://api.maktaba.tv/healthz` → 200 + valid TLS chain.
+- `curl -H 'Host: cloud.maktaba.tv' https://<lb-ip>/healthz` → 200.
 
 ## 8. Edge cases — handling table
 

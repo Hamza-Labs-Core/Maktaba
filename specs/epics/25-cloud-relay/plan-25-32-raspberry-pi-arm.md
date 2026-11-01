@@ -13,7 +13,7 @@
 
 ## 1. Setup script
 
-`packaging/pi/get-maktaba.sh` (served at https://get.maktaba.app/pi.sh):
+`packaging/pi/get-maktaba.sh` (served at https://get.maktaba.tv/pi.sh):
 
 ```bash
 #!/bin/sh
@@ -27,8 +27,8 @@ ROOTDEV=$(findmnt -n -o SOURCE / | sed 's/[0-9]*$//')
 if echo "$ROOTDEV" | grep -q 'mmcblk'; then SD=1; else SD=0; fi
 echo "SD root detected: $SD"
 
-curl -fsSL https://apt.maktaba.app/maktaba.gpg | sudo tee /usr/share/keyrings/maktaba.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/maktaba.gpg] https://apt.maktaba.app stable main" | \
+curl -fsSL https://apt.maktaba.tv/maktaba.gpg | sudo tee /usr/share/keyrings/maktaba.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/maktaba.gpg] https://apt.maktaba.tv stable main" | \
     sudo tee /etc/apt/sources.list.d/maktaba.list
 sudo apt-get update
 sudo apt-get install -y maktaba avahi-daemon
@@ -173,7 +173,7 @@ Published as `ghcr.io/hamza-labs-core/maktaba:jetson-orin`.
 
 ## 10. Acceptance checklist
 
-- [ ] `get-maktaba.sh` installer publishes at https://get.maktaba.app/pi.sh.
+- [ ] `get-maktaba.sh` installer publishes at https://get.maktaba.tv/pi.sh.
 - [ ] Profile files for Pi 4 / Pi 5 / Jetson.
 - [ ] Probe detects Pi model from `/proc/cpuinfo`.
 - [ ] Profile auto-applied on first run.

@@ -9,7 +9,7 @@
 | Endpoints | `GET /api/servers`, `GET /api/servers/{id}`, `GET /api/servers/{id}/status`, `GET /api/servers/{id}/usage`, `DELETE /api/servers/{id}`, `POST /api/servers/{id}/reconnect-hint`. WS `/ws/servers`. |
 | Online/offline | `online = last_seen_at >= now()-60s AND registry.Has(id)`. Cross-checks the live tunnel registry via inter-pod RPC (250ms deadline). |
 | Realtime | Server-Sent Events fallback if WS not desired; v1 uses WS only. WS auth: JWT in `Sec-WebSocket-Protocol` header (cloud convention). |
-| Release manifest poll | Cron every 6h hits `https://releases.maktaba.app/manifest.json`; compares each server's version to `latest_stable`. |
+| Release manifest poll | Cron every 6h hits `https://releases.maktaba.tv/manifest.json`; compares each server's version to `latest_stable`. |
 | Unlink | Closes tunnel, revokes bearer, releases subdomain (grace), drops server row (cascade). |
 | Out of scope | Server logs surfacing (deferred v2). Auto-update orchestration (25.34). |
 
@@ -129,7 +129,7 @@ ALTER TABLE servers DROP COLUMN IF EXISTS update_available;
 // Uses golang.org/x/mod/semver for canonical comparison; lexicographic
 // compare is unsafe for versions like "1.10" vs "1.9".
 func CheckReleases(ctx context.Context, db *pgxpool.Pool) error {
-    body, _ := http.Get("https://releases.maktaba.app/manifest.json")
+    body, _ := http.Get("https://releases.maktaba.tv/manifest.json")
     var m Manifest; json.NewDecoder(body.Body).Decode(&m)
     stable := "v" + m.Channels["stable"].Version
     rows, _ := db.Query(ctx, `SELECT id, version FROM servers WHERE deleted_at IS NULL`)
@@ -167,7 +167,7 @@ export function Servers() {
 ```tsx
 <article className="card">
   <Indicator state={s.online ? "online" : "offline"}/>
-  <h3>{s.subdomain}.maktaba.app</h3>
+  <h3>{s.subdomain}.maktaba.tv</h3>
   <p>{relativeTime(s.last_seen_at)}</p>
   <UsageBar usedGB={...} capGB={...} />
   {s.update_available && <Badge>Update available: {s.update_available.version}</Badge>}

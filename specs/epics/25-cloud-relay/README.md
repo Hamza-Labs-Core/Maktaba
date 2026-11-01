@@ -21,7 +21,7 @@ The cloud has **five jobs** and one non-job:
    server. After linking, the cloud knows which server belongs to whom.
 3. **Reachability.** Each linked server holds a persistent outbound
    **WebSocket tunnel** to the cloud. The cloud advertises a public DNS
-   name (`username.maktaba.app`) and TLS termination; client traffic
+   name (`username.maktaba.tv`) and TLS termination; client traffic
    enters at the edge, is multiplexed onto the tunnel, and reaches the
    server **without the user opening a port, configuring DDNS, or
    buying a static IP**.
@@ -85,8 +85,8 @@ on the user's box.
 | 25.19 | [FCM dispatcher](story-25-19-fcm-dispatcher.md)         | Android + web push; Firebase Admin SDK; topic-less per-device send. |
 | 25.20 | [Admin: user & server fleet](story-25-20-admin-fleet.md) | HamzaLabs-only console; search users, see linked servers, last-seen. |
 | 25.21 | [Admin: revenue dashboard](story-25-21-admin-revenue.md) | MRR, ARR, churn, LTV, plan mix; pulled from Stripe. |
-| 25.22 | [Subdomain provisioning (`username.maktaba.app`)](story-25-22-subdomain-provisioning.md) | Username uniqueness, DNS via Cloudflare API, name reservations. |
-| 25.23 | [TLS at the edge (wildcard ACME)](story-25-23-tls-edge.md) | `*.maktaba.app` issued via Let's Encrypt DNS-01; rotation; cert pinning posture. |
+| 25.22 | [Subdomain provisioning (`username.maktaba.tv`)](story-25-22-subdomain-provisioning.md) | Username uniqueness, DNS via Cloudflare API, name reservations. |
+| 25.23 | [TLS at the edge (wildcard ACME)](story-25-23-tls-edge.md) | `*.maktaba.tv` issued via Let's Encrypt DNS-01; rotation; cert pinning posture. |
 | 25.24 | [Rate limiting & quota](story-25-24-rate-limiting.md)   | Per-IP, per-user, per-server; redis-backed sliding window; 429 with Retry-After. |
 | 25.25 | [Abuse detection & response](story-25-25-abuse-detection.md) | Anomalous traffic, port-scan-via-relay, hot link, bot signups; suspend playbook. |
 | 25.26 | [Cloud-server entitlement signing](story-25-26-entitlement-signing.md) | Ed25519-signed JSON the server caches; reuses Epic 16 license-validation pattern. |
@@ -129,7 +129,7 @@ acquisition funnel.
   tunnels at Hetzner edge.
 
 - **Relay is HTTP-over-WSS, not WireGuard.** Plex relay tunnels HTTP. We
-  do the same: client makes HTTPS request to `username.maktaba.app`,
+  do the same: client makes HTTPS request to `username.maktaba.tv`,
   cloud edge multiplexes the request onto a frame on the WS tunnel,
   server demultiplexes and dispatches to its local API. This keeps the
   client surface unchanged from LAN — the same `fetch()` works.
@@ -137,7 +137,7 @@ acquisition funnel.
   which the iOS App Store and TV platforms make impractical.
 
 - **TLS posture.** Cloud edge presents a Cloudflare-issued or
-  Let's-Encrypt-issued cert for `*.maktaba.app`. The server's local
+  Let's-Encrypt-issued cert for `*.maktaba.tv`. The server's local
   Caddy presents a self-signed or local-CA cert for `maktaba.local`.
   Relay traffic is **TLS to the cloud, then plaintext over the
   WS tunnel** (the tunnel itself is TLS). End-to-end TLS from client to
@@ -248,7 +248,7 @@ DELETE /api/servers/{server_id}
 GET    /api/servers/{server_id}/status
 
 # Relay (the public-facing virtual host)
-ANY    https://{username}.maktaba.app/*         # routed to user's server
+ANY    https://{username}.maktaba.tv/*         # routed to user's server
 
 # Tunnel (server-to-cloud only)
 GET    /tunnel/v1/connect                       # WSS upgrade with X-Server-Token
@@ -352,7 +352,7 @@ extends slot 0004 with `server_endpoints`.
 | Stolen claim token → server hijack      | 8-char token, 10-min TTL, single-use, TLS-pinned to cloud cert |
 | Stolen server bearer token → impersonation | Tokens hashed at rest; rotation on demand from server UI; `last_used_at` tracking surfaces anomalies |
 | Account takeover via OAuth email reuse  | Email collision triggers explicit merge prompt; never auto-link |
-| Relay used for arbitrary HTTP proxying  | `Host` header must match `{subdomain}.maktaba.app`; non-Maktaba paths 404; abuse score |
+| Relay used for arbitrary HTTP proxying  | `Host` header must match `{subdomain}.maktaba.tv`; non-Maktaba paths 404; abuse score |
 | Bandwidth fraud (free user transfers TB)| Free tier hard-cap = 0 GB; Pro/Family caps + circuit breaker at 110% |
 | Stripe webhook replay                   | `stripe_events.event_id` PK = idempotency |
 | Push token leak                         | AES-GCM at rest with KMS-managed key; never returned in any response |

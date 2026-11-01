@@ -6,7 +6,7 @@
 
 | Concern | Decision |
 |---|---|
-| Manifest | `https://releases.maktaba.app/manifest.json`, EdDSA-signed (`manifest.json.sig`), CDN-cached. |
+| Manifest | `https://releases.maktaba.tv/manifest.json`, EdDSA-signed (`manifest.json.sig`), CDN-cached. |
 | Channels | `stable`, `beta`, `nightly` (internal only). |
 | Per-platform | macOS: Sparkle 2; Windows: small `MaktabaUpdater.exe`; Linux deb/rpm: apt/dnf; Docker: `docker compose pull`; AppImage: AppImageUpdate; NAS: vendor handles. |
 | Server-side updater shim | `internal/updater/check.go` shared across platforms; surfaces "Update available" in the local UI. |
@@ -237,7 +237,7 @@ func (u *Updater) rollback(ctx context.Context) error {
 | Battery / laptop | Defer when low. | `TestBatteryCheck`. |
 | Cluster of servers | Per-server update. | Spec. |
 | Channel switch beta→stable | No auto-downgrade; wait. | Spec. |
-| GitHub Releases mirror | Same artifacts; canonical is `releases.maktaba.app`. | Doc. |
+| GitHub Releases mirror | Same artifacts; canonical is `releases.maktaba.tv`. | Doc. |
 | Manifest signature key rotation | New key signs alongside old for one release; servers accept either. | Doc. |
 | Cache staleness | CDN max-age=300; clients additionally honor cache headers. | Doc. |
 

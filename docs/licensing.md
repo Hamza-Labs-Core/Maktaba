@@ -71,7 +71,7 @@ security find-generic-password -s maktaba-license-signing -w | maktaba-cloud lic
 The home's API (`subscriptions.Refresher`, started in `api/license.go`):
 
 - **Revocation list**, daily, from the license server: the cloud the home is claimed
-  in, else `MAKTABA_LICENSE_SERVER` (default `https://api.maktaba.app`; `off` asks
+  in, else `MAKTABA_LICENSE_SERVER` (default `https://api.maktaba.tv`; `off` asks
   no one). It is signed; the home keeps the last one it verified (slot 0155,
   `license_state`) and uses it while offline. A listed license locks at once.
 - **Plan license**, every minute, for a home whose relay agent claimed it in the

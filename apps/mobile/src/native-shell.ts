@@ -36,7 +36,7 @@ export function deepLinkToPath(raw: string): string | null {
     return null;
   }
   // maktaba://watch/123 → host="watch", pathname="/123"
-  // https://maktaba.app/watch/123 → pathname="/watch/123"
+  // https://maktaba.tv/watch/123 → pathname="/watch/123"
   const isCustom = u.protocol === 'maktaba:';
   const segs = (
     isCustom ? `${u.host}${u.pathname}` : u.pathname

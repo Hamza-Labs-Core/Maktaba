@@ -1,5 +1,5 @@
 // Package relay (handlers) is the HTTP edge of the relay. It takes
-// incoming requests at <slug>.relay.maktaba.app and proxies them
+// incoming requests at <slug>.relay.maktaba.tv and proxies them
 // across the live WebSocket tunnel registered by the matching server.
 package relay
 
@@ -51,7 +51,7 @@ type Deps struct {
 	Servers    *stores.Servers
 	Lookup     ServerLookup
 	Meter      Metering
-	PublicHost string // e.g. "relay.maktaba.app"
+	PublicHost string // e.g. "relay.maktaba.tv"
 	// Editions serves the web app's player and remote editions at /play/ and /manage/ on
 	// a home's relay address (Epic 42.9); nil: those paths go to the home like any other.
 	Editions *Editions

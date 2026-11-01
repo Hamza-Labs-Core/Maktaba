@@ -27,7 +27,7 @@ func assertThemed(t *testing.T, rec *httptest.ResponseRecorder) {
 }
 
 func TestRelayErrorPagesFollowTheSystemTheme(t *testing.T) {
-	d := &Deps{PublicHost: "relay.maktaba.app"}
+	d := &Deps{PublicHost: "relay.maktaba.tv"}
 	req := httptest.NewRequest("GET", "/", nil)
 	req.Host = "elsewhere.example"
 	req.Header.Set("Sec-Fetch-Dest", "document")

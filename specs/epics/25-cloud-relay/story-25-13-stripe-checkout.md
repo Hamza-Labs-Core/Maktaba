@@ -8,7 +8,7 @@ Users upgrade by clicking a button that takes them to Stripe-hosted
 checkout. The cloud creates a Stripe Checkout Session and returns the
 session URL; the client redirects (web) or opens the URL in a system
 browser (mobile/desktop). On success, Stripe redirects back to
-`https://app.maktaba.app/billing/success?session_id={CHECKOUT_SESSION_ID}`;
+`https://app.maktaba.tv/billing/success?session_id={CHECKOUT_SESSION_ID}`;
 on cancel, to `/billing/canceled`. The webhook handler (25.14) is the
 authority on what actually happened.
 
@@ -112,7 +112,7 @@ Behavior details:
   We never approach these in v1; documented as a v2
   scaling concern.
 - **`return_url` validation.** Allowed list:
-  `https://app.maktaba.app/*`, `https://web.maktaba.app/*`,
+  `https://app.maktaba.tv/*`, `https://web.maktaba.tv/*`,
   custom-scheme `maktaba://*`. Defends against open-redirect.
 - **B2B / VAT.** Stripe collects VAT IDs at checkout; v1
   doesn't issue formal VAT invoices ourselves — Stripe's

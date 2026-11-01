@@ -10,8 +10,8 @@
 //
 // Configuration is via environment (the on-prem box has no cloud.toml):
 //
-//	MAKTABA_CLOUD_API     https://api.maktaba.app   (claim REST base)
-//	MAKTABA_RELAY_WS       wss://relay.maktaba.app/v1/relay/ws
+//	MAKTABA_CLOUD_API     https://api.maktaba.tv   (claim REST base)
+//	MAKTABA_RELAY_WS       wss://relay.maktaba.tv/v1/relay/ws
 //	MAKTABA_LOCAL_API      http://127.0.0.1:8080     (loopback to maktaba-api)
 //	MAKTABA_CRED_FILE      /var/lib/maktaba/cloudlink.cred
 //	MAKTABA_CRED_KEY_HEX   64 hex chars (AES-256 key for cred-at-rest)
@@ -152,8 +152,8 @@ type config struct {
 
 func loadConfig() (config, error) {
 	c := config{
-		cloudAPI:  envOr("MAKTABA_CLOUD_API", "https://api.maktaba.app"),
-		relayWS:   envOr("MAKTABA_RELAY_WS", "wss://relay.maktaba.app/v1/relay/ws"),
+		cloudAPI:  envOr("MAKTABA_CLOUD_API", "https://api.maktaba.tv"),
+		relayWS:   envOr("MAKTABA_RELAY_WS", "wss://relay.maktaba.tv/v1/relay/ws"),
 		localAPI:  envOr("MAKTABA_LOCAL_API", "http://127.0.0.1:8080"),
 		credFile:  envOr("MAKTABA_CRED_FILE", "/var/lib/maktaba/cloudlink.cred"),
 		claimCode: os.Getenv("MAKTABA_CLAIM_CODE"),

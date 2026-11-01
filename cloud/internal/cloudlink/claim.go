@@ -59,7 +59,7 @@ var (
 
 // Claimer redeems a one-time claim code against the cloud and returns
 // long-lived server credentials. Endpoint is the cloud API base, e.g.
-// https://api.maktaba.app (NOT the relay ws endpoint).
+// https://api.maktaba.tv (NOT the relay ws endpoint).
 type Claimer struct {
 	Endpoint string
 	Client   *http.Client

@@ -12,10 +12,10 @@ import Foundation
 
 // MARK: - Where the cloud is
 
-/// The cloud's API address: `https://api.maktaba.app`, or the one the person set (a test or
+/// The cloud's API address: `https://api.maktaba.tv`, or the one the person set (a test or
 /// self-hosted cloud), remembered in the defaults (an address, nothing secret).
 public enum CloudAddress {
-    public static let standard = URL(string: "https://api.maktaba.app")!
+    public static let standard = URL(string: "https://api.maktaba.tv")!
     static let key = "cloud.api"
 
     public static func current(_ defaults: UserDefaults = .standard) -> URL {

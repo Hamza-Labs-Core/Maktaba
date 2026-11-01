@@ -6,7 +6,7 @@
 
 | Concern | Decision |
 |---|---|
-| Channels | `.deb` (apt.maktaba.app), `.rpm` (rpm.maktaba.app), Snap, Flatpak, AppImage, plain tarball. |
+| Channels | `.deb` (apt.maktaba.tv), `.rpm` (rpm.maktaba.tv), Snap, Flatpak, AppImage, plain tarball. |
 | Build | One Go binary `maktaba` (subcommands wrap the underlying api/streaming/pipeline binaries). Per format wrapping in CI. |
 | systemd unit | `maktaba.service` with `ProtectSystem=strict`, `NoNewPrivileges=true`, `LimitNOFILE=65536`. |
 | System user | `maktaba` (no shell, no home); created by post-install. |
@@ -75,7 +75,7 @@ WantedBy=multi-user.target
 Source: maktaba
 Section: misc
 Priority: optional
-Maintainer: HamzaLabs <ops@maktaba.app>
+Maintainer: HamzaLabs <ops@maktaba.tv>
 Build-Depends: debhelper-compat (= 13)
 Standards-Version: 4.6.0
 
@@ -111,7 +111,7 @@ Version: 1.0.0
 Release: 1%{?dist}
 Summary: Maktaba Media Server
 License: MIT
-URL: https://maktaba.app
+URL: https://maktaba.tv
 
 Requires: vips, ffmpeg, avahi
 %description
@@ -202,10 +202,10 @@ exec "$HERE/usr/bin/maktaba" "$@"
 
 Hosted on Cloudflare R2 (cheap). Static repo metadata generated via `reprepro` (Debian) and `createrepo_c` (RPM). GPG signed.
 
-`apt.maktaba.app`:
+`apt.maktaba.tv`:
 
 ```
-deb https://apt.maktaba.app stable main
+deb https://apt.maktaba.tv stable main
 ```
 
 CI publishes new packages on tag push.

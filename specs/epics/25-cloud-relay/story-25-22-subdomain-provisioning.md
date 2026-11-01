@@ -1,11 +1,11 @@
-# Story 25.22 — Subdomain provisioning (`{username}.maktaba.app`)
+# Story 25.22 — Subdomain provisioning (`{username}.maktaba.tv`)
 
 > Epic 25 · Cloud relay · Phase 5 (operations)
 
 ## Description
 
-Each linked server gets a public subdomain of `maktaba.app`. The
-subdomain is the user's stable, friendly URL: `mahmoud.maktaba.app`.
+Each linked server gets a public subdomain of `maktaba.tv`. The
+subdomain is the user's stable, friendly URL: `mahmoud.maktaba.tv`.
 The cloud manages name reservations, uniqueness, DNS propagation, and
 release-with-grace.
 
@@ -25,7 +25,7 @@ Behavior:
   claimed_at)`. If the user already has a server linked but no
   subdomain, this binds the server to the new subdomain.
 - DNS provisioning is **wildcard-based**: a single
-  `*.maktaba.app A 1.2.3.4` record points all subdomains at the
+  `*.maktaba.tv A 1.2.3.4` record points all subdomains at the
   relay LB. Per-subdomain DNS records are *not* needed for v1.
   This means subdomain resolution is instant (no DNS propagation
   delay) — we control routing inside the relay (25.9).
@@ -112,12 +112,12 @@ profanity list (multi-language).
   authoritative end. Recursive resolvers may cache `NXDOMAIN`
   for a stale name briefly, but since we use a wildcard,
   there's no NXDOMAIN to cache.
-- **Cloudflare proxy mode.** We proxy `*.maktaba.app`
+- **Cloudflare proxy mode.** We proxy `*.maktaba.tv`
   through Cloudflare for the TLS+CDN benefits on
   non-streaming endpoints; streaming endpoints (HLS chunks)
   are proxied with caching disabled.
 - **Subdomain takeover risk.** Standard mitigation:
-  the wildcard CNAME is at the apex of `*.maktaba.app`;
+  the wildcard CNAME is at the apex of `*.maktaba.tv`;
   users cannot point an external CNAME at us, so no
   subdomain dangling occurs in the user's DNS.
 - **Custom domains.** Out for v1. A user wanting

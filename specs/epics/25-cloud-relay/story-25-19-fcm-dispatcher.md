@@ -40,7 +40,7 @@ Payload:
   ```
 - For web push: include `webpush.notification.title|body` and
   `webpush.headers.TTL`. Notifications open
-  `https://app.maktaba.app/r/<ref_id>` on click.
+  `https://app.maktaba.tv/r/<ref_id>` on click.
 
 Failure handling:
 

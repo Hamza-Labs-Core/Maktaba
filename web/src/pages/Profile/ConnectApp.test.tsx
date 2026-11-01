@@ -23,7 +23,7 @@ const HOME: DiscoveryHome = {
   urls: [
     "http://192.168.1.5:8088",
     "http://studio.local:8088",
-    "https://kitchen.relay.maktaba.app",
+    "https://kitchen.relay.maktaba.tv",
   ],
   sign_in: { password: true, code: true },
 };
@@ -47,7 +47,7 @@ describe("connectLink", () => {
     expect(connectLink(HOME)).toBe(
       "maktaba://connect?id=0a1b2c3d-0000-4000-8000-000000000000&n=Kitchen%20%26%20Den" +
         "&u=http%3A%2F%2F192.168.1.5%3A8088&u=http%3A%2F%2Fstudio.local%3A8088" +
-        "&u=https%3A%2F%2Fkitchen.relay.maktaba.app"
+        "&u=https%3A%2F%2Fkitchen.relay.maktaba.tv"
     );
   });
 

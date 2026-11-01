@@ -31,7 +31,7 @@ calls the Remote makes (`Admin.swift`).
   token (`Redirects.swift`; a request with a password, refresh token or assertion in its body
   does not follow it at all). **Through Maktaba Cloud** (story 42.7, `Cloud.swift`,
   `CloudViews.swift`): sign in to the cloud (email, password; its API address under
-  *Advanced*, `https://api.maktaba.app` by default, remembered in the defaults), see the homes
+  *Advanced*, `https://api.maktaba.tv` by default, remembered in the defaults), see the homes
   the account reaches (online or not; one not linked is shown with how to link it, never
   offered), pick a linked one: the app reaches it at the cloud's `direct_url` or `relay_url`,
   asks the cloud for a one-use assertion and trades it at that address (`POST

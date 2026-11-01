@@ -11,7 +11,7 @@ Method: every AC traced to code. READ-ONLY. Verified against source, not audit/s
 | Path | Lines / state | Relevance |
 |---|---|---|
 | `apps/mobile/package.json` | 35 | Capacitor 6 deps declared (`@capacitor/app, network, status-bar, splash-screen, preferences, haptics, push-notifications, share`). No native-player, no filesystem/background-download plugin. |
-| `apps/mobile/capacitor.config.json` | 40 | appId `dev.maktaba.app`, `webDir → ../../web/dist`, SplashScreen/StatusBar/PushNotifications plugin config. |
+| `apps/mobile/capacitor.config.json` | 40 | appId `dev.maktaba.tv`, `webDir → ../../web/dist`, SplashScreen/StatusBar/PushNotifications plugin config. |
 | `apps/mobile/src/native-shell.ts` | 89 | Lifecycle→DOM-event bridge + `tapHaptic()` + `nativePrefs` (uses **`@capacitor/preferences`, NOT Keychain/Keystore**). |
 | `apps/mobile/README.md` | 47 | Documents `ios/`, `android/` as *"scaffolded by npx cap add (not in git yet)"*. |
 | `apps/mobile/ios/`, `apps/mobile/android/` | **absent** | No native Xcode/Gradle projects exist. |

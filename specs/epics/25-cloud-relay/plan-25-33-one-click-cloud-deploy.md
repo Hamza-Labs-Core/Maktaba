@@ -8,7 +8,7 @@
 |---|---|
 | Runtime | Same Docker image (25.30). |
 | Marketplaces | DigitalOcean Marketplace (Packer-built image), Hetzner Cloud App (same), Railway template, generic VPS shell installer. |
-| Auto-TLS at server | Bundled Caddy with DNS-01 against `*.maktaba.app` (using a one-time short-lived Cloudflare API token issued by the cloud after subdomain claim). Alternative: cloud-side TLS via tunnel (preferred, requires no Caddy on server). |
+| Auto-TLS at server | Bundled Caddy with DNS-01 against `*.maktaba.tv` (using a one-time short-lived Cloudflare API token issued by the cloud after subdomain claim). Alternative: cloud-side TLS via tunnel (preferred, requires no Caddy on server). |
 | Hardening | UFW + fail2ban + no-root-SSH + unattended-upgrades. |
 | Out of scope | AWS Lightsail formal listing; GCP / Azure marketplaces. |
 
@@ -194,7 +194,7 @@ echo "Maktaba is starting. Open http://$(curl -fs ifconfig.me)/welcome"
 | Hetzner regions | nbg1 default; user pick. | Spec. |
 | Railway pricing | "~$5/mo" estimated; not bundled in Pro. | Doc. |
 | Volume durability | Vendor-owned; nightly DB dump documented. | Doc. |
-| DDoS at VPS | Vendor-level only. Cloud Cloudflare protects only `*.maktaba.app`. | Doc. |
+| DDoS at VPS | Vendor-level only. Cloud Cloudflare protects only `*.maktaba.tv`. | Doc. |
 | IPv6 | Enabled by Caddy by default. | Spec. |
 | Custom domain instead of subdomain | Out for v1. | Spec. |
 | Sensitive data in cloud-init | PG password generated locally; `.env` mode 0600. | Implementation. |
@@ -204,7 +204,7 @@ echo "Maktaba is starting. Open http://$(curl -fs ifconfig.me)/welcome"
 
 - 25.30 (Docker image).
 - 25.6 (claim token entry triggers cloud-link).
-- 25.23 (cloud-issued cert for *.maktaba.app; server side uses tunnel for TLS so Caddy at the host isn't strictly needed for relay traffic).
+- 25.23 (cloud-issued cert for *.maktaba.tv; server side uses tunnel for TLS so Caddy at the host isn't strictly needed for relay traffic).
 
 ## 9. Acceptance checklist
 

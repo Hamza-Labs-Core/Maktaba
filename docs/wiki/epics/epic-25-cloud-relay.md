@@ -14,13 +14,13 @@ unmonetizable.
 
 The cloud has five jobs: **identity** (sign-up, OAuth, sessions),
 **linking** (claim-token-based server↔account binding), **reachability**
-(WSS-tunneled HTTP relay at `{username}.maktaba.app`), **push** (server →
+(WSS-tunneled HTTP relay at `{username}.maktaba.tv`), **push** (server →
 cloud → APNs/FCM fanout), and **billing** (Stripe-hosted checkout, signed
 entitlement blobs). It explicitly does **not** store media, transcribe,
 or analyze content. Self-hosted features never depend on the cloud.
 
 This epic also covers **server distribution**: native installers for
-macOS, Windows, Linux, NAS, ARM, and VPS — the path from `maktaba.app`
+macOS, Windows, Linux, NAS, ARM, and VPS — the path from `maktaba.tv`
 download to scanning library.
 
 ## Stories & Plans
@@ -112,7 +112,7 @@ download to scanning library.
 ## API endpoints (cloud)
 
 70+ endpoints across identity (`/api/auth/*`), accounts (`/api/me/*`),
-servers (`/api/servers/*`), relay (`https://{user}.maktaba.app/*`),
+servers (`/api/servers/*`), relay (`https://{user}.maktaba.tv/*`),
 tunnel (`/tunnel/v1/connect`), push (`/api/push/*`), entitlements
 (`/api/entitlements`), billing (`/api/billing/*`), and admin
 (`/api/admin/*`). Full list in

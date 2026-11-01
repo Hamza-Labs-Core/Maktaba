@@ -105,9 +105,9 @@ func (f *FCMDispatcher) Send(ctx context.Context, row OutboxJoinedRow) {
 func deepLinkFor(row OutboxJoinedRow) string {
     switch row.Kind {
     case "library.video_ready", "download.complete":
-        return "https://app.maktaba.app/r/" + row.RefID
+        return "https://app.maktaba.tv/r/" + row.RefID
     default:
-        return "https://app.maktaba.app/"
+        return "https://app.maktaba.tv/"
     }
 }
 ```

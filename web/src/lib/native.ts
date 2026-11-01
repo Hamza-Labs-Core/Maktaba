@@ -41,7 +41,7 @@ const DEEP_LINK_ROUTES = new Set(["watch", "search", "library", "queue", "settin
  * ignore it.
  *
  *   maktaba://watch/123?t=42        → /watch/123?t=42
- *   https://maktaba.app/library/abc → /library/abc
+ *   https://maktaba.tv/library/abc → /library/abc
  *   https://example.com/watch/1     → null  (foreign host, custom only)
  */
 export function deepLinkToPath(raw: string): string | null {

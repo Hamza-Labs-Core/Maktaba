@@ -15,7 +15,7 @@ Blob shape:
 
 ```json
 {
-  "iss": "cloud.maktaba.app",
+  "iss": "cloud.maktaba.tv",
   "sub": "<server_id>",
   "user_id": "<user_id>",
   "tier": "pro",

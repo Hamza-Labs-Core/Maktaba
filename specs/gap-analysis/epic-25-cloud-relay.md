@@ -20,7 +20,7 @@
 
 This is the single worst gap and it invalidates the epic's premise.
 
-**What the spec requires.** Story 25.6 §"Files/packages" requires `internal/cloudlink/claim.go`; Story 25.7 §"Files/packages" requires `internal/cloudlink/{conn,frame,multiplex,proxy,health}.go` plus a separate process `cmd/maktaba-cloudlink/main.go`. Story 25.7 ACs require the on-prem box to: open a WSS to `wss://relay.maktaba.app/tunnel/v1/connect` within 5s of start, send `Authorization: Bearer <server_token>`, frame-multiplex requests to its loopback API, PING/PONG every 25s/10s, exponential-backoff reconnect, handle `0x20 REVOKE`, refresh entitlements on `0x21 ENT_REFRESH`, and surface state at local `GET /admin/cloud-link`. Story 25.6 requires the server to POST `/api/servers/claim/init` with `{token_hash, server_pubkey, server_version}` and persist `{server_id, server_token}` encrypted-at-rest.
+**What the spec requires.** Story 25.6 §"Files/packages" requires `internal/cloudlink/claim.go`; Story 25.7 §"Files/packages" requires `internal/cloudlink/{conn,frame,multiplex,proxy,health}.go` plus a separate process `cmd/maktaba-cloudlink/main.go`. Story 25.7 ACs require the on-prem box to: open a WSS to `wss://relay.maktaba.tv/tunnel/v1/connect` within 5s of start, send `Authorization: Bearer <server_token>`, frame-multiplex requests to its loopback API, PING/PONG every 25s/10s, exponential-backoff reconnect, handle `0x20 REVOKE`, refresh entitlements on `0x21 ENT_REFRESH`, and surface state at local `GET /admin/cloud-link`. Story 25.6 requires the server to POST `/api/servers/claim/init` with `{token_hash, server_pubkey, server_version}` and persist `{server_id, server_token}` encrypted-at-rest.
 
 **What exists.** Nothing. Verified:
 
@@ -78,7 +78,7 @@ Legend: ✅ complete · 🟡 partial · ❌ missing · 🔌 unwired · 🧱 stub
 | 25.7 (server side) | **ALL 7 ACs** (WSS connect, frame mux, backoff, PING/PONG, REVOKE, concurrency, RSS bound) | ❌ | **No cloudlink client exists** — see Critical section |
 | 25.8 (cloud side) | Accept tunnel, register, demux | 🟡 | `cloud/internal/relay/ws.go:81 ServeWS`, `relay/registry.go`, `relay/tunnel.go`; wired `role_relay.go:34` at `/v1/relay/ws` |
 | 25.8 | Auth = `Authorization: Bearer server_token` | ❌ | Impl uses an AUTH **frame** with `{server_id,secret}` argon2 (`ws.go:99-136`), not the spec's Bearer header / bcrypt |
-| 25.8 | Endpoint path `tunnel/v1/connect` | 🟡 | Impl path is `/v1/relay/ws` (`role_relay.go:34`); spec says `wss://relay.maktaba.app/tunnel/v1/connect` |
+| 25.8 | Endpoint path `tunnel/v1/connect` | 🟡 | Impl path is `/v1/relay/ws` (`role_relay.go:34`); spec says `wss://relay.maktaba.tv/tunnel/v1/connect` |
 | 25.8 | Last-write-wins on duplicate session | 🟡 | `registry.go` Register/Unregister present; explicit older-session-close on collision not verified |
 | 25.8 | PING/PONG, REVOKE, ENT_REFRESH frames | 🟡 | `protocol.go` has frame kinds; `tunnel.go:81` handles KindPing only; REVOKE/ENT_REFRESH dispatch absent |
 | 25.9 HTTP proxy | Host→slug→tunnel proxy | ✅ | `cloud/internal/handlers/relay/proxy.go:31-83`, wired `role_relay.go:39-45` |
@@ -125,7 +125,7 @@ Legend: ✅ complete · 🟡 partial · ❌ missing · 🔌 unwired · 🧱 stub
 | 25.22 | **DNS via Cloudflare API** | ❌ | `subdomain.go:20-22` comment "DNS provisioning … happens out-of-band in a worker"; **no Cloudflare API code anywhere** (`grep cloudflare cloud/internal` → none) |
 | 25.22 | handler reachable | 🔌 | `MountSubdomains` defined (`subdomain.go:23`) but **never called** in any role (`grep MountSubdomains cmd/` → none) — dead code |
 | 25.22 | 90-day rename limit / 301 old subdomain | ❌ | Not implemented |
-| 25.23 TLS edge | Wildcard ACME `*.maktaba.app` DNS-01 | 🧱 | `cloud/internal/tls/acme.go:9-14` explicitly: "do not import x/crypto/acme … this file establishes the shape." Only a HostPolicy stub; no issuance, no rotation, not wired to relay listener |
+| 25.23 TLS edge | Wildcard ACME `*.maktaba.tv` DNS-01 | 🧱 | `cloud/internal/tls/acme.go:9-14` explicitly: "do not import x/crypto/acme … this file establishes the shape." Only a HostPolicy stub; no issuance, no rotation, not wired to relay listener |
 | 25.24 Rate limiting | Per-IP/user/server sliding window, 429+Retry-After | 🟡 | `cloud/internal/ratelimit/ratelimit.go` token-bucket; wired only on login/register (`role_api.go:90-96`). No redis, no per-user/per-server scope, no `rate_overrides` table |
 | 25.25 Abuse detection | Anomaly/port-scan/hotlink/bot signals + suspend | 🔌 | `cloud/internal/abuse/detector.go` exists but `_ = abuse.New(pool.DB) // wired … follow-up` (`role_api.go:46`) — instantiated and discarded; no signals emitted, `abuse_signals`/`blocklist` tables unused |
 | 25.26 Entitlement signing | Ed25519-signed JSON, 24h, kid, server caches | 🔌 | `cloud/internal/entitlement/entitlement.go` Sign/Verify/Fingerprint correct & tested; but **no HTTP endpoint** (`GET /api/entitlements`, `/api/servers/{id}/entitlement` not mounted in any role), no issuance at claim/webhook, `entitlement_keys`/`entitlement_grants` tables never written. Server-side verify consumer absent (no cloudlink) |
@@ -159,7 +159,7 @@ All distribution stories ship **config/script artifacts, not built+signed binari
 
 4. **[HIGH] Entitlement system unwired (25.26 + 25.14).** Crypto is correct & tested but no endpoint serves it, claim/webhook never issues/signs grants, `entitlement_keys`/`entitlement_grants` never written. Paid features cannot be gated on any server.
 
-5. **[HIGH] DNS provisioning absent (25.22).** No Cloudflare API integration anywhere; `MountSubdomains` is dead code (never mounted). `username.maktaba.app` is never actually created in DNS.
+5. **[HIGH] DNS provisioning absent (25.22).** No Cloudflare API integration anywhere; `MountSubdomains` is dead code (never mounted). `username.maktaba.tv` is never actually created in DNS.
 
 6. **[HIGH] TLS edge is a stub (25.23).** `acme.go` explicitly ships only a HostPolicy shape; no ACME issuance/rotation, not wired. No valid cert for any subdomain.
 

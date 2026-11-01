@@ -571,7 +571,7 @@ free integer at implementation time** (MANIFEST rule); this spec calls it `NNNN`
    playback continues across the A/B switch with a fresh token and that `ip.src` rules behave on
    mobile networks (CGNAT, IPv4/IPv6 switching). Fallback: `bind_token_ip = false`.
 9. **Cold start time** (only with `tiering = top_n`): not documented; measure in the spike.
-10. **Accounts mode identity.** Use Epic 25 cloud accounts (OAuth at maktaba.app) — the only identity
+10. **Accounts mode identity.** Use Epic 25 cloud accounts (OAuth at maktaba.tv) — the only identity
     reachable without the home. OK, or drop `accounts` mode?
 11. **Artwork.** Posters off by default (their rights differ from the programme's). OK?
 12. **Workers Paid plan** ($5/month) is assumed (Durable Objects, KV/R2 volumes, CPU). OK?

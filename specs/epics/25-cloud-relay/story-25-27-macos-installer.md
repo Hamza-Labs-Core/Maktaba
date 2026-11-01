@@ -27,7 +27,7 @@ Lifecycle:
   current libraries count, "Open in browser", "Pause indexing",
   "Show logs", "Preferences", "Quit".
 - **Auto-update** via Sparkle 2 (EdDSA-signed appcast at
-  `https://releases.maktaba.app/macos/appcast.xml`). Updates
+  `https://releases.maktaba.tv/macos/appcast.xml`). Updates
   cleanly even while running by signaling subprocesses to
   drain.
 

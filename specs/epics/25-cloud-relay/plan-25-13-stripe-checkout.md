@@ -231,7 +231,7 @@ func portal(s *Service) http.HandlerFunc {
         if user.StripeCustomerID == "" { problem(w, 409, "no_customer", "Create a subscription first."); return }
         params := &stripe.BillingPortalSessionParams{
             Customer: stripe.String(user.StripeCustomerID),
-            ReturnURL: stripe.String("https://app.maktaba.app/billing"),
+            ReturnURL: stripe.String("https://app.maktaba.tv/billing"),
         }
         sess, err := portalsession.New(params)
         if err != nil { problem(w, 502, "stripe_unavailable", ""); return }

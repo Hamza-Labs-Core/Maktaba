@@ -34,7 +34,7 @@ const FREE_OVER: LicenseView = {
   message:
     "This home has more users than its plan allows. They all keep working, but no new user can be added until the plan allows more or users are removed.",
   cloud: { claimed: false },
-  manage_url: "https://maktaba.app/billing",
+  manage_url: "https://maktaba.tv/billing",
 };
 
 const PRO_CLOUD: LicenseView = {
@@ -56,7 +56,7 @@ const PRO_CLOUD: LicenseView = {
   },
   last_refresh_at: "2026-10-26T10:00:00Z",
   cloud: { claimed: true, server_id: "srv-1", slug: "myhome" },
-  manage_url: "https://maktaba.app/billing",
+  manage_url: "https://maktaba.tv/billing",
 };
 
 function open(user = adminUser) {
@@ -89,7 +89,7 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
     );
     expect(screen.getByRole("link", { name: "Get a plan" })).toHaveAttribute(
       "href",
-      "https://maktaba.app/billing"
+      "https://maktaba.tv/billing"
     );
     expect(screen.getByText(/not linked to Maktaba Cloud/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remove license" })).toBeNull();

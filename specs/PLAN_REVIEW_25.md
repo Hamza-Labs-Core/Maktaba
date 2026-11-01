@@ -388,7 +388,7 @@ Same issue as PLAN_REVIEW_18_24 §1.9, replayed in Epic 25:
 - plan-25-27 §1 (`scripts/build.sh`) "vendor binaries" assumes those
   binaries built from somewhere.
 - plan-25-34 (auto-update mechanism) downloads "the binaries"
-  from `releases.maktaba.app/manifest.json`; manifest build
+  from `releases.maktaba.tv/manifest.json`; manifest build
   pipeline is not specified.
 
 **Recommendation.** Either land the top-level Go module + `cmd/`
@@ -747,7 +747,7 @@ declares the R2 binding library (`aws-sdk-go-v2` with R2 endpoint?
 - `[major]` Migration filename slot conflict; see §1.1.
 - `[major]` §1 places `cloud_identities` in slot 0002, but README
   slot 0001 reserves identities. Re-file as `00010002_*`.
-- `[minor]` §5 `validateNext` allowlist excludes `https://maktaba.app`
+- `[minor]` §5 `validateNext` allowlist excludes `https://maktaba.tv`
   (the marketing site) but [`README.md:144`](epics/25-cloud-relay/README.md)
   CORS list in plan-25-01:144 includes it. Reconcile.
 - `[minor]` §3 `Provider.AuthURL` signature includes `nonce` and
@@ -1218,7 +1218,7 @@ declares the R2 binding library (`aws-sdk-go-v2` with R2 endpoint?
 
 **Verdict:** NEEDS_REVISION
 
-- `[major]` §1 manifest published at `releases.maktaba.app/manifest.json`;
+- `[major]` §1 manifest published at `releases.maktaba.tv/manifest.json`;
   no plan owns the host. plan-25-22 § reservations include
   `releases` — good. Add a plan-25-23 entry to cover its TLS posture
   (the wildcard already covers it).

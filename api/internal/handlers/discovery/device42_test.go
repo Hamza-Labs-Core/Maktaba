@@ -196,7 +196,7 @@ func TestDeviceStartVerifyURL(t *testing.T) {
 		t.Fatalf("verify_url without a home = %q", s.VerifyURL)
 	}
 	h.Home = func(context.Context, *http.Request) HomeInfo {
-		return HomeInfo{URLs: []string{"http://192.168.1.5:8088/", "https://kitchen.relay.maktaba.app"}}
+		return HomeInfo{URLs: []string{"http://192.168.1.5:8088/", "https://kitchen.relay.maktaba.tv"}}
 	}
 	s = startDevice(t, r)
 	if s.VerifyURL != "http://192.168.1.5:8088/pair?code="+s.Code || s.VerifyPath != "/pair?code="+s.Code {

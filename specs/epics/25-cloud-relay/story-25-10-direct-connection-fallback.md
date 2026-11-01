@@ -21,7 +21,7 @@ Algorithm (in client code, all platforms):
        { "url": "http://192.168.1.42:8080", "source": "mdns" },
        { "url": "http://10.0.0.5:8080",   "source": "user-set" }
      ],
-     "relay": "https://mahmoud.maktaba.app",
+     "relay": "https://mahmoud.maktaba.tv",
      "preferred": "lan"
    }
    ```
@@ -68,7 +68,7 @@ Privacy:
   is pinned for 5 min.
 - **Given** a client off-LAN,
   **when** all LAN probes fail or time out,
-  **then** the client falls back to `https://mahmoud.maktaba.app`
+  **then** the client falls back to `https://mahmoud.maktaba.tv`
   and `cloud_streams_active` accounts the stream.
 - **Given** the client is on the LAN but the server is offline,
   **when** the client probes,
@@ -120,7 +120,7 @@ Privacy:
   IPs that look private but aren't. Probes will simply fail
   (unless improbable luck) and we fall back to relay.
 - **HTTPS to private IP.** Browser security policies on web
-  block mixed content; if the page is `https://app.maktaba.app`,
+  block mixed content; if the page is `https://app.maktaba.tv`,
   it cannot fetch `http://192.168.1.42`. Web client must
   either (a) only run direct on `http://localhost`, or (b)
   use Caddy local-CA HTTPS. We document (b) as the

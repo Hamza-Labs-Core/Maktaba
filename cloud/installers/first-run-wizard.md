@@ -22,7 +22,7 @@ launches the wizard. The wizard runs on:
    `/var/lib/maktaba/secret` mode `0600`.
 6. **Storage location** — where to keep the library. Default
    `/var/lib/maktaba/library` (or `~/Maktaba` on desktops).
-7. **Done** — service starts, browser navigates to `https://app.maktaba.app`.
+7. **Done** — service starts, browser navigates to `https://app.maktaba.tv`.
 
 ## Error handling
 

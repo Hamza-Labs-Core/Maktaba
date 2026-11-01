@@ -160,7 +160,7 @@ func TestCLIUpdateGitHubOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(string(b), "releases.maktaba.app") || strings.Contains(string(b), "manifest-url") {
+		if strings.Contains(string(b), "releases.maktaba.tv") || strings.Contains(string(b), "manifest-url") {
 			t.Fatalf("%s still references the old manifest feed", f)
 		}
 	}

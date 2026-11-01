@@ -12,7 +12,7 @@ flags").
 
 Auth:
 
-- Mounted at `https://admin.maktaba.app` — separate hostname,
+- Mounted at `https://admin.maktaba.tv` — separate hostname,
   separate Cloudflare zone with stricter WAF rules.
 - SSO via Google Workspace `@hamzalabs.com` only. No password
   fallback. Sessions are 4h; every sensitive action requires
@@ -69,7 +69,7 @@ Performance:
 ## Acceptance criteria
 
 - **Given** a HamzaLabs operator with valid SSO,
-  **when** they open `https://admin.maktaba.app`,
+  **when** they open `https://admin.maktaba.tv`,
   **then** the user-search page loads within 1s.
 - **Given** a non-`@hamzalabs.com` Google account,
   **when** they attempt admin SSO,
@@ -157,7 +157,7 @@ Performance:
 - `cloud/internal/admin/sso.go` — Workspace OIDC.
 - `web/admin/` — separate React app (or server-rendered
   pages; v1 uses simple Vite + React, deployed under
-  `admin.maktaba.app`).
+  `admin.maktaba.tv`).
 
 ## Open questions
 

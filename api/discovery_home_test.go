@@ -29,7 +29,7 @@ func TestHomeDirectory(t *testing.T) {
 		Cloud:     func() subh.CloudLink { return subh.CloudLink{Claimed: true, Slug: "Kitchen"} },
 	}
 	info := d.Info(context.Background(), nil)
-	want := []string{"http://192.168.1.5:8088", "http://Studio.local:8088", "https://kitchen.relay.maktaba.app"}
+	want := []string{"http://192.168.1.5:8088", "http://Studio.local:8088", "https://kitchen.relay.maktaba.tv"}
 	if !reflect.DeepEqual(info.URLs, want) {
 		t.Fatalf("urls = %v, want %v", info.URLs, want)
 	}
