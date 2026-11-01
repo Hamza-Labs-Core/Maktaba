@@ -107,6 +107,10 @@ func (h *SubtitleHandler) ServeSidecar(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "sidecar not found", http.StatusNotFound)
 		return
 	}
+	if r.URL.Query().Has(hlsTimestampQuery) {
+		// a subtitle rendition's segment (subtitle_playlist.go)
+		body = WithTimestampMap(body)
+	}
 	w.Header().Set("Content-Type", "text/vtt; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	w.WriteHeader(http.StatusOK)
