@@ -16,6 +16,13 @@ don't append a line here; docs-only PRs are exempt.
   serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
   for an hour like the full one. A viewer without the video's library now gets 404 (as for a
   missing video) instead of 403, for both sizes.
+- **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
+  Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
+  a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,
+  Live TV, Search and Profile, each keeping its own screens and scroll position. A section
+  appears only once its screen is built, so for now the app opens on today's Libraries as
+  before. CI now runs the Player's unit and UI tests on a fake home, with dark English and
+  Arabic screenshots checked against references.
 - **Subtitles show on Apple TV, AirPlay and Cast (story 48.4).** A video session's master
   playlist now lists each subtitle file beside the video as an HLS subtitle track (language,
   its own name, off by default). Each track is a one-file playlist over the existing subtitle
@@ -93,6 +100,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node installs the home's updates even when the Maktaba window is closed.** Until
+  now the window app downloaded and installed each update. The server only tried to open it
+  with a `maktaba://` link, so an update waited until a window could be opened. On 2026-10-31
+  windows-pc's update to v0.3.44 sat waiting for eight hours, while Windows showed "Get an app
+  to open this 'maktaba' link" every 90 seconds. Now the server agent that runs at sign-in
+  (`Maktaba.exe --server-agent`) does it itself:
+  - it downloads the release's installer from that release's own page;
+  - it checks the installer with the app's key, and checks that the signature carries the
+    ordered version and names that very installer;
+  - at the home's go, it runs the installer.
+
+  The server no longer sends the link, and the window app only shows the update.
 - **A channel's stream follows library access (security, Epic 48 story 48.3).** The web
   port's `/stream/channel/{id}/…` checked only that someone was signed in, so a viewer
   limited to some libraries could watch another library's channel by its id. The gate now
