@@ -38,6 +38,8 @@ final class MockHome: @unchecked Sendable {
         var body: Data
         var contentType = "application/json"
         var delay: TimeInterval = 0
+        /// More response headers (`Retry-After`).
+        var headers: [String: String] = [:]
     }
 
     private struct Route: Decodable {
@@ -123,9 +125,10 @@ final class MockHome: @unchecked Sendable {
     func approve() { lock.withLock { approved = true } }
 
     /// From now on, `method path` (exact, no query) answers `status` and `body` (JSON),
-    /// after `delay` seconds. Wins over the fixtures.
-    func stub(_ method: String, _ path: String, status: Int = 200, body: String = "", delay: TimeInterval = 0) {
-        lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), delay: delay) }
+    /// after `delay` seconds, with more `headers` (a 503's `Retry-After`). Wins over the fixtures.
+    func stub(_ method: String, _ path: String, status: Int = 200, body: String = "", delay: TimeInterval = 0,
+              headers: [String: String] = [:]) {
+        lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), delay: delay, headers: headers) }
     }
 
     /// From now on, `method path` (any query) answers as it would anyway, but after `delay`
@@ -191,7 +194,7 @@ final class MockHome: @unchecked Sendable {
                     let request = Request(method: method, path: target[0], query: target.count > 1 ? target[1] : "",
                                           body: Data(buf[end.upperBound...].prefix(length)))
                     let a = answer(request)
-                    var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\nContent-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
+                    var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\n\(a.headers.map { "\($0): \($1)\r\n" }.joined())Content-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
                     response.append(a.body)
                     let send = { c.send(content: response, completion: .contentProcessed { _ in c.cancel() }) }
                     let parked = lock.withLock {
