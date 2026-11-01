@@ -22,7 +22,7 @@ Sources of truth:
 - Bandwidth: this month's sum from `cloud_bandwidth_daily` (25.11).
 - Updates available: a backend cron (every 6h) compares
   `cloud_servers.version` to the `latest_stable` value in
-  `https://releases.maktaba.app/manifest.json`.
+  `https://releases.maktaba.tv/manifest.json`.
 
 API surface:
 

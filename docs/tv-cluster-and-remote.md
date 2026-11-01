@@ -225,7 +225,7 @@ channels being sent, the remote sessions and the last remote events.
 
 ## 6. Remote viewers
 
-**Web.** Open the web app through your relay address (`https://<you>.maktaba.app`) and tune a
+**Web.** Open the web app through your relay address (`https://<you>.maktaba.tv`) and tune a
 channel as at home. The server tells the player it came through the relay
 (`/api/tv/info` → `remote.via_relay`), and the player tunes through Cloudflare instead of the LAN
 stream; nothing to choose. Switching channels works the same everywhere (▲/▼, PageUp/PageDown,

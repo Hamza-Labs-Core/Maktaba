@@ -20,7 +20,7 @@ import (
 )
 
 // HostPolicy reports whether `host` is eligible for cert issuance.
-// We accept either the bare public host (api.maktaba.app) or
+// We accept either the bare public host (api.maktaba.tv) or
 // <slug>.<relay public host>.
 type HostPolicy func(ctx context.Context, host string) error
 
@@ -33,7 +33,7 @@ type SubdomainResolver interface {
 // PolicyFromResolver returns a HostPolicy enforcing the subdomain rule.
 //
 // `apex` is the comma-separated list of bare hostnames we always serve
-// (api.maktaba.app, admin.maktaba.app, ...); `wildcardRoot` is the
+// (api.maktaba.tv, admin.maktaba.tv, ...); `wildcardRoot` is the
 // suffix that delimits valid per-server subdomains.
 func PolicyFromResolver(apex, wildcardRoot string, r SubdomainResolver) HostPolicy {
 	apexSet := map[string]bool{}

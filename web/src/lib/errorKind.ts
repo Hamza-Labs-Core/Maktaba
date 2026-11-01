@@ -31,7 +31,7 @@ export interface ClassifiedError {
 
 /**
  * The slug after `/problems/` in a problem type (the domain varies:
- * maktaba.invalid, maktaba.dev), or "" (about:blank, no type).
+ * maktaba.invalid, maktaba.tv), or "" (about:blank, no type).
  */
 export function problemSlug(type: string | undefined): string {
   if (!type) return "";

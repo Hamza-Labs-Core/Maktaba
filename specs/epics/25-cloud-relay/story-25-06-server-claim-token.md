@@ -23,7 +23,7 @@ The protocol:
      improbable but still checked on insert.
    - Computes its own Ed25519 fingerprint (Epic 10 Story 10.18)
      and includes it in the registration request.
-   - `POST`s to `https://api.maktaba.app/api/servers/claim/init`
+   - `POST`s to `https://api.maktaba.tv/api/servers/claim/init`
      with `{token_hash: HMAC-SHA256(token, server_secret),
      server_pubkey, server_version, server_locale}`. The cloud
      responds with `{claim_id}` and stores a row in
@@ -33,7 +33,7 @@ The protocol:
      `maktaba-claim://K3F9-MZ7P/{server_pubkey_b64}`.
 
 2. **Redeem (cloud side).** The user, signed in to
-   `app.maktaba.app`, enters the token (or scans the QR). The
+   `app.maktaba.tv`, enters the token (or scans the QR). The
    client `POST`s `/api/servers/claim` with `{token: "K3F9-MZ7P",
    server_pubkey: "..."}`. The cloud:
    - Hashes the token, finds the matching `cloud_claim_tokens`
@@ -48,7 +48,7 @@ The protocol:
      inserts `cloud_server_tokens` (random 256-bit bearer,
      stored as bcrypt-of-bearer), marks the claim row redeemed.
    - Responds with `{server_id, server_token, cloud_endpoint:
-     "wss://relay.maktaba.app/tunnel/v1/connect", entitlement: ...}`.
+     "wss://relay.maktaba.tv/tunnel/v1/connect", entitlement: ...}`.
 
 3. **Persist (server side).** The server stores `server_id` and
    `server_token` (encrypted-at-rest using its data key) and
@@ -115,7 +115,7 @@ The protocol:
   Without `init`, the cloud has no record and cannot redeem;
   this is intentional (defends against unknown-server
   redemption).
-- **User is on a corporate network blocking `*.maktaba.app`.**
+- **User is on a corporate network blocking `*.maktaba.tv`.**
   The init call fails; we offer manual key import (out of
   scope for this story; future enhancement: signed-CSR-by-mail).
 - **Server reset / re-claim.** Operator clicks "Reset cloud

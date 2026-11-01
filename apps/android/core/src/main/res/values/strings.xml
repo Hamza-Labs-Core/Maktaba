@@ -129,7 +129,7 @@
     <string name="cloud_sign_in">Sign in to Maktaba Cloud</string>
     <string name="cloud_advanced">Advanced</string>
     <string name="cloud_address">Maktaba Cloud address</string>
-    <string name="cloud_address_hint">Change it only to reach a test or your own Maktaba Cloud. Empty: api.maktaba.app.</string>
+    <string name="cloud_address_hint">Change it only to reach a test or your own Maktaba Cloud. Empty: api.maktaba.tv.</string>
     <string name="cloud_address_invalid">That is not an address.</string>
     <string name="cloud_wrong">The email or the password is wrong.</string>
     <string name="cloud_too_many">Too many tries. Wait a minute and try again.</string>

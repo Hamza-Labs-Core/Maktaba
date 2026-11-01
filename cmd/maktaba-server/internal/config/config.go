@@ -372,7 +372,7 @@ type CloudSection struct {
 	// Slug is the subdomain asked for at the claim; Name the server's label there.
 	Slug string `toml:"slug" json:"slug,omitempty"`
 	Name string `toml:"name" json:"name,omitempty"`
-	// API and RelayWS override the cloud's addresses (default: maktaba.app's).
+	// API and RelayWS override the cloud's addresses (default: maktaba.tv's).
 	API     string `toml:"api" json:"api,omitempty"`
 	RelayWS string `toml:"relay_ws" json:"relay_ws,omitempty"`
 	// AdminAddr is the agent's loopback status address (default 127.0.0.1:8765).

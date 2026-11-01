@@ -29,7 +29,7 @@ Limits (default; can be raised in admin):
 | `POST /api/servers/claim`                | IP                     | 10 / minute        |
 | `POST /api/billing/checkout`             | user                   | 30 / hour          |
 | `POST /api/billing/webhook`              | (none — Stripe only)   | n/a                |
-| Relay-via-`{user}.maktaba.app` (any)     | IP per subdomain       | 600 / minute       |
+| Relay-via-`{user}.maktaba.tv` (any)     | IP per subdomain       | 600 / minute       |
 | Relay (free tier, total)                 | user                   | 100 / day (any)    |
 | Relay streaming open                     | user                   | tier-specific (25.12) |
 | `POST /api/push/devices`                 | user                   | 30 / hour          |

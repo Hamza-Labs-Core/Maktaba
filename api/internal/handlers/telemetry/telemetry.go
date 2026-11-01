@@ -22,10 +22,10 @@ import (
 
 // Problem types of the pipe (beside the httperror registry's own).
 const (
-	TypeUnknownEventKind = "https://maktaba.dev/problems/unknown-event-kind"
-	TypeUnknownMetric    = "https://maktaba.dev/problems/unknown-metric"
-	TypeTooManyEvents    = "https://maktaba.dev/problems/too-many-events"
-	TypeUnknownField     = "https://maktaba.dev/problems/unknown-field"
+	TypeUnknownEventKind = "https://maktaba.tv/problems/unknown-event-kind"
+	TypeUnknownMetric    = "https://maktaba.tv/problems/unknown-metric"
+	TypeTooManyEvents    = "https://maktaba.tv/problems/too-many-events"
+	TypeUnknownField     = "https://maktaba.tv/problems/unknown-field"
 )
 
 const (

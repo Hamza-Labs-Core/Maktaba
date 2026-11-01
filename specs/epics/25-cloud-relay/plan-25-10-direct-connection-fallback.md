@@ -105,7 +105,7 @@ func endpoints(s *Service) http.HandlerFunc {
         sealed, _ := s.repo.GetEndpoints(r.Context(), sid)
         var cands []Endpoint
         if sealed != nil { seal.Unmarshal(s.dataKey, sealed, &cands) }
-        relay := fmt.Sprintf("https://%s.maktaba.app", srv.Subdomain)
+        relay := fmt.Sprintf("https://%s.maktaba.tv", srv.Subdomain)
         preferred := "lan"
         if len(cands) == 0 { preferred = "relay" }
         writeJSON(w, 200, map[string]any{

@@ -47,7 +47,7 @@ class LiveApiTest {
         "/api/channels/guide" -> json(200, fixture("guide.json"))
         "/api/channels/c1/guide" -> json(200, fixture("channel-guide.json"))
         "/api/tv/info" -> json(200, fixture("tv-info.json"))
-        else -> json(404, """{"type":"https://maktaba.dev/problems/not-found","title":"Not Found","status":404}""")
+        else -> json(404, """{"type":"https://maktaba.tv/problems/not-found","title":"Not Found","status":404}""")
     }
 
     @Before
@@ -213,7 +213,7 @@ class LiveApiTest {
     @Test
     fun aRefusedTuneCarriesTheHomesCode() = runBlocking {
         route = {
-            json(429, """{"type":"https://maktaba.dev/problems/user-streams-full","title":"Too Many Requests","status":429,"code":"user_streams_full"}""")
+            json(429, """{"type":"https://maktaba.tv/problems/user-streams-full","title":"Too Many Requests","status":429,"code":"user_streams_full"}""")
         }
         try {
             live().tune("c1", "Pixel")

@@ -38,7 +38,7 @@ func TestDiscoveryHomeShape(t *testing.T) {
 		Home: func(context.Context, *http.Request) HomeInfo {
 			return HomeInfo{ID: "0a1b2c3d-0000-4000-8000-000000000000", Name: "Kitchen", Version: "1.6.0",
 				URLs: []string{"http://192.168.1.5:8088", "http://studio.local:8088/", "http://192.168.1.5:8088",
-					"ftp://nope", "https://kitchen.relay.maktaba.app"}}
+					"ftp://nope", "https://kitchen.relay.maktaba.tv"}}
 		}}
 	rec := getHome(homeRouter(h, -1), nil)
 	if rec.Code != http.StatusOK {
@@ -55,7 +55,7 @@ func TestDiscoveryHomeShape(t *testing.T) {
 		t.Fatalf("identity = %v", got)
 	}
 	urls, _ := got["urls"].([]any)
-	want := []string{"http://192.168.1.5:8088", "http://studio.local:8088", "https://kitchen.relay.maktaba.app"}
+	want := []string{"http://192.168.1.5:8088", "http://studio.local:8088", "https://kitchen.relay.maktaba.tv"}
 	if len(urls) != len(want) {
 		t.Fatalf("urls = %v, want %v", urls, want)
 	}

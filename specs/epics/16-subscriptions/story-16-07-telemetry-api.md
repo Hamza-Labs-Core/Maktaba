@@ -39,7 +39,7 @@ later slot drops them) and adds `telemetry_outbox`.
   6 h, or Retry-After); another 4xx sends each batch of the envelope alone and drops the
   refused one. A batch a week old is dropped unsent; at most 5,000 wait.
 - The cloud is the license server's (the cloud the home is claimed in, else
-  `MAKTABA_LICENSE_SERVER`, else `https://api.maktaba.app`); `MAKTABA_TELEMETRY_URL`
+  `MAKTABA_LICENSE_SERVER`, else `https://api.maktaba.tv`); `MAKTABA_TELEMETRY_URL`
   overrides (`off`: nowhere). `[telemetry] enabled = "off"`: nothing is queued or sent.
 - Server errors are counted in memory by kind (every Error-level log record's message and
   `event` attribute, never its other attributes) and drained by each report.

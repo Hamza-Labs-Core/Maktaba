@@ -57,8 +57,8 @@ class PairingTest {
         assertEquals("under the base path", "https://example.com/maktaba/pair?code=ABCD-1234", code.approveUrl("https://example.com/maktaba".toHttpUrl()))
         assertEquals(
             "the home's own verify_url first",
-            "https://darwish.maktaba.dev/pair?code=ABCD-1234",
-            code.copy(verifyUrl = "https://darwish.maktaba.dev/pair?code=ABCD-1234").approveUrl("http://192.168.1.5:8088".toHttpUrl()),
+            "https://darwish.maktaba.tv/pair?code=ABCD-1234",
+            code.copy(verifyUrl = "https://darwish.maktaba.tv/pair?code=ABCD-1234").approveUrl("http://192.168.1.5:8088".toHttpUrl()),
         )
     }
 

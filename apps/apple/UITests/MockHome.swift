@@ -310,7 +310,7 @@ final class MockHome: @unchecked Sendable {
            {"node_id":"home","name":"Mac mini","ord":0,"platform":"darwin/arm64","state":"watching","from_version":"0.3.40","to_version":"0.3.43","attempts":1},
            {"node_id":"n1","name":"Basement PC","ord":1,"platform":"windows/amd64","state":"app_staged","from_version":"0.3.40","to_version":"0.3.43","attempts":1},
            {"node_id":"n2","name":"Attic","ord":2,"platform":"linux/amd64","state":"needs_person","from_version":"0.3.40","to_version":"0.3.43","attempts":2,
-            "error":{"code":"old_launcher","detail":"Run the installer once on this machine: curl -fsSL https://get.maktaba.app | sh"}}]}
+            "error":{"code":"old_launcher","detail":"Run the installer once on this machine: curl -fsSL https://get.maktaba.tv | sh"}}]}
         """#
     }
 

@@ -4,7 +4,7 @@
 
 ## Description
 
-Client traffic to `https://{username}.maktaba.app/...` is accepted at
+Client traffic to `https://{username}.maktaba.tv/...` is accepted at
 the cloud edge, routed onto the right server's tunnel (25.8),
 demultiplexed into REQ frames, awaited, and the response is streamed
 back. To the client, this looks like a plain HTTP/1.1 or HTTP/2
@@ -14,12 +14,12 @@ cloudlink. To the cloud, it's a managed bidirectional pipe.
 Components:
 
 - **Edge listener.** TLS-terminating HTTP/2 server on `:443`.
-  Cert is the wildcard `*.maktaba.app` (25.23). The Hetzner LB
+  Cert is the wildcard `*.maktaba.tv` (25.23). The Hetzner LB
   routes to a `relay` role pod with consistent hashing on
   `Host:` so the same subdomain consistently lands on the same
   pod that holds its tunnel.
 - **Subdomain → server lookup.** Strip the host suffix
-  `.maktaba.app`; look up `cloud_subdomains` (citext PK) →
+  `.maktaba.tv`; look up `cloud_subdomains` (citext PK) →
   `(server_id, user_id, suspended_at)`. If suspended,
   `503 server_suspended`. If subdomain reserved or unclaimed,
   `404 unknown_host`.
@@ -27,9 +27,9 @@ Components:
   missing, `503 server_offline` (formatted JSON or HTML based
   on `Accept`).
 - **Request adaptation.** The relay rewrites:
-  - `Host:` from `{user}.maktaba.app` to the server's local
+  - `Host:` from `{user}.maktaba.tv` to the server's local
     canonical (`maktaba.local` or `127.0.0.1:8080`).
-  - Adds `X-Maktaba-Original-Host: {user}.maktaba.app`,
+  - Adds `X-Maktaba-Original-Host: {user}.maktaba.tv`,
     `X-Maktaba-Client-Ip: <peer>`,
     `X-Maktaba-Cloud-User: <jwt-sub-or-anon>` (if auth header
     present and decodable; else absent — server's normal auth
@@ -61,9 +61,9 @@ on the request and response streams.
 
 ## Acceptance criteria
 
-- **Given** `mahmoud.maktaba.app` is claimed and the server
+- **Given** `mahmoud.maktaba.tv` is claimed and the server
   is online,
-  **when** a client `GET`s `https://mahmoud.maktaba.app/api/libraries`,
+  **when** a client `GET`s `https://mahmoud.maktaba.tv/api/libraries`,
   **then** the response status, headers, and body are
   byte-equivalent to a direct LAN call (modulo `Server`,
   `Date`, and `Via` headers).
@@ -91,7 +91,7 @@ on the request and response streams.
   **then** the bidirectional WS payloads are tunneled
   with negligible latency overhead (<5ms p50 added).
 - **Given** a request with malformed `Host:` header
-  (e.g., contains `..maktaba.app`),
+  (e.g., contains `..maktaba.tv`),
   **when** the relay parses it,
   **then** the response is `400 bad_host`.
 
@@ -108,8 +108,8 @@ on the request and response streams.
 | T07 | integration | WS upgrade for `/ws/library/{id}` | client subscribes | events arrive |
 | T08 | regression  | offline server then online mid-test | first request | 503; second request after reconnect | 200 |
 | T09 | integration | suspended subdomain | GET | 503 with body referencing billing |
-| T10 | unit        | wildcard certificate trust | verify chain | valid against `*.maktaba.app` |
-| T11 | regression  | pseudo-rebinding: `Host: example.com` to wildcard cert | verify | 421 `misdirected_request` (we only handle `*.maktaba.app`) |
+| T10 | unit        | wildcard certificate trust | verify chain | valid against `*.maktaba.tv` |
+| T11 | regression  | pseudo-rebinding: `Host: example.com` to wildcard cert | verify | 421 `misdirected_request` (we only handle `*.maktaba.tv`) |
 
 ## Edge cases
 
@@ -136,7 +136,7 @@ on the request and response streams.
 - **TLS handshake errors.** Surface in metrics
   (`tls_errors_total{reason}`); never crash the listener.
 - **DDoS.** Large attack volumes hit Cloudflare in front of
-  the relay (when on `*.maktaba.app` proxied through CF) —
+  the relay (when on `*.maktaba.tv` proxied through CF) —
   but the *streaming* path bypasses CF for cost reasons. We
   keep an L7 rate limit at the relay (per IP, per
   subdomain) backed by Redis (25.24) and a circuit breaker

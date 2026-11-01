@@ -61,7 +61,7 @@ func (e *Emergency) Claim(w http.ResponseWriter, r *http.Request) {
 	var out json.RawMessage
 	if err := e.Supervisor.Call(r.Context(), "term-claim", map[string]any{"from": req.From, "term": req.Term,
 		"sealed": req.Sealed}, &out); err != nil {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/term-claim-refused",
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/term-claim-refused",
 			"the claim does not open on this machine"))
 		return
 	}
@@ -84,7 +84,7 @@ func (e *Emergency) Start(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e.Supervisor == nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/switchover-unavailable",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/switchover-unavailable",
 			Title: "this machine cannot take over", Status: http.StatusConflict,
 			Detail: "it does not run under Maktaba's supervisor"})
 		return
@@ -92,7 +92,7 @@ func (e *Emergency) Start(w http.ResponseWriter, r *http.Request) {
 	var out json.RawMessage
 	if err := e.Supervisor.Call(r.Context(), "emergency", map[string]any{"confirm": req.Confirm,
 		"by": "user:" + p.UserID}, &out); err != nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/emergency-refused",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/emergency-refused",
 			Title: "this machine cannot take over now", Status: http.StatusConflict, Detail: err.Error()})
 		return
 	}

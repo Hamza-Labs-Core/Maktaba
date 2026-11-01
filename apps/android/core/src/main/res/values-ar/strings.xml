@@ -127,7 +127,7 @@
     <string name="cloud_sign_in">تسجيل الدخول إلى سحابة مكتبة</string>
     <string name="cloud_advanced">متقدم</string>
     <string name="cloud_address">عنوان سحابة مكتبة</string>
-    <string name="cloud_address_hint">لا تغيّره إلا للوصول إلى سحابة مكتبة تجريبية أو خاصة بك. فارغ: api.maktaba.app.</string>
+    <string name="cloud_address_hint">لا تغيّره إلا للوصول إلى سحابة مكتبة تجريبية أو خاصة بك. فارغ: api.maktaba.tv.</string>
     <string name="cloud_address_invalid">هذا ليس عنوانًا.</string>
     <string name="cloud_wrong">البريد الإلكتروني أو كلمة المرور غير صحيحة.</string>
     <string name="cloud_too_many">محاولات كثيرة. انتظر دقيقة ثم حاول مرة أخرى.</string>

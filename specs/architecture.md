@@ -2562,7 +2562,7 @@ The cloud has **five jobs**:
 2. **Linking** — bind one or more self-hosted servers to a cloud
    account via short-lived **claim tokens**.
 3. **Reachability** — accept inbound HTTPS at
-   `{username}.maktaba.app`, multiplex onto a persistent outbound
+   `{username}.maktaba.tv`, multiplex onto a persistent outbound
    WSS tunnel from the server, demultiplex on the server side
    into a normal local HTTP request. No port-forward, no DDNS, no
    static IP needed by the user.
@@ -2593,7 +2593,7 @@ The cloud explicitly **does not** do:
    │    https://<lan-ip>:8080  ────► local API / Streaming                        │
    │                                                                              │
    │  Relay path (off-LAN fallback):                                              │
-   │    https://{user}.maktaba.app  ────► Cloud edge ────► Tunnel ────► local API │
+   │    https://{user}.maktaba.tv  ────► Cloud edge ────► Tunnel ────► local API │
    └──────────────────────────────────────────────────────────────────────────────┘
 
                               Maktaba Cloud (HamzaLabs)
@@ -2633,10 +2633,10 @@ run with one of three roles:
 
 - **`--role=api`** — public REST/JSON endpoints (auth, accounts,
   servers, billing, push ingest, admin). Fronted by Cloudflare for
-  TLS + DDoS at `api.maktaba.app`, `app.maktaba.app`,
-  `admin.maktaba.app`.
+  TLS + DDoS at `api.maktaba.tv`, `app.maktaba.tv`,
+  `admin.maktaba.tv`.
 - **`--role=relay`** — accepts WSS tunnels from servers and HTTPS
-  from clients on `*.maktaba.app`. TLS terminates at Hetzner LB
+  from clients on `*.maktaba.tv`. TLS terminates at Hetzner LB
   (Cloudflare-bypass for cost on streaming bandwidth).
 - **`--role=worker`** — non-request work: Stripe webhook
   application, push outbox drainer (APNs + FCM), bandwidth
@@ -2741,17 +2741,17 @@ force is rate-limited per IP and tracked in `cloud_abuse_events`.
 ### 13.8 Subdomains & TLS at the edge
 
 Each linked server gets a stable
-`{username}.maktaba.app` subdomain. Validation:
+`{username}.maktaba.tv` subdomain. Validation:
 `^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$`, citext-unique, not in
 the 200-word reserved list. Username changes are limited to once
 per 90 days; the old subdomain enters a 30-day 301-redirect grace
 before returning to the pool.
 
-DNS is **wildcard-based** (one `*.maktaba.app` record). No
+DNS is **wildcard-based** (one `*.maktaba.tv` record). No
 per-subdomain provisioning is needed; routing is in the relay.
 
 TLS uses a **single Let's Encrypt wildcard cert** for
-`*.maktaba.app`, issued via DNS-01 against the Cloudflare API,
+`*.maktaba.tv`, issued via DNS-01 against the Cloudflare API,
 rotated automatically every 30 days, persisted encrypted-at-rest
 in Postgres, and reloaded into the LB and relay processes on
 SIGHUP. ZeroSSL is configured as a hot-swappable backup CA.
@@ -2912,7 +2912,7 @@ half of the job. The same `maktaba-api`, `maktaba-streaming`,
   for any Linux VPS (Lightsail, Linode, OVH).
 
 All paths share **one auto-update mechanism**: a signed
-`releases.maktaba.app/manifest.json` plus a `stable | beta`
+`releases.maktaba.tv/manifest.json` plus a `stable | beta`
 channel. Each platform plugs into the manifest with its native
 update path (Sparkle, MSI delta, apt/dnf, Watchtower-pull, vendor
 package manager). Updates verify SHA-256 + signature, take a

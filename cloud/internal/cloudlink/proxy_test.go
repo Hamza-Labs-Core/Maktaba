@@ -18,7 +18,7 @@ import (
 func TestParseRequest_PreservesMethodHeadersHostBody(t *testing.T) {
 	var head bytes.Buffer
 	fmt.Fprintf(&head, "POST /api/x?q=1 HTTP/1.1\r\n")
-	fmt.Fprintf(&head, "Host: acme.maktaba.app\r\n")
+	fmt.Fprintf(&head, "Host: acme.maktaba.tv\r\n")
 	fmt.Fprintf(&head, "X-Custom: yes\r\n")
 	head.WriteString("\r\n")
 
@@ -32,7 +32,7 @@ func TestParseRequest_PreservesMethodHeadersHostBody(t *testing.T) {
 	if req.URL.String() != "http://127.0.0.1:8080/api/x?q=1" {
 		t.Errorf("url = %q", req.URL.String())
 	}
-	if req.Host != "acme.maktaba.app" {
+	if req.Host != "acme.maktaba.tv" {
 		t.Errorf("host = %q, want preserved original", req.Host)
 	}
 	if req.Header.Get("X-Custom") != "yes" {

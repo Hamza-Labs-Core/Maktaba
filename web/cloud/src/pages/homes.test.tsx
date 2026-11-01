@@ -14,7 +14,7 @@ const KITCHEN: CloudHome = {
   server_id: "0a1b2c3d-0000-4000-8000-000000000000",
   name: "Kitchen",
   slug: "kitchen",
-  relay_url: "https://kitchen.relay.maktaba.app",
+  relay_url: "https://kitchen.relay.maktaba.tv",
   online: true,
   linked: true,
   owned: true,
@@ -24,7 +24,7 @@ const CABIN: CloudHome = {
   server_id: "s2",
   name: "Cabin",
   slug: "cabin",
-  relay_url: "https://cabin.relay.maktaba.app",
+  relay_url: "https://cabin.relay.maktaba.tv",
   linked: false,
   online: false,
 };
@@ -50,7 +50,7 @@ describe("your homes", () => {
       purpose: "signin",
     });
     expect(navigateExternal).toHaveBeenCalledWith(
-      "https://kitchen.relay.maktaba.app/play/cloud-sign-in#assertion=mkha1.p.s"
+      "https://kitchen.relay.maktaba.tv/play/cloud-sign-in#assertion=mkha1.p.s"
     );
   });
 
@@ -64,7 +64,7 @@ describe("your homes", () => {
     await userEvent.setup().click(await screen.findByRole("button", { name: "Manage" }));
     await waitFor(() =>
       expect(navigateExternal).toHaveBeenCalledWith(
-        "https://kitchen.relay.maktaba.app/manage/cloud-sign-in#assertion=a2"
+        "https://kitchen.relay.maktaba.tv/manage/cloud-sign-in#assertion=a2"
       )
     );
   });
@@ -79,7 +79,7 @@ describe("your homes", () => {
     expect(screen.queryByRole("button", { name: "Watch" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open the home" })).toHaveAttribute(
       "href",
-      "https://cabin.relay.maktaba.app/account"
+      "https://cabin.relay.maktaba.tv/account"
     );
     expect(f.find("POST", `/v1/homes/s2/assertion`)).toHaveLength(0);
   });

@@ -232,7 +232,7 @@ class VideoScreenTest {
         assertNull(VideoLink.route("maktaba://video/v1/extra"))
         assertNull(VideoLink.route("maktaba://series/s1"))
         assertNull(VideoLink.route("maktaba://connect?u=http://192.168.1.5:8088"))
-        assertNull(VideoLink.route("https://maktaba.dev/video/v1"))
+        assertNull(VideoLink.route("https://maktaba.tv/video/v1"))
     }
 
     @Test

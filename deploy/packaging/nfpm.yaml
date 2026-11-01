@@ -32,7 +32,7 @@ description: |
   pipeline roles, serves the embedded web UI, transcribes with Whisper,
   and provides full-text + semantic search over your library.
 vendor: Hamza Labs
-homepage: https://maktaba.dev
+homepage: https://maktaba.tv
 license: MIT
 
 # Runtime dependencies. ffmpeg is required for media probing/transcoding;

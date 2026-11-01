@@ -20,7 +20,7 @@ describe("deepLinkToPath (Story 12.9)", () => {
   });
 
   it("maps https Universal/App link", () => {
-    expect(deepLinkToPath("https://maktaba.app/library/abc")).toBe("/library/abc");
+    expect(deepLinkToPath("https://maktaba.tv/library/abc")).toBe("/library/abc");
   });
 
   it.each(["search", "queue", "settings", "collection"])("accepts the %s route", (route) => {
@@ -30,7 +30,7 @@ describe("deepLinkToPath (Story 12.9)", () => {
   it("rejects unknown routes and garbage", () => {
     expect(deepLinkToPath("maktaba://evil/1")).toBeNull();
     expect(deepLinkToPath("not a url")).toBeNull();
-    expect(deepLinkToPath("https://maktaba.app/")).toBeNull();
+    expect(deepLinkToPath("https://maktaba.tv/")).toBeNull();
   });
 });
 

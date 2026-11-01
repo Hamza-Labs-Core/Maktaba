@@ -28,7 +28,7 @@ import (
 
 // TypeLicenseInvalid is the problem type of a pasted license the home
 // refuses; the detail says why in plain words.
-const TypeLicenseInvalid = "https://maktaba.dev/problems/license-invalid"
+const TypeLicenseInvalid = "https://maktaba.tv/problems/license-invalid"
 
 // CloudLink describes this home's place in Maktaba Cloud, for Settings.
 type CloudLink struct {
@@ -226,7 +226,7 @@ func (h *Handler) SetLicense(w http.ResponseWriter, r *http.Request) {
 		// "feature off in this build" from "we broke" (500). Fail-closed,
 		// never trust a zero key.
 		httperror.Write(w, r, (&httperror.Error{
-			Type: "https://maktaba.dev/problems/licensing-unavailable", Title: "Licensing unavailable",
+			Type: "https://maktaba.tv/problems/licensing-unavailable", Title: "Licensing unavailable",
 			Status: http.StatusServiceUnavailable,
 			Detail: "This build of Maktaba cannot check licenses. Install an official release to apply one.",
 		}))

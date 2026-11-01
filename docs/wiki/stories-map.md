@@ -251,7 +251,7 @@ Linear issue IDs are not embedded in story files — column shown for completene
 | **[25.6](../../specs/epics/25-cloud-relay/story-25-06-server-claim-token.md)** | Server claim token flow | Cloud Relay | 5 | — | — | `POST /api/servers/claim/init`, `POST /api/servers/claim` | `cloud_servers`, `cloud_claim_tokens`, `cloud_server_tokens` |
 | **[25.7](../../specs/epics/25-cloud-relay/story-25-07-relay-tunnel-server.md)** | Relay tunnel — server side | Cloud Relay | 5 | — | — | `WSS /tunnel/v1/connect` | — |
 | **[25.8](../../specs/epics/25-cloud-relay/story-25-08-relay-tunnel-cloud.md)** | Relay tunnel — cloud side | Cloud Relay | 5 | — | — | `WSS /tunnel/v1/connect` | `cloud_servers` |
-| **[25.9](../../specs/epics/25-cloud-relay/story-25-09-http-relay-proxy.md)** | HTTP relay proxy | Cloud Relay | 5 | — | — | `ANY https://{user}.maktaba.app/*` | `cloud_subdomains` |
+| **[25.9](../../specs/epics/25-cloud-relay/story-25-09-http-relay-proxy.md)** | HTTP relay proxy | Cloud Relay | 5 | — | — | `ANY https://{user}.maktaba.tv/*` | `cloud_subdomains` |
 | **[25.10](../../specs/epics/25-cloud-relay/story-25-10-direct-connection-fallback.md)** | Direct-connection probe & LAN fallback | Cloud Relay | 5 | — | — | `GET /api/servers/{id}/endpoints` | — |
 | **[25.11](../../specs/epics/25-cloud-relay/story-25-11-bandwidth-metering.md)** | Bandwidth metering & accounting | Cloud Relay | 5 | — | — | `GET /api/me/usage`, `GET /api/servers/{id}/usage` | `cloud_bandwidth_daily`, `cloud_streams_active` |
 | **[25.12](../../specs/epics/25-cloud-relay/story-25-12-tier-enforcement.md)** | Tier enforcement (concurrent + caps) | Cloud Relay | 5 | — | — | (gate inside relay) | `cloud_subscriptions` |

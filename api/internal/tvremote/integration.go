@@ -677,7 +677,7 @@ func (in *Integration) ValidateSettings(ctx context.Context, cur, next map[strin
 		}
 	}
 	if has {
-		return httperror.Conflict("https://maktaba.dev/problems/cloudflare-account-in-use",
+		return httperror.Conflict("https://maktaba.tv/problems/cloudflare-account-in-use",
 			"Maktaba has live inputs and a signing key on account "+was+": remove the integration first")
 	}
 	return nil

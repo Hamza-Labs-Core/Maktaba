@@ -71,7 +71,7 @@ type Service struct {
 ```
 
 `start` handler:
-1. Validate `next` against allowlist (`https://app.maktaba.app/*`, `https://web.maktaba.app/*`, `maktaba://oauth/done`).
+1. Validate `next` against allowlist (`https://app.maktaba.tv/*`, `https://web.maktaba.tv/*`, `maktaba://oauth/done`).
 2. Generate `nonce` (16B), `code_verifier` (64B), `code_challenge = S256(code_verifier)`.
 3. Pack `state = HMAC{provider, nonce, code_verifier, next, exp}`; set as `__Host-oauth_state` cookie (10-min TTL, secure attrs).
 4. Redirect to `provider.AuthURL(state, nonce, code_challenge)`.
@@ -117,7 +117,7 @@ func (s *Service) ResolveIdentity(ctx context.Context, p string, c *Claims, req 
 }
 ```
 
-On Path C, the callback redirects to `https://app.maktaba.app/oauth/merge?token=<merge>` (or mobile equivalent). The merge page collects the user's *existing password* and POSTs to `/api/auth/oauth/merge`. Server:
+On Path C, the callback redirects to `https://app.maktaba.tv/oauth/merge?token=<merge>` (or mobile equivalent). The merge page collects the user's *existing password* and POSTs to `/api/auth/oauth/merge`. Server:
 
 1. Verify merge token (single-use, 10-min TTL).
 2. Verify password against `users.password_hash` (argon2id). Wrong → 401.
@@ -130,8 +130,8 @@ On Path C, the callback redirects to `https://app.maktaba.app/oauth/merge?token=
 
 ```go
 var allowedNextHosts = []string{
-    "https://app.maktaba.app",
-    "https://web.maktaba.app",
+    "https://app.maktaba.tv",
+    "https://web.maktaba.tv",
 }
 
 func validateNext(next string) error {
@@ -190,7 +190,7 @@ func (g *Google) ExchangeCode(ctx context.Context, code, verifier string) (*Clai
 |---|---|
 | `TestStateCookieHMAC` | Tamper → reject. |
 | `TestStateCookieExpiry` | exp passed → reject. |
-| `TestValidateNextAllowedHosts` | `app.maktaba.app`, `web.maktaba.app`, `maktaba://oauth/done` pass; `evil.tld` rejected. |
+| `TestValidateNextAllowedHosts` | `app.maktaba.tv`, `web.maktaba.tv`, `maktaba://oauth/done` pass; `evil.tld` rejected. |
 | `TestPKCEChallengeS256` | Verifier-challenge correspondence verified. |
 | `TestIDTokenVerifyBadAud` | aud≠clientID → reject. |
 

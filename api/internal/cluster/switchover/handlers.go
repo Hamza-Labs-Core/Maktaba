@@ -57,10 +57,10 @@ func (o *Orchestrator) postCancel(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrNoSwitch):
 		httperror.Write(w, r, httperror.NotFound("switch under way"))
 	case errors.Is(err, ErrTakingOver):
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/switchover-taking-over", err.Error()).
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/switchover-taking-over", err.Error()).
 			With("machine", name))
 	case errors.Is(err, ErrNoAnswer):
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/switchover-no-answer", err.Error()).
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/switchover-no-answer", err.Error()).
 			With("machine", name))
 	case errors.Is(err, ErrConfirmName):
 		httperror.Write(w, r, httperror.BadRequest(err.Error()).With("machine", name))
@@ -179,7 +179,7 @@ func (o *Orchestrator) putStandby(w http.ResponseWriter, r *http.Request) {
 	}
 	err := o.SetStandby(r.Context(), req.NodeID, req.Standby)
 	if errors.Is(err, ErrNotStandby) {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/not-standby",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/not-standby",
 			Title: "that machine cannot be a standby home", Status: http.StatusConflict, Detail: err.Error()})
 		return
 	}
@@ -208,14 +208,14 @@ func (o *Orchestrator) postStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if o.Supervisor == nil || o.Hub == nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/switchover-unavailable",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/switchover-unavailable",
 			Title: "this home cannot be switched", Status: http.StatusConflict,
 			Detail: "it does not run under Maktaba's supervisor with its own Postgres"})
 		return
 	}
 	id, err := o.Start(r.Context(), req.ToNode, "user:"+p.UserID)
 	if errors.Is(err, ErrNotReady) {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/switchover-not-ready",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/switchover-not-ready",
 			Title: "that machine cannot take over now", Status: http.StatusConflict, Detail: err.Error()})
 		return
 	}

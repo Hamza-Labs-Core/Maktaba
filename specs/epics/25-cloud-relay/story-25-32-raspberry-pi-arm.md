@@ -55,7 +55,7 @@ Imaging:
   we publish a setup script that runs on a fresh Raspberry Pi
   OS install:
   ```
-  curl -sSL https://get.maktaba.app/pi.sh | sudo bash
+  curl -sSL https://get.maktaba.tv/pi.sh | sudo bash
   ```
   installs deps, mounts an external SSD if present, and runs
   the .deb installer. Documented; not a custom OS image yet.
@@ -139,7 +139,7 @@ Imaging:
 ## Files / packages
 
 - `packaging/pi/get-maktaba.sh` (setup script published
-  at https://get.maktaba.app/pi.sh).
+  at https://get.maktaba.tv/pi.sh).
 - `packaging/profiles/pi-default.toml`,
   `packaging/profiles/pi5-default.toml`,
   `packaging/profiles/jetson-orin.toml`.

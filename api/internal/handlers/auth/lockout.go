@@ -24,7 +24,7 @@ const (
 // account. Distinct from invalid-credentials so a client can show
 // "locked, try later" instead of "wrong password" — Story 10.11 AC-1
 // mandates a 423 here, not the generic 401.
-const TypeAccountLocked = "https://maktaba.dev/problems/account-locked"
+const TypeAccountLocked = "https://maktaba.tv/problems/account-locked"
 
 // FailedLogins is the narrow seam the login path uses to drive the
 // per-username brute-force counter. *users.Store satisfies it; unit

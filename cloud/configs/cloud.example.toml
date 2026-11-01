@@ -6,9 +6,9 @@
 
 [server]
 listen_addr   = "0.0.0.0:8080"
-public_url    = "https://api.maktaba.app"
+public_url    = "https://api.maktaba.tv"
 # Origin of the cloud web app (mail links, OAuth landings). Defaults to public_url.
-web_url       = "https://app.maktaba.app"
+web_url       = "https://app.maktaba.tv"
 # Read the client IP from CF-Connecting-IP / X-Forwarded-For. Only behind a
 # proxy that overwrites those headers.
 trust_proxy_headers = false
@@ -77,5 +77,5 @@ sample_2xx_rate       = 0.10
 
 [relay]
 # Public host used to construct per-server subdomains:
-#   <server-slug>.relay.maktaba.app
-public_host = "relay.maktaba.app"
+#   <server-slug>.relay.maktaba.tv
+public_host = "relay.maktaba.tv"

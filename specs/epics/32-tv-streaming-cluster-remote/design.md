@@ -497,7 +497,7 @@ Polling is the source of truth (README Q12): input `status` and `lifecycle` ever
 every 15 s while `live`; `views` (live viewers) every 60 s for the admin page and as a second
 signal for idleness (sessions are primary). Webhooks (`live_input.connected|disconnected|errored`)
 are optional: if the admin configures a Cloudflare Notifications webhook to
-`https://<user>.maktaba.app/api/tv/remote/webhook` with a secret, the handler verifies the secret
+`https://<user>.maktaba.tv/api/tv/remote/webhook` with a secret, the handler verifies the secret
 and triggers an immediate reconcile (it never changes state by itself); errored events carry the `ERR_*` code shown on the admin page.
 
 ### 7.9 Simulcast (story 32.13)

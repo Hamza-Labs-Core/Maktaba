@@ -229,7 +229,7 @@ func (h *Handler) forceTooEarly(r *http.Request, id string, now time.Time) *http
 	}
 	if !requested {
 		return &httperror.Error{
-			Type:   "https://maktaba.dev/problems/pause-not-requested",
+			Type:   "https://maktaba.tv/problems/pause-not-requested",
 			Title:  "pause not requested",
 			Status: http.StatusConflict,
 			Detail: "request a pause first: a force pause is taken once the pause has waited " +
@@ -239,7 +239,7 @@ func (h *Handler) forceTooEarly(r *http.Request, id string, now time.Time) *http
 	if at.Valid {
 		if wait := grace - now.Sub(at.Time); wait > 0 {
 			return &httperror.Error{
-				Type:   "https://maktaba.dev/problems/pause-grace",
+				Type:   "https://maktaba.tv/problems/pause-grace",
 				Title:  "pause grace not over",
 				Status: http.StatusConflict,
 				Detail: "the worker may still pause at its next segment: force pause is taken in " +
@@ -291,7 +291,7 @@ func (h *Handler) Pause(w http.ResponseWriter, r *http.Request) {
 	}
 	if isTerminal(j.State) {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/job-terminal",
+			Type:   "https://maktaba.tv/problems/job-terminal",
 			Title:  "job already terminal",
 			Status: http.StatusConflict,
 			Detail: "cannot pause job in state " + j.State,
@@ -371,7 +371,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 	}
 	if j.State != "failed" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/job-not-failed",
+			Type:   "https://maktaba.tv/problems/job-not-failed",
 			Title:  "job not failed",
 			Status: http.StatusConflict,
 			Detail: "retry only valid for failed jobs",

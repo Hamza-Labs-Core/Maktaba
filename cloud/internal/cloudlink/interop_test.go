@@ -54,9 +54,9 @@ func TestEndToEnd_RealRelayTunnel_HeaderRoundTrip(t *testing.T) {
 	mux := NewMultiplexer(clientEnd, &LocalProxy{BaseURL: local.URL})
 	defer mux.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "http://acme.maktaba.app/api/books",
+	req := httptest.NewRequest(http.MethodPost, "http://acme.maktaba.tv/api/books",
 		strings.NewReader("payload"))
-	req.Host = "acme.maktaba.app"
+	req.Host = "acme.maktaba.tv"
 	req.Header.Set("X-Test", "abc")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -91,7 +91,7 @@ func TestEndToEnd_LocalAPIError_PropagatesStatus(t *testing.T) {
 	mux := NewMultiplexer(clientEnd, &LocalProxy{BaseURL: local.URL})
 	defer mux.Close()
 
-	req := httptest.NewRequest(http.MethodGet, "http://beta.maktaba.app/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://beta.maktaba.tv/x", nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	resp, err := tun.Proxy(ctx, req)
@@ -116,7 +116,7 @@ func TestEndToEnd_LoopbackDown_ReturnsBadGateway(t *testing.T) {
 	})
 	defer mux.Close()
 
-	req := httptest.NewRequest(http.MethodGet, "http://gamma.maktaba.app/x", nil)
+	req := httptest.NewRequest(http.MethodGet, "http://gamma.maktaba.tv/x", nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	resp, err := tun.Proxy(ctx, req)
@@ -165,7 +165,7 @@ func TestEndToEnd_BodyRoundTrip_HappyPath(t *testing.T) {
 	mux := NewMultiplexer(clientEnd, &LocalProxy{BaseURL: local.URL})
 	defer mux.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "http://delta.maktaba.app/x",
+	req := httptest.NewRequest(http.MethodPost, "http://delta.maktaba.tv/x",
 		strings.NewReader("payload"))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

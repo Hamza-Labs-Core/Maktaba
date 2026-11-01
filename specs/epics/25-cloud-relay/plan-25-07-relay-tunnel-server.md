@@ -402,7 +402,7 @@ Uses `secrets.SealedBox` from Epic 10.14 (data key locally derived from machine 
 
 | Case | Behaviour | Pinned |
 |---|---|---|
-| Captive-portal WSS | TLS handshake fails on `*.maktaba.app`; "captive portal detected" surface. | Doc. |
+| Captive-portal WSS | TLS handshake fails on `*.maktaba.tv`; "captive portal detected" surface. | Doc. |
 | Corp MITM proxy | Local trust store honored; banner shown. | Doc. |
 | Frame fragmentation | Single frame per WS message; reader handles "partial message" only via WS lib. | Codec. |
 | Goroutine leak on rapid reconnect | All stream goroutines hung off `parentCtx`; cancel fans out. | `TestDropWSMidStream`. |

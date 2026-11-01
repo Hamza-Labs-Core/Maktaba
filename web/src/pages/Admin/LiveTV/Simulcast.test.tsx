@@ -234,7 +234,7 @@ describe("SimulcastPanel", () => {
     setup();
     put.mockRejectedValueOnce(
       new ApiError({
-        type: "https://maktaba.dev/problems/rights-confirmation-required",
+        type: "https://maktaba.tv/problems/rights-confirmation-required",
         title: "Conflict",
         status: 409,
         code: "rights_confirmation_required",

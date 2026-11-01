@@ -6,10 +6,10 @@
 
 The cloud serves three TLS hostnames:
 
-- `*.maktaba.app` — wildcard for user-claimed subdomains and the
+- `*.maktaba.tv` — wildcard for user-claimed subdomains and the
   `app.`, `web.`, `api.`, `admin.`, `cloud.`, `relay.`,
   `releases.` administrative names.
-- `maktaba.app` — apex (marketing site).
+- `maktaba.tv` — apex (marketing site).
 - `*.maktaba.cloud` — staging environment.
 
 The wildcard is non-negotiable: per-user certs would mean
@@ -24,7 +24,7 @@ Issuance:
 - DNS-01 over HTTP-01 because the wildcard is not issuable via
   HTTP-01.
 - Cloudflare API token scoped to `Zone.DNS:Edit` for the two
-  zones (`maktaba.app`, `maktaba.cloud`); rotated quarterly.
+  zones (`maktaba.tv`, `maktaba.cloud`); rotated quarterly.
 - **ZeroSSL** as backup CA; hot-swappable via config flag.
 - Certificates persisted in Postgres
   (`cloud_tls_certs(host, fullchain_pem, key_sealed_pem,
@@ -75,10 +75,10 @@ Pinning posture:
   **then** the operator is paged; ZeroSSL fallback can be
   enabled with a one-line config change; existing cert
   continues serving.
-- **Given** a user opens `https://mahmoud.maktaba.app`,
+- **Given** a user opens `https://mahmoud.maktaba.tv`,
   **when** TLS handshake completes,
   **then** the chain validates against public roots and
-  the SAN includes `*.maktaba.app`.
+  the SAN includes `*.maktaba.tv`.
 - **Given** a client tries TLS 1.0,
   **when** the LB negotiates,
   **then** the handshake fails; TLS errors metric
@@ -109,12 +109,12 @@ Pinning posture:
 
 ## Edge cases
 
-- **Cert preload list.** `maktaba.app` is in HSTS preload
+- **Cert preload list.** `maktaba.tv` is in HSTS preload
   list; documented operationally that we cannot remove
   HSTS without 6+ months lead time. Do not break it.
 - **Certificate transparency.** All certs we issue end up
   in CT logs. We monitor Cert-Spotter for unexpected
-  issuances against `maktaba.app` (could indicate a
+  issuances against `maktaba.tv` (could indicate a
   rogue issuance via compromised DNS).
 - **OCSP must-staple.** We staple but don't set the
   must-staple OID in the CSR (rate of failure too high
@@ -127,7 +127,7 @@ Pinning posture:
   only read/write DNS in those two zones; cannot create
   zones, transfer, or modify settings. Logged.
 - **Subdomain-of-subdomain.** A wildcard
-  `*.maktaba.app` does **not** cover `a.b.maktaba.app`;
+  `*.maktaba.tv` does **not** cover `a.b.maktaba.tv`;
   per RFC 6125, wildcards are single-label. We don't
   use deeper levels.
 - **Cert size.** Wildcard ECDSA P-256 is ~700 bytes;

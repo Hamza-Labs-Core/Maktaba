@@ -214,7 +214,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := h.repo().insert(r.Context(), c); err != nil {
 		if isUniqueViolation(err) {
 			httperror.Write(w, r, httperror.Conflict(
-				"https://maktaba.dev/problems/channel-number-exists",
+				"https://maktaba.tv/problems/channel-number-exists",
 				"a channel with that number already exists in this library"))
 			return
 		}
@@ -407,7 +407,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
 			if isUniqueViolation(err) {
 				httperror.Write(w, r, httperror.Conflict(
-					"https://maktaba.dev/problems/channel-number-exists",
+					"https://maktaba.tv/problems/channel-number-exists",
 					"a channel with that number already exists in this library"))
 				return
 			}
@@ -547,7 +547,7 @@ func (h *Handler) Reorder(w http.ResponseWriter, r *http.Request) {
 			e.Number, now, e.ID); err != nil {
 			if isUniqueViolation(err) {
 				httperror.Write(w, r, httperror.Conflict(
-					"https://maktaba.dev/problems/channel-number-exists",
+					"https://maktaba.tv/problems/channel-number-exists",
 					"reorder would collide on a channel number"))
 				return
 			}

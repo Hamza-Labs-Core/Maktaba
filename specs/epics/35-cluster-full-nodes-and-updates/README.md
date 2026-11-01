@@ -37,7 +37,7 @@ Today a joined machine is a Python worker installed by hand (`deploy/packaging/n
 update is a button that swaps one binary (`POST /api/admin/system/update`, Epic 28.3: SHA-256
 against `checksums.txt` only — the cosign signature is not checked, and the sibling `maktaba-api` /
 `maktaba-streaming` binaries and the pipeline are not updated), the CLI `maktaba-server update` reads
-a different feed (`releases.maktaba.app/manifest.json`), and every machine is updated by someone
+a different feed (`releases.maktaba.tv/manifest.json`), and every machine is updated by someone
 re-running its installer. A node updated before its home pauses (schema guard); a home updated
 before its nodes leaves them paused until someone visits each one. This epic closes all of that.
 

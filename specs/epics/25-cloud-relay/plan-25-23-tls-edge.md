@@ -7,7 +7,7 @@
 | Concern | Decision |
 |---|---|
 | ACME library | `github.com/go-acme/lego/v4`. |
-| Challenge | DNS-01 via Cloudflare API (token scoped `Zone.DNS:Edit` for `maktaba.app` and `maktaba.cloud` zones). |
+| Challenge | DNS-01 via Cloudflare API (token scoped `Zone.DNS:Edit` for `maktaba.tv` and `maktaba.cloud` zones). |
 | Storage | Postgres `tls_certs` table; key sealed with KMS data key. |
 | Process | Issuance + rotation in `--role=worker` (cron-driven). |
 | Reload | LB and relay reload on `SIGHUP` after a fresh cert lands. |
@@ -25,7 +25,7 @@ the subdomain table created in `00080001_subdomains.sql`
 -- +goose Up
 CREATE TABLE tls_certs (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    host            TEXT NOT NULL,         -- '*.maktaba.app' | 'maktaba.app' | '*.maktaba.cloud'
+    host            TEXT NOT NULL,         -- '*.maktaba.tv' | 'maktaba.tv' | '*.maktaba.cloud'
     issuer          TEXT NOT NULL,         -- 'letsencrypt' | 'zerossl'
     fullchain_pem   TEXT NOT NULL,
     key_pem_sealed  BYTEA NOT NULL,
@@ -100,7 +100,7 @@ func RotateCron(ctx context.Context, o *Orchestrator) error {
         select {
         case <-ctx.Done(): return ctx.Err()
         case <-t.C:
-            for _, host := range []string{"*.maktaba.app", "maktaba.app", "*.maktaba.cloud"} {
+            for _, host := range []string{"*.maktaba.tv", "maktaba.tv", "*.maktaba.cloud"} {
                 if err := o.IssueIfNeeded(ctx, host); err != nil {
                     page(ctx, host, err)   // PagerDuty path on failure
                 }
@@ -157,11 +157,11 @@ Lego returns a `lego.Resource` we can feed to `golang.org/x/crypto/ocsp`; we sta
 
 ## 7. CT monitoring
 
-A weekly job hits `crt.sh` for `%.maktaba.app` and `%.maktaba.cloud`; diffs against our `tls_certs` issuer list; alerts on unknown certs.
+A weekly job hits `crt.sh` for `%.maktaba.tv` and `%.maktaba.cloud`; diffs against our `tls_certs` issuer list; alerts on unknown certs.
 
 ```go
 func CTSentinel(ctx context.Context) {
-    body, _ := http.Get("https://crt.sh/?q=%25.maktaba.app&output=json")
+    body, _ := http.Get("https://crt.sh/?q=%25.maktaba.tv&output=json")
     // diff against tls_certs.serial
     // alert if unknown serial found
 }
@@ -207,7 +207,7 @@ func CTSentinel(ctx context.Context) {
 | must-staple | Not set in CSR (LE flakiness). | Spec. |
 | Key compromise | Sealed in PG with KMS data key; rotation runbook. | Doc. |
 | CF token scope | Zone.DNS:Edit only. | Doc. |
-| `*.maktaba.app` does not cover `a.b.maktaba.app` | We never use 2-level subdomains. | Spec. |
+| `*.maktaba.tv` does not cover `a.b.maktaba.tv` | We never use 2-level subdomains. | Spec. |
 | Cert size | ECDSA ~700B; fine. | Spec. |
 | Old client compatibility | LE ISRG Root X2 + cross-sign. | Doc. |
 | Renewal failure 3x | Page on-call. | Cron metric. |

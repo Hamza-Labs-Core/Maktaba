@@ -16,7 +16,7 @@ func TestRedactDevice_HidesPushToken(t *testing.T) {
 		UserID:    "user-1",
 		Platform:  "ios",
 		PushToken: "secrettoken",
-		BundleID:  "dev.maktaba.app",
+		BundleID:  "dev.maktaba.tv",
 	}
 
 	out := redactDevice(d)

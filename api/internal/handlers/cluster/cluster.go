@@ -298,7 +298,7 @@ func (h *Handler) announce(ctx context.Context, id cluster.Identity) {
 
 func problem(status int, code, title, detail string) *httperror.Error {
 	return (&httperror.Error{
-		Type:   "https://maktaba.dev/problems/" + strings.ReplaceAll(code, "_", "-"),
+		Type:   "https://maktaba.tv/problems/" + strings.ReplaceAll(code, "_", "-"),
 		Title:  title,
 		Status: status,
 		Detail: detail,

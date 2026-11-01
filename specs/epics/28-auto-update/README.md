@@ -44,7 +44,7 @@ source and builds one update model on top of it:
 ### Why GitHub Releases (relationship to Story 25.34)
 
 Story 25.34 specced a manifest-based updater hosted at
-`releases.maktaba.app` with EdDSA-signed `manifest.json`. Epic 28 makes
+`releases.maktaba.tv` with EdDSA-signed `manifest.json`. Epic 28 makes
 **GitHub Releases the canonical source** instead — the release pipeline
 ([`release.yml`](../../../.github/workflows/release.yml)) already publishes
 every artifact, a `checksums.txt`, and keyless-cosign signatures there,
@@ -52,7 +52,7 @@ so there is no second system to operate, no CDN to provision, and no
 private signing key to guard for the *server* path (cosign is keyless via
 OIDC; the desktop path keeps a Tauri updater key because Tauri requires
 one). The 25.34 manifest stays valid as a *future* mirror; 28 is the
-shipping path. Where 25.34 said `releases.maktaba.app/manifest.json`, 28
+shipping path. Where 25.34 said `releases.maktaba.tv/manifest.json`, 28
 says `api.github.com/repos/Hamza-Labs-Core/Maktaba/releases`.
 
 ## Stories

@@ -151,7 +151,7 @@ func defaultConfig() Config {
 			Sample2xxAfterDays: 7,
 			Sample2xxRate:      0.10,
 		},
-		Relay: RelayConfig{PublicHost: "relay.maktaba.app"},
+		Relay: RelayConfig{PublicHost: "relay.maktaba.tv"},
 	}
 }
 

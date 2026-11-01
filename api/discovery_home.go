@@ -25,7 +25,7 @@ import (
 
 // defaultRelayWS is the relay agent's default tunnel (cloud/cmd/maktaba-cloudlink): a
 // claimed home is reached at https://<slug>.<its host>.
-const defaultRelayWS = "wss://relay.maktaba.app/v1/relay/ws"
+const defaultRelayWS = "wss://relay.maktaba.tv/v1/relay/ws"
 
 // homeDirectory answers discoveryh.HomeFunc.
 type homeDirectory struct {

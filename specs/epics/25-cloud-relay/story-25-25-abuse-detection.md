@@ -12,7 +12,7 @@ abused as an HTTP proxy or a bandwidth piggyback.
 
 Detectors:
 
-- **`relay_host_abuse`.** A request through `{user}.maktaba.app`
+- **`relay_host_abuse`.** A request through `{user}.maktaba.tv`
   whose `Path` doesn't match Maktaba's known route shapes
   (`/api/...`, `/stream/...`, `/ws/...`, `/_health`, `/`,
   `/manifest.json`, `/favicon.ico`, `/robots.txt`,
@@ -68,7 +68,7 @@ Response actions:
   with halved limits.
 - **Hot-link mitigation.** If `bandwidth_anomaly` fires, the
   relay starts requiring a `Referer:` matching the
-  `username.maktaba.app` (or an in-app token) for streaming
+  `username.maktaba.tv` (or an in-app token) for streaming
   endpoints — drops cold deep-link traffic. Affected users
   see the warning in their dashboard with a "click here to
   reset" button.

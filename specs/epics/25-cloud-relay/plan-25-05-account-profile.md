@@ -97,7 +97,7 @@ All require valid access token. Soft-deleted users get 401 on all endpoints (tok
   "id": "<uuid>",
   "email": "user@example.com",
   "display_name": "Mahmoud",
-  "avatar_url": "https://cdn.maktaba.app/avatars/<id>.jpg",
+  "avatar_url": "https://cdn.maktaba.tv/avatars/<id>.jpg",
   "locale": "ar",
   "timezone": "Asia/Riyadh",
   "plan": "pro",

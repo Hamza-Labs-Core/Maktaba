@@ -10,7 +10,7 @@
 | Validation | Regex `^[a-z0-9](?:[a-z0-9-]{1,30}[a-z0-9])?$`, 3-32 chars, no double-hyphen, ASCII-only (defends against unicode confusables). |
 | Reservations | Static list bundled at build (`reserved_list.go`) + DB table `reserved_slugs`. |
 | Profanity | Multi-language small list bundled. Accept some false negatives. |
-| Resolution | Wildcard `*.maktaba.app` DNS A record at Cloudflare; **no per-subdomain DNS calls**. The relay (25.9) does the routing. |
+| Resolution | Wildcard `*.maktaba.tv` DNS A record at Cloudflare; **no per-subdomain DNS calls**. The relay (25.9) does the routing. |
 | Grace | 30-day 301-redirect after release; 90-day per-user change cooldown. |
 | Out of scope | Custom domains (deferred). IDN (deferred). |
 
@@ -186,7 +186,7 @@ Rate-limit: 60/min per user (or 30/min per IP if anonymous).
 
 ## 7. DNS
 
-One-time setup (not in code; runbook): create `*.maktaba.app A <lb-ip>` and `*.maktaba.app AAAA <lb-ipv6>` records via Cloudflare API. Wildcard means new subdomains resolve instantly without further DNS calls.
+One-time setup (not in code; runbook): create `*.maktaba.tv A <lb-ip>` and `*.maktaba.tv AAAA <lb-ipv6>` records via Cloudflare API. Wildcard means new subdomains resolve instantly without further DNS calls.
 
 `X-Robots-Tag: noindex, nofollow` is set in the proxy (25.9) on all relay responses by default.
 
@@ -212,7 +212,7 @@ One-time setup (not in code; runbook): create `*.maktaba.app A <lb-ip>` and `*.m
 | `TestChange90dCooldown` | Second change within 90d → 429. |
 | `TestChangeRedirectChain` | Old 301 → new for 30d. |
 | `TestProfanityListBlocks` | `nazi` → 400. |
-| `TestWildcardDNSResolution` | `dig random.maktaba.app A` → LB IP (assumes runbook setup). |
+| `TestWildcardDNSResolution` | `dig random.maktaba.tv A` → LB IP (assumes runbook setup). |
 | `TestConcurrentClaim` | Two POSTs same name → one 200, other 409. |
 | `TestUnlinkReleasesIntoGrace` | After unlink, `redirect_until` 30d. |
 

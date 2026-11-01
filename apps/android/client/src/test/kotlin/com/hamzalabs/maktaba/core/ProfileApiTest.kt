@@ -67,7 +67,7 @@ class ProfileApiTest {
                 answer?.invoke(request)?.let { return it }
                 if (request.method == "DELETE") return MockResponse.Builder().code(204).build()
                 val file = routes["${request.method} ${request.url.encodedPath}"]
-                    ?: return json(404, """{"type":"https://maktaba.dev/problems/not-found","title":"not found","status":404}""")
+                    ?: return json(404, """{"type":"https://maktaba.tv/problems/not-found","title":"not found","status":404}""")
                 return json(200, fixture(file))
             }
         }

@@ -16,19 +16,19 @@ func (f *fakeResolver) HasSlug(_ context.Context, slug string) (bool, error) {
 
 func TestPolicyFromResolver(t *testing.T) {
 	r := &fakeResolver{known: map[string]bool{"abc": true}}
-	policy := PolicyFromResolver("api.maktaba.app,admin.maktaba.app", "relay.maktaba.app", r)
+	policy := PolicyFromResolver("api.maktaba.tv,admin.maktaba.tv", "relay.maktaba.tv", r)
 
 	cases := []struct {
 		host string
 		want bool
 	}{
-		{"api.maktaba.app", true},
-		{"admin.maktaba.app", true},
-		{"abc.relay.maktaba.app", true},
-		{"xyz.relay.maktaba.app", false},
-		{"abc.def.relay.maktaba.app", false},
+		{"api.maktaba.tv", true},
+		{"admin.maktaba.tv", true},
+		{"abc.relay.maktaba.tv", true},
+		{"xyz.relay.maktaba.tv", false},
+		{"abc.def.relay.maktaba.tv", false},
 		{"evil.example.com", false},
-		{".relay.maktaba.app", false},
+		{".relay.maktaba.tv", false},
 	}
 	for _, c := range cases {
 		err := policy(context.Background(), c.host)

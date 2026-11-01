@@ -122,7 +122,7 @@ class CloudSession(
 
     companion object {
         /** The hosted Maktaba Cloud's API. */
-        const val DEFAULT_API = "https://api.maktaba.app"
+        const val DEFAULT_API = "https://api.maktaba.tv"
 
         /** Where the app keeps the cloud's address a person chose (a test or their own cloud). */
         const val KEY_API = "cloud_api"

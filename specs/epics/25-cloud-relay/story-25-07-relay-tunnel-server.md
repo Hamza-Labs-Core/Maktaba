@@ -58,7 +58,7 @@ Process model:
 - **Given** a freshly claimed server with a valid `server_token`,
   **when** `maktaba-cloudlink` starts,
   **then** within 5s a WSS connection is established to
-  `wss://relay.maktaba.app/tunnel/v1/connect` and
+  `wss://relay.maktaba.tv/tunnel/v1/connect` and
   `cloud_servers.last_seen_at` is updated.
 - **Given** the cloud sends a `REQ_HEAD/REQ_BODY/REQ_END`
   for a `GET /api/libraries`,
@@ -111,7 +111,7 @@ Process model:
 
 - **Captive-portal NAT (hotel wifi).** WSS port 443 is rarely
   blocked; we never use a non-443 port. If 443 is captive-portal
-  intercepted, the TLS handshake to `*.maktaba.app` fails and we
+  intercepted, the TLS handshake to `*.maktaba.tv` fails and we
   surface "captive portal detected".
 - **Corporate MITM proxies.** Some corp networks intercept TLS;
   detection is "cert chain not pinned to known roots". We

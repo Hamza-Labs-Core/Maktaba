@@ -16,7 +16,7 @@ import (
 // carry Principal.MustChangePassword, and the gate refuses the rest.
 
 // TypePasswordChangeRequired is the problem type a must-change session gets.
-const TypePasswordChangeRequired = "https://maktaba.dev/problems/password-change-required"
+const TypePasswordChangeRequired = "https://maktaba.tv/problems/password-change-required"
 
 // AllowedWhilePasswordChange lists what a session with a temporary password may
 // still reach: anything outside /api (the web app itself), the auth endpoints (who
