@@ -60,7 +60,8 @@ final class PlayerShellUITests: PlayerUITestCase {
     func testChoosingTheChosenSectionPopsItsStack() {
         launchSignedIn(sections: ["all"], section: "home", open: "video/v1")
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 15), "the pushed route")
-        XCTAssertTrue(app.staticTexts["v1"].exists, "the route's id reaches its screen")
+        // the route's id reaches its screen (48.19's page: v1's title)
+        XCTAssertTrue(element("video.title").waitForExistence(timeout: 10), "the route's id reaches its screen")
         sectionButton("Home").tap()
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 5), "back to Home's first screen")
         XCTAssertFalse(element("screen.video").exists)

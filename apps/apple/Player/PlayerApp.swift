@@ -9,6 +9,9 @@ struct PlayerApp: App {
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
     /// A video plays: the whole app goes dark, whatever the theme.
     @State private var playing = false
+    /// A deep link's page (`maktaba://video/{id}`, FR-9), kept until the shell opens it (a link
+    /// that arrives before sign-in waits for it).
+    @State private var link: PlayerRoute?
 
     init() {
         // a crash at an earlier launch is logged and kept on this device
@@ -40,8 +43,10 @@ struct PlayerApp: App {
     private var signedIn: some View {
         SessionGate(session: session, title: "Maktaba Player") { user, client in
             // the sections (PlayerSection.enabled); today Libraries alone
-            PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing)
+            PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing, link: $link)
         }
+        // a video's link; a home's connect link stays SessionGate's
+        .onOpenURL { url in if let route = VideoLink.route(url) { link = route } }
         .maktabaTheme(theme, forceDark: playing)
         .permissionsWalkthrough()
     }

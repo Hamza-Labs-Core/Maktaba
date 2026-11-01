@@ -23,16 +23,23 @@ struct PlayerShell: View {
     let context: PlayerContext
     @Binding var playing: Bool
     let sections: [PlayerSection]
+    /// A deep link's page (`maktaba://video/{id}`, `PlayerApp`), opened on the section in view
+    /// and then cleared.
+    @Binding var link: PlayerRoute?
 
     @State private var selection: PlayerSection
+    /// A linked page over a section with no route stack (Libraries' split view), in a sheet.
+    @State private var linked: PlayerRoute?
     @State private var paths: [PlayerSection: [PlayerRoute]]
     /// The tabs' order and the sidebar's sections as the person arranged them (iPad, Mac).
     @AppStorage("player.tabs") private var customization = TabViewCustomization()
 
-    init(context: PlayerContext, playing: Binding<Bool>, sections: [PlayerSection] = PlayerSection.visible(),
+    init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
+         sections: [PlayerSection] = PlayerSection.visible(),
          start: PlayerSection? = ShellLaunch.section(), route: PlayerRoute? = ShellLaunch.route()) {
         self.context = context
         _playing = playing
+        _link = link
         self.sections = sections
         let first = start.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first ?? .libraries
         _selection = State(initialValue: first)
@@ -47,6 +54,14 @@ struct PlayerShell: View {
             } else {
                 tabs
             }
+        }
+        .onChange(of: link, initial: true) { _, route in
+            guard let route else { return }
+            link = nil
+            open(route)
+        }
+        .sheet(isPresented: Binding { linked != nil } set: { if !$0 { linked = nil } }) {
+            if let linked { LinkedRouteSheet(context: context, route: linked) }
         }
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
@@ -78,6 +93,20 @@ struct PlayerShell: View {
         }
     }
 
+    /// A deep link's page: pushed on the chosen section's stack, or in a sheet over a section
+    /// with none.
+    private func open(_ route: PlayerRoute) {
+        if hasStack(selection) {
+            paths[selection, default: []].append(route)
+        } else {
+            linked = route
+        }
+    }
+
+    /// Libraries is today's split view, which navigates on its own until its new screens
+    /// (story 48.18) replace it; every other section is a stack of `PlayerRoute`s.
+    private func hasStack(_ section: PlayerSection) -> Bool { section != .libraries }
+
     private func path(_ section: PlayerSection) -> Binding<[PlayerRoute]> {
         Binding { paths[section] ?? [] } set: { paths[section] = $0 }
     }
@@ -85,7 +114,7 @@ struct PlayerShell: View {
     /// A section's stack. Libraries is today's split view, which navigates on its own until
     /// its new screens (story 48.18) replace it.
     @ViewBuilder private func stack(_ section: PlayerSection) -> some View {
-        if section == .libraries {
+        if !hasStack(section) {
             root(section)
         } else {
             NavigationStack(path: path(section)) {
@@ -110,14 +139,22 @@ extension View {
     /// Where each `PlayerRoute` goes: one place, so every section's stack opens a route the
     /// same way.
     func playerDestinations(_ context: PlayerContext) -> some View {
-        navigationDestination(for: PlayerRoute.self) { route in
-            switch route {
-            case let .video(id): VideoScreen(context: context, id: id)
-            case let .series(id): SeriesScreen(context: context, id: id)
-            case let .library(id): LibraryScreen(context: context, id: id)
-            case let .channel(id): ChannelScreen(context: context, id: id)
-            case let .watch(id, at): WatchScreen(context: context, videoID: id, at: at)
-            }
+        navigationDestination(for: PlayerRoute.self) { PlayerDestination(context: context, route: $0) }
+    }
+}
+
+/// A route's screen.
+struct PlayerDestination: View {
+    let context: PlayerContext
+    let route: PlayerRoute
+
+    var body: some View {
+        switch route {
+        case let .video(id): VideoScreen(context: context, id: id)
+        case let .series(id): SeriesScreen(context: context, id: id)
+        case let .library(id): LibraryScreen(context: context, id: id)
+        case let .channel(id): ChannelScreen(context: context, id: id)
+        case let .watch(id, at): WatchScreen(context: context, videoID: id, at: at)
         }
     }
 }
