@@ -121,6 +121,9 @@ class DeviceSignIn(
     /** This home cannot sign a device in with a code. */
     class Unsupported(val status: Int) : Exception("The home has no sign-in by code ($status).")
 
+    /** The code ran out before anyone approved it (`AppSession.signInWithCode` without renewing). */
+    class Expired : Exception("The sign-in code ran out before anyone approved it.")
+
     /** Runs until a person approves; returns the tokens. Cancel to stop. */
     suspend fun run(onCode: (DeviceCode) -> Unit): AuthTokens {
         while (true) {
@@ -157,10 +160,16 @@ class DeviceSignIn(
         }
     }
 
+    /**
+     * When [code] runs out, on this device's clock: the home's expiry, unless this device's
+     * clock disagrees with it (the home's 410 says too), else ten minutes from now.
+     */
+    fun deadline(code: DeviceCode): Long =
+        code.expiresMillis?.takeIf { it - now() in 1..DEFAULT_TTL_MS } ?: (now() + DEFAULT_TTL_MS)
+
     /** Polls one code until approved (the tokens) or gone (null: ask for a new code). */
     internal suspend fun poll(code: DeviceCode): AuthTokens? {
-        // the home's expiry, unless this device's clock disagrees with it (the home's 410 says too)
-        val until = code.expiresMillis?.takeIf { it - now() in 1..DEFAULT_TTL_MS } ?: (now() + DEFAULT_TTL_MS)
+        val until = deadline(code)
         val every = code.interval.coerceIn(1, 30) * 1000L
         val body = buildJsonObject {
             put("device_code", code.deviceCode)
