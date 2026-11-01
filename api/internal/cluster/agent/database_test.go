@@ -51,6 +51,56 @@ func TestPushDatabase(t *testing.T) {
 	take("CA two")
 }
 
+// A machine whose agent connects after a pass is told at once, not at the next interval
+// (the replica e2e flake: it waited 30 s unable to verify its home's database, its copy
+// idle, then started again in the middle of the test).
+func TestPushDatabaseTellsAMachineAsItConnects(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.hub.PushDatabase(ctx, "", time.Hour, nil)
+	time.Sleep(100 * time.Millisecond) // its first pass runs with no machine connected
+	for _, name := range []string{"studio", "den"} {
+		id, priv := f.approvedNode(name)
+		a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// within recvType's 3 s, where the interval is an hour
+		cmd := a.recvType("cmd")
+		args, _ := cmd["args"].(map[string]any)
+		if cmd["name"] != "home.database" || args["tls_off"] != true {
+			t.Fatalf("%s: cmd = %v, want the home's word that its database has no TLS", name, cmd)
+		}
+		a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	}
+}
+
+// A machine's agent that reconnects under the same worker id (its supervisor's channel
+// dropped and came back) is told on its new session at once, even when a pass ran while
+// the session it replaces was still registered and named for the machine.
+func TestPushDatabaseTellsAReplacedAgentAtOnce(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.hub.PushDatabase(ctx, "", time.Hour, nil)
+	id, priv := f.approvedNode("studio")
+	hello := helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor", workerID: "maktaba-supervisor"}
+	// which of the two sessions a pass in between names is the map's order: several
+	// reconnects make the old one come up
+	for i := range 12 {
+		a, err := f.dialAgent(hello)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := a.recvType("cmd") // within 3 s, where the interval is an hour
+		if cmd["name"] != "home.database" {
+			t.Fatalf("reconnect %d: cmd = %v", i, cmd)
+		}
+		a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	}
+}
+
 func TestDatabaseArgs(t *testing.T) {
 	if b, err := databaseArgs(""); err != nil || string(b) != `{"tls_off":true}` {
 		t.Fatalf("TLS off: %s %v", b, err)

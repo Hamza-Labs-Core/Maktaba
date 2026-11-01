@@ -411,9 +411,13 @@ slots = "off"
 	nodeWebURL := fmt.Sprintf("http://localhost:%d", nWeb)
 	homeToml := toml(homeDir, hAPI, hWeb, hStream, fmt.Sprintf("web_public_url = %q\nrole = \"home\"\n[database]\nurl = %q", homeWebURL, dsn))
 	nodeToml := toml(nodeDir, nAPI, nWeb, nStream, fmt.Sprintf("web_public_url = %q\n[database]\nurl = \"sqlite://unused.db\"\n[postgres]\ncopy_port = %d", nodeWebURL, p()))
+	// node.json as a join writes it: with the home's word that its database has no TLS
+	// (the test's Postgres runs without), which a join seals in. Without it the node
+	// learns that over the machine channel and starts again a moment after it connects,
+	// in the middle of whichever subtest is talking to it then.
 	nodeCfg, _ := json.Marshal(map[string]any{"node_id": nodeID, "name": "studio-node", "private_key": cluster.EncodeKey(nodePriv),
 		"home":         map[string]any{"url": apiProxy.dsn, "cluster_pub": cluster.EncodeKey(homePub)},
-		"database_url": nodeDSN})
+		"database_url": nodeDSN, "database_tls": "off"})
 	_ = os.WriteFile(filepath.Join(nodeDir, "node.json"), nodeCfg, 0o600)
 	self, _ := os.Executable()
 	repo, _ := filepath.Abs("..")
@@ -787,6 +791,11 @@ slots = "off"
 			}
 			return r.StatusCode == 200 && json.Unmarshal(b, &s) == nil && s.Copy.State == "following"
 		})
+		// a node joined as a join makes it never starts again on its own: one that did
+		// would drop whichever request reached it then
+		if strings.Contains(node.log.String(), "[serve] starting again") {
+			t.Errorf("the node started again on its own:\n%s", tail(node.log.String(), 3000))
+		}
 		// and the home's Machines page says so
 		if r, b := user.do("GET", homeWebURL+"/api/cluster/nodes", nil, nil); r.StatusCode == 200 &&
 			!strings.Contains(string(b), `"state":"following"`) {

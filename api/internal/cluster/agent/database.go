@@ -15,8 +15,10 @@ import (
 // channel (or the home's word that its database has no TLS: caFile ""), which the
 // cluster key authenticates (specs/epics/37-node-replica): a machine verifies its
 // home's database with it, never with what the database connection itself would say.
-// Each machine's agent session is told once, and again when the CA changes; it runs
-// until ctx ends.
+// Each machine's agent session is told once, as soon as it connects, and again when the
+// CA changes (looked at every interval); it runs until ctx ends. A machine that waited
+// for the next interval instead would run that long unable to verify its home's database
+// (its copy idle), then start again in the middle of its work.
 func (h *Hub) PushDatabase(ctx context.Context, caFile string, every time.Duration, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
@@ -25,6 +27,7 @@ func (h *Hub) PushDatabase(ctx context.Context, caFile string, every time.Durati
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
+		joined := h.agentJoinedCh()
 		if args, err := databaseArgs(caFile); err != nil {
 			logger.Warn("cluster: this home's database CA cannot be read for the machines", "err", err,
 				"event", "cluster_database_ca_unreadable")
@@ -54,6 +57,7 @@ func (h *Hub) PushDatabase(ctx context.Context, caFile string, every time.Durati
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-joined:
 		}
 	}
 }

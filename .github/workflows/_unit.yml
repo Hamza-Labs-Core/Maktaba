@@ -57,6 +57,13 @@ jobs:
       - name: Run unit tier
         run: make test-unit
 
+      # Story 48.2: one token source. Fails when the committed Tokens.swift /
+      # Tokens.kt are stale against web/design-system/tokens/, when
+      # web/src/styles/tokens.css drifts from the JSON, or when a text colour is
+      # under 4.5:1 on its background (light and dark).
+      - name: Design tokens are current
+        run: make test-tokens
+
       # Epic 42.5: the player edition of the web app builds with no server page
       # code (vite.config.ts playerBundleCheck fails the build if any is left).
       - name: Web player edition has no server pages
