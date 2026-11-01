@@ -41,7 +41,9 @@ enum class PlayerSection(
          * browser until 48.27 replaces it.
          */
         val enabled: List<PlayerSection> = listOf(
+            Home,
             Libraries,
+            Search,
         )
 
         /** The section whose root is [route], if it is one. */

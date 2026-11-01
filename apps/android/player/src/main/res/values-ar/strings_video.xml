@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A video's page (Epic 48.28), in Arabic. -->
+<resources>
+    <string name="video_not_available">هذا الفيديو غير متاح</string>
+    <string name="video_not_available_detail">ربما حُذف، أو لا يملك حسابك صلاحية مشاهدته.</string>
+    <string name="video_play">تشغيل</string>
+    <string name="video_resume_at">استئناف من %1$s</string>
+    <string name="video_play_from_start">التشغيل من البداية</string>
+    <string name="video_favorite">المفضلة</string>
+    <string name="video_mark_watched">تمييز كمُشاهَد</string>
+    <string name="video_chapters">الفصول</string>
+    <string name="video_transcript">من النص المفرَّغ</string>
+    <string name="video_next_episodes">الحلقات التالية</string>
+    <string name="video_season_episode">الموسم %1$d، الحلقة %2$d</string>
+    <string name="video_episode">الحلقة %1$d</string>
+    <string name="video_play_from">التشغيل من %1$s</string>
+    <string name="video_save_failed">تعذّر الحفظ. حاول مرة أخرى.</string>
+</resources>

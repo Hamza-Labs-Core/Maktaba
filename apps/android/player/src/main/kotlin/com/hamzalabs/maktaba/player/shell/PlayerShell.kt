@@ -117,6 +117,9 @@ typealias PlayerScreens = @Composable (route: Route, nav: PlayerNavigator) -> Un
  *
  * The navigation hides while a video plays full screen ([immersive]) and when only one section
  * is reachable (a bar of one is no choice).
+ *
+ * [link] is a screen a deep link asked for (`maktaba://video/{id}`, FR-9): it is pushed on the
+ * shown section's stack, then [onLinkOpened] says it was, so it opens once.
  */
 @Composable
 fun PlayerShell(
@@ -125,6 +128,8 @@ fun PlayerShell(
     adaptiveInfo: WindowAdaptiveInfo = currentWindowAdaptiveInfoV2(),
     immersive: Boolean = false,
     screens: PlayerScreens = AppScreens,
+    link: Route? = null,
+    onLinkOpened: () -> Unit = {},
 ) {
     require(sections.isNotEmpty()) { "the shell needs a section" }
     var currentName by rememberSaveable { mutableStateOf(sections.first().name) }
@@ -154,6 +159,14 @@ fun PlayerShell(
             val controller = rememberNavController()
             val navigator = remember(controller) { PlayerNavigator(controller) { s -> if (s in sections) currentName = s.name } }
             NavHost(controller, startDestination = current.root) { playerGraph(screens, navigator) }
+
+            // a deep link: its screen on this section's stack, once
+            LaunchedEffect(link) {
+                if (link != null) {
+                    navigator.open(link)
+                    onLinkOpened()
+                }
+            }
 
             // re-selected: back to the section's root
             var handled by remember { mutableStateOf(toRoot) }

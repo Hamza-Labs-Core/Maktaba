@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.tv.data
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.api.BODY_KEPT
+import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.Page
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import kotlinx.coroutines.CancellationException
@@ -33,6 +34,22 @@ class TvApi(
     private val http: OkHttpClient = ApiClient.defaultHttp,
 ) {
     val home: HttpUrl get() = client.home
+
+    /** Live TV on this home (the shared client's, Epic 48.9): what is on now, the guide, the streams. */
+    val live: LiveApi by lazy { LiveApi(client, http) }
+
+    /**
+     * Whether this user may watch any channel: the Live TV tab shows only then. A home that does
+     * not answer, or has no Live TV, counts as none (the tab stays hidden; the others still work).
+     */
+    suspend fun hasChannels(): Boolean = try {
+        live.now().channels.isNotEmpty()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        AppLog.failure("tv live channels", e)
+        false
+    }
 
     suspend fun recommendations(): Recommendations = get("/api/recommendations")
 

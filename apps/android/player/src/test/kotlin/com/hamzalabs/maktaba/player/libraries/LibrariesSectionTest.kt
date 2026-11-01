@@ -1,7 +1,6 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -15,8 +14,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.setShell
 import com.hamzalabs.maktaba.player.shell.PlayerSection
-import com.hamzalabs.maktaba.player.shell.ShellNavigation
-import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -25,7 +22,7 @@ import org.robolectric.annotation.Config
 
 /**
  * Today's library browsing stays reachable in the shell until 48.27 replaces it: the app's
- * sections as they ship (only Libraries), against the fake home.
+ * sections as they ship, against the fake home.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
@@ -37,19 +34,20 @@ class LibrariesSectionTest {
         compose.waitUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     @Test
-    fun theShippedShellOpensOnTheLibrariesWithTheHomesVideos() {
+    fun theShippedShellsLibrariesShowTheHomesVideos() {
         compose.setShell(home, sections = PlayerSection.enabled)
+        // Home is first since 48.26: the bar offers Libraries beside it
+        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, ShellNavigation.Bar)).assertExists()
+        compose.onNodeWithTag("section-Libraries").performClick()
         waitFor("The Message")
         compose.onNodeWithText("The Message").assertIsDisplayed()
         compose.onNodeWithText("Lion of the Desert").assertIsDisplayed()
-        // a single section offers no navigation
-        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, ShellNavigation.None)).assertExists()
         assertTrue(home.paths.toString(), "/api/videos" in home.paths)
     }
 
     @Test
     fun aVideoOpensItsPageAndBackReturnsToTheList() {
-        compose.setShell(home, sections = PlayerSection.enabled)
+        compose.setShell(home, sections = listOf(PlayerSection.Libraries))
         waitFor("Omar, Episode 1")
         compose.onNodeWithText("Omar, Episode 1").performClick()
         waitFor("A film about Omar, Episode 1.")
@@ -80,7 +78,7 @@ class LibrariesSectionTest {
 
         // another section, and back: the open video is still open
         compose.onNodeWithTag("section-Search").performClick()
-        compose.onNodeWithTag("placeholder").assertIsDisplayed()
+        compose.onNodeWithTag("search").assertIsDisplayed()
         compose.onNodeWithTag("section-Libraries").performClick()
         waitFor("A film about Omar, Episode 1.")
         compose.onNodeWithText("A film about Omar, Episode 1.").assertIsDisplayed()

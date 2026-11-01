@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's Home (Epic 48.26): the hero, the rows, the cards' menus, the empty home.
+     Its Arabic is in values-ar/strings_home.xml: PlayerTranslationsTest and lint fail without it.
+     The wording is the web's (web/src/i18n/en.json, home.* and won.*). -->
+<resources>
+    <string name="home_row_continue_watching">Continue Watching</string>
+    <string name="home_row_on_deck">On Deck</string>
+    <string name="home_row_live_now">What\'s On Now</string>
+    <string name="home_row_favorites">Favorites</string>
+    <string name="home_row_recently_added">Recently Added</string>
+    <string name="home_row_recently_watched">Recently Watched</string>
+    <string name="home_row_for_you">For You</string>
+    <string name="home_row_from_library">From your library</string>
+    <string name="home_hero_new_series">New series</string>
+    <string name="home_hero_picked">Featured</string>
+    <plurals name="home_hero_lessons">
+        <item quantity="one">%d lesson</item>
+        <item quantity="other">%d lessons</item>
+    </plurals>
+    <plurals name="home_new_lessons">
+        <item quantity="one">%d new lesson</item>
+        <item quantity="other">%d new lessons</item>
+    </plurals>
+    <string name="home_series_unnamed">Untitled series</string>
+    <string name="home_no_content">No content right now</string>
+    <string name="home_more_options">More options</string>
+    <string name="home_not_interested">Not interested</string>
+    <string name="home_not_interested_failed">Could not tell the home. Try again.</string>
+    <string name="home_stale">Couldn\'t refresh — showing the last rows.</string>
+    <string name="home_error_title">Home could not load</string>
+    <string name="home_empty_title">Nothing to watch yet</string>
+    <string name="home_empty_desc">Open Libraries to see the videos you may watch. Pin the libraries you watch most to see them here.</string>
+    <string name="home_empty_desc_admin">Add a library under Manage libraries on the home\'s web page and scan it; its videos then show here.</string>
+</resources>

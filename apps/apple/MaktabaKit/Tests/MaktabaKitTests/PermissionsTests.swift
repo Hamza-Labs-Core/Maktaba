@@ -51,6 +51,16 @@ import Testing
         #expect(v.tick(at: .seconds(6)) == .unknown)
     }
 
+    /// On a busy device the first signals can arrive after the timeout: they are still heard.
+    @Test func aLateSignalIsHeardNotTimedOut() {
+        var v = LocalNetworkVerdict(grace: .seconds(2), timeout: .seconds(1))
+        #expect(v.feed(.ready, at: .milliseconds(1500)) == nil)
+        #expect(v.feed(.results(1), at: .milliseconds(1500)) == .granted)
+        var silent = LocalNetworkVerdict(grace: .seconds(2), timeout: .seconds(1))
+        #expect(silent.feed(.waiting(dnsError: -65555), at: .zero) == .unknown)
+        #expect(silent.tick(at: .milliseconds(1500)) == .unknown)
+    }
+
     @Test func theEndOfABrowseDecides() {
         var ready = LocalNetworkVerdict()
         ready.feed(.ready, at: .zero)
@@ -75,6 +85,16 @@ final class CountingProbe: LocalNetworkProbe, @unchecked Sendable {
     init(_ script: [BrowseSignal]) { self.script = script }
     func signals() -> AsyncStream<BrowseSignal> {
         browses += 1
+        return ScriptedProbe(script).signals()
+    }
+}
+
+/// A probe that is slow to start, as when a busy test run holds the reader back.
+struct SlowToStartProbe: LocalNetworkProbe {
+    let script: [BrowseSignal]
+    let delay: TimeInterval
+    func signals() -> AsyncStream<BrowseSignal> {
+        Thread.sleep(forTimeInterval: delay)
         return ScriptedProbe(script).signals()
     }
 }
@@ -114,6 +134,15 @@ final class CountingProbe: LocalNetworkProbe, @unchecked Sendable {
         await next.refresh()
         #expect(next.state(of: .localNetwork) == .granted)
         #expect(!next.isPresented)
+    }
+
+    /// The clock starts when the browse is read: a reader held back past the timeout still
+    /// hears the answer.
+    @Test func aSlowStartStillHearsTheAnswer() async {
+        let m = PermissionsModel(defaults: freshDefaults(), probe: SlowToStartProbe(script: grantedScript, delay: 1.5), timing: quick)
+        await m.refresh()
+        await m.request(.localNetwork)
+        #expect(m.state(of: .localNetwork) == .granted)
     }
 
     @Test func aRefusalShowsItAgainOnTheNextRun() async {
