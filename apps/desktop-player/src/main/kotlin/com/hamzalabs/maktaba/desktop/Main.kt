@@ -176,7 +176,7 @@ fun PlayerApp(session: AppSession, background: CoroutineScope) {
 }
 
 /** The homes on this network; none when this computer's networks cannot be browsed. */
-private fun discoverOrNothing() = runCatching { discoverHomes() }.getOrElse { emptyFlow<List<FoundHome>>() }
+internal fun discoverOrNothing() = runCatching { discoverHomes() }.getOrElse { emptyFlow<List<FoundHome>>() }
 
 @Composable
 private fun SignedIn(p: AppSession.Phase.SignedIn, session: AppSession, background: CoroutineScope) {

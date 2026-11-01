@@ -394,6 +394,43 @@ class AppSession(
         return false
     }
 
+    /**
+     * The homes announced on this network (mDNS). The home in use whose kept sign-in could
+     * not be checked (none of its addresses answered), announced now at another address with
+     * its id (its name on the network changed): asked there, and when the same home answers,
+     * its entry moves there, the old address among its others. Tokens stay with the address
+     * that issued them: the new one uses its own, or signs in afresh.
+     */
+    fun announced(found: List<FoundHome>) {
+        val home = _current.value ?: return
+        if (_restoreProblem.value == null || _phase.value != Phase.SigningIn) return
+        val moved = found.firstOrNull { sameHome(home.id, it.id) && it.url != home.url && it.url !in home.addresses } ?: return
+        scope.launch { moveTo(home, moved.url) }
+    }
+
+    private suspend fun moveTo(home: Home, url: String) {
+        val attempt = _progress.value?.attempt ?: 1
+        _progress.value = ConnectProgress.Trying(shown(url), 1, 1, attempt)
+        val info = try {
+            probe.probe(url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        if (_current.value?.url != home.url) return
+        // an announcement is what an address says of itself: the home's own answer decides
+        if (info == null || !sameHome(home.id, info.id)) {
+            val why = if (info == null) FailReason.NoAnswer else FailReason.OtherHome
+            _progress.value = ConnectProgress.Failed(why, (listOf(home.url) + home.addresses + url).map(::shown), ConnectStage.Restore, attempt)
+            return
+        }
+        val moved = home.copy(url = url, addresses = (home.addresses + home.url).filter { it != url }.distinct())
+        _homes.value = _homes.value.map { if (it.url == home.url) moved else it }
+        saveHomes()
+        use(moved)
+    }
+
     /** Signed in to Maktaba Cloud (in memory only: the app asks again after it restarts). */
     var cloud: CloudSession? = null
 

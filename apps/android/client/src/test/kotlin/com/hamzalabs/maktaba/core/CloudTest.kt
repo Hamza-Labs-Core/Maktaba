@@ -5,11 +5,14 @@ import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.CloudException
 import com.hamzalabs.maktaba.core.session.CloudHome
 import com.hamzalabs.maktaba.core.session.CloudSession
+import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.Home
 import com.hamzalabs.maktaba.core.session.HomeProbe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -196,6 +199,36 @@ class CloudTest {
         } catch (e: CloudException) {
             assertEquals("not_a_cloud_address", e.code)
         }
+    }
+
+    /**
+     * Kept under a name that no longer resolves (its `.local` name changed): announced at a
+     * new address with its id, the home is asked there and its entry moves; its tokens stay
+     * with the address that issued them, so it signs in afresh. Another home's id moves nothing.
+     */
+    @Test
+    fun aHomeAnnouncedAtANewAddressIsMovedTo() = runBlocking {
+        val tokens = mutableMapOf<String, MemoryTokens>()
+        val store = MapStore()
+        val dead = "http://127.0.0.1:1"
+        tokens.getOrPut(dead) { MemoryTokens() }.save(AuthTokens("old-name-token", "r0"))
+        val s = AppSession(store, CoroutineScope(Dispatchers.Unconfined), { tokens.getOrPut(it) { MemoryTokens() } })
+        s.probe = HomeProbe()
+        s.use(Home(dead, "Kitchen", homeId, nickname = "Grandma's"))
+        withTimeout(10_000) { while (s.restoreProblem.value == null) delay(20) }
+        s.announced(listOf(FoundHome("Studio", relayUrl, "another-home-id", "0.40.0")))
+        assertEquals("another home is not asked", dead, s.current.value?.url)
+        s.announced(listOf(FoundHome("Studio", relayUrl, homeId, "0.40.0")))
+        withTimeout(10_000) { while (s.current.value?.url != relayUrl) delay(20) }
+        val moved = s.homes.value.single()
+        assertEquals(relayUrl, moved.url)
+        assertEquals(listOf(dead), moved.addresses)
+        assertEquals("the person's name stays", "Grandma's", moved.nickname)
+        assertEquals("the next launch starts there", relayUrl, AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() }).current.value?.url)
+        assertEquals("signed in afresh there", AppSession.Phase.SigningIn, s.phase.value)
+        assertNull(s.restoreProblem.value)
+        assertTrue("the old token never went to the new address", seen.none { it.second.headers["Authorization"] == "Bearer old-name-token" })
+        assertEquals("old-name-token", tokens.getValue(dead).access)
     }
 
     @Test

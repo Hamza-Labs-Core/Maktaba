@@ -245,6 +245,10 @@ fun SignIn(session: AppSession) {
     val home by session.current.collectAsState()
     val restoreProblem by session.restoreProblem.collectAsState()
     var tab by remember { mutableStateOf(0) }
+    // the home did not answer: the same home announced at a new address is asked there
+    LaunchedEffect(restoreProblem != null) {
+        if (restoreProblem != null) discoverOrNothing().collect(session::announced)
+    }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

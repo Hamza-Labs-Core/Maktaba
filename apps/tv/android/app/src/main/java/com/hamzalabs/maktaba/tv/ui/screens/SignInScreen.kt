@@ -74,6 +74,10 @@ fun SignInScreen(app: MaktabaTVApp, home: Home) {
     // the kept sign-in could not be checked (the home did not answer): say so, try again
     val restoreProblem by app.session.restoreProblem.collectAsState()
     var unsupported by remember(home.url) { mutableStateOf(false) }
+    // the home did not answer: the same home announced at a new address is asked there
+    LaunchedEffect(restoreProblem != null) {
+        if (restoreProblem != null) app.homesFound.collect(app.session::announced)
+    }
 
     LibraryBackdrop {
         Column(

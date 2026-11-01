@@ -359,6 +359,64 @@ extension RouteStub.Answer {
             #expect(s.phase == .signingIn, "signed in afresh at the new address")
         }
 
+        /// A home saved under a name that no longer resolves (its `.local` name changed) is
+        /// asked at its other addresses at launch, and its entry moves to the one that answers.
+        @Test func aSavedHomeAtADeadAddressConnectsThroughItsOther() async throws {
+            RouteStub.reset()
+            RouteStub.on("GET lan.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            let dead = URL(string: "http://oldname.test:8088")!, lan = URL(string: "http://lan.test:8088")!
+            let defaults = try saved(Home(url: dead, name: "Grandma's", homeID: "home-1", addresses: [lan]), renamed: true)
+            let old = TokenStore(app: "test.homes.moved", home: dead), new = TokenStore(app: "test.homes.moved", home: lan)
+            new.clear()
+            old.save(AuthTokens(accessToken: "issued.by.oldname", refreshToken: "r", user: nil))
+            defer { old.clear(); new.clear() }
+            let s = launched("test.homes.moved", defaults)
+            for _ in 0..<100 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url == lan, "reached at its other address")
+            #expect(s.homes.count == 1, "the same entry, moved")
+            #expect(s.homes.first?.addresses?.contains(dead) == true, "the old address among its others")
+            #expect(s.homes.first?.name == "Grandma's" && s.homes.first?.renamed == true)
+            #expect(defaults.url(forKey: "home") == lan, "the next launch starts there")
+            // tokens stay with the address that issued them: signed in afresh at the new one
+            #expect(new.access == nil && old.access == "issued.by.oldname")
+            #expect(s.phase == .signingIn)
+        }
+
+        /// A saved home that answers at none of its addresses, announced on the network at a
+        /// new one with its id: asked there, the entry moved. Another home's id moves nothing.
+        @Test func aBrowsedHomeWithTheSameIdReplacesTheStaleAddress() async throws {
+            RouteStub.reset()
+            let dead = URL(string: "http://oldname.test:8088")!, lan = URL(string: "http://lan.test:8088")!
+            let defaults = try saved(Home(url: dead, name: "oldname.test", homeID: "home-1"))
+            let s = launched("test.homes.browsed", defaults)
+            for _ in 0..<100 where s.connectProblem == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.connectProblem != nil && s.current == nil, "the saved address did not answer")
+            RouteStub.on("GET lan.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            RouteStub.on("GET other.test/api/discovery/home", .json(200, #"{"id":"neighbour","urls":[]}"#))
+            s.announced([HomeBrowser.Found(name: "Neighbour", url: URL(string: "http://other.test:8088")!, homeID: "neighbour")])
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(s.current == nil && !RouteStub.seen.contains { $0.route.contains("other.test") }, "another home is not asked")
+            s.announced([HomeBrowser.Found(name: "Studio", url: lan, homeID: "home-1")])
+            for _ in 0..<100 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url == lan)
+            #expect(s.homes.map(\.url) == [lan] && s.homes.first?.addresses?.contains(dead) == true)
+            #expect(s.homes.first?.name == "Living room", "the placeholder name gives way to the home's")
+            #expect(s.connectProblem == nil && s.phase == .signingIn)
+        }
+
+        private func saved(_ home: Home, renamed: Bool = false) throws -> UserDefaults {
+            let defaults = try #require(UserDefaults(suiteName: "maktabakit.test.\(UUID().uuidString)"))
+            var h = home
+            if renamed { h.renamed = true }
+            defaults.set(try JSONEncoder().encode([h]), forKey: "homes")
+            defaults.set(h.url, forKey: "home")
+            return defaults
+        }
+
+        private func launched(_ app: String, _ defaults: UserDefaults) -> AppSession {
+            AppSession(app: app, defaults: defaults, probe: HomeProbe(session: RouteStub.session(), timeout: 2), asksHomes: false)
+        }
+
         @Test func thePersonsNameStays() throws {
             let (s, _) = try session()
             s.use(Home(url: URL(string: "http://lan.test:8088")!, name: "lan.test", homeID: "home-1"))

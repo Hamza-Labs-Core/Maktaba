@@ -539,6 +539,14 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
     var byCode by rememberSaveable { mutableStateOf(false) }
     val name = home?.label ?: ""
     val progress by session.progress.collectAsState()
+    val context = LocalContext.current
+    val restoreProblem by session.restoreProblem.collectAsState()
+    // the home did not answer: the same home announced at a new address is asked there
+    LaunchedEffect(restoreProblem != null) {
+        if (restoreProblem == null) return@LaunchedEffect
+        runCatching { HomeDiscovery(context.applicationContext).homes().collect(session::announced) }
+            .onFailure { if (it is CancellationException) throw it else AppLog.failure("home discovery", it) }
+    }
     StartFrame(app) {
         // on launch: reconnecting, the home busy (its countdown), the home just found, or why
         // the kept sign-in could not be checked (Retry, attempt n)

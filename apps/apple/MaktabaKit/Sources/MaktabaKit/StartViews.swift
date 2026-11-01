@@ -143,6 +143,9 @@ public struct HomePickerView: View {
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
         .onAppear { browser.start() }
         .onDisappear { browser.stop() }
+        // a saved home that did not answer, announced at a new address, is asked there
+        .onChange(of: browser.found) { session.announced(browser.found) }
+        .onChange(of: session.connectProblem) { session.announced(browser.found) }
         #if os(iOS)
         .sheet(isPresented: $scanning) {
             QRScannerSheet(words: words, found: scanned)

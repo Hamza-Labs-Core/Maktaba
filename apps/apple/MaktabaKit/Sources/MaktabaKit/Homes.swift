@@ -138,8 +138,9 @@ public final class AppSession {
     private var progressFromConnect = false
     /// Which attempt the current connect, restore or sign-in is (a Retry adds one).
     private var attempt = 1
-    /// The last addresses asked (Retry asks them again).
-    private var lastConnect: (candidates: [URL], name: String?, homeID: String?)?
+    /// The last addresses asked (Retry asks them again), and the saved home's address when
+    /// they were a saved home's (it moves to the address that answers).
+    private var lastConnect: (candidates: [URL], name: String?, homeID: String?, saved: URL?)?
     /// Hears every `progress` published, in order (the tests' transition log).
     var progressObserver: (@MainActor (ConnectProgress?) -> Void)?
     /// The "Approve a sign-in" sheet is up (the account menus open it).
@@ -204,8 +205,10 @@ public final class AppSession {
         }
         #endif
         homes = Self.decodeHomes(defaults.data(forKey: "homes"), defaults: defaults)
+        // asked at each of its addresses, not only the saved one: a home whose name on the
+        // network changed answers at another
         if let last = defaults.url(forKey: "home"), let h = homes.first(where: { $0.url == last }) {
-            use(h)
+            open(h)
         }
     }
 
@@ -244,11 +247,32 @@ public final class AppSession {
         }
     }
 
-    /// Picks a known home: at its address, or the first of its others that answers.
+    /// Picks a known home: at its address, or the first of its others where the same home
+    /// answers (the entry moves there), each step in `progress`.
     public func open(_ home: Home) {
-        guard let others = home.addresses, !others.isEmpty else { return use(home) }
         connectTask?.cancel()
-        connectTask = Task { await connect(to: [home.url] + others, name: home.name, homeID: home.homeID) }
+        connectTask = Task { await reconnect(home) }
+    }
+
+    /// `home`'s addresses (`first` before them: where it was just announced), asked in order.
+    @discardableResult
+    func reconnect(_ home: Home, first: URL? = nil) async -> ReachFailure? {
+        var candidates: [URL] = []
+        for u in [first, home.url].compactMap(\.self) + (home.addresses ?? []) where !candidates.contains(u) { candidates.append(u) }
+        attempt = 1
+        lastConnect = (candidates, home.name, home.homeID, home.url)
+        return await reachAndUse(candidates, name: home.name, homeID: home.homeID, saved: home.url)
+    }
+
+    /// The homes announced on this network (the picker's browser). A saved home none of whose
+    /// addresses answered, announced now at another (its name on the network changed), is
+    /// asked there: the same id, so the entry moves when it answers as that home.
+    public func announced(_ found: [HomeBrowser.Found]) {
+        guard !connecting, connectProblem != nil, let last = lastConnect, let saved = last.saved, let id = last.homeID,
+              let home = homes.first(where: { $0.url == saved }),
+              let moved = found.first(where: { $0.homeID == id && !last.candidates.contains($0.url) }) else { return }
+        connectTask?.cancel()
+        connectTask = Task { await reconnect(home, first: moved.url) }
     }
 
     /// Tries `candidates` in order and uses the first that is a Maktaba home (the one
@@ -256,8 +280,8 @@ public final class AppSession {
     @discardableResult
     public func connect(to candidates: [URL], name: String? = nil, homeID: String? = nil) async -> ReachFailure? {
         attempt = 1
-        lastConnect = (candidates, name, homeID)
-        return await reachAndUse(candidates, name: name, homeID: homeID)
+        lastConnect = (candidates, name, homeID, nil)
+        return await reachAndUse(candidates, name: name, homeID: homeID, saved: nil)
     }
 
     /// Asks the last addresses again (the progress's Retry after a failed connect): the same
@@ -266,11 +290,12 @@ public final class AppSession {
     public func retryConnect() async -> ReachFailure? {
         guard let last = lastConnect else { return nil }
         attempt += 1
-        return await reachAndUse(last.candidates, name: last.name, homeID: last.homeID)
+        return await reachAndUse(last.candidates, name: last.name, homeID: last.homeID, saved: last.saved)
     }
 
-    /// Publishes looking, each address tried, and found (or why not), then uses the home.
-    private func reachAndUse(_ candidates: [URL], name: String?, homeID: String?) async -> ReachFailure? {
+    /// Publishes looking, each address tried, and found (or why not), then uses the home
+    /// (`saved`'s entry, moved to the address that answered).
+    private func reachAndUse(_ candidates: [URL], name: String?, homeID: String?, saved: URL?) async -> ReachFailure? {
         connecting = true
         connectProblem = nil
         defer { connecting = false }
@@ -280,6 +305,7 @@ public final class AppSession {
             var others: [URL] = []
             for u in r.addresses + candidates where u != r.url && !others.contains(u) { others.append(u) }
             let fallback = r.url.host() ?? r.url.absoluteString
+            if let saved, saved != r.url { move(saved, to: r.url) }
             use(Home(url: r.url, name: r.name ?? name ?? fallback, homeID: r.id ?? homeID,
                      addresses: others.isEmpty ? nil : others), ask: false)
             signInMethods = r.signIn
@@ -364,7 +390,8 @@ public final class AppSession {
     }
 
     public func forget(_ home: Home) {
-        TokenStore(app: app, home: home.url).clear()
+        // its old addresses may still hold the tokens they issued (`move`)
+        for u in [home.url] + (home.addresses ?? []) { TokenStore(app: app, home: u).clear() }
         homes.removeAll { $0.url == home.url }
         save()
         if current?.url == home.url { switchHome() }
@@ -626,6 +653,20 @@ public final class AppSession {
         homes.append(entry)
         save()
         return entry
+    }
+
+    /// A saved home answered at another of its addresses (or where it was announced): the
+    /// entry moves there, its name and the person's kept, the old address among its others.
+    /// Tokens stay with the address that issued them: the new one is signed in to afresh
+    /// (its own tokens when it has some), as `remember` never moves them either.
+    private func move(_ old: URL, to new: URL) {
+        guard let i = homes.firstIndex(where: { $0.url == old }), !homes.contains(where: { $0.url == new }) else { return }
+        // the old host was its name until the home said one: the new host is, now
+        if homes[i].hasPlaceholderName { homes[i].name = new.host() ?? new.absoluteString }
+        homes[i].addresses = merged([old] + (homes[i].addresses ?? []), [], without: new)
+        homes[i].url = new
+        if current?.url == old { current = homes[i] }
+        save()
     }
 
     private func merged(_ a: [URL], _ b: [URL], without: URL) -> [URL]? {
