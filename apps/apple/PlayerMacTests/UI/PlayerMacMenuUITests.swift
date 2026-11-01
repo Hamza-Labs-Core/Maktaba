@@ -138,7 +138,11 @@ final class PlayerMacMenuUITests: XCTestCase {
     /// to the mock home by a code.
     private func launchSignedIn(_ language: String = "en", sections: String? = nil, section: String? = nil) {
         self.language = language
-        var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
+        // AppKit reads arguments as `-key value` pairs: a flag with no value takes the next
+        // one, and a word left over (`granted`) is opened as a document, so SwiftUI opens no
+        // window. Xcode's own runs pass this too.
+        var args = ["-NSTreatUnknownArgumentsAsOpen", "NO",
+                    "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
                     "-theme", "dark",
                     "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
         if let sections { args += ["-maktaba-sections", sections] }
