@@ -47,6 +47,11 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **MaktabaKit reads Live TV (story 48.7).** The Apple apps' shared kit can read what is on now,
+  the guide for a time window, one channel's guide and logo, and where the TV streams. It
+  plays a channel from the home's network at home, or through a remote session away from home,
+  keeping that session alive and taking each new token without reopening the player. The
+  Player and the Apple TV app will both use it.
 - **One design-token source for web, Apple and Android (Story 48.2).**
   `web/design-system/tokens/` now holds the shipped Ink & Brass (dark: ink `#0B111C`, brass
   `#E3B252`) and its light set, plus the apps' surfaces (`raised`, `nav`, `scrim`, `chosen`).
