@@ -5,7 +5,7 @@ import XCTest
 /// - the hero, then the rows in FR-10's order; an empty row is absent;
 /// - a card opens its video's page; Resume (the context menu) opens the player at the
 ///   person's position; Not interested removes the card and calls the DELETE route;
-/// - a second launch shows the kept rows before the home answers (it answers 3 s late);
+/// - a second launch shows the kept rows before the home answers (held until released);
 /// - an empty home says so, with Switch home and Sign out;
 /// - the accessibility audit, and dark screenshots in English and Arabic.
 final class PlayerHomeUITests: PlayerUITestCase {
@@ -72,6 +72,10 @@ final class PlayerHomeUITests: PlayerUITestCase {
 
     /// A tap opens the video's page; Resume in the context menu opens the player at the
     /// person's position (v2 stopped at 1240 s).
+    ///
+    /// Tied to the placeholders: "v2" and "v2 @ 1240" are what the placeholder `VideoScreen`
+    /// and `WatchScreen` print. Stories 48.19 (a video's page) and 48.23 (the player) change
+    /// these checks to what their screens show (the player's start position).
     func testCardOpensVideoAndResumeOpensPlayer() {
         openHome()
         let card = element("home.card.v2")
@@ -109,7 +113,8 @@ final class PlayerHomeUITests: PlayerUITestCase {
     }
 
     /// FR-12: the second launch shows the rows kept on the device at once; the home's answer
-    /// (3 s late, and without Continue Watching this time) then replaces them.
+    /// (without Continue Watching this time) then replaces them. The answer is held by a latch
+    /// (`MockHome.hold`) until the kept rows have shown, so a slow runner cannot race it.
     func testSecondLaunchShowsKeptRowsFirst() throws {
         openHome()
         XCTAssertTrue(row("continue").waitForExistence(timeout: 10))
@@ -117,11 +122,14 @@ final class PlayerHomeUITests: PlayerUITestCase {
 
         var json = try XCTUnwrap(home.fixture(named: "home"))
         json = try Self.replacing(json) { $0["continue_watching"] = [] }
-        home.stub("GET", "/api/home", body: json, delay: 3)
+        home.stub("GET", "/api/home", body: json)
+        home.hold("GET", "/api/home")
         launchSignedIn(sections: ["home"])
-        XCTAssertTrue(row("continue").waitForExistence(timeout: 2), "the kept rows, before the home answers")
+        XCTAssertTrue(row("continue").waitForExistence(timeout: 15), "the kept rows, before the home answers")
         XCTAssertTrue(element("home.hero").exists)
-        XCTAssertTrue(row("continue").waitForNonExistence(timeout: 10), "then the home's answer")
+        XCTAssertTrue(home.seen.contains("GET /api/home"), "Home asked the home, which has not answered yet")
+        home.release()
+        XCTAssertTrue(row("continue").waitForNonExistence(timeout: 15), "then the home's answer")
     }
 
     /// FR-13: no library the person may see: Home says so, with Switch home and Sign out.
