@@ -20,6 +20,8 @@ import com.hamzalabs.maktaba.core.ui.SessionGate
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerShell
+import com.hamzalabs.maktaba.player.ui.components.ImageCache
+import com.hamzalabs.maktaba.player.ui.components.LocalHomeImages
 
 /** Maktaba Player: a home's sections (the shell) and what plays, on a phone, a foldable or a tablet. */
 class MainActivity : ComponentActivity() {
@@ -39,8 +41,10 @@ class MainActivity : ComponentActivity() {
                     PermissionsGate(MaktabaApp.Player, helpUrl = { app.session.current.value?.url?.let(::permissionsHelpUrl) }) {
                         SessionGate(app.session, MaktabaApp.Player) { user, client ->
                             val home = remember(user, client) { PlayerHome(app.session, user, client, app.themes, onPlaying = { playing = it }) }
+                            // this home's pictures, with its token, in the app's shared caches (NFR-4)
+                            val images = remember(client) { ImageCache.loader(applicationContext, client) }
                             // the sections (a bar, a rail or a drawer, by the window); hidden while a video plays full screen
-                            CompositionLocalProvider(LocalPlayerHome provides home) {
+                            CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
                                 PlayerShell(immersive = playing)
                             }
                         }
