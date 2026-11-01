@@ -2,6 +2,8 @@
 
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.player.profile.LocalPlaybackSettings
 import android.content.Context
 import android.os.Looper
 import androidx.activity.ComponentActivity
@@ -77,13 +79,13 @@ class WatchScreenshotTest {
 
     /** The player on [watch], paused once it plays (the controls then stay), Up next per [autoplay]. */
     private fun paused(autoplay: Boolean) {
-        val prefs = PlaybackPrefs(MapStore()).apply { setAutoplayNext(autoplay) }
+        val prefs = PlaybackSettings(MapStore()).apply { update { it.copy(autoplayNext = autoplay) } }
         compose.setContent {
             MaktabaTheme(ThemeMode.Dark) {
                 Surface {
                     CompositionLocalProvider(
                         LocalPlayerHome provides home.home,
-                        LocalPlaybackPrefs provides prefs,
+                        LocalPlaybackSettings provides prefs,
                         LocalPlayerBuild provides { b: ExoPlayer.Builder -> b.setClock(clock).setRenderersFactory(CapturingRenderersFactory(app, clock)) },
                     ) {
                         PlayerShell(

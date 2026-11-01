@@ -158,6 +158,12 @@ fun PlayerShell(
         stacks.SaveableStateProvider(current.name) {
             val controller = rememberNavController()
             val navigator = remember(controller) { PlayerNavigator(controller) { s -> if (s in sections) currentName = s.name } }
+            // At another section's root, Back returns to the first section (Material's guidance).
+            // Registered before the screens (the NavHost below): the handler registered last is
+            // asked first, so a screen's own Back (a page it keeps, as Profile's Settings) wins.
+            val entry by controller.currentBackStackEntryAsState()
+            val atRoot = entry != null && controller.previousBackStackEntry == null
+            BackHandler(enabled = atRoot && current != sections.first()) { currentName = sections.first().name }
             NavHost(controller, startDestination = current.root) { playerGraph(screens, navigator) }
 
             // a deep link: its screen on this section's stack, once
@@ -176,10 +182,6 @@ fun PlayerShell(
                     navigator.reselect(current.root)
                 }
             }
-            // at another section's root, Back returns to the first section (Material's guidance)
-            val entry by controller.currentBackStackEntryAsState()
-            val atRoot = entry != null && controller.previousBackStackEntry == null
-            BackHandler(enabled = atRoot && current != sections.first()) { currentName = sections.first().name }
         }
     }
 }

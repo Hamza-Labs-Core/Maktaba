@@ -37,12 +37,12 @@ enum class PlayerSection(
         /**
          * The sections a person can reach: only those whose screen has merged, so a TestFlight or
          * internal build never shows a half-built one (the epic's release rule). Each screen
-         * story adds its section here, one line, in [entries]' order. Libraries is today's
-         * browser until 48.27 replaces it.
+         * story adds its section here, one line, in [entries]' order.
          */
         val enabled: List<PlayerSection> = listOf(
             Home,
             Libraries,
+            LiveTv,
             Search,
             Profile,
         )

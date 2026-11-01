@@ -55,6 +55,7 @@ class FakeHome : ExternalResource() {
 
     init {
         answer("/api/libraries") { json(LIBRARIES) }
+        answer("/api/libraries/summary") { json(LIBRARY_SUMMARY) }
         answer("/api/videos") { json(VIDEOS) }
         VIDEO_LIST.forEach { (id, title) -> answer("/api/videos/$id") { json(video(id, title)) } }
     }
@@ -96,6 +97,9 @@ class FakeHome : ExternalResource() {
         )
 
         val LIBRARIES = """{"items":[{"id":"l1","name":"Films"},{"id":"l2","name":"Series"}]}"""
+
+        /** The Libraries section's cards (`GET /api/libraries/summary`, 48.27). */
+        val LIBRARY_SUMMARY = """{"items":[{"id":"l1","name":"Films","videos":5},{"id":"l2","name":"Series","videos":0}]}"""
 
         fun video(id: String, title: String) =
             """{"id":"$id","library_id":"l1","filename":"$id.mkv","title":"$title","description":"A film about $title.","duration_sec":5400}"""

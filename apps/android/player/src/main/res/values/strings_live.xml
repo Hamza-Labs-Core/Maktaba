@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's Live TV (Epic 48.30): Now, the guide and a channel's live player.
+     Its Arabic is in values-ar/strings_live.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="live_now">Now</string>
+    <string name="live_guide">Guide</string>
+    <string name="live_no_channels">No channels</string>
+    <string name="live_no_channels_detail">This home has no channel you can watch.</string>
+    <string name="live_cant_load">Can\'t load Live TV</string>
+    <string name="live_nothing_on">Nothing scheduled</string>
+    <string name="live_next">Next at %1$s: %2$s</string>
+    <string name="live_next_label">Next</string>
+    <string name="live_channel">Channel %1$d, %2$s</string>
+    <string name="live_progress">%1$d%% through</string>
+    <string name="live_time_range">%1$s – %2$s</string>
+    <string name="live_today">Today</string>
+    <string name="live_tomorrow">Tomorrow</string>
+    <string name="live_earlier">Earlier</string>
+    <string name="live_later">Later</string>
+    <string name="live_on_now">On now</string>
+    <string name="live_watch">Watch</string>
+    <string name="live_badge">LIVE</string>
+    <string name="live_back_to_live">Back to live</string>
+    <string name="live_pause">Pause</string>
+    <string name="live_play">Play</string>
+    <string name="live_next_channel">Next channel</string>
+    <string name="live_previous_channel">Previous channel</string>
+    <string name="live_tuning">Tuning…</string>
+    <string name="live_close">Close</string>
+    <string name="live_try_again">Try again</string>
+    <string name="live_cant_play">This channel can\'t play</string>
+    <string name="live_session_ended">The remote session ended.</string>
+    <string name="live_remote_unavailable">Watching away from home isn\'t available right now.</string>
+    <string name="live_streams_full">You\'re already watching on as many devices as allowed.</string>
+    <string name="live_budget">This home\'s remote viewing allowance is used up.</string>
+    <string name="live_remote_timeout">The channel took too long to start.</string>
+    <string name="live_not_allowed">You can\'t watch away from home.</string>
+    <string name="live_no_such_channel">This channel isn\'t available.</string>
+</resources>

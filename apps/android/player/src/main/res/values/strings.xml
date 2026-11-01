@@ -4,11 +4,7 @@
      MissingTranslation fail without it. -->
 <resources>
     <string name="libraries">Libraries</string>
-    <string name="all_videos">All videos</string>
     <string name="choose_library">Choose a library</string>
-    <string name="search_titles">Search titles</string>
-    <string name="no_videos">No videos</string>
-    <string name="choose_video">Choose a video</string>
     <string name="play">Play</string>
     <string name="play_named">Play %1$s</string>
 </resources>

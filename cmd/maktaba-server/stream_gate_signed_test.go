@@ -321,3 +321,43 @@ func TestStreamGateSignedURLViaHome(t *testing.T) {
 		t.Errorf("via-home on a home: %d, want 404", rec.Code)
 	}
 }
+
+// A Cast receiver (Google's Default Media Receiver) reads the HLS from its own
+// web page, so a signed answer carries Access-Control-Allow-Origin: * (story
+// 48.33: the phone hands the receiver the session's HLS master, never DASH).
+// A refused signed request, and one with a session (the web app's own, same
+// origin), carry none.
+func TestStreamGateSignedAnswerIsReadableByACastReceiver(t *testing.T) {
+	g, _, _ := signedGate(t, nil)
+	exp := signedNow.Add(4 * time.Hour)
+	sessTok := fakeToken(t, audSession, sessID, exp)
+	origin := map[string]string{"Origin": "https://www.gstatic.com"}
+	for _, p := range []string{
+		"/stream/" + sessID + "/manifest.m3u8",
+		"/stream/" + sessID + "/v0/index.m3u8",
+		"/stream/" + sessID + "/v0/seg-3.ts",
+		"/stream/" + sessID + "/subs-en/index.m3u8",
+		"/stream/" + sessID + "/subs/sidecar/en.vtt",
+	} {
+		rec := do(g, http.MethodGet, withSig(p, sessTok), origin)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d %s", p, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("%s: Access-Control-Allow-Origin %q, want *", p, got)
+		}
+	}
+	// another session's token: refused, and no CORS
+	rec := do(g, http.MethodGet, withSig("/stream/"+otherSess+"/manifest.m3u8", sessTok), origin)
+	if rec.Code != http.StatusForbidden || rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("foreign token: %d, ACAO %q; want 403 without CORS", rec.Code, rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+	// the web app's own request (a session): no CORS added
+	rec = do(g, http.MethodGet, "/stream/"+sessID+"/manifest.m3u8", map[string]string{"Cookie": "mkt_sess=good"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("session request: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Errorf("session request: ACAO %q, want none", rec.Header().Get("Access-Control-Allow-Origin"))
+	}
+}
