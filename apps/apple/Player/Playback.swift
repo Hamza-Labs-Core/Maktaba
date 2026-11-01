@@ -90,12 +90,7 @@ final class Playback {
             return
         }
         stop()
-        #if os(iOS)
-        // the app declares background audio: with the playback category the sound goes on
-        // when the screen locks or the app goes to the background (and ignores the mute switch)
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
-        try? AVAudioSession.sharedInstance().setActive(true)
-        #endif
+        PlaybackAudio.activate()
         video = v
         settings = PlaybackSettings.read()
         running = Task { await run(v, asked: start) }
@@ -516,4 +511,17 @@ struct PlaybackCommands: Commands {
 extension FocusedValues {
     /// What plays in the focused window.
     @Entry var playback: Playback?
+}
+
+/// What plays here plays with sound: a video and a live channel alike.
+enum PlaybackAudio {
+    static func activate() {
+        #if os(iOS)
+        // the app declares background audio: with the playback category the sound goes on
+        // when the screen locks or the app goes to the background, and it ignores the mute
+        // switch (the default category is silent with the switch on: live TV had no sound)
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        #endif
+    }
 }

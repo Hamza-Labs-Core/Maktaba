@@ -165,6 +165,7 @@ final class LivePlayback {
             let item = try await item(url, path: path)
             try Task.checkCancellation()
             player.replaceCurrentItem(with: item)
+            PlaybackAudio.activate()
             player.play()
             phase = .playing
             await watch(source, path: path, url: url)
