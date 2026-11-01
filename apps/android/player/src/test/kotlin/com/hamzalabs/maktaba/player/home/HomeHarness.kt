@@ -1,6 +1,17 @@
 package com.hamzalabs.maktaba.player.home
 
+import android.content.Context
 import androidx.activity.ComponentActivity
+import coil3.ImageLoader
+import coil3.asImage
+import coil3.decode.DataSource
+import coil3.intercept.Interceptor
+import coil3.request.ErrorResult
+import coil3.request.ImageResult
+import coil3.request.SuccessResult
+import kotlinx.coroutines.Dispatchers
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.io.IOException
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,8 +62,33 @@ val HomeTestScreens: PlayerScreens = { route, nav ->
 }
 
 /**
+ * [FakePictures]' pictures keyed by the URL's path and query only: FakeHome's port changes on
+ * every run, and a picture keyed by it would make every screenshot differ.
+ */
+fun homePictures(context: Context): ImageLoader = ImageLoader.Builder(context)
+    .memoryCache(null)
+    .diskCache(null)
+    .coroutineContext(Dispatchers.Unconfined)
+    .interceptorCoroutineContext(Dispatchers.Unconfined)
+    .components {
+        add(
+            Interceptor { chain ->
+                val url = chain.request.data.toString()
+                val key = url.toHttpUrlOrNull()?.let { it.encodedPath + (it.encodedQuery?.let { q -> "?$q" } ?: "") } ?: url
+                val result: ImageResult = if ("missing" in key) {
+                    ErrorResult(null, chain.request, IOException("404"))
+                } else {
+                    SuccessResult(FakePictures.picture(key).asImage(), chain.request, DataSource.MEMORY)
+                }
+                result
+            },
+        )
+    }
+    .build()
+
+/**
  * The shipped shell ([PlayerSection.enabled]: Home first) in the dark theme with [home] signed in
- * and [FakePictures] for every picture. Each new value of [launch] is a new launch of the app: a
+ * and [homePictures] for every picture. Each new value of [launch] is a new launch of the app: a
  * new signed-in home (nothing kept in memory), the same device (Home's disk cache kept).
  */
 fun AndroidComposeTestRule<ActivityScenarioRule<ComponentActivity>, ComponentActivity>.setHome(
@@ -66,7 +102,7 @@ fun AndroidComposeTestRule<ActivityScenarioRule<ComponentActivity>, ComponentAct
         key(launch?.intValue ?: 0) {
             val n = launch?.intValue ?: 0
             val signedIn = remember { if (n == 0) home.home else home.home.let { PlayerHome(it.session, it.user, it.client, it.themes) } }
-            val images = remember { FakePictures.loader(activity) }
+            val images = remember { homePictures(activity) }
             MaktabaTheme(ThemeMode.Dark) {
                 Surface(Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalPlayerHome provides signedIn, LocalHomeImages provides images) {
