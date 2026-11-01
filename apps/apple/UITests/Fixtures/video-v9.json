@@ -1,0 +1,26 @@
+{
+ "id": "v9",
+ "library_id": "lib-docs",
+ "path": "/Volumes/Media/Documentaries/journey-to-makkah.mkv",
+ "filename": "journey-to-makkah.mkv",
+ "title": "رحلة إلى مكة",
+ "description": "فيلم وثائقي عن طريق الحج القديم.",
+ "state": "ready",
+ "detected_language": "ar",
+ "duration_sec": 3300,
+ "size_bytes": 825000000,
+ "content_hash": "bf998a53d47de425a47efa7e0aa072cf77318817ecfc787c3f9c3552b7f2d78d",
+ "created_at": "{{now-864000}}",
+ "updated_at": "{{now-863400}}",
+ "playable": true,
+ "tags": [
+  "hajj",
+  "history"
+ ],
+ "latest_transcript_id": "tr-v9",
+ "playback_state": {
+  "position_sec": 1500,
+  "completed": false,
+  "updated_at": "{{now-172800}}"
+ }
+}

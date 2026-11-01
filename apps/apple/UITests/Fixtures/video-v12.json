@@ -1,0 +1,20 @@
+{
+ "id": "v12",
+ "library_id": "lib-docs",
+ "path": "/Volumes/Media/Documentaries/silk-road-scholars.mkv",
+ "filename": "silk-road-scholars.mkv",
+ "title": "Scholars of the Silk Road",
+ "description": "Travelling scholars between Samarkand and Cairo.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 2580,
+ "size_bytes": 645000000,
+ "content_hash": "ab2e2270cde6bedf499a2de2191cc006222f242408d222268b77c991a01c42c1",
+ "created_at": "{{now-3600}}",
+ "updated_at": "{{now-3000}}",
+ "playable": true,
+ "tags": [
+  "history"
+ ],
+ "latest_transcript_id": "tr-v12"
+}

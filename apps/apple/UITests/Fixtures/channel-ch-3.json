@@ -1,0 +1,40 @@
+{
+ "id": "ch-3",
+ "number": 3,
+ "name": "Documentaries",
+ "slug": "documentaries",
+ "logo_path": "/srv/maktaba/channel-art/ch-3/logo.png",
+ "logo_url": "/api/channels/ch-3/logo",
+ "art": {
+  "logo": {
+   "url": "/api/channels/ch-3/art/logo?v=8a5ee3e3",
+   "path": "/srv/maktaba/channel-art/ch-3/logo.png",
+   "overridden": false
+  },
+  "watermark": {
+   "overridden": false,
+   "position": "top-right",
+   "width_pct": 12,
+   "margin_pct": 2
+  },
+  "loading": {
+   "overridden": false
+  },
+  "strip": null
+ },
+ "category": "general",
+ "mode": "shuffle",
+ "mode_config": {},
+ "transition": "cut",
+ "enabled": true,
+ "sort_order": 3,
+ "created_at": "{{now-17280000}}",
+ "updated_at": "{{now-864000}}",
+ "now_playing": {
+  "title": "رحلة إلى مكة",
+  "start_at": "{{now-2700}}",
+  "end_at": "{{now+300}}",
+  "progress": 0.9
+ },
+ "guide_until": "{{now+86400}}"
+}

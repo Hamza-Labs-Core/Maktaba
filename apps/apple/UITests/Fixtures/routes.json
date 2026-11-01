@@ -1,0 +1,430 @@
+[
+ {
+  "method": "GET",
+  "path": "/api/home",
+  "status": 200,
+  "file": "home.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/recommendations",
+  "status": 200,
+  "file": "recommendations.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/summary",
+  "status": 200,
+  "file": "libraries-summary.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/pinned-libraries",
+  "status": 200,
+  "file": "pinned-libraries.json"
+ },
+ {
+  "method": "PUT",
+  "path": "/api/me/pinned-libraries",
+  "status": 200,
+  "file": "pinned-libraries.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries",
+  "status": 200,
+  "file": "libraries.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-lectures/hub",
+  "status": 200,
+  "file": "hub-lectures.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-lectures/series",
+  "status": 200,
+  "file": "library-series-lectures.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-docs/hub",
+  "status": 200,
+  "file": "hub-docs.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/libraries/lib-docs/series",
+  "status": 200,
+  "file": "library-series-docs.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos",
+  "status": 200,
+  "file": "videos.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/facets",
+  "status": 200,
+  "file": "facets.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v1",
+  "status": 200,
+  "file": "video-v1.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v2",
+  "status": 200,
+  "file": "video-v2.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v3",
+  "status": 200,
+  "file": "video-v3.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v4",
+  "status": 200,
+  "file": "video-v4.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v5",
+  "status": 200,
+  "file": "video-v5.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v6",
+  "status": 200,
+  "file": "video-v6.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v7",
+  "status": 200,
+  "file": "video-v7.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v8",
+  "status": 200,
+  "file": "video-v8.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v9",
+  "status": 200,
+  "file": "video-v9.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v10",
+  "status": 200,
+  "file": "video-v10.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v11",
+  "status": 200,
+  "file": "video-v11.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/v12",
+  "status": 200,
+  "file": "video-v12.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v1",
+  "status": 200,
+  "file": "me-video-v1.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v2",
+  "status": 200,
+  "file": "me-video-v2.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v3",
+  "status": 200,
+  "file": "me-video-v3.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v4",
+  "status": 200,
+  "file": "me-video-v4.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v5",
+  "status": 200,
+  "file": "me-video-v5.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v6",
+  "status": 200,
+  "file": "me-video-v6.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v7",
+  "status": 200,
+  "file": "me-video-v7.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v8",
+  "status": 200,
+  "file": "me-video-v8.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v9",
+  "status": 200,
+  "file": "me-video-v9.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v10",
+  "status": 200,
+  "file": "me-video-v10.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v11",
+  "status": 200,
+  "file": "me-video-v11.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/videos/v12",
+  "status": 200,
+  "file": "me-video-v12.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series",
+  "status": 200,
+  "file": "series.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-seerah/episodes",
+  "status": 200,
+  "file": "series-episodes-seerah.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-tafsir/episodes",
+  "status": 200,
+  "file": "series-episodes-tafsir.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-seerah",
+  "status": 200,
+  "file": "series-seerah.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/series/s-tafsir",
+  "status": 200,
+  "file": "series-tafsir.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/me/watched",
+  "status": 200,
+  "file": "marks-updated.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/me/favorites",
+  "status": 200,
+  "file": "marks-updated.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/search",
+  "status": 200,
+  "file": "search.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search/suggest",
+  "status": 200,
+  "file": "search-suggest.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search/recent",
+  "status": 200,
+  "file": "search-recent.json"
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/search/recent",
+  "status": 204
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/now",
+  "status": 200,
+  "file": "channels-now.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/guide",
+  "status": 200,
+  "file": "channels-guide.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels",
+  "status": 200,
+  "file": "channels.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-1/guide",
+  "status": 200,
+  "file": "channel-guide-ch-1.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-2/guide",
+  "status": 200,
+  "file": "channel-guide-ch-2.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-3/guide",
+  "status": 200,
+  "file": "channel-guide-ch-3.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-1",
+  "status": 200,
+  "file": "channel-ch-1.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-2",
+  "status": 200,
+  "file": "channel-ch-2.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/channels/ch-3",
+  "status": 200,
+  "file": "channel-ch-3.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/tv/info",
+  "status": 200,
+  "file": "tv-info.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/tv/remote/tune",
+  "status": 200,
+  "file": "tv-remote-tune.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me",
+  "status": 200,
+  "file": "me.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/auth/me",
+  "status": 200,
+  "file": "auth-me.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/sessions",
+  "status": 200,
+  "file": "me-sessions.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/history",
+  "status": 200,
+  "file": "me-history.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/me/playlists",
+  "status": 200,
+  "file": "me-playlists.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/stream/sessions",
+  "status": 201,
+  "file": "stream-session.json"
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/recommendations/items/{video_id}",
+  "status": 204
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/recommendations/rows/{reason_kind}",
+  "status": 204
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/{id}/chapters",
+  "status": 200,
+  "file": "chapters.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/{id}/subtitles",
+  "status": 200,
+  "file": "subtitles.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/videos/{id}/segments",
+  "status": 200,
+  "file": "segments.json"
+ },
+ {
+  "method": "GET",
+  "path": "/api/search/results/{sid}",
+  "status": 200,
+  "file": "search-results.json"
+ },
+ {
+  "method": "POST",
+  "path": "/api/tv/remote/sessions/{id}/heartbeat",
+  "status": 200,
+  "file": "tv-remote-heartbeat.json"
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/tv/remote/sessions/{id}",
+  "status": 204
+ }
+]

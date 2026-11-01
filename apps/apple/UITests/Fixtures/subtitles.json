@@ -1,0 +1,20 @@
+{
+ "items": [
+  {
+   "id": 201,
+   "language": "ar",
+   "format": "vtt",
+   "source": "generated",
+   "is_default": true,
+   "url": "/stream/subtitles/v1/ar.vtt"
+  },
+  {
+   "id": 202,
+   "language": "en",
+   "format": "vtt",
+   "source": "external",
+   "is_default": false,
+   "url": "/stream/subtitles/v1/en.vtt"
+  }
+ ]
+}
