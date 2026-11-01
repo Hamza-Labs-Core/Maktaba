@@ -51,6 +51,31 @@ func TestPushDatabase(t *testing.T) {
 	take("CA two")
 }
 
+// A machine whose agent connects after a pass is told at once, not at the next interval
+// (the replica e2e flake: it waited 30 s unable to verify its home's database, its copy
+// idle, then started again in the middle of the test).
+func TestPushDatabaseTellsAMachineAsItConnects(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.hub.PushDatabase(ctx, "", time.Hour, nil)
+	time.Sleep(100 * time.Millisecond) // its first pass runs with no machine connected
+	for _, name := range []string{"studio", "den"} {
+		id, priv := f.approvedNode(name)
+		a, err := f.dialAgent(helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		// within recvType's 3 s, where the interval is an hour
+		cmd := a.recvType("cmd")
+		args, _ := cmd["args"].(map[string]any)
+		if cmd["name"] != "home.database" || args["tls_off"] != true {
+			t.Fatalf("%s: cmd = %v, want the home's word that its database has no TLS", name, cmd)
+		}
+		a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	}
+}
+
 func TestDatabaseArgs(t *testing.T) {
 	if b, err := databaseArgs(""); err != nil || string(b) != `{"tls_off":true}` {
 		t.Fatalf("TLS off: %s %v", b, err)
