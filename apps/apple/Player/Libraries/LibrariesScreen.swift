@@ -109,10 +109,10 @@ struct LibrariesScreen: View {
                     Image(systemName: "rectangle.stack")
                 }
             } description: {
-                Text(SeriesGrid.count(model.series.count))
+                if !model.moreSeries { Text(SeriesGrid.count(model.series.count)) }
             }
         } else {
-            SeriesGrid(context: context, series: model.series)
+            SeriesGrid(context: context, series: model.series) { await model.loadMoreSeries() }
         }
     }
 }
@@ -185,6 +185,12 @@ private struct LibraryCard: View {
 struct SeriesGrid: View {
     let context: PlayerContext
     let series: [SeriesSummary]
+    /// Asks for the next page once a cover near the end shows (nil: all are here).
+    var more: (() async -> Void)?
+
+    /// How many covers before the end the next page is asked for: about a screen ahead,
+    /// so scrolling doesn't stop at the edge of a page.
+    static let ahead = 18
 
     static func count(_ n: Int) -> LocalizedStringResource {
         LocalizedStringResource("\(n) series", table: "Libraries", comment: "How many series there are")
@@ -202,8 +208,14 @@ struct SeriesGrid: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("series.\(s.id)")
+                .onAppear { if let more, Self.nearEnd(s.id, of: series) { Task { await more() } } }
             }
         }
+    }
+
+    /// Whether `id` is one of the last `ahead` covers.
+    static func nearEnd(_ id: String, of series: [SeriesSummary]) -> Bool {
+        series.suffix(ahead).contains { $0.id == id }
     }
 
     static let untitled = LocalizedStringResource("Untitled series", table: "Libraries", comment: "A series with no name")
@@ -220,7 +232,7 @@ struct SeriesPage: View {
 
     var body: some View {
         ScrollView {
-            SeriesGrid(context: context, series: model.series)
+            SeriesGrid(context: context, series: model.series) { await model.loadMoreSeries() }
                 .padding(MaktabaTokens.Spacing.s4)
         }
         .maktabaSurface()

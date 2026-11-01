@@ -1323,6 +1323,13 @@ public extension APIClient {
         try await seriesPage(library: library, page: page).items
     }
 
+    /// One page (from 0) of the series, and whether the home has another: a grid asks for
+    /// the next as it nears its end instead of waiting for all of them.
+    func seriesListPage(library: String? = nil, page: Int) async throws -> (items: [SeriesSummary], more: Bool) {
+        let r = try await seriesPage(library: library, page: page)
+        return (r.items, r.sent >= Self.seriesPageSize)
+    }
+
     /// Every series the person may see, or one library's: page after page until a short one.
     func seriesList(library: String? = nil) async throws -> [SeriesSummary] {
         var all: [SeriesSummary] = []
