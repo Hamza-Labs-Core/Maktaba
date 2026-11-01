@@ -688,7 +688,8 @@ slots = "off"
 			t.Fatalf("per-machine stream keys: %v %v equal=%v", err1, err2, bytes.Equal(hk, nk))
 		}
 
-		// refused: tampered, expired, the node's signature on the home, no signature, no sign-in
+		// refused, signed in or not: tampered, expired, the node's signature on the
+		// home, no signature; a good signature plays without a sign-in (story 48.12)
 		u, _ := url.Parse(homeSess.ManifestURL)
 		good := u.Query().Get("sig")
 		bare := homeWebURL + u.Path
@@ -719,9 +720,27 @@ slots = "off"
 			if resp, body := user.do("GET", target, nil, nil); resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
 				t.Errorf("%s: %d %s, want 401/403", name, resp.StatusCode, tail(string(body), 200))
 			}
+			// without a sign-in too (an AirPlay / Cast receiver): the gate or the
+			// streaming service still refuses it (Epic 48 story 48.12)
+			if r, err := http.Get(target); err != nil {
+				t.Errorf("%s, no sign-in: %v", name, err)
+			} else {
+				_ = r.Body.Close()
+				if r.StatusCode != http.StatusUnauthorized && r.StatusCode != http.StatusForbidden {
+					t.Errorf("%s, no sign-in: %d, want 401/403", name, r.StatusCode)
+				}
+			}
 		}
-		if r, err := http.Get(homeWebURL + homeSess.ManifestURL); err != nil || r.StatusCode != http.StatusUnauthorized {
-			t.Errorf("a signed URL without a sign-in on the web port: %v %v", r, err)
+		// Epic 48 story 48.12 (gap G2): a good signed URL plays without a sign-in on
+		// the web port (an AirPlay or Cast receiver carries no cookie); the streaming
+		// service verifies its ?sig=
+		if r, err := http.Get(homeWebURL + homeSess.ManifestURL); err != nil {
+			t.Errorf("a signed URL without a sign-in on the web port: %v", err)
+		} else {
+			_ = r.Body.Close()
+			if r.StatusCode != http.StatusOK {
+				t.Errorf("a signed URL without a sign-in on the web port: %d, want 200", r.StatusCode)
+			}
 		}
 	})
 
