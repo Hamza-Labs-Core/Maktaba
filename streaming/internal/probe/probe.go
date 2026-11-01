@@ -39,6 +39,19 @@ type Row struct {
 	// (media_info.raw_ffprobe; "" when it named none): the transcode's tone-mapping
 	// reads them instead of probing the file again at the session's open.
 	ColorTransfer, ColorMatrix, ColorPrimaries, ColorRange, PixFmt string
+	// HasAudio: the video has an audio_tracks row, or the probe's ffprobe output lists an
+	// audio stream. A track row may have no codec (transcribe records the stream it
+	// decoded before the probe fills it in): the video still has audio.
+	HasAudio bool
+}
+
+// NoAudio reports that the video has no audio stream at all, so a transcode maps none.
+// Only when nothing says it has one: no track row, no audio stream in the probe's
+// output, and no codec or channels (a backend that fills those but not HasAudio). An
+// unknown codec is still audio: the capability matrix sends it to a transcode, which
+// encodes it to AAC.
+func (r *Row) NoAudio() bool {
+	return !r.HasAudio && r.AudioCodec == "" && r.AudioChannels == 0
 }
 
 // Errors.

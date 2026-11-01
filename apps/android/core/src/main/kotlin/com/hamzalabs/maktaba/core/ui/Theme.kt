@@ -7,7 +7,12 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -24,7 +29,8 @@ enum class ThemeMode(@androidx.annotation.StringRes val label: Int) {
 
     companion object {
         const val STORAGE_KEY = "theme"
-        fun parse(s: String?): ThemeMode = entries.firstOrNull { it.name.equals(s, ignoreCase = true) } ?: System
+        /** The kept choice; with none (or one this version does not know), dark (FR-2). */
+        fun parse(s: String?): ThemeMode = entries.firstOrNull { it.name.equals(s, ignoreCase = true) } ?: Dark
     }
 }
 
@@ -39,68 +45,126 @@ class ThemeStore(private val store: KeyValueStore) {
     }
 }
 
-/** "Ink & Brass", the web's tokens (`web/src/styles/tokens.css`). */
+/**
+ * "Ink & Brass" as Material's colour schemes, every colour from the generated design tokens
+ * ([MaktabaTokens], `web/design-system/tokens/`): a change to a token reaches the apps through
+ * `make build-tokens`, never by editing a colour here. A role Material has and the tokens do not
+ * name is the nearest token, or a mix of two ([outline]).
+ */
 object InkAndBrass {
     /** --color-accent: the brand's gold, a fill colour. */
-    val Brass = Color(0xFFE3B252)
+    val Brass = MaktabaTokens.Dark.accent
     /** --color-accent-text on light: the gold dark enough for text (AA). */
-    val BrassText = Color(0xFF8A6212)
+    val BrassText = MaktabaTokens.Light.accentText
 
-    val Light: ColorScheme = lightColorScheme(
-        primary = BrassText,
-        onPrimary = Color.White,
-        primaryContainer = Color(0xFFF3DCA2),
-        onPrimaryContainer = Color(0xFF1A1408),
-        secondary = Color(0xFFC8952C),
-        onSecondary = Color(0xFF1A1408),
-        secondaryContainer = Color(0xFFFBEFD3),
-        onSecondaryContainer = Color(0xFF1A1408),
-        tertiary = Brass,
-        onTertiary = Color(0xFF1A1408),
-        background = Color(0xFFFFFFFF),
-        onBackground = Color(0xFF1C1810),
-        surface = Color(0xFFFFFFFF),
-        onSurface = Color(0xFF1C1810),
-        surfaceVariant = Color(0xFFFBF5E8),
-        onSurfaceVariant = Color(0xFF5A5040),
-        surfaceContainerLowest = Color(0xFFFFFFFF),
-        surfaceContainerLow = Color(0xFFFFF9EA),
-        surfaceContainer = Color(0xFFFBF5E8),
-        surfaceContainerHigh = Color(0xFFF8EFDB),
-        surfaceContainerHighest = Color(0xFFF4E8CD),
-        outline = Color(0xFF8C7C5C),
-        outlineVariant = Color(0xFFEFE3C8),
-        error = Color(0xFFB6253A),
-        onError = Color.White,
+    /** The Light tokens as Material's light scheme. */
+    val Light: ColorScheme = with(MaktabaTokens.Light) {
+        lightColorScheme(
+            primary = accentText,
+            onPrimary = bg,
+            primaryContainer = chosen,
+            onPrimaryContainer = accentFg,
+            secondary = MaktabaTokens.Brand.brand600,
+            onSecondary = accentFg,
+            secondaryContainer = MaktabaTokens.Brand.brand100,
+            onSecondaryContainer = accentFg,
+            tertiary = accent,
+            onTertiary = accentFg,
+            background = bg,
+            onBackground = fg,
+            surface = bg,
+            onSurface = fg,
+            surfaceVariant = subtle,
+            onSurfaceVariant = muted,
+            surfaceContainerLowest = bg,
+            surfaceContainerLow = nav,
+            surfaceContainer = subtle,
+            surfaceContainerHigh = raised,
+            surfaceContainerHighest = border,
+            outline = outline(muted, border),
+            outlineVariant = border,
+            error = error,
+            onError = bg,
+        )
+    }
+
+    /** The Dark tokens as Material's dark scheme: the apps' default (FR-2). */
+    val Dark: ColorScheme = with(MaktabaTokens.Dark) {
+        darkColorScheme(
+            primary = accent,
+            onPrimary = accentFg,
+            primaryContainer = chosen,
+            onPrimaryContainer = MaktabaTokens.Brand.brand200,
+            secondary = accent,
+            onSecondary = accentFg,
+            secondaryContainer = chosen,
+            onSecondaryContainer = MaktabaTokens.Brand.brand200,
+            tertiary = accent,
+            onTertiary = accentFg,
+            background = bg,
+            onBackground = fg,
+            surface = bg,
+            onSurface = fg,
+            surfaceVariant = subtle,
+            onSurfaceVariant = muted,
+            surfaceContainerLowest = bg,
+            surfaceContainerLow = nav,
+            surfaceContainer = subtle,
+            surfaceContainerHigh = raised,
+            surfaceContainerHighest = border,
+            outline = outline(muted, border),
+            outlineVariant = border,
+            error = error,
+            onError = bg,
+        )
+    }
+
+    /** The app-only roles Material's scheme has no slot for, in the light theme. */
+    val LightBrand = BrandColors(
+        raised = MaktabaTokens.Light.raised, nav = MaktabaTokens.Light.nav, scrim = MaktabaTokens.Light.scrim,
+        chosen = MaktabaTokens.Light.chosen, accentSoft = MaktabaTokens.Light.accentSoft, accentText = MaktabaTokens.Light.accentText,
+        success = MaktabaTokens.Light.success, warn = MaktabaTokens.Light.warn, running = MaktabaTokens.Light.running, info = MaktabaTokens.Light.info,
     )
 
-    val Dark: ColorScheme = darkColorScheme(
-        primary = Brass,
-        onPrimary = Color(0xFF1A1408),
-        primaryContainer = Color(0xFF3A3020),
-        onPrimaryContainer = Color(0xFFF3DCA2),
-        secondary = Brass,
-        onSecondary = Color(0xFF1A1408),
-        secondaryContainer = Color(0xFF2A2618),
-        onSecondaryContainer = Color(0xFFF3DCA2),
-        tertiary = Brass,
-        onTertiary = Color(0xFF1A1408),
-        background = Color(0xFF0B111C),
-        onBackground = Color(0xFFE8ECF3),
-        surface = Color(0xFF0B111C),
-        onSurface = Color(0xFFE8ECF3),
-        surfaceVariant = Color(0xFF131D2E),
-        onSurfaceVariant = Color(0xFFA9B3C4),
-        surfaceContainerLowest = Color(0xFF080D16),
-        surfaceContainerLow = Color(0xFF0F1725),
-        surfaceContainer = Color(0xFF131D2E),
-        surfaceContainerHigh = Color(0xFF18243A),
-        surfaceContainerHighest = Color(0xFF1D2B44),
-        outline = Color(0xFF5A6A86),
-        outlineVariant = Color(0xFF22304A),
-        error = Color(0xFFF0707F),
-        onError = Color(0xFF1A0508),
+    /** The app-only roles Material's scheme has no slot for, in the dark theme. */
+    val DarkBrand = BrandColors(
+        raised = MaktabaTokens.Dark.raised, nav = MaktabaTokens.Dark.nav, scrim = MaktabaTokens.Dark.scrim,
+        chosen = MaktabaTokens.Dark.chosen, accentSoft = MaktabaTokens.Dark.accentSoft, accentText = MaktabaTokens.Dark.accentText,
+        success = MaktabaTokens.Dark.success, warn = MaktabaTokens.Dark.warn, running = MaktabaTokens.Dark.running, info = MaktabaTokens.Dark.info,
     )
+
+    /**
+     * A control's outline: secondary text 40 % of the way to the hairline border, so it keeps
+     * 3:1 on the page (NFR-8) in both themes while staying quieter than text.
+     */
+    private fun outline(muted: Color, border: Color): Color = lerp(muted, border, 0.4f)
+}
+
+/**
+ * The tokens' app-only roles (a sheet, the navigation bar, the scrim over the library art, a
+ * chosen row, status colours), beside Material's scheme: read them as [MaktabaTheme.brand].
+ */
+@Immutable
+data class BrandColors(
+    val raised: Color,
+    val nav: Color,
+    val scrim: Color,
+    val chosen: Color,
+    val accentSoft: Color,
+    val accentText: Color,
+    val success: Color,
+    val warn: Color,
+    val running: Color,
+    val info: Color,
+)
+
+private val LocalBrandColors = staticCompositionLocalOf { InkAndBrass.DarkBrand }
+
+/** What the theme provides beside [MaterialTheme]. */
+object MaktabaTheme {
+    /** The app-only colours of the theme in use. */
+    val brand: BrandColors
+        @Composable @ReadOnlyComposable get() = LocalBrandColors.current
 }
 
 /** The web's type: IBM Plex Sans Arabic for text, Amiri for headings (both SIL OFL). */
@@ -135,7 +199,9 @@ fun MaktabaTheme(mode: ThemeMode, forceDark: Boolean = false, content: @Composab
         ThemeMode.Dark -> true
     }
     MaterialTheme(colorScheme = if (dark) InkAndBrass.Dark else InkAndBrass.Light, typography = MaktabaFonts.typography) {
-        SystemBars(dark)
-        content()
+        CompositionLocalProvider(LocalBrandColors provides if (dark) InkAndBrass.DarkBrand else InkAndBrass.LightBrand) {
+            SystemBars(dark)
+            content()
+        }
     }
 }

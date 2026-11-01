@@ -179,7 +179,7 @@ def test_commit_probe_idempotent_on_replay() -> None:
     asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
 
     assert db.videos[vid].state == "probed"
-    assert len(db.audio_tracks) == 1  # ON CONFLICT DO NOTHING swallowed the duplicate
+    assert len(db.audio_tracks) == 1  # ON CONFLICT updated the row, no duplicate
 
 
 def test_commit_probe_skips_extract_when_already_transcribed() -> None:
@@ -251,3 +251,82 @@ def test_commit_probe_skips_extract_when_a_transcribe_job_is_queued() -> None:
 
     assert db.videos[vid].state == "probed"
     assert all(j.stage != "extract" for j in db.processing_jobs.values())
+
+
+# --- the probe is the authority on a track's facts ----------------------
+
+
+def _opus_stereo(index: int = 0, *, default: bool = True) -> AudioTrack:
+    return AudioTrack(
+        index=index,
+        codec="opus",
+        channels=2,
+        sample_rate=48000,
+        language="ara",
+        title="Arabic",
+        is_default=default,
+        disposition={"default": 1 if default else 0},
+    )
+
+
+def test_commit_probe_fills_the_bare_row_transcribe_wrote_first() -> None:
+    """The order behind the silent streams: transcribe recorded track 0 with no codec
+    before the probe ran; the probe's facts still land on that row (same id, so a
+    transcript naming it keeps it)."""
+    db = FakeAudioDB()
+    vid = db.add_video()
+    bare = db.add_bare_audio_track(video_id=vid)
+    db.seed_transcript(video_id=vid, audio_track_id=bare)
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result([_opus_stereo()])))
+
+    assert list(db.audio_tracks) == [bare]
+    row = db.audio_tracks[bare]
+    assert (row.codec, row.channels, row.sample_rate) == ("opus", 2, 48000)
+    assert (row.language, row.title, row.is_default) == ("ara", "Arabic", True)
+    assert row.disposition == '{"default": 1}'
+
+
+def test_commit_probe_default_is_the_probe_s_choice_across_tracks() -> None:
+    """Transcribe marked track 0 the default (the video had none); the file's default
+    is track 1: after the probe exactly track 1 is the default."""
+    db = FakeAudioDB()
+    vid = db.add_video()
+    db.add_bare_audio_track(video_id=vid, is_default=True)
+    tracks = [_opus_stereo(0, default=False), _opus_stereo(1, default=True)]
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result(tracks)))
+
+    got = sorted((r.track_index, r.is_default) for r in db.audio_tracks.values())
+    assert got == [(0, False), (1, True)]
+
+
+def test_commit_probe_rows_past_the_file_s_streams_lose_the_default() -> None:
+    """A file replaced by one with fewer audio streams: the old row stays (a transcript
+    may name it) but is no longer the video's default."""
+    db = FakeAudioDB()
+    vid = db.add_video()
+    db.add_bare_audio_track(video_id=vid, track_index=0, is_default=False)
+    db.add_bare_audio_track(video_id=vid, track_index=1, is_default=True)
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result([_opus_stereo(0)])))
+
+    got = sorted((r.track_index, r.codec, r.is_default) for r in db.audio_tracks.values())
+    assert got == [(0, "opus", True), (1, None, False)]
+
+
+def test_commit_probe_corrects_convert_mp4_s_codec() -> None:
+    """convert_mp4 sets codec 'aac' and asks for a probe: the probe's facts stand."""
+    db = FakeAudioDB()
+    vid = db.add_video(state="probed")
+    tid = db.add_bare_audio_track(video_id=vid)
+    db.audio_tracks[tid].codec = "aac"
+    aac = AudioTrack(
+        index=0, codec="aac", channels=6, sample_rate=44100, language="eng", title=None,
+        is_default=True, disposition={"default": 1},
+    )  # fmt: skip
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result([aac])))
+
+    row = db.audio_tracks[tid]
+    assert (row.codec, row.channels, row.sample_rate, row.language) == ("aac", 6, 44100, "eng")

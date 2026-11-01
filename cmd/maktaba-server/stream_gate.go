@@ -20,6 +20,19 @@ package main
 //     through, 404 / 403 (a channel of a library the viewer may not read,
 //     or no such channel) is a 403. The verdict is cached per credential
 //     and channel for streamAuthTTL, so segment fetches cost no API call;
+//   - a video session's path (/stream/{session}/…) and direct play
+//     (/stream/direct/{video}), also behind a node's /stream/via-home/, pass
+//     without a cookie or bearer token when they carry the signed URL's ?sig=
+//     (Epic 48 story 48.12, gap G2): an AirPlay or Cast receiver fetches the
+//     URL itself and carries neither. The gate reads the token's claims (it
+//     holds no key): the audience must be the path family's (streaming /
+//     streaming-direct) and the subject the session or video in the path;
+//     otherwise 403 (unreadable: 401). The streaming service still verifies it
+//     in full (signature, audience, subject, expiry with its configured leeway:
+//     an expired token is its 403, LibraryGuard), as for every session and
+//     direct path.
+//     A channel's path has no ?sig= and still needs a session; so does the
+//     staging preview. No viewer is named for a signed request;
 //   - strips Cookie and Authorization before proxying, so the session
 //     never reaches the streaming service;
 //   - names the signed-in person to the streaming service in
@@ -37,6 +50,7 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -167,6 +181,10 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	cookie, authz := r.Header.Get("Cookie"), r.Header.Get("Authorization")
 	if cookie == "" && authz == "" {
+		if sig := r.URL.Query().Get("sig"); sig != "" && !staging {
+			g.serveSigned(w, r, sig)
+			return
+		}
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
@@ -211,6 +229,94 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if who.user != "" {
 		out.Header.Set(viewerHeader, who.user)
 	}
+	g.next.ServeHTTP(w, out)
+}
+
+// signedTokenMax bounds the ?sig= the gate reads (a minted token is ~700 bytes).
+const signedTokenMax = 4096
+
+// signedPathRe is a path a signed URL may open without a session: a video
+// session's (sub = the session, aud streaming) or direct play (sub = the video,
+// aud streaming-direct); on a node also behind /stream/via-home/. Channel and
+// staging paths do not match: they need a session.
+var signedPathRe = regexp.MustCompile(`^/stream/(?:via-home/)?(?:(direct)/)?(` + uuidRe + `)(?:/|$)`)
+
+// Audiences of the API's signed-URL minter (api/internal/auth/signedurl).
+const (
+	audSession = "streaming"
+	audDirect  = "streaming-direct"
+)
+
+// signedVerdict is the gate's reading of a ?sig= for a path.
+type signedVerdict int
+
+const (
+	signedOK         signedVerdict = iota
+	signedUnreadable               // not a token at all: 401
+	signedRefused                  // a token, but not this path's: 403
+)
+
+// checkSigned reads the claims of a signed URL's token (no signature check: the
+// gate has no key; the streaming service verifies it) and reports whether it is
+// this path's: aud the path family's, sub the session or video in the path.
+//
+// Expiry is left to the streaming service, which checks it on every request
+// with its own configurable leeway (MAKTABA_CLOCK_SKEW_LEEWAY_SEC; on a node's
+// via-home path, the home's) and answers an expired token 403 (Story 23.2
+// AC-3). A second, differently-tuned check here would only refuse tokens the
+// streaming service still accepts.
+func checkSigned(path, sig string) signedVerdict {
+	m := signedPathRe.FindStringSubmatch(path)
+	if m == nil {
+		return signedRefused
+	}
+	wantAud, wantSub := audSession, m[2]
+	if m[1] == "direct" {
+		wantAud = audDirect
+	}
+	if len(sig) > signedTokenMax {
+		return signedUnreadable
+	}
+	parts := strings.Split(sig, ".")
+	if len(parts) != 3 {
+		return signedUnreadable
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return signedUnreadable
+	}
+	var c struct {
+		Aud string `json:"aud"`
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return signedUnreadable
+	}
+	if c.Aud != wantAud || !strings.EqualFold(c.Sub, wantSub) {
+		return signedRefused
+	}
+	return signedOK
+}
+
+// serveSigned serves a request that carries a signed URL and no session: only a
+// video session's or direct play's path, with a token for that path. The
+// streaming service then verifies the token in full.
+func (g *streamGate) serveSigned(w http.ResponseWriter, r *http.Request, sig string) {
+	if !signedPathRe.MatchString(r.URL.Path) {
+		// a channel's path: a signed URL does not open it
+		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
+		return
+	}
+	switch checkSigned(r.URL.Path, sig) {
+	case signedUnreadable:
+		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
+		return
+	case signedRefused:
+		pagetheme.Error(w, r, "this link is not for this video", http.StatusForbidden)
+		return
+	}
+	out := r.Clone(r.Context())
+	out.Header.Del(viewerHeader)
 	g.next.ServeHTTP(w, out)
 }
 

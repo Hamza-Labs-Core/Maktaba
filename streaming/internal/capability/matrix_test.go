@@ -23,6 +23,19 @@ func TestDecide_Direct(t *testing.T) {
 	}
 }
 
+// An unknown audio codec (a track row the probe has not filled in) is never played
+// direct, on any profile: the transcode encodes the audio to AAC.
+func TestDecide_UnknownAudioCodecTranscodes(t *testing.T) {
+	r := NewRegistry()
+	for _, name := range []string{"ios-native", "generic", "browser-chrome"} {
+		p, _ := r.Get(name)
+		src := Source{Container: "mp4", VideoCodec: "h264", AudioCodec: "", Height: 1080, BitrateKbps: 6000}
+		if v := r.Decide(p, src, Override{}); v.Mode != ModeTranscode {
+			t.Errorf("%s: want transcode, got %s (%s)", name, v.Mode, v.Reason)
+		}
+	}
+}
+
 func TestDecide_RemuxOnContainerMismatch(t *testing.T) {
 	r := NewRegistry()
 	p, _ := r.Get("ios-native")
