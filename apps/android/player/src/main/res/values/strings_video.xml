@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A video's page (Epic 48.28, FR-18).
+     Its Arabic is in values-ar/strings_video.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="video_not_available">This video isn\'t available</string>
+    <string name="video_not_available_detail">It may have been removed, or your account can\'t see it.</string>
+    <string name="video_play">Play</string>
+    <string name="video_resume_at">Resume from %1$s</string>
+    <string name="video_play_from_start">Play from start</string>
+    <string name="video_favorite">Favorite</string>
+    <string name="video_mark_watched">Mark watched</string>
+    <string name="video_chapters">Chapters</string>
+    <string name="video_transcript">From the transcript</string>
+    <string name="video_next_episodes">Next episodes</string>
+    <string name="video_season_episode">Season %1$d, Episode %2$d</string>
+    <string name="video_episode">Episode %1$d</string>
+    <string name="video_play_from">Play from %1$s</string>
+    <string name="video_save_failed">Couldn\'t save that. Try again.</string>
+</resources>
