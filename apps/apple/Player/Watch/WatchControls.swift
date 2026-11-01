@@ -1,7 +1,8 @@
 import MaktabaKit
 import SwiftUI
 
-/// The controls over the video: Close and the title, Subtitles and audio, Quality; back 10 s,
+/// The controls over the video: Close and the title, AirPlay, Picture in Picture, Subtitles
+/// and audio, Quality; back 10 s,
 /// play / pause, forward 10 s; the scrubber with the time and the length; Next when the
 /// series has one. Every touch keeps them up (`touched`).
 struct WatchControls: View {
@@ -39,6 +40,20 @@ struct WatchControls: View {
                 .lineLimit(1)
                 .shadow(radius: 4)
             Spacer()
+            if let player = playback.player {
+                AirPlayButton(player: player, label: String(localized: "AirPlay", table: "Watch",
+                                                            comment: "Plays the video on an Apple TV or another AirPlay screen"),
+                              identifier: "player.airplay")
+                    .frame(width: 44, height: 44)
+                    .padding(2)
+                    .background(.ultraThinMaterial, in: .circle)
+            }
+            if PictureInPicture.isSupported {
+                round(playback.pip.isActive ? "pip.exit" : "pip.enter", id: "player.pip") { playback.pip.toggle() } label: {
+                    Text("Picture in Picture", tableName: "Watch", comment: "Floats the video in a small window over other apps")
+                }
+                .disabled(!playback.pip.isPossible && !playback.pip.isActive)
+            }
             round("captions.bubble", id: "player.tracks") { open(.tracks) } label: {
                 Text("Subtitles and audio", tableName: "Watch", comment: "Opens the subtitle and audio choices")
             }

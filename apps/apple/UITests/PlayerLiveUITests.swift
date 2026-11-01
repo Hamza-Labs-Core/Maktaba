@@ -135,6 +135,9 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(wait(timeout: 20) { self.home.seen.contains { $0.hasPrefix("GET /stream/channel/ch-1/seg") } },
                       "its segments are read: it plays; the home saw \(home.seen)")
         XCTAssertFalse(home.seen.contains("POST /api/tv/remote/tune"), "at home: no remote session")
+        // story 48.24: AirPlay and Picture in Picture on the live player
+        XCTAssertTrue(app.buttons["live.player.airplay"].waitForExistence(timeout: 10), "the AirPlay button")
+        XCTAssertEqual(app.buttons["live.player.airplay"].label, "AirPlay")
         shot("live-player")
 
         app.buttons["live.player.next"].tap()

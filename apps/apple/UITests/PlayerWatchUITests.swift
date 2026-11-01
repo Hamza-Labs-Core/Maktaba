@@ -158,6 +158,50 @@ final class PlayerWatchUITests: PlayerUITestCase {
         }
     }
 
+    // MARK: AirPlay and Picture in Picture (story 48.24)
+
+    /// The AirPlay route button is on the controls (a receiver itself can't run in CI: checked by
+    /// hand). Where the device has Picture in Picture (the iPad simulator) it floats the video
+    /// from its button and closing ends it; where it has none (the iPhone simulator,
+    /// `isPictureInPictureSupported` false) there is no PiP button.
+    func testAirPlayIsOnTheControlsAndPictureInPictureFloatsTheVideo() {
+        watch("v2")
+        waitFor("it plays", timeout: 20) { state["playing"] == "true" && state["route"] == "device" }
+        showControls()
+        let airplay = app.buttons["player.airplay"]
+        XCTAssertTrue(airplay.waitForExistence(timeout: 10), "the AirPlay button")
+        XCTAssertEqual(airplay.label, "AirPlay")
+        guard state["pipSupported"] == "true" else {
+            XCTAssertFalse(app.buttons["player.pip"].exists, "no Picture in Picture on this device: no button")
+            return
+        }
+        waitFor("Picture in Picture can start", timeout: 20) { state["pipPossible"] == "true" }
+        tapControl("player.pip")
+        waitFor("the video floats", timeout: 20) { state["pip"] == "true" }
+        shot("watch-pip")
+        waitFor("it plays on in the window") { state["playing"] == "true" }
+        // the floating window sits over the controls' corner: Close (the other corner) ends
+        // it with the player
+        tapControl("player.close")
+        XCTAssertTrue(element("player.surface").waitForNonExistence(timeout: 10), "the player closes, the window with it")
+    }
+
+    /// Taps one of the controls, showing them first when they have hidden (they hide 4 s after
+    /// the last touch, so a check and a tap can straddle the moment they go).
+    private func tapControl(_ id: String) {
+        let button = app.buttons[id]
+        for _ in 0 ..< 3 {
+            if button.exists, button.isHittable {
+                button.tap()
+                return
+            }
+            // above the middle row (play / pause sits in the middle)
+            element("player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            _ = button.waitForExistence(timeout: 3)
+        }
+        XCTFail("\(id) did not show")
+    }
+
     // MARK: helpers
 
     private func watch(_ video: String, at: Int? = nil, language: String = "en") {
