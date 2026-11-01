@@ -76,6 +76,31 @@ func TestPushDatabaseTellsAMachineAsItConnects(t *testing.T) {
 	}
 }
 
+// A machine's agent that reconnects under the same worker id (its supervisor's channel
+// dropped and came back) is told on its new session at once, even when a pass ran while
+// the session it replaces was still registered and named for the machine.
+func TestPushDatabaseTellsAReplacedAgentAtOnce(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go f.hub.PushDatabase(ctx, "", time.Hour, nil)
+	id, priv := f.approvedNode("studio")
+	hello := helloOpts{kind: "node", nodeID: id, nodePriv: priv, process: "supervisor", workerID: "maktaba-supervisor"}
+	// which of the two sessions a pass in between names is the map's order: several
+	// reconnects make the old one come up
+	for i := range 12 {
+		a, err := f.dialAgent(hello)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cmd := a.recvType("cmd") // within 3 s, where the interval is an hour
+		if cmd["name"] != "home.database" {
+			t.Fatalf("reconnect %d: cmd = %v", i, cmd)
+		}
+		a.send(map[string]any{"t": "cmd.result", "id": cmd["id"], "ok": true})
+	}
+}
+
 func TestDatabaseArgs(t *testing.T) {
 	if b, err := databaseArgs(""); err != nil || string(b) != `{"tls_off":true}` {
 		t.Fatalf("TLS off: %s %v", b, err)

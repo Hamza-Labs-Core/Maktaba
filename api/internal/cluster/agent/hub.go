@@ -162,8 +162,8 @@ type Hub struct {
 	// acc is the machines' own requests for their database access (access.request)
 	acc accessRequests
 
-	// agentJoined is closed (and dropped) when a machine agent connects: a loop that
-	// tells each machine something wakes for it at once (agentJoinedCh)
+	// agentJoined is closed (and dropped) when a machine agent connects or leaves: a
+	// loop that tells each machine something wakes for it at once (agentJoinedCh)
 	agentJoined chan struct{}
 }
 
@@ -412,9 +412,8 @@ func (h *Hub) register(s *Session, authAt time.Time) bool {
 		}
 	}
 	h.sessions[s.ID] = s
-	if s.machineAgent() && h.agentJoined != nil {
-		close(h.agentJoined)
-		h.agentJoined = nil
+	if s.machineAgent() {
+		h.agentsChangedLocked()
 	}
 	h.mu.Unlock()
 	for _, o := range replaced {
@@ -427,8 +426,19 @@ func (h *Hub) register(s *Session, authAt time.Time) bool {
 	return true
 }
 
-// agentJoinedCh is closed when the next machine agent connects. Take it before reading
-// the machine agents, so one that connects after that read is never missed.
+// agentsChangedLocked wakes the loops waiting on agentJoinedCh (h.mu held).
+func (h *Hub) agentsChangedLocked() {
+	if h.agentJoined != nil {
+		close(h.agentJoined)
+		h.agentJoined = nil
+	}
+}
+
+// agentJoinedCh is closed when the next machine agent connects or leaves. Take it before
+// reading the machine agents, so a change after that read is never missed. A leave
+// counts: a machine's agent that reconnects is registered while the session it
+// replaces is still there (closed after, removed when its pump ends), so a read in
+// between may name the old session for the machine; its removal names the new one.
 func (h *Hub) agentJoinedCh() <-chan struct{} {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -446,6 +456,9 @@ func (h *Hub) unregister(s *Session, reason string) {
 		return
 	}
 	delete(h.sessions, s.ID)
+	if s.machineAgent() {
+		h.agentsChangedLocked()
+	}
 	p := s.view()
 	p.GoneAt = &now
 	kept := h.gone[:0]
