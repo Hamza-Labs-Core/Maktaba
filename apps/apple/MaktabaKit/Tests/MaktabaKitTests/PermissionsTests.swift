@@ -89,6 +89,16 @@ final class CountingProbe: LocalNetworkProbe, @unchecked Sendable {
     }
 }
 
+/// A probe that is slow to start, as when a busy test run holds the reader back.
+struct SlowToStartProbe: LocalNetworkProbe {
+    let script: [BrowseSignal]
+    let delay: TimeInterval
+    func signals() -> AsyncStream<BrowseSignal> {
+        Thread.sleep(forTimeInterval: delay)
+        return ScriptedProbe(script).signals()
+    }
+}
+
 @MainActor @Suite struct WalkthroughModel {
     let quick = PermissionsModel.Timing(check: LocalNetworkVerdict(grace: .milliseconds(200), timeout: .seconds(1)), request: .seconds(1))
     let deniedScript: [BrowseSignal] = [.waiting(dnsError: LocalNetworkVerdict.policyDenied)]
@@ -124,6 +134,15 @@ final class CountingProbe: LocalNetworkProbe, @unchecked Sendable {
         await next.refresh()
         #expect(next.state(of: .localNetwork) == .granted)
         #expect(!next.isPresented)
+    }
+
+    /// The clock starts when the browse is read: a reader held back past the timeout still
+    /// hears the answer.
+    @Test func aSlowStartStillHearsTheAnswer() async {
+        let m = PermissionsModel(defaults: freshDefaults(), probe: SlowToStartProbe(script: grantedScript, delay: 1.5), timing: quick)
+        await m.refresh()
+        await m.request(.localNetwork)
+        #expect(m.state(of: .localNetwork) == .granted)
     }
 
     @Test func aRefusalShowsItAgainOnTheNextRun() async {
