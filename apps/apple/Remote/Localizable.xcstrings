@@ -1045,6 +1045,16 @@
         }
       }
     },
+    "This home cannot take machines." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يقبل هذا الجهاز الرئيسي أجهزة أخرى."
+          }
+        }
+      }
+    },
     "Time left" : {
       "localizations" : {
         "ar" : {
