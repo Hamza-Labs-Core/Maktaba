@@ -129,7 +129,7 @@ public final class AppSession {
     private var discovering = false
     private let discovery: any HomeDiscovering
     /// A saved home none of whose addresses answered, waited for on the network (`lookingNearby`).
-    private var looking: (id: UUID, homeID: String, saved: URL, tried: [URL])?
+    private var looking: (id: UUID, homeID: String?, saved: URL, tried: [URL])?
     /// How long a saved home is looked for on the network before why it was not found shows.
     static let lookFor: Duration = .seconds(15)
     /// Why the last address, code or link did not lead to a home (cleared by the screens;
@@ -302,11 +302,11 @@ public final class AppSession {
            let at = announced(l.homeID, in: found, besides: l.tried) {
             looking = nil
             ask(home, at: at)
-        } else if !connecting, connectProblem != nil, let last = lastConnect, let saved = last.saved, let id = last.homeID,
-                  let home = homes.first(where: { $0.url == saved }), let at = announced(id, in: found, besides: last.candidates) {
+        } else if !connecting, connectProblem != nil, let last = lastConnect, let saved = last.saved,
+                  let home = homes.first(where: { $0.url == saved }), let at = announced(last.homeID, in: found, besides: last.candidates) {
             ask(home, at: at)
-        } else if restoreProblem != nil, let home = current, let id = home.homeID,
-                  let at = announced(id, in: found, besides: [home.url]) {
+        } else if restoreProblem != nil, let home = current,
+                  let at = announced(home.homeID, in: found, besides: [home.url]) {
             ask(home, at: at)
         }
     }
@@ -317,8 +317,18 @@ public final class AppSession {
     }
 
     /// Where the home with `homeID` is announced, other than `besides`.
-    private func announced(_ homeID: String, in found: [HomeBrowser.Found], besides: [URL]) -> URL? {
-        found.first { $0.homeID?.lowercased() == homeID.lowercased() && !besides.contains($0.url) }?.url
+    private func announced(_ homeID: String?, in found: [HomeBrowser.Found], besides: [URL]) -> URL? {
+        Self.announced(homeID, in: found, besides: besides)
+    }
+
+    /// Where a saved home is announced, other than `besides`: the one with its `homeID`. A home
+    /// saved without one (added at an address that never answered, so it never said who it
+    /// is) is the only home on this network, when there is exactly one; with two or more, which
+    /// one it is cannot be told, and none is picked. Only an address changes: tokens are kept
+    /// per address, so the home found there is signed in to afresh.
+    nonisolated static func announced(_ homeID: String?, in found: [HomeBrowser.Found], besides: [URL]) -> URL? {
+        guard let homeID else { return found.count == 1 && !besides.contains(found[0].url) ? found[0].url : nil }
+        return found.first { $0.homeID?.lowercased() == homeID.lowercased() && !besides.contains($0.url) }?.url
     }
 
     /// Saved homes announced at an address they do not list: kept among their others (asked
@@ -363,7 +373,7 @@ public final class AppSession {
         looking = nil
         defer { connects -= 1 }
         // a saved home that does not answer is looked for on the network, while the app browses
-        let lookable = saved.flatMap { u in homes.first { $0.url == u } }.flatMap { h in homeID.map { (h, $0) } }
+        let lookable = saved.flatMap { u in homes.first { $0.url == u } }
         switch await reach(candidates, expectedID: homeID, sayFailure: !(discovering && lookable != nil)) {
         case let .success(r):
             publish(.found(name: r.name ?? name ?? r.url.host() ?? r.url.progressAddress))
@@ -376,9 +386,9 @@ public final class AppSession {
             signInMethods = r.signIn
             return nil
         case let .failure(f):
-            if let (home, id) = lookable, discovering, !Task.isCancelled {
-                if let at = announced(id, in: nearby, besides: candidates) { return await reconnect(home, first: at) }
-                return await lookNearby(home, homeID: id, tried: candidates, failure: f)
+            if let home = lookable, discovering, !Task.isCancelled {
+                if let at = announced(homeID, in: nearby, besides: candidates) { return await reconnect(home, first: at) }
+                return await lookNearby(home, homeID: homeID, tried: candidates, failure: f)
             }
             if !Task.isCancelled { connectProblem = f }
             return f
@@ -387,7 +397,7 @@ public final class AppSession {
 
     /// None of a saved home's addresses answered: "Looking for your home on this network…"
     /// until it is announced (`heard` asks it there) or `lookFor` passes (then why, and Retry).
-    private func lookNearby(_ home: Home, homeID: String, tried: [URL], failure: ReachFailure) async -> ReachFailure? {
+    private func lookNearby(_ home: Home, homeID: String?, tried: [URL], failure: ReachFailure) async -> ReachFailure? {
         let id = UUID()
         looking = (id, homeID, home.url, tried)
         publish(.lookingNearby)
