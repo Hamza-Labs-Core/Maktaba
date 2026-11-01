@@ -1541,4 +1541,3 @@ Details of everything in this release:
   change controller's next tick instead of being remembered as started (the change
   then failed as "not healthy"); the staging plan is read under the routing lock
   (a data race between the controller's plan updates and the warm-set sync).
-[#512]: https://github.com/Hamza-Labs-Core/Maktaba/pull/512
