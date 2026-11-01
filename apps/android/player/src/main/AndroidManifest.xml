@@ -2,6 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A video's sound goes on with the screen off (FR-39, story 48.33): the media session's
+         service runs in the foreground while it plays, and the stream keeps loading. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Homes are on the local network by address (http://192.168.1.20:8088): cleartext is
          allowed, as in the Apple apps' local-network exception. No backup or device
@@ -19,13 +24,15 @@
         android:usesCleartextTraffic="true">
 
         <!-- Folding, unfolding and turning do not restart the activity: Compose lays the
-             screen out again and a playing video keeps playing. -->
+             screen out again and a playing video keeps playing; so does picture in picture
+             (FR-37), which going Home while a video plays opens. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density|keyboard|keyboardHidden|navigation|uiMode"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
+            android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -48,5 +55,21 @@
                 <data android:scheme="maktaba" android:host="video" />
             </intent-filter>
         </activity>
+
+        <!-- The media session (FR-39): the notification and lock screen controls, and the
+             sound with the screen off. -->
+        <service
+            android:name=".media.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+
+        <!-- Cast (FR-38): Google's Default Media Receiver (media/Cast.kt). -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.hamzalabs.maktaba.player.media.CastOptionsProvider" />
     </application>
 </manifest>

@@ -8,10 +8,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -22,6 +25,10 @@ import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.api.Rendition
 import com.hamzalabs.maktaba.core.api.errorDetails
 import com.hamzalabs.maktaba.core.api.Video
+import com.hamzalabs.maktaba.player.media.NowPlaying
+import com.hamzalabs.maktaba.player.media.SEEK_INCREMENT_MS
+import com.hamzalabs.maktaba.player.media.castable
+import com.hamzalabs.maktaba.player.media.isRemote
 import com.hamzalabs.maktaba.player.watch.PlaybackPrefs
 import com.hamzalabs.maktaba.player.watch.TrackChoice
 import com.hamzalabs.maktaba.player.watch.TrackOption
@@ -55,6 +62,11 @@ import kotlinx.coroutines.withContext
  * when the player fails, or at another quality (FR-35); and closes the session when stopped.
  * The audio and subtitle choice is kept for the next video (FR-34), and a stream with sound
  * always plays with an audio track selected (FR-39a).
+ *
+ * The player is handed to the system (48.33: [NowPlaying], the media session's service), so the
+ * sound goes on with the screen off and the notification and lock screen drive it (FR-39); and
+ * a Cast receiver can take it over ([control] then plays there, FR-38): it gets the same signed
+ * URL, and the progress still goes out from here, read from the receiver.
  */
 @OptIn(UnstableApi::class)
 class Playback(
@@ -66,10 +78,27 @@ class Playback(
     private val signedOut: () -> Unit,
     /** The player's last touches: a test gives a clock and renderers that run on the JVM. */
     private val build: (ExoPlayer.Builder) -> ExoPlayer.Builder = { it },
+    /** The player the controls drive, around this device's: Cast's (a test gives a fake receiver). */
+    private val cast: (ExoPlayer) -> Player = { castable(context, it) },
+    /** Hands the player to the system's controls (the notification, the lock screen). */
+    private val system: Boolean = true,
 ) {
     var video by mutableStateOf<Video?>(null)
         private set
+    /** This device's player: it draws the video and its subtitles, and holds the tracks. */
     var player by mutableStateOf<ExoPlayer?>(null)
+        private set
+    /**
+     * The player the controls, the notification and the progress go through: [player] while the
+     * video plays here, a Cast receiver's while it plays there.
+     */
+    var control by mutableStateOf<Player?>(null)
+        private set
+    /** A Cast receiver plays the video (the phone shows that, not the video). */
+    var casting by mutableStateOf(false)
+        private set
+    /** The video's size as it plays here (the picture-in-picture window takes its shape). */
+    var videoSize by mutableStateOf(VideoSize.UNKNOWN)
         private set
     /** Why nothing plays (the error screen): what it means to a person, and the home's own words. */
     var problem by mutableStateOf<Failure?>(null)
@@ -126,25 +155,38 @@ class Playback(
     fun stop() {
         running?.cancel()
         running = null
-        val p = player
         val s = session
         if (s != null) {
-            val at = p?.currentPosition?.div(1000)?.toInt() ?: 0
+            val at = control?.currentPosition?.div(1000)?.toInt() ?: 0
             val done = ended
             background.launch {
                 if (!done && at > 0) client.reportProgress(s, at)
                 client.closeStream(s)
             }
         }
-        p?.release()
+        releasePlayers()
         session = null
-        player = null
         problem = null
         video = null
         tracks = Tracks.EMPTY
         isPlaying = false
         ended = false
         ladder = emptyList()
+    }
+
+    /** Lets go of both players, and the system's controls of them. */
+    private fun releasePlayers() {
+        val c = control
+        val p = player
+        if (c != null) {
+            if (system) NowPlaying.detach(c)
+            if (c !== p) c.release()
+        }
+        p?.release()
+        control = null
+        player = null
+        casting = false
+        videoSize = VideoSize.UNKNOWN
     }
 
     /**
@@ -154,12 +196,12 @@ class Playback(
     fun setQuality(kbps: Int?) {
         if (kbps == maxBitrateKbps) return
         maxBitrateKbps = kbps
-        val p = player ?: return
+        val p = control ?: return
         val at = p.currentPosition
         val wasPlaying = p.playWhenReady
         scope.launch(Dispatchers.Main.immediate) {
             opening.withLock { open(fromMs = at) }
-            if (!wasPlaying) player?.playWhenReady = false
+            if (!wasPlaying) control?.playWhenReady = false
         }
     }
 
@@ -200,13 +242,19 @@ class Playback(
                 val item = MediaItem.Builder()
                     .setUri(url.toString())
                     .apply { if (s.isHls) setMimeType(MimeTypes.APPLICATION_M3U8) }
+                    // the notification's, the lock screen's and the receiver's title
+                    .setMediaMetadata(MediaMetadata.Builder().setTitle(v.displayTitle).build())
                     .build()
                 currentCoroutineContext().ensureActive()
                 val p = player ?: newPlayer()
-                p.setMediaItem(item, fromMs)
-                p.prepare()
-                p.playWhenReady = true
+                val c = control ?: newControl(p)
+                // while casting, the receiver is handed the new URL (a reopen, another quality)
+                c.setMediaItem(item, fromMs)
+                c.prepare()
+                c.playWhenReady = true
                 player = p
+                control = c
+                if (system) NowPlaying.attach(context, c)
             } catch (e: Throwable) {
                 background.launch { client.closeStream(s.sessionId) }
                 throw e
@@ -223,10 +271,9 @@ class Playback(
             stop()
             signedOut()
         } catch (e: Exception) {
-            if (old != null && player?.playerError == null) return
+            if (old != null && control?.playerError == null) return
             Log.w("Maktaba", "playback: ${e.errorDetails()}", e)
-            player?.release()
-            player = null
+            releasePlayers()
             problem = Failure.of(e)
         }
     }
@@ -240,6 +287,11 @@ class Playback(
                 true,
             )
             .setHandleAudioBecomingNoisy(true)
+            // ±10 s from the notification and the lock screen too
+            .setSeekBackIncrementMs(SEEK_INCREMENT_MS)
+            .setSeekForwardIncrementMs(SEEK_INCREMENT_MS)
+            // the stream keeps loading with the screen off (FR-39)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .let(build)
             .build()
         // the kept choice (or the Settings' defaults) for the new video
@@ -249,6 +301,24 @@ class Playback(
                 // a stream with sound plays with sound (FR-39a)
                 if (p.ensureAudio(t)) Log.i("Maktaba", "player: no audio track was selected; chose the first")
                 tracks = t
+            }
+
+            override fun onVideoSizeChanged(size: VideoSize) {
+                videoSize = size
+            }
+        })
+        return p
+    }
+
+    /**
+     * The player the controls drive around [local] (Cast's, which moves the video to a receiver
+     * and back): playing, paused, the end and where it plays are read here, wherever it plays.
+     */
+    private fun newControl(local: ExoPlayer): Player {
+        val p = cast(local)
+        p.addListener(object : Player.Listener {
+            override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+                casting = isRemote(p)
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -268,6 +338,7 @@ class Playback(
                 if (state != Player.STATE_ENDED) ended = false
             }
         })
+        casting = isRemote(p)
         return p
     }
 
@@ -286,15 +357,15 @@ class Playback(
     private suspend fun watch() {
         while (scope.isActive) {
             delay(10_000)
-            val p = player ?: return
+            // the receiver's position while casting
+            val p = control ?: return
             session ?: return
             // the end was said once, when it came
             if (p.playbackState == Player.STATE_ENDED) continue
             if (p.isPlaying) report(p, completed = false)
             val failed = p.playerError
             if (failed != null && System.currentTimeMillis() - openedAt < 30_000) {
-                p.release()
-                player = null
+                releasePlayers()
                 Log.w("Maktaba", "player: ${failed.errorCodeName}", failed)
                 problem = playbackFailure(failed)
                 return
@@ -302,7 +373,7 @@ class Playback(
             if (failed != null || System.currentTimeMillis() >= renewAt) {
                 val wasPlaying = p.playWhenReady
                 opening.withLock { open(fromMs = p.currentPosition) }
-                if (!wasPlaying) player?.playWhenReady = false
+                if (!wasPlaying) control?.playWhenReady = false
             }
         }
     }

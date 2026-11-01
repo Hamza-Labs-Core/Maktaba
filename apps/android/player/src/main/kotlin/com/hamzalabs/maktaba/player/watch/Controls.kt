@@ -68,6 +68,7 @@ import com.hamzalabs.maktaba.core.ui.InkAndBrass
 import com.hamzalabs.maktaba.core.ui.formatDuration
 import com.hamzalabs.maktaba.player.Playback
 import com.hamzalabs.maktaba.player.R
+import com.hamzalabs.maktaba.player.media.LocalCastRoutes
 import kotlinx.coroutines.delay
 
 /** How long the controls stay after the last touch while playing (FR-36). */
@@ -98,8 +99,8 @@ private enum class Sheet { Tracks, Quality }
  * The player's own controls over the video (FR-36, 48.32's part): a tap shows or hides them,
  * and they hide [CONTROLS_HIDE_MS] after the last touch while playing; a double-tap on either
  * side seeks ±10 s (mirrored in Arabic). Close and the title; Subtitles and audio (FR-34) and
- * Quality (FR-35); Play / Pause and ±10 s; the scrubber with the time and length; Next, when
- * there is a next episode (FR-33).
+ * Quality (FR-35); Cast, while a receiver is on the network (FR-38, 48.33); Play / Pause and
+ * ±10 s; the scrubber with the time and length; Next, when there is a next episode (FR-33).
  */
 @Composable
 fun PlayerControls(
@@ -111,7 +112,8 @@ fun PlayerControls(
     onNext: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val player = playback.player ?: return
+    // the player where the video plays: this device's, or the Cast receiver's
+    val player = playback.control ?: return
     val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     var visible by remember { mutableStateOf(true) }
     // each touch starts the 4 seconds again
@@ -233,6 +235,9 @@ private fun TopRow(title: String, onClose: () -> Unit, onTracks: () -> Unit, onQ
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
+        // Cast (FR-38): only while a receiver is on the network
+        val cast = LocalCastRoutes.current
+        if (cast.available()) cast.Button(Modifier)
         IconButton(onClick = onTracks, modifier = Modifier.testTag("tracks-button")) {
             Icon(Icons.Filled.ClosedCaption, stringResource(R.string.watch_tracks), tint = Color.White)
         }

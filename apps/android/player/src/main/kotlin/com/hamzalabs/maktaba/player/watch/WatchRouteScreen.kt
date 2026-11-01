@@ -13,8 +13,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.hamzalabs.maktaba.core.api.ApiException
@@ -69,7 +67,8 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
             home.onPlaying(false)
         }
     }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { playback.player?.pause() }
+    // the screen off or the app left: the sound goes on (FR-39, the media session's service), and
+    // the notification pauses it; closing the picture-in-picture window pauses it (WatchScreen)
     LaunchedEffect(settings) { playback.prefs = settings }
     LaunchedEffect(videoId, startSec) {
         val detail = try {
