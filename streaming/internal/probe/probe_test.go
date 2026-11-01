@@ -110,3 +110,22 @@ func TestCache_LRUEvictionByCapacity(t *testing.T) {
 		t.Fatalf("len=%d", c.Len())
 	}
 }
+
+func TestRow_NoAudio(t *testing.T) {
+	cases := []struct {
+		name string
+		row  Row
+		want bool
+	}{
+		{"a track row with no codec (transcribe wrote it first)", Row{HasAudio: true}, false},
+		{"a known codec", Row{HasAudio: true, AudioCodec: "aac", AudioChannels: 2}, false},
+		{"a backend that sets the codec only", Row{AudioCodec: "opus"}, false},
+		{"channels only", Row{AudioChannels: 2}, false},
+		{"nothing says it has audio", Row{}, true},
+	}
+	for _, tc := range cases {
+		if got := tc.row.NoAudio(); got != tc.want {
+			t.Errorf("%s: NoAudio()=%v want %v", tc.name, got, tc.want)
+		}
+	}
+}

@@ -10,7 +10,7 @@ package main
 //
 // Profiles (MAKTABA_REHEARSAL_PROFILE):
 //
-//	full     150,000 videos with their audio tracks and transcripts, 2,000,000 transcript
+//	full     150,000 videos with their probe, audio tracks and transcripts, 2,000,000 transcript
 //	         segments each with its halfvec(384) embedding (the HNSW index built over
 //	         them), 2,000 series with 40,000 episodes, 600 collections with 60,000 items
 //	restore  the same shape with 300,000 segments and vectors: the scenarios that put a
@@ -36,7 +36,7 @@ import (
 )
 
 // seedVersion changes whenever the seed below does: the cached seeds are keyed on it.
-const seedVersion = "4"
+const seedVersion = "5"
 
 type seedProfile struct {
 	Name     string
@@ -163,7 +163,7 @@ func (r *rehearsal) makeSeed(profile, dir string) {
 }
 
 // seedTables are the tables the seed fills (their rows are counted before and after).
-var seedTables = []string{"libraries", "videos", "audio_tracks", "transcripts", "transcript_segments",
+var seedTables = []string{"libraries", "videos", "media_info", "audio_tracks", "transcripts", "transcript_segments",
 	"segment_embeddings", "series", "series_episodes", "collections", "collection_items", "users", "cluster_nodes"}
 
 func seedCounts(t *testing.T, db *sql.DB) map[string]int64 {
@@ -233,8 +233,25 @@ func seedDatabase(t *testing.T, db *sql.DB, p seedProfile, logf func(string, ...
 			900 + g % 3600, jsonb_build_object('codec', 'h264', 'height', 1080, 'audio', jsonb_build_array('ar', 'en')),
 			CASE WHEN g % 3 = 0 THEN 'en' ELSE 'ar' END, now() - make_interval(mins => g), now(), now()
 		FROM generate_series(1, $1) g`, v)
+	// every video probed (ffprobe's output as the probe stores it); two in nine have the
+	// bare track 0 transcribe wrote before the probe ran (no codec, channels or sample
+	// rate), the owner's home's share on 2026-10-31, so slot 0171's backfill runs at scale
+	exec("media info", `INSERT INTO media_info (video_id, container, video_codec, width, height, fps, bitrate_kbps,
+			has_subtitles, raw_ffprobe)
+		SELECT md5('video' || g)::uuid, 'matroska,webm', 'h264', 1920, 1080, 25, 4000, false,
+			jsonb_build_object('format', jsonb_build_object('format_name', 'matroska,webm', 'duration', (900 + g % 3600)::text),
+				'streams', jsonb_build_array(
+					jsonb_build_object('index', 0, 'codec_type', 'video', 'codec_name', 'h264', 'width', 1920, 'height', 1080,
+						'pix_fmt', 'yuv420p', 'disposition', jsonb_build_object('default', 1, 'attached_pic', 0)),
+					jsonb_build_object('index', 1, 'codec_type', 'audio', 'codec_name', CASE WHEN g % 2 = 0 THEN 'aac' ELSE 'opus' END,
+						'channels', 2, 'sample_rate', '48000', 'disposition', jsonb_build_object('default', 1),
+						'tags', jsonb_build_object('language', CASE WHEN g % 3 = 0 THEN 'eng' ELSE 'ara' END))))
+		FROM generate_series(1, $1) g`, v)
 	exec("audio tracks", `INSERT INTO audio_tracks (id, video_id, track_index, codec, channels, sample_rate, language, is_default)
-		SELECT g, md5('video' || g)::uuid, 0, 'aac', 2, 48000, CASE WHEN g % 3 = 0 THEN 'eng' ELSE 'ara' END, true
+		SELECT g, md5('video' || g)::uuid, 0,
+			CASE WHEN g % 9 < 2 THEN NULL WHEN g % 2 = 0 THEN 'aac' ELSE 'opus' END,
+			CASE WHEN g % 9 < 2 THEN NULL ELSE 2 END, CASE WHEN g % 9 < 2 THEN NULL ELSE 48000 END,
+			CASE WHEN g % 9 < 2 THEN 'und' WHEN g % 3 = 0 THEN 'eng' ELSE 'ara' END, true
 		FROM generate_series(1, $1) g`, v)
 	exec("transcripts", `INSERT INTO transcripts (id, video_id, audio_track_id, language, backend, model, word_level)
 		SELECT md5('transcript' || g)::uuid, md5('video' || g)::uuid, g, CASE WHEN g % 3 = 0 THEN 'en' ELSE 'ar' END,

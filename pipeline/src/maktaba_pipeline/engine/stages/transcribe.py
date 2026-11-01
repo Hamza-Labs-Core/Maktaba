@@ -62,6 +62,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from ...audio.probe import AudioTrack, parse_ffprobe_json
 from ...binaries import ffmpeg_binary
 from ...db.jobs import Job
 from ...log import get_logger
@@ -1101,14 +1102,28 @@ async def _store(
     store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
     async with db.transaction():
         # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have: the
-        # default only when the video has none (the probe's choice of default stands)
+        # default only when the video has none (the probe's choice of default stands).
+        # Its facts come from the probe's ffprobe output when there is one: a row with
+        # no codec read as "no audio" to streaming, and the video played silent. A row
+        # already there keeps its facts; only the ones it lacks are filled.
+        facts = await _probed_first_audio(db, video_id)
         track = await db.fetchrow(
-            "INSERT INTO audio_tracks (video_id, track_index, is_default)"
-            " VALUES ($1, 0, NOT EXISTS (SELECT 1 FROM audio_tracks"
+            "INSERT INTO audio_tracks (video_id, track_index, codec, channels, sample_rate,"
+            "                          language, title, disposition, is_default)"
+            " VALUES ($1, 0, $2, $3, $4, $5, $6, $7, NOT EXISTS (SELECT 1 FROM audio_tracks"
             "  WHERE video_id = $1 AND is_default))"
-            " ON CONFLICT (video_id, track_index) DO UPDATE SET track_index = 0"
+            " ON CONFLICT (video_id, track_index) DO UPDATE SET"
+            "  codec = COALESCE(NULLIF(audio_tracks.codec, ''), EXCLUDED.codec),"
+            "  channels = COALESCE(audio_tracks.channels, EXCLUDED.channels),"
+            "  sample_rate = COALESCE(audio_tracks.sample_rate, EXCLUDED.sample_rate)"
             " RETURNING id",
             uid(video_id),
+            facts.codec if facts else None,
+            facts.channels if facts else None,
+            facts.sample_rate if facts else None,
+            facts.language if facts else "und",
+            facts.title if facts else None,
+            dumps(facts.disposition if facts else {}),
         )
         row = await db.fetchrow(
             """
@@ -1177,6 +1192,21 @@ async def _store(
                 result.detected_language,
             )
     return str(tid)
+
+
+async def _probed_first_audio(db: Any, video_id: Any) -> AudioTrack | None:
+    """The video's first audio stream (``-map 0:a:0``) as the probe saw it, from
+    ``media_info.raw_ffprobe``; ``None`` when the video was not probed or the output
+    lists no audio."""
+    raw = await db.fetchval("SELECT raw_ffprobe FROM media_info WHERE video_id = $1", uid(video_id))
+    try:
+        payload = loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    audio = parse_ffprobe_json(payload).audio
+    return audio[0] if audio else None
 
 
 def _backend_version(result: Transcript | None = None) -> str | None:
