@@ -228,7 +228,7 @@ runs only when the person opens that tab or submits from it; Results never waits
 | 49.6 | **`keyword_index` queue stage** and backfill through the queue | a new transcript queues it; a title change queues it; a version bump queues every video at priority 10; shown on the Queues page; one item at a time |
 | 49.7 | **The query: BM25 videos, phrase boost, passages, hybrid** | p95 < 50 ms on a 45 k-document fixture; الله, a sentence and a rare word; ACL filter test for a limited user; hybrid order unchanged where BM25 and today agree on the obvious case |
 | 49.8 | **Suggestions, did-you-mean, facets, sort** (API) | suggest < 50 ms on the fixture; a misspelled Arabic word gets the right did-you-mean; facet counts match the result set; role tests |
-| 49.9 | **Relevance check** | 30 test searches (Arabic and English) drafted from the home's most searched words and the library's topics, each with the videos that should come first; the owner reviews the list once; field weights, the exact/stem balance and the phrase boost tuned until they pass; kept as a regression test |
+| 49.9 | **Relevance check built from the transcripts** | test searches generated from the home's own transcripts, no hand-written list: (a) *known-item*: 200 distinctive sentences and phrases taken from random videos, each must bring its own video in the top 3, also with the spelling and word-form variants of 49.4; (b) *topic*: for videos with chapters or topic tags, a chapter title or topic word must bring those videos in the top 10; (c) *common words*: الله, الصبر and the 20 most frequent content words must answer under 50 ms and rank videos that use the word most (per minute) above passing mentions; field weights, the exact/stem balance and the phrase boost tuned until they pass; the generator and its fixed seed kept as a regression test, re-run on a sample in CI |
 | 49.10 | **Web search page**: suggestions, did-you-mean, facets, sort | English and Arabic; axe; screenshots dark |
 | 49.11 | **Apple and Android apps, TV, big screen** | same features; UI tests on a throwaway simulator / emulator |
 | 49.12 | **AI mode: API** (retrieval, grounded answer, citations, streaming, follow-ups, one at a time) | every sentence has a citation that exists in the passages; an unanswerable question says so; no model → 409 with help; a limited user never gets a passage from another library (role test); measured first-token time on the home Mac |
@@ -248,4 +248,4 @@ runs only when the person opens that tab or submits from it; Results never waits
 - One delivery, no phases: word forms, AI mode and every client are in this epic (owner, 2026-11-01).
 - No language model in ordinary search; AI mode is a separate tab, run only when chosen, like
   Google's AI mode (owner, 2026-11-01).
-- The relevance list is drafted by us and reviewed once by the owner (49.9).
+- The relevance tests are generated from the home's own transcripts, not a hand-written list (owner, 2026-11-01).
