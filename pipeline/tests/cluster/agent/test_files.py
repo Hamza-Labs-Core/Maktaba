@@ -166,22 +166,26 @@ def test_lines_end_in_lf_and_the_cap_counts_the_bytes_written(tmp_path: Path) ->
 def test_retention_removes_every_process_file_of_expired_days(tmp_path: Path) -> None:
     """Worker ids are new at every start: the files of earlier processes of this machine
     must expire too, or a folder the hub never sweeps (the local fallback) grows for ever."""
-    f = _files(tmp_path, retention_days=14)
+    f = _files(tmp_path, retention_days=14)  # 2026-10-05 is the first day kept
     m = tmp_path / "share/maktaba/cluster/192.168.50.31"
-    old_ids = ("node-ab12cd34-1111", "node-ab12cd34-2222")  # two earlier processes
-    for day in ("2026-09-01", "2026-10-04", "2026-10-05", "2026-10-19"):
-        for stream in ("logs", "metrics"):
-            d = m / stream / day
-            d.mkdir(parents=True)
-            for wid in (*old_ids, "node-ab12cd34-4242"):
-                (d / f"{wid}.jsonl").write_text("{}\n")
+    # two earlier processes (1111, 2222) and this one (4242), in both streams; few files,
+    # as each one costs a Windows runner tens of milliseconds
+    layout = {
+        "logs/2026-09-01": ("node-ab12cd34-1111", "node-ab12cd34-4242"),  # expired
+        "metrics/2026-10-04": ("node-ab12cd34-2222", "node-ab12cd34-4242"),  # last expired
+        "logs/2026-10-05": ("node-ab12cd34-1111",),  # first kept
+        "metrics/2026-10-05": ("node-ab12cd34-2222",),
+    }
+    for folder, ids in layout.items():
+        (m / folder).mkdir(parents=True)
+        for wid in ids:
+            (m / folder / f"{wid}.jsonl").write_text("{}\n")
     (m / "logs/2026-09-01/notes.txt").write_text("not a record file")
-    assert f.prune(today="2026-10-19") == 2 * 2 * 3  # two expired days, two kinds, three ids
-    assert not (m / "metrics/2026-09-01").exists() and not (m / "logs/2026-10-04").exists()
+    assert f.prune(today="2026-10-19") == 4  # every process's files of both expired days
+    assert not (m / "metrics/2026-10-04").exists()
     assert [p.name for p in (m / "logs/2026-09-01").iterdir()] == ["notes.txt"]  # kept
-    for wid in (*old_ids, "node-ab12cd34-4242"):
-        assert (m / f"logs/2026-10-05/{wid}.jsonl").exists()  # not expired yet
-        assert (m / f"metrics/2026-10-19/{wid}.jsonl").exists()
+    assert (m / "logs/2026-10-05/node-ab12cd34-1111.jsonl").exists()  # not expired yet
+    assert (m / "metrics/2026-10-05/node-ab12cd34-2222.jsonl").exists()
 
 
 def test_retention_in_the_local_fallback_drops_gone_processes(tmp_path: Path) -> None:
