@@ -21,17 +21,14 @@ android {
     productFlavors {
         create("phone") {
             dimension = "form"
-            resValue("string", "app_name", "Maktaba Remote")
         }
         create("foldable") {
             dimension = "form"
             applicationIdSuffix = ".foldable"
-            resValue("string", "app_name", "Maktaba Remote")
         }
         create("tablet") {
             dimension = "form"
             applicationIdSuffix = ".tablet"
-            resValue("string", "app_name", "Maktaba Remote")
         }
     }
 
