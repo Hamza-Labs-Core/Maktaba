@@ -25,10 +25,7 @@ if str(_SHARED_PY) not in sys.path:
 # `@pytest.fixture` definitions on conftest.py at collection time.
 import pytest  # noqa: E402,I001
 from maktaba_testtier.netguard import unit_netguard  # noqa: F401,E402
-from maktaba_testtier.softcap import (  # noqa: F401,E402
-    pytest_runtest_call,
-    pytest_runtest_makereport,
-)
+from maktaba_testtier.softcap import pytest_runtest_protocol  # noqa: F401,E402
 
 
 def pytest_collection_finish(session: pytest.Session) -> None:

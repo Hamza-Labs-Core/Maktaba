@@ -706,6 +706,17 @@ Append here: date, session, one to five lines on what changed. Newest last.
     `x86_64-pc-windows-msvc` target, `CC_x86_64_pc_windows_msvc=clang-cl` from Homebrew LLVM,
     `AR_…=llvm-lib`, plus stub `assert.h`/`string.h`/`stdlib.h` via `CFLAGS_…="/imsvc <dir>"`
     so `ring` builds. `cargo check` and `cargo clippy` then work. No linking, no running.
+  - 2026-10-31, later (review of [#470]): swapping only `tmp_path` left fixtures built on it
+    (e.g. `_settings` in `tests/models/test_fetch_cli.py`) on the first folder. The soft cap
+    now runs a slow test again through `runtestprotocol` (setup, call, teardown, all
+    function-scoped fixtures afresh, as pytest-rerunfailures does) and logs the reports only
+    after judging. A forced re-run of all 274 cluster unit tests passes. Before, 66 failed.
+    Also pinned the enrich test's budget clock, so midnight between its two runs gives no
+    fresh allowance. The same signature failed `test_linux_nfs_mount_found_through_proc_mounts`
+    on #467: 0.945 s and no run-again time, because the re-run raised.
+  - Not mine, seen on #470's integration run: `TestRowCacheInvalidationPostgres`
+    (`api/internal/handlers/browse`): "a scan's videos: …b's entry dropped too". Likely a late
+    notice of an earlier write dropping libB after `fill()` saw both rows cached.
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1

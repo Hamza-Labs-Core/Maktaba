@@ -88,9 +88,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
+      # --durations: a test near the soft cap here shows by how much (file work costs a
+      # Windows runner several times what it costs Linux).
       - name: Run cluster tests
         working-directory: pipeline
-        run: uv run --frozen --extra dev pytest tests/cluster -q -p no:cacheprovider
+        run: uv run --frozen --extra dev pytest tests/cluster -q -p no:cacheprovider --durations=40 --durations-min=0.05
 
   # Epic 36: the Mac app shell (apps/desktop, Tauri 2): menu-bar status,
   # login item, setup-step runner. macOS only (SMAppService, launchd).

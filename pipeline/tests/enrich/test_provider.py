@@ -7,6 +7,7 @@ Google, a fake page server, a fake model): no test reaches the real ones.
 
 from __future__ import annotations
 
+import functools
 import json
 import uuid
 from collections.abc import Callable, Iterator, Mapping
@@ -23,7 +24,8 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.sql import is_pg, loads, now, parse_ts, to_ts
 from maktaba_pipeline.enrich import providers
-from maktaba_pipeline.enrich.budget import seconds_to_next_day
+from maktaba_pipeline.enrich import service as enrich_service
+from maktaba_pipeline.enrich.budget import Budget, seconds_to_next_day
 from maktaba_pipeline.enrich.sweep import sweep
 from maktaba_pipeline.enrich.web import GOOGLE_URL, OLLAMA_SEARCH_URL, HttpResponse
 from maktaba_pipeline.runtime import Database
@@ -460,7 +462,16 @@ async def test_pages_on_private_addresses_are_not_read(db: Database, net: FakeNe
 
 
 @pytest.mark.asyncio
-async def test_the_daily_search_cap_defers_the_web_part(db: Database, net: FakeNet) -> None:
+async def test_the_daily_search_cap_defers_the_web_part(
+    db: Database, net: FakeNet, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both runs count against one budget day, even when midnight passes between them (b
+    # would otherwise get a fresh allowance and search again). seconds_to_next_day's own
+    # midnight edges are test_seconds_to_next_day's.
+    day_of_the_test = now()
+    monkeypatch.setattr(
+        enrich_service, "Budget", functools.partial(Budget, clock=lambda: day_of_the_test)
+    )
     a = await make_lesson(db)
     b = await make_lesson(db, filename="other_07.mp4")
     await web_search_on(db)
