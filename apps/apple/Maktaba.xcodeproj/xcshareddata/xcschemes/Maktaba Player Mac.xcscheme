@@ -50,6 +50,17 @@
                ReferencedContainer = "container:Maktaba.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F4095033F2F80CA8E10E0DF9"
+               BuildableName = "Maktaba Player Mac UITests.xctest"
+               BlueprintName = "Maktaba Player Mac UITests"
+               ReferencedContainer = "container:Maktaba.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>
