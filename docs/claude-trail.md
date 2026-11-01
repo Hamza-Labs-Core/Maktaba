@@ -953,6 +953,11 @@ Append here: date, session, one to five lines on what changed. Newest last.
     (about every 30 min). The phone stays in the loop either way (progress, heartbeat).
   - Not verified: playback on a real Apple TV (no receiver in CI); the spec box for that
     stays unticked until the owner checks it by hand.
+  - Gotcha: a closure a system framework calls on its own queue (`MPMediaItemArtwork`'s
+    image, KVO handlers, `MPRemoteCommand` targets) must not be made inside a `@MainActor`
+    method: Swift 6 gives it main-actor isolation and traps off the main thread. Make it in a
+    `nonisolated static func` and hop on. The first CI run of [#512] crashed every watch test so.
+  - The CI iOS simulator reports no Picture in Picture; the PiP UI test skips the float there.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
