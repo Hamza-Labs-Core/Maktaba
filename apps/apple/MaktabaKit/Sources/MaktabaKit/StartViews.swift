@@ -169,16 +169,14 @@ public struct HomePickerView: View {
         if let link = session.pendingLink {
             LinkPrompt(session: session, link: link, words: words)
         }
-        if session.connecting {
+        if let progress = session.progress, problem == nil {
             Section {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text(words.text(.connecting))
+                // its own identifier says the step (connect.progress.trying, …failed)
+                ConnectProgressView(progress, locale: words.locale, retryID: "picker.retry") {
+                    Task { await session.retryConnect() }
                 }
-                .accessibilityIdentifier("picker.connecting")
             }
-        }
-        if let shown = problem ?? session.connectProblem.map(words.reach) {
+        } else if let shown = problem ?? session.connectProblem.map(words.reach) {
             Section {
                 Label(shown, systemImage: "exclamationmark.triangle")
                     .foregroundStyle(.red)
@@ -211,10 +209,7 @@ public struct HomePickerView: View {
                 .accessibilityIdentifier("picker.nearby.\(home.id)")
             }
             if browser.found.isEmpty {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text(words.text(.searching)).foregroundStyle(.secondary)
-                }
+                ConnectBusyLabel(words.text(.searching)).foregroundStyle(.secondary)
             }
         } header: {
             Text(words.text(.onThisNetwork))
@@ -345,6 +340,8 @@ public struct SignInView: View {
     @State private var busy = false
     @State private var problem: String?
     @State private var codeFlow: CodeSignIn?
+    /// A Retry on the code's progress: a new flow, at the next attempt.
+    @State private var codeRound = 0
     private let words = ConnectStrings.forPreferredLanguages()
 
     enum Method: Hashable { case password, code }
@@ -352,6 +349,7 @@ public struct SignInView: View {
     struct CodeFlowKey: Equatable {
         let home: URL?
         let shown: Bool
+        var round = 0
     }
 
     public init(session: AppSession) {
@@ -396,10 +394,12 @@ public struct SignInView: View {
         }
         // one code at a time, asked for only while it shows (here, not on the Form's rows,
         // which come and go as the code's state changes)
-        .task(id: CodeFlowKey(home: session.current?.url, shown: codeShown)) {
+        .task(id: CodeFlowKey(home: session.current?.url, shown: codeShown, round: codeRound)) {
+            let next = (codeFlow?.progress?.attempt ?? 0) + 1
             codeFlow = nil
             guard codeShown, let client = session.client else { return }
-            let m = CodeSignIn(client: client, label: CodeSignInSection.deviceLabel) { [session] in
+            let m = CodeSignIn(client: client, label: CodeSignInSection.deviceLabel, homeName: session.current?.name ?? "",
+                               attempt: codeRound == 0 ? 1 : next) { [session] in
                 try await session.signedInByCode()
             }
             codeFlow = m
@@ -427,7 +427,7 @@ public struct SignInView: View {
         case .password:
             passwordForm
         case .code:
-            CodeSignInSection(session: session, words: words, model: codeFlow) { method = .password }
+            CodeSignInSection(session: session, words: words, model: codeFlow, retry: { codeRound += 1 }) { method = .password }
         }
     }
 
@@ -445,10 +445,20 @@ public struct SignInView: View {
                 .onSubmit(signIn)
                 .accessibilityIdentifier("signin.password")
         } footer: {
-            if let problem { Text(problem).foregroundStyle(.red) }
+            // why the last try did not work (the form is its retry)
+            if !busy, problem != nil, let p = session.progress, !p.isWorking {
+                ConnectProgressView(p, locale: words.locale)
+                    .accessibilityIdentifier("signin.problem")
+            } else if let problem {
+                Text(problem).foregroundStyle(.red)
+            }
         }
         Button(action: signIn) {
-            if busy { ProgressView() } else { Text(words.text(.signIn)) }
+            if busy, let p = session.progress, p.isWorking {
+                ConnectBusyLabel(p.headline(words.locale))
+            } else {
+                Text(words.text(.signIn))
+            }
         }
         .disabled(username.isEmpty || password.isEmpty || busy)
         .accessibilityIdentifier("signin.submit")
@@ -469,23 +479,29 @@ public struct SignInView: View {
     }
 }
 
-/// The saved sign-in being checked (a spinner), or why it could not be: the home did not
-/// answer, so the person is still signed in and can try again (or sign in afresh below).
+/// The saved sign-in being checked ("Reconnecting to <home>…", the home busy with the
+/// countdown to its next try), or why it could not be: the home did not answer, so the
+/// person is still signed in and can try again (or sign in afresh below).
 struct RestoreSection: View {
     let session: AppSession
 
     var body: some View {
+        let locale = ConnectStrings.forPreferredLanguages().locale
         if session.restoring {
-            Section { HStack { Spacer(); ProgressView(); Spacer() } }
-        } else if let f = session.restoreProblem {
+            Section {
+                ConnectProgressView(session.progress ?? ConnectProgress(.reconnecting(name: session.current?.name ?? "")),
+                                    locale: locale)
+            }
+            .accessibilityIdentifier("signin.restoring")
+        } else if session.restoreProblem != nil {
             let words = ErrorStrings.forPreferredLanguages()
             Section {
                 Text(words.text(.restoreFailed))
-                Label(f.message(words), systemImage: f.symbol).foregroundStyle(.red)
-                Button(words.text(.tryAgain), systemImage: "arrow.clockwise") {
-                    Task { await session.retryRestore() }
+                if let p = session.progress, !p.isWorking {
+                    ConnectProgressView(p, locale: locale, retryID: "signin.restore.retry") {
+                        Task { await session.retryRestore() }
+                    }
                 }
-                .accessibilityIdentifier("signin.restore.retry")
             }
             .accessibilityIdentifier("signin.restoreProblem")
         }
@@ -498,13 +514,22 @@ struct CodeSignInSection: View {
     let session: AppSession
     let words: ConnectStrings
     let model: CodeSignIn?
+    /// Retry after a failure: a new code flow at the next attempt.
+    let retry: () -> Void
     let usePassword: () -> Void
+
+    /// What the flow is doing (asking for a code before it has said).
+    private var progress: ConnectProgress {
+        model?.progress ?? ConnectProgress(.signingIn(home: session.current?.name ?? ""))
+    }
 
     var body: some View {
         Group {
             switch model?.status {
             case nil, .starting?, .approved?:
-                Section { HStack { Spacer(); ProgressView(); Spacer() } }
+                Section {
+                    ConnectProgressView(progress, locale: words.locale, retryID: "signin.code.retry", retry: retry)
+                }
             case .unsupported?:
                 Section {
                     Text(words.text(.codeUnsupported))
@@ -514,7 +539,8 @@ struct CodeSignInSection: View {
             case let .showing(p)?:
                 showing(p)
             }
-            if let problem = model?.problem {
+            // a blip while the code shows (the progress says why a code could not be had)
+            if case .showing? = model?.status, let problem = model?.problem {
                 Section { Text(problem).foregroundStyle(.red) }
             }
         }
@@ -548,17 +574,9 @@ struct CodeSignInSection: View {
                             #endif
                     }
                 }
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text(words.text(.waiting))
-                }
-                .foregroundStyle(.secondary)
-                TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                    let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
-                    Text(words.text(.codeChangesIn, String(format: "%d:%02d", left / 60, left % 60)))
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
+                // waiting for approval, the code and the time it has left, the attempt
+                ConnectProgressView(model?.progress ?? ConnectProgress(.awaitingApproval(code: p.code, expiresAt: p.expiresAt)),
+                                    locale: words.locale)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
