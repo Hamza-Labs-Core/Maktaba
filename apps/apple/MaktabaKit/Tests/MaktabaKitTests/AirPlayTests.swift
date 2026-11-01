@@ -82,13 +82,34 @@ import Testing
         }
     }
 
+    @Test func itListensOnTheLANAddressAloneNotEveryInterface() throws {
+        let lan = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.lan3", home: home)),
+                                  reach: .lan(host: "192.168.50.20"))
+        #expect(lan.boundHost == "192.168.50.20", "not cellular or a VPN")
+        let loop = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.lan4", home: home)))
+        #expect(loop.boundHost == "127.0.0.1")
+    }
+
+    /// Bound to the given address, it answers there.
+    @Test func itAnswersOnItsBoundAddress() async throws {
+        let proxy = try StreamProxy(client: APIClient(home: URL(string: "http://127.0.0.1:9")!,
+                                                      tokens: TokenStore(app: "test.proxy.lan5", home: home)),
+                                    reach: .lan(host: "127.0.0.1"), onlyUnder: "/stream/channel/c1/")
+        try await proxy.start()
+        defer { proxy.stop() }
+        let local = try #require(proxy.local(URL(string: "http://127.0.0.1:9/stream/channel/c1/index.m3u8")!))
+        let (_, response) = try await URLSession.shared.data(from: local)
+        #expect((response as? HTTPURLResponse)?.statusCode == 502, "served (no token to forward with here)")
+    }
+
     @Test func itsAddressIsTheLANOneNotTheLoopback() async throws {
+        let host = try #require(LANAddress.current() ?? "127.0.0.1")
         let proxy = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.lan2", home: home)),
-                                    reach: .lan(host: "192.168.50.20"))
+                                    reach: .lan(host: host))
         try await proxy.start()
         defer { proxy.stop() }
         let local = try #require(proxy.local(home.appending(path: "/stream/channel/c1/index.m3u8")))
-        #expect(local.host() == "192.168.50.20")
+        #expect(local.host() == host)
         #expect(local.path().hasPrefix("/\(proxy.secret)/stream/channel/c1/"))
     }
 }

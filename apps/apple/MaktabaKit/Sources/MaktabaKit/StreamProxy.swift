@@ -17,7 +17,7 @@ import Network
 /// An AirPlay receiver (story 48.24) cannot reach the device's loopback. A video hands it the
 /// session's signed URL instead; a live channel at home has none (the web port's gate opens
 /// channel paths to a signed-in caller only), so while it plays on a receiver a second proxy
-/// listens on the device's LAN address (`Reach.lan`), serving only that channel's paths
+/// listens on (and only on) the device's LAN address (`Reach.lan`), serving only that channel's paths
 /// (`onlyUnder`) under its own secret, and is stopped when the receiver lets go.
 public final class StreamProxy: @unchecked Sendable {
     /// Who can reach the proxy.
@@ -46,8 +46,10 @@ public final class StreamProxy: @unchecked Sendable {
         self.reach = reach
         self.onlyUnder = onlyUnder
         let params = NWParameters.tcp
-        if reach == .loopback {
-            params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        switch reach {
+        case .loopback: params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        // the LAN address alone: not cellular, not a VPN
+        case let .lan(host): params.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host(host), port: .any)
         }
         listener = try NWListener(using: params)
     }
@@ -84,6 +86,12 @@ public final class StreamProxy: @unchecked Sendable {
     public func stop() { listener.cancel() }
 
     var port: UInt16? { lock.withLock { boundPort } }
+
+    /// The address the listener is bound to.
+    var boundHost: String? {
+        guard case let .hostPort(host, _)? = listener.parameters.requiredLocalEndpoint else { return nil }
+        return "\(host)"
+    }
     private func setPort(_ p: UInt16) { lock.withLock { boundPort = p } }
 
     /// Where the player reads `remote` (an address on the home) from.
