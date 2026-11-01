@@ -12,6 +12,11 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Android client: Live TV.** `apps/android/client` gains `Live.kt`: what is on now, the guide
+  and one channel's guide, channel logos, a channel's stream URL, `GET /api/tv/info`, and away
+  from home the remote session (tune, heartbeat every 60 s, end). `LiveSource` picks between
+  the home's stream and the relay, and swaps a heartbeat's new token without reopening the
+  player. The Android Player and Android TV both build on it (story 48.9).
 - **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
   serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
   for an hour like the full one. A viewer without the video's library now gets 404 (as for a
