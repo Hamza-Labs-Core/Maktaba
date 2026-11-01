@@ -209,7 +209,7 @@ class LibrariesSectionTest {
     fun aSeriesContinueOpensItsNextEpisode() {
         openSeries()
         compose.onNodeWithTag("continue").performClick()
-        // today's video page for the next episode (v3), from the home
+        // the video's page (48.28) for the next episode (v3), pushed on the stack
         waitForText("A film about Lion of the Desert.")
         assertTrue(home.paths.toString(), "/api/videos/v3" in home.paths)
     }

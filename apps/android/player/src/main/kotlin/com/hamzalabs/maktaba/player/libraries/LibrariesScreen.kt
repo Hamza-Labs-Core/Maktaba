@@ -97,7 +97,7 @@ fun LibrariesScreen(nav: PlayerNavigator) {
     LaunchedEffect(state, state.tab) { if (state.tab == RootTab.Series) state.loadSeries() }
     OnReselect(nav) { state.chosen = null }
 
-    VideoHost {
+    VideoHost(nav) {
         when (panes) {
             Panes.One -> RootList(state, home.client, grid = true, chosen = null, onOpen = { c ->
                 when (c) {
@@ -121,11 +121,11 @@ fun LibrariesScreen(nav: PlayerNavigator) {
 
 /** A library's page, pushed on the stack (FR-15). */
 @Composable
-fun LibraryScreen(id: String, nav: PlayerNavigator) = VideoHost { LibraryPage(id, nav, embedded = false) }
+fun LibraryScreen(id: String, nav: PlayerNavigator) = VideoHost(nav) { LibraryPage(id, nav, embedded = false) }
 
 /** A series' page, pushed on the stack (FR-17). */
 @Composable
-fun SeriesScreen(id: String, nav: PlayerNavigator) = VideoHost { SeriesPage(id, nav, embedded = false) }
+fun SeriesScreen(id: String, nav: PlayerNavigator) = VideoHost(nav) { SeriesPage(id, nav, embedded = false) }
 
 /** What the page beside the list shows: the chosen one, else the shown tab's first. */
 private val LibrariesState.shown: Chosen?
