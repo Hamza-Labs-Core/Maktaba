@@ -6,11 +6,39 @@ import AppKit
 #endif
 
 /// The theme a person picks, as on the web (`web/src/lib/theme.ts`): light, dark, or the
-/// system's. Kept per device under `ThemeMode.storageKey`.
+/// system's. Kept per device under `ThemeMode.storageKey`. With nothing stored the app is
+/// dark (Ink & Brass, Epic 48 FR-2), whatever the system's setting; a stored choice is kept.
 public enum ThemeMode: String, CaseIterable, Identifiable, Sendable {
     case system, light, dark
 
-    public static let storageKey = "theme"
+    /// What an app shows before the person picks: dark.
+    public static let defaultMode = ThemeMode.dark
+
+    /// The defaults key. Reading it first registers `defaultMode` as the key's registered
+    /// default, so every `@AppStorage(ThemeMode.storageKey) var theme = …` in the apps reads
+    /// dark while nothing is stored (its own fallback value is then never used).
+    public static let storageKey: String = {
+        registerDefault(in: .standard)
+        return key
+    }()
+
+    static let key = "theme"
+
+    /// Registers dark as the theme of `defaults` while none is stored there.
+    public static func registerDefault(in defaults: UserDefaults) {
+        defaults.register(defaults: [key: defaultMode.rawValue])
+    }
+
+    /// The mode a stored value names: dark for nothing stored, or for an unknown value.
+    public init(stored: String?) {
+        self = stored.flatMap(ThemeMode.init(rawValue:)) ?? ThemeMode.defaultMode
+    }
+
+    /// The mode kept in `defaults` (dark while nothing is).
+    public static func stored(in defaults: UserDefaults) -> ThemeMode {
+        ThemeMode(stored: defaults.string(forKey: key))
+    }
+
     public var id: String { rawValue }
 
     public var label: String {
@@ -39,19 +67,29 @@ public enum ThemeMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// "Ink & Brass", the web's tokens (`web/src/styles/tokens.css`): each colour has its
-/// light and its dark value.
+/// "Ink & Brass": the generated design tokens (`Tokens.swift`, from
+/// `web/design-system/tokens/`, Story 48.2). Each colour has its light and its dark value.
 public extension Color {
-    /// --color-accent: the brand's gold.
-    static let brass = Color(red: 0xE3 / 255, green: 0xB2 / 255, blue: 0x52 / 255)
-    /// --color-bg: white / ink.
-    static let mktBackground = Color(light: 0xFFFFFF, dark: 0x0B111C)
-    /// --color-subtle: rows and cards on the background.
-    static let mktSurface = Color(light: 0xFBF5E8, dark: 0x131D2E)
-    /// --color-border.
-    static let mktBorder = Color(light: 0xEFE3C8, dark: 0x22304A)
-    /// A chosen row: brass, strong enough to stand out from `mktSurface`.
-    static let mktChosen = Color(light: 0xF3DCA2, dark: 0x3A3020)
+    /// The brand's gold, a fill (`accent`).
+    static let brass = MaktabaTokens.Colors.accent.color
+    /// Brass as text: AA on the background in light and dark (`accentText`).
+    static let mktBrassText = MaktabaTokens.Colors.accentText.color
+    /// The page: white / ink (`bg`).
+    static let mktBackground = MaktabaTokens.Colors.bg.color
+    /// Body text (`fg`).
+    static let mktText = MaktabaTokens.Colors.fg.color
+    /// Secondary text (`muted`).
+    static let mktMuted = MaktabaTokens.Colors.muted.color
+    /// Rows and cards on the background (`subtle`).
+    static let mktSurface = MaktabaTokens.Colors.subtle.color
+    /// A sheet, a menu, the start screens' panel (`raised`).
+    static let mktRaised = MaktabaTokens.Colors.raised.color
+    /// The layer over the library art (`scrim`).
+    static let mktScrim = MaktabaTokens.Colors.scrim.color
+    /// Hairlines (`border`).
+    static let mktBorder = MaktabaTokens.Colors.border.color
+    /// A chosen row: brass, strong enough to stand out from `mktSurface` (`chosen`).
+    static let mktChosen = MaktabaTokens.Colors.chosen.color
 
     init(light: UInt32, dark: UInt32) {
         #if canImport(UIKit)
