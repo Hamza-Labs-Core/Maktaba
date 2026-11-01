@@ -151,6 +151,9 @@ struct SearchScreen: View {
 
     private func submit(_ q: String) {
         guard !SearchModel.sendable(q).isEmpty else { return }
+        // the field holds the chosen text at once: the field's own submit, which can follow
+        // a suggestion's tap, then sends that too rather than what was typed so far
+        model.query = q
         typing = false
         Task { await model.submit(q) }
     }

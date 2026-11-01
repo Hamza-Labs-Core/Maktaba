@@ -47,13 +47,17 @@ final class PlayerShellUITests: PlayerUITestCase {
         }
         shot("sections")
 
-        for (label, id) in [("Live TV", "screen.liveTV"), ("Search", "screen.search"), ("Profile", "screen.profile")] {
+        for (label, id) in [("Live TV", "screen.liveTV"), ("Profile", "screen.profile")] {
             sectionButton(label).tap()
             XCTAssertTrue(element(id).waitForExistence(timeout: 5), "\(label) opens its screen")
         }
         sectionButton("Libraries").tap()
         XCTAssertTrue(element(libraryCard).waitForExistence(timeout: 10), "Libraries shows its cards")
         shot("sections-libraries")
+        // Search last: on an iPhone its tab turns the tab bar into its field, the other
+        // sections folded into one button
+        sectionButton("Search").tap()
+        XCTAssertTrue(element("screen.search").waitForExistence(timeout: 5), "Search opens its screen")
     }
 
     /// Choosing the section already chosen takes it back to its first screen (FR-6).

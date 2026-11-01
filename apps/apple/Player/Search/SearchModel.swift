@@ -100,6 +100,8 @@ final class SearchModel {
     func submit(_ q: String) async {
         let sent = Self.sendable(q)
         guard !sent.isEmpty else { return }
+        // the same search already on its way (a suggestion's tap and the field's submit)
+        guard !(searching && sent == submitted) else { return }
         query = q
         submitted = sent
         suggestions = []

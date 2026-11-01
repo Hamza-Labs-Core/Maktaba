@@ -73,16 +73,15 @@ final class PlayerHomeUITests: PlayerUITestCase {
     /// A tap opens the video's page; Resume in the context menu opens the player at the
     /// person's position (v2 stopped at 1240 s).
     ///
-    /// Tied to the placeholders: "v2" and "v2 @ 1240" are what the placeholder `VideoScreen`
-    /// and `WatchScreen` print. Stories 48.19 (a video's page) and 48.23 (the player) change
-    /// these checks to what their screens show (the player's start position).
+    /// The page shows v2's title (`Fixtures/video-v2.json`); where the player opens is the
+    /// stream session it asks the home for.
     func testCardOpensVideoAndResumeOpensPlayer() {
         openHome()
         let card = element("home.card.v2")
         scrollTo(card)
         card.tap()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
-        XCTAssertTrue(app.staticTexts["v2"].exists, "v2's page")
+        XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١١"].waitForExistence(timeout: 10), "v2's page")
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
 
@@ -90,8 +89,7 @@ final class PlayerHomeUITests: PlayerUITestCase {
         let resume = app.buttons["home.menu.resume"].firstMatch
         XCTAssertTrue(resume.waitForExistence(timeout: 5), "Resume in the context menu")
         resume.tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 10), "the player")
-        XCTAssertTrue(app.staticTexts["v2 @ 1240"].exists, "at the person's position")
+        playerOpened("v2", at: 1240, "at the person's position")
     }
 
     /// Not interested: the card leaves For You at once and the home is told.

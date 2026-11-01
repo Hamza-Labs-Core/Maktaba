@@ -126,8 +126,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
         let play = app.buttons["player.playPause"]
         waitFor("it plays") { state["playing"] == "true" }
         XCTAssertTrue(play.waitForNonExistence(timeout: 15), "they hide while it plays")
-        showControls()
+        // timed from the tap, as the app's 4 s are: the tap and the wait for the controls to
+        // show take most of a second on a slow runner
         let shown = Date()
+        showControls()
         XCTAssertTrue(play.waitForNonExistence(timeout: 10), "hidden again after 4 s")
         XCTAssertGreaterThan(Date().timeIntervalSince(shown), 3.5, "not before 4 s")
         showControls()

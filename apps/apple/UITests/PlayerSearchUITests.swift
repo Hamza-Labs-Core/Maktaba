@@ -38,7 +38,10 @@ final class PlayerSearchUITests: PlayerUITestCase {
             try app.performAccessibilityAudit { issue in
                 // a row half under the tab bar or past the screen's foot: the audit samples
                 // pixels beyond it (the rows fully on screen are still checked)
-                if issue.auditType == .contrast, let f = issue.element?.frame, !self.app.windows.firstMatch.frame.contains(f) { return true }
+                if self.contrastOutOfView(issue) { return true }
+                // the system's clear button in the search field (iOS 26 puts the field in the
+                // tab bar); UIKit's own control, its size not this app's
+                if issue.auditType == .hitRegion, issue.detailedDescription.contains("_UITextFieldClearButton") { return true }
                 // the system's own search field (UISearchTextField) reports its placeholder as
                 // clipped although it shows in full (the shots); this screen's texts are checked
                 if issue.auditType == .textClipped, issue.element?.elementType == .searchField { return true }
@@ -65,7 +68,9 @@ final class PlayerSearchUITests: PlayerUITestCase {
         // a suggestion runs that search
         app.staticTexts["seerah"].tap()
         XCTAssertTrue(element("search.titles").waitForExistence(timeout: 10), "the suggestion's results")
-        XCTAssertEqual(searches.last?["q"] as? String, "seerah")
+        eventually("the suggestion's search") { searches.last?["q"] as? String == "seerah" }
+        // and only that one: what was typed so far is never searched as well
+        XCTAssertEqual(searches.compactMap { $0["q"] as? String }, ["seerah"])
     }
 
     func testSubmitShowsTitlesAndTranscriptsAndAPassagePlaysAtItsTime() {
@@ -87,8 +92,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(passage.waitForExistence(timeout: 5), "a passage")
         XCTAssertTrue(passage.label.hasPrefix("Play from"), "a passage says what it does: \(passage.label)")
         passage.tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 10), "the player")
-        XCTAssertTrue(app.staticTexts["v1 @ 1622"].exists, "at the passage's time")
+        playerOpened("v1", at: 1622, "at the passage's time")
     }
 
     func testATitleOpensItsPage() {
@@ -98,7 +102,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 10))
         title.tap()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
-        XCTAssertTrue(app.staticTexts["v3"].exists)
+        XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١٢"].waitForExistence(timeout: 10), "v3's title")
     }
 
     /// Arabic: the query goes to the home as typed, its diacritics too (the home ranks it;

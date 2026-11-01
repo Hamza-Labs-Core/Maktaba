@@ -69,10 +69,16 @@ jobs:
   # apps/apple/UITests/Player*Tests.swift runs, so a screen's tests need no change here. Each
   # simulator is made for the run and deleted after it (never a shared device); the
   # screenshots (dark, English and Arabic) are kept as an artifact.
+  #
+  # One job per device, side by side: the iPhone's run alone takes most of an hour.
   player-ui-tests:
-    name: Player UI tests (iPhone, iPad, Mac)
+    name: Player UI tests (${{ matrix.device }})
     runs-on: macos-26
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [iphone, ipad, mac]
     env:
       DERIVED: ${{ github.workspace }}/build/player-ui-derived
       SHOTS: ${{ github.workspace }}/build/player-shots
@@ -88,6 +94,7 @@ jobs:
           xcodebuild -version
 
       - name: Run the Player UI tests
+        if: matrix.device != 'mac'
         working-directory: apps/apple
         run: |
           set -euo pipefail
@@ -122,8 +129,10 @@ jobs:
             echo "::endgroup::"
             xcrun simctl shutdown "$udid" || true
           }
-          run "Maktaba Player" "Maktaba Player UITests" "iphone"
-          run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad"
+          case "${{ matrix.device }}" in
+            iphone) run "Maktaba Player" "Maktaba Player UITests" "iphone" ;;
+            ipad) run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad" ;;
+          esac
           exit $status
 
       # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
@@ -132,6 +141,7 @@ jobs:
       # client and server): the app's own add a keychain group, which needs a provisioning
       # profile. The Mac keychain test needs that group, so it is not among the classes here.
       - name: Run the Mac Player tests
+        if: matrix.device == 'mac'
         working-directory: apps/apple
         run: |
           set -euo pipefail
@@ -148,7 +158,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: player-ui-tests
+          name: player-ui-tests-${{ matrix.device }}
           path: |
             build/player-shots
             build/player-results

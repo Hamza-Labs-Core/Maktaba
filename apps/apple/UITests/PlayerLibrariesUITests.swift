@@ -229,12 +229,10 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     private func launchAtAX3(open: String) {
         launch("en", section: "libraries", open: open,
                extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
-        XCTAssertTrue(app.textFields["picker.address"].waitForExistence(timeout: 30), "the home picker at AX3")
-        signIn()
+        signIn(timeout: 30)
     }
 
     private func audit(_ page: String) {
-        let window = app.windows.firstMatch.frame
         // Dynamic Type exemption, for the episode rows and a library's filter row only: the
         // audit grows the text, and what sits low on the page then moves below the screen,
         // which it reports as "partially unsupported" (on iPhone the lowest episode row fails,
@@ -252,7 +250,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // a card half off the screen's edge (a row scrolls sideways): the audit samples
                 // pixels beyond it; the cards fully on screen are still checked (as 48.14's audit)
-                if issue.auditType == .contrast, let f = issue.element?.frame, !window.contains(f) { return true }
+                if self.contrastOutOfView(issue) { return true }
                 if issue.auditType == .dynamicType, let f = issue.element?.frame, lowOnThePage.contains(where: { $0.contains(f) }) { return true }
                 found.append("\(issue.compactDescription) [\(issue.element?.identifier ?? "")|\(issue.element?.label ?? "")]")
                 return true

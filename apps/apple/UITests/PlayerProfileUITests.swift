@@ -223,6 +223,7 @@ final class PlayerProfileUITests: PlayerUITestCase {
         let barTop = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
         try app.performAccessibilityAudit(for: [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]) { issue in
             if issue.auditType == .dynamicType, (issue.element?.frame.maxY ?? 0) > barTop - 100 { return true }
+            if self.contrastOutOfView(issue) { return true }
             return false
         }
     }

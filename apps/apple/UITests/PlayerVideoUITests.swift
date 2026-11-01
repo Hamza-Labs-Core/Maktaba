@@ -25,19 +25,6 @@ final class PlayerVideoUITests: PlayerUITestCase {
         app.navigationBars.buttons.firstMatch.tap()
     }
 
-    /// The player opened `video` at `start` seconds (the last stream session asked for).
-    private func playerOpened(_ video: String, at start: Int, _ why: String) {
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 10), "the player")
-        var last: [String: Any]?
-        waitUntil("a stream session") {
-            last = home.requests.last { $0.method == "POST" && $0.path == "/api/stream/sessions" }
-                .flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
-            return last != nil
-        }
-        XCTAssertEqual(last?["video_id"] as? String, video)
-        XCTAssertEqual(last?["start_sec"] as? Int ?? 0, start, why)
-    }
-
     /// Close on the player's controls (they show on a tap) back to the page.
     private func closePlayer() {
         let close = app.buttons["player.close"]
@@ -305,13 +292,12 @@ final class PlayerVideoUITests: PlayerUITestCase {
 
     /// NFR-6 on the page as it shows: labels, contrast, hit regions, clipped text.
     private func audit() {
-        let window = app.windows.firstMatch.frame
         do {
             try app.performAccessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // an element partly off screen: the audit samples pixels beyond it
-                if issue.auditType == .contrast, let f = issue.element?.frame, !window.contains(f) { return true }
+                if self.contrastOutOfView(issue) { return true }
                 print("audit issue: \(issue.compactDescription) on \(issue.element?.debugDescription ?? "?")")
                 return false
             }
