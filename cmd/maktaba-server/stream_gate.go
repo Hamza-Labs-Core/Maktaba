@@ -13,6 +13,13 @@ package main
 //     are checked by the API (GET /api/auth/me must answer 200); a good
 //     answer is cached for streamAuthTTL so segment fetches do not each
 //     cost an API round trip;
+//   - a channel's stream (/stream/channel/{id}/…, also behind a node's
+//     /stream/via-home/) follows library access, as the guide does (Epic 48
+//     story 48.3, gap G1): unless the session is an admin's, the gate asks
+//     GET /api/channels/{id} with the caller's credentials; 200 lets it
+//     through, 404 / 403 (a channel of a library the viewer may not read,
+//     or no such channel) is a 403. The verdict is cached per credential
+//     and channel for streamAuthTTL, so segment fetches cost no API call;
 //   - strips Cookie and Authorization before proxying, so the session
 //     never reaches the streaming service;
 //   - names the signed-in person to the streaming service in
@@ -32,10 +39,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -73,6 +82,18 @@ var streamPathRes = []*regexp.Regexp{
 var stagingPathRe = regexp.MustCompile(`^/stream/staging/channel/` + uuidRe +
 	`/(index\.m3u8|s/(blue|green|amber)/seg-[0-9]{1,12}\.ts)$`)
 
+// channelPathRe finds the channel a stream path plays: /stream/channel/{id}/…,
+// also /stream/via-home/channel/{id}/… on a node (allowedNodeStreamPath).
+var channelPathRe = regexp.MustCompile(`^/stream/(?:via-home/)?channel/(` + uuidRe + `)/`)
+
+// streamChannel is the channel id path plays, or "" for a video session.
+func streamChannel(path string) string {
+	if m := channelPathRe.FindStringSubmatch(path); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return ""
+}
+
 // allowedStreamPath reports whether path is one the web app loads.
 func allowedStreamPath(path string) bool {
 	for _, re := range streamPathRes {
@@ -87,6 +108,7 @@ func allowedStreamPath(path string) bool {
 type streamGate struct {
 	next    http.Handler // the streaming proxy
 	authURL string       // the API's GET /api/auth/me
+	apiURL  string       // the API's origin (GET /api/channels/{id})
 	client  *http.Client
 	now     func() time.Time
 	// allow is the path filter (allowedStreamPath; a full node adds its
@@ -97,6 +119,14 @@ type streamGate struct {
 	ok    map[string]time.Time // credential hash → accepted until
 	admin map[string]bool      // credential hash → an admin's session (while in ok)
 	user  map[string]string    // credential hash → the session's user id (while in ok)
+	// chans is the channel verdicts: credential hash + channel id → verdict
+	chans map[string]channelVerdict
+}
+
+// channelVerdict is what GET /api/channels/{id} said of a viewer and a channel.
+type channelVerdict struct {
+	allowed bool
+	until   time.Time
 }
 
 // sessionInfo is what /api/auth/me said of a session.
@@ -109,11 +139,13 @@ func newStreamGate(next http.Handler, apiOrigin *url.URL) *streamGate {
 	return &streamGate{
 		next:    next,
 		authURL: apiOrigin.String() + "/api/auth/me",
+		apiURL:  apiOrigin.String(),
 		client:  &http.Client{Timeout: 5 * time.Second},
 		now:     time.Now,
 		ok:      map[string]time.Time{},
 		admin:   map[string]bool{},
 		user:    map[string]string{},
+		chans:   map[string]channelVerdict{},
 		allow:   allowedStreamPath,
 	}
 }
@@ -138,7 +170,8 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
-	ok, who, err := g.session(r, cookie, authz)
+	key := credentialKey(cookie, authz)
+	ok, who, err := g.session(r, key, cookie, authz)
 	if err != nil {
 		// the API did not answer the check (down, restarting): not the viewer's sign-in,
 		// so not a 401 that sends them to sign in again; still nothing is streamed
@@ -154,6 +187,23 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pagetheme.Error(w, r, "the staging preview is for admins", http.StatusForbidden)
 		return
 	}
+	if ch := streamChannel(r.URL.Path); ch != "" && !staging && !who.admin {
+		answer, err := g.channel(r, key, ch, cookie, authz)
+		switch {
+		case err != nil:
+			stderrProxyError(authCheckErrs, "stream gate: the channel check", r, err)
+			pagetheme.Error(w, r, "the sign-in check is not answering; try again shortly", http.StatusBadGateway)
+			return
+		case answer == channelSignedOut:
+			pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
+			return
+		case answer == channelRefused:
+			// the same answer for a channel of another library and for no such
+			// channel: the gate does not tell which ids exist
+			pagetheme.Error(w, r, "this channel is not in your libraries", http.StatusForbidden)
+			return
+		}
+	}
 	out := r.Clone(r.Context())
 	out.Header.Del("Cookie")
 	out.Header.Del("Authorization")
@@ -167,9 +217,7 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // session reports whether the credentials are a signed-in session, and whose
 // (GET /api/auth/me: 200, user_id, is_admin), with a short cache of the accepted
 // ones. err: the API did not answer at all (no verdict on the session).
-func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, sessionInfo, error) {
-	sum := sha256.Sum256([]byte(cookie + "\x00" + authz))
-	key := hex.EncodeToString(sum[:])
+func (g *streamGate) session(r *http.Request, key, cookie, authz string) (bool, sessionInfo, error) {
 	now := g.now()
 	g.mu.Lock()
 	until, hit := g.ok[key]
@@ -206,6 +254,7 @@ func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, sessi
 		delete(g.ok, key)
 		delete(g.admin, key)
 		delete(g.user, key)
+		g.forgetChannels(key)
 		g.mu.Unlock()
 		return false, sessionInfo{}, nil
 	}
@@ -223,6 +272,7 @@ func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, sessi
 			g.ok = map[string]time.Time{}
 			g.admin = map[string]bool{}
 			g.user = map[string]string{}
+			g.chans = map[string]channelVerdict{}
 		}
 	}
 	if g.user == nil {
@@ -233,4 +283,102 @@ func (g *streamGate) session(r *http.Request, cookie, authz string) (bool, sessi
 	g.user[key] = me.UserID
 	g.mu.Unlock()
 	return true, who, nil
+}
+
+// credentialKey is the cache key of a request's credentials (a hash, never
+// the credentials themselves).
+func credentialKey(cookie, authz string) string {
+	sum := sha256.Sum256([]byte(cookie + "\x00" + authz))
+	return hex.EncodeToString(sum[:])
+}
+
+// channelAnswer is the channel check's verdict.
+type channelAnswer int
+
+const (
+	channelAllowed   channelAnswer = iota
+	channelRefused                 // not the viewer's to watch (or no such channel)
+	channelSignedOut               // the API no longer accepts the credentials
+)
+
+// channel asks the API whether the credentials may watch channel ch
+// (GET /api/channels/{id}: the channels handler's canRead, the guide's rule),
+// with the verdict cached per credential and channel for streamAuthTTL.
+// err: the API did not answer with a verdict.
+func (g *streamGate) channel(r *http.Request, key, ch, cookie, authz string) (channelAnswer, error) {
+	ck := key + "\x00" + ch
+	now := g.now()
+	g.mu.Lock()
+	v, hit := g.chans[ck]
+	g.mu.Unlock()
+	if hit && now.Before(v.until) {
+		if v.allowed {
+			return channelAllowed, nil
+		}
+		return channelRefused, nil
+	}
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, g.apiURL+"/api/channels/"+ch, nil)
+	if err != nil {
+		return channelRefused, err
+	}
+	if cookie != "" {
+		req.Header.Set("Cookie", cookie)
+	}
+	if authz != "" {
+		req.Header.Set("Authorization", authz)
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := g.client.Do(req)
+	if err != nil {
+		return channelRefused, err
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	_ = resp.Body.Close()
+	var answer channelAnswer
+	switch resp.StatusCode {
+	case http.StatusOK:
+		answer = channelAllowed
+	case http.StatusNotFound, http.StatusForbidden:
+		answer = channelRefused
+	case http.StatusUnauthorized:
+		// signed out since the session check: forget the session too
+		g.mu.Lock()
+		delete(g.ok, key)
+		delete(g.admin, key)
+		delete(g.user, key)
+		g.forgetChannels(key)
+		g.mu.Unlock()
+		return channelSignedOut, nil
+	default:
+		// a 5xx (the API or its database in trouble) is no verdict: never
+		// cached, and not a refusal the viewer can do nothing about
+		return channelRefused, fmt.Errorf("GET /api/channels/{id}: %s", resp.Status)
+	}
+	g.mu.Lock()
+	if g.chans == nil {
+		g.chans = map[string]channelVerdict{}
+	}
+	if len(g.chans) >= streamAuthCacheMax {
+		for k, cv := range g.chans {
+			if !now.Before(cv.until) {
+				delete(g.chans, k)
+			}
+		}
+		if len(g.chans) >= streamAuthCacheMax {
+			g.chans = map[string]channelVerdict{}
+		}
+	}
+	g.chans[ck] = channelVerdict{allowed: answer == channelAllowed, until: now.Add(streamAuthTTL)}
+	g.mu.Unlock()
+	return answer, nil
+}
+
+// forgetChannels drops the channel verdicts of credential key (g.mu held).
+func (g *streamGate) forgetChannels(key string) {
+	prefix := key + "\x00"
+	for k := range g.chans {
+		if strings.HasPrefix(k, prefix) {
+			delete(g.chans, k)
+		}
+	}
 }

@@ -83,6 +83,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A channel's stream follows library access (security, Epic 48 story 48.3).** The web
+  port's `/stream/channel/{id}/…` checked only that someone was signed in, so a viewer
+  limited to some libraries could watch another library's channel by its id. The gate now
+  asks `GET /api/channels/{id}` with the viewer's credentials (the guide's rule): a channel
+  the viewer may not read, or no such channel, is a 403. Admins skip the check; the verdict
+  is cached per viewer and channel for 30 s, so segments cost no extra API call; the API not
+  answering stays a 502. Video sessions and the admins' staging preview are unchanged.
 - **Resume on Windows starts the server right after it stopped, and three flaky tests are
   fixed at the root.** The desktop app took an agent that had let go of its lock but was still
   exiting for a running one, so Resume asked Task Scheduler once, was ignored, and the server
