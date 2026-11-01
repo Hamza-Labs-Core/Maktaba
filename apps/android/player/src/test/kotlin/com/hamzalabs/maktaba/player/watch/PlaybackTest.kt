@@ -2,6 +2,8 @@
 
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.player.profile.SubtitleLanguage
+import com.hamzalabs.maktaba.player.profile.PlaybackValues
 import android.content.Context
 import androidx.annotation.OptIn
 import androidx.media3.common.C
@@ -146,7 +148,7 @@ class PlaybackTest {
 
     @Test
     fun subtitlesOnInSettingsStartInTheirLanguage() {
-        playback.prefs = PlaybackPrefs.Values(subtitlesOn = true, subtitleLanguage = "ar")
+        playback.prefs = PlaybackValues(subtitlesOn = true, subtitleLanguage = SubtitleLanguage.Arabic)
         playback.play(v1)
         playing()
         runUntil { trackOptions(playback.tracks, C.TRACK_TYPE_TEXT).singleOrNull { it.selected }?.language == "ar" }
@@ -181,6 +183,21 @@ class PlaybackTest {
         assertEquals("v2", streams.opens().last()["video_id"]!!.toString().trim('"'))
         // the first video's session was closed
         runUntil { "s1" in streams.closed() }
+    }
+
+    @Test
+    fun aVideoStartsAtTheSettingsQualityUntilOneIsChosenInThePlayer() {
+        playback.startAt(1_500)
+        playback.play(v1)
+        playing()
+        assertEquals(1_500, streams.opens().last().int("max_bitrate_kbps"))
+
+        // chosen in the player (Auto): kept for the next video, over the Settings'
+        playback.setQuality(null)
+        playback.startAt(4_000)
+        playback.play(v2)
+        runUntil { playback.video?.id == "v2" && playback.player?.playbackState == Player.STATE_READY }
+        assertEquals(null, streams.opens().last().int("max_bitrate_kbps"))
     }
 
     @Test
