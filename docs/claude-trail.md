@@ -904,6 +904,44 @@ Append here: date, session, one to five lines on what changed. Newest last.
     a section switch keeps its open video, library and search, and re-selecting Libraries closes
     the video (`OnReselect`); `PlayerNavigator.back()` never pops a section's root (Navigation
     Compose will pop it and leave the section blank); `FakeHome.requests` is a locked copy.
+- 2026-11-01 · Epic 48 lead of `b743b7d4` (batch from PR bodies; agents no longer edit this
+  file or `CHANGELOG.md`, so open PRs stop conflicting):
+  - [#463] 48.7, MaktabaKit's Live client (`Live.swift`: now, guide, `tv/info`, tune, heartbeat,
+    end) and `LiveSource`, which picks LAN or relay and swaps a heartbeat's new token without
+    reopening the player. `APIClient.send`/`sendRaw` went from private to internal so client
+    files can be `APIClient` extensions.
+  - [#465] 48.9, the Android client's Live calls (`LiveApi`, `LiveSource`), a wrapper class like
+    Android TV's `TvApi`, so `ApiClient.kt` is unchanged.
+  - [#479] 48.11, Android brand: `ThemeMode.parse` falls back to Dark; one dark-parent
+    `Theme.Maktaba` (`values-night` deleted); Material's `scrim` left at its default (the light
+    scrim token is cream). Failed first: screenshots drew black headings until the harness had
+    MainActivity's `Surface`.
+  - [#480] 48.10, Apple brand: `ThemeMode.storageKey` registers `dark` as the default, so the
+    apps' `@AppStorage(…) = .system` reads dark without editing other stories' files. Found: the
+    plan's hand-edited `Info-*.plist` launch screen can't work (xcodegen regenerates it); it lives
+    in `project.yml`'s `IOSApp` template. A new `UITests/*.swift` needs `xcodegen generate` or
+    the run executes 0 tests.
+  - [#474] 48.12 (G2): `stream_gate.go` lets a `?sig=` request with no credentials through on
+    `/stream/{session}/…`, `/stream/direct/{video}` and node `/stream/via-home/`. The gate has no
+    key, so it reads only aud and sub (mismatch 403); expiry is left to streaming, whose leeway
+    is configurable (a fixed 60 s gate check was stricter, dropped in review). Open: DASH
+    top-level segments (`/stream/{session}/init-*.m4s`, `chunk-*.m4s`) are not on the allow-list;
+    48.24 or 48.33 must add them before AirPlay or Cast uses DASH.
+  - [#476] spec: the owner's TestFlight findings. "No audio" traced to codec-less
+    `audio_tracks` rows, not the Player's audio session (already `.playback`); AirPlay and the
+    video page's poster became criteria of 48.24 and 48.19; 48.19 gained `maktaba://video/{id}`.
+  - [#477] silent streams: transcribe's bare `audio_tracks` row (68e9e903) plus the probe's
+    `ON CONFLICT DO NOTHING` left 32,381 of 148,589 videos with a codec-less default track,
+    which streaming read as no audio. Now the probe `DO UPDATE`s, transcribe copies probe facts,
+    streaming's `has_audio` also reads `raw_ffprobe`, and slot 0171 backfills. Rejected: a
+    per-play `raw_ffprobe` fallback (hides bad rows). Gotchas: `jsonb_array_elements(...) s`
+    let bare `s` resolve to an outer column (use `AS au(stream)`); a third SchemaRev lives in
+    `schemaguard/guard.go`.
+  - Flakes fixed at the root: [#471] the row-cache test waits on its own `pg_notify` marker
+    (one connection hears notices in commit order); [#473] the home pushes its database CA when a
+    machine agent connects or leaves, not only every 30 s; [#475] the relay records a home online
+    before routable and offline after removal, one at a time per slug; [#472] host apt installs
+    get retries, timeouts and an 8-minute step limit after stalled mirrors hung jobs 30 min.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1059,3 +1097,14 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#467]: https://github.com/Hamza-Labs-Core/Maktaba/pull/467
 [#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470
 [#468]: https://github.com/Hamza-Labs-Core/Maktaba/pull/468
+[#463]: https://github.com/Hamza-Labs-Core/Maktaba/pull/463
+[#465]: https://github.com/Hamza-Labs-Core/Maktaba/pull/465
+[#471]: https://github.com/Hamza-Labs-Core/Maktaba/pull/471
+[#472]: https://github.com/Hamza-Labs-Core/Maktaba/pull/472
+[#473]: https://github.com/Hamza-Labs-Core/Maktaba/pull/473
+[#474]: https://github.com/Hamza-Labs-Core/Maktaba/pull/474
+[#475]: https://github.com/Hamza-Labs-Core/Maktaba/pull/475
+[#476]: https://github.com/Hamza-Labs-Core/Maktaba/pull/476
+[#477]: https://github.com/Hamza-Labs-Core/Maktaba/pull/477
+[#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
+[#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
