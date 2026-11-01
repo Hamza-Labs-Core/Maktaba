@@ -1,0 +1,39 @@
+{
+  "items": [
+    {
+      "video_id": "11111111-0000-4000-8000-000000000002",
+      "title": "سيرة ابن هشام ٢",
+      "duration_sec": 3000,
+      "times_watched": 1,
+      "total_watch_sec": 750,
+      "best_percent": 25,
+      "last_watched_at": "2026-10-30T20:15:00Z",
+      "position_sec": 750,
+      "completed": false
+    },
+    {
+      "video_id": "11111111-0000-4000-8000-000000000001",
+      "title": "Tafsir al-Kahf, part 1",
+      "duration_sec": 2650,
+      "times_watched": 2,
+      "total_watch_sec": 2650,
+      "best_percent": 100,
+      "last_watched_at": "2026-10-28T18:00:00Z",
+      "position_sec": 2650,
+      "completed": true
+    },
+    {
+      "video_id": "11111111-0000-4000-8000-000000000003",
+      "title": "",
+      "duration_sec": 0,
+      "times_watched": 1,
+      "total_watch_sec": 0,
+      "best_percent": 0,
+      "last_watched_at": "2026-10-20T09:00:00Z",
+      "position_sec": 0,
+      "completed": false
+    }
+  ],
+  "limit": 50,
+  "offset": 0
+}

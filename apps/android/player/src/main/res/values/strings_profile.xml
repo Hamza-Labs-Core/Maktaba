@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's Profile and Settings (Epic 48.31, FR-25 to FR-31).
+     Its Arabic is in values-ar/strings_profile.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="profile_library">Your library</string>
+    <string name="profile_history">Watch history</string>
+    <string name="profile_favorites">Favorites</string>
+    <string name="profile_playlists">Playlists</string>
+    <string name="profile_account">Account</string>
+    <string name="profile_sessions">Sessions</string>
+    <string name="profile_settings">Settings on this device</string>
+    <string name="profile_theme">Theme</string>
+    <string name="profile_language">Language</string>
+    <string name="profile_language_system">System</string>
+    <string name="profile_language_english">English</string>
+    <string name="profile_language_arabic">العربية</string>
+    <string name="profile_language_system_settings">Language in Android settings</string>
+    <string name="profile_playback">Playback</string>
+    <string name="profile_help_about">Help and about</string>
+    <string name="profile_help">Help</string>
+    <string name="profile_about_version">Maktaba Player %1$s (build %2$s)</string>
+    <string name="profile_about_home_version">The home: %1$s</string>
+    <string name="profile_unknown">unknown</string>
+    <string name="profile_diagnostics">Diagnostics</string>
+    <string name="profile_diagnostics_about">The last problem this app recorded on this device, without anything personal. Share it with whoever runs the home if they ask.</string>
+    <string name="profile_diagnostics_none">No problems recorded</string>
+    <string name="profile_diagnostics_clear">Clear</string>
+    <string name="profile_sign_out_title">Sign out of %1$s?</string>
+    <string name="profile_sign_out_body">You can sign in again with your password or a code.</string>
+    <string name="profile_cancel">Cancel</string>
+    <string name="profile_untitled">Untitled</string>
+    <string name="profile_load_more">Show more</string>
+
+    <string name="profile_history_empty">Nothing watched yet</string>
+    <string name="profile_history_watched">Watched</string>
+    <plurals name="profile_history_times">
+        <item quantity="one">Watched once</item>
+        <item quantity="other">Watched %1$d times</item>
+    </plurals>
+    <string name="profile_history_remove">Remove %1$s from history</string>
+
+    <string name="profile_favorites_empty">No favorites yet</string>
+    <string name="profile_playlists_empty">No playlists yet. Make one on the home\'s web page.</string>
+    <string name="profile_playlist_empty">This playlist is empty</string>
+    <string name="profile_playlist_play">Play</string>
+    <string name="profile_playlist_play_named">Play %1$s</string>
+
+    <string name="profile_sessions_about">Browsers signed in to the home as you. Sign out any you do not recognise.</string>
+    <string name="profile_sessions_empty">No browser is signed in as you</string>
+    <string name="profile_session_unknown">A browser</string>
+    <string name="profile_session_last_seen">last used %1$s</string>
+    <string name="profile_session_current">this browser</string>
+    <string name="profile_session_sign_out">Sign out</string>
+
+    <string name="profile_autoplay_next">Play the next episode automatically</string>
+    <string name="profile_resume_without_asking">Resume without asking</string>
+    <string name="profile_subtitles_on">Subtitles on by default</string>
+    <string name="profile_subtitle_language">Subtitle language</string>
+    <string name="profile_subtitle_language_default">The video\'s own</string>
+    <string name="profile_subtitle_size">Subtitle size</string>
+    <string name="profile_subtitle_small">S</string>
+    <string name="profile_subtitle_medium">M</string>
+    <string name="profile_subtitle_large">L</string>
+    <string name="profile_quality_wifi">Quality on Wi-Fi</string>
+    <string name="profile_quality_mobile">Quality on mobile data</string>
+    <string name="profile_quality_original">Original</string>
+    <string name="profile_quality_1080">1080p</string>
+    <string name="profile_quality_720">720p</string>
+    <string name="profile_quality_480">480p</string>
+
+    <string name="profile_just_now">just now</string>
+    <plurals name="profile_minutes_ago">
+        <item quantity="one">%1$d minute ago</item>
+        <item quantity="other">%1$d minutes ago</item>
+    </plurals>
+    <plurals name="profile_hours_ago">
+        <item quantity="one">%1$d hour ago</item>
+        <item quantity="other">%1$d hours ago</item>
+    </plurals>
+    <plurals name="profile_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <plurals name="profile_videos">
+        <item quantity="one">%1$d video</item>
+        <item quantity="other">%1$d videos</item>
+    </plurals>
+</resources>

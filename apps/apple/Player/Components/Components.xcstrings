@@ -1,0 +1,83 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld%% watched" : {
+      "comment" : "A progress bar's spoken value: the percent watched",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد %lld٪"
+          }
+        }
+      }
+    },
+    "Channel %lld, %@" : {
+      "comment" : "A channel's logo, spoken: its number and its name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القناة %1$lld، %2$@"
+          }
+        }
+      }
+    },
+    "Loading…" : {
+      "comment" : "A placeholder while a picture or a row loads",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ التحميل…"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "The hero's button: play the video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Resume" : {
+      "comment" : "The hero's button: go on from where it stopped",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استئناف"
+          }
+        }
+      }
+    },
+    "See all" : {
+      "comment" : "A row's link to all of its items",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض الكل"
+          }
+        }
+      }
+    },
+    "Watched" : {
+      "comment" : "A progress bar's spoken value: watched to the end",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -40,12 +40,16 @@ struct PlayerShell: View {
     }
 
     var body: some View {
-        if sections.count == 1, let only = sections.first {
-            // its stack (and the routes) without a tab bar; Libraries stays its split view
-            stack(only)
-        } else {
-            tabs
+        Group {
+            if sections.count == 1, let only = sections.first {
+                // its stack (and the routes) without a tab bar; Libraries stays its split view
+                stack(only)
+            } else {
+                tabs
+            }
         }
+        // the components' posters and logos: the image cache, with this home's Bearer token
+        .environment(\.imageSource, .home(context.client))
     }
 
     private var tabs: some View {

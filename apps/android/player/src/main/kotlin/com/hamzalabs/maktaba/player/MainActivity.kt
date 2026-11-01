@@ -17,6 +17,7 @@ import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
+import com.hamzalabs.maktaba.player.profile.AppLanguageScope
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerShell
@@ -44,7 +45,8 @@ class MainActivity : ComponentActivity() {
             var playing by remember { mutableStateOf(false) }
             // dark while a video plays, as on the web and the Apple apps
             MaktabaTheme(mode, forceDark = playing) {
-                Surface {
+                // before Android 13, the in-app language (48.31); 13+ uses per-app locales
+                AppLanguageScope { Surface {
                     // first run, and whenever a required permission is missing (checked on resume)
                     PermissionsGate(MaktabaApp.Player, helpUrl = { app.session.current.value?.url?.let(::permissionsHelpUrl) }) {
                         SessionGate(app.session, MaktabaApp.Player) { user, client ->
@@ -57,7 +59,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                }
+                } }
             }
         }
     }
