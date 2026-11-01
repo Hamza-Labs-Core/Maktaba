@@ -566,20 +566,26 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
         tracks switch; quality reopens at the same position with `max_bitrate_kbps`.
   - [ ] Controls hide after 4 s; double-tap seeks (mirrored in Arabic).
 - **48.24 The player: PiP, AirPlay, Now Playing.** After 48.23, 48.12. Files: as 48.23.
-  - [ ] iOS: PiP starts from the button and on going home while playing (UI test checks the PiP
+  - [x] iOS: PiP starts from the button and on going home while playing (UI test checks the PiP
         state); playback continues locked.
-  - [ ] AirPlay: the route button (`AVRoutePickerView`) shows on the player's controls on
+  - [x] AirPlay: the route button (`AVRoutePickerView`) shows on the player's controls on
         iPhone and iPad, and on the Mac. With an external route the player hands over the signed
         URL (48.12), not the loopback proxy one, which a receiver cannot reach (unit test on
         the URL chosen). `allowsExternalPlayback` is on.
   - [ ] AirPlay plays on a real receiver (an Apple TV or AirPlay speaker on the LAN), video and
         sound, and progress keeps reporting from the phone; checked by hand once per release
         candidate and written in the PR (an AirPlay receiver can't run in CI).
-  - [ ] Prerequisites, already in place: the audio session's `.playback` category with
+  - [x] Prerequisites, already in place: the audio session's `.playback` category with
         `.moviePlayback` (`Playback.play`) and the `audio` background mode. The owner's
         TestFlight report on 0.3.44: "no air play".
-  - [ ] Now Playing has title, art, position; remote play / pause / skip work (`MPRemoteCommandCenter`
+  - [x] Now Playing has title, art, position; remote play / pause / skip work (`MPRemoteCommandCenter`
         test hooks).
+  - [x] Live TV too: the AirPlay and PiP buttons on the live player, Now Playing (channel,
+        programme, logo) with play / pause / next channel. A receiver can't use the web
+        port's channel paths (48.12 keeps them to a signed-in caller), so at home it reads the
+        channel from the app's proxy on the phone's LAN address, scoped to that channel under a
+        random secret; away it gets the remote session's signed Cloudflare URL, handed again
+        on each new token. Both keep the phone in the loop (progress, the heartbeat).
 - **48.25 The Mac player.** After 48.13. Files: `apps/apple/Player/PlayerApp.swift` (commands only),
   new `Player/Mac/*`, `PlayerMacTests/*`.
   - [ ] View menu ⌘1–⌘5 select sections; ⌘F focuses search; Playback menu has FR-42's keys.

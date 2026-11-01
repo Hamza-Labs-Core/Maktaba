@@ -13,7 +13,21 @@ import Network
 /// Only the loopback listens (`acceptLocalOnly` is not set: the simulator refuses the
 /// player's own connections with it), only paths under this proxy's random secret are served (another
 /// app on the device cannot borrow the user's token), and only `/stream/` paths of this home.
+///
+/// An AirPlay receiver (story 48.24) cannot reach the device's loopback. A video hands it the
+/// session's signed URL instead; a live channel at home has none (the web port's gate opens
+/// channel paths to a signed-in caller only), so while it plays on a receiver a second proxy
+/// listens on the device's LAN address (`Reach.lan`), serving only that channel's paths
+/// (`onlyUnder`) under its own secret, and is stopped when the receiver lets go.
 public final class StreamProxy: @unchecked Sendable {
+    /// Who can reach the proxy.
+    public enum Reach: Sendable, Equatable {
+        /// This device only (`127.0.0.1`).
+        case loopback
+        /// The local network too, at this address (an AirPlay receiver).
+        case lan(host: String)
+    }
+
     private let client: APIClient
     private let session: URLSession
     private let listener: NWListener
@@ -22,12 +36,19 @@ public final class StreamProxy: @unchecked Sendable {
     let secret = UUID().uuidString.lowercased()
     private let lock = NSLock()
     private var boundPort: UInt16?
+    public let reach: Reach
+    /// The only home paths served (`/stream/channel/{id}/`), nil: any `/stream/` path.
+    public let onlyUnder: String?
 
-    public init(client: APIClient, session: URLSession = .shared) throws {
+    public init(client: APIClient, session: URLSession = .shared, reach: Reach = .loopback, onlyUnder: String? = nil) throws {
         self.client = client
         self.session = session
+        self.reach = reach
+        self.onlyUnder = onlyUnder
         let params = NWParameters.tcp
-        params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        if reach == .loopback {
+            params.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        }
         listener = try NWListener(using: params)
     }
 
@@ -69,7 +90,10 @@ public final class StreamProxy: @unchecked Sendable {
     public func local(_ remote: URL) -> URL? {
         guard let port, var c = URLComponents(url: remote, resolvingAgainstBaseURL: false) else { return nil }
         c.scheme = "http"
-        c.host = "127.0.0.1"
+        switch reach {
+        case .loopback: c.host = "127.0.0.1"
+        case let .lan(host): c.host = host
+        }
         c.port = Int(port)
         c.percentEncodedPath = "/" + secret + c.percentEncodedPath
         return c.url
@@ -81,6 +105,7 @@ public final class StreamProxy: @unchecked Sendable {
         let lower = target.lowercased()
         guard target.hasPrefix(prefix), !lower.contains("/.."), !lower.contains("%2e") else { return nil }
         let rest = String(target.dropFirst(secret.count + 1))
+        if let onlyUnder, !rest.hasPrefix(onlyUnder) { return nil }
         return URL(string: rest, relativeTo: client.home)?.absoluteURL
     }
 

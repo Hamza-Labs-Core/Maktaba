@@ -13,6 +13,12 @@ import SwiftUI
 /// stopped. It lists the item's subtitles and audio and keeps the person's choice for the
 /// next video, makes sure a video with sound plays with sound (FR-39a), and finds the
 /// series' next episode for Up next (story 48.23).
+///
+/// Story 48.24: AirPlay takes the video to a receiver, which is handed the session's signed
+/// URL (it can't reach the loopback proxy) at the same position, and the proxy again when
+/// AirPlay ends; progress keeps reporting from here. Picture in Picture floats the picture
+/// (the button, or going home while it plays). Now Playing shows the title, poster and
+/// position, and the remote commands (play, pause, ±10 s, next, the scrubber) drive it.
 @MainActor @Observable
 final class Playback {
     let client: APIClient
@@ -60,6 +66,17 @@ final class Playback {
     /// Where the player reads the stream from: every request reaches the home with the
     /// user's token as it is now (see `StreamProxy`).
     private var proxy: StreamProxy?
+    /// The session's signed URL and the proxy's address for it: a receiver plays the first,
+    /// the device the second.
+    private var signedURL: URL?
+    private var proxiedURL: URL?
+    /// Where the picture plays (story 48.24).
+    private(set) var routes = RouteSwitch()
+    private var externalWatcher: ExternalPlaybackWatcher?
+    /// Picture in Picture for the watch screen's picture.
+    let pip = PictureInPicture()
+    /// What Now Playing was last told, and when (it moves the position on by itself).
+    private var nowShown: (item: NowPlayingItem, at: Date)?
 
     private var timeObserver: Any?
     private var itemObservers: [NSObjectProtocol] = []
@@ -213,6 +230,13 @@ final class Playback {
         video = nil
         proxy?.stop()
         proxy = nil
+        signedURL = nil
+        proxiedURL = nil
+        externalWatcher = nil
+        routes = RouteSwitch()
+        pip.stop()
+        NowPlaying.shared.end(self)
+        nowShown = nil
         position = 0
         duration = 0
         isPlaying = false
@@ -243,6 +267,9 @@ final class Playback {
             "subtitle=\(subtitle?.language ?? subtitle?.name ?? "off")",
             "quality=\(maxBitrateKbps.map(String.init) ?? "auto")",
             "ended=\(ended)",
+            "route=\(routes.route.rawValue)",
+            "pip=\(pip.isActive)",
+            "pipPossible=\(pip.isPossible)",
         ].joined(separator: ";")
     }
 
@@ -288,13 +315,20 @@ final class Playback {
             try Task.checkCancellation()
             openedAt = .now
             renewAt = (s.expires ?? .distantFuture).addingTimeInterval(-60)
-            let item = AVPlayerItem(url: local)
+            signedURL = url
+            proxiedURL = local
+            let item = AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route))
             let p = player ?? AVPlayer()
             observe(item, of: p)
             p.replaceCurrentItem(with: item)
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
             position = start
-            if player == nil { player = p; observeTime(of: p) }
+            if player == nil {
+                player = p
+                observeTime(of: p)
+                startRoutes(of: p)
+                startNowPlaying()
+            }
             ended = false
             p.play()
             isPlaying = true
@@ -358,6 +392,7 @@ final class Playback {
         if playing != isPlaying { isPlaying = playing }
         refreshSound()
         checkUpNext()
+        showNowPlaying()
     }
 
     private func observe(_ item: AVPlayerItem, of p: AVPlayer) {
@@ -447,6 +482,69 @@ final class Playback {
         checkUpNext()
     }
 
+    // MARK: AirPlay (story 48.24)
+
+    private func startRoutes(of p: AVPlayer) {
+        p.allowAirPlay()
+        externalWatcher = ExternalPlaybackWatcher(p) { [weak self] active in self?.externalPlaybackChanged(active) }
+    }
+
+    /// AirPlay took the video to a receiver, or gave it back: the item is opened again on the
+    /// URL that route can read, at the same position, playing if it played.
+    private func externalPlaybackChanged(_ active: Bool) {
+        guard let route = routes.update(externalPlaybackActive: active), let p = player,
+              let signedURL, let proxiedURL else { return }
+        let at = p.currentTime().seconds
+        let wasPlaying = p.rate > 0 || isPlaying
+        let item = AVPlayerItem(url: RouteURL.video(signed: signedURL, proxied: proxiedURL, route: route))
+        observe(item, of: p)
+        p.replaceCurrentItem(with: item)
+        openedAt = .now
+        if at.isFinite, at > 0 { p.seek(to: CMTime(seconds: at, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
+        if wasPlaying { p.play() }
+        let to = route.rawValue
+        Log.ui.info("playback route: \(to, privacy: .public)")
+    }
+
+    // MARK: Now Playing and the remote commands (story 48.24)
+
+    private func startNowPlaying() {
+        NowPlaying.shared.begin(self, handlers: remoteHandlers())
+        nowShown = nil
+        showNowPlaying()
+        guard let id = video?.id else { return }
+        Task { [client, weak self] in
+            guard let data = try? await client.poster(video: id), let image = PlatformImage(data: data),
+                  let self, self.video?.id == id else { return }
+            NowPlaying.shared.show(self, artwork: image)
+        }
+    }
+
+    private func remoteHandlers() -> RemoteHandlers {
+        RemoteHandlers(
+            play: { [weak self] in if self?.isPlaying == false { self?.togglePause() } },
+            pause: { [weak self] in if self?.isPlaying == true { self?.togglePause() } },
+            toggle: { [weak self] in self?.togglePause() },
+            skip: { [weak self] in self?.skip(by: $0) },
+            next: next == nil ? nil : { [weak self] in self?.playNext() },
+            seek: { [weak self] in self?.seek(to: $0) }
+        )
+    }
+
+    /// Tells Now Playing when playing starts or stops, the length changes, or the position
+    /// jumps (a seek): between those the system moves it on by itself.
+    private func showNowPlaying() {
+        guard let video else { return }
+        let item = NowPlayingItem(title: video.displayTitle, duration: duration > 0 ? duration : nil,
+                                  position: position, playing: isPlaying)
+        if let (last, at) = nowShown, last.playing == item.playing, last.duration == item.duration {
+            let expected = last.position + (last.playing ? Date.now.timeIntervalSince(at) : 0)
+            if abs(expected - item.position) < 2 { return }
+        }
+        nowShown = (item, .now)
+        NowPlaying.shared.show(self, item)
+    }
+
     // MARK: Up next
 
     /// The series' next episode: the video's series (`/api/me/videos/{id}`), then its
@@ -460,6 +558,7 @@ final class Playback {
                 let keys = all.map { WatchLogic.EpisodeKey(id: $0.videoID, season: $0.season, episode: $0.episode, absolute: $0.absoluteNumber) }
                 guard !Task.isCancelled, video?.id == v.id, let id = WatchLogic.next(after: v.id, in: keys) else { return }
                 next = all.first { $0.videoID == id }
+                NowPlaying.shared.update(self, handlers: remoteHandlers())
             } catch {
                 // not an episode, or the home could not say: no Up next
             }

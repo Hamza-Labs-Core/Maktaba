@@ -158,6 +158,28 @@ final class PlayerWatchUITests: PlayerUITestCase {
         }
     }
 
+    // MARK: AirPlay and Picture in Picture (story 48.24)
+
+    /// The AirPlay route button is on the controls (a receiver itself can't run in CI: checked by
+    /// hand), and Picture in Picture floats the video from its button and comes back.
+    func testAirPlayIsOnTheControlsAndPictureInPictureFloatsTheVideo() {
+        watch("v2")
+        waitFor("it plays", timeout: 20) { state["playing"] == "true" && state["route"] == "device" }
+        showControls()
+        let airplay = app.buttons["player.airplay"]
+        XCTAssertTrue(airplay.waitForExistence(timeout: 10), "the AirPlay button")
+        XCTAssertEqual(airplay.label, "AirPlay")
+        waitFor("Picture in Picture can start", timeout: 20) { state["pipPossible"] == "true" }
+        showControls()
+        app.buttons["player.pip"].tap()
+        waitFor("the video floats", timeout: 20) { state["pip"] == "true" }
+        shot("watch-pip")
+        waitFor("it plays on in the window") { state["playing"] == "true" }
+        showControls()
+        app.buttons["player.pip"].tap()
+        waitFor("back in the app", timeout: 20) { state["pip"] == "false" }
+    }
+
     // MARK: helpers
 
     private func watch(_ video: String, at: Int? = nil, language: String = "en") {
