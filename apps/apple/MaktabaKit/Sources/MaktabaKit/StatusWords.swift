@@ -278,6 +278,140 @@ public enum StatusWords {
         "green": "green",
     ]
 
+    /// A TV change check's name (`tvchanges.check.*`)
+    public static let checkNames: [String: String] = [
+        "channel.block": "Programme on the air kept",
+        "channel.cadence": "Segment cadence",
+        "channel.first_segment": "First segment",
+        "channel.position": "Position against the clock",
+        "channel.wallclock": "Wall clock",
+        "cloudflare.ingest": "Cloudflare ingest",
+        "encoders": "Encoders",
+        "encoders.budget": "Encoder budget",
+        "guide.coverage": "Guide coverage",
+        "guide.vs_stream": "Guide matches the stream",
+        "hls.conformity": "HLS stream",
+        "lineup.sanity": "Lineup",
+        "push.continuity": "Remote pushes",
+        "schedule.boundary": "Programme on the air kept (schedule)",
+        "slot.health": "Staging process",
+        "soak": "Soak",
+        "splice.align": "Splice alignment with live",
+        "splice.compat": "Seamless switch",
+        "ts.conformity": "TS stream",
+    ]
+
+    /// A TV change check's result (`tvchanges.result.*`)
+    public static let checkResults: [String: String] = [
+        "fail": "fail",
+        "pass": "pass",
+        "skip": "skipped",
+        "warn": "warn",
+    ]
+
+    /// A TV change check's value by its code, its {params} filled (`tvchanges.value.*`)
+    public static let checkValues: [String: String] = [
+        "block.boundary_passed": "The planned boundary {boundary} has passed: the switch starts the new schedule when it happens",
+        "block.cut": "The new schedule would cut the programme on the air",
+        "block.differs_from_live": "An unchanged channel airs “{title}” on staging, “{live}” on live",
+        "block.ends_early": "The programme on the air ends early, at {at} (the longest wait for a boundary); it was to end at {was}",
+        "block.instead_of_live": "Airs “{title}” in place of “{scheduled}”, whose file the live TV reads",
+        "block.kept": "The programme on the air is kept",
+        "block.mismatch": "Airs “{title}” ({start}–{end}); schedule generation {gen} has “{scheduled}” ({scheduled_start}–{scheduled_end})",
+        "block.nothing_scheduled": "Airs “{title}” but schedule generation {gen} has nothing at {at}",
+        "block.same_as_live": "The item of schedule generation {gen} at this moment (item {seq}), the same as live",
+        "block.scheduled": "The item of schedule generation {gen} at this moment (item {seq})",
+        "block.slate": "A slate, as scheduled",
+        "block.slate_empty": "A slate, where schedule generation {gen} has nothing",
+        "block.unreadable": "The file of “{title}” (item {seq}, generation {gen}) cannot be read on this machine: “{filler}” airs in its place",
+        "budget.none": "No encoder left for staging: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby})",
+        "budget.none_rolling": "No encoder left for staging: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby}); {waiting} channels wait for an encoder (in turn)",
+        "budget.ok": "Staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby})",
+        "budget.ok_rolling": "Staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby}); {waiting} channels wait for an encoder (in turn)",
+        "budget.over": "Over budget: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby})",
+        "budget.over_rolling": "Over budget: staging {staging} of {budget} (capacity {capacity}: live {live}, standby {standby}); {waiting} channels wait for an encoder (in turn)",
+        "cloudflare.issues": "Problems: {issues}",
+        "cloudflare.ok": "H.264, AAC, closed GOP 2–10 s, 2–14 Mb/s",
+        "encoders.ok": "{encoder}, no muxer restart, no fallback",
+        "encoders.restarts": "{encoder}, {restarts} muxer restarts, {fallbacks} hardware fallbacks",
+        "guide.covered": "The next 24 hours are covered",
+        "guide.gaps": "{gaps} gaps in the next 24 hours",
+        "guide.none": "No programmes",
+        "guide.until": "Covered until {until}",
+        "guide.vs_stream": "Guide “{guide}” = stream “{stream}”",
+        "lineup.missing_from_release": "On the air for viewers but missing from the release (the change does not remove it)",
+        "lineup.no_logo": "No logo",
+        "lineup.number_taken": "Number {number} is also on {other}",
+        "lineup.slug_taken": "Slug {slug} is also on {other}",
+        "position.offset": "Output at {seconds} s from the wall clock",
+        "position.offset_settling": "Output at {seconds} s from the wall clock (settling: {settle} s after the first segment)",
+        "push.param_change": "Stream settings change: {params} (simulcast outputs may reconnect: accept it when you approve)",
+        "push.param_change_deferred": "Stream settings change: {params} (waits until the push ends)",
+        "push.seamless": "Seamless: the push keeps its session",
+        "segment.none": "No segment {seconds} s after the warm-up began",
+        "segment.not_measured": "Not measured {seconds} s after the warm-up began",
+        "slot.down": "The staging slot is down",
+        "slot.healthy": "Slot {slot} is healthy on release {release}, version {version}, process {pid}",
+        "slot.interim": "No staging slot here: checked on the database",
+        "slot.interim_why": "No staging slot ({why}): checked on the database",
+        "slot.not_healthy": "The staging slot did not become healthy on the release",
+        "slot.release_mismatch": "The staging slot runs another release",
+        "slot.restarted": "The staging slot restarted {count} times during the check",
+        "slot.start_failed": "The staging slot did not start: {error}",
+        "soak.unfinished": "The check did not finish: still measuring {pending}",
+    ]
+
+    /// Who or what started an update (`updates.trigger.*`)
+    public static let triggers: [String: String] = [
+        "auto": "the quiet window",
+        "badge": "its update badge",
+        "catch_up": "a machine catching up",
+        "manual": "an admin",
+        "menu": "its menu",
+        "order": "the home's order",
+        "retry": "a retry",
+        "start": "its first start",
+    ]
+
+    /// Why a process is not started yet, by its detail_code, its {params} filled (`setup.starting.detail.*`)
+    public static let processDetails: [String: String] = [
+        "db_ahead": "The library database was changed by a newer Maktaba than this one ({release}): install that newer version again.",
+        "db_checking": "Checking the library database.",
+        "db_dump_failed": "The library database could not be saved before the update to {to}, so the update waits (nothing was changed).",
+        "db_dumping": "Saving the library database before the update to {to}.",
+        "db_migrate_failed": "The library database could not be brought up to date for {release}.",
+        "db_migrating": "Updating the library database for {to}.",
+        "db_no_cluster": "The update to {failed} could not change the library database, and this Maktaba runs no database of its own to put {dump} back into.",
+        "db_record_failed": "The library database's record ({path}) cannot be read or saved.",
+        "db_refused_older": "This Maktaba ({release}) is older than the one whose changes the library database holds ({needed}): install {needed} or later.",
+        "db_refused_older.dump": "This Maktaba ({release}) is older than the one whose changes the library database holds ({needed}): install {needed} or later (the database from before the update to {needed} is in {dump}).",
+        "db_restore_backup_failed": "Putting the library database back from the backup {dump} failed. Nothing was changed; Maktaba stays stopped and its next start tries again.",
+        "db_restore_failed": "The update to {failed} could not change the library database, and putting it back from {dump} failed too. Maktaba stays stopped; its next start tries again.",
+        "db_restore_unfinished": "The library database is being put back as it was before the update to {failed} (from {dump}): start the whole server to finish it.",
+        "db_restored": "The update to {failed} could not change the library database. It is back as it was before the update (restored from {dump}), and Maktaba stays stopped: install {release} again to go on as before, or an update that fixes this; starting Maktaba again tries the update again.",
+        "db_restoring": "The update to {failed} could not change the library database: putting it back as it was.",
+        "db_restoring_backup": "Putting the library database back from the backup {dump}, as {by} asked.",
+        "db_waiting": "Waiting for the library database.",
+        "pg_major": "The library database was made by PostgreSQL {cluster} and this Maktaba carries PostgreSQL {payload}: it needs an upgrade between the two, which no update does yet.",
+        "pg_unreadable": "The library database ({path}) cannot be read.",
+        "port_taken": "Port {port} ({addr}) is in use by another program, so a part of Maktaba is not started; it starts once the port is free.",
+        "storage_move_failed": "Could not move Maktaba's data to {to}: it keeps running from where it was.",
+        "storage_moving": "Moving Maktaba's data to {to} ({percent}%).",
+        "storage_waiting": "Waiting for the disk that holds Maktaba's data ({path}). Connect it; Maktaba starts as soon as it is there.",
+        "venv_building": "Installing the transcription tools ({percent}%).",
+        "venv_failed": "The transcription tools could not be installed.",
+        "venv_interrupted": "The transcription tools' install was stopped; it goes on from where it was next time.",
+        "venv_waiting": "Waiting for the transcription tools.",
+    ]
+
+    /// Why the home cannot take machines, by its roles_reason_code (`machines.home.reason.*`)
+    public static let rolesReasons: [String: String] = [
+        "cannot_create_roles": "The database user cannot create roles.",
+        "check_failed": "Cannot check the database user's privileges: {error}",
+        "no_worker_group": "The maktaba_worker role is missing (run the migrations as a user that may create roles).",
+        "sqlite": "Joining machines needs a Postgres home (this home runs on SQLite).",
+    ]
+
     /// A process's name: its role's words, a TV slot with its colour ("TV slot blue").
     static func processName(role: String, instance: String?, locale: Locale = AppLanguage.locale) -> String {
         let base = words(processRoles, "health.processes.role.", role, locale)
@@ -285,6 +419,16 @@ public enum StatusWords {
         let i = role == "tv-slot" ? words(slotColors, "tvchanges.slots.color.", instance, locale) : instance
         return "\(base) \(i)"
     }
+}
+
+/// A template's words (`words`) with its {name}s filled from `params`.
+func filled(_ table: [String: String], _ prefix: String, _ value: String, _ params: [String: String],
+            _ locale: Locale = AppLanguage.locale) -> String {
+    var s = words(table, prefix, value, locale)
+    for (k, v) in params {
+        s = s.replacingOccurrences(of: "{\(k)}", with: v)
+    }
+    return s
 }
 
 /// A value's words from `table`, whose catalog keys are `prefix` + the value, in `locale`'s
@@ -301,7 +445,9 @@ extension StatusWords {
         ("updates.waiting.", waiting), ("updates.plan.waiting.", planWaitingTable),
         ("updates.blocked.reason.", blockedReasons), ("machines.homeDb.code.", homeDBCodes),
         ("health.processes.state.", processStates), ("health.processes.role.", processRoles),
-        ("tvchanges.slots.color.", slotColors),
+        ("tvchanges.slots.color.", slotColors), ("tvchanges.check.", checkNames),
+        ("tvchanges.result.", checkResults), ("tvchanges.value.", checkValues), ("updates.trigger.", triggers),
+        ("setup.starting.detail.", processDetails), ("machines.home.reason.", rolesReasons),
     ]
 }
 
@@ -322,6 +468,11 @@ public enum UpdateWords {
 
     public static func blocked(_ reason: String, locale: Locale = AppLanguage.locale) -> String {
         words(StatusWords.blockedReasons, "updates.blocked.reason.", reason, locale)
+    }
+
+    /// Who or what started a run (its trigger: auto, manual, catch_up, retry).
+    public static func trigger(_ t: String, locale: Locale = AppLanguage.locale) -> String {
+        words(StatusWords.triggers, "updates.trigger.", t, locale)
     }
 
     /// An error code's words: its own, a check of the release's verification, a step's

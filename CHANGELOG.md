@@ -16,6 +16,17 @@ don't append a line here; docs-only PRs are exempt.
   serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
   for an hour like the full one. A viewer without the video's library now gets 404 (as for a
   missing video) instead of 403, for both sizes.
+- **The server sends codes, not English, for what the admin screens say.** Each TV change
+  check now carries a `code` and `params` beside its English `value` (for example
+  `slot.release_mismatch` for "the staging slot runs another release"), and the move that
+  fails a change carries `report_code`/`report_params`. The home's "cannot take machines"
+  reason carries `roles_reason_code`/`roles_reason_params`. The web, Android Remote and Apple
+  apps say these in English and Arabic, and show the English when they don't know a code
+  (older apps keep reading `value`). Who started an update (`auto`, `manual`, `catch_up`,
+  `retry`) now has words on Android and iPhone, the TV check names have words on the
+  Updates page and in the apps, and the iPhone's Processes screen says the supervisor's
+  `detail_code` in words instead of its English. Only fields were added: TV staging behaves
+  as before.
 - **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
   Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
   a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,

@@ -1508,6 +1508,39 @@ describe("Admin Updates: a TV held at an update", () => {
     kind: "layout",
   };
 
+  it("a failed check reads in Arabic from its code; an unknown code shows the home's English", async () => {
+    const coded = {
+      ...heldTV,
+      failed: ["slot.health", "moon.phase"],
+      checks: [
+        {
+          check: "slot.health",
+          result: "fail",
+          code: "slot.release_mismatch",
+          value: "the staging slot runs another release (release_mismatch)",
+        },
+        { check: "moon.phase", result: "fail", code: "moon.waxing", value: "the moon is waxing" },
+      ],
+    };
+    const view = { ...done, detail: { tv: coded } };
+    routes(
+      overview({
+        current_version: "1.5.0",
+        plan: { auto_install: true, due: false },
+        machines: [home],
+        last_run: { ...liveRun, id: "run-9", state: "done", finished_at: finishedAt },
+        tv_held: { run_id: "run-9", version: "1.5.0", ...coded },
+      }),
+      view,
+      [view]
+    );
+    renderPage("ar");
+    const report = await screen.findByTestId("updates-run-tv-report");
+    expect(report).toHaveTextContent("عملية التجهيز · خانة التجهيز تشغّل إصدارًا آخر");
+    expect(report).toHaveTextContent("moon.phase · the moon is waxing");
+    expect(report).not.toHaveTextContent("release_mismatch");
+  });
+
   it("the run says installed and TV held, with what failed, Retry and Drop; the home's row says held", async () => {
     routes(
       overview({

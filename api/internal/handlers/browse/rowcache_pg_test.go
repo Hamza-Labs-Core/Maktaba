@@ -190,10 +190,24 @@ func TestRowCacheInvalidationPostgres(t *testing.T) {
 		defer e.c.mu.Unlock()
 		return e.c.entries[rowKey{lib, RowSize}] != nil
 	}
-	// fill caches both rows; a notice of an earlier write may still arrive and
-	// drop a fresh entry (rightly: it is a change), so it reads again until both stay
+	// heard waits until the listener has handled every notice sent so far: a
+	// notice of its own for a library no test row uses comes after them (one
+	// connection hears notices in commit order), so once it dropped the marker's
+	// entry, the earlier ones were handled too
+	const marker = "00000000-0000-4000-8000-0000000000ff"
+	heard := func() {
+		t.Helper()
+		eventually(t, "the marker cached", func() bool { row(marker); return cached(marker) })
+		if _, err := e.db.Exec(`SELECT pg_notify($1, $2)`, LibraryChangedChannel, marker); err != nil {
+			t.Fatal(err)
+		}
+		eventually(t, "the marker heard", func() bool { return !cached(marker) })
+	}
+	// fill caches both rows once every earlier write's notice was heard, so no
+	// late notice drops a fresh entry before the next change is checked
 	fill := func() {
 		t.Helper()
+		heard()
 		eventually(t, "both rows cached", func() bool {
 			row(libA)
 			row(libB)
