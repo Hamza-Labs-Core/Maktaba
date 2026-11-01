@@ -10,6 +10,7 @@ import com.hamzalabs.maktaba.core.api.TvCheck
 import com.hamzalabs.maktaba.core.api.UpdatesOverview
 import com.hamzalabs.maktaba.core.api.UpdatesStuck
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.OffsetDateTime
 import java.time.ZoneId
@@ -107,12 +108,30 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
         }
     }
 
-    fun tvCheck(c: TvCheck): String = buildString {
-        append(spaced(c.check))
-        c.channelId?.takeIf { it.isNotEmpty() }?.let { append(" ($it)") }
-        append(": ").append(spaced(c.result))
-        c.value?.takeIf { it.isNotEmpty() }?.let { append(" · ").append(it) }
+    /** A TV change check's name ("slot.health": "Staging process"). */
+    fun tvCheckName(name: String): String = word(WebWords.tvCheck, name)
+
+    /** A check's value in the web's words (its code with its params), else the home's English. */
+    fun tvValue(c: TvCheck): String? {
+        c.code?.let { code ->
+            WebWords.tvValue[code]?.let { template -> return fill(template, strings(c.params)) }
+        }
+        return c.value?.takeIf { it.isNotEmpty() }
     }
+
+    fun tvCheck(c: TvCheck): String = buildString {
+        append(tvCheckName(c.check))
+        c.channelId?.takeIf { it.isNotEmpty() }?.let { append(" ($it)") }
+        append(": ").append(word(WebWords.tvResult, c.result))
+        tvValue(c)?.let { append(" · ").append(it) }
+    }
+
+    /** Who or what started an update run (its trigger: auto, manual, catch_up, retry). */
+    fun trigger(t: String): String = word(WebWords.trigger, t)
+
+    /** A JSON object's text values by name (a value that is not text is left out). */
+    private fun strings(o: JsonObject?): Map<String, String> =
+        o.orEmpty().mapNotNull { (k, v) -> (v as? JsonPrimitive)?.takeUnless { it is JsonNull }?.let { k to it.content } }.toMap()
 
     // ---------- processes ----------
 
@@ -133,10 +152,7 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
     fun processDetail(p: ProcessStatus): String? {
         p.detailCode?.let { code ->
             WebWords.processDetail[code]?.let { template ->
-                val vars = p.detailParams.orEmpty().mapNotNull { (k, v) ->
-                    (v as? JsonPrimitive)?.takeUnless { it is JsonNull }?.let { k to it.content }
-                }.toMap()
-                return fill(template, vars)
+                return fill(template, strings(p.detailParams))
             }
         }
         return p.detail?.takeIf { it.isNotEmpty() }
