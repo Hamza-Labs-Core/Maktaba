@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.player.home
 
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import mockwebserver3.MockResponse
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
@@ -71,10 +72,15 @@ object HomeFixtures {
 
     val REC_TITLES = mapOf(REC_1 to "The Night Journey", REC_2 to "Andalusia, a History", REC_LIB to "Lion of the Desert")
 
-    /** Answers Home's routes on [home]: `/api/home` (after [homeDelaySec]), the recommendations, Live TV on now, the recommended videos. */
-    fun install(home: FakeHome, homeBody: String = HOME, recs: String = RECS, now: String? = NOW, homeDelaySec: Long = 0) {
+    /**
+     * Answers Home's routes on [home]: `/api/home`, the recommendations, Live TV on now, the
+     * recommended videos. With [homeGate], `/api/home` answers only once the test opens it (no
+     * clock involved; a minute's cap so a failed test never leaves the server's thread waiting).
+     */
+    fun install(home: FakeHome, homeBody: String = HOME, recs: String = RECS, now: String? = NOW, homeGate: CountDownLatch? = null) {
         home.answer("/api/home") {
-            FakeHome.json(homeBody).let { r -> if (homeDelaySec > 0) r.newBuilder().headersDelay(homeDelaySec, TimeUnit.SECONDS).build() else r }
+            homeGate?.await(60, TimeUnit.SECONDS)
+            FakeHome.json(homeBody)
         }
         home.answer("/api/recommendations") { FakeHome.json(recs) }
         home.answer("/api/channels/now") { if (now != null) FakeHome.json(now) else MockResponse.Builder().code(404).build() }

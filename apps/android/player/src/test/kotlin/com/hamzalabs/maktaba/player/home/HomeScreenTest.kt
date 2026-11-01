@@ -33,12 +33,13 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
+import java.util.concurrent.CountDownLatch
 
 /**
  * Home against the mock home (48.26, as 48.17's criteria): the hero then FR-10's rows, an empty
  * row absent; a card opens its video, Resume opens the player at the position; Not interested
  * removes the card and calls the DELETE route; the next launch shows the kept rows before the
- * home answers (the mock waits 3 s); pull to refresh; a failure; the empty home (FR-13); and an
+ * home answers (the mock holds its answer until the test releases it); pull to refresh; a failure; the empty home (FR-13); and an
  * accessibility audit.
  */
 @RunWith(AndroidJUnit4::class)
@@ -139,21 +140,26 @@ class HomeScreenTest {
         val kept = File(ApplicationProvider.getApplicationContext<android.content.Context>().cacheDir, HomeCache.FOLDER)
         compose.waitUntil(5_000) { kept.listFiles().orEmpty().any { it.name.endsWith(".json") } }
 
-        // the home now takes 3 s to answer, with a new title
-        HomeFixtures.install(home, homeBody = HomeFixtures.HOME.replace("Fiqh of Fasting 7", "Fiqh of Fasting 8"), homeDelaySec = 3)
+        // the home now answers only when the test lets it, with a new title
+        val gate = CountDownLatch(1)
+        HomeFixtures.install(home, homeBody = HomeFixtures.HOME.replace("Fiqh of Fasting 7", "Fiqh of Fasting 8"), homeGate = gate)
         val asked = count("/api/home")
-        val started = System.nanoTime()
-        compose.runOnIdle { launch.intValue = 1 }
+        try {
+            compose.runOnIdle { launch.intValue = 1 }
 
-        waitForTag("row-$KEY_CONTINUE", timeout = 2_500)
-        val shownMs = (System.nanoTime() - started) / 1_000_000
-        assertTrue("kept rows took ${shownMs} ms", shownMs < 3_000)
-        compose.onNode(inRow(KEY_CONTINUE, "card-${HomeFixtures.CONTINUE}")).assertExists()
-        assertTrue("the new answer is not in yet", compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isEmpty())
-        assertTrue("and Home asked again behind them", count("/api/home") > asked)
+            // while the home has not answered: the kept rows, and Home asking again behind them
+            // (a node query first: it lets Compose run the new launch, which a request count alone does not)
+            waitForTag("row-$KEY_CONTINUE", timeout = 15_000)
+            compose.waitUntil(15_000) { compose.waitForIdle(); count("/api/home") > asked }
+            compose.onNode(inRow(KEY_CONTINUE, "card-${HomeFixtures.CONTINUE}")).assertExists()
+            assertTrue("the new answer is not in yet", compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isEmpty())
+        } finally {
+            gate.countDown()
+        }
 
         // then the fresh answer replaces them
-        compose.waitUntil(8_000) { compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(15_000) { compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        assertTrue(compose.onAllNodes(hasContentDescription("Fiqh of Fasting 7", substring = true)).fetchSemanticsNodes().isEmpty())
     }
 
     @Test
