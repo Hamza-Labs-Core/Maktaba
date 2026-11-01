@@ -47,4 +47,32 @@
     <string name="sign_out">تسجيل الخروج</string>
     <string name="language">اللغة</string>
     <string name="licences">الخطّان هما أميري وIBM Plex Sans Arabic، بترخيص SIL Open Font License.</string>
+
+    <!-- البث المباشر (الملحمة 48، القصة 48.35) -->
+    <string name="tab_live">البث المباشر</string>
+    <string name="live_now">ما يُعرض الآن</string>
+    <string name="live_guide">الدليل</string>
+    <string name="live_next">التالي: %1$s</string>
+    <string name="live_no_content">لا يوجد محتوى</string>
+    <string name="live_no_channels">لا توجد قنوات بعد</string>
+    <string name="live_watch_channel">شاهد القناة %1$d، %2$s</string>
+    <string name="live_close">إغلاق</string>
+    <string name="live_starts_at">يبدأ في %1$s</string>
+    <string name="live_minutes">%1$d دقيقة</string>
+    <string name="live_label">مباشر</string>
+    <string name="live_tuning">جارٍ الضبط…</string>
+    <string name="live_remote_badge">عن بُعد</string>
+    <string name="live_remote_starting">جارٍ بدء البث عن بُعد…</string>
+    <string name="live_back_to_live">العودة إلى البث المباشر</string>
+    <string name="live_paused">متوقف مؤقتًا</string>
+    <string name="live_player_hint">▲ ▼ القنوات · زر التحديد لما يُعرض الآن · رجوع للخروج</string>
+    <string name="live_play_failed">تعذّر تشغيل القناة</string>
+    <string name="live_remote_budget">المشاهدة عن بُعد متوقفة: بلغت الميزانية الشهرية حدّها</string>
+    <string name="live_remote_user_full">عدد البثوث عن بُعد أكثر من المسموح</string>
+    <string name="live_remote_channels_full">كل القنوات عن بُعد مستخدمة</string>
+    <string name="live_remote_not_set_up">المشاهدة عن بُعد غير مُعدّة</string>
+    <string name="live_remote_not_allowed">لا يُسمح لك بالمشاهدة من خارج المنزل</string>
+    <string name="live_remote_timeout">لم يبدأ البث عن بُعد. حاول مرة أخرى بعد قليل.</string>
+    <string name="live_remote_ended">انتهى البث عن بُعد.</string>
+    <string name="live_not_found">هذه القناة غير موجودة أو معطّلة أو لا يمكنك الوصول إليها.</string>
 </resources>
