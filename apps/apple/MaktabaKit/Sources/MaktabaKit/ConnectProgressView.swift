@@ -9,6 +9,8 @@ extension ConnectProgress {
         switch step {
         case .finding:
             kit("Looking for your home…", locale)
+        case .lookingNearby:
+            kit("Looking for your home on this network…", locale)
         case let .trying(address, index, count):
             kit("Trying \(Self.isolated(address)) — \(index) of \(count)", locale)
         case let .found(name):
@@ -62,6 +64,7 @@ extension ConnectProgress {
     public var stepName: String {
         switch step {
         case .finding: "finding"
+        case .lookingNearby: "lookingNearby"
         case .trying: "trying"
         case .found: "found"
         case .signingIn: "signingIn"

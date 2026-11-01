@@ -435,6 +435,16 @@
         }
       }
     },
+    "Looking for your home on this network…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ البحث عن الجهاز الرئيسي على هذه الشبكة…"
+          }
+        }
+      }
+    },
     "Looking for your home…" : {
       "localizations" : {
         "ar" : {

@@ -351,12 +351,14 @@ extension AgainstAStubHome {
             ConnectProgress(.awaitingApproval(code: "ABCD-1234", expiresAt: at)),
             ConnectProgress(.reconnecting(name: "Living room")),
             ConnectProgress(.homeBusy(retryAt: at)),
+            ConnectProgress(.lookingNearby),
         ] + [ConnectProgress.Failure.unreachable, .notAHome, .otherHome, .wrongPassword, .approvalExpired, .busy, .server]
             .map { ConnectProgress(.failed(reason: $0, tried: ["http://192.168.1.20:8088"]), attempt: 2) }
     }
 
     @Test func eachStepSaysWhatIsHappening() {
         #expect(ConnectProgress(.finding).headline(en) == "Looking for your home…")
+        #expect(ConnectProgress(.lookingNearby).headline(en) == "Looking for your home on this network…")
         #expect(ConnectProgress(.trying(address: "http://192.168.1.20:8088", index: 1, count: 3)).headline(en)
             == "Trying \u{2068}http://192.168.1.20:8088\u{2069} — 1 of 3")
         #expect(ConnectProgress(.found(name: "Living room")).headline(en) == "Found \u{2068}Living room\u{2069}")

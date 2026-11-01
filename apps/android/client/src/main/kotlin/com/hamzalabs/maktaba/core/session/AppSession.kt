@@ -14,6 +14,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -338,6 +341,8 @@ class AppSession(
             } catch (e: ApiException.Transport) {
                 // this address does not answer (the local one, away from home): another might
                 if (c === client && !reachElsewhere(attempt)) {
+                    // or the home announces itself at a new address: looked for on the network
+                    if (browsing != null && home.id != null && lookNearby(c, home, attempt)) return
                     _restoreProblem.value = e.errorKind()
                     _progress.value = ConnectProgress.Failed(
                         FailReason.NoAnswer, (listOf(home.url) + home.addresses).map(::shown), ConnectStage.Restore, attempt,
@@ -349,6 +354,20 @@ class AppSession(
                 return
             }
         }
+    }
+
+    /**
+     * "Looking for your home on this network…" until it is announced ([heard] asks it there:
+     * true) or [LOOK_MS] passes (false: why it failed shows).
+     */
+    private suspend fun lookNearby(c: ApiClient, home: Home, attempt: Int): Boolean {
+        announced(home, _nearby.value)?.let { moveTo(home, it); return true }
+        looking = home.url
+        _progress.value = ConnectProgress.LookingNearby(attempt)
+        sleep(LOOK_MS)
+        val found = looking != home.url || c !== client
+        if (!found) looking = null
+        return found
     }
 
     private fun failRestore(home: Home, e: Exception, attempt: Int) {
@@ -395,18 +414,75 @@ class AppSession(
     }
 
     /**
-     * The homes announced on this network (mDNS). The home in use whose kept sign-in could
-     * not be checked (none of its addresses answered), announced now at another address with
-     * its id (its name on the network changed): asked there, and when the same home answers,
-     * its entry moves there, the old address among its others. Tokens stay with the address
-     * that issued them: the new one uses its own, or signs in afresh.
+     * Where the homes on this network come from (mDNS: the platform's, set before [discover]).
      */
-    fun announced(found: List<FoundHome>) {
-        val home = _current.value ?: return
-        if (_restoreProblem.value == null || _phase.value != Phase.SigningIn) return
-        val moved = found.firstOrNull { sameHome(home.id, it.id) && it.url != home.url && it.url !in home.addresses } ?: return
-        scope.launch { moveTo(home, moved.url) }
+    var discovery: (() -> Flow<List<FoundHome>>)? = null
+
+    private val _nearby = MutableStateFlow<List<FoundHome>>(emptyList())
+    /** The homes announced on this network now, while the app is in front ([discover]). */
+    val nearby: StateFlow<List<FoundHome>> = _nearby.asStateFlow()
+
+    private var browsing: Job? = null
+
+    /**
+     * Browses for homes while the app is in front (its screens call it as it comes and goes):
+     * afresh each time it comes back, stopped in the background.
+     */
+    fun discover(front: Boolean) {
+        browsing?.cancel()
+        browsing = null
+        _nearby.value = emptyList()
+        val homes = discovery
+        if (!front || homes == null) return
+        browsing = scope.launch {
+            // a network that cannot be browsed (no permission, no Wi-Fi) lists nothing
+            homes().catch { }.collect(::heard)
+        }
     }
+
+    /** Browses afresh (another network, the permission just given), when browsing at all. */
+    fun rediscover() {
+        if (browsing != null) discover(true)
+    }
+
+    /**
+     * The homes announced now. The saved homes are matched to them by id: an address a saved
+     * home is announced at is kept among its others; the home in use, when it did not answer
+     * at any of its addresses (looked for on the network, or its kept sign-in could not be
+     * checked), is asked where it is announced, and its entry moves there when the same home
+     * answers. A home that answers where it is is not moved: its tokens are that address's.
+     */
+    private fun heard(found: List<FoundHome>) {
+        _nearby.value = found
+        // matched before its addresses learn the announced one
+        val home = _current.value
+        val at = home?.let { announced(it, found) }
+        learn(found)
+        if (home == null || at == null) return
+        if (_phase.value != Phase.SigningIn || (looking != home.url && _restoreProblem.value == null)) return
+        looking = null
+        scope.launch { moveTo(home, at) }
+    }
+
+    /** Where [home] is announced, other than the addresses it has. */
+    private fun announced(home: Home, found: List<FoundHome>): String? =
+        found.firstOrNull { sameHome(home.id, it.id) && it.url != home.url && it.url !in home.addresses }?.url
+
+    /** Saved homes announced at an address they do not list: kept among their others. */
+    private fun learn(found: List<FoundHome>) {
+        val known = _homes.value
+        val learned = known.map { h ->
+            val more = found.filter { sameHome(h.id, it.id) && it.url != h.url && it.url !in h.addresses }.map { it.url }
+            if (more.isEmpty()) h else h.copy(addresses = (h.addresses + more).distinct())
+        }
+        if (learned == known) return
+        _homes.value = learned
+        _current.value?.let { c -> _current.value = learned.firstOrNull { it.url == c.url } ?: c }
+        saveHomes()
+    }
+
+    /** The home in use, none of whose addresses answered, looked for on the network. */
+    private var looking: String? = null
 
     private suspend fun moveTo(home: Home, url: String) {
         val attempt = _progress.value?.attempt ?: 1
@@ -650,6 +726,9 @@ class AppSession(
         /** The wait when a busy home does not say (no Retry-After), and the longest one kept. */
         const val BUSY_WAIT_SEC = 5L
         const val MAX_WAIT_SEC = 120L
+
+        /** How long a home that does not answer is looked for on the network before it counts as failed. */
+        const val LOOK_MS = 15_000L
 
         /** Why [e] failed, as a person reads it ([password]: a 400-403 is the username and password). */
         fun reasonFor(e: Throwable, password: Boolean = false): FailReason {

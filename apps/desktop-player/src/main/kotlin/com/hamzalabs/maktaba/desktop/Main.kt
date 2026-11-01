@@ -67,6 +67,10 @@ fun main(args: Array<String>) {
     val session = AppSession(stores.settings, CoroutineScope(SupervisorJob() + Dispatchers.Main), stores::tokens)
     // a home's link handed to the player (`maktaba://connect?…`, by the system or a shortcut): asked, never followed
     args.firstOrNull { it.startsWith("maktaba:", ignoreCase = true) }?.let(session::openLink)
+    // the homes on this network, the whole time the player runs: a saved home is found again
+    // where it announces itself
+    session.discovery = ::discoverOrNothing
+    session.discover(true)
 
     application {
         var lang by remember { mutableStateOf(Lang.of(stores.settings.get(KEY_LANG))) }
@@ -166,7 +170,7 @@ fun PlayerApp(session: AppSession, background: CoroutineScope) {
     Surface(arrows.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         when (val p = phase) {
             AppSession.Phase.ChoosingHome -> {
-                val found by remember { discoverOrNothing() }.collectAsState(emptyList())
+                val found by session.nearby.collectAsState()
                 HomePicker(session, found)
             }
             AppSession.Phase.SigningIn -> SignIn(session)
@@ -176,7 +180,7 @@ fun PlayerApp(session: AppSession, background: CoroutineScope) {
 }
 
 /** The homes on this network; none when this computer's networks cannot be browsed. */
-internal fun discoverOrNothing() = runCatching { discoverHomes() }.getOrElse { emptyFlow<List<FoundHome>>() }
+private fun discoverOrNothing() = runCatching { discoverHomes() }.getOrElse { emptyFlow<List<FoundHome>>() }
 
 @Composable
 private fun SignedIn(p: AppSession.Phase.SignedIn, session: AppSession, background: CoroutineScope) {

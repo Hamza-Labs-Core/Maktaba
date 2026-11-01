@@ -10,6 +10,9 @@ public struct ConnectProgress: Equatable, Sendable {
     public enum Step: Equatable, Sendable {
         /// Starting to look for the home (no address asked yet).
         case finding
+        /// None of a saved home's addresses answered: it is looked for among the homes
+        /// announced on this network (mDNS), to be asked where it is announced.
+        case lookingNearby
         /// Asking `address` whether it is the home: the `index`th (from 1) of `count`.
         case trying(address: String, index: Int, count: Int)
         /// An address answered: this is the home.

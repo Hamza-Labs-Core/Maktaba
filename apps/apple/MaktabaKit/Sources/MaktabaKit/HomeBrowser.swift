@@ -34,7 +34,11 @@ public final class HomeBrowser {
         }
     }
 
-    public private(set) var found: [Found] = []
+    public private(set) var found: [Found] = [] {
+        didSet { if found != oldValue { onChange?(found) } }
+    }
+    /// Hears each new list (`BonjourDiscovery`).
+    public var onChange: (@MainActor ([Found]) -> Void)?
     private var store = FoundHomes()
     private var browser: NWBrowser?
     /// The announcements being resolved to an address, by their instance name.

@@ -11,6 +11,7 @@ public struct SessionGate<Content: View>: View {
     let title: String
     let content: (User, APIClient) -> Content
     private let words = ConnectStrings.forPreferredLanguages()
+    @Environment(\.scenePhase) private var scenePhase
 
     public init(session: AppSession, title: String, @ViewBuilder content: @escaping (User, APIClient) -> Content) {
         self.session = session
@@ -36,6 +37,9 @@ public struct SessionGate<Content: View>: View {
             }
         }
         .onOpenURL { session.open($0) }
+        // the homes on this network, the whole time the app is in front (browsed afresh
+        // each time it comes back): a saved home is found again where it announces itself
+        .onChange(of: scenePhase != .background, initial: true) { _, front in session.discover(front) }
         #if os(macOS)
         // a link opened on the Mac goes to the window already open, not a new one
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
@@ -112,7 +116,6 @@ struct LinkPrompt: View {
 public struct HomePickerView: View {
     @Bindable var session: AppSession
     let title: String
-    @State private var browser = HomeBrowser()
     @State private var address = ""
     @State private var problem: String?
     @State private var scanning = false
@@ -141,11 +144,6 @@ public struct HomePickerView: View {
             .disabled(session.connecting)
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
-        .onAppear { browser.start() }
-        .onDisappear { browser.stop() }
-        // a saved home that did not answer, announced at a new address, is asked there
-        .onChange(of: browser.found) { session.announced(browser.found) }
-        .onChange(of: session.connectProblem) { session.announced(browser.found) }
         #if os(iOS)
         .sheet(isPresented: $scanning) {
             QRScannerSheet(words: words, found: scanned)
@@ -202,7 +200,7 @@ public struct HomePickerView: View {
 
     private var nearby: some View {
         Section {
-            ForEach(browser.found) { home in
+            ForEach(session.nearby) { home in
                 Button {
                     problem = nil
                     session.use(Home(url: home.url, name: home.name, homeID: home.homeID))
@@ -211,7 +209,7 @@ public struct HomePickerView: View {
                 }
                 .accessibilityIdentifier("picker.nearby.\(home.id)")
             }
-            if browser.found.isEmpty {
+            if session.nearby.isEmpty {
                 ConnectBusyLabel(words.text(.searching)).foregroundStyle(.secondary)
             }
         } header: {
