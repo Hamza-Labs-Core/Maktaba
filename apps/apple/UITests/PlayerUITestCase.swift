@@ -42,13 +42,14 @@ class PlayerUITestCase: XCTestCase {
     /// with its checks faked); otherwise the home and the sign-in of the last launch are kept
     /// (in a signed build only: an unsigned one, as on CI, keeps no token in the Keychain).
     /// `extra`: more launch arguments (the components' gallery, a Dynamic Type size).
+    /// `theme`: the theme forced for the run (nil: the stored choice, as Settings changes it).
     func launch(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
-                fresh: Bool = true, extra: [String] = []) {
+                fresh: Bool = true, theme: String? = "dark", extra: [String] = []) {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
-        var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale,
-                    // the dark theme (the owner's screenshots are dark; FR-2)
-                    "-theme", "dark"]
+        var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+        // the dark theme (the owner's screenshots are dark; FR-2)
+        if let theme { args += ["-theme", theme] }
         if fresh {
             args += ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
         }

@@ -5,10 +5,10 @@ import XCTest
 /// tests use. No app is launched.
 final class PlayerShellTests: XCTestCase {
     /// TestFlight uploads every tag: only Libraries (today's screen) is on until the other
-    /// screens merge, each turning its own section on.
+    /// screens merge, each turning its own section on (Profile: story 48.22).
     func testOnlyLibrariesIsTurnedOn() {
-        XCTAssertEqual(PlayerSection.enabled, [.libraries])
-        XCTAssertEqual(PlayerSection.visible(arguments: []), [.libraries])
+        XCTAssertEqual(PlayerSection.enabled, [.libraries, .profile])
+        XCTAssertEqual(PlayerSection.visible(arguments: []), [.libraries, .profile])
     }
 
     func testTheFiveSectionsInTheirOrder() {
