@@ -1,0 +1,32 @@
+{
+  "search_id": "ffffffff-0000-4000-8000-000000000001",
+  "expires_at": "2026-10-31T10:00:00Z",
+  "q": "الطهارة",
+  "mode": "hybrid",
+  "list": "transcripts",
+  "offset": 0,
+  "limit": 2,
+  "total": 31,
+  "items": [
+    {
+      "video_id": "11111111-0000-4000-8000-000000000002",
+      "title": "الفقه ٧",
+      "duration_sec": 2400,
+      "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "library_name": "دروس",
+      "poster_url": "/api/videos/11111111-0000-4000-8000-000000000002/poster",
+      "best_score": 0.9,
+      "matches": 7,
+      "passages": [
+        {
+          "segment_id": 10,
+          "start_sec": 1200.5,
+          "end_sec": 1206,
+          "snippet": "باب <mark>الطهارة</mark>",
+          "score": 0.9
+        }
+      ],
+      "in_title": true
+    }
+  ]
+}

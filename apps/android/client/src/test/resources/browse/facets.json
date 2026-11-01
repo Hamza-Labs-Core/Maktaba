@@ -1,0 +1,49 @@
+{
+  "languages": [
+    {
+      "code": "ar",
+      "videos": 100
+    },
+    {
+      "code": "en",
+      "videos": 20
+    }
+  ],
+  "tags": [
+    {
+      "id": "cccccccc-0000-4000-8000-000000000001",
+      "name": "فقه",
+      "videos": 30
+    }
+  ],
+  "speakers": [
+    {
+      "name": "الشيخ أحمد",
+      "videos": 42
+    }
+  ],
+  "letters": [
+    {
+      "letter": "س",
+      "videos": 24
+    }
+  ],
+  "durations": [
+    {
+      "value": "long",
+      "videos": 70
+    }
+  ],
+  "added": [
+    {
+      "value": "week",
+      "videos": 3
+    }
+  ],
+  "resolutions": [
+    {
+      "value": "1080",
+      "videos": 90
+    }
+  ]
+}

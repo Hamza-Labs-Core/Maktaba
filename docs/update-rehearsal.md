@@ -57,7 +57,7 @@ as the app makes its database, then the seed fills it as the server itself
 (`generate_series`), the big tables' indexes dropped and made again from their own
 definitions so the schema is the release's exactly:
 
-| Profile | Videos (with audio tracks, transcripts) | Segments and `segment_embeddings` (halfvec 384, HNSW) | Used by |
+| Profile | Videos (with their probe, audio tracks, transcripts) | Segments and `segment_embeddings` (halfvec 384, HNSW) | Used by |
 |---|---|---|---|
 | full | 150,000 | 2,000,000 | 01 |
 | restore | 150,000 | 300,000 | 02–06 (a restore rebuilds the HNSW index: minutes per million) |

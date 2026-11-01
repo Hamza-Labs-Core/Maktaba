@@ -289,6 +289,27 @@ class FakeAudioDB:
         self.videos[vid] = _VideoRow(id=vid, library_id=library_id or uuid4(), state=state)
         return vid
 
+    def add_bare_audio_track(
+        self, *, video_id: UUID, track_index: int = 0, is_default: bool = True
+    ) -> int:
+        """The row transcribe's ``_store`` writes for the stream it decoded when the
+        video has none: no codec, channels or sample rate; language ``und``."""
+        tid = self._audio_next_id
+        self._audio_next_id += 1
+        self.audio_tracks[tid] = _AudioTrackRow(
+            id=tid,
+            video_id=video_id,
+            track_index=track_index,
+            codec=None,
+            channels=None,
+            sample_rate=None,
+            language="und",
+            title=None,
+            is_default=is_default,
+            disposition="{}",
+        )
+        return tid
+
     def add_library(
         self,
         *,
@@ -684,7 +705,15 @@ class FakeAudioDB:
             )
             return None
 
-        # commit_probe — UPSERT audio_tracks (DO NOTHING)
+        # commit_probe — clear the default of rows past the file's audio streams
+        if s.startswith("UPDATE audio_tracks SET is_default = false"):
+            vid, n = args
+            for row in self.audio_tracks.values():
+                if row.video_id == vid and row.track_index >= int(n):
+                    row.is_default = False
+            return None
+
+        # commit_probe — UPSERT audio_tracks (the probe's facts win on conflict)
         if s.startswith("INSERT INTO audio_tracks"):
             (
                 video_id,
@@ -699,6 +728,13 @@ class FakeAudioDB:
             ) = args
             for row in self.audio_tracks.values():
                 if row.video_id == video_id and row.track_index == track_index:
+                    row.codec = codec
+                    row.channels = channels
+                    row.sample_rate = sample_rate
+                    row.language = str(language)
+                    row.title = title
+                    row.is_default = bool(is_default)
+                    row.disposition = disposition
                     return None
             new_id = self._audio_next_id
             self._audio_next_id += 1

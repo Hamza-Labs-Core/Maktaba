@@ -160,6 +160,9 @@ public struct ClusterHome: Decodable, Sendable {
     public let acceptJoinsUntil: Date?
     public let rolesSupported: Bool
     public let rolesReason: String?
+    /// rolesReason's code (`machines.home.reason.*`) and the values its words take.
+    public let rolesReasonCode: String?
+    public let rolesReasonParams: [String: String]?
     public let webURL: String?
     public let version: String?
 
@@ -169,7 +172,17 @@ public struct ClusterHome: Decodable, Sendable {
         case acceptJoinsUntil = "accept_joins_until"
         case rolesSupported = "roles_supported"
         case rolesReason = "roles_reason"
+        case rolesReasonCode = "roles_reason_code"
+        case rolesReasonParams = "roles_reason_params"
         case webURL = "web_url"
+    }
+
+    /// Why the home cannot take machines: its code's words, else the home's English.
+    public func reasonText(locale: Locale = AppLanguage.locale) -> String? {
+        if let code = rolesReasonCode, StatusWords.rolesReasons[code] != nil {
+            return filled(StatusWords.rolesReasons, "machines.home.reason.", code, rolesReasonParams ?? [:], locale)
+        }
+        return rolesReason
     }
 }
 

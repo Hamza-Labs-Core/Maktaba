@@ -197,7 +197,10 @@ export interface TVCheck {
   check: string;
   channel_id?: string;
   result: string;
+  /** The home's English; `code` names it and `params` fill it (tvchanges.value.<code>). */
   value?: string;
+  code?: string;
+  params?: Record<string, string>;
 }
 
 /** What a TV held at an update is now: held (Retry or Drop), retrying (checked again),

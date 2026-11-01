@@ -18,11 +18,34 @@ const (
 )
 
 // Check is one line of a verification report (design §6.2).
+//
+// Value is the measured value in English (what apps before the codes show). Code names
+// that sentence and Params fill it, so an app says it in its own language: the web's key
+// is tvchanges.value.<code> with the params as its {name}s (Android: tv_value_<code>,
+// Apple: the catalog under the web's key). An app that does not know a code shows
+// Value. A check the streaming software measures itself (ts.conformity,
+// channel.cadence, ...) has no code: its Value is the streaming software's own.
 type Check struct {
-	Check     string `json:"check"`
-	ChannelID string `json:"channel_id,omitempty"`
-	Result    string `json:"result"`
-	Value     string `json:"value,omitempty"`
+	Check     string            `json:"check"`
+	ChannelID string            `json:"channel_id,omitempty"`
+	Result    string            `json:"result"`
+	Value     string            `json:"value,omitempty"`
+	Code      string            `json:"code,omitempty"`
+	Params    map[string]string `json:"params,omitempty"`
+}
+
+// coded is the check with its value's code and params (name, value pairs; each value
+// as fmt's %v writes it).
+func (k Check) coded(code string, kv ...any) Check {
+	k.Code = code
+	k.Params = nil
+	if len(kv) > 0 {
+		k.Params = make(map[string]string, len(kv)/2)
+		for i := 0; i+1 < len(kv); i += 2 {
+			k.Params[fmt.Sprint(kv[i])] = fmt.Sprint(kv[i+1])
+		}
+	}
+	return k
 }
 
 // releaseChannel is a tv_release_channels row as the checks read it.
@@ -152,10 +175,13 @@ func (c *Controller) coverage(ctx context.Context, channelID string, gen int64, 
 func (c *Controller) Verify(ctx context.Context, ch *Change) (map[string]any, bool, int, error) {
 	now := c.now()
 	why := "no staging slot runtime: verified on the database"
+	skip := Check{Check: "slot.health", Result: ResultSkip}.coded("slot.interim")
 	if c.interimWhy != "" {
 		why = "no staging slot (" + c.interimWhy + "): verified on the database"
+		skip = skip.coded("slot.interim_why", "why", c.interimWhy)
 	}
-	checks := []Check{{Check: "slot.health", Result: ResultSkip, Value: why}}
+	skip.Value = why
+	checks := []Check{skip}
 	failed, warnings := false, 0
 	add := func(k Check) {
 		checks = append(checks, k)
@@ -181,15 +207,17 @@ func (c *Controller) Verify(ctx context.Context, ch *Change) (map[string]any, bo
 			continue
 		}
 		if o, dup := numbers[rc.Number]; dup {
-			add(Check{Check: "lineup.sanity", ChannelID: rc.ID, Result: ResultFail, Value: fmt.Sprintf("number %d also on %s", rc.Number, o)})
+			add(Check{Check: "lineup.sanity", ChannelID: rc.ID, Result: ResultFail, Value: fmt.Sprintf("number %d also on %s", rc.Number, o)}.
+				coded("lineup.number_taken", "number", rc.Number, "other", o))
 		}
 		numbers[rc.Number] = rc.ID
 		if o, dup := slugs[rc.Slug]; dup && rc.Slug != "" {
-			add(Check{Check: "lineup.sanity", ChannelID: rc.ID, Result: ResultFail, Value: "slug " + rc.Slug + " also on " + o})
+			add(Check{Check: "lineup.sanity", ChannelID: rc.ID, Result: ResultFail, Value: "slug " + rc.Slug + " also on " + o}.
+				coded("lineup.slug_taken", "slug", rc.Slug, "other", o))
 		}
 		slugs[rc.Slug] = rc.ID
 		if rc.Logo == "" {
-			add(Check{Check: "lineup.sanity", ChannelID: rc.ID, Result: ResultWarn, Value: "no logo"})
+			add(Check{Check: "lineup.sanity", ChannelID: rc.ID, Result: ResultWarn, Value: "no logo"}.coded("lineup.no_logo"))
 		}
 		end, gaps, err := c.coverage(ctx, rc.ID, gen, now, now.Add(24*time.Hour))
 		if err != nil {
@@ -197,13 +225,15 @@ func (c *Controller) Verify(ctx context.Context, ch *Change) (map[string]any, bo
 		}
 		switch {
 		case end.IsZero():
-			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultFail, Value: "no programmes"})
+			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultFail, Value: "no programmes"}.coded("guide.none"))
 		case gaps > 0:
-			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultFail, Value: fmt.Sprintf("%d gaps in the next 24 h", gaps)})
+			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultFail, Value: fmt.Sprintf("%d gaps in the next 24 h", gaps)}.
+				coded("guide.gaps", "gaps", gaps))
 		case end.Before(now.Add(24 * time.Hour)):
-			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultWarn, Value: "covered until " + end.Format(time.RFC3339)})
+			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultWarn, Value: "covered until " + end.Format(time.RFC3339)}.
+				coded("guide.until", "until", end.Format(time.RFC3339)))
 		default:
-			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultPass, Value: "24 h covered"})
+			add(Check{Check: "guide.coverage", ChannelID: rc.ID, Result: ResultPass, Value: "24 h covered"}.coded("guide.covered"))
 		}
 		lb, err := c.blockAt(ctx, rc.ID, live, now)
 		if err != nil {
@@ -241,19 +271,23 @@ func blockCheck(rc releaseChannel, lb, nb *block, now time.Time) Check {
 	switch {
 	case sameStart && nb.end.T.Equal(lb.end.T):
 		k.Result, k.Value = ResultPass, "the programme on the air is kept"
+		k = k.coded("block.kept")
 	case sameStart && rc.SchedChanged && rc.Boundary.Valid && nb.end.T.Equal(rc.Boundary.T) &&
 		nb.end.T.Before(lb.end.T) && nb.end.T.After(now):
 		k.Result = ResultWarn
 		k.Value = fmt.Sprintf("the programme on the air ends early, at %s (boundary_max_wait_minutes); it was to end at %s",
 			nb.end.T.Format(time.RFC3339), lb.end.T.Format(time.RFC3339))
+		k = k.coded("block.ends_early", "at", nb.end.T.Format(time.RFC3339), "was", lb.end.T.Format(time.RFC3339))
 	case rc.SchedChanged && rc.Boundary.Valid && !rc.Boundary.T.After(now):
 		// verified after the planned swap instant (building the generation takes about
 		// as long as the soak margin): the channel's boundary is behind us, and the
 		// swap re-anchors the new schedule at the instant it really happens
 		k.Result = ResultPass
 		k.Value = "the planned boundary " + rc.Boundary.T.Format(time.RFC3339) + " has passed: the swap re-anchors the new schedule"
+		k = k.coded("block.boundary_passed", "boundary", rc.Boundary.T.Format(time.RFC3339))
 	default:
 		k.Result, k.Value = ResultFail, "the new schedule would cut the programme on the air"
+		k = k.coded("block.cut")
 	}
 	return k
 }

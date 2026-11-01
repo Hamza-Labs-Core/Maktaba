@@ -63,6 +63,21 @@ import Testing
         #expect(o.nodes.first { $0.id == "n1" }?.lastSeenAt == Date(timeIntervalSince1970: 1792960198.5))
     }
 
+    /// Why the home cannot take machines: its code's words in the app's language, else the
+    /// home's English (an older home, or a code the app does not know).
+    @Test func saysWhyTheHomeCannotTakeMachines() throws {
+        func home(_ extra: String) throws -> ClusterHome {
+            let json = #"{"name":"h","accept_joins":false,"roles_supported":false,"roles_reason":"english reason"\#(extra)}"#
+            return try JSONDecoder.home.decode(ClusterHome.self, from: Data(json.utf8))
+        }
+        let ar = Locale(identifier: "ar")
+        #expect(try home(#","roles_reason_code":"cannot_create_roles""#).reasonText(locale: ar) == "مستخدم قاعدة البيانات لا يستطيع إنشاء أدوار.")
+        #expect(try home(#","roles_reason_code":"check_failed","roles_reason_params":{"error":"refused"}"#).reasonText(locale: ar)
+            == "تعذّر فحص صلاحيات مستخدم قاعدة البيانات: refused")
+        #expect(try home(#","roles_reason_code":"brand_new""#).reasonText(locale: ar) == "english reason")
+        #expect(try home("").reasonText(locale: ar) == "english reason")
+    }
+
     /// Go writes up to nine digits of a second; a time the app cannot read would hide the machine.
     @Test(arguments: ["2026-10-25T20:29:58.123456789Z", "2026-10-25T20:29:58.123456Z", "2026-10-25T23:29:58+03:00"])
     func readsTheHomesTimes(at: String) throws {

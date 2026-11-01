@@ -1,0 +1,20 @@
+{
+ "search_id": "sr-2",
+ "expires_at": "{{now+1800}}",
+ "q": "zzzz",
+ "mode": "hybrid",
+ "filters": {},
+ "took_ms": {
+  "fts": 3,
+  "semantic": 0,
+  "fusion": 0
+ },
+ "page_size": 20,
+ "passages_page_size": 20,
+ "videos": [],
+ "videos_total": 0,
+ "transcript_videos": [],
+ "transcript_total": 0,
+ "hits": [],
+ "total": 0
+}

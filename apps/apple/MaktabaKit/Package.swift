@@ -13,7 +13,10 @@ let package = Package(
         .library(name: "MaktabaKit", targets: ["MaktabaKit"]),
     ],
     targets: [
-        .target(name: "MaktabaKit", resources: [.process("Localizable.xcstrings")]),
+        // Resources/: the brand every app shares (Epic 48 FR-4): Amiri Bold and IBM Plex
+        // Sans Arabic (Fonts/, with their OFL licences), the web's library art and the logo
+        // (Art/). `.process` flattens them into Bundle.module; Brand.swift loads them.
+        .target(name: "MaktabaKit", resources: [.process("Localizable.xcstrings"), .process("Resources")]),
         .testTarget(name: "MaktabaKitTests", dependencies: ["MaktabaKit"]),
     ]
 )

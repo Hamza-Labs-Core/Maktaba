@@ -1,0 +1,12 @@
+{
+ "library_ids": [
+  "lib-lectures"
+ ],
+ "items": [
+  {
+   "id": "lib-lectures",
+   "name": "Lectures",
+   "position": 0
+  }
+ ]
+}

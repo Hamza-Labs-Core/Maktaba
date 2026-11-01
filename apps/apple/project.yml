@@ -73,13 +73,19 @@ targetTemplates:
       base:
         # scanning a home's QR code, or a device's sign-in QR code to approve it
         INFOPLIST_KEY_NSCameraUsageDescription: "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it."
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         # only the system's HTTPS: no export-compliance question on every TestFlight build
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    info:
+      properties:
+        # the launch screen (Epic 48 FR-3): ink with the logo, in light mode too, so there is
+        # no white frame before the first one (Shared/Assets.xcassets)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
 
 targets:
   # ---- Maktaba Player: iPhone (iPhone Duo too), iPad, Mac -------------------------------
@@ -182,10 +188,18 @@ targets:
       path: Remote/Info-iPad.plist
 
   # ---- the permissions walkthrough's UI tests on iPhone (UITests/) ----------------------
+  # UITests/Player*.swift are the Player's own (Epic 48: its shell and screens, against
+  # MockHome and UITests/Fixtures); the Remote's targets leave them out. The Player's test
+  # targets also compile the shell's plain types (sections, routes, launch arguments) for
+  # their unit tests.
   Maktaba Player UITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests]
+    sources:
+      - path: UITests
+      - path: Player/Shell/PlayerSection.swift
+      - path: Player/Shell/PlayerRoute.swift
+      - path: Player/Shell/ShellLaunch.swift
     dependencies: [{ target: Maktaba Player }]
     settings:
       base:
@@ -194,7 +208,9 @@ targets:
   Maktaba Remote UITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests]
+    sources:
+      - path: UITests
+        excludes: ["Player*.swift"]
     dependencies: [{ target: Maktaba Remote }]
     settings:
       base:
@@ -204,7 +220,11 @@ targets:
   Maktaba Player iPad UITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests]
+    sources:
+      - path: UITests
+      - path: Player/Shell/PlayerSection.swift
+      - path: Player/Shell/PlayerRoute.swift
+      - path: Player/Shell/ShellLaunch.swift
     dependencies: [{ target: Maktaba Player iPad }]
     settings:
       base:
@@ -214,7 +234,9 @@ targets:
   Maktaba Remote iPad UITests:
     type: bundle.ui-testing
     platform: iOS
-    sources: [UITests]
+    sources:
+      - path: UITests
+        excludes: ["Player*.swift"]
     dependencies: [{ target: Maktaba Remote iPad }]
     settings:
       base:
@@ -250,6 +272,7 @@ targets:
       - path: ../tv/tvos/MaktabaTVUITests
       # the mock home the iPhone's connect tests use (no real home, no real account)
       - path: UITests/MockHome.swift
+      - path: UITests/Fixtures
     dependencies:
       - target: Maktaba TV
     settings:

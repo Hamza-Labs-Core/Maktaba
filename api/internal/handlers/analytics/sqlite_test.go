@@ -2,7 +2,6 @@ package analytics
 
 import (
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -71,7 +70,9 @@ func sqliteAt(t time.Time, f int) any {
 }
 
 func TestAnalytics_SQLite(t *testing.T) {
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "analytics.db"))
+	// In memory: a file here synced every seed insert, 1.3s on a CI disk. The
+	// one connection below keeps the database alive for the whole test.
+	db, err := sql.Open("sqlite", "file::memory:")
 	if err != nil {
 		t.Fatal(err)
 	}

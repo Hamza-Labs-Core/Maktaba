@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Before Android 12 (no system launch screen): the window until the first frame, ink with the
+     logo in the middle (the launcher icon's foreground). -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android" android:opacity="opaque">
+    <item android:drawable="@color/maktaba_background" />
+    <item>
+        <bitmap android:gravity="center" android:src="@mipmap/ic_launcher_foreground" />
+    </item>
+</layer-list>

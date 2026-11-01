@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.Maktaba" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/maktaba_background</item>
-        <item name="android:colorAccent">#E3B252</item>
-    </style>
-    <color name="maktaba_background">#0B111C</color>
-</resources>

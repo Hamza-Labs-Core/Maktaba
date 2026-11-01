@@ -137,6 +137,9 @@ private struct RunSections: View {
             if let waiting = view?.waiting {
                 Label(UpdateWords.waiting(waiting), systemImage: "hourglass").foregroundStyle(.secondary)
             }
+            if let trigger = run.trigger, !trigger.isEmpty {
+                LabeledContent("Started by", value: UpdateWords.trigger(trigger))
+            }
             if let started = run.startedAt {
                 LabeledContent("Started", value: started.formatted(date: .abbreviated, time: .shortened))
             }

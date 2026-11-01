@@ -8,6 +8,7 @@ import com.hamzalabs.maktaba.core.api.ProcessStatus
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.hamzalabs.maktaba.core.api.StageHealth
+import com.hamzalabs.maktaba.core.api.TvCheck
 import com.hamzalabs.maktaba.core.api.UpdateRun
 import com.hamzalabs.maktaba.core.api.UpdatesOverview
 import com.hamzalabs.maktaba.core.api.UpdatesPlan
@@ -206,12 +207,50 @@ class SayTest {
         val maps = listOf(
             WebWords.updateState, WebWords.updateStep, WebWords.updateCode, WebWords.updateWaiting, WebWords.blockedReason,
             WebWords.blocker, WebWords.processState, WebWords.processRole, WebWords.queueState, WebWords.jobState, WebWords.machineStatus,
+            WebWords.tvCheck, WebWords.tvResult, WebWords.trigger,
         )
         for (lookup in listOf(XmlLookup.english, XmlLookup.arabic)) {
             maps.flatMap { it.values }.forEach { assert(lookup.text(it).isNotBlank()) }
-            (WebWords.planWaiting + WebWords.queueWaiting + WebWords.processDetail).values.forEach { t ->
+            (WebWords.planWaiting + WebWords.queueWaiting + WebWords.processDetail + WebWords.tvValue).values.forEach { t ->
                 assert(lookup.text(t.id, *t.args.map { "x" }.toTypedArray()).isNotBlank())
             }
         }
+    }
+
+    // ---------- a TV change's check: its code and params, in this app's language ----------
+
+    private val mismatch = TvCheck(
+        check = "slot.health", result = "fail", code = "slot.release_mismatch",
+        value = "the staging slot runs another release (release_mismatch)",
+    )
+
+    @Test
+    fun aTvCheckIsSaidByItsCode() {
+        assertEquals("Staging process: fail · The staging slot runs another release", en.tvCheck(mismatch))
+        assertEquals("عملية التجهيز: فاشل · خانة التجهيز تشغّل إصدارًا آخر", ar.tvCheck(mismatch))
+        val started = TvCheck(
+            check = "slot.health", result = "fail", code = "slot.start_failed",
+            value = "the staging slot did not start: no slots", params = buildJsonObject { put("error", "no slots") },
+        )
+        assertEquals("لم تبدأ خانة التجهيز: no slots", ar.tvValue(started))
+        val gaps = TvCheck(check = "guide.coverage", channelId = "c1", result = "fail", code = "guide.gaps",
+            value = "3 gaps in the next 24 h", params = buildJsonObject { put("gaps", "3") })
+        assertEquals("تغطية الدليل (c1): فاشل · 3 فجوات في الساعات الـ24 القادمة", ar.tvCheck(gaps))
+    }
+
+    @Test
+    fun aTvCheckWithAnUnknownCodeShowsTheHomesEnglish() {
+        val newer = TvCheck(check = "moon.phase", result = "fail", code = "moon.waxing", value = "the moon is waxing")
+        assertEquals("moon.phase: فاشل · the moon is waxing", ar.tvCheck(newer))
+        // an older home sends no code: its English
+        assertEquals("the staging slot runs another release (release_mismatch)", ar.tvValue(mismatch.copy(code = null)))
+    }
+
+    @Test
+    fun whoStartedAnUpdateIsSaid() {
+        assertEquals("the quiet window", en.trigger("auto"))
+        assertEquals("النافذة الهادئة", ar.trigger("auto"))
+        assertEquals("جهاز يلحق بالبقية", ar.trigger("catch_up"))
+        assertEquals("solar flare", ar.trigger("solar_flare"))
     }
 }

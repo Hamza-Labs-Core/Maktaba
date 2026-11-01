@@ -1,0 +1,27 @@
+{
+  "items": [
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000001",
+      "name": "دروس",
+      "videos": 120,
+      "duration_sec": 432000.5,
+      "poster_video_ids": [
+        "11111111-0000-4000-8000-000000000001",
+        "11111111-0000-4000-8000-000000000002"
+      ],
+      "latest_added_at": "2026-10-20T09:00:00Z",
+      "pinned": false,
+      "pin_position": null
+    },
+    {
+      "id": "aaaaaaaa-0000-4000-8000-000000000002",
+      "name": "Talks",
+      "videos": 0,
+      "duration_sec": 0,
+      "poster_video_ids": [],
+      "latest_added_at": null,
+      "pinned": true,
+      "pin_position": 0
+    }
+  ]
+}

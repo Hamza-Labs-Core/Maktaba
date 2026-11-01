@@ -403,7 +403,7 @@ public actor APIClient {
         return r
     }
 
-    private func send<T: Decodable>(_ r: URLRequest, authorized: Bool = true,
+    func send<T: Decodable>(_ r: URLRequest, authorized: Bool = true,
                                     redirects: URLSessionTaskDelegate = SameOriginRedirects.shared) async throws -> T {
         let data = try await sendRaw(r, authorized: authorized, redirects: redirects)
         do {
@@ -422,7 +422,7 @@ public actor APIClient {
 
     /// `redirects`: `SameOriginRedirects` (a token header dropped to another origin), or
     /// `SameOriginOnly` for a request with a credential in its body (not followed there at all).
-    private func sendRaw(_ r: URLRequest, authorized: Bool = true, retried: Bool = false,
+    func sendRaw(_ r: URLRequest, authorized: Bool = true, retried: Bool = false,
                          redirects: URLSessionTaskDelegate = SameOriginRedirects.shared) async throws -> Data {
         var r = r
         if authorized, let access = tokens.access {
