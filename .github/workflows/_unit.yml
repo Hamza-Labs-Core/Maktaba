@@ -95,9 +95,11 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
+      # --durations: a test near the soft cap here shows by how much (file work costs a
+      # Windows runner several times what it costs Linux).
       - name: Run cluster tests
         working-directory: pipeline
-        run: uv run --frozen --extra dev pytest tests/cluster -q -p no:cacheprovider
+        run: uv run --frozen --extra dev pytest tests/cluster -q -p no:cacheprovider --durations=40 --durations-min=0.05
 
   # Epic 36: the Mac app shell (apps/desktop, Tauri 2): menu-bar status,
   # login item, setup-step runner. macOS only (SMAppService, launchd).
@@ -168,9 +170,13 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - name: Install the WebKitGTK and AppIndicator libraries
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+          # a mirror that stalls fails over instead of holding the job until its time runs
+          # out (it did: this install hung 30 minutes and the job was cancelled)
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          sudo apt-get "${apt_opts[@]}" update -qq
+          sudo apt-get "${apt_opts[@]}" install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
