@@ -709,6 +709,7 @@
 		26FE31850DAA6C8094E0C331 /* RemoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModel.swift; sourceTree = "<group>"; };
 		2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVConnectUITests.swift; sourceTree = "<group>"; };
 		29B33B1848E746CEBB7D5E19 /* CachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedImage.swift; sourceTree = "<group>"; };
+		2A0A65DCD283B8ECB2A1BC71 /* PlayerMacUITests.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PlayerMacUITests.entitlements; sourceTree = "<group>"; };
 		2A6DE6622B543757A04F782E /* search-empty.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "search-empty.json"; sourceTree = "<group>"; };
 		2B007237FF966C6BE58A24C8 /* ConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectUITests.swift; sourceTree = "<group>"; };
 		2E57DFFB5A7EE1113A046038 /* me-video-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-video-v2.json"; sourceTree = "<group>"; };
@@ -1302,6 +1303,7 @@
 			isa = PBXGroup;
 			children = (
 				BC2AC9683D83DEA85B35A9BE /* PlayerMacMenuUITests.swift */,
+				2A0A65DCD283B8ECB2A1BC71 /* PlayerMacUITests.entitlements */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -2754,6 +2756,7 @@
 			buildSettings = {
 				ARCHS = arm64;
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_ENTITLEMENTS = PlayerMacTests/UI/PlayerMacUITests.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -2787,6 +2790,7 @@
 			buildSettings = {
 				ARCHS = arm64;
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_ENTITLEMENTS = PlayerMacTests/UI/PlayerMacUITests.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

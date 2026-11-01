@@ -171,6 +171,15 @@ targets:
       - path: UITests/MockHome.swift
       - path: UITests/Fixtures
     dependencies: [{ target: Maktaba Player Mac }]
+    # the runner is sandboxed: MockHome listens on the loopback inside it. CI's ad-hoc signed
+    # run signs the app with this file too: the app's own adds a keychain group, which needs
+    # a provisioning profile
+    entitlements:
+      path: PlayerMacTests/UI/PlayerMacUITests.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac.uitests
