@@ -161,10 +161,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
     // MARK: AirPlay and Picture in Picture (story 48.24)
 
     /// The AirPlay route button is on the controls (a receiver itself can't run in CI: checked by
-    /// hand), and Picture in Picture floats the video from its button; closing ends it. A
-    /// simulator that has no Picture in Picture (the app's own `isPictureInPictureSupported`)
-    /// shows no PiP button, and the float is skipped there, said in the result.
-    func testAirPlayIsOnTheControlsAndPictureInPictureFloatsTheVideo() throws {
+    /// hand). Where the device has Picture in Picture (the iPad simulator) it floats the video
+    /// from its button and closing ends it; where it has none (the iPhone simulator,
+    /// `isPictureInPictureSupported` false) there is no PiP button.
+    func testAirPlayIsOnTheControlsAndPictureInPictureFloatsTheVideo() {
         watch("v2")
         waitFor("it plays", timeout: 20) { state["playing"] == "true" && state["route"] == "device" }
         showControls()
@@ -172,8 +172,8 @@ final class PlayerWatchUITests: PlayerUITestCase {
         XCTAssertTrue(airplay.waitForExistence(timeout: 10), "the AirPlay button")
         XCTAssertEqual(airplay.label, "AirPlay")
         guard state["pipSupported"] == "true" else {
-            XCTAssertFalse(app.buttons["player.pip"].exists, "no Picture in Picture here: no button")
-            throw XCTSkip("this simulator has no Picture in Picture: the float is checked on a device")
+            XCTAssertFalse(app.buttons["player.pip"].exists, "no Picture in Picture on this device: no button")
+            return
         }
         waitFor("Picture in Picture can start", timeout: 20) { state["pipPossible"] == "true" }
         tapControl("player.pip")

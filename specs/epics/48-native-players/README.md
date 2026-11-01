@@ -569,7 +569,7 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
   - [x] iOS: PiP starts from the button and on going home while playing (UI test checks the PiP
         state); playback continues locked. The iPad simulator floats the video; the iPhone
         simulator reports no Picture in Picture (`isPictureInPictureSupported` false), so there
-        the test checks the button is hidden and skips the float, saying so.
+        the test checks there is no PiP button.
   - [x] AirPlay: the route button (`AVRoutePickerView`) shows on the player's controls on
         iPhone and iPad, and on the Mac. With an external route the player hands over the signed
         URL (48.12), not the loopback proxy one, which a receiver cannot reach (unit test on
