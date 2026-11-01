@@ -39,6 +39,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="maktaba" android:host="connect" />
             </intent-filter>
+            <!-- A video's page: maktaba://video/{id} (FR-9, story 48.28). The page asks the home,
+                 so a video this person may not see says "not available". -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="maktaba" android:host="video" />
+            </intent-filter>
         </activity>
     </application>
 </manifest>
