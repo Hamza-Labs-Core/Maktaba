@@ -167,6 +167,14 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 		err = ErrCmdTimeout
 	case <-ctx.Done():
 		err = ctx.Err()
+	case <-s.ctx.Done():
+		// a session that closes (replaced by its reconnect, dropped) answers nothing more:
+		// waiting out the timeout would hold the caller back from the session that replaced it
+		select {
+		case res = <-ch: // its answer came in just before it closed
+		default:
+			err = ErrNoSession
+		}
 	}
 	if err != nil {
 		s.mu.Lock()

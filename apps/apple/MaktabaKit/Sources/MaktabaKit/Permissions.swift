@@ -154,17 +154,23 @@ public struct LocalNetworkVerdict: Sendable {
         case .ended:
             if state == nil { state = readyAt != nil ? .granted : .unknown }
         }
-        return tick(at: elapsed)
+        applyGrace(at: elapsed)
+        return state
     }
 
-    /// The verdict as time passes with no new signal.
+    /// The verdict as time passes with no new signal. Only silence times out: a signal
+    /// that arrives late (a busy device) is still heard, along with any queued behind it.
     @discardableResult
     public mutating func tick(at elapsed: Duration) -> PermissionState? {
+        applyGrace(at: elapsed)
+        if state == nil, elapsed >= timeout { state = .unknown }
+        return state
+    }
+
+    private mutating func applyGrace(at elapsed: Duration) {
         if state == nil || state == .unknown, let readyAt, elapsed - readyAt >= grace {
             state = .granted
         }
-        if state == nil, elapsed >= timeout { state = .unknown }
-        return state
     }
 
     /// A verdict that will not change by waiting longer (a home listed, a refusal, an error).
@@ -380,17 +386,20 @@ public final class PermissionsModel {
         busy.insert(.localNetwork)
         defer { busy.remove(.localNetwork) }
         var v = verdict
-        let start = ContinuousClock.now
-        let (events, cont) = AsyncStream<BrowseSignal?>.makeStream()
+        // the clock starts when the probe is being read, not when the browse was asked for:
+        // a busy test run (or device) can hold the reader back past the whole timeout
+        var start: ContinuousClock.Instant?
+        let (events, cont) = AsyncStream<BrowseEvent>.makeStream()
         let stream = probe.signals()
         let feeder = Task {
-            for await s in stream { cont.yield(s) }
-            cont.yield(.ended)
+            cont.yield(.reading)
+            for await s in stream { cont.yield(.signal(s)) }
+            cont.yield(.signal(.ended))
         }
         let ticker = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
-                cont.yield(nil)
+                cont.yield(.tick)
             }
         }
         defer {
@@ -399,17 +408,36 @@ public final class PermissionsModel {
             cont.finish()
         }
         for await e in events {
+            let signal: BrowseSignal?
+            switch e {
+            case .reading:
+                start = .now
+                continue
+            case .tick:
+                signal = nil
+            case let .signal(s):
+                signal = s
+            }
+            guard let start else { continue }
             let now = ContinuousClock.now - start
-            let state = e.map { v.feed($0, at: now) } ?? v.tick(at: now)
+            let state = signal.map { v.feed($0, at: now) } ?? v.tick(at: now)
             if let state { set(.localNetwork, state) }
+            // time runs out only on a tick, so signals already queued are heard first
+            let timedOut = signal == nil && now >= (until ?? v.timeout)
             if let until {
                 // allowed is the answer; a refusal may be the system's while its question is up
-                if state == .granted || now >= until || e == .ended { break }
-            } else if v.isFinal || now >= v.timeout || e == .ended {
+                if state == .granted || timedOut || signal == .ended { break }
+            } else if v.isFinal || timedOut || signal == .ended {
                 break
             }
         }
         if v.state == nil { set(.localNetwork, .unknown) }
+    }
+
+    private enum BrowseEvent {
+        case reading
+        case signal(BrowseSignal)
+        case tick
     }
 
     private func set(_ kind: PermissionKind, _ state: PermissionState) {
