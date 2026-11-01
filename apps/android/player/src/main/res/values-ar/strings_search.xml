@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's Search in Arabic, in the web's words where it has them (web/src/i18n/ar.json:
+     search.recent, search.recent.clear, search.recent.remove, search.recent.counts, search.matches). -->
+<resources>
+    <string name="search_field_hint">ابحث في العناوين والتفريغات</string>
+    <string name="search_clear_query">مسح البحث</string>
+    <string name="search_recent">عمليات البحث الأخيرة</string>
+    <string name="search_recent_clear">مسح الكل</string>
+    <string name="search_recent_remove">إزالة %1$s</string>
+    <string name="search_recent_counts">في العناوين: %1$d · في التفريغات: %2$d</string>
+    <string name="search_group_titles">العناوين</string>
+    <string name="search_group_transcripts">في التفريغ</string>
+    <string name="search_matches">عدد المطابقات: %1$d</string>
+    <string name="search_show_more">عرض المزيد</string>
+    <string name="search_play_from">التشغيل من %1$s</string>
+    <string name="search_empty_hint">ابحث عن عنوان، أو عن كلمات قيلت في فيديو.</string>
+    <string name="search_no_results">لا شيء يطابق «%1$s».</string>
+    <string name="search_degraded">مطابقات نصية فقط: لم يستجب البحث بالمعنى.</string>
+    <string name="search_failed">تعذّر البحث</string>
+</resources>
