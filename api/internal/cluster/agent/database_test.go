@@ -185,3 +185,44 @@ func TestACommandToAClosingSessionEndsAtOnce(t *testing.T) {
 		t.Fatal("the command waited on a closed session")
 	}
 }
+
+// While a machine's agent reconnects, the session it replaces stays listed until its
+// connection has shut (seconds when the far end does not answer the close). The machine is
+// named by its live, newer session, never the closed one: naming the old one left the new
+// one untold until the old one was removed (TestPushDatabaseTellsAReplacedAgentAtOnce
+// flaked on CI that way).
+func TestMachineAgentsNamesTheLiveNewerSession(t *testing.T) {
+	f := newFixture(t)
+	node := "0b6f3c1e-2a4d-4e8f-9c71-5d2a8b3e6f10"
+	at := time.Date(2026, 11, 1, 6, 0, 0, 0, time.UTC)
+	agent := func(id string, connected time.Time) *Session {
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		return &Session{ID: id, Kind: "node", NodeID: node, Process: "supervisor", ConnectedAt: connected,
+			out: make(chan outFrame, 8), ctx: ctx, cancel: cancel}
+	}
+	put := func(ss ...*Session) {
+		f.hub.mu.Lock()
+		defer f.hub.mu.Unlock()
+		for _, s := range ss {
+			f.hub.sessions[s.ID] = s
+		}
+	}
+	// "z-old" sorts after "a-new", so a pick by id or map order alone would name it
+	old, fresh := agent("z-old", at), agent("a-new", at.Add(time.Second))
+	put(old, fresh)
+	for range 50 {
+		if got := f.hub.MachineAgents()[node]; got != "a-new" {
+			t.Fatalf("both live: named %q, want the newer a-new", got)
+		}
+	}
+	// the new one closes first (it dropped too): the old one, still live, is the machine's
+	fresh.closeWith(CloseReplaced, "")
+	if got := f.hub.MachineAgents()[node]; got != "z-old" {
+		t.Fatalf("newer closed: named %q, want the live z-old", got)
+	}
+	old.closeWith(CloseReplaced, "")
+	if got, ok := f.hub.MachineAgents()[node]; ok {
+		t.Fatalf("both closed: named %q, want no agent", got)
+	}
+}

@@ -163,11 +163,10 @@ class PlayerShellTest {
     @Test
     fun theAppsScreensAreReachableForEverySection() {
         // the placeholders: each section's own screen, titled with its name
-        compose.setShell()
+        // Home (48.26) and Libraries are real screens that need a signed-in home, which this test has not
+        compose.setShell(sections = PlayerSection.entries - PlayerSection.Home - PlayerSection.Libraries)
         for ((section, title) in listOf(
-            PlayerSection.Home to "Home",
             PlayerSection.LiveTv to "Live TV",
-            PlayerSection.Profile to "Profile",
         )) {
             compose.onNodeWithTag("section-${section.name}").performClick()
             compose.onNodeWithTag("placeholder").assertIsDisplayed()

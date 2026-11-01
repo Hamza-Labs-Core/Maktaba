@@ -49,4 +49,32 @@
     <string name="sign_out">Sign out</string>
     <string name="language">Language</string>
     <string name="licences">The fonts are Amiri and IBM Plex Sans Arabic, under the SIL Open Font License.</string>
+
+    <!-- Live TV (Epic 48 story 48.35): the web's guide.* and live.* words -->
+    <string name="tab_live">Live TV</string>
+    <string name="live_now">On now</string>
+    <string name="live_guide">Guide</string>
+    <string name="live_next">Next: %1$s</string>
+    <string name="live_no_content">No content</string>
+    <string name="live_no_channels">No channels yet</string>
+    <string name="live_watch_channel">Watch channel %1$d, %2$s</string>
+    <string name="live_close">Close</string>
+    <string name="live_starts_at">Starts at %1$s</string>
+    <string name="live_minutes">%1$d min</string>
+    <string name="live_label">LIVE</string>
+    <string name="live_tuning">Tuning…</string>
+    <string name="live_remote_badge">Remote</string>
+    <string name="live_remote_starting">Starting remote stream…</string>
+    <string name="live_back_to_live">Back to live</string>
+    <string name="live_paused">Paused</string>
+    <string name="live_player_hint">▲ ▼ channels · Select for what is on · Back to leave</string>
+    <string name="live_play_failed">Could not play the channel</string>
+    <string name="live_remote_budget">Remote viewing paused: the monthly budget is reached</string>
+    <string name="live_remote_user_full">Too many remote streams</string>
+    <string name="live_remote_channels_full">All remote channels are in use</string>
+    <string name="live_remote_not_set_up">Remote viewing is not set up</string>
+    <string name="live_remote_not_allowed">You may not watch away from home</string>
+    <string name="live_remote_timeout">The remote stream did not start. Try again in a moment.</string>
+    <string name="live_remote_ended">The remote stream ended.</string>
+    <string name="live_not_found">That channel does not exist, is disabled, or you cannot access it.</string>
 </resources>

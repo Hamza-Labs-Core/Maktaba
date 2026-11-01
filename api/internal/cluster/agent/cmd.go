@@ -225,17 +225,36 @@ func (h *Hub) MachineAgent(nodeID string) string {
 }
 
 // MachineAgents are the connected machines' own agents (their supervisors): session
-// id by node id.
+// id by node id. A machine's agent that reconnects is registered before the session it
+// replaces is closed, and that one stays listed until its connection has shut, which can
+// take seconds. So a closed session is never named, and of two live ones the newer is:
+// naming the old one would leave the new one untold until the old one is removed.
 func (h *Hub) MachineAgents() map[string]string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	out := map[string]string{}
-	for id, s := range h.sessions {
-		if s.Process == "supervisor" && s.NodeID != "" && s.Kind != "home" {
-			out[s.NodeID] = id
+	picked := map[string]*Session{}
+	for _, s := range h.sessions {
+		if s.Process != "supervisor" || s.NodeID == "" || s.Kind == "home" || s.ctx.Err() != nil {
+			continue
 		}
+		if cur, ok := picked[s.NodeID]; ok && !newer(s, cur) {
+			continue
+		}
+		picked[s.NodeID] = s
+	}
+	out := make(map[string]string, len(picked))
+	for node, s := range picked {
+		out[node] = s.ID
 	}
 	return out
+}
+
+// newer reports whether a connected after b (the session id breaks a tie).
+func newer(a, b *Session) bool {
+	if !a.ConnectedAt.Equal(b.ConnectedAt) {
+		return a.ConnectedAt.After(b.ConnectedAt)
+	}
+	return a.ID > b.ID
 }
 
 // NodeWorker is a machine's pipeline worker on the channel: its session, its worker id

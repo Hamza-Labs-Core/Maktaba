@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- الرئيسية في المشغّل (Epic 48.26). الصياغة من web/src/i18n/ar.json. -->
+<resources>
+    <string name="home_row_continue_watching">تابع المشاهدة</string>
+    <string name="home_row_on_deck">الدرس التالي</string>
+    <string name="home_row_live_now">ما يُعرض الآن</string>
+    <string name="home_row_favorites">المفضلة</string>
+    <string name="home_row_recently_added">أضيف حديثًا</string>
+    <string name="home_row_recently_watched">شوهد مؤخرًا</string>
+    <string name="home_row_for_you">مقترح لك</string>
+    <string name="home_row_from_library">من مكتبتك</string>
+    <string name="home_hero_new_series">سلسلة جديدة</string>
+    <string name="home_hero_picked">مختار</string>
+    <plurals name="home_hero_lessons">
+        <item quantity="zero">عدد الدروس: %d</item>
+        <item quantity="one">عدد الدروس: %d</item>
+        <item quantity="two">عدد الدروس: %d</item>
+        <item quantity="few">عدد الدروس: %d</item>
+        <item quantity="many">عدد الدروس: %d</item>
+        <item quantity="other">عدد الدروس: %d</item>
+    </plurals>
+    <plurals name="home_new_lessons">
+        <item quantity="zero">دروس جديدة: %d</item>
+        <item quantity="one">دروس جديدة: %d</item>
+        <item quantity="two">دروس جديدة: %d</item>
+        <item quantity="few">دروس جديدة: %d</item>
+        <item quantity="many">دروس جديدة: %d</item>
+        <item quantity="other">دروس جديدة: %d</item>
+    </plurals>
+    <string name="home_series_unnamed">سلسلة بلا عنوان</string>
+    <string name="home_no_content">لا يوجد محتوى الآن</string>
+    <string name="home_more_options">خيارات أخرى</string>
+    <string name="home_not_interested">غير مهتم</string>
+    <string name="home_not_interested_failed">تعذّر إبلاغ الجهاز الرئيسي. أعد المحاولة.</string>
+    <string name="home_stale">تعذّر التحديث — تُعرض آخر الصفوف.</string>
+    <string name="home_error_title">تعذّر تحميل الرئيسية</string>
+    <string name="home_empty_title">لا شيء للمشاهدة بعد</string>
+    <string name="home_empty_desc">افتح المكتبات لترى المقاطع المتاحة لك. وثبّت المكتبات التي تشاهدها كثيرًا لتظهر هنا.</string>
+    <string name="home_empty_desc_admin">أضف مكتبة من إدارة المكتبات في صفحة الجهاز الرئيسي على الويب وافحصها، فتظهر مقاطعها هنا.</string>
+</resources>
