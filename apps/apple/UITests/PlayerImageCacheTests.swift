@@ -27,6 +27,22 @@ final class PlayerImageCacheTests: XCTestCase {
         URLRequest(url: URL(string: "http://home.test/api/videos/\(name)/poster?size=small")!)
     }
 
+    /// The token goes only to the home's own API: not another host, port or scheme, nor a
+    /// path outside the home's base path.
+    func testOnlyTheHomesAPIGetsTheToken() {
+        let home = URL(string: "https://home.test:8088/maktaba")!
+        func ok(_ s: String) -> Bool { HomeImageAuth.isHomeAPI(URL(string: s)!, home: home) }
+        XCTAssertTrue(ok("https://home.test:8088/maktaba/api/videos/v1/poster?size=small"))
+        XCTAssertTrue(ok("https://HOME.test:8088/maktaba/api/channels/c1/logo"))
+        XCTAssertFalse(ok("https://cdn.example.com/maktaba/api/logo.png"))
+        XCTAssertFalse(ok("https://home.test:9000/maktaba/api/videos/v1/poster"))
+        XCTAssertFalse(ok("http://home.test:8088/maktaba/api/videos/v1/poster"))
+        XCTAssertFalse(ok("https://home.test:8088/api/videos/v1/poster"))
+        XCTAssertFalse(ok("https://home.test:8088/maktaba/static/logo.png"))
+        XCTAssertTrue(HomeImageAuth.isHomeAPI(
+            URL(string: "https://home.test/api/videos/v1/poster")!, home: URL(string: "https://home.test:443/")!))
+    }
+
     func testTheLimitsAreNFR4s() {
         XCTAssertEqual(ImageCacheLimits.standard.memoryBytes, 50 * 1024 * 1024)
         XCTAssertEqual(ImageCacheLimits.standard.diskBytes, 200 * 1024 * 1024)

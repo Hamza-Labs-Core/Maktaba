@@ -5,14 +5,18 @@ import SwiftUI
 /// need (the Bearer token; `playbackHeaders` refreshes it when it is about to end).
 struct ImageSource: Sendable {
     var cache: ImageCache
-    var headers: @Sendable () async throws -> [String: String]
+    var headers: @Sendable (URL) async throws -> [String: String]
 
     /// No header: the UI tests' gallery, previews.
-    static let plain = ImageSource(cache: .shared) { [:] }
+    static let plain = ImageSource(cache: .shared) { _ in [:] }
 
-    /// A signed-in home's pictures.
+    /// A signed-in home's pictures: the token goes only to the home's own `/api/` routes, so a
+    /// logo on another host never sees it.
     static func home(_ client: APIClient) -> ImageSource {
-        ImageSource(cache: .shared) { try await client.playbackHeaders().headers }
+        ImageSource(cache: .shared) { url in
+            guard HomeImageAuth.isHomeAPI(url, home: client.home) else { return [:] }
+            return try await client.playbackHeaders().headers
+        }
     }
 }
 
@@ -65,7 +69,7 @@ struct CachedImage<Content: View>: View {
         if case .loaded = phase {} else { phase = .loading }
         do {
             var request = URLRequest(url: url)
-            for (k, v) in (try? await source.headers()) ?? [:] { request.setValue(v, forHTTPHeaderField: k) }
+            for (k, v) in (try? await source.headers(url)) ?? [:] { request.setValue(v, forHTTPHeaderField: k) }
             let image = try await source.cache.image(for: request, maxPixelSize: pixels)
             guard !Task.isCancelled else { return }
             phase = .loaded(Image(decorative: image.cgImage, scale: scale))

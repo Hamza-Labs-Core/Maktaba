@@ -303,3 +303,23 @@ actor ImageCache {
     /// The bytes on disk (the tests' view).
     var diskBytes: Int { diskIndex().values.reduce(0) { $0 + $1.bytes } }
 }
+
+/// Which picture requests carry a home's token: only the home's own `/api/` routes (same
+/// scheme, host and port, under its path), so a logo on another host never sees it.
+enum HomeImageAuth {
+    static func isHomeAPI(_ url: URL, home: URL) -> Bool {
+        let base = home.path.hasSuffix("/") ? String(home.path.dropLast()) : home.path
+        return url.scheme?.lowercased() == home.scheme?.lowercased()
+            && url.host?.lowercased() == home.host?.lowercased()
+            && (url.port ?? defaultPort(url)) == (home.port ?? defaultPort(home))
+            && url.path.hasPrefix(base + "/api/")
+    }
+
+    private static func defaultPort(_ url: URL) -> Int? {
+        switch url.scheme?.lowercased() {
+        case "https": 443
+        case "http": 80
+        default: nil
+        }
+    }
+}
