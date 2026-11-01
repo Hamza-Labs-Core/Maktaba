@@ -11,7 +11,7 @@ import json
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -23,6 +23,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.sql import is_pg, loads, now, parse_ts, to_ts
 from maktaba_pipeline.enrich import providers
+from maktaba_pipeline.enrich.budget import seconds_to_next_day
 from maktaba_pipeline.enrich.sweep import sweep
 from maktaba_pipeline.enrich.web import GOOGLE_URL, OLLAMA_SEARCH_URL, HttpResponse
 from maktaba_pipeline.runtime import Database
@@ -470,6 +471,9 @@ async def test_the_daily_search_cap_defers_the_web_part(db: Database, net: FakeN
     await queue(db, a)
     await run_enrich(db, a)
     await queue(db, b, query="another search")
+    # The deferral is measured from the moment b's run starts: the worker reads its own clock
+    # after this, so not_before >= before + (time to the next UTC day, never under 60 s).
+    before = now()
     await run_enrich(db, b)
     assert net.count("google") == 1
     # b still has its internal suggestion; the web part waits for the next UTC day
@@ -478,8 +482,30 @@ async def test_the_daily_search_cap_defers_the_web_part(db: Database, net: FakeN
     assert row["status"] == "deferred" and row["last_error"] == "budget:search"
     assert row["attempts"] == 0
     nb = parse_ts(row["not_before"])
-    assert nb is not None and nb.date() > datetime.now(UTC).date() - timedelta(days=0)
-    assert nb > now() + timedelta(minutes=1)
+    assert nb is not None
+    # On a later UTC day than the run, and at least the 60 s floor after it. Near midnight
+    # the floor makes not_before exactly worker-now + 60 s, so the bound must be inclusive
+    # (1 s slack for timestamp rounding), and the date is compared with the run's start, not
+    # with a clock read after midnight may have passed.
+    assert nb.astimezone(UTC).date() > before.date()
+    assert nb >= before + timedelta(seconds=59)
+
+
+@pytest.mark.parametrize(
+    ("at", "expected"),
+    [
+        # mid-day: until 00:00:05 the next UTC day
+        (datetime(2026, 10, 31, 12, 0, 0, tzinfo=UTC), 12 * 3600 + 5),
+        # 35 s before the next day's 00:00:05: clamped to the 60 s floor
+        (datetime(2026, 10, 31, 23, 59, 30, tzinfo=UTC), 60.0),
+        # just after midnight: a whole day ahead (the 5 s grace was already passed)
+        (datetime(2026, 11, 1, 0, 0, 10, tzinfo=UTC), 24 * 3600 - 5),
+        # another zone: measured in UTC (14:00+02:00 is 12:00Z)
+        (datetime(2026, 10, 31, 14, 0, 0, tzinfo=timezone(timedelta(hours=2))), 12 * 3600 + 5),
+    ],
+)
+def test_seconds_to_next_day(at: datetime, expected: float) -> None:
+    assert seconds_to_next_day(at) == expected
 
 
 @pytest.mark.asyncio

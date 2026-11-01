@@ -60,6 +60,8 @@ class SoftCapWarning(UserWarning):
 #: the first run's duration, and the second's when the first broke the hard cap
 _FIRST = pytest.StashKey[float]()
 _AGAIN = pytest.StashKey["float | None"]()
+#: why the run again failed, for the failure's message
+_AGAIN_ERROR = pytest.StashKey[str]()
 
 
 def breached(first: float, again: float | None, hard_cap: float) -> bool:
@@ -80,13 +82,26 @@ def pytest_runtest_call(item: Any) -> Generator[None, Any, None]:
     cap = _cap_for_item(item)
     if cap is None or outcome.excinfo is not None or first <= cap * TIER_HARD_CAP_MULTIPLIER:
         return
+    fresh_tmp_path(item)
     began = time.perf_counter()
     try:
         item.runtest()
-    except Exception:  # noqa: BLE001 — the second run's failure leaves the first verdict
+    except Exception as exc:  # noqa: BLE001 — the second run's failure leaves the first verdict
         item.stash[_AGAIN] = None
+        item.stash[_AGAIN_ERROR] = f"{type(exc).__name__}: {exc}"[:200]
         return
     item.stash[_AGAIN] = time.perf_counter() - began
+
+
+def fresh_tmp_path(item: Any) -> None:
+    """The run again gets an empty ``tmp_path``, as a first run does. In the first run's
+    folder a test meets its own files (``mkdir`` raises, an append finds lines already
+    there), so the run again failed and one stall of the runner failed the test."""
+    funcargs = getattr(item, "funcargs", None)
+    factory = getattr(item.config, "_tmp_path_factory", None)
+    if not isinstance(funcargs, dict) or "tmp_path" not in funcargs or factory is None:
+        return
+    funcargs["tmp_path"] = factory.mktemp("again", numbered=True)
 
 
 def pytest_runtest_makereport(item: Any, call: Any) -> Any | None:
@@ -126,6 +141,11 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any | None:
             f"test took {duration:.3f}s > {TIER_HARD_CAP_MULTIPLIER}x "
             f"soft cap {cap:.3f}s (Story 20.1 AC4)"
             + (f", and {again:.3f}s run again" if again is not None else "")
+            + (
+                f", and the run again failed ({item.stash[_AGAIN_ERROR]})"
+                if _AGAIN_ERROR in item.stash
+                else ""
+            )
         )
 
         def _raise() -> None:

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import socket
 import time
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -82,3 +84,23 @@ def test_soft_cap_fails_only_a_test_slow_twice() -> None:
     assert not breached(0.55, 0.02, 0.3)  # a stall, then fast: the runner
     assert breached(0.55, 0.5, 0.3)  # slow twice: the test
     assert breached(0.55, None, 0.3)  # the second run failed or did not run
+
+
+@pytest.mark.unit
+def test_the_run_again_gets_an_empty_tmp_path(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> None:
+    """A test run again in its first run's folder meets its own files (``mkdir`` raises),
+    so one stall of the runner failed it: the run again gets a folder of its own."""
+    from maktaba_testtier.softcap import fresh_tmp_path
+
+    (tmp_path / "day").mkdir()
+    item = SimpleNamespace(funcargs={"tmp_path": tmp_path}, config=request.config)
+    fresh_tmp_path(item)
+    again = item.funcargs["tmp_path"]
+    assert again != tmp_path and again.is_dir() and not any(again.iterdir())
+    (again / "day").mkdir()  # what failed in the first run's folder
+    # a test without tmp_path is left as it is
+    plain = SimpleNamespace(funcargs={"x": 1}, config=request.config)
+    fresh_tmp_path(plain)
+    assert plain.funcargs == {"x": 1}

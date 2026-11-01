@@ -83,6 +83,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **Resume on Windows starts the server right after it stopped, and three flaky tests are
+  fixed at the root.** The desktop app took an agent that had let go of its lock but was still
+  exiting for a running one, so Resume asked Task Scheduler once, was ignored, and the server
+  stayed stopped. Now only an agent that holds the lock counts as running. The enrich test
+  near midnight now allows exactly the 60 s minimum wait and reads the date before the run. The
+  unit tier's run-again after one slow run now gets an empty `tmp_path`. Before, it met the
+  first run's files and failed every time. The retention test also writes fewer files.
 - **A full node's copy of the home's database starts afresh even when a worker hangs.** On
   2026-10-28 a table's first copy was mid-way when the home's database restarted. Its
   connection never dropped, so the worker waited 15 minutes for rows that never came, and

@@ -157,7 +157,13 @@ fn stop_event_set(name: &str) -> bool {
     unsafe { WaitForSingleObject(ev.0, 0) == WAIT_OBJECT_0 }
 }
 
-/// Whether an agent of this session holds the mutex.
+/// Whether an agent of this session holds the mutex: owns it, not only has it
+/// open. An agent that is exiting has released it but keeps its handle (so
+/// the mutex still exists) until its process is gone, and Task Scheduler
+/// counts that instance as running until then; taking it for a running agent
+/// sent Resume's one /Run into IgnoreNew and left the server stopped. Never
+/// asked on the thread that owns it (a mutex is recursive: that would say
+/// "free").
 fn mutex_held(name: &str) -> bool {
     let n = wide(OsStr::new(name));
     // SAFETY: as in open_event.
@@ -165,8 +171,18 @@ fn mutex_held(name: &str) -> bool {
     if h.is_null() {
         return false;
     }
-    drop(Owned(h));
-    true
+    let m = Owned(h);
+    // SAFETY: m is a live mutex handle opened with SYNCHRONIZE; a zero timeout
+    // only tries to take it.
+    match unsafe { WaitForSingleObject(m.0, 0) } {
+        WAIT_OBJECT_0 | WAIT_ABANDONED_0 => {
+            // no one owned it (or its owner died): give it back at once
+            // SAFETY: this thread owns the mutex after the successful wait.
+            unsafe { ReleaseMutex(m.0) };
+            false
+        }
+        _ => true, // WAIT_TIMEOUT: an agent owns it
+    }
 }
 
 /// Whether a mutex of this name exists in this session, even one this process may not open
@@ -805,9 +821,10 @@ fn run_task(name: &str) -> Result<(), String> {
 
 /// Run the task once the agent that is stopping (a Pause a moment ago) has
 /// exited: while it runs, Task Scheduler ignores /Run (IgnoreNew), and it
-/// would then exit and leave the server stopped. With no agent at all the
-/// /Run is asked again too: one that exited a moment ago (its mutex free, its
-/// process not yet gone) makes Task Scheduler ignore the first.
+/// would then exit and leave the server stopped. With no agent owning the
+/// mutex the /Run is asked again too: one that exited a moment ago (its mutex
+/// released, its process and handle not yet gone) makes Task Scheduler
+/// ignore the first.
 fn start_task(name: &str, mutex: &str, stop: &str) -> Result<(), String> {
     if !mutex_held(mutex) {
         return run_after_stop(name, mutex);
@@ -1715,6 +1732,36 @@ mod tests {
         go_tx.send(()).unwrap();
         assert!(wait_mutex_free(&name, Duration::from_secs(5)));
         owner.join().unwrap();
+    }
+
+    /// An agent that is exiting has released its mutex but still has it open:
+    /// it no longer runs (Resume must ask Task Scheduler again, not take it for
+    /// a running agent), and a wait for a new agent does not end on it.
+    #[test]
+    fn a_released_mutex_still_open_is_not_held() {
+        let name = unique("Exiting");
+        let (released_tx, released_rx) = std::sync::mpsc::channel();
+        let (close_tx, close_rx) = std::sync::mpsc::channel::<()>();
+        let owner_name = name.clone();
+        let owner = std::thread::spawn(move || {
+            let n = wide(OsStr::new(&owner_name));
+            // SAFETY: test-only, a valid name; owned by this thread.
+            let m = Owned(unsafe { CreateMutexW(std::ptr::null(), 1, n.as_ptr()) });
+            // SAFETY: this thread owns it.
+            unsafe { ReleaseMutex(m.0) };
+            released_tx.send(()).unwrap();
+            close_rx.recv().unwrap();
+            drop(m);
+        });
+        released_rx.recv().unwrap();
+        assert!(mutex_exists(&name), "the exiting agent's handle keeps it");
+        assert!(!mutex_held(&name), "released: no agent runs");
+        assert!(!wait_mutex_held(&name, Duration::from_millis(150)));
+        assert!(mutex_exists(&name), "asking did not take it away");
+        assert!(wait_mutex_free(&name, Duration::from_millis(10)));
+        close_tx.send(()).unwrap();
+        owner.join().unwrap();
+        assert!(!mutex_exists(&name));
     }
 
     fn stand_in(tmp: &Path, script: &str) -> AgentRun {
