@@ -5,10 +5,21 @@ import XCTest
 /// tests use. No app is launched.
 final class PlayerShellTests: XCTestCase {
     /// TestFlight uploads every tag: only the screens that merged are on (Home 48.17,
-    /// Libraries 48.18, Search 48.20), each story turning its own section on.
-    func testOnlyMergedSectionsAreTurnedOn() {
-        XCTAssertEqual(PlayerSection.enabled, [.home, .libraries, .search])
-        XCTAssertEqual(PlayerSection.visible(arguments: []), [.home, .libraries, .search])
+    /// Libraries 48.18, Live TV 48.21, Search 48.20), each story turning its own section on.
+    func testOnlyTheMergedSectionsAreTurnedOn() {
+        XCTAssertEqual(PlayerSection.enabled, [.home, .libraries, .liveTV, .search])
+        XCTAssertEqual(PlayerSection.visible(arguments: []), [.home, .libraries, .liveTV, .search])
+    }
+
+    /// Live TV only when the person may watch a channel (story 48.21): not while the home has
+    /// not said, not with none, and never leaving no section.
+    func testLiveTVShowsOnlyWithAChannel() {
+        let all = PlayerSection.allCases
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: true), all)
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: false), [.home, .libraries, .search, .profile])
+        XCTAssertEqual(PlayerSection.shown([.libraries, .liveTV], hasChannels: nil), [.libraries])
+        XCTAssertEqual(PlayerSection.shown([.liveTV], hasChannels: false), [.liveTV], "never no section")
+        XCTAssertEqual(PlayerSection.shown([.libraries], hasChannels: true), [.libraries])
     }
 
     func testTheFiveSectionsInTheirOrder() {

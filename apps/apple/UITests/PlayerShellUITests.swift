@@ -20,7 +20,9 @@ final class PlayerShellUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 15), "Home, the first section")
         XCTAssertTrue(element("player.shell").exists, "more than one section: the tab bar")
         XCTAssertTrue(sectionButton("Search").exists, "Search is turned on")
-        for label in ["Live TV", "Profile"] {
+        // Live TV (48.21) is on, and shows because the mock home has channels
+        XCTAssertTrue(sectionButton("Live TV").exists, "Live TV is turned on")
+        for label in ["Profile"] {
             XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
             XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
         }

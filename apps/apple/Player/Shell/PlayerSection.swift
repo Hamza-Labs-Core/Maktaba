@@ -16,6 +16,7 @@ enum PlayerSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     static let enabled: [PlayerSection] = [
         .home,
         .libraries, // 48.18: Libraries, a library, Series, a series
+        .liveTV, // 48.21: Now, Guide, the live player (shown only with a channel)
         .search, // 48.20: Search
     ]
 
@@ -55,5 +56,13 @@ enum PlayerSection: String, CaseIterable, Identifiable, Hashable, Sendable {
         #endif
         let ordered = allCases.filter(shown.contains)
         return ordered.isEmpty ? [.libraries] : ordered
+    }
+
+    /// `sections` with Live TV only when the person may watch a channel (`hasChannels`;
+    /// nil: the home has not said yet), never leaving no section (`LiveSectionGate`).
+    static func shown(_ sections: [PlayerSection], hasChannels: Bool?) -> [PlayerSection] {
+        guard hasChannels != true else { return sections }
+        let without = sections.filter { $0 != .liveTV }
+        return without.isEmpty ? sections : without
     }
 }
