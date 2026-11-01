@@ -17,6 +17,12 @@ don't append a line here; docs-only PRs are exempt.
   from home the remote session (tune, heartbeat every 60 s, end). `LiveSource` picks between
   the home's stream and the relay, and swaps a heartbeat's new token without reopening the
   player. The Android Player and Android TV both build on it (story 48.9).
+- **Subtitles show on Apple TV, AirPlay and Cast (story 48.4).** A video session's master
+  playlist now lists each subtitle file beside the video as an HLS subtitle track (language,
+  its own name, off by default). Each track is a one-file playlist over the existing subtitle
+  route, signed like the rest of the session and timed to the picture, so AVPlayer, AirPlay
+  and Cast can show it. hls.js in the web lists the tracks too. A video without subtitles gets
+  the same playlist as before.
 - **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
   lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
   and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next
