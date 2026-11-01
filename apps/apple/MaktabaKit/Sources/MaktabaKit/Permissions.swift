@@ -154,17 +154,23 @@ public struct LocalNetworkVerdict: Sendable {
         case .ended:
             if state == nil { state = readyAt != nil ? .granted : .unknown }
         }
-        return tick(at: elapsed)
+        applyGrace(at: elapsed)
+        return state
     }
 
-    /// The verdict as time passes with no new signal.
+    /// The verdict as time passes with no new signal. Only silence times out: a signal
+    /// that arrives late (a busy device) is still heard, along with any queued behind it.
     @discardableResult
     public mutating func tick(at elapsed: Duration) -> PermissionState? {
+        applyGrace(at: elapsed)
+        if state == nil, elapsed >= timeout { state = .unknown }
+        return state
+    }
+
+    private mutating func applyGrace(at elapsed: Duration) {
         if state == nil || state == .unknown, let readyAt, elapsed - readyAt >= grace {
             state = .granted
         }
-        if state == nil, elapsed >= timeout { state = .unknown }
-        return state
     }
 
     /// A verdict that will not change by waiting longer (a home listed, a refusal, an error).
@@ -402,10 +408,12 @@ public final class PermissionsModel {
             let now = ContinuousClock.now - start
             let state = e.map { v.feed($0, at: now) } ?? v.tick(at: now)
             if let state { set(.localNetwork, state) }
+            // time runs out only on a tick, so signals already queued are heard first
+            let timedOut = e == nil && now >= (until ?? v.timeout)
             if let until {
                 // allowed is the answer; a refusal may be the system's while its question is up
-                if state == .granted || now >= until || e == .ended { break }
-            } else if v.isFinal || now >= v.timeout || e == .ended {
+                if state == .granted || timedOut || e == .ended { break }
+            } else if v.isFinal || timedOut || e == .ended {
                 break
             }
         }

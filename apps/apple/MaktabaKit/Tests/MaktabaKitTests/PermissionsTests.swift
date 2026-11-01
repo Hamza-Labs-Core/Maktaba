@@ -51,6 +51,16 @@ import Testing
         #expect(v.tick(at: .seconds(6)) == .unknown)
     }
 
+    /// On a busy device the first signals can arrive after the timeout: they are still heard.
+    @Test func aLateSignalIsHeardNotTimedOut() {
+        var v = LocalNetworkVerdict(grace: .seconds(2), timeout: .seconds(1))
+        #expect(v.feed(.ready, at: .milliseconds(1500)) == nil)
+        #expect(v.feed(.results(1), at: .milliseconds(1500)) == .granted)
+        var silent = LocalNetworkVerdict(grace: .seconds(2), timeout: .seconds(1))
+        #expect(silent.feed(.waiting(dnsError: -65555), at: .zero) == .unknown)
+        #expect(silent.tick(at: .milliseconds(1500)) == .unknown)
+    }
+
     @Test func theEndOfABrowseDecides() {
         var ready = LocalNetworkVerdict()
         ready.feed(.ready, at: .zero)
