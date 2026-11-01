@@ -31,9 +31,16 @@ public final class PictureInPicture: NSObject {
         c?.canStartPictureInPictureAutomaticallyFromInline = true
         #endif
         controller = c
-        possible = c?.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { [weak self] c, _ in
+        possible = c.map { Self.observePossible($0) { [weak self] now in self?.isPossible = now } }
+    }
+
+    /// KVO may call back on any thread: the handler is made outside the main actor (no
+    /// isolation for Swift to check there) and hops on.
+    nonisolated private static func observePossible(_ c: AVPictureInPictureController,
+                                                    _ changed: @escaping @MainActor @Sendable (Bool) -> Void) -> NSKeyValueObservation {
+        c.observe(\.isPictureInPicturePossible, options: [.initial, .new]) { c, _ in
             let now = c.isPictureInPicturePossible
-            Task { @MainActor in self?.isPossible = now }
+            Task { @MainActor in changed(now) }
         }
     }
 

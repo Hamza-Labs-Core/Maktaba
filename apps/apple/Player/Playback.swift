@@ -269,6 +269,7 @@ final class Playback {
             "ended=\(ended)",
             "route=\(routes.route.rawValue)",
             "pip=\(pip.isActive)",
+            "pipSupported=\(PictureInPicture.isSupported)",
             "pipPossible=\(pip.isPossible)",
         ].joined(separator: ";")
     }

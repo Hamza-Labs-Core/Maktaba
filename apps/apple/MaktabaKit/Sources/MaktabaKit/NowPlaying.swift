@@ -134,8 +134,14 @@ public final class NowPlaying {
     /// The poster or channel logo.
     public func show(_ owner: AnyObject, artwork image: PlatformImage) {
         guard isOwned(by: owner) else { return }
-        artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        artwork = Self.artwork(image)
         publish()
+    }
+
+    /// MediaPlayer asks the artwork for its image on its own queue: the closure is made outside
+    /// the main actor, so it carries no isolation for Swift to check there (a trap).
+    nonisolated static func artwork(_ image: PlatformImage) -> MPMediaItemArtwork {
+        MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     /// `owner` stopped: Now Playing clears and the commands go off.
@@ -190,9 +196,8 @@ public final class NowPlaying {
 
     private func register() {
         unregister()
-        func add(_ c: MPRemoteCommand, _ run: @escaping @MainActor (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
-            let t = c.addTarget { e in MainActor.assumeIsolated { run(e) } }
-            targets.append((c, t))
+        func add(_ c: MPRemoteCommand, _ run: @escaping @MainActor @Sendable (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) {
+            targets.append((c, Self.target(c, run)))
         }
         add(commands.playCommand) { [weak self] _ in self?.perform(.play) ?? .commandFailed }
         add(commands.pauseCommand) { [weak self] _ in self?.perform(.pause) ?? .commandFailed }
@@ -211,6 +216,16 @@ public final class NowPlaying {
             return self?.perform(.seek(to)) ?? .commandFailed
         }
         enable()
+    }
+
+    /// The commands come on the main thread; the handler is made outside the main actor so it
+    /// carries no isolation for Swift to check, and hops on explicitly.
+    nonisolated private static func target(_ c: MPRemoteCommand,
+                                           _ run: @escaping @MainActor @Sendable (MPRemoteCommandEvent) -> MPRemoteCommandHandlerStatus) -> Any {
+        c.addTarget { e in
+            nonisolated(unsafe) let e = e
+            return MainActor.assumeIsolated { run(e) }
+        }
     }
 
     private func enable() {

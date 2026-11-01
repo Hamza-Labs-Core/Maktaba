@@ -138,7 +138,6 @@ final class PlayerLiveUITests: PlayerUITestCase {
         // story 48.24: AirPlay and Picture in Picture on the live player
         XCTAssertTrue(app.buttons["live.player.airplay"].waitForExistence(timeout: 10), "the AirPlay button")
         XCTAssertEqual(app.buttons["live.player.airplay"].label, "AirPlay")
-        XCTAssertTrue(app.buttons["live.player.pip"].waitForExistence(timeout: 10), "the Picture in Picture button")
         shot("live-player")
 
         app.buttons["live.player.next"].tap()

@@ -131,8 +131,14 @@ public enum LANAddress {
 public final class ExternalPlaybackWatcher {
     private var observation: NSKeyValueObservation?
 
-    public init(_ player: AVPlayer, changed: @escaping @MainActor (Bool) -> Void) {
-        observation = player.observe(\.isExternalPlaybackActive, options: [.initial, .new]) { p, _ in
+    public init(_ player: AVPlayer, changed: @escaping @MainActor @Sendable (Bool) -> Void) {
+        observation = Self.observe(player, changed)
+    }
+
+    /// KVO may call back on any thread: the handler is made outside the main actor (no
+    /// isolation for Swift to check there) and hops on.
+    nonisolated private static func observe(_ player: AVPlayer, _ changed: @escaping @MainActor @Sendable (Bool) -> Void) -> NSKeyValueObservation {
+        player.observe(\.isExternalPlaybackActive, options: [.initial, .new]) { p, _ in
             let active = p.isExternalPlaybackActive
             Task { @MainActor in changed(active) }
         }

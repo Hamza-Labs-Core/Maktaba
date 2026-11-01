@@ -567,7 +567,9 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
   - [ ] Controls hide after 4 s; double-tap seeks (mirrored in Arabic).
 - **48.24 The player: PiP, AirPlay, Now Playing.** After 48.23, 48.12. Files: as 48.23.
   - [x] iOS: PiP starts from the button and on going home while playing (UI test checks the PiP
-        state); playback continues locked.
+        state); playback continues locked. The CI simulator reports no Picture in Picture
+        (`isPictureInPictureSupported` false), so there the test checks the button follows that
+        and skips the float, saying so; the float itself is checked on a device.
   - [x] AirPlay: the route button (`AVRoutePickerView`) shows on the player's controls on
         iPhone and iPad, and on the Mac. With an external route the player hands over the signed
         URL (48.12), not the loopback proxy one, which a receiver cannot reach (unit test on

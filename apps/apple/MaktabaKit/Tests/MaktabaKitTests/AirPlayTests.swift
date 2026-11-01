@@ -1,5 +1,11 @@
 import Foundation
+import MediaPlayer
 import Testing
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
 @testable import MaktabaKit
 
 // AirPlay, Now Playing and the remote commands (story 48.24): which URL a receiver is handed
@@ -151,6 +157,20 @@ import Testing
         #expect(np.isOwned(by: video))
         #expect(np.item?.title == "الدرس ١١")
         np.end(video)
+    }
+
+    /// MediaPlayer asks the artwork for its image on its own queue; a main-actor closure trapped
+    /// there (the CI crash on #512).
+    @Test func theArtworkAnswersOffTheMainThread() async {
+        #if os(macOS)
+        let image = NSImage(size: NSSize(width: 4, height: 4))
+        #else
+        let image = UIImage()
+        #endif
+        let artwork = NowPlaying.artwork(image)
+        nonisolated(unsafe) let a = artwork
+        let size = await Task.detached { a.image(at: CGSize(width: 4, height: 4))?.size }.value
+        #expect(size != nil)
     }
 
     @Test func theInfoHasTitlePositionAndLive() {
