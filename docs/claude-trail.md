@@ -974,6 +974,15 @@ Append here: date, session, one to five lines on what changed. Newest last.
     a change on each test platform that uses them.
   - Not verified until it runs on GitHub: the coverage-map workflow, the xccov and JaCoCo
     fragment steps (JaCoCo via the init script was checked locally for `:client` and `:core`).
+  - CodeQL #108 (cache poisoning) was raised against the first `coverage-map.yml`, which checked
+    out the triggering run's `head_sha` and used setup-go/setup-uv caches. Fixed rather than
+    dismissed. It now runs only for a CI run of a push to main in this repo (or a manual run on
+    main), checks out its own commit, has every cache off, and reads artifacts as data only.
+    Keep it that way: any `workflow_run` workflow with caches brings the alert back.
+  - The `Player UI tests (mac)` job failed on #516 with "the home picker" in
+    `PlayerMacMenuUITests`. It runs only because this PR touches `_apple-apps.yml`, and
+    `feat/airplay` fails the same way. That is the existing Mac UI window bug that [#510] fixes,
+    not this change.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1141,4 +1150,5 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#469]: https://github.com/Hamza-Labs-Core/Maktaba/pull/469
+[#510]: https://github.com/Hamza-Labs-Core/Maktaba/pull/510
 [#516]: https://github.com/Hamza-Labs-Core/Maktaba/pull/516
