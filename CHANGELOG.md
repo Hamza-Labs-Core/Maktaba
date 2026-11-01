@@ -12,6 +12,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
+  lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
+  and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next
+  episode, tracks, PiP, AirPlay and Cast), Live TV for the TV apps, one design-token source,
+  four server gaps (a channel's stream must follow library access; signed stream URLs for
+  AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
+  checks, and the plan that runs them in parallel.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes
@@ -88,6 +95,13 @@ don't append a line here; docs-only PRs are exempt.
   - at the home's go, it runs the installer.
 
   The server no longer sends the link, and the window app only shows the update.
+- **A channel's stream follows library access (security, Epic 48 story 48.3).** The web
+  port's `/stream/channel/{id}/…` checked only that someone was signed in, so a viewer
+  limited to some libraries could watch another library's channel by its id. The gate now
+  asks `GET /api/channels/{id}` with the viewer's credentials (the guide's rule): a channel
+  the viewer may not read, or no such channel, is a 403. Admins skip the check; the verdict
+  is cached per viewer and channel for 30 s, so segments cost no extra API call; the API not
+  answering stays a 502. Video sessions and the admins' staging preview are unchanged.
 - **A full node's copy of the home's database starts afresh even when a worker hangs.** On
   2026-10-28 a table's first copy was mid-way when the home's database restarted. Its
   connection never dropped, so the worker waited 15 minutes for rows that never came, and

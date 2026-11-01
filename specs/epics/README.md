@@ -52,3 +52,4 @@ older epics, a story file and a plan file per story. The number is the order the
 | 45 | [Libraries: manage them, browse them, and the server's storage settings](45-libraries-ui/README.md) |
 | 46 | [Big-screen mode: a 10-foot view for the couch, in the desktop apps and the browser](46-big-screen/README.md) |
 | 47 | [Keep libraries offline, in MP4, and without duplicates: three queue jobs](47-offline-convert-dedup/README.md) |
+| 48 | [The native Players: as good as the web, and as Plex](48-native-players/README.md) |
