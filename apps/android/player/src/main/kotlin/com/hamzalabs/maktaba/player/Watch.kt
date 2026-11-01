@@ -37,9 +37,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.media3.common.C
-import com.hamzalabs.maktaba.player.media.PictureInPicture
+import com.hamzalabs.maktaba.player.media.pictureInPicture
 import com.hamzalabs.maktaba.player.watch.PlayerClock
 import com.hamzalabs.maktaba.player.watch.PlayerControls
 import com.hamzalabs.maktaba.player.watch.UpNext
@@ -95,12 +100,15 @@ fun WatchScreen(
     onPlayNext: (Video) -> Unit = { playback.play(it) },
 ) {
     if (fullScreen) ImmersiveWhileShown()
+    // where the video is drawn, in the window: the picture-in-picture window grows out of it
+    var videoRect by remember { mutableStateOf<android.graphics.Rect?>(null) }
     val inPip = if (fullScreen) {
-        PictureInPicture(
+        pictureInPicture(
             player = playback.control,
             playing = playback.isPlaying,
             videoWidth = playback.videoSize.width,
             videoHeight = playback.videoSize.height,
+            sourceRect = videoRect,
             enabled = playback.player != null && !playback.casting,
             onDismissed = { playback.control?.pause() },
         )
@@ -125,7 +133,11 @@ fun WatchScreen(
                     },
                     update = { it.player = player },
                     onRelease = { it.player = null },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
+                        val r = coordinates.boundsInWindow()
+                        val rect = android.graphics.Rect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+                        if (rect != videoRect) videoRect = rect
+                    },
                 )
                 val clock = remember(player) { PlayerClock() }
                 // where it plays: here, or on the receiver while casting

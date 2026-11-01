@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- A video's sound goes on with the screen off (FR-39, story 48.33): the media session's
@@ -57,11 +58,13 @@
         </activity>
 
         <!-- The media session (FR-39): the notification and lock screen controls, and the
-             sound with the screen off. -->
+             sound with the screen off. Exported, as a media session's service is: the system,
+             Bluetooth and a watch connect to it as controllers (no permission names them). -->
         <service
             android:name=".media.PlaybackService"
             android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ExportedService">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>

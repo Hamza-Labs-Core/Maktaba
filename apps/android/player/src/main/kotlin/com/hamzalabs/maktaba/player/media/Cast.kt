@@ -1,10 +1,10 @@
 package com.hamzalabs.maktaba.player.media
 
 import android.content.Context
-import android.net.Uri
 import android.util.Log
 import androidx.annotation.MainThread
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.media3.cast.CastPlayer
 import androidx.media3.cast.MediaItemConverter
 import androidx.media3.cast.RemoteCastPlayer
@@ -73,7 +73,7 @@ class CastItems : MediaItemConverter {
         val info = requireNotNull(mediaQueueItem.media) { "a cast item has its media" }
         val url = info.contentUrl ?: info.contentId
         return MediaItem.Builder()
-            .setUri(Uri.parse(url))
+            .setUri(url.toUri())
             .setMimeType(info.contentType)
             .setMediaMetadata(Media3Metadata.Builder().setTitle(info.metadata?.getString(MediaMetadata.KEY_TITLE)).build())
             .build()
@@ -113,6 +113,7 @@ fun isRemote(player: Player?): Boolean = player?.deviceInfo?.playbackType == Dev
  * Starts the Cast framework once (Media3's [Media3Cast] singleton, which loads the framework's
  * context in the background); false where it cannot run.
  */
+@OptIn(UnstableApi::class)
 @MainThread
 fun castStarted(context: Context): Boolean {
     val app = context.applicationContext

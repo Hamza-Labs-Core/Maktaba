@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Rect
 import android.graphics.drawable.Icon
 import android.os.Build
 import android.util.Rational
@@ -82,7 +83,15 @@ private const val EXTRA_ACTION = "action"
  * [onDismissed] runs when the person closes the window (the video should stop playing then).
  */
 @Composable
-fun PictureInPicture(player: Player?, playing: Boolean, videoWidth: Int, videoHeight: Int, enabled: Boolean, onDismissed: () -> Unit): Boolean {
+fun pictureInPicture(
+    player: Player?,
+    playing: Boolean,
+    videoWidth: Int,
+    videoHeight: Int,
+    sourceRect: Rect?,
+    enabled: Boolean,
+    onDismissed: () -> Unit,
+): Boolean {
     val activity = LocalActivity.current as? ComponentActivity ?: return false
     if (!activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return false
     val apply = LocalPipParams.current
@@ -113,8 +122,8 @@ fun PictureInPicture(player: Player?, playing: Boolean, videoWidth: Int, videoHe
     }
 
     val auto = enabled && playing
-    val params = remember(auto, playing, videoWidth, videoHeight) {
-        pipParams(activity, auto, pipActions(playing), pipAspect(videoWidth, videoHeight))
+    val params = remember(auto, playing, videoWidth, videoHeight, sourceRect) {
+        pipParams(activity, auto, pipActions(playing), pipAspect(videoWidth, videoHeight), sourceRect)
     }
     DisposableEffect(params) {
         apply(activity, params)
@@ -139,11 +148,16 @@ fun PictureInPicture(player: Player?, playing: Boolean, videoWidth: Int, videoHe
     return inPip
 }
 
-/** The window's settings: its shape, its buttons, and whether Home opens it by itself (12+). */
-fun pipParams(context: Context, autoEnter: Boolean, actions: List<PipAction>, aspect: Rational): PictureInPictureParams {
+/**
+ * The window's settings: its shape, its buttons, where the video is on screen, and whether Home
+ * opens it by itself (12+).
+ */
+fun pipParams(context: Context, autoEnter: Boolean, actions: List<PipAction>, aspect: Rational, sourceRect: Rect? = null): PictureInPictureParams {
     val b = PictureInPictureParams.Builder()
         .setAspectRatio(aspect)
         .setActions(actions.map { it.remote(context) })
+    // the video's place on screen: the window grows out of it, and shrinks back into it
+    if (sourceRect != null && !sourceRect.isEmpty) b.setSourceRectHint(sourceRect)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         b.setAutoEnterEnabled(autoEnter)
         b.setSeamlessResizeEnabled(true)
