@@ -232,6 +232,13 @@ and Android (phone, foldable, tablet).
 - **FR-39** **Background and lock screen**: sound continues with the screen locked (Apple:
   already declared; Android: a `MediaSessionService`); Now Playing (title, art, position) and
   remote commands (play, pause, ±10 s, next).
+- **FR-39a** **Sound**: every video with an audio stream plays with sound on every Player and
+  the web. The owner's TestFlight report on 0.3.44, "no audio", was not the Player: the transcribe
+  stage wrote a bare `audio_tracks` row (no codec, no channels) before the probe's, whose insert
+  then did nothing, and streaming read "no codec, 0 channels" as "no audio" and transcoded
+  without any. 32,381 of 148,589 probed videos on the owner's home were silent this way. Fixed in
+  its own PR, outside these stories: the probe updates its track rows, streaming decides on any
+  audio track or audio stream, and a migration fills the missing codecs from `raw_ffprobe`.
 - **FR-40** **Failures** say why and what to do (the existing `HomeErrorView` / `ErrorState`):
   try again, sign in again, choose another home.
 
@@ -530,6 +537,13 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
   - [ ] A chapter tap opens the player at its time; Favorite and Mark watched toggle and persist
         on reload.
   - [ ] A 404 shows "not available".
+  - [ ] The poster is at the top of the page (`/api/videos/{id}/poster`: `?size=small` on a phone,
+        the full one on iPad, Mac and TV, from 48.5), at its own shape (a portrait video's
+        poster is not cropped to 16:9); with no poster (404), a placeholder of the same size
+        shows the title on the brand colour. Snapshot tests: with a poster, without, dark en/ar.
+        (The owner's TestFlight report on 0.3.44: "no thumbnail on video page".)
+  - [ ] Deep links: `maktaba://video/{id}` opens this page (FR-9); a video the user may not see
+        shows "not available".
 - **48.20 Search.** FR-19, FR-20.
   - [ ] Typing shows suggestions; submit shows Titles and In the transcript; a passage opens the
         player at its time; an Arabic query is sent unchanged.
@@ -554,8 +568,16 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
 - **48.24 The player: PiP, AirPlay, Now Playing.** After 48.23, 48.12. Files: as 48.23.
   - [ ] iOS: PiP starts from the button and on going home while playing (UI test checks the PiP
         state); playback continues locked.
-  - [ ] AirPlay: the route button shows; with an external route the player hands over the
-        signed URL, not the loopback one (unit test on the URL chosen).
+  - [ ] AirPlay: the route button (`AVRoutePickerView`) shows on the player's controls on
+        iPhone and iPad, and on the Mac. With an external route the player hands over the signed
+        URL (48.12), not the loopback proxy one, which a receiver cannot reach (unit test on
+        the URL chosen). `allowsExternalPlayback` is on.
+  - [ ] AirPlay plays on a real receiver (an Apple TV or AirPlay speaker on the LAN), video and
+        sound, and progress keeps reporting from the phone; checked by hand once per release
+        candidate and written in the PR (an AirPlay receiver can't run in CI).
+  - [ ] Prerequisites, already in place: the audio session's `.playback` category with
+        `.moviePlayback` (`Playback.play`) and the `audio` background mode. The owner's
+        TestFlight report on 0.3.44: "no air play".
   - [ ] Now Playing has title, art, position; remote play / pause / skip work (`MPRemoteCommandCenter`
         test hooks).
 - **48.25 The Mac player.** After 48.13. Files: `apps/apple/Player/PlayerApp.swift` (commands only),
