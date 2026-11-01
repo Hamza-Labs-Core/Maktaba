@@ -33,8 +33,8 @@ enum VideoLink {
     }
 }
 
-/// A deep-linked page over a section that has no stack of routes (Libraries' split view, until
-/// 48.18 replaces it): the page in a sheet with its own stack, and Done.
+/// A deep-linked page over a section whose stack the shell does not hold (Libraries' browser
+/// keeps its own): the page in a sheet with its own stack, and Done.
 struct LinkedRouteSheet: View {
     let context: PlayerContext
     let route: PlayerRoute

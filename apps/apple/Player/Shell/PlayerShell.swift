@@ -103,8 +103,8 @@ struct PlayerShell: View {
         }
     }
 
-    /// Libraries is today's split view, which navigates on its own until its new screens
-    /// (story 48.18) replace it; every other section is a stack of `PlayerRoute`s.
+    /// Libraries (`LibraryBrowser`) keeps its own stack, out of the shell's reach; every other
+    /// section is a stack of `PlayerRoute`s the shell holds.
     private func hasStack(_ section: PlayerSection) -> Bool { section != .libraries }
 
     private func path(_ section: PlayerSection) -> Binding<[PlayerRoute]> {

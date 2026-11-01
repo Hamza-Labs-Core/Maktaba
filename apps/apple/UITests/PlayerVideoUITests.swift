@@ -159,12 +159,12 @@ final class PlayerVideoUITests: PlayerUITestCase {
         XCTAssertTrue(app.buttons["video.play"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["video.resume"].exists)
 
-        // what the home answers from now on
+        app.buttons["video.play"].tap()
+        playerOpened("v2", at: 0, "Play after Mark watched starts over")
+        // what the home answers from now on (once the player has its video)
         home.stub("GET", "/api/me/videos/v2", body: #"{"video_id":"v2","position_sec":0,"completed":true,"favorite":true,"playlists":[],"series":{"id":"s-seerah","name":"Seerah"}}"#)
         home.stub("GET", "/api/videos/v2", body: #"{"id":"v2","filename":"seerah-11.mp4","title":"\#(title)","duration_sec":2980,"playback_state":{"position_sec":0,"completed":true}}"#)
         let reads = count("GET", "/api/me/videos/v2")
-        app.buttons["video.play"].tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 10))
         closePlayer()
         waitUntil("the page read the home again") { count("GET", "/api/me/videos/v2") > reads }
         XCTAssertTrue(favorite.waitForExistence(timeout: 5))
