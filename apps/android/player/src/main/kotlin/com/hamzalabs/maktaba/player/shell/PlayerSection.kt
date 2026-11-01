@@ -41,6 +41,7 @@ enum class PlayerSection(
          * browser until 48.27 replaces it.
          */
         val enabled: List<PlayerSection> = listOf(
+            Home,
             Libraries,
         )
 

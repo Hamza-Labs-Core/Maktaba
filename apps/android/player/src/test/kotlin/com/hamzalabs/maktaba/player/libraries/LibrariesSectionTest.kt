@@ -25,7 +25,7 @@ import org.robolectric.annotation.Config
 
 /**
  * Today's library browsing stays reachable in the shell until 48.27 replaces it: the app's
- * sections as they ship (only Libraries), against the fake home.
+ * sections as they ship, against the fake home.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
@@ -37,19 +37,20 @@ class LibrariesSectionTest {
         compose.waitUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     @Test
-    fun theShippedShellOpensOnTheLibrariesWithTheHomesVideos() {
+    fun theShippedShellsLibrariesShowTheHomesVideos() {
         compose.setShell(home, sections = PlayerSection.enabled)
+        // Home is first since 48.26: the bar offers Libraries beside it
+        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, ShellNavigation.Bar)).assertExists()
+        compose.onNodeWithTag("section-Libraries").performClick()
         waitFor("The Message")
         compose.onNodeWithText("The Message").assertIsDisplayed()
         compose.onNodeWithText("Lion of the Desert").assertIsDisplayed()
-        // a single section offers no navigation
-        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, ShellNavigation.None)).assertExists()
         assertTrue(home.paths.toString(), "/api/videos" in home.paths)
     }
 
     @Test
     fun aVideoOpensItsPageAndBackReturnsToTheList() {
-        compose.setShell(home, sections = PlayerSection.enabled)
+        compose.setShell(home, sections = listOf(PlayerSection.Libraries))
         waitFor("Omar, Episode 1")
         compose.onNodeWithText("Omar, Episode 1").performClick()
         waitFor("A film about Omar, Episode 1.")
