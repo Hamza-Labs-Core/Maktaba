@@ -98,6 +98,7 @@
 		3206DDDCA854C841C9CBE022 /* ProcessesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2CFA6753C3C4451A4B46020 /* ProcessesView.swift */; };
 		323E472661806B3DF8FEC923 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		32FA6B59CA4B4C4A55E2EE5A /* video-v9.json in Resources */ = {isa = PBXBuildFile; fileRef = BC614FBB95936071AB95C6E8 /* video-v9.json */; };
+		332EC82BA1511AF9A108BA76 /* TVLiveUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B790041B9E119302365AAF2F /* TVLiveUITests.swift */; };
 		3388A5239DDCEF29F1336CF3 /* videos-page2.json in Resources */ = {isa = PBXBuildFile; fileRef = 099A5FD71E3C9479CBB5EE0C /* videos-page2.json */; };
 		3388CD3C65A8560DCBCFF6FA /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		33DDDCF5D900F624B251EE8A /* routes.json in Resources */ = {isa = PBXBuildFile; fileRef = A66B35B9C56E3162884CE164 /* routes.json */; };
@@ -105,6 +106,7 @@
 		35172B42869CF38212760F07 /* HomeStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C9394DEDD0E1D5ECA6E4E32 /* HomeStatusView.swift */; };
 		3569959F5AC9002EC362E9D9 /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
 		35A110875CFB32B552A90A7F /* me-video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = 747990C071BEB9C6D01E2A25 /* me-video-v5.json */; };
+		35C7207FBC12E9F15D969D5E /* LiveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D166887D0132D01208C1F4B /* LiveView.swift */; };
 		3669EE88B28CD4A8E802754B /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
 		36F0013C9D43BF0E500FB1EE /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
 		376EBF384522F8AEF2AE04BC /* ChannelScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */; };
@@ -191,6 +193,7 @@
 		5ED7F182ADBD447147D78501 /* video-v2.json in Resources */ = {isa = PBXBuildFile; fileRef = 567979BC3286DC364F1D2E94 /* video-v2.json */; };
 		5EDF4E204C072B79FFF3200A /* PermissionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D278F13E0FB225131B9188 /* PermissionsUITests.swift */; };
 		5F06EB49CF88D94C229B80F6 /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
+		5FF385C8360D15C1A4A80C7D /* LivePlayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78D034D5D32C8A081C694A3 /* LivePlayer.swift */; };
 		605914018490BB068027BD7D /* MaktabaKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6390E85846DBE30CED36A0C3 /* MaktabaKit */; };
 		608E4DBE31883090A73B21C2 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8A82DC74FE23D47611AC0059 /* Localizable.xcstrings */; };
 		629161B598CC49A24777052E /* ShellLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */; };
@@ -492,6 +495,7 @@
 		F6D3591588C9C65C381E8337 /* VideoScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4BA7BDE12DA20703801AF7A /* VideoScreen.swift */; };
 		F6DF291ED135089C948958A1 /* PlayerBrandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ECB7FAA590AF03E7798BF3A /* PlayerBrandTests.swift */; };
 		F75F68CB30D6E09CCA6F0252 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8A82DC74FE23D47611AC0059 /* Localizable.xcstrings */; };
+		F78ACC6B23C4A8B3E167365E /* LiveGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19454F5AD097C64274322B1 /* LiveGuide.swift */; };
 		F81CF896EAB94181685937B9 /* search.json in Resources */ = {isa = PBXBuildFile; fileRef = 4767E3AA21407672ACF27439 /* search.json */; };
 		F89755D39FB18F5A8F3831C1 /* me-video-v8.json in Resources */ = {isa = PBXBuildFile; fileRef = 8A5789D0242D82200492ECE4 /* me-video-v8.json */; };
 		F9506FD36D45BACCC6BB64CA /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
@@ -655,6 +659,7 @@
 		95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChannelScreen.swift; sourceTree = "<group>"; };
 		99C953845F9EC74084F7444A /* video-v12.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "video-v12.json"; sourceTree = "<group>"; };
 		9C597463B3D151244BC108BB /* video-v3.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "video-v3.json"; sourceTree = "<group>"; };
+		9D166887D0132D01208C1F4B /* LiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveView.swift; sourceTree = "<group>"; };
 		9DFA15E2382D382C6A16B1F4 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		A131A888F4586F376E30AAFC /* Maktaba Player iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Player iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		A191553C5553CBCD35BDA7E8 /* channel-ch-2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channel-ch-2.json"; sourceTree = "<group>"; };
@@ -669,6 +674,8 @@
 		B4308B97DA9C3C82928D74F9 /* SearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchView.swift; sourceTree = "<group>"; };
 		B59999EF22178CFC7B64E17D /* me-video-v1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-video-v1.json"; sourceTree = "<group>"; };
 		B722A47D46B320D8C9C4466E /* PlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerView.swift; sourceTree = "<group>"; };
+		B78D034D5D32C8A081C694A3 /* LivePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePlayer.swift; sourceTree = "<group>"; };
+		B790041B9E119302365AAF2F /* TVLiveUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVLiveUITests.swift; sourceTree = "<group>"; };
 		B8F40A31A58629458B396F20 /* pinned-libraries.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "pinned-libraries.json"; sourceTree = "<group>"; };
 		B98AED34220C815DD101BEDF /* VideoDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoDetail.swift; sourceTree = "<group>"; };
 		BA377D873DB5DE610F6F4CAD /* Info-iPad.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPad.plist"; sourceTree = "<group>"; };
@@ -705,6 +712,7 @@
 		E6AC62B2E29B7931B3D836B6 /* Info-iPad.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPad.plist"; sourceTree = "<group>"; };
 		EC72337275DE887837858996 /* me-video-v9.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-video-v9.json"; sourceTree = "<group>"; };
 		EF8A504D2033AFF469413F98 /* IBMPlexSansArabic-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "IBMPlexSansArabic-Regular.ttf"; sourceTree = "<group>"; };
+		F19454F5AD097C64274322B1 /* LiveGuide.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveGuide.swift; sourceTree = "<group>"; };
 		F2AAF6514EB46D3CBD9DCA24 /* channels-now.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channels-now.json"; sourceTree = "<group>"; };
 		F2E7A424529D8DE1BCD5975E /* Maktaba Remote iPad.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba Remote iPad.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		F6629068B08CFDCF4BEA7DB9 /* Playback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Playback.swift; sourceTree = "<group>"; };
@@ -894,6 +902,7 @@
 				87F4B5ABCCB67B2EADC26918 /* MaktabaTVUITests.swift */,
 				D5A393205A7EEE149BDDD305 /* PermissionsUITests.swift */,
 				2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */,
+				B790041B9E119302365AAF2F /* TVLiveUITests.swift */,
 			);
 			path = MaktabaTVUITests;
 			sourceTree = "<group>";
@@ -1061,6 +1070,9 @@
 			children = (
 				D41DCD8360915712BC0B6FED /* HomeView.swift */,
 				857FEC60E4C11079B4F295FE /* LibraryView.swift */,
+				F19454F5AD097C64274322B1 /* LiveGuide.swift */,
+				B78D034D5D32C8A081C694A3 /* LivePlayer.swift */,
+				9D166887D0132D01208C1F4B /* LiveView.swift */,
 				B722A47D46B320D8C9C4466E /* PlayerView.swift */,
 				B4308B97DA9C3C82928D74F9 /* SearchView.swift */,
 				50CED999F23DF99657A01AF7 /* SettingsView.swift */,
@@ -1957,6 +1969,9 @@
 				6A727E03589D0C92DB27EC3A /* ContentView.swift in Sources */,
 				76084C98EF3BF9F0A31F1054 /* HomeView.swift in Sources */,
 				D21C3B13322E3659D5EAC9DC /* LibraryView.swift in Sources */,
+				F78ACC6B23C4A8B3E167365E /* LiveGuide.swift in Sources */,
+				5FF385C8360D15C1A4A80C7D /* LivePlayer.swift in Sources */,
+				35C7207FBC12E9F15D969D5E /* LiveView.swift in Sources */,
 				E91EF9BB0082BACB13E84403 /* MaktabaTVApp.swift in Sources */,
 				CCD68EE350B2420A1D2C8C96 /* PlayerView.swift in Sources */,
 				21E7ED008727D6BE2B90C597 /* SearchView.swift in Sources */,
@@ -2035,6 +2050,7 @@
 				85E5B2FC99B75D16A052750C /* MockHome.swift in Sources */,
 				090BCDAE9625A4DF362699A5 /* PermissionsUITests.swift in Sources */,
 				A60FE7308932BEE8359595FF /* TVConnectUITests.swift in Sources */,
+				332EC82BA1511AF9A108BA76 /* TVLiveUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
