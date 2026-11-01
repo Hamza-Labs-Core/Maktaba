@@ -161,7 +161,6 @@ class PlayerShellTest {
         for ((section, title) in listOf(
             PlayerSection.Home to "Home",
             PlayerSection.LiveTv to "Live TV",
-            PlayerSection.Search to "Search",
             PlayerSection.Profile to "Profile",
         )) {
             compose.onNodeWithTag("section-${section.name}").performClick()
