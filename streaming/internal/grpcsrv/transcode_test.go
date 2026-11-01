@@ -446,3 +446,43 @@ type stubRunner struct{}
 func (stubRunner) Start(context.Context, ffmpeg.Job) (*ffmpeg.Handle, error) {
 	return ffmpeg.NewHandleForTest(nil, nil, nil), nil
 }
+
+// The silent streams of 2026-10-31: a video whose audio_tracks row has no codec (transcribe
+// recorded it before the probe filled it in) still has audio, so the transcode maps it;
+// with its codec unknown it is transcoded (to AAC), never direct-played, even when the
+// rest of it plays direct on an iPhone. Only a video with no audio at all goes without.
+func TestOpenSession_CodecLessTrackKeepsTheAudio(t *testing.T) {
+	cases := []struct {
+		name        string
+		codec       string
+		channels    int
+		hasAudio    bool
+		wantNoAudio bool
+	}{
+		{"track row with no codec", "", 0, true, false},
+		{"known codec", "aac", 2, true, false},
+		{"no track, no audio stream", "", 0, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, row, _ := transcodeSetup(t)
+			row.Container, row.VideoCodec = "mp4", "h264" // plays direct on ios-native, but for the audio
+			row.AudioCodec, row.AudioChannels, row.HasAudio = tc.codec, tc.channels, tc.hasAudio
+			orch := &fakeOrchestrator{}
+			srv.Transcode = orch
+			resp, err := srv.OpenSession(context.Background(), OpenSessionRequest{
+				VideoID: row.VideoID.String(), UserID: uuid.New().String(), ClientProfile: "ios-native",
+				ForceTranscode: tc.codec != "", // a known codec would play direct: see its job
+			})
+			if err != nil {
+				t.Fatalf("OpenSession: %v", err)
+			}
+			if resp.Mode != "transcode" || orch.calls != 1 {
+				t.Fatalf("mode=%s calls=%d, want a transcode (an unknown audio codec never plays direct)", resp.Mode, orch.calls)
+			}
+			if orch.lastJob.NoAudio != tc.wantNoAudio {
+				t.Fatalf("job.NoAudio=%v want %v", orch.lastJob.NoAudio, tc.wantNoAudio)
+			}
+		})
+	}
+}

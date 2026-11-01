@@ -85,6 +85,7 @@ func okCols(vid, lib uuid.UUID, probed bool) []any {
 		"bt2020",                       // color_primaries
 		"tv",                           // color_range
 		"yuv420p10le",                  // pix_fmt
+		true,                           // has_audio
 	}
 }
 

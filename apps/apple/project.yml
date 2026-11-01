@@ -73,13 +73,19 @@ targetTemplates:
       base:
         # scanning a home's QR code, or a device's sign-in QR code to approve it
         INFOPLIST_KEY_NSCameraUsageDescription: "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it."
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
         # only the system's HTTPS: no export-compliance question on every TestFlight build
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortraitUpsideDown"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    info:
+      properties:
+        # the launch screen (Epic 48 FR-3): ink with the logo, in light mode too, so there is
+        # no white frame before the first one (Shared/Assets.xcassets)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+          UIImageName: LaunchLogo
 
 targets:
   # ---- Maktaba Player: iPhone (iPhone Duo too), iPad, Mac -------------------------------

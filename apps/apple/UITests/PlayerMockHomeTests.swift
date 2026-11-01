@@ -137,17 +137,19 @@ final class PlayerMockHomeTests: XCTestCase {
     /// A delay keeps only the timing: a delayed `/api/videos` still answers its second page
     /// for `cursor=c2`, so paging still ends.
     func testADelayKeepsTheQuerysAnswer() async throws {
-        home.delay("GET", "/api/videos", by: 0.3)
+        home.delay("GET", "/api/videos", by: 1.5)
         let first = try JSONSerialization.jsonObject(with: try await call("GET", "/api/videos").1) as? [String: Any]
         XCTAssertEqual(first?["next"] as? String, "c2")
         let started = Date()
         let last = try JSONSerialization.jsonObject(with: try await call("GET", "/api/videos?cursor=c2").1) as? [String: Any]
         XCTAssertTrue(last?["next"] is NSNull, "the last page, not the first again")
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 0.25, "delayed too")
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 1.4, "delayed too")
         home.reset()
+        // Half the delay, not a fixed bound: a loaded simulator took 0.5s for an
+        // undelayed local answer, and a kept delay would take 1.5s.
         let quick = Date()
         _ = try await call("GET", "/api/videos")
-        XCTAssertLessThan(Date().timeIntervalSince(quick), 0.25, "reset forgets the delay")
+        XCTAssertLessThan(Date().timeIntervalSince(quick), 0.75, "reset forgets the delay")
     }
 
     func testTimesAreFilledRelativeToNow() {

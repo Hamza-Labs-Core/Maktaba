@@ -1,0 +1,53 @@
+{
+  "seasons": [
+    {
+      "season": 1,
+      "episodes": [
+        {
+          "video_id": "11111111-0000-4000-8000-000000000001",
+          "season": 1,
+          "episode": 1,
+          "title": "سيرة ابن هشام ١",
+          "duration_sec": 3605.5,
+          "progress_pct": 100,
+          "watched": true
+        },
+        {
+          "video_id": "11111111-0000-4000-8000-000000000003",
+          "season": 1,
+          "episode": 2,
+          "title": "Seerah 2",
+          "thumbnail": "/api/videos/11111111-0000-4000-8000-000000000003/poster",
+          "duration_sec": 3500,
+          "progress_pct": 40,
+          "watched": false
+        }
+      ]
+    },
+    {
+      "season": 2,
+      "episodes": [
+        {
+          "video_id": "11111111-0000-4000-8000-000000000005",
+          "season": 2,
+          "episode": 1,
+          "absolute_number": 13,
+          "title": "Seerah 13",
+          "progress_pct": 0,
+          "watched": false
+        }
+      ]
+    }
+  ],
+  "numbering": "season",
+  "sort": "episode",
+  "next_episode": {
+    "video_id": "11111111-0000-4000-8000-000000000003",
+    "season": 1,
+    "episode": 2,
+    "title": "Seerah 2",
+    "duration_sec": 3500,
+    "progress_pct": 40,
+    "watched": false
+  }
+}

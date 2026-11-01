@@ -16,6 +16,8 @@ public struct SessionGate<Content: View>: View {
         self.session = session
         self.title = title
         self.content = content
+        // the brand's fonts, from Bundle.module, before the first start screen draws
+        Brand.registerFonts()
     }
 
     public var body: some View {
@@ -126,40 +128,16 @@ public struct HomePickerView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                if let link = session.pendingLink {
-                    LinkPrompt(session: session, link: link, words: words)
+                StartBrandSection(appName: appName, tagline: MaktabaApp.current?.tagline())
+                Group {
+                    pickerSections
                 }
-                if session.connecting {
-                    Section {
-                        HStack(spacing: 10) {
-                            ProgressView()
-                            Text(words.text(.connecting))
-                        }
-                        .accessibilityIdentifier("picker.connecting")
-                    }
-                }
-                if let shown = problem ?? session.connectProblem.map(words.reach) {
-                    Section {
-                        Label(shown, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("picker.problem")
-                    }
-                }
-                nearby
-                recent
-                throughCloud
-                byAddress
-                #if os(iOS)
-                Section {
-                    Button(words.text(.scanQR), systemImage: "qrcode.viewfinder") { scanning = true }
-                        .accessibilityIdentifier("picker.scan")
-                } footer: {
-                    Text(words.text(.scanHint))
-                }
-                #endif
+                .startPanelRows()
             }
             .formStyle(.grouped)
-            .navigationTitle(title)
+            .startScreen()
+            .navigationTitle(appName)
+            .startTitleHidden()
             .disabled(session.connecting)
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
@@ -182,7 +160,44 @@ public struct HomePickerView: View {
         }
     }
 
+    /// The running app's name under «Maktaba» (the title the app gave, in a test host).
+    private var appName: String { MaktabaApp.current?.name() ?? title }
+
     // MARK: sections
+
+    @ViewBuilder private var pickerSections: some View {
+        if let link = session.pendingLink {
+            LinkPrompt(session: session, link: link, words: words)
+        }
+        if session.connecting {
+            Section {
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text(words.text(.connecting))
+                }
+                .accessibilityIdentifier("picker.connecting")
+            }
+        }
+        if let shown = problem ?? session.connectProblem.map(words.reach) {
+            Section {
+                Label(shown, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("picker.problem")
+            }
+        }
+        nearby
+        recent
+        throughCloud
+        byAddress
+        #if os(iOS)
+        Section {
+            Button(words.text(.scanQR), systemImage: "qrcode.viewfinder") { scanning = true }
+                .accessibilityIdentifier("picker.scan")
+        } footer: {
+            Text(words.text(.scanHint))
+        }
+        #endif
+    }
 
     private var nearby: some View {
         Section {
@@ -360,29 +375,18 @@ public struct SignInView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    if offered.count > 1 {
-                        Picker(words.text(.signInTitle), selection: $method) {
-                            Text(words.text(.byPassword)).tag(Method.password)
-                            Text(words.text(.byCode)).tag(Method.code)
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .accessibilityIdentifier("signin.method")
-                    }
-                } header: {
-                    Text(session.current?.name ?? "")
+                StartBrandSection(appName: MaktabaApp.current?.name())
+                Group {
+                    signInSections
                 }
-                RestoreSection(session: session)
-                switch shown {
-                case .password:
-                    passwordForm
-                case .code:
-                    CodeSignInSection(session: session, words: words, model: codeFlow) { method = .password }
-                }
+                .startPanelRows()
             }
             .formStyle(.grouped)
+            .startScreen()
             .navigationTitle(words.text(.signInTitle))
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(words.text(.homes), systemImage: "house") { session.switchHome() }
@@ -402,6 +406,29 @@ public struct SignInView: View {
             await m.run()
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
+    }
+
+    @ViewBuilder private var signInSections: some View {
+        Section {
+            if offered.count > 1 {
+                Picker(words.text(.signInTitle), selection: $method) {
+                    Text(words.text(.byPassword)).tag(Method.password)
+                    Text(words.text(.byCode)).tag(Method.code)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityIdentifier("signin.method")
+            }
+        } header: {
+            Text(session.current?.name ?? "")
+        }
+        RestoreSection(session: session)
+        switch shown {
+        case .password:
+            passwordForm
+        case .code:
+            CodeSignInSection(session: session, words: words, model: codeFlow) { method = .password }
+        }
     }
 
     @ViewBuilder private var passwordForm: some View {
@@ -500,7 +527,7 @@ struct CodeSignInSection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Text(verbatim: p.code)
                     .font(.system(size: 44, weight: .bold, design: .monospaced))
-                    .foregroundStyle(Color.brass)
+                    .foregroundStyle(Color.mktBrassText)
                     .environment(\.layoutDirection, .leftToRight)
                     #if !os(tvOS)
                     .textSelection(.enabled)

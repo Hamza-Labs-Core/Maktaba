@@ -255,6 +255,26 @@
         }
       }
     },
+    "Choose the home you run." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر الجهاز الرئيسي الذي تديره."
+          }
+        }
+      }
+    },
+    "Choose your home to start watching." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر جهازك الرئيسي لتبدأ المشاهدة."
+          }
+        }
+      }
+    },
     "Dark" : {
       "localizations" : {
         "ar" : {
@@ -375,6 +395,16 @@
         }
       }
     },
+    "Maktaba" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبة"
+          }
+        }
+      }
+    },
     "No release can be installed from this version." : {
       "localizations" : {
         "ar" : {
@@ -445,12 +475,32 @@
         }
       }
     },
+    "Player" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المشغّل"
+          }
+        }
+      }
+    },
     "Reaches the home's database." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "يصل إلى قاعدة بيانات الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "Remote" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإدارة عن بُعد"
           }
         }
       }

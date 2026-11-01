@@ -135,3 +135,196 @@ func TestRegistry_UnregisterOnlyTheLiveTunnel(t *testing.T) {
 		t.Fatal("the live tunnel was not unregistered")
 	}
 }
+
+// gateStore is a memTunnelStore whose first SetOnline(gate) waits until release is
+// closed (a slow database write); entered is closed as that call starts.
+type gateStore struct {
+	memTunnelStore
+	gate    bool
+	once    sync.Once
+	entered chan struct{}
+	release chan struct{}
+}
+
+func newGateStore(gate bool) *gateStore {
+	return &gateStore{gate: gate, entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (g *gateStore) SetOnline(ctx context.Context, id string, online bool) error {
+	if online == g.gate {
+		first := false
+		g.once.Do(func() { first = true })
+		if first {
+			close(g.entered)
+			<-g.release
+		}
+	}
+	return g.memTunnelStore.SetOnline(ctx, id, online)
+}
+
+// A tunnel is routable only once its server is recorded online: whatever finds the
+// tunnel (the proxy, a test, the dashboard read after it) finds the server online.
+func TestServeTunnels_OnlineBeforeRoutable(t *testing.T) {
+	reg := NewRegistry()
+	store := newGateStore(true)
+	srv := httptest.NewServer(ServeTunnels(reg, store, nil))
+	defer srv.Close()
+
+	c, f := dialAuth(t, srv.URL, AuthPayload{ServerID: "srv-1", Secret: "sek"})
+	defer c.Close()
+	if f.Kind != KindAuthOK {
+		t.Fatalf("kind=%#x", f.Kind)
+	}
+	<-store.entered // recording it online, not done yet
+	if _, err := reg.Lookup("acme"); err == nil {
+		close(store.release)
+		t.Fatal("the tunnel is routable while its server is not yet recorded online")
+	}
+	close(store.release)
+	waitFor(t, "the tunnel", func() bool { _, err := reg.Lookup("acme"); return err == nil })
+	if s := store.states(); len(s) != 1 || !s[0] {
+		t.Fatalf("states when routable: %v", s)
+	}
+}
+
+// The cloud drops a home's tunnel and the home reconnects while the old tunnel's
+// offline is still being written: the server ends online (the old offline never lands
+// after the new online).
+func TestServeTunnels_ReconnectEndsOnline(t *testing.T) {
+	reg := NewRegistry()
+	store := newGateStore(false)
+	srv := httptest.NewServer(ServeTunnels(reg, store, nil))
+	defer srv.Close()
+
+	c1, f := dialAuth(t, srv.URL, AuthPayload{ServerID: "srv-1", Secret: "sek"})
+	defer c1.Close()
+	if f.Kind != KindAuthOK {
+		t.Fatalf("kind=%#x", f.Kind)
+	}
+	waitFor(t, "the tunnel", func() bool { _, err := reg.Lookup("acme"); return err == nil })
+	old, _ := reg.Lookup("acme")
+	old.Close()     // the cloud drops it
+	<-store.entered // its offline is being written
+
+	c2, f := dialAuth(t, srv.URL, AuthPayload{ServerID: "srv-1", Secret: "sek"})
+	defer c2.Close()
+	if f.Kind != KindAuthOK {
+		close(store.release)
+		t.Fatalf("reconnect: kind=%#x", f.Kind)
+	}
+	// where the reconnect's online can land before the old offline, let it (a second
+	// state shows); where it waits its turn none shows, and the bound lets the offline go
+	for end := time.Now().Add(300 * time.Millisecond); len(store.states()) < 2 && time.Now().Before(end); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(store.release)
+	waitFor(t, "the reconnected tunnel", func() bool { tun, err := reg.Lookup("acme"); return err == nil && tun != old })
+	waitFor(t, "three states", func() bool { return len(store.states()) == 3 })
+	if s := store.states(); !s[0] || s[1] || !s[2] {
+		t.Fatalf("states: %v, want online, offline, online (the server ends online)", s)
+	}
+}
+
+// Up refuses an attempt that went stale while it waited its turn, recording nothing: one
+// whose connection is gone, and one older than the tunnel installed meanwhile. Either
+// installed would close the live tunnel for one that is dead or replaced.
+func TestRegistry_UpRefusesAStaleAttempt(t *testing.T) {
+	reg := NewRegistry()
+	var recorded int
+	record := func() { recorded++ }
+
+	dead := NewTunnel("s", "x", newChanConn())
+	older := NewTunnel("s", "x", newChanConn())
+	defer older.Close()
+	live := NewTunnel("s", "x", newChanConn())
+	defer live.Close()
+	dead.Close() // its home disconnected while it waited
+
+	if !reg.Up("x", live, record) {
+		t.Fatal("the newest attempt was refused")
+	}
+	if reg.Up("x", dead, record) {
+		t.Fatal("an attempt whose connection is gone was installed")
+	}
+	if reg.Up("x", older, record) {
+		t.Fatal("an attempt older than the installed tunnel was installed")
+	}
+	if cur, _ := reg.Lookup("x"); cur != live || live.closed.Load() {
+		t.Fatal("a stale attempt replaced or closed the live tunnel")
+	}
+	if recorded != 1 {
+		t.Fatalf("recorded %d times, want once (the live tunnel's online)", recorded)
+	}
+	// with nothing installed, an open attempt is installed (an older live one included)
+	if !reg.Down("x", live, record) || !reg.Up("x", older, record) {
+		t.Fatal("an open attempt with nothing newer installed was refused")
+	}
+}
+
+// waiters is how many hold or wait for slug's turn (Up, Down).
+func (r *Registry) waiters(slug string) int {
+	r.locksMu.Lock()
+	defer r.locksMu.Unlock()
+	if l := r.slugLocks[slug]; l != nil {
+		return l.users
+	}
+	return 0
+}
+
+// The home disconnects while its new attempt waits its turn behind the old tunnel's
+// offline, then reconnects, and that reconnect waits too: whichever gets its turn first,
+// the reconnect ends the one live tunnel and the server ends online, recorded offline
+// once and online once after it. (A stale attempt installed after the reconnect would
+// close it, and its Down would record the server offline.)
+func TestRegistry_DisconnectThenReconnectWhileUpWaits(t *testing.T) {
+	reg := NewRegistry()
+	var mu sync.Mutex
+	var states []bool
+	record := func(online bool) func() {
+		return func() { mu.Lock(); states = append(states, online); mu.Unlock() }
+	}
+	old := NewTunnel("s", "x", newChanConn())
+	if !reg.Up("x", old, record(true)) {
+		t.Fatal("the first tunnel was refused")
+	}
+	old.Close() // the cloud drops it; its offline holds the slug's turn
+	release, held := make(chan struct{}), make(chan struct{})
+	downDone := make(chan bool, 1)
+	go func() {
+		downDone <- reg.Down("x", old, func() { close(held); <-release; record(false)() })
+	}()
+	<-held
+
+	attempt := NewTunnel("s", "x", newChanConn()) // the home's new attempt...
+	reconnect := NewTunnel("s", "x", newChanConn())
+	defer reconnect.Close()
+	ups := make(chan bool, 2)
+	go func() { ups <- reg.Up("x", attempt, record(true)) }()
+	waitFor(t, "the attempt waiting its turn", func() bool { return reg.waiters("x") == 2 })
+	attempt.Close() // ...gone while it waits (its reader closed it)
+	<-attempt.Done()
+	go func() { ups <- reg.Up("x", reconnect, record(true)) }()
+	waitFor(t, "the reconnect waiting its turn", func() bool { return reg.waiters("x") == 3 })
+	close(release)
+
+	if !<-downDone {
+		t.Fatal("the dropped tunnel's Down did not record")
+	}
+	installed := 0
+	for range 2 {
+		if <-ups {
+			installed++
+		}
+	}
+	if installed != 1 {
+		t.Fatalf("%d attempts installed, want 1 (the reconnect)", installed)
+	}
+	if cur, err := reg.Lookup("x"); err != nil || cur != reconnect || reconnect.closed.Load() {
+		t.Fatalf("the live tunnel is not the open reconnect: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(states) != 3 || !states[0] || states[1] || !states[2] {
+		t.Fatalf("states: %v, want online, offline, online", states)
+	}
+}

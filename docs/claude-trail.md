@@ -721,6 +721,46 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Story 48.9 agent of `b743b7d4`: Android client Live (`apps/android/client/…/api/Live.kt`):
+  now, guide, one channel's guide, logo / poster / stream URLs, `tv/info`, tune, heartbeat, end,
+  and `LiveSource` (LAN or relay from `tv/info.remote.via_relay`).
+  - Decided: a `LiveApi(client)` wrapper, as Android TV's `TvApi` does, not new methods in
+    `ApiClient.kt` (its `send` is private and the file is no story's). It reuses
+    `ApiClient.request` (internal: base path and headers), `playbackToken` and `refreshAfter`.
+  - Decided: a heartbeat's new token does not change `LiveSource.stream`, so the player is not
+    reopened. Only `token` changes, and `LiveSource.interceptor` writes it into each Cloudflare
+    request, as hls.js does on the web. Opening a new channel ends the old session first, so
+    the per-user stream limit never trips.
+  - Tested: JVM tests (`LiveApiTest` on MockWebServer, `LiveSourceTest` on virtual time with a
+    fake home). Ran once against a branch stack (scratch Postgres, branch API): every route
+    decoded. The stack has no Cloudflare, so tune answered 503 `remote_unavailable` as expected.
+  - Surprise: on a fresh DB, `POST /api/channels` answered 201 but wrote no `channels` row (TV
+    staging, it seems). The stack check seeded a channel by SQL.
+- 2026-10-31 · Epic 48 story 48.8 agent of `b743b7d4`: [#464] adds the Android client's
+  browse calls (`apps/android/client/…/core/api/Browse.kt`): Home, recommendations, libraries
+  and pins, hub, grid, facets, series, a video's page, marks, search.
+  - Decided: calls are `ApiClient` extensions in their own file. To make that possible,
+    `ApiClient.get`/`decode`/`send` went from `private` to `internal`; 48.9 needs the same edit.
+    A 404 is `NotAvailable`, a new `ApiException` subclass whose cause is the `Status`, so
+    `errorKind()` and Details work without touching `HomeError.kt`. Lists decode through
+    `LenientList`, which drops elements it cannot read.
+  - Fixtures are hand-made from the Go structs, not recorded from a branch stack. To keep them
+    honest, `api/internal/handlers/browse/native_fixtures_test.go` decodes each one into the
+    handlers' types with unknown fields refused.
+  - Left out: the Profile routes (48.31's).
+- 2026-10-31 · Epic 48 story 48.7 agent of `b743b7d4`: MaktabaKit's `Live.swift`: now, the
+  guide window, one channel's guide, the logo, `tv/info`, the LAN playlist, and remote tune,
+  heartbeat and end, as an `APIClient` extension. `LiveSource` picks LAN or relay from
+  `tv/info`, tunes through 202s, and heartbeats every 60 s. A new token is swapped in through
+  `rewrite(_:)`, with no new tune and no new player item.
+  - Premise gap: an extension in another file cannot POST or DELETE, because
+    `APIClient.send` and `sendRaw` were `private`. Made both internal (two words in
+    `APIClient.swift`). 48.6 (`Browse.swift`) needs the same change.
+  - Decided: the clock is an injected `sleep`, as `waitUntilPlayable` already does. The tests
+    use a hand-advanced `FakeClock` and a `FakeLiveAPI`. The HTTP tests use their own
+    `LiveStub`, separate from the shared `Stub` that other suites use.
+  - Left to 48.21: the encoder warm-up retry on the LAN path, and the AVPlayer side of
+    `rewrite(_:)` (a resource loader or proxy).
 - 2026-10-31 · Story 48.2 agent of `b743b7d4`: [#462], one token source. `tokens.json` /
   `tokens.dark.json` now hold the shipped Ink & Brass (values copied from
   `web/src/styles/tokens.css`, which stays hand-written and is what the web ships), plus
@@ -1014,6 +1054,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#460]: https://github.com/Hamza-Labs-Core/Maktaba/pull/460
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#464]: https://github.com/Hamza-Labs-Core/Maktaba/pull/464
 [#462]: https://github.com/Hamza-Labs-Core/Maktaba/pull/462
 [#467]: https://github.com/Hamza-Labs-Core/Maktaba/pull/467
 [#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470

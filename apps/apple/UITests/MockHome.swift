@@ -53,6 +53,7 @@ final class MockHome: @unchecked Sendable {
     private let routes: [Route]
     private let fixtures: Bundle
     private(set) var port: UInt16 = 0
+    private var startFailure: Error?
 
     static let code = "TEST-2345"
 
@@ -72,14 +73,24 @@ final class MockHome: @unchecked Sendable {
     /// Every request so far, in order.
     var requests: [Request] { lock.withLock { log } }
 
+    /// Waits for the listener: 30s, as a loaded CI simulator took over 5s to be ready, and a
+    /// listener that fails says why instead of reading as "cannot connect".
     func start() throws {
-        let ready = DispatchSemaphore(value: 0)
-        listener.stateUpdateHandler = { if case .ready = $0 { ready.signal() } }
+        let settled = DispatchSemaphore(value: 0)
+        listener.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready: settled.signal()
+            case .failed(let error): self?.lock.withLock { self?.startFailure = error }; settled.signal()
+            default: break
+            }
+        }
         listener.newConnectionHandler = { [weak self] c in self?.serve(c) }
         listener.start(queue: queue)
-        guard ready.wait(timeout: .now() + 5) == .success, let p = listener.port?.rawValue else {
-            throw URLError(.cannotConnectToHost)
+        guard settled.wait(timeout: .now() + 30) == .success else {
+            throw URLError(.timedOut, userInfo: [NSLocalizedDescriptionKey: "the mock home was not ready in 30s"])
         }
+        if let failure = lock.withLock({ startFailure }) { throw failure }
+        guard let p = listener.port?.rawValue else { throw URLError(.cannotConnectToHost) }
         port = p
     }
 

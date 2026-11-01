@@ -21,6 +21,11 @@ don't append a line here; docs-only PRs are exempt.
   route's 403) is `BrowseError.notAvailable`, a 401 the existing sign-out path. Tested against
   answers recorded from the API on a scratch database; a Go test fails when a recorded field is
   renamed in the handlers.
+- **Android client: Live TV.** `apps/android/client` gains `Live.kt`: what is on now, the guide
+  and one channel's guide, channel logos, a channel's stream URL, `GET /api/tv/info`, and away
+  from home the remote session (tune, heartbeat every 60 s, end). `LiveSource` picks between
+  the home's stream and the relay, and swaps a heartbeat's new token without reopening the
+  player. The Android Player and Android TV both build on it (story 48.9).
 - **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
   serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
   for an hour like the full one. A viewer without the video's library now gets 404 (as for a
@@ -56,6 +61,17 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **The Android client can browse (Epic 48, story 48.8).** `apps/android/client`'s new
+  `Browse.kt` reads Home's rails and recommendations, the libraries and their pins, a library's
+  hub, grid, facets and series, the series and their episodes, a video's page (its state,
+  chapters, transcript, marks) and search (results, pages, suggestions, recent), tolerantly: a
+  missing row is empty and an unreadable card is left out. A 404 is `NotAvailable`. The test
+  fixtures are checked against the API's own response types by a Go test.
+- **MaktabaKit reads Live TV (story 48.7).** The Apple apps' shared kit can read what is on now,
+  the guide for a time window, one channel's guide and logo, and where the TV streams. It
+  plays a channel from the home's network at home, or through a remote session away from home,
+  keeping that session alive and taking each new token without reopening the player. The
+  Player and the Apple TV app will both use it.
 - **One design-token source for web, Apple and Android (Story 48.2).**
   `web/design-system/tokens/` now holds the shipped Ink & Brass (dark: ink `#0B111C`, brass
   `#E3B252`) and its light set, plus the apps' surfaces (`raised`, `nav`, `scrim`, `chosen`).

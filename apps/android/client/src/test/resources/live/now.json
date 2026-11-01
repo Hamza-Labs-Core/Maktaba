@@ -1,0 +1,17 @@
+{
+  "server_time": "2026-10-31T18:20:00Z",
+  "channels": [
+    {
+      "channel": {"id": "0b6f3c1e-1d2a-4f5b-9c8d-7e6f5a4b3c2d", "number": 1, "name": "قناة القرآن", "slug": "quran", "logo_url": "/api/channels/0b6f3c1e-1d2a-4f5b-9c8d-7e6f5a4b3c2d/logo"},
+      "current": {"channel_id": "0b6f3c1e-1d2a-4f5b-9c8d-7e6f5a4b3c2d", "kind": "program", "start": "2026-10-31T18:00:00Z", "stop": "2026-10-31T18:40:00Z", "title": "تفسير سورة البقرة", "sub_title": "الآية ١٨٣", "desc": "درس في الصيام", "poster": "/api/videos/v-183/poster", "series": "تفسير", "season": 1, "episode": 45, "on_air": "تفسير · الحلقة 45 — تفسير سورة البقرة", "strip_title": "تفسير سورة البقرة", "strip_series": "تفسير", "strip_episode": "الحلقة 45", "strip_ref": "البقرة ١٨٣", "is_live": true, "progress": 0.5},
+      "next": {"channel_id": "0b6f3c1e-1d2a-4f5b-9c8d-7e6f5a4b3c2d", "kind": "program", "start": "2026-10-31T18:40:00Z", "stop": "2026-10-31T19:30:00Z", "title": "Seerah, part 2"},
+      "on_air": true
+    },
+    {
+      "channel": {"id": "c2", "number": 2, "name": "Talks", "slug": "talks", "logo": "https://cdn.example.org/talks.png"},
+      "current": null,
+      "next": null,
+      "on_air": false
+    }
+  ]
+}

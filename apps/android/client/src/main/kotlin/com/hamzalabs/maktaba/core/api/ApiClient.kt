@@ -317,10 +317,11 @@ class ApiClient(
         java.net.URLEncoder.encode(s, Charsets.UTF_8.name()).replace("+", "%20")
 
 
-    private suspend inline fun <reified T> get(path: String, query: Map<String, String> = emptyMap()): T =
+    // internal: the browse calls (`Browse.kt`) are built on these, as the client's own are
+    internal suspend inline fun <reified T> get(path: String, query: Map<String, String> = emptyMap()): T =
         decode(send(request("GET", path, query)))
 
-    private inline fun <reified T> decode(bytes: ByteArray): T = try {
+    internal inline fun <reified T> decode(bytes: ByteArray): T = try {
         json.decodeFromString<T>(String(bytes))
     } catch (e: Exception) {
         throw ApiException.Decoding(e.message ?: e.toString())
@@ -346,7 +347,7 @@ class ApiClient(
             .build()
     }
 
-    private suspend fun send(r: Request, authorized: Boolean = true): ByteArray {
+    internal suspend fun send(r: Request, authorized: Boolean = true): ByteArray {
         val sentWith = if (authorized) tokens.access else null
         val first = exchange(r, sentWith)
         if (first.code == 401 && authorized) {

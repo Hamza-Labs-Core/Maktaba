@@ -1,0 +1,8 @@
+{
+  "server_time": "2026-10-31T18:20:00Z",
+  "channel": {"id": "c1", "number": 1, "name": "Quran", "slug": "quran", "logo_url": "/api/channels/c1/logo"},
+  "blocks": [
+    {"channel_id": "c1", "kind": "program", "start": "2026-10-31T18:00:00Z", "stop": "2026-10-31T18:40:00Z", "title": "Tafsir", "is_live": true, "progress": 0.5}
+  ],
+  "horizon_until": "2026-11-02T00:00:00Z"
+}
