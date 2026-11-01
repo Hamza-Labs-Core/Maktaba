@@ -33,6 +33,9 @@ import com.hamzalabs.maktaba.core.api.DeviceCode
 import com.hamzalabs.maktaba.core.api.DeviceSignIn
 import com.hamzalabs.maktaba.core.api.PairingCode
 import com.hamzalabs.maktaba.core.session.ConnectLink
+import com.hamzalabs.maktaba.core.session.ConnectProgress
+import com.hamzalabs.maktaba.core.session.ConnectStage
+import com.hamzalabs.maktaba.core.session.FailReason
 import com.hamzalabs.maktaba.core.session.HomeProbe
 import com.hamzalabs.maktaba.core.session.addressCandidates
 import kotlinx.coroutines.CancellationException
@@ -64,7 +67,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Wifi
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -96,7 +98,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiClient
-import com.hamzalabs.maktaba.core.api.ApiException
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.User
@@ -281,6 +282,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
     var typing by rememberSaveable { mutableStateOf(false) }
     var address by rememberSaveable { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
+    val progress by session.progress.collectAsState()
     var connecting by remember { mutableStateOf(false) }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var renaming by remember { mutableStateOf<Home?>(null) }
@@ -288,7 +290,6 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
     val scope = rememberCoroutineScope()
     val invalid = stringResource(R.string.address_invalid)
     val notHome = stringResource(R.string.scan_not_home)
-    val failed = stringResource(R.string.connect_failed, "%s")
 
     LaunchedEffect(granted) {
         if (!granted) return@LaunchedEffect
@@ -299,7 +300,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
     }
 
     fun connect(link: ConnectLink) {
-        if (connecting) return
+        if (connecting || progress.let { it is ConnectProgress.Finding || it is ConnectProgress.Trying }) return
         connecting = true
         problem = null
         scope.launch {
@@ -308,8 +309,8 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // why, and the addresses tried, are in session.progress (Failed)
                 AppLog.failure("connect", e)
-                problem = failed.replace("%s", link.urls.joinToString { it.substringAfter("://") })
             } finally {
                 connecting = false
             }
@@ -398,20 +399,16 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
                 HomeRow(f.name, f.url.substringAfter("://"), onClick = { session.use(Home(f.url, f.name, f.id)) }, enabled = !connecting)
             }
             if (fresh.isEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (!searched) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text(
-                        stringResource(
-                            when {
-                                found.isNotEmpty() -> R.string.homes_all_saved
-                                searched -> R.string.homes_none
-                                else -> R.string.homes_looking
-                            },
-                        ),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                StatusLine(
+                    stringResource(
+                        when {
+                            found.isNotEmpty() -> R.string.homes_all_saved
+                            searched -> R.string.homes_none
+                            else -> R.string.homes_looking
+                        },
+                    ),
+                    busy = !searched,
+                )
             }
         }
 
@@ -449,12 +446,8 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
             Spacer(Modifier.width(8.dp))
             Text(stringResource(R.string.cloud_title))
         }
-        if (connecting) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                Text(stringResource(R.string.connecting), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
+        // adding a home: finding it, each address tried, or why none answered (Retry, attempt n)
+        progress?.takeIf { it.showsOnPicker() }?.let { ConnectStatus(it, session.now, onRetry = session::retry) }
         problem?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
         }
@@ -495,9 +488,9 @@ private fun RenameDialog(home: Home, onDismiss: () -> Unit, onSave: (String) -> 
 @Composable
 fun ConnectLinkDialog(session: AppSession, link: ConnectLink, probe: HomeProbe = remember { HomeProbe() }) {
     var busy by remember(link) { mutableStateOf(false) }
-    var problem by remember(link) { mutableStateOf<String?>(null) }
+    var tried by remember(link) { mutableStateOf(false) }
+    val progress by session.progress.collectAsState()
     val scope = rememberCoroutineScope()
-    val failed = stringResource(R.string.connect_failed, link.urls.joinToString { it.substringAfter("://") })
     AlertDialog(
         onDismissRequest = { if (!busy) session.dismissLink() },
         title = { Text(stringResource(R.string.link_title, link.name ?: stringResource(R.string.link_unnamed))) },
@@ -507,8 +500,8 @@ fun ConnectLinkDialog(session: AppSession, link: ConnectLink, probe: HomeProbe =
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     Column { link.urls.forEach { Text(it.substringAfter("://"), style = MaterialTheme.typography.bodySmall) } }
                 }
-                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                problem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                // once Connect is pressed: each step, or why it failed and what was tried
+                progress?.takeIf { tried && it.showsOnPicker() }?.let { ConnectStatus(it, session.now) }
             }
         },
         confirmButton = {
@@ -516,20 +509,21 @@ fun ConnectLinkDialog(session: AppSession, link: ConnectLink, probe: HomeProbe =
                 enabled = !busy,
                 onClick = {
                     busy = true
-                    problem = null
+                    tried = true
                     scope.launch {
                         try {
                             session.connect(link, probe)
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {
-                            problem = failed
+                            // said in session.progress (Failed): the button reads Retry
+                            AppLog.failure("connect link", e)
                         } finally {
                             busy = false
                         }
                     }
                 },
-            ) { Text(stringResource(R.string.connect)) }
+            ) { Text(stringResource(if (progress is ConnectProgress.Failed && tried) R.string.progress_retry else R.string.connect)) }
         },
         dismissButton = { TextButton(enabled = !busy, onClick = session::dismissLink) { Text(stringResource(R.string.cancel)) } },
     )
@@ -544,11 +538,16 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
     val home by session.current.collectAsState()
     var byCode by rememberSaveable { mutableStateOf(false) }
     val name = home?.label ?: ""
-    val kept by session.restoreProblem.collectAsState()
+    val progress by session.progress.collectAsState()
     StartFrame(app) {
-        kept?.let { why ->
-            Text(stringResource(R.string.signin_kept_failed, stringResource(why.sentence())), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-            TextButton(onClick = session::retryRestore) { Text(stringResource(R.string.try_again)) }
+        // on launch: reconnecting, the home busy (its countdown), the home just found, or why
+        // the kept sign-in could not be checked (Retry, attempt n)
+        progress?.takeIf { it.showsOverSignIn() }?.let { p ->
+            ConnectStatus(
+                p,
+                session.now,
+                onRetry = if ((p as? ConnectProgress.Failed)?.stage == ConnectStage.Restore) session::retryRestore else session::retry,
+            )
         }
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.signin_to, name), style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
@@ -573,7 +572,7 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
         if (byCode) {
             CodeSignIn(session, name, onUsePassword = { byCode = false })
         } else {
-            PasswordSignIn(session, name)
+            PasswordSignIn(session)
         }
         // a home chosen in Maktaba Cloud, at an address the cloud gave: no password needed
         val h = home
@@ -586,30 +585,29 @@ fun SignIn(session: AppSession, app: MaktabaApp) {
 }
 
 @Composable
-private fun PasswordSignIn(session: AppSession, name: String) {
+private fun PasswordSignIn(session: AppSession) {
     var username by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
-    var problem by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val wrong = stringResource(R.string.signin_wrong)
-    val unreachable = stringResource(R.string.signin_unreachable, name)
-    val resources = LocalResources.current
+    val progress by session.progress.collectAsState()
+    // this form's own step: signing in, or why it failed (a wrong password, no answer, ...)
+    val mine = progress?.takeIf {
+        (it is ConnectProgress.SigningIn && it.stage == ConnectStage.Password) ||
+            (it is ConnectProgress.Failed && it.stage == ConnectStage.Password)
+    }
+    val wrong = (mine as? ConnectProgress.Failed)?.reason == FailReason.WrongPassword
     fun signIn() {
         if (username.isEmpty() || password.isEmpty() || busy) return
         busy = true
-        problem = null
         scope.launch {
             try {
                 session.signIn(username, password)
-            } catch (e: ApiException.Status) {
-                problem = if (e.code in 400..403) wrong else resources.getString(e.errorKind().sentence())
-            } catch (e: ApiException.Transport) {
-                problem = unreachable
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                problem = resources.getString(e.errorKind().sentence())
+                // said in session.progress (Failed)
+                AppLog.failure("sign in", e)
             } finally {
                 busy = false
             }
@@ -631,8 +629,7 @@ private fun PasswordSignIn(session: AppSession, name: String) {
         visualTransformation = PasswordVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { signIn() }),
-        isError = problem != null,
-        supportingText = problem?.let { { Text(it) } },
+        isError = wrong,
         modifier = Modifier.fillMaxWidth(),
     )
     Button(
@@ -640,8 +637,9 @@ private fun PasswordSignIn(session: AppSession, name: String) {
         enabled = username.isNotEmpty() && password.isNotEmpty() && !busy,
         modifier = Modifier.fillMaxWidth().height(48.dp),
     ) {
-        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.signin_submit))
+        Text(stringResource(if (busy) R.string.progress_signing_in_button else R.string.signin_submit))
     }
+    mine?.let { ConnectStatus(it, session.now, onRetry = if (wrong) null else ::signIn) }
 }
 
 /**
@@ -656,19 +654,25 @@ private fun ColumnScope.CodeSignIn(session: AppSession, name: String, onUsePassw
     var unsupported by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
     var attempt by remember { mutableStateOf(0) }
-    val unreachable = stringResource(R.string.signin_unreachable, name)
+    val progress by session.progress.collectAsState()
+    // this tab's own step: signing in, the code waiting for approval, or why it ended
+    val mine = progress?.takeIf {
+        (it is ConnectProgress.SigningIn && it.stage == ConnectStage.Code) || it is ConnectProgress.AwaitingApproval ||
+            (it is ConnectProgress.Failed && it.stage == ConnectStage.Code)
+    }
     LaunchedEffect(attempt) {
         code = null
         problem = null
         try {
-            session.signInWithCode(deviceLabel(context), onCode = { code = it })
+            // a code that runs out ends the wait: "expired", and Retry asks for a new one
+            session.signInWithCode(deviceLabel(context), onCode = { code = it }, renew = false)
         } catch (e: CancellationException) {
             throw e
         } catch (e: DeviceSignIn.Unsupported) {
             unsupported = true
-        } catch (e: ApiException.Transport) {
-            problem = unreachable
         } catch (e: Exception) {
+            // said in session.progress (Failed); the sentence is kept for a failure it did not say
+            AppLog.failure("sign in by code", e)
             problem = resources.getString(e.errorKind().sentence())
         }
     }
@@ -678,14 +682,13 @@ private fun ColumnScope.CodeSignIn(session: AppSession, name: String, onUsePassw
             Text(stringResource(R.string.code_unsupported, name), style = MaterialTheme.typography.bodyMedium)
             Button(onClick = onUsePassword, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.signin_password_tab)) }
         }
+        mine is ConnectProgress.Failed -> ConnectStatus(mine, session.now, onRetry = { attempt++ })
         problem != null -> {
             Text(problem ?: "", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
-            Button(onClick = { attempt++ }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.try_again)) }
+            Button(onClick = { attempt++ }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.progress_retry)) }
         }
-        current == null -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            Text(stringResource(R.string.code_starting, name), style = MaterialTheme.typography.bodyMedium)
-        }
+        current == null -> mine?.let { ConnectStatus(it, session.now) }
+            ?: StatusLine(stringResource(R.string.code_starting, name))
         else -> {
             val shown = PairingCode.shown(current.code)
             Text(stringResource(R.string.code_intro, name), style = MaterialTheme.typography.bodyMedium)
@@ -709,13 +712,26 @@ private fun ColumnScope.CodeSignIn(session: AppSession, name: String, onUsePassw
                     Modifier.align(Alignment.CenterHorizontally).widthIn(max = 220.dp).fillMaxWidth(0.6f),
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                Text(stringResource(R.string.code_waiting), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            }
-            Text(stringResource(R.string.code_renews), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // waiting for approval, the code and its live countdown
+            mine?.let { ConnectStatus(it, session.now) } ?: StatusLine(stringResource(R.string.code_waiting))
         }
     }
+}
+
+/** A step the home picker shows: adding a home (finding, trying, why it failed). */
+internal fun ConnectProgress.showsOnPicker(): Boolean = when (this) {
+    is ConnectProgress.Finding, is ConnectProgress.Trying -> true
+    is ConnectProgress.Failed -> stage == ConnectStage.Connect || stage == ConnectStage.Cloud
+    else -> false
+}
+
+/** A step shown over the sign-in form: on launch (reconnecting, busy, other addresses), found, or why. */
+internal fun ConnectProgress.showsOverSignIn(): Boolean = when (this) {
+    is ConnectProgress.Reconnecting, is ConnectProgress.HomeBusy, is ConnectProgress.Found,
+    is ConnectProgress.Finding, is ConnectProgress.Trying,
+    -> true
+    is ConnectProgress.Failed -> stage == ConnectStage.Restore || stage == ConnectStage.Cloud
+    else -> false
 }
 
 /** This device's name for the home's list of signed-in devices: the one its owner gave it, else its model. */

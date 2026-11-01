@@ -97,13 +97,21 @@ data class Home(
 
 /**
  * The app's state the screens follow: the homes it knows, the one in use, who is signed in
- * there. One per app ([app] names it: its tokens and homes are its own).
+ * there, and what connecting is doing right now ([progress]). One per app ([app] names it: its
+ * tokens and homes are its own).
+ *
+ * [now] and [sleep] are the clock and the wait between tries (a busy home's Retry-After, a
+ * code's polling): replaced in tests. [progressState] is where [progress] is kept: a test or a
+ * screenshot may hold a step there to show it.
  */
 class AppSession(
     private val store: KeyValueStore,
     private val scope: CoroutineScope,
     private val tokensFor: (home: String) -> TokenStore,
     private val clientFor: (HttpUrl, TokenStore) -> ApiClient = { url, t -> ApiClient(url, t) },
+    val now: () -> Long = System::currentTimeMillis,
+    private val sleep: suspend (Long) -> Unit = { delay(it) },
+    progressState: MutableStateFlow<ConnectProgress?> = MutableStateFlow(null),
 ) {
     sealed interface Phase {
         data object ChoosingHome : Phase
@@ -123,6 +131,58 @@ class AppSession(
     private val _restoreProblem = MutableStateFlow<ErrorKind?>(null)
     /** Why the kept sign-in could not be checked (the home did not answer): try again, or sign in. */
     val restoreProblem: StateFlow<ErrorKind?> = _restoreProblem.asStateFlow()
+
+    private val _progress = progressState
+
+    /**
+     * What connecting is doing now (story 48.37): finding the home, each address tried, found,
+     * signing in, waiting for a code's approval, reconnecting on launch, the home busy, or why
+     * it failed. Null when nothing is under way. Every connect, sign-in and restore screen
+     * shows it.
+     */
+    val progress: StateFlow<ConnectProgress?> = _progress.asStateFlow()
+
+    /** What is being tried, and how many times in a row (Retry counts up). */
+    private var trying: Any? = null
+    private var tries = 0
+
+    /** The attempt number for [what]: one more when it is what was tried last, else 1. */
+    private fun attemptFor(what: Any): Int {
+        tries = if (what == trying) tries + 1 else 1
+        trying = what
+        return tries
+    }
+
+    /** It worked: the next try of anything starts at attempt 1. */
+    private fun succeeded() {
+        trying = null
+        tries = 0
+    }
+
+    /** Clears [progress] when it still shows [mine] (a cancelled step leaves no spinner behind). */
+    private fun clearIf(mine: ConnectProgress) {
+        _progress.compareAndSet(mine, null)
+    }
+
+    /** What Retry does for the last failure of a connect or restore ([retry]). */
+    private var again: (suspend () -> Unit)? = null
+
+    /**
+     * Tries the last failed connect or restore again (its attempt number one more). Its
+     * failure is in [progress].
+     */
+    fun retry() {
+        val a = again ?: return
+        scope.launch {
+            try {
+                a()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // said in progress (Failed)
+            }
+        }
+    }
 
     /** The client for the current home (null while choosing one). */
     var client: ApiClient? = null
@@ -155,14 +215,35 @@ class AppSession(
      * the link names, when it names one), and uses it. [NotAHome] when none answers.
      */
     suspend fun connect(link: ConnectLink, probe: HomeProbe = HomeProbe()): Home {
-        val r = probe.first(link.urls, link.id)
+        val attempt = attemptFor(Tried(ConnectStage.Connect, link.urls + listOfNotNull(link.id)))
+        again = { connect(link, probe) }
+        val r = find(link.urls, link.id, probe, ConnectStage.Connect, attempt)
         val name = r.info.name?.trim()?.takeIf { it.isNotEmpty() } ?: link.name ?: r.url.substringAfter("://")
         // its other addresses as the home that answered says them (a link's that did not answer
         // are unchecked: never kept)
         val others = r.info.urls.mapNotNull { Home.normalizeWithPath(it) }
+        _progress.value = ConnectProgress.Found(name, attempt)
+        succeeded()
         use(Home(r.url, name, r.info.id ?: link.id, addresses = others))
         if (_link.value == link) _link.value = null
         return _current.value!!
+    }
+
+    /**
+     * Finds the home at [urls] (the first that answers as it), saying each step in [progress]:
+     * finding, each address tried, and why none did ([NotAHome], rethrown).
+     */
+    private suspend fun find(urls: List<String>, expectId: String?, probe: HomeProbe, stage: ConnectStage, attempt: Int): Reached {
+        _progress.value = ConnectProgress.Finding(attempt)
+        try {
+            return probe.first(urls, expectId) { u, i, n -> _progress.value = ConnectProgress.Trying(shown(u), i, n, attempt) }
+        } catch (e: NotAHome) {
+            _progress.value = ConnectProgress.Failed(e.reason, urls.map(::shown), stage, attempt)
+            throw e
+        } catch (e: CancellationException) {
+            if (_progress.value.let { it is ConnectProgress.Finding || it is ConnectProgress.Trying }) _progress.value = null
+            throw e
+        }
     }
 
     init {
@@ -197,30 +278,82 @@ class AppSession(
         client = c
         _phase.value = Phase.SigningIn
         _restoreProblem.value = null
+        // the home just found stays said ("Found …") over the sign-in; anything else is over
+        _progress.value.let { if (it != null && it !is ConnectProgress.Found) _progress.value = null }
         if (tokens.access != null) restore(c)
     }
 
-    /** Signs in again with the kept tokens, if the home answers. */
+    /** Signs in again with the kept tokens, if the home answers (its attempt number one more). */
     fun retryRestore() {
         client?.let(::restore)
     }
 
     private fun restore(c: ApiClient) {
-        scope.launch {
+        val home = _current.value ?: return
+        val what = Tried(ConnectStage.Restore, listOf(home.url))
+        val attempt = attemptFor(what)
+        again = { restore(c) }
+        _progress.value = ConnectProgress.Reconnecting(home.label, attempt)
+        scope.launch { restoring(c, home, what, attempt) }
+    }
+
+    /**
+     * Checks the kept sign-in at [home]: "Reconnecting to …"; a busy or starting home
+     * (429/503) is tried again after its Retry-After, counted down in [progress]; an address
+     * that does not answer tries the home's others; else why it failed.
+     */
+    private suspend fun restoring(c: ApiClient, home: Home, what: Tried, first: Int) {
+        var attempt = first
+        var waits = 0
+        while (true) {
+            if (c !== client) return
+            _progress.value = ConnectProgress.Reconnecting(home.label, attempt)
             try {
                 signedIn(c, c.whoami())
                 _restoreProblem.value = null
+                succeeded()
+                _progress.value = null
+                return
             } catch (e: ApiException.SignedOut) {
+                // the kept sign-in ended: the sign-in form, nothing failed
                 _restoreProblem.value = null
+                succeeded()
+                _progress.value = null
+                return
             } catch (e: CancellationException) {
+                clearIf(ConnectProgress.Reconnecting(home.label, attempt))
                 throw e
+            } catch (e: ApiException.Status) {
+                if ((e.code == 429 || e.code == 503) && waits < BUSY_TRIES && c === client) {
+                    waits++
+                    val wait = (e.retryAfterSec ?: BUSY_WAIT_SEC).coerceIn(1, MAX_WAIT_SEC) * 1000
+                    _progress.value = ConnectProgress.HomeBusy(home.label, now() + wait, attempt)
+                    sleep(wait)
+                    if (trying != what) return // something else started meanwhile
+                    attempt = attemptFor(what)
+                    continue
+                }
+                if (c === client) failRestore(home, e, attempt)
+                return
             } catch (e: ApiException.Transport) {
                 // this address does not answer (the local one, away from home): another might
-                if (c === client && !reachElsewhere()) _restoreProblem.value = e.errorKind()
+                if (c === client && !reachElsewhere(attempt)) {
+                    _restoreProblem.value = e.errorKind()
+                    _progress.value = ConnectProgress.Failed(
+                        FailReason.NoAnswer, (listOf(home.url) + home.addresses).map(::shown), ConnectStage.Restore, attempt,
+                    )
+                }
+                return
             } catch (e: Exception) {
-                if (c === client) _restoreProblem.value = e.errorKind()
+                if (c === client) failRestore(home, e, attempt)
+                return
             }
         }
+    }
+
+    private fun failRestore(home: Home, e: Exception, attempt: Int) {
+        _restoreProblem.value = e.errorKind()
+        _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(home.url)), ConnectStage.Restore, attempt)
     }
 
     /** Checks an address before the app moves to it (replaceable in tests). */
@@ -232,9 +365,14 @@ class AppSession(
      * signs in through Maktaba Cloud (no password) when it can, or asks the person to sign in.
      * False when no other address answers.
      */
-    suspend fun reachElsewhere(): Boolean {
+    suspend fun reachElsewhere(): Boolean = reachElsewhere(_progress.value?.attempt ?: 1)
+
+    private suspend fun reachElsewhere(attempt: Int): Boolean {
         val home = _current.value ?: return false
-        for (other in home.addresses) {
+        for ((i, other) in home.addresses.withIndex()) {
+            if (_current.value?.url == home.url) {
+                _progress.value = ConnectProgress.Trying(shown(other), i + 1, home.addresses.size, attempt)
+            }
             val info = try {
                 probe.probe(other)
             } catch (e: CancellationException) {
@@ -269,7 +407,9 @@ class AppSession(
      * else the relay's, both kept; then signs in there through the cloud.
      */
     suspend fun useCloudHome(home: CloudHome, probe: HomeProbe = this.probe) {
-        val r = probe.first(home.addresses)
+        val attempt = attemptFor(Tried(ConnectStage.Cloud, listOf(home.serverId)))
+        again = { useCloudHome(home, probe) }
+        val r = find(home.addresses, null, probe, ConnectStage.Cloud, attempt)
         val name = home.name.ifBlank { r.info.name ?: r.url.substringAfter("://") }
         use(
             Home(
@@ -279,7 +419,22 @@ class AppSession(
                 cloudAddresses = home.addresses,
             ),
         )
-        if (phase.value !is Phase.SignedIn) signInWithCloud()
+        _progress.value = ConnectProgress.Found(name, attempt)
+        succeeded()
+        if (phase.value !is Phase.SignedIn) {
+            val step = ConnectProgress.SigningIn(_current.value?.label ?: name, ConnectStage.Cloud, attempt)
+            _progress.value = step
+            try {
+                signInWithCloud()
+                clearIf(step)
+            } catch (e: CancellationException) {
+                clearIf(step)
+                throw e
+            } catch (e: Exception) {
+                _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(r.url)), ConnectStage.Cloud, attempt)
+                throw e
+            }
+        }
     }
 
     /**
@@ -319,36 +474,105 @@ class AppSession(
     fun switchHome() {
         _current.value = null
         client = null
+        _progress.value = null
+        succeeded()
+        again = null
         _phase.value = Phase.ChoosingHome
         store.put(KEY_HOME, null)
     }
 
+    /**
+     * Signs in with a username and password: "Signing in to …" in [progress], then nothing
+     * (signed in) or why it failed (a wrong password, no answer, …), and the failure rethrown.
+     */
     suspend fun signIn(username: String, password: String) {
         val c = client ?: return
-        c.signIn(username, password)
-        signedIn(c, c.whoami())
+        val home = _current.value ?: return
+        val attempt = attemptFor(Tried(ConnectStage.Password, listOf(home.url)))
+        val step = ConnectProgress.SigningIn(home.label, ConnectStage.Password, attempt)
+        _progress.value = step
+        try {
+            c.signIn(username, password)
+            signedIn(c, c.whoami())
+            succeeded()
+            clearIf(step)
+        } catch (e: CancellationException) {
+            clearIf(step)
+            throw e
+        } catch (e: Exception) {
+            if (c === client) {
+                _progress.value = ConnectProgress.Failed(reasonFor(e, password = true), listOf(shown(home.url)), ConnectStage.Password, attempt)
+            }
+            throw e
+        }
     }
 
     /**
      * Signs in with a code (story 42.6): shows each code the home gives ([onCode]) until a
-     * person signed in elsewhere approves it, then keeps this device's tokens.
+     * person signed in elsewhere approves it, then keeps this device's tokens. [progress] says
+     * "Signing in", then the code waiting for approval and when it runs out.
      * [DeviceSignIn.Unsupported] when the home has no sign-in by code.
+     *
+     * A code that runs out is replaced by a new one when [renew]; else (story 48.37) the wait
+     * ends: [progress] says the approval expired and [DeviceSignIn.Expired] is thrown (Retry
+     * asks for a new code, attempt one more).
      */
-    suspend fun signInWithCode(label: String, onCode: (DeviceCode) -> Unit, sleep: suspend (Long) -> Unit = { delay(it) }) {
+    suspend fun signInWithCode(
+        label: String,
+        onCode: (DeviceCode) -> Unit,
+        sleep: suspend (Long) -> Unit = this.sleep,
+        renew: Boolean = true,
+    ) {
         val c = client ?: return
-        val tokens = DeviceSignIn({ path, body -> c.publicPost(path, body) }, label, sleep = sleep).run(onCode)
-        if (c !== client) return
-        c.keep(tokens)
-        signedIn(c, c.whoami())
+        val home = _current.value ?: return
+        val attempt = attemptFor(Tried(ConnectStage.Code, listOf(home.url)))
+        val device = DeviceSignIn({ path, body -> c.publicPost(path, body) }, label, now, sleep)
+        _progress.value = ConnectProgress.SigningIn(home.label, ConnectStage.Code, attempt)
+        try {
+            while (true) {
+                val code = device.start()
+                if (c !== client) return
+                onCode(code)
+                _progress.value = ConnectProgress.AwaitingApproval(code.code, device.deadline(code), attempt)
+                val tokens = device.poll(code)
+                if (c !== client) return
+                if (tokens != null) {
+                    c.keep(tokens)
+                    signedIn(c, c.whoami())
+                    succeeded()
+                    _progress.value = null
+                    return
+                }
+                if (!renew) {
+                    _progress.value = ConnectProgress.Failed(FailReason.ApprovalExpired, listOf(shown(home.url)), ConnectStage.Code, attempt)
+                    throw DeviceSignIn.Expired()
+                }
+            }
+        } catch (e: CancellationException) {
+            val p = _progress.value
+            if ((p is ConnectProgress.SigningIn && p.stage == ConnectStage.Code) || p is ConnectProgress.AwaitingApproval) _progress.value = null
+            throw e
+        } catch (e: DeviceSignIn.Expired) {
+            throw e
+        } catch (e: DeviceSignIn.Unsupported) {
+            // the screen offers the password instead: nothing failed
+            if (c === client) _progress.value = null
+            throw e
+        } catch (e: Exception) {
+            if (c === client) _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(home.url)), ConnectStage.Code, attempt)
+            throw e
+        }
     }
 
     fun signOut() {
         _current.value?.let { tokensFor(it.url).clear() }
+        _progress.value = null
         _phase.value = Phase.SigningIn
     }
 
     /** A screen saw `ApiException.SignedOut`: back to signing in. */
     fun signedOut() {
+        _progress.value = null
         _phase.value = Phase.SigningIn
     }
 
@@ -376,8 +600,29 @@ class AppSession(
         store.put(KEY_HOMES, ApiClient.json.encodeToString(ListSerializer(Home.serializer()), _homes.value))
     }
 
+    /** What a try is of: its flow and what it is tried at (an attempt counts up while it stays the same). */
+    private data class Tried(val stage: ConnectStage, val at: List<String>)
+
     private companion object {
         const val KEY_HOMES = "homes"
         const val KEY_HOME = "home"
+
+        /** How many times a busy or starting home is waited for on launch before it counts as failed. */
+        const val BUSY_TRIES = 5
+
+        /** The wait when a busy home does not say (no Retry-After), and the longest one kept. */
+        const val BUSY_WAIT_SEC = 5L
+        const val MAX_WAIT_SEC = 120L
+
+        /** Why [e] failed, as a person reads it ([password]: a 400-403 is the username and password). */
+        fun reasonFor(e: Throwable, password: Boolean = false): FailReason {
+            if (e is NotAHome) return e.reason
+            if (password && e is ApiException.Status && e.code in 400..403) return FailReason.WrongPassword
+            return when (e.errorKind()) {
+                ErrorKind.Unreachable -> FailReason.NoAnswer
+                ErrorKind.Busy -> FailReason.Busy
+                else -> FailReason.Other
+            }
+        }
     }
 }

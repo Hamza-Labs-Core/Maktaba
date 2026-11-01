@@ -163,4 +163,25 @@
     <string name="error_back">Back</string>
     <string name="error_sign_in_again">Sign in again</string>
     <string name="error_details">Details</string>
+    <!-- connect progress (story 48.37): what a connect, sign-in or reconnect is doing now -->
+    <string name="progress_finding">Looking for your home…</string>
+    <string name="progress_trying">Trying %1$s — %2$d of %3$d</string>
+    <string name="progress_found">Found %1$s</string>
+    <string name="progress_signing_in">Signing in to %1$s…</string>
+    <string name="progress_awaiting">Waiting for approval on another device</string>
+    <string name="progress_code_expires">Code %1$s · expires in %2$s</string>
+    <string name="progress_reconnecting">Reconnecting to %1$s…</string>
+    <string name="progress_busy">%1$s is busy or starting up. Next try in %2$s</string>
+    <string name="progress_attempt">Attempt %1$d</string>
+    <string name="progress_tried">Tried: %1$s</string>
+    <string name="progress_fail_no_answer">The home didn\'t answer.</string>
+    <string name="progress_fail_not_home">That address isn\'t a Maktaba home.</string>
+    <string name="progress_fail_other_home">A different home answered there, not the one you chose.</string>
+    <string name="progress_fail_wrong_password">Wrong username or password.</string>
+    <string name="progress_fail_expired">The code expired before anyone approved it.</string>
+    <string name="progress_fail_busy">The home stayed busy. It may still be starting.</string>
+    <string name="progress_fail_other">Something went wrong on the home.</string>
+    <string name="progress_retry">Retry</string>
+    <string name="progress_signing_in_button">Signing in…</string>
+    <string name="progress_cloud_loading">Loading your homes from Maktaba Cloud…</string>
 </resources>

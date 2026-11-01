@@ -159,4 +159,25 @@
     <string name="error_back">رجوع</string>
     <string name="error_sign_in_again">سجّل الدخول مجددًا</string>
     <string name="error_details">التفاصيل</string>
+    <!-- connect progress (story 48.37) -->
+    <string name="progress_finding">جارٍ البحث عن الجهاز الرئيسي…</string>
+    <string name="progress_trying">تجربة %1$s — %2$d من %3$d</string>
+    <string name="progress_found">تم العثور على %1$s</string>
+    <string name="progress_signing_in">جارٍ تسجيل الدخول إلى %1$s…</string>
+    <string name="progress_awaiting">بانتظار الموافقة من جهاز آخر</string>
+    <string name="progress_code_expires">الرمز %1$s · تنتهي صلاحيته خلال %2$s</string>
+    <string name="progress_reconnecting">جارٍ إعادة الاتصال بـ%1$s…</string>
+    <string name="progress_busy">%1$s مشغول أو قيد التشغيل. المحاولة التالية خلال %2$s</string>
+    <string name="progress_attempt">المحاولة %1$d</string>
+    <string name="progress_tried">العناوين التي جُرّبت: %1$s</string>
+    <string name="progress_fail_no_answer">لم يستجب الجهاز الرئيسي.</string>
+    <string name="progress_fail_not_home">هذا العنوان ليس جهازًا رئيسيًا لمكتبة.</string>
+    <string name="progress_fail_other_home">استجاب جهاز رئيسي آخر على هذا العنوان، لا الذي اخترته.</string>
+    <string name="progress_fail_wrong_password">اسم المستخدم أو كلمة المرور غير صحيحة.</string>
+    <string name="progress_fail_expired">انتهت صلاحية الرمز قبل أن يوافق عليه أحد.</string>
+    <string name="progress_fail_busy">بقي الجهاز الرئيسي مشغولًا. ربما لا يزال قيد التشغيل.</string>
+    <string name="progress_fail_other">حدث خطأ ما في الجهاز الرئيسي.</string>
+    <string name="progress_retry">إعادة المحاولة</string>
+    <string name="progress_signing_in_button">جارٍ تسجيل الدخول…</string>
+    <string name="progress_cloud_loading">جارٍ تحميل أجهزتك الرئيسية من سحابة مكتبة…</string>
 </resources>
