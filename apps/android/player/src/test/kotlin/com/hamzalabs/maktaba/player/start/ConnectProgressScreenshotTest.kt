@@ -133,7 +133,7 @@ class ConnectProgressScreenshotTest {
     private val busy = ConnectProgress.HomeBusy("Darwish home", NOW + 7_000)
     private val failed = ConnectProgress.Failed(
         FailReason.NoAnswer,
-        listOf("192.168.1.20:8088", "darwish.example.com", "relay.maktaba.app/h/darwish"),
+        listOf("192.168.1.20:8088", "darwish.example.com", "relay.maktaba.tv/h/darwish"),
         ConnectStage.Connect,
         attempt = 2,
     )
