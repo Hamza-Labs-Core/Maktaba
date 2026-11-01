@@ -33,6 +33,10 @@ struct PlayerShell: View {
     @State private var paths: [PlayerSection: [PlayerRoute]]
     /// The tabs' order and the sidebar's sections as the person arranged them (iPad, Mac).
     @AppStorage("player.tabs") private var customization = TabViewCustomization()
+    #if os(macOS)
+    /// The player over the whole window, sidebar and all (`WindowPlayer`).
+    @State private var windowPlayer = WindowPlayer()
+    #endif
 
     init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
          sections: [PlayerSection] = PlayerSection.visible(),
@@ -67,6 +71,16 @@ struct PlayerShell: View {
         .playerMenuTarget(sections: sections, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
+        #if os(macOS)
+        .environment(windowPlayer)
+        .overlay {
+            if let playback = windowPlayer.playback {
+                WatchView(playback: playback, session: context.session) { windowPlayer.close?() }
+                    .ignoresSafeArea()
+                    .accessibilityIdentifier("player.window")
+            }
+        }
+        #endif
     }
 
     private var tabs: some View {

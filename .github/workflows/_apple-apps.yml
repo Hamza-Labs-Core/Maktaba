@@ -112,19 +112,7 @@ jobs:
           mkdir -p "$SHOTS" "$RESULTS"
           # this shard's classes: heaviest first (by test count) to the lightest shard
           only=()
-          while IFS= read -r c; do only+=("$c"); done < <(python3 - "${{ matrix.shard }}" "${{ matrix.shards }}" UITests/Player*Tests.swift <<'PY'
-          import os, re, sys
-          shard, shards, files = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3:]
-          weight = {os.path.basename(f)[:-6]: len(re.findall(r"func test", open(f).read())) for f in files}
-          load, mine = [0] * shards, []
-          for name in sorted(weight, key=lambda n: (-weight[n], n)):
-              i = min(range(shards), key=lambda k: (load[k], k))
-              load[i] += weight[name]
-              if i == shard - 1:
-                  mine.append(name)
-          print("\n".join(mine))
-          PY
-          )
+          while IFS= read -r c; do only+=("$c"); done < <(python3 ../../tools/apple/ui-shard.py "${{ matrix.shard }}" "${{ matrix.shards }}" UITests/Player*Tests.swift)
           echo "shard ${{ matrix.shard }}/${{ matrix.shards }} classes: ${only[*]}"
           runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
           # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")

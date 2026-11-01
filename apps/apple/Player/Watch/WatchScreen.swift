@@ -13,13 +13,20 @@ struct WatchScreen: View {
     @State private var playback: Playback?
     @State private var failure: HomeFailure?
     @Environment(\.dismiss) private var dismiss
+    /// The Mac's window-wide player: there the sidebar is beside the stack, so the picture is
+    /// shown over the whole window by the shell and this screen keeps only its black.
+    @Environment(WindowPlayer.self) private var window: WindowPlayer?
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let playback {
-                WatchView(playback: playback, session: context.session) { dismiss() }
-                    .focusedSceneValue(\.playback, playback)
+                if window == nil {
+                    WatchView(playback: playback, session: context.session) { dismiss() }
+                        .focusedSceneValue(\.playback, playback)
+                } else {
+                    Color.clear.focusedSceneValue(\.playback, playback)
+                }
             } else if let failure {
                 HomeErrorView(failure) { action in
                     switch action {
@@ -44,7 +51,14 @@ struct WatchScreen: View {
         .toolbar(.hidden, for: .windowToolbar)
         #endif
         .task(id: videoID) { await load() }
-        .onDisappear { playback?.stop() }
+        .onChange(of: playback.map(ObjectIdentifier.init), initial: true) {
+            guard let window, let playback else { return }
+            window.show(playback) { dismiss() }
+        }
+        .onDisappear {
+            if let playback { window?.hide(playback) }
+            playback?.stop()
+        }
     }
 
     private func load() async {
@@ -59,5 +73,26 @@ struct WatchScreen: View {
         } catch {
             failure = HomeFailure(error)
         }
+    }
+}
+
+/// The Mac's player over the whole window (story 48.25): the shell's sidebar sits beside each
+/// section's stack, so a pushed player would leave it showing. The watch screen hands its
+/// playback here and the shell draws it over everything; Close goes back as on any device.
+@MainActor @Observable
+final class WindowPlayer {
+    private(set) var playback: Playback?
+    private(set) var close: (() -> Void)?
+
+    func show(_ playback: Playback, close: @escaping () -> Void) {
+        self.playback = playback
+        self.close = close
+    }
+
+    /// Clears the player only if it is still `playback` (a newer one may have taken its place).
+    func hide(_ playback: Playback) {
+        guard self.playback === playback else { return }
+        self.playback = nil
+        close = nil
     }
 }
