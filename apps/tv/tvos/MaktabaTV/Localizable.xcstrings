@@ -31,12 +31,32 @@
         }
       }
     },
+    "Channels appear here once this home shares one with you." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تظهر القنوات هنا حين يشارك «الجهاز الرئيسي» قناة معك."
+          }
+        }
+      }
+    },
     "Choose another home" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "اختر جهازًا رئيسيًا آخر"
+          }
+        }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إغلاق"
           }
         }
       }
@@ -81,6 +101,16 @@
         }
       }
     },
+    "Guide" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدليل"
+          }
+        }
+      }
+    },
     "Home" : {
       "localizations" : {
         "ar" : {
@@ -91,12 +121,42 @@
         }
       }
     },
+    "LIVE" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مباشر"
+          }
+        }
+      }
+    },
     "Libraries" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "المكتبات"
+          }
+        }
+      }
+    },
+    "Live TV" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث المباشر"
+          }
+        }
+      }
+    },
+    "Mini guide" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدليل المصغّر"
           }
         }
       }
@@ -121,6 +181,26 @@
         }
       }
     },
+    "Next: %@ %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي: %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "No channels yet" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا قنوات بعد"
+          }
+        }
+      }
+    },
     "No libraries" : {
       "localizations" : {
         "ar" : {
@@ -141,12 +221,32 @@
         }
       }
     },
+    "Nothing scheduled" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء في الجدول"
+          }
+        }
+      }
+    },
     "Nothing to watch yet" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "لا شيء للمشاهدة بعد"
+          }
+        }
+      }
+    },
+    "Now" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الآن"
           }
         }
       }
@@ -211,6 +311,26 @@
         }
       }
     },
+    "Select to try again, or ▲ ▼ for another channel." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اضغط «اختيار» للمحاولة مجددًا، أو ▲ ▼ لقناة أخرى."
+          }
+        }
+      }
+    },
+    "Select to watch again, or ▲ ▼ for another channel." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اضغط «اختيار» للمشاهدة مجددًا، أو ▲ ▼ لقناة أخرى."
+          }
+        }
+      }
+    },
     "Settings" : {
       "localizations" : {
         "ar" : {
@@ -247,6 +367,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "جارٍ بدء %@…"
+          }
+        }
+      }
+    },
+    "The channel stopped playing." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف بث القناة."
+          }
+        }
+      }
+    },
+    "The home ended this stream." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنهى «الجهاز الرئيسي» هذا البث."
           }
         }
       }
@@ -291,12 +431,32 @@
         }
       }
     },
+    "Tuning…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ ضبط القناة…"
+          }
+        }
+      }
+    },
     "Videos appear here once this home shares a library with you." : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "تظهر المقاطع هنا حين يشارك هذا الجهاز الرئيسي مكتبة معك."
+          }
+        }
+      }
+    },
+    "Watch" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شاهد"
           }
         }
       }
@@ -324,6 +484,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "▲ ▼ for another channel." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "▲ ▼ لقناة أخرى."
+          }
+        }
+      }
+    },
+    "▲ ▼ to change channel · Menu to close" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "▲ ▼ لتغيير القناة · «القائمة» للإغلاق"
           }
         }
       }

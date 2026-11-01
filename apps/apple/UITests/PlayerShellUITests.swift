@@ -12,18 +12,20 @@ final class PlayerShellUITests: PlayerUITestCase {
     /// A library card of `Fixtures/libraries-summary.json` (the Libraries root, story 48.18).
     private let libraryCard = "library.lib-docs"
 
-    /// A TestFlight build shows `PlayerSection.enabled` only: Libraries, reading the home's
-    /// library cards; no section that has not merged.
+    /// A TestFlight build shows `PlayerSection.enabled` only: Home (story 48.17) first, then
+    /// Libraries (48.18) reading the home's library cards; no section that has not merged.
     func testOnlyTheEnabledSectionsShow() {
         launchSignedIn()
-        XCTAssertTrue(element(libraryCard).waitForExistence(timeout: 15), "the Libraries root")
-        XCTAssertTrue(home.seen.contains("GET /api/libraries/summary"))
-        for label in ["Home", "Live TV", "Profile"] {
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 15), "Home, the first section")
+        XCTAssertTrue(element("player.shell").exists, "more than one section: the tab bar")
+        for label in ["Live TV", "Profile"] {
             XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
             XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
         }
-        XCTAssertFalse(element("player.shell").exists, "one section: no tab bar")
-        shot("libraries-only")
+        sectionButton("Libraries").tap()
+        XCTAssertTrue(element(libraryCard).waitForExistence(timeout: 15), "the Libraries root")
+        XCTAssertTrue(home.seen.contains("GET /api/libraries/summary"))
+        shot("enabled-sections")
     }
 
     /// Every section shown: a tab bar at the bottom of an iPhone, tabs at the top of an iPad;
@@ -75,7 +77,14 @@ final class PlayerShellUITests: PlayerUITestCase {
             launchSignedIn(sections: ["all"], section: "search", open: route)
             XCTAssertTrue(element(id).waitForExistence(timeout: 15), "\(route) opens \(id)")
         }
-        XCTAssertTrue(app.staticTexts["v3 @ 90"].exists, "the player's route carries its time")
+        // the player's route carries its time: the stream opens at 90 s (story 48.23)
+        let opened = { self.home.requests.contains { r in
+            r.method == "POST" && r.path == "/api/stream/sessions"
+                && (try? JSONSerialization.jsonObject(with: r.body) as? [String: Any]).map { $0["video_id"] as? String == "v3" && $0["start_sec"] as? Int == 90 } == true
+        } }
+        let end = Date().addingTimeInterval(15)
+        while !opened(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+        XCTAssertTrue(opened(), "the player's route carries its time")
         shot("route-watch")
     }
 
@@ -97,7 +106,7 @@ final class PlayerShellUITests: PlayerUITestCase {
         for label in arabic { XCTAssertTrue(sectionButton(label).exists, label) }
         // right to left: Home leads from the right, Libraries after it
         XCTAssertGreaterThan(first.frame.midX, sectionButton(arabic[1]).frame.midX, "Home is right of Libraries")
-        XCTAssertTrue(app.staticTexts["هذه الشاشة قادمة قريبًا."].exists, "the placeholder in Arabic")
+        XCTAssertTrue(app.staticTexts["تابع المشاهدة"].waitForExistence(timeout: 10), "Home's rows in Arabic")
         shot("sections")
     }
 }
