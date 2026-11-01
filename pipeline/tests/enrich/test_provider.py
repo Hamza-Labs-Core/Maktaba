@@ -7,12 +7,12 @@ Google, a fake page server, a fake model): no test reaches the real ones.
 
 from __future__ import annotations
 
-import functools
 import json
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta, timezone
+from functools import partial
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -469,9 +469,7 @@ async def test_the_daily_search_cap_defers_the_web_part(
     # would otherwise get a fresh allowance and search again). seconds_to_next_day's own
     # midnight edges are test_seconds_to_next_day's.
     day_of_the_test = now()
-    monkeypatch.setattr(
-        enrich_service, "Budget", functools.partial(Budget, clock=lambda: day_of_the_test)
-    )
+    monkeypatch.setattr(enrich_service, "Budget", partial(Budget, clock=lambda: day_of_the_test))
     a = await make_lesson(db)
     b = await make_lesson(db, filename="other_07.mp4")
     await web_search_on(db)
