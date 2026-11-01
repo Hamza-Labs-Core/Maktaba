@@ -84,6 +84,10 @@ final class StatusUITests: XCTestCase {
         XCTAssertTrue(element("updates.blocked.0.3.45").waitForExistence(timeout: 10))
         // the plan's sentence and the run's state from MaktabaKit's catalog
         XCTAssertTrue(app.staticTexts["التحديثات"].exists || app.navigationBars["التحديثات"].exists, "the Updates title in Arabic")
+        // the held TV's failed check, said from its code (slot.release_mismatch), not the home's English
+        let check = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "خانة التجهيز تشغّل إصدارًا آخر")).firstMatch
+        XCTAssertTrue(check.waitForExistence(timeout: 10), "the TV check in Arabic")
+        XCTAssertFalse(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "release_mismatch")).firstMatch.exists)
         shot("ar-updates")
         app.swipeUp()
         shot("ar-updates-run")

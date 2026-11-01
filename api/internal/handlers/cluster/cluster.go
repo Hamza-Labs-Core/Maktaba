@@ -558,6 +558,11 @@ type Home struct {
 	AcceptJoinsUntil *time.Time `json:"accept_joins_until"`
 	RolesSupported   bool       `json:"roles_supported"`
 	RolesReason      *string    `json:"roles_reason"`
+	// RolesReasonCode names RolesReason (the web's machines.home.reason.<code>) and
+	// RolesReasonParams fill it, so an app says it in its own language; RolesReason stays
+	// the English for older apps.
+	RolesReasonCode   string            `json:"roles_reason_code,omitempty"`
+	RolesReasonParams map[string]string `json:"roles_reason_params,omitempty"`
 	// Story 31.3: the home's per-share storage check (as the pipeline on
 	// the home reports it) and its "share -> local mount" override.
 	Storage json.RawMessage `json:"storage,omitempty"`
@@ -591,8 +596,26 @@ func (h *Handler) home(ctx context.Context, id cluster.Identity) Home {
 	}
 	if !ok {
 		out.RolesReason = &reason
+		out.RolesReasonCode, out.RolesReasonParams = rolesReasonCode(reason)
 	}
 	return out
+}
+
+// rolesReasonCode is the code of a reason the home cannot take machines (cluster.Reason*),
+// with its params; "" for a reason it does not know.
+func rolesReasonCode(reason string) (string, map[string]string) {
+	switch reason {
+	case cluster.ReasonSQLite:
+		return "sqlite", nil
+	case cluster.ReasonCannotCreate:
+		return "cannot_create_roles", nil
+	case cluster.ReasonNoGroup:
+		return "no_worker_group", nil
+	}
+	if e, ok := strings.CutPrefix(reason, cluster.ReasonCheckFailed); ok {
+		return "check_failed", map[string]string{"error": e}
+	}
+	return "", nil
 }
 
 // Overview implements GET /api/cluster.

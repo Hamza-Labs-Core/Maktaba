@@ -52,6 +52,18 @@ use std::process::Command;
 #[path = "agent_windows.rs"]
 mod win;
 
+// The agent answers the home's update orders on Windows; its decisions are tested on
+// every OS
+#[cfg(any(windows, test))]
+#[path = "agent_orders.rs"]
+pub mod orders;
+
+/// The agent's kill-on-close job, for agent_orders' test of an installer outliving it.
+#[cfg(all(windows, test))]
+pub fn join_job_for_tests() -> Result<(), String> {
+    win::join_job_for_tests()
+}
+
 // compiled in every test build too: its decisions are tested on every OS
 #[cfg(any(target_os = "linux", test))]
 #[path = "agent_linux.rs"]

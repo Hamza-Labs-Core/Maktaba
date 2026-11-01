@@ -396,10 +396,12 @@ pub fn exactly(wanted: &str, offered: &str) -> bool {
 const WRITE_TRIES: u32 = 5;
 const WRITE_PAUSE: Duration = Duration::from_millis(40);
 
-/// The order still holds run_id (Err: it cannot be read now; Ok(false): gone, replaced).
-fn holds(path: &Path, run_id: &str) -> std::io::Result<bool> {
+/// The order still holds run_id, at state `at` when one is given (Err: it cannot be read
+/// now; Ok(false): gone, replaced, or moved on).
+fn holds(path: &Path, run_id: &str, at: Option<&str>) -> std::io::Result<bool> {
     match std::fs::read(path) {
-        Ok(raw) => Ok(serde_json::from_slice::<Request>(&raw).is_ok_and(|r| r.run_id == run_id)),
+        Ok(raw) => Ok(serde_json::from_slice::<Request>(&raw)
+            .is_ok_and(|r| r.run_id == run_id && at.map_or(true, |s| r.state == s))),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(e) => Err(e),
     }
@@ -411,8 +413,28 @@ fn holds(path: &Path, run_id: &str) -> std::io::Result<bool> {
 /// only that moment to cross it; a rename that fails (Windows: someone holds the file) is
 /// tried again a few times, briefly.
 pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std::io::Result<()> {
-    if !holds(path, &req.run_id).unwrap_or(true) {
-        return Ok(());
+    write_if(path, req, state, error, None).map(|_| ())
+}
+
+/// advance writes the order's next state as write_state does, but only while the order is
+/// still at the state req was read at: an answer that took a while (a download) never takes
+/// back what the server wrote meanwhile (its go, a withdrawal). Ok(true): it went in;
+/// Ok(false): the order had moved on, and was left as it is. (The Windows agent's:
+/// agent_orders.rs.)
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn advance(path: &Path, req: &Request, state: &str) -> std::io::Result<bool> {
+    write_if(path, req, state, "", Some(&req.state))
+}
+
+fn write_if(
+    path: &Path,
+    req: &Request,
+    state: &str,
+    error: &str,
+    at: Option<&str>,
+) -> std::io::Result<bool> {
+    if !holds(path, &req.run_id, at).unwrap_or(true) {
+        return Ok(false);
     }
     let mut r = req.clone();
     r.state = state.to_string();
@@ -431,12 +453,12 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
         if attempt > 0 {
             std::thread::sleep(WRITE_PAUSE);
         }
-        match holds(path, &req.run_id) {
+        match holds(path, &req.run_id, at) {
             Ok(true) => {}
             // withdrawn or replaced meanwhile: left as it is
             Ok(false) => {
                 let _ = std::fs::remove_file(&tmp);
-                return Ok(());
+                return Ok(false);
             }
             Err(e) => {
                 last = Some(e);
@@ -444,7 +466,7 @@ pub fn write_state(path: &Path, req: &Request, state: &str, error: &str) -> std:
             }
         }
         match std::fs::rename(&tmp, path) {
-            Ok(()) => return Ok(()),
+            Ok(()) => return Ok(true),
             Err(e) => last = Some(e),
         }
     }

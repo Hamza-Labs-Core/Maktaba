@@ -164,8 +164,38 @@ import Testing
         let o: UpdatesOverview = try Self.decode(Self.overview)
         let held = try #require(o.tvHeld)
         #expect(held.runID == "r9" && held.tv.held && held.tv.number == 12)
-        #expect(held.summary == "The TV stays on 0.3.39: check slot.health failed: the staging slot runs another release")
+        #expect(held.summary == "The TV stays on 0.3.39: check Staging process failed: the staging slot runs another release")
         #expect(held.tv.title(release: "0.3.40") == "Installed. TV held on 0.3.39: its check failed")
+    }
+
+    /// A failed check is said from its code and params, in the app's language; a code the
+    /// app does not know, or an older home without codes, shows the home's English.
+    @Test func saysATVCheckByItsCode() throws {
+        let ar = Locale(identifier: "ar")
+        func plain(_ s: String) -> String { s.filter { $0 != "\u{2068}" && $0 != "\u{2069}" } }
+        let json = #"""
+        {"check":"slot.health","result":"fail","code":"slot.release_mismatch",
+         "value":"the staging slot runs another release (release_mismatch)"}
+        """#
+        let mismatch: TVCheck = try Self.decode(json)
+        #expect(mismatch.valueText(locale: ar) == "خانة التجهيز تشغّل إصدارًا آخر")
+        #expect(mismatch.name(locale: ar) == "عملية التجهيز")
+        #expect(plain(mismatch.sentence(locale: ar)) == "فشل الفحص عملية التجهيز: خانة التجهيز تشغّل إصدارًا آخر")
+        #expect(mismatch.sentence(locale: Locale(identifier: "en")) == "check Staging process failed: The staging slot runs another release")
+        let gaps: TVCheck = try Self.decode(#"{"check":"guide.coverage","result":"fail","code":"guide.gaps","params":{"gaps":"3"},"value":"3 gaps"}"#)
+        #expect(gaps.valueText(locale: ar) == "3 فجوات في الساعات الـ24 القادمة")
+        let newer: TVCheck = try Self.decode(#"{"check":"moon.phase","result":"fail","code":"moon.waxing","value":"the moon is waxing"}"#)
+        #expect(newer.valueText(locale: ar) == "the moon is waxing" && newer.name(locale: ar) == "moon.phase")
+        let older: TVCheck = try Self.decode(#"{"check":"slot.health","result":"fail","value":"as the home said"}"#)
+        #expect(older.valueText(locale: ar) == "as the home said")
+    }
+
+    @Test func saysWhoStartedAnUpdate() {
+        let ar = Locale(identifier: "ar")
+        #expect(UpdateWords.trigger("auto", locale: Locale(identifier: "en")) == "the quiet window")
+        #expect(UpdateWords.trigger("auto", locale: ar) == "النافذة الهادئة")
+        #expect(UpdateWords.trigger("catch_up", locale: ar) == "جهاز يلحق بالبقية")
+        #expect(UpdateWords.trigger("solar_flare", locale: ar) == "solar flare")
     }
 
     @Test func readsARunWithItsStepsAndMachines() throws {
@@ -217,7 +247,7 @@ import Testing
         "last_exit":{"at":"2026-10-31T09:00:00Z","code":-1,"signal":"SIGKILL","reason":"crash","uptime_sec":12}},
        {"role":"tv-slot","instance":"amber","wanted":true,"state":"backoff","restarts":4,"crash_loop":true,"uptime_sec":0,
         "next_restart_at":"2026-10-31T10:05:00Z","detail":"port 9104 is held by pid 77 (maktaba-streaming)",
-        "detail_code":"port_taken","detail_params":{"port":9104,"holder_pid":77},
+        "detail_code":"port_taken","detail_params":{"port":9104,"addr":"127.0.0.1:9104","holder_pid":77},
         "last_exit":{"code":-1,"reason":"start_failed","error":"listen tcp :9104: bind: address already in use","uptime_sec":0}},
        {"role":"pipeline","state":"levitating","restarts":0,"crash_loop":false,"last_probe":{"ok":false,"consecutive_failures":3}},
        {"role":"ollama","wanted":true,"state":"stopped","restarts":"lots"},
@@ -237,7 +267,10 @@ import Testing
         #expect(d.processes.map(\.name) == ["API", "TV slot blue", "TV slot amber", "Processing pipeline", "ollama"])
         let amber = d.processes[2]
         #expect(amber.wanted && amber.crashLoop && amber.restarts == 4 && amber.stateText == "Restarting")
-        #expect(amber.detailCode == "port_taken" && amber.detailText == "port 9104 is held by pid 77 (maktaba-streaming)")
+        // its code's words with its values (the web's setup.starting.detail.port_taken), not the English
+        #expect(amber.detailCode == "port_taken" && amber.detail == "port 9104 is held by pid 77 (maktaba-streaming)")
+        #expect(amber.detailText == "Port 9104 (127.0.0.1:9104) is in use by another program, so a part of Maktaba is not started; it starts once the port is free.")
+        #expect(amber.detailText(locale: Locale(identifier: "ar")) == "المنفذ 9104 (127.0.0.1:9104) يشغله برنامج آخر، فلا يبدأ جزء من مكتبة؛ يبدأ حين يصير المنفذ متاحًا.")
         #expect(amber.lastExit?.sentence == "could not start" && amber.lastExit?.failed == true)
         #expect(d.processes[1].lastExit?.sentence == "killed by SIGKILL")
         // a state the app does not know shows raw; a field of the wrong shape reads as absent

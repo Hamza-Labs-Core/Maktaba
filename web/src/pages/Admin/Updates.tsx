@@ -34,6 +34,7 @@ import {
   type Words,
 } from "../../lib/updatesView";
 import { Markdown } from "../../lib/markdown";
+import { checkValue, useTk } from "./LiveTV/changeBits";
 import "../../styles/updates.css";
 import { accessAnswerWords, type HomeDb } from "../../lib/homeDb";
 import {
@@ -1191,11 +1192,13 @@ function TVHeldBlock({
 }) {
   const w = useWords();
   const { t } = w;
+  const { locale } = useI18n();
+  const tk = useTk();
   const on = tv.held_on || t("updates.tv.oldVersion");
   const state = tv.state ?? "held";
   const held = tvHeld(tv);
   const checks = tv.checks?.length
-    ? tv.checks.map((c) => ({ name: c.check, value: c.value }))
+    ? tv.checks.map((c) => ({ name: c.check, value: checkValue(locale, t, c) || undefined }))
     : (tv.failed ?? []).map((name) => ({ name, value: undefined as string | undefined }));
   return (
     <div
@@ -1221,9 +1224,9 @@ function TVHeldBlock({
           <ul className="mkt-updates__tv-checks">
             {checks.map((c, i) => (
               <li key={`${c.name}-${i}`}>
-                {w.word("tvcheck", c.name)}
+                {tk(`tvchanges.check.${c.name}`, c.name.replace(/_/g, " "))}
                 {c.value ? (
-                  <span className="mkt-muted" dir="ltr">
+                  <span className="mkt-muted" dir="auto">
                     {" "}
                     · {c.value}
                   </span>

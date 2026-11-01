@@ -46,6 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # The server agent starts an ordered release's installer (agent_orders.rs), which stops
+      # the agent and then runs its sign-in task again: a task's child must outlive the task's
+      # process, and the task must run again meanwhile. A throwaway task on this runner.
+      - name: A task's child outlives it, and the task runs again meanwhile
+        shell: pwsh
+        run: ./tools/release/win-app/check-task-children.ps1
+
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod

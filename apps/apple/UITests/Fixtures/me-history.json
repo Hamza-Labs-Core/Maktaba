@@ -1,0 +1,72 @@
+{
+ "items": [
+  {
+   "video_id": "v2",
+   "title": "السيرة النبوية، الدرس ١١",
+   "duration_sec": 2980,
+   "times_watched": 1,
+   "total_watch_sec": 1240,
+   "best_percent": 41.6,
+   "last_watched_at": "{{now-1800}}",
+   "position_sec": 1240,
+   "completed": false
+  },
+  {
+   "video_id": "v5",
+   "title": "Tafsir al-Kahf, part 2",
+   "duration_sec": 2700,
+   "times_watched": 1,
+   "total_watch_sec": 600,
+   "best_percent": 22.2,
+   "last_watched_at": "{{now-5400}}",
+   "position_sec": 600,
+   "completed": false
+  },
+  {
+   "video_id": "v9",
+   "title": "رحلة إلى مكة",
+   "duration_sec": 3300,
+   "times_watched": 1,
+   "total_watch_sec": 1500,
+   "best_percent": 45.5,
+   "last_watched_at": "{{now-172800}}",
+   "position_sec": 1500,
+   "completed": false
+  },
+  {
+   "video_id": "v1",
+   "title": "السيرة النبوية، الدرس ١٠",
+   "duration_sec": 3120,
+   "times_watched": 2,
+   "total_watch_sec": 3120,
+   "best_percent": 100,
+   "last_watched_at": "{{now-259200}}",
+   "position_sec": 3120,
+   "completed": true
+  },
+  {
+   "video_id": "v4",
+   "title": "Tafsir al-Kahf, part 1",
+   "duration_sec": 2650,
+   "times_watched": 2,
+   "total_watch_sec": 2650,
+   "best_percent": 100,
+   "last_watched_at": "{{now-345600}}",
+   "position_sec": 2650,
+   "completed": true
+  },
+  {
+   "video_id": "v8",
+   "title": "The Libraries of Cordoba",
+   "duration_sec": 3480,
+   "times_watched": 2,
+   "total_watch_sec": 3480,
+   "best_percent": 100,
+   "last_watched_at": "{{now-518400}}",
+   "position_sec": 3480,
+   "completed": true
+  }
+ ],
+ "limit": 50,
+ "offset": 0
+}

@@ -1,0 +1,25 @@
+{
+ "id": "v8",
+ "library_id": "lib-docs",
+ "path": "/Volumes/Media/Documentaries/libraries-of-cordoba.mkv",
+ "filename": "libraries-of-cordoba.mkv",
+ "title": "The Libraries of Cordoba",
+ "description": "How a medieval city kept hundreds of thousands of books.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 3480,
+ "size_bytes": 870000000,
+ "content_hash": "58580d134b665f53ca5614a4367f7e2b42e632d838e1390e1ebe9dc89869c9d5",
+ "created_at": "{{now-3456000}}",
+ "updated_at": "{{now-3455400}}",
+ "playable": true,
+ "tags": [
+  "history"
+ ],
+ "latest_transcript_id": "tr-v8",
+ "playback_state": {
+  "position_sec": 3480,
+  "completed": true,
+  "updated_at": "{{now-518400}}"
+ }
+}

@@ -21,6 +21,9 @@ const (
 	ReasonSQLite       = "joining machines needs a Postgres home (this home runs on SQLite)"
 	ReasonCannotCreate = "the database user cannot create roles"
 	ReasonNoGroup      = "the maktaba_worker role is missing (run the migrations as a user that may create roles)"
+	// ReasonCheckFailed starts the reason when the privileges could not be read (the
+	// database's error follows it).
+	ReasonCheckFailed = "cannot check the database user's privileges: "
 )
 
 // Roles provisions the machines' database roles (design §3.3).
@@ -88,7 +91,7 @@ SELECT COALESCE((SELECT rolsuper OR rolcreaterole FROM pg_roles WHERE rolname = 
        EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, WorkerGroup).Scan(&may, &group)
 	switch {
 	case err != nil:
-		return false, "cannot check the database user's privileges: " + err.Error()
+		return false, ReasonCheckFailed + err.Error()
 	case !may:
 		return false, ReasonCannotCreate
 	case !group:

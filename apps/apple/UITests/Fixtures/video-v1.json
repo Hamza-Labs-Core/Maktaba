@@ -1,0 +1,25 @@
+{
+ "id": "v1",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/seerah-10.mp4",
+ "filename": "seerah-10.mp4",
+ "title": "السيرة النبوية، الدرس ١٠",
+ "description": "الدرس العاشر من سلسلة السيرة النبوية.",
+ "state": "ready",
+ "detected_language": "ar",
+ "duration_sec": 3120,
+ "size_bytes": 780000000,
+ "content_hash": "f4c269b09d0ce5c2957ddf37c612bc57568772f32f100086cfcf1939b34f7e49",
+ "created_at": "{{now-1728000}}",
+ "updated_at": "{{now-1727400}}",
+ "playable": true,
+ "tags": [
+  "seerah"
+ ],
+ "latest_transcript_id": "tr-v1",
+ "playback_state": {
+  "position_sec": 3120,
+  "completed": true,
+  "updated_at": "{{now-259200}}"
+ }
+}
