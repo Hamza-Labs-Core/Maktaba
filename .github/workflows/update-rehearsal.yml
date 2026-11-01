@@ -42,6 +42,7 @@ on:
       - 'cmd/maktaba-server/internal/selfupdate/**'
       - 'cmd/maktaba-server/internal/machineagent/**'
       - 'cmd/maktaba-server/serve*.go'
+      - 'cmd/maktaba-server/stream_gate*.go'
       - 'cmd/maktaba-server/cmd_serve.go'
       - 'cmd/maktaba-server/cmd_update*.go'
       - 'cmd/maktaba-server/cmd_restore.go'
