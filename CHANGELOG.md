@@ -12,6 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
+  serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
+  for an hour like the full one. A viewer without the video's library now gets 404 (as for a
+  missing video) instead of 403, for both sizes.
 - **The server sends codes, not English, for what the admin screens say.** Each TV change
   check now carries a `code` and `params` beside its English `value` (for example
   `slot.release_mismatch` for "the staging slot runs another release"), and the move that
@@ -43,6 +47,12 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **Maktaba Player (Apple) has its sections' shell (Epic 48, story 48.13).** It has Home,
+  Libraries, Live TV, Search and Profile in a tab bar on iPhone that becomes a sidebar on
+  iPad, Mac and an open iPhone Duo. A section shows only once its screen has shipped, so
+  today's builds still open straight on the libraries. CI now runs the Player's UI tests,
+  in English and Arabic, on throwaway iPhone and iPad simulators against a mock home, and
+  keeps their screenshots.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes

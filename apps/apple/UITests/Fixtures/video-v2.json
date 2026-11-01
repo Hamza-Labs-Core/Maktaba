@@ -1,0 +1,25 @@
+{
+ "id": "v2",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/seerah-11.mp4",
+ "filename": "seerah-11.mp4",
+ "title": "السيرة النبوية، الدرس ١١",
+ "description": "الدرس الحادي عشر من سلسلة السيرة النبوية.",
+ "state": "ready",
+ "detected_language": "ar",
+ "duration_sec": 2980,
+ "size_bytes": 745000000,
+ "content_hash": "a921a8b8565ec6c39070dc11c56a7a0c70b247293390cc26c99eb6db3937efdc",
+ "created_at": "{{now-1641600}}",
+ "updated_at": "{{now-1641000}}",
+ "playable": true,
+ "tags": [
+  "seerah"
+ ],
+ "latest_transcript_id": "tr-v2",
+ "playback_state": {
+  "position_sec": 1240,
+  "completed": false,
+  "updated_at": "{{now-1800}}"
+ }
+}

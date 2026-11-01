@@ -1,0 +1,21 @@
+{
+ "id": "v7",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/fiqh-of-fasting.mp4",
+ "filename": "fiqh-of-fasting.mp4",
+ "title": "The Fiqh of Fasting",
+ "description": "The rulings of the fast, from intention to breaking it.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 1820,
+ "size_bytes": 455000000,
+ "content_hash": "e15d3463fb5abffcf1cf0b3a0f31786688cff7b49c8363b1735120946ef27609",
+ "created_at": "{{now-2592000}}",
+ "updated_at": "{{now-2591400}}",
+ "playable": true,
+ "tags": [
+  "fiqh",
+  "ramadan"
+ ],
+ "latest_transcript_id": "tr-v7"
+}

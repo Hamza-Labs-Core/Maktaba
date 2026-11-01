@@ -1,0 +1,25 @@
+{
+ "id": "v4",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/kahf-01.mp4",
+ "filename": "kahf-01.mp4",
+ "title": "Tafsir al-Kahf, part 1",
+ "description": "An introduction to Surat al-Kahf and its themes.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 2650,
+ "size_bytes": 662500000,
+ "content_hash": "c55dfcb282f457f42c0b136d40852af2b25ecded144264606f0e7428e21404e5",
+ "created_at": "{{now-1296000}}",
+ "updated_at": "{{now-1295400}}",
+ "playable": true,
+ "tags": [
+  "tafsir"
+ ],
+ "latest_transcript_id": "tr-v4",
+ "playback_state": {
+  "position_sec": 2650,
+  "completed": true,
+  "updated_at": "{{now-345600}}"
+ }
+}

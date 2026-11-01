@@ -721,6 +721,18 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Epic 48 story 48.5 agent of `b743b7d4`: `?size=small` on
+  `GET /api/videos/{id}/poster` (`api/internal/handlers/videos/poster.go`, tests in
+  `poster_size_test.go`).
+  - Decided: small = the pipeline's `thumb_small` copy (`<hash>/small.jpg`, then the import's
+    staged `imported/<id>.jpg`), else the full chain. The API generates nothing: the pipeline
+    makes each size once and keeps it in the thumbnail cache, and both sizes keep
+    `Cache-Control: private, max-age=3600`. An unknown `size` is a 400.
+  - Decided: the spec asks 404 for a viewer without the library, so the poster route now
+    answers a signed-in viewer without access exactly as a missing video (it said 403 before);
+    no one signed in still gets 403. The other video routes still say 403.
+  - Changed: the query reads `library_id` without `::text`, so the handler runs on the SQLite
+    test table too (lib/pq scans a uuid into a string either way, as `trickplay.go` does).
 - 2026-10-31 · Epic 48 story 48.4 agent of `b743b7d4`: [#468] lists a video session's sidecar
   subtitles as HLS `SUBTITLES` renditions in its master (one-segment WebVTT playlist at
   `subs-{lang}/index.m3u8` over the sidecar route), so AVPlayer, AirPlay and Cast can show them.
@@ -770,6 +782,28 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - Not mine, seen on #470's integration run: `TestRowCacheInvalidationPostgres`
     (`api/internal/handlers/browse`): "a scan's videos: …b's entry dropped too". Likely a late
     notice of an earlier write dropping libB after `fill()` saw both rows cached.
+- 2026-10-31 · Story 48.13 agent of `b743b7d4`: the Apple Player shell and its UI-test harness
+  (branch `feat/48.13-apple-player-shell`).
+  - Built: `Player/Shell/` holds `PlayerShell` (a `TabView` with `.sidebarAdaptable`, one
+    `[PlayerRoute]` stack per section; choosing the chosen tab pops it), `PlayerSection`
+    (`enabled` = `[.libraries]`), `PlayerRoute` (video, series, library, channel, watch) with
+    one `playerDestinations`, and `Shell.xcstrings`. Placeholder files sit in each screen's
+    folder (`Home/`, `Libraries/`, `Video/`, `Search/`, `Live/`, `Profile/`, `Watch/`); each
+    screen story owns its file. `LibraryBrowser.swift` moved to `Libraries/`.
+  - Decided: with one section enabled, the shell shows that screen alone (no one-tab bar), so
+    TestFlight builds look exactly as before until a second section merges. Debug-only launch
+    arguments (`-maktaba-sections all`, `-maktaba-section`, `-maktaba-open video/v1`) let the
+    tests reach screens that are not turned on yet; Release builds ignore them.
+  - Decided: MockHome serves `UITests/Fixtures/*.json` (shapes taken from the Go handlers,
+    with a `{{now±N}}` time token) through `routes.json`. It adds `stub`, `delay` and
+    `requests` (with query and body). The string guard now checks every table of a target
+    against the `<table>.xcstrings` in its folders, so a screen's new table needs no guard edit.
+  - CI: a new `player-ui-tests` job in `_apple-apps.yml` runs every `UITests/Player*Tests.swift`
+    class on throwaway iPhone and iPad simulators (deleted after) and uploads the screenshots.
+  - Failed, then fixed: relaunching without `-maktaba-session-reset` went back to sign-in,
+    because an unsigned test build keeps no Keychain token. So every UI test signs in fresh.
+    The Duo hinge split was only built with Xcode 27 (it is `LibraryBrowser`'s and unchanged);
+    it was not exercised on a Duo simulator.
 
 - 2026-10-31 · Epic 48.15 agent of `b743b7d4`: the Android Player shell. `player/…/shell/`:
   `PlayerShell` (Material's `NavigationSuiteScaffold`: bar compact or tabletop, rail medium,
