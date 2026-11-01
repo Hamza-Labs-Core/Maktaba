@@ -152,9 +152,11 @@ jobs:
         if: steps.config.outputs.ready == 'true'
       - name: Install the repository tools
         if: steps.config.outputs.ready == 'true'
+        timeout-minutes: 8
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends apt-utils createrepo-c rpm
+          apt_opts=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          sudo apt-get "${apt_opts[@]}" update -q
+          sudo apt-get "${apt_opts[@]}" install -y -q --no-install-recommends apt-utils createrepo-c rpm
 
       - name: Download the release's server packages
         if: steps.config.outputs.ready == 'true'

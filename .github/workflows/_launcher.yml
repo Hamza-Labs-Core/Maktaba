@@ -230,7 +230,7 @@ jobs:
       - name: A pre-release's .deb and .rpm order before the release
         run: |
           set -euo pipefail
-          command -v rpm >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq rpm; }
+          command -v rpm >/dev/null || { sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq rpm; }
           rm -rf pkgroot out-pre && mkdir -p pkgroot out-pre
           for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming; do
             printf '#!/bin/sh\n' > "pkgroot/$b"
