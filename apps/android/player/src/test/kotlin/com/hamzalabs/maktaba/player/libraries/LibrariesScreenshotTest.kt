@@ -68,7 +68,9 @@ class LibrariesScreenshotTest {
 
     private fun tablet() {
         compose.setLibraries(home, Window.Tablet)
-        waitForTag("video-v2")
+        // the wide grid has room past the first page and asks for the next one: shoot once
+        // its last video is in, or a slow run captures the first page alone
+        waitForTag("video-v5")
         shoot("listdetail_tablet")
     }
 
