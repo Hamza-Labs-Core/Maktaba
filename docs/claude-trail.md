@@ -957,7 +957,9 @@ Append here: date, session, one to five lines on what changed. Newest last.
     image, KVO handlers, `MPRemoteCommand` targets) must not be made inside a `@MainActor`
     method: Swift 6 gives it main-actor isolation and traps off the main thread. Make it in a
     `nonisolated static func` and hop on. The first CI run of [#512] crashed every watch test so.
-  - The CI iOS simulator reports no Picture in Picture; the PiP UI test skips the float there.
+  - The iPhone simulator reports no Picture in Picture (the iPad one floats it); the PiP UI
+    test skips the float on iPhone. `AVRoutePickerView` adds its inner button late on iPad:
+    `AirPlayButton.Picker` names every control in it once it is on screen.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2

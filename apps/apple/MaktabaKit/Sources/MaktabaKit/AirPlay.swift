@@ -217,9 +217,32 @@ extension AirPlayButton: UIViewRepresentable {
 
         override public func layoutSubviews() {
             super.layoutSubviews()
-            for b in subviews.compactMap({ $0 as? UIButton }) {
-                b.accessibilityLabel = label
-                b.accessibilityIdentifier = identifier
+            name(self)
+        }
+
+        override public func didMoveToWindow() {
+            super.didMoveToWindow()
+            // the system adds its button after the first layout on some devices (iPad): name it
+            // once it is there
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.name(self)
+            }
+        }
+
+        override public func didAddSubview(_ subview: UIView) {
+            super.didAddSubview(subview)
+            name(subview)
+        }
+
+        /// Every control in `view`, however deep the system put it.
+        private func name(_ view: UIView) {
+            for v in view.subviews {
+                if v is UIControl {
+                    v.accessibilityLabel = label
+                    v.accessibilityIdentifier = identifier
+                }
+                name(v)
             }
         }
     }

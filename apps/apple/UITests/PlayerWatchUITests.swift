@@ -161,7 +161,7 @@ final class PlayerWatchUITests: PlayerUITestCase {
     // MARK: AirPlay and Picture in Picture (story 48.24)
 
     /// The AirPlay route button is on the controls (a receiver itself can't run in CI: checked by
-    /// hand), and Picture in Picture floats the video from its button and comes back. A
+    /// hand), and Picture in Picture floats the video from its button; closing ends it. A
     /// simulator that has no Picture in Picture (the app's own `isPictureInPictureSupported`)
     /// shows no PiP button, and the float is skipped there, said in the result.
     func testAirPlayIsOnTheControlsAndPictureInPictureFloatsTheVideo() throws {
@@ -175,16 +175,31 @@ final class PlayerWatchUITests: PlayerUITestCase {
             XCTAssertFalse(app.buttons["player.pip"].exists, "no Picture in Picture here: no button")
             throw XCTSkip("this simulator has no Picture in Picture: the float is checked on a device")
         }
-        XCTAssertTrue(app.buttons["player.pip"].exists, "the Picture in Picture button")
         waitFor("Picture in Picture can start", timeout: 20) { state["pipPossible"] == "true" }
-        showControls()
-        app.buttons["player.pip"].tap()
+        tapControl("player.pip")
         waitFor("the video floats", timeout: 20) { state["pip"] == "true" }
         shot("watch-pip")
         waitFor("it plays on in the window") { state["playing"] == "true" }
-        showControls()
-        app.buttons["player.pip"].tap()
-        waitFor("back in the app", timeout: 20) { state["pip"] == "false" }
+        // the floating window sits over the controls' corner: Close (the other corner) ends
+        // it with the player
+        tapControl("player.close")
+        XCTAssertTrue(element("player.surface").waitForNonExistence(timeout: 10), "the player closes, the window with it")
+    }
+
+    /// Taps one of the controls, showing them first when they have hidden (they hide 4 s after
+    /// the last touch, so a check and a tap can straddle the moment they go).
+    private func tapControl(_ id: String) {
+        let button = app.buttons[id]
+        for _ in 0 ..< 3 {
+            if button.exists, button.isHittable {
+                button.tap()
+                return
+            }
+            // above the middle row (play / pause sits in the middle)
+            element("player.surface").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
+            _ = button.waitForExistence(timeout: 3)
+        }
+        XCTFail("\(id) did not show")
     }
 
     // MARK: helpers
