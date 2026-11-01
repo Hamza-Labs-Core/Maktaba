@@ -1,0 +1,31 @@
+{
+ "items": [
+  {
+   "id": "pl-1",
+   "name": "رمضان",
+   "description": "دروس الشهر",
+   "videos": 2,
+   "duration_sec": 5125,
+   "poster_video_ids": [
+    "v3",
+    "v7"
+   ],
+   "created_at": "{{now-2160000}}",
+   "updated_at": "{{now-259200}}",
+   "hand_ordered": false
+  },
+  {
+   "id": "pl-2",
+   "name": "Weekend documentaries",
+   "description": "",
+   "videos": 1,
+   "duration_sec": 2940,
+   "poster_video_ids": [
+    "v10"
+   ],
+   "created_at": "{{now-691200}}",
+   "updated_at": "{{now-86400}}",
+   "hand_ordered": true
+  }
+ ]
+}

@@ -1,0 +1,20 @@
+{
+ "id": "v11",
+ "library_id": "lib-docs",
+ "path": "/Volumes/Media/Documentaries/house-of-wisdom.mkv",
+ "filename": "house-of-wisdom.mkv",
+ "title": "بيت الحكمة في بغداد",
+ "description": "فيلم وثائقي عن الترجمة والعلم في بغداد العباسية.",
+ "state": "ready",
+ "detected_language": "ar",
+ "duration_sec": 3060,
+ "size_bytes": 765000000,
+ "content_hash": "e75688e31c5ab5c8aac161892e18d32d52eeea4bd30633d231f1f1274d9d007e",
+ "created_at": "{{now-7200}}",
+ "updated_at": "{{now-6600}}",
+ "playable": true,
+ "tags": [
+  "history"
+ ],
+ "latest_transcript_id": "tr-v11"
+}

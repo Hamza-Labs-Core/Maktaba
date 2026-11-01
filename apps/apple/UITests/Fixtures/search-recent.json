@@ -1,0 +1,26 @@
+{
+ "items": [
+  {
+   "search_id": "sr-1",
+   "q": "السيرة",
+   "mode": "hybrid",
+   "created_at": "{{now-600}}",
+   "last_used_at": "{{now-600}}",
+   "expires_at": "{{now+1800}}",
+   "title_count": 3,
+   "transcript_count": 2,
+   "live": true
+  },
+  {
+   "search_id": "sr-0",
+   "q": "Cordoba",
+   "mode": "hybrid",
+   "created_at": "{{now-172800}}",
+   "last_used_at": "{{now-172800}}",
+   "expires_at": "{{now-170400}}",
+   "title_count": 1,
+   "transcript_count": 0,
+   "live": false
+  }
+ ]
+}

@@ -1,0 +1,20 @@
+{
+ "id": "v6",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/kahf-03.mp4",
+ "filename": "kahf-03.mp4",
+ "title": "تفسير سورة الكهف، الجزء ٣",
+ "description": "قصة صاحب الجنتين.",
+ "state": "ready",
+ "detected_language": "ar",
+ "duration_sec": 2810,
+ "size_bytes": 702500000,
+ "content_hash": "1cf2a877e5ca94a303dfa1b4e047f68a58a27c4209824e461ff5a4560809ed1a",
+ "created_at": "{{now-90000}}",
+ "updated_at": "{{now-89400}}",
+ "playable": true,
+ "tags": [
+  "tafsir"
+ ],
+ "latest_transcript_id": "tr-v6"
+}

@@ -1,0 +1,35 @@
+{
+ "items": [
+  {
+   "id": 101,
+   "seq": 0,
+   "start_sec": 0,
+   "end_sec": 420,
+   "title": "المقدمة",
+   "source": "inferred"
+  },
+  {
+   "id": 102,
+   "seq": 1,
+   "start_sec": 420,
+   "end_sec": 1500,
+   "title": "Hijrah to Madinah",
+   "source": "inferred"
+  },
+  {
+   "id": 103,
+   "seq": 2,
+   "start_sec": 1500,
+   "end_sec": 2600,
+   "title": "بناء المسجد",
+   "source": "inferred"
+  },
+  {
+   "id": 104,
+   "seq": 3,
+   "start_sec": 2600,
+   "title": "Questions and answers",
+   "source": "inferred"
+  }
+ ]
+}

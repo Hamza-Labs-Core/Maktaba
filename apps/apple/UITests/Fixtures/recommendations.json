@@ -1,0 +1,58 @@
+{
+ "rails": [
+  {
+   "id": "continue",
+   "title": "Continue Watching",
+   "reason_kind": "continue_watching",
+   "items": [
+    {
+     "video_id": "v2",
+     "position_sec": 1240,
+     "duration_sec": 2980,
+     "remaining_sec": 1740,
+     "last_watched_at": "{{now-1800}}"
+    },
+    {
+     "video_id": "v5",
+     "position_sec": 600,
+     "duration_sec": 2700,
+     "remaining_sec": 2100,
+     "last_watched_at": "{{now-5400}}"
+    },
+    {
+     "video_id": "v9",
+     "position_sec": 1500,
+     "duration_sec": 3300,
+     "remaining_sec": 1800,
+     "last_watched_at": "{{now-172800}}"
+    }
+   ]
+  },
+  {
+   "id": "for-you",
+   "title": "For You",
+   "reason_kind": "for_you",
+   "items": [
+    {
+     "video_id": "v6",
+     "score": 0.91
+    },
+    {
+     "video_id": "v11",
+     "score": 0.84
+    },
+    {
+     "video_id": "v10",
+     "score": 0.77
+    },
+    {
+     "video_id": "v7",
+     "score": 0.62
+    }
+   ]
+  }
+ ],
+ "generated_at": "{{now}}",
+ "expires_at": "{{now+60}}",
+ "cache_hit": false
+}

@@ -744,6 +744,28 @@ Append here: date, session, one to five lines on what changed. Newest last.
     nothing tested `Get`'s library rule, and the gate now depends on it.
   - Needs the update-rehearsal CI green on its exact commit before merge, because it changes
     the front door.
+- 2026-10-31 · Story 48.13 agent of `b743b7d4`: the Apple Player shell and its UI-test harness
+  (branch `feat/48.13-apple-player-shell`).
+  - Built: `Player/Shell/` holds `PlayerShell` (a `TabView` with `.sidebarAdaptable`, one
+    `[PlayerRoute]` stack per section; choosing the chosen tab pops it), `PlayerSection`
+    (`enabled` = `[.libraries]`), `PlayerRoute` (video, series, library, channel, watch) with
+    one `playerDestinations`, and `Shell.xcstrings`. Placeholder files sit in each screen's
+    folder (`Home/`, `Libraries/`, `Video/`, `Search/`, `Live/`, `Profile/`, `Watch/`); each
+    screen story owns its file. `LibraryBrowser.swift` moved to `Libraries/`.
+  - Decided: with one section enabled, the shell shows that screen alone (no one-tab bar), so
+    TestFlight builds look exactly as before until a second section merges. Debug-only launch
+    arguments (`-maktaba-sections all`, `-maktaba-section`, `-maktaba-open video/v1`) let the
+    tests reach screens that are not turned on yet; Release builds ignore them.
+  - Decided: MockHome serves `UITests/Fixtures/*.json` (shapes taken from the Go handlers,
+    with a `{{now±N}}` time token) through `routes.json`. It adds `stub`, `delay` and
+    `requests` (with query and body). The string guard now checks every table of a target
+    against the `<table>.xcstrings` in its folders, so a screen's new table needs no guard edit.
+  - CI: a new `player-ui-tests` job in `_apple-apps.yml` runs every `UITests/Player*Tests.swift`
+    class on throwaway iPhone and iPad simulators (deleted after) and uploads the screenshots.
+  - Failed, then fixed: relaunching without `-maktaba-session-reset` went back to sign-in,
+    because an unsigned test build keeps no Keychain token. So every UI test signs in fresh.
+    The Duo hinge split was only built with Xcode 27 (it is `LibraryBrowser`'s and unchanged);
+    it was not exercised on a Duo simulator.
 
 - 2026-10-31 · Epic 48.15 agent of `b743b7d4`: the Android Player shell. `player/…/shell/`:
   `PlayerShell` (Material's `NavigationSuiteScaffold`: bar compact or tabletop, rail medium,

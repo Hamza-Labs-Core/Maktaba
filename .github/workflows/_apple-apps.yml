@@ -1,6 +1,7 @@
 # Reusable gate for the native Apple apps (Epic 42, `apps/apple` and the Apple TV app in
 # `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote, Maktaba Player
-# for iPhone and the Mac, Maktaba TV), and their String Catalogs in English and Arabic.
+# for iPhone and the Mac, Maktaba TV), and their String Catalogs in English and Arabic; and,
+# in a second job, the Player's UI tests on throwaway iPhone and iPad simulators.
 #
 # The catalogs: tools/apple/check-string-catalogs.py fails on a key without its Arabic
 # (state "translated") and, reading the .stringsdata the builds write (project.yml sets
@@ -62,3 +63,76 @@ jobs:
 
       - name: Every string the code uses is in its catalog
         run: python3 tools/apple/check-string-catalogs.py --stringsdata "$DERIVED"
+
+  # The Player's UI tests (Epic 48: its shell, then each screen) on iPhone and iPad, against
+  # MockHome (apps/apple/UITests, served by the test runner; no real home). Every class in
+  # apps/apple/UITests/Player*Tests.swift runs, so a screen's tests need no change here. Each
+  # simulator is made for the run and deleted after it (never a shared device); the
+  # screenshots (dark, English and Arabic) are kept as an artifact.
+  player-ui-tests:
+    name: Player UI tests (iPhone, iPad)
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DERIVED: ${{ github.workspace }}/build/player-ui-derived
+      SHOTS: ${{ github.workspace }}/build/player-shots
+      RESULTS: ${{ github.workspace }}/build/player-results
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Run the Player UI tests
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          mkdir -p "$SHOTS" "$RESULTS"
+          only=()
+          for f in UITests/Player*Tests.swift; do only+=("$(basename "$f" .swift)"); done
+          echo "classes: ${only[*]}"
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+          # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
+          devtype() {
+            xcrun simctl list devicetypes -j | python3 -c "
+          import json, re, sys
+          want = {'iphone': r'^iPhone (\d+)$', 'ipad': r'^iPad Pro 11-inch \(M(\d+)\)$'}[sys.argv[1]]
+          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
+          print(max(t)[1])" "$1"
+          }
+          made=()
+          cleanup() { for u in ${made[@]+"${made[@]}"}; do xcrun simctl shutdown "$u" || true; xcrun simctl delete "$u" || true; done; }
+          trap cleanup EXIT
+          status=0
+          run() { # scheme, test target, device-type prefix
+            local udid args=()
+            udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$3" "$(devtype "$3")" "$runtime")
+            made+=("$udid")
+            xcrun simctl boot "$udid"
+            xcrun simctl ui "$udid" appearance dark
+            for c in "${only[@]}"; do args+=(-only-testing "$2/$c"); done
+            echo "::group::$1 on $3"
+            TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "$1" \
+              -destination "id=$udid" -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO \
+              -resultBundlePath "$RESULTS/$3.xcresult" "${args[@]}" || status=1
+            echo "::endgroup::"
+            xcrun simctl shutdown "$udid" || true
+          }
+          run "Maktaba Player" "Maktaba Player UITests" "iphone"
+          run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad"
+          exit $status
+
+      - name: Keep the screenshots and results
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: player-ui-tests
+          path: |
+            build/player-shots
+            build/player-results
+          if-no-files-found: warn
+          retention-days: 14

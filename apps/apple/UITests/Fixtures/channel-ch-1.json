@@ -1,0 +1,41 @@
+{
+ "id": "ch-1",
+ "library_id": "lib-lectures",
+ "number": 1,
+ "name": "Lectures TV",
+ "slug": "lectures-tv",
+ "logo_path": "/srv/maktaba/channel-art/ch-1/logo.png",
+ "logo_url": "/api/channels/ch-1/logo",
+ "art": {
+  "logo": {
+   "url": "/api/channels/ch-1/art/logo?v=73477b70",
+   "path": "/srv/maktaba/channel-art/ch-1/logo.png",
+   "overridden": false
+  },
+  "watermark": {
+   "overridden": false,
+   "position": "top-right",
+   "width_pct": 12,
+   "margin_pct": 2
+  },
+  "loading": {
+   "overridden": false
+  },
+  "strip": null
+ },
+ "category": "general",
+ "mode": "shuffle",
+ "mode_config": {},
+ "transition": "cut",
+ "enabled": true,
+ "sort_order": 1,
+ "created_at": "{{now-17280000}}",
+ "updated_at": "{{now-864000}}",
+ "now_playing": {
+  "title": "Tafsir al-Kahf, part 2",
+  "start_at": "{{now-2200}}",
+  "end_at": "{{now+500}}",
+  "progress": 0.8148
+ },
+ "guide_until": "{{now+86400}}"
+}

@@ -1,0 +1,25 @@
+{
+ "id": "v5",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/kahf-02.mp4",
+ "filename": "kahf-02.mp4",
+ "title": "Tafsir al-Kahf, part 2",
+ "description": "The story of the people of the cave.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 2700,
+ "size_bytes": 675000000,
+ "content_hash": "2808378060564a0e5ea96c5b9b502f921ff81ff6deb41d6774fb856d49aead3e",
+ "created_at": "{{now-1209600}}",
+ "updated_at": "{{now-1209000}}",
+ "playable": true,
+ "tags": [
+  "tafsir"
+ ],
+ "latest_transcript_id": "tr-v5",
+ "playback_state": {
+  "position_sec": 600,
+  "completed": false,
+  "updated_at": "{{now-5400}}"
+ }
+}

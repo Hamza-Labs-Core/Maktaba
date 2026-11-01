@@ -1,0 +1,26 @@
+{
+ "items": [
+  {
+   "id": "lib-docs",
+   "name": "Documentaries",
+   "roots": [
+    "/Volumes/Media/Documentaries"
+   ],
+   "settings": {},
+   "created_at": "{{now-25920000}}",
+   "updated_at": "{{now-25833600}}"
+  },
+  {
+   "id": "lib-lectures",
+   "name": "Lectures",
+   "roots": [
+    "/Volumes/Media/Lectures"
+   ],
+   "settings": {
+    "default_subtitle_lang": "ar"
+   },
+   "created_at": "{{now-34560000}}",
+   "updated_at": "{{now-34473600}}"
+  }
+ ]
+}
