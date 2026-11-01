@@ -161,7 +161,6 @@ class PlayerShellTest {
         compose.setShell(sections = PlayerSection.entries - PlayerSection.Home - PlayerSection.Libraries)
         for ((section, title) in listOf(
             PlayerSection.LiveTv to "Live TV",
-            PlayerSection.Profile to "Profile",
         )) {
             compose.onNodeWithTag("section-${section.name}").performClick()
             compose.onNodeWithTag("placeholder").assertIsDisplayed()

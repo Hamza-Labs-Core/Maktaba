@@ -43,6 +43,7 @@ enum class PlayerSection(
             Home,
             Libraries,
             Search,
+            Profile,
         )
 
         /** The section whose root is [route], if it is one. */
