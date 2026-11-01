@@ -32,8 +32,11 @@ class LibrariesScreenshotTest {
 
     @Before fun routes() = home.answerLibraries()
 
+    // a picture waits for every answer from the fake home, not only the first card's
+    @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
+
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private val lang get() = if (compose.activity.resources.configuration.locales[0].language == "ar") "ar" else "en"
 
@@ -52,7 +55,8 @@ class LibrariesScreenshotTest {
         compose.setLibraries(home)
         waitForTag("library-l1")
         compose.onNodeWithTag("library-l1").performClick()
-        waitForTag("video-v2")
+        // the grid's last card in the picture: the first can show from the rows above it
+        waitForTag("video-v4")
         shoot("library_phone")
     }
 
