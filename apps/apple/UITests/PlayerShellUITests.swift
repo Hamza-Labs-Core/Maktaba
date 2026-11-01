@@ -13,11 +13,13 @@ final class PlayerShellUITests: PlayerUITestCase {
     private let libraryCard = "library.lib-docs"
 
     /// A TestFlight build shows `PlayerSection.enabled` only: Home (story 48.17) first, then
-    /// Libraries (48.18) reading the home's library cards; no section that has not merged.
+    /// Libraries (48.18) reading the home's library cards, Search (48.20); no section that has
+    /// not merged.
     func testOnlyTheEnabledSectionsShow() {
         launchSignedIn()
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 15), "Home, the first section")
         XCTAssertTrue(element("player.shell").exists, "more than one section: the tab bar")
+        XCTAssertTrue(sectionButton("Search").exists, "Search is turned on")
         for label in ["Live TV", "Profile"] {
             XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
             XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
