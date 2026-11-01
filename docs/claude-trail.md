@@ -40,6 +40,7 @@ and `docs/`.
 | **Secrets are never printed or committed:** Plex token, DB password, signing keys, API keys. Credentials are typed by the owner only. Test accounts are used through the API (`login.sh` reads the Keychain unseen); never type passwords into sign-in forms.                                                                     | standing               | Security. [#328] removed the DB password from every URL a process gets.                                                                                                              |
 | **Live data only for justified recovery.** Tests never touch the live DB: use scratch Postgres clusters. Read-only checks are fine. Don't change Plex DVRs (use Add to Plex). Never call live Cloudflare, Stripe, DNS or the VPS without the owner's OK. Don't bypass the admin API to create users.                              | standing               | Outages and the classifier's denials taught this.                                                                                                                                    |
 | **Fix flaky tests at the root.** Never only re-run, never skip a test.                                                                                                                                                                                                                                                            | 2026-10-26             | "wtf skipping tests? fix them".                                                                                                                                                      |
+| **Changed code needs its tests changed, in the same push.** The pre-push hook (`tools/affected-tests/install-hook.sh`) and CI's `affected-tests` job enforce it. The way out is a commit trailer `No-Test-Change: <reason>`. Never run Mac or simulator UI tests locally: the hook only compiles them. | 2026-11-01 | [#469] left the Mac UI tests stale ([#516]). |
 | **Throwaway simulators.** iOS sim tests create a device (`xcrun simctl create`), run, and delete it. Never reboot the shared "iPhone 17". Stop any `simctl log stream` you start.                                                                                                                                                 | 2026-10-31             | SpringBoard crashed 19 times in a day and every crash put a dialog in front of the owner.                                                                                            |
 | **Screenshots in the dark theme** unless showing a light-only issue.                                                                                                                                                                                                                                                              | 2026-10-28             | Owner preference.                                                                                                                                                                    |
 | **Plain, short answers.** Explain without jargon.                                                                                                                                                                                                                                                                                 | standing               | "don't understand" came often.                                                                                                                                                       |
@@ -942,6 +943,37 @@ Append here: date, session, one to five lines on what changed. Newest last.
     machine agent connects or leaves, not only every 30 s; [#475] the relay records a home online
     before routable and offline after removal, one at a time per slug; [#472] host apt installs
     get retries, timeouts and an 8-minute step limit after stalled mirrors hung jobs 30 min.
+- 2026-11-01 · affected-tests agent of `b743b7d4`: [#516] (not merged; the owner asked for the PR
+  only). **New owner rule:** a push that changes code also changes the tests that cover it, and
+  this fails at once, before CI. Why: [#469] made the Player's sign-in a segmented choice, and the
+  Mac UI tests (`PlayerMacTests/UI/PlayerMacMenuUITests.swift`, which tap "With a code") went
+  stale with nothing running them.
+  - `tools/affected-tests` lists a range's tests by platform. It uses a coverage map, the UI
+    search (identifiers and the strings on the changed lines, keyed strings resolved) and naming.
+    The web adds its import graph. `gate` blocks in three cases: a source with none of its tests
+    changed, a UI platform whose tests use the changed phrase but did not change, or a test still
+    using a string that no source has any more. A commit trailer `No-Test-Change: <reason>` lets a
+    push through.
+  - The hook: `tools/affected-tests/install-hook.sh` writes `.git/hooks/pre-push`, which runs
+    `.githooks/pre-push`. `core.hooksPath` was rejected: the pre-commit framework refuses to
+    install with it set. The hook runs Go, Python, web, Android/JVM and MaktabaKit tests. Apple
+    UI targets are only compiled (`build-for-testing`, unsigned), and `safeToRun` refuses any
+    other `xcodebuild test`.
+  - CI: the `affected-tests` job reports into `ci-success`. The map is built in its own
+    `coverage-map.yml` (`workflow_run` after CI on main), not in ci.yml: the tag guard needs
+    CI's whole run on the commit green, so a map job there could block a release and would add
+    to its wait.
+  - Granularity: Go per package (`-coverpkg` over the module); Python per test (`--cov-context=test`);
+    MaktabaKit and the Mac Player per xccov target; Android per JaCoCo module, through an init
+    script; web per test file, from its import graph. iPhone/iPad UITests are not measured: that
+    run takes most of an hour, so coverage there could hit its 60-minute limit.
+  - Failed first, then fixed: the first pytest-context map pinned 100+ modules on whichever test
+    imported them first. Now a `-p pytest_preimport` plugin imports the package before any test,
+    and only lines inside functions count. A UI hit on any platform used to satisfy the gate,
+    which would not have caught [#469]: strict terms (identifiers, phrases with a space) now need
+    a change on each test platform that uses them.
+  - Not verified until it runs on GitHub: the coverage-map workflow, the xccov and JaCoCo
+    fragment steps (JaCoCo via the init script was checked locally for `:client` and `:core`).
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1108,3 +1140,5 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#477]: https://github.com/Hamza-Labs-Core/Maktaba/pull/477
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
+[#469]: https://github.com/Hamza-Labs-Core/Maktaba/pull/469
+[#516]: https://github.com/Hamza-Labs-Core/Maktaba/pull/516
