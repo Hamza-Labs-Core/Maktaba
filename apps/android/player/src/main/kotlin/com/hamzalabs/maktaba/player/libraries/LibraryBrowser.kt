@@ -186,12 +186,13 @@ fun LibraryBrowser(
     client: ApiClient,
     themes: ThemeStore,
     onPlaying: (Boolean) -> Unit,
+    /** What is chosen and loaded; the Libraries section keeps it across section switches. */
+    state: BrowserState = remember(client) { BrowserState(client, session::signedOut, session::switchHome) },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val app = context.applicationContext as PlayerApplication
     val playback = remember(client) { Playback(app, client, scope, app.background, session::signedOut) }
-    val state = remember(client) { BrowserState(client, session::signedOut, session::switchHome) }
     val panes = currentPanes()
 
     DisposableEffect(playback) { onDispose { playback.stop() } }

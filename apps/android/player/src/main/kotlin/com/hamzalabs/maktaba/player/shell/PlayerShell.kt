@@ -8,6 +8,8 @@ import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -66,11 +68,39 @@ class PlayerNavigator internal constructor(
         if (section != null) select(section) else controller.navigate(route)
     }
 
-    /** Back one screen; false at the section's root. */
-    fun back(): Boolean = controller.popBackStack()
+    /** Back one screen; false at the section's root, which always stays (never a blank section). */
+    fun back(): Boolean = canGoBack && controller.popBackStack()
 
     /** True when Back has a screen to return to in this section. */
     val canGoBack: Boolean get() = controller.previousBackStackEntry != null
+
+    private val reselectListeners = mutableListOf<() -> Unit>()
+
+    /**
+     * The section was selected again while shown: back to its root, and each listener told (a
+     * screen that keeps its own pages, as today's library browser does, returns to its first one).
+     */
+    internal fun reselect(root: Route) {
+        controller.popBackStack(root, inclusive = false)
+        reselectListeners.toList().forEach { it() }
+    }
+
+    internal fun addReselectListener(listener: () -> Unit) { reselectListeners += listener }
+    internal fun removeReselectListener(listener: () -> Unit) { reselectListeners -= listener }
+}
+
+/**
+ * Runs [action] each time the person selects the shown section again (its root is already
+ * shown, so a screen with pages of its own goes back to its first one).
+ */
+@Composable
+fun OnReselect(nav: PlayerNavigator, action: () -> Unit) {
+    val latest by rememberUpdatedState(action)
+    DisposableEffect(nav) {
+        val listener = { latest() }
+        nav.addReselectListener(listener)
+        onDispose { nav.removeReselectListener(listener) }
+    }
 }
 
 /** Draws a route's screen. The app's is [AppScreens]; a test may give its own. */
@@ -130,7 +160,7 @@ fun PlayerShell(
             LaunchedEffect(toRoot) {
                 if (handled != toRoot) {
                     handled = toRoot
-                    controller.popBackStack(current.root, inclusive = false)
+                    navigator.reselect(current.root)
                 }
             }
             // at another section's root, Back returns to the first section (Material's guidance)

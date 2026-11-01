@@ -17,7 +17,6 @@ import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.rules.ExternalResource
-import java.util.Collections
 
 /**
  * A home for the Player's UI tests (NFR-19): an OkHttp MockWebServer that answers the API
@@ -29,15 +28,24 @@ import java.util.Collections
  * @get:Rule val home = FakeHome()
  * home.answer("/api/home") { json(HOME_FIXTURE) }
  * ```
- * Every request is kept in [requests], to assert what a screen asked for.
+ * Every request is kept: [requests] is a copy of them, taken under the lock the server's
+ * thread appends with, to assert what a screen asked for.
  */
 class FakeHome : ExternalResource() {
     private val server = MockWebServer()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val routes = linkedMapOf<String, (RecordedRequest) -> MockResponse>()
 
-    /** What the screens asked, in order. */
-    val requests: MutableList<RecordedRequest> = Collections.synchronizedList(mutableListOf())
+    private val recorded = mutableListOf<RecordedRequest>()
+
+    /**
+     * What the screens asked so far, in order: a copy, so a test can read it while the server's
+     * thread records more (iterating the live list would race the dispatcher).
+     */
+    val requests: List<RecordedRequest> get() = synchronized(recorded) { recorded.toList() }
+
+    /** The paths asked so far, in order (no query). */
+    val paths: List<String> get() = requests.map { it.url.encodedPath }
 
     /** Who is signed in. */
     val user = User(id = "u1", username = "layla")
@@ -59,7 +67,7 @@ class FakeHome : ExternalResource() {
     override fun before() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
-                requests += request
+                synchronized(recorded) { recorded += request }
                 val path = request.url.encodedPath
                 return routes[path]?.invoke(request) ?: MockResponse.Builder().code(404).build()
             }

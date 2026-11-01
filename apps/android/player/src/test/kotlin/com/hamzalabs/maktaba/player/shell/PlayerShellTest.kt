@@ -1,6 +1,10 @@
 package com.hamzalabs.maktaba.player.shell
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -165,5 +169,18 @@ class PlayerShellTest {
             compose.onNodeWithText("Not available yet").assertIsDisplayed()
             compose.onAllNodesWithText(title).assertCountEquals(2) // the title bar and the section's label
         }
+    }
+
+    @Test
+    fun backAtASectionsRootKeepsTheRoot() {
+        var answer: Boolean? = null
+        compose.setShell(sections = listOf(PlayerSection.Home)) { route, nav ->
+            Text("root $route", Modifier.testTag("root").clickable { answer = nav.back() })
+        }
+        compose.onNodeWithTag("root").performClick()
+        compose.onNodeWithTag("root").performClick()
+
+        assertEquals("nothing to go back to", false, answer)
+        compose.onNodeWithText("root Home").assertIsDisplayed()
     }
 }

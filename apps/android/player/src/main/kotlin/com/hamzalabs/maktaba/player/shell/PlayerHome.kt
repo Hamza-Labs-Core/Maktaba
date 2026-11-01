@@ -17,7 +17,16 @@ class PlayerHome(
     val client: ApiClient,
     val themes: ThemeStore,
     val onPlaying: (Boolean) -> Unit = {},
-)
+) {
+    private val kept = mutableMapOf<String, Any>()
+
+    /**
+     * A screen's state kept for as long as this home is signed in, under [key]: a section's
+     * screen leaves composition when another section is shown, and finds its state again here.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun <T : Any> keep(key: String, create: () -> T): T = kept.getOrPut(key, create) as T
+}
 
 /** The signed-in home, provided by [MainActivity][com.hamzalabs.maktaba.player.MainActivity] (or a test's fake home). */
 val LocalPlayerHome = staticCompositionLocalOf<PlayerHome> { error("no PlayerHome: provide one around the shell") }

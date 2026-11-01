@@ -2,12 +2,15 @@ package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.setShell
@@ -41,7 +44,7 @@ class LibrariesSectionTest {
         compose.onNodeWithText("Lion of the Desert").assertIsDisplayed()
         // a single section offers no navigation
         compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, ShellNavigation.None)).assertExists()
-        assertTrue(home.requests.any { it.url.encodedPath == "/api/videos" })
+        assertTrue(home.paths.toString(), "/api/videos" in home.paths)
     }
 
     @Test
@@ -64,5 +67,28 @@ class LibrariesSectionTest {
         compose.onNodeWithTag("section-Libraries").performClick()
         waitFor("The Message")
         compose.onNodeWithText("The Message").assertIsDisplayed()
+    }
+
+    @Test
+    fun switchingSectionsKeepsTheBrowsersChoicesAndReselectingClosesTheVideo() {
+        compose.setShell(home, sections = listOf(PlayerSection.Libraries, PlayerSection.Search))
+        waitFor("Omar, Episode 1")
+        compose.onNodeWithText("Search titles").performTextInput("Omar")
+        waitFor("Omar, Episode 1")
+        compose.onNodeWithText("Omar, Episode 1").performClick()
+        waitFor("A film about Omar, Episode 1.")
+
+        // another section, and back: the open video is still open
+        compose.onNodeWithTag("section-Search").performClick()
+        compose.onNodeWithTag("placeholder").assertIsDisplayed()
+        compose.onNodeWithTag("section-Libraries").performClick()
+        waitFor("A film about Omar, Episode 1.")
+        compose.onNodeWithText("A film about Omar, Episode 1.").assertIsDisplayed()
+
+        // Libraries again: back to its list, the search still typed
+        compose.onNodeWithTag("section-Libraries").performClick()
+        waitFor("Lion of the Desert")
+        compose.onAllNodes(hasText("A film about Omar, Episode 1.")).assertCountEquals(0)
+        compose.onNode(hasText("Omar") and hasSetTextAction()).assertIsDisplayed()
     }
 }

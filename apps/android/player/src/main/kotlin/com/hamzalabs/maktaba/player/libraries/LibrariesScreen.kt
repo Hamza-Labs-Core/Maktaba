@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import com.hamzalabs.maktaba.player.R
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
+import com.hamzalabs.maktaba.player.shell.OnReselect
 import com.hamzalabs.maktaba.player.shell.PlaceholderScreen
 import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 
@@ -11,11 +12,17 @@ import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 // libraries, their videos, a video's page and the player, in every layout of the window. 48.27
 // replaces this file and LibraryBrowser.kt, keeping these signatures (shell/AppScreens.kt calls them).
 
-/** The Libraries section's root. */
+/**
+ * The Libraries section's root. The browser's choices (library, search, the open video) are
+ * kept by the signed-in home, so showing another section and coming back finds them; selecting
+ * Libraries again closes the open video, as re-selecting a section returns it to its root.
+ */
 @Composable
 fun LibrariesScreen(nav: PlayerNavigator) {
     val home = LocalPlayerHome.current
-    LibraryBrowser(home.session, home.user, home.client, home.themes, onPlaying = home.onPlaying)
+    val state = home.keep("libraries.browser") { BrowserState(home.client, home.session::signedOut, home.session::switchHome) }
+    OnReselect(nav) { state.video = null }
+    LibraryBrowser(home.session, home.user, home.client, home.themes, onPlaying = home.onPlaying, state = state)
 }
 
 /** A library's videos or series (FR-15). */
