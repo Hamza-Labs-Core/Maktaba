@@ -1,0 +1,17 @@
+{
+ "items": [
+  {
+   "best_percent": 25.15,
+   "completed": true,
+   "duration_sec": 3000,
+   "last_watched_at": "2026-10-31T23:49:13Z",
+   "position_sec": 0,
+   "times_watched": 1,
+   "title": "تفسير سورة البقرة ١",
+   "total_watch_sec": 0,
+   "video_id": "00000000-0000-4000-8000-000000000002"
+  }
+ ],
+ "limit": 50,
+ "offset": 0
+}

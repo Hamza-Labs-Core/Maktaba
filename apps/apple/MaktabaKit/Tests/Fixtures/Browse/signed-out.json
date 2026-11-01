@@ -1,0 +1,6 @@
+{
+ "detail": "authentication required",
+ "status": 401,
+ "title": "Unauthorized",
+ "type": "unauthorized"
+}

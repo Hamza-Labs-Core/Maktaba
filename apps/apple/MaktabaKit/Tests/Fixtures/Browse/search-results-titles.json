@@ -1,0 +1,24 @@
+{
+ "degraded": true,
+ "expires_at": "2026-11-01T00:04:13.027109Z",
+ "items": [
+  {
+   "duration_sec": 1800,
+   "in_transcripts": false,
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "library_name": "Tafsir Lessons",
+   "poster_url": "/api/videos/00000000-0000-4000-8000-000000000004/poster",
+   "score": 0.23333333,
+   "title": "Questions and answers on prayer",
+   "title_snippet": "Questions and answers on <mark>prayer</mark>",
+   "video_id": "00000000-0000-4000-8000-000000000004"
+  }
+ ],
+ "limit": 24,
+ "list": "titles",
+ "mode": "hybrid",
+ "offset": 0,
+ "q": "prayer",
+ "search_id": "GzrxeRrax489Zl2zdRr9PqV6",
+ "total": 1
+}

@@ -678,6 +678,24 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-11-01 · story 48.6 agent of `b743b7d4`: MaktabaKit `Browse.swift`, the browse client
+  (Home to Profile, not Live, which is 48.7, nor the player's session options, which stay
+  `openStream` until 48.23 needs more).
+  - Decided: fixtures are real answers. The branch API ran on a scratch Postgres (port 55486,
+    a viewer of one library of two, seeded series, chapters, transcript, playlist, search),
+    recorded by a script as that viewer into `MaktabaKit/Tests/Fixtures/Browse/` (outside the
+    test target, read by `#filePath`, so `Package.swift`, owned by 48.10, is untouched). A Go
+    test (`browse/native_fixtures_test.go`) decodes them into the handlers' types with unknown
+    fields refused, so renaming a field fails in the PR that renames it.
+  - Decided: `send` and `sendRaw` in `APIClient.swift` lost `private` (an extension in another
+    file needs them; 48.7 needs the same two-word change, which git merges cleanly).
+  - Decided: new model names avoid the apps' views (`BrowseVideo`, `VideoInfo`,
+    `VideoListPage`: the Player has a `VideoDetail` view, tvOS `VideoCard` and `VideoPage`).
+  - Found: a hidden video answers **403**, not 404 (`videos.canRead`), against FR-18's premise;
+    the client maps a video route's 403 to `.notAvailable` too. `GET /api/series/{id}` answers
+    its counts as 0 (only the list counts): a series page must count its episodes.
+  - Failed first: `initdb` without `-E UTF8` made a SQL_ASCII database, and the facets route
+    500'd on Arabic first letters; recreated the DB as UTF8 (not an API bug).
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1

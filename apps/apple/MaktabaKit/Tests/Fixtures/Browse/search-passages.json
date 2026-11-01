@@ -1,0 +1,29 @@
+{
+ "expires_at": "2026-11-01T00:04:13.031785Z",
+ "in_title": false,
+ "items": [
+  {
+   "end_sec": 22,
+   "score": 0.01639344262295082,
+   "segment_id": 3,
+   "snippet": "today we speak about <mark>prayer</mark> and its meaning",
+   "start_sec": 14.2
+  }
+ ],
+ "limit": 20,
+ "mode": "hybrid",
+ "offset": 0,
+ "q": "prayer",
+ "search_id": "GzrxeRrax489Zl2zdRr9PqV6",
+ "title_snippet": "تفسير سورة الفاتحة",
+ "total": 1,
+ "video": {
+  "duration_sec": 3600,
+  "library_id": "11111111-1111-4111-8111-111111111111",
+  "library_name": "Tafsir Lessons",
+  "poster_url": "/api/videos/00000000-0000-4000-8000-000000000001/poster",
+  "title": "تفسير سورة الفاتحة",
+  "video_id": "00000000-0000-4000-8000-000000000001"
+ },
+ "video_id": "00000000-0000-4000-8000-000000000001"
+}

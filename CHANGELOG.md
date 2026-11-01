@@ -12,6 +12,15 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **MaktabaKit: the Player's browse client (Epic 48, story 48.6).** `Browse.swift` adds the
+  calls and models for Home (rows, rails, Not interested), Libraries (cards, pins), a library
+  (hub, the grid by cursor with facets and sort, its series), Series, a video's page (detail,
+  marks, chapters, subtitles, transcript, trickplay, small poster), Watched and Favorite,
+  Search (both groups, pages, passages, suggestions, recent) and Profile (history, sessions,
+  cloud link, playlists). Each model reads the home's answer leniently; a 404 (and a video
+  route's 403) is `BrowseError.notAvailable`, a 401 the existing sign-out path. Tested against
+  answers recorded from the API on a scratch database; a Go test fails when a recorded field is
+  renamed in the handlers.
 - **Epic 48 spec: the native Players reach the web and Plex.** `specs/epics/48-native-players/`
   lists what Epic 42 left out of Maktaba Player on iPhone, iPad, Mac and Android (the brand
   and a dark start, Home rails, Series, Search, Live TV, Profile, a full player with next
