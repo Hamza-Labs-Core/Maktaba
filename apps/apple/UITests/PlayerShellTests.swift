@@ -4,11 +4,11 @@ import XCTest
 /// project.yml): the sections turned on, the routes' paths and the launch arguments the UI
 /// tests use. No app is launched.
 final class PlayerShellTests: XCTestCase {
-    /// TestFlight uploads every tag: only the screens that merged are on (Home 48.17,
-    /// Libraries 48.18, Live TV 48.21, Search 48.20), each story turning its own section on.
+    /// TestFlight uploads every tag: every section is on now that
+    /// each screen merged (Home 48.17, Libraries 48.18, Live TV 48.21, Search 48.20, Profile 48.22).
     func testOnlyTheMergedSectionsAreTurnedOn() {
-        XCTAssertEqual(PlayerSection.enabled, [.home, .libraries, .liveTV, .search])
-        XCTAssertEqual(PlayerSection.visible(arguments: []), [.home, .libraries, .liveTV, .search])
+        XCTAssertEqual(PlayerSection.enabled, PlayerSection.allCases)
+        XCTAssertEqual(PlayerSection.visible(arguments: []), PlayerSection.allCases)
     }
 
     /// Live TV only when the person may watch a channel (story 48.21): not while the home has

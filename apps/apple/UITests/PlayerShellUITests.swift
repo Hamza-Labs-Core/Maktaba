@@ -12,19 +12,15 @@ final class PlayerShellUITests: PlayerUITestCase {
     /// A library card of `Fixtures/libraries-summary.json` (the Libraries root, story 48.18).
     private let libraryCard = "library.lib-docs"
 
-    /// A TestFlight build shows `PlayerSection.enabled` only: Home (story 48.17) first, then
-    /// Libraries (48.18) reading the home's library cards, Search (48.20); no section that has
-    /// not merged.
+    /// A TestFlight build shows `PlayerSection.enabled`: Home (story 48.17) first, then
+    /// Libraries (48.18) reading the home's library cards, Live TV (48.21, the mock has
+    /// channels), Search (48.20) and Profile (48.22).
     func testOnlyTheEnabledSectionsShow() {
         launchSignedIn()
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 15), "Home, the first section")
         XCTAssertTrue(element("player.shell").exists, "more than one section: the tab bar")
-        XCTAssertTrue(sectionButton("Search").exists, "Search is turned on")
-        // Live TV (48.21) is on, and shows because the mock home has channels
-        XCTAssertTrue(sectionButton("Live TV").exists, "Live TV is turned on")
-        for label in ["Profile"] {
-            XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
-            XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
+        for label in ["Search", "Live TV", "Profile"] {
+            XCTAssertTrue(sectionButton(label).exists, "\(label) is turned on")
         }
         sectionButton("Libraries").tap()
         XCTAssertTrue(element(libraryCard).waitForExistence(timeout: 15), "the Libraries root")

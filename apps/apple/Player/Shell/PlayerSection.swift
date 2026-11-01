@@ -18,6 +18,7 @@ enum PlayerSection: String, CaseIterable, Identifiable, Hashable, Sendable {
         .libraries, // 48.18: Libraries, a library, Series, a series
         .liveTV, // 48.21: Now, Guide, the live player (shown only with a channel)
         .search, // 48.20: Search
+        .profile, // 48.22: Profile and Settings
     ]
 
     var id: String { rawValue }
