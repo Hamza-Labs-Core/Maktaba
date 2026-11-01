@@ -1,0 +1,204 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Audio" : {
+      "comment" : "The audio track choices' heading",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصوت"
+          }
+        }
+      }
+    },
+    "Auto" : {
+      "comment" : "The home chooses the quality",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تلقائي"
+          }
+        }
+      }
+    },
+    "Back 10 seconds" : {
+      "comment" : "Seeks 10 seconds back",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رجوع ١٠ ثوانٍ"
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "comment" : "Up next: stays on this video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء"
+          }
+        }
+      }
+    },
+    "Close" : {
+      "comment" : "Closes the player",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إغلاق"
+          }
+        }
+      }
+    },
+    "Done" : {
+      "comment" : "Closes the choices",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم"
+          }
+        }
+      }
+    },
+    "Forward 10 seconds" : {
+      "comment" : "Seeks 10 seconds forward",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقديم ١٠ ثوانٍ"
+          }
+        }
+      }
+    },
+    "Next" : {
+      "comment" : "Plays the series' next episode",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي"
+          }
+        }
+      }
+    },
+    "Off" : {
+      "comment" : "No subtitles",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف"
+          }
+        }
+      }
+    },
+    "Pause" : {
+      "comment" : "Pauses the video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "Plays the video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Play now" : {
+      "comment" : "Up next: plays the next episode at once",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّل الآن"
+          }
+        }
+      }
+    },
+    "Position" : {
+      "comment" : "The scrubber: where the video is",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموضع"
+          }
+        }
+      }
+    },
+    "Quality" : {
+      "comment" : "Opens the quality choices",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجودة"
+          }
+        }
+      }
+    },
+    "Subtitles" : {
+      "comment" : "The subtitle choices' heading",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة"
+          }
+        }
+      }
+    },
+    "Subtitles and audio" : {
+      "comment" : "Opens the subtitle and audio choices",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة والصوت"
+          }
+        }
+      }
+    },
+    "Up next in %lld s" : {
+      "comment" : "Up next's countdown, in seconds",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي خلال %lld ث"
+          }
+        }
+      }
+    },
+    "Video" : {
+      "comment" : "The video picture, for VoiceOver",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفيديو"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

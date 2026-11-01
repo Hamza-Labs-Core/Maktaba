@@ -234,6 +234,26 @@ public struct Page<Item: Decodable & Sendable>: Decodable, Sendable {
     public let next: String?
 }
 
+/// A rung of a stream session's `ladder`: a quality the home can transcode to.
+public struct Rendition: Codable, Hashable, Sendable {
+    public let height: Int
+    public let width: Int
+    public let bitrateKbps: Int
+    public let codec: String?
+
+    public init(height: Int, width: Int, bitrateKbps: Int, codec: String? = nil) {
+        self.height = height
+        self.width = width
+        self.bitrateKbps = bitrateKbps
+        self.codec = codec
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case height, width, codec
+        case bitrateKbps = "bitrate_kbps"
+    }
+}
+
 /// `POST /api/stream/sessions`: where the video plays from. `direct_url` is the file
 /// itself; `manifest_url` an HLS playlist. Both are signed (`?sig=`, good until
 /// `expires_at`) and relative to the home. The home's web port also wants a signed-in
@@ -244,13 +264,19 @@ public struct StreamSession: Codable, Sendable {
     public let manifestURL: String?
     public let directURL: String?
     public let expiresAt: String?
+    /// The qualities a transcode can be capped to (nil or empty: none offered, as for direct
+    /// play).
+    public let ladder: [Rendition]?
+    /// The quality this session plays at, when the home says.
+    public let currentRendition: Rendition?
 
     enum CodingKeys: String, CodingKey {
-        case mode
+        case mode, ladder
         case sessionID = "session_id"
         case manifestURL = "manifest_url"
         case directURL = "direct_url"
         case expiresAt = "expires_at"
+        case currentRendition = "current_rendition"
     }
 
     /// When the signed URL stops working (nil: the home did not say).
