@@ -678,6 +678,21 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · flaky-tests agent of `b743b7d4`: [#470] fixes three flakes at the root.
+  - Enrich near midnight: the test, not the product. `seconds_to_next_day` floors at 60 s, so
+    `not_before` can be exactly now + 60 s. Read the clock *before* the run, bound inclusively.
+  - Windows Resume: a product bug. `mutex_held` meant "the mutex exists". An exiting agent has
+    released it but keeps the handle until its process is gone (Task Scheduler still counts it
+    running), so `start_task` sent one `/Run` into IgnoreNew. Now "held" means owned (a
+    zero-timeout wait).
+  - Unit-tier soft cap: its run-again reused the first run's `tmp_path`, so any test that
+    `mkdir`s or appends there failed the run-again, and one runner stall failed the test. Now
+    the run-again gets a fresh `tmp_path`. A "> 3x soft cap" failure with no "run again" time
+    means the run-again raised, not that the test was slow twice.
+  - Cross-check Windows Rust from this Mac: rustup's cargo (Homebrew's shadows it), the
+    `x86_64-pc-windows-msvc` target, `CC_x86_64_pc_windows_msvc=clang-cl` from Homebrew LLVM,
+    `AR_…=llvm-lib`, plus stub `assert.h`/`string.h`/`stdlib.h` via `CFLAGS_…="/imsvc <dir>"`
+    so `ring` builds. `cargo check` and `cargo clippy` then work. No linking, no running.
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
@@ -828,3 +843,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470
