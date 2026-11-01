@@ -12,6 +12,9 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **AirPlay, Picture in Picture and Now Playing in the Apple Player.** Videos and live TV play
+  on an Apple TV from the AirPlay button, float in Picture in Picture (also on going home), and
+  show on the lock screen with play, pause, ±10 s and next (Epic 48 story 48.24, [#512]).
 - **AirPlay and Cast can play through the web port.** A video's signed URL (`?sig=`) passes
   the web port without a sign-in cookie; live TV channels still need a signed-in session
   (Epic 48 story 48.12, [#474]).
@@ -1538,3 +1541,4 @@ Details of everything in this release:
   change controller's next tick instead of being remembered as started (the change
   then failed as "not healthy"); the staging plan is read under the routing lock
   (a data race between the controller's plan updates and the warm-set sync).
+[#512]: https://github.com/Hamza-Labs-Core/Maktaba/pull/512
