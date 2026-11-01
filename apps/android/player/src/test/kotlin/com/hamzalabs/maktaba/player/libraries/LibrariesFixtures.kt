@@ -111,7 +111,7 @@ const val EPISODES = """{"seasons":[
  "numbering":"season","next_episode":{"video_id":"v3","season":1,"episode":2,"title":"Lion of the Desert","progress_pct":40,"watched":false}}"""
 
 /**
- * The shipped shell (Libraries only) in the dark theme, signed in to [home], laid out for
+ * The shell with the Libraries section alone (so it opens there whatever else ships) in the dark theme, signed in to [home], laid out for
  * [window]; [panes] stands in for a fold the JVM cannot report, and posters are drawn by
  * [FakePictures] by path ([portlessPictures]) so screenshots are the same on every run and machine.
  */
@@ -136,7 +136,7 @@ fun ComposeContentTestRule.setLibraries(
             LocalLayoutDirection provides direction,
         ) {
             MaktabaTheme(ThemeMode.Dark) {
-                Surface { PlayerShell(sections = PlayerSection.enabled, adaptiveInfo = window.info()) }
+                Surface { PlayerShell(sections = listOf(PlayerSection.Libraries), adaptiveInfo = window.info()) }
             }
         }
     }

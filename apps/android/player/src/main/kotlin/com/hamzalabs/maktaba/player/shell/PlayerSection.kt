@@ -40,7 +40,9 @@ enum class PlayerSection(
          * story adds its section here, one line, in [entries]' order.
          */
         val enabled: List<PlayerSection> = listOf(
-            Libraries, // 48.27: Libraries, a library, Series, a series
+            Home,
+            Libraries,
+            Search,
         )
 
         /** The section whose root is [route], if it is one. */

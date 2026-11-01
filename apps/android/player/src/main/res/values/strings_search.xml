@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's Search (Epic 48.29: FR-19, FR-20).
+     Its Arabic is in values-ar/strings_search.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="search_field_hint">Search titles and transcripts</string>
+    <string name="search_clear_query">Clear the search</string>
+    <string name="search_recent">Recent searches</string>
+    <string name="search_recent_clear">Clear all</string>
+    <string name="search_recent_remove">Remove %1$s</string>
+    <string name="search_recent_counts">%1$d in titles · %2$d in transcripts</string>
+    <string name="search_group_titles">Titles</string>
+    <string name="search_group_transcripts">In the transcript</string>
+    <string name="search_matches">Matches: %1$d</string>
+    <string name="search_show_more">Show more</string>
+    <string name="search_play_from">Play from %1$s</string>
+    <string name="search_empty_hint">Search for a title, or for words said in a video.</string>
+    <string name="search_no_results">Nothing matches “%1$s”.</string>
+    <string name="search_degraded">Text matches only: the meaning search did not answer.</string>
+    <string name="search_failed">Search failed</string>
+</resources>

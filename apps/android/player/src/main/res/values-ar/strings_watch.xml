@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The player in Arabic, in the web's words where it has them (web/src/i18n/ar.json: big.player.*,
+     big.upNext.*, video.subtitles, video.audioTracks, player.upNext.*, common.cancel). -->
+<resources>
+    <string name="watch_play">تشغيل</string>
+    <string name="watch_pause">إيقاف مؤقت</string>
+    <string name="watch_back_10">رجوع ١٠ ثوانٍ</string>
+    <string name="watch_forward_10">تقديم ١٠ ثوانٍ</string>
+    <string name="watch_position">الموضع</string>
+    <string name="watch_next">التالي</string>
+    <string name="watch_tracks">الترجمة والصوت</string>
+    <string name="watch_subtitles">الترجمة</string>
+    <string name="watch_subtitles_off">إيقاف</string>
+    <string name="watch_audio">الصوت</string>
+    <string name="watch_quality">الجودة</string>
+    <string name="watch_quality_auto">تلقائي</string>
+    <string name="watch_quality_height">%1$dp</string>
+    <string name="watch_track_n">المسار %1$d</string>
+    <string name="watch_up_next">التالي</string>
+    <string name="watch_up_next_in">التالي خلال %1$d ث</string>
+    <string name="watch_play_now">شغّل الآن</string>
+    <string name="watch_cancel">إلغاء</string>
+</resources>
