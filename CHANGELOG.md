@@ -89,6 +89,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node installs the home's updates even when the Maktaba window is closed.** Until
+  now the window app downloaded and installed each update. The server only tried to open it
+  with a `maktaba://` link, so an update waited until a window could be opened. On 2026-10-31
+  windows-pc's update to v0.3.44 sat waiting for eight hours, while Windows showed "Get an app
+  to open this 'maktaba' link" every 90 seconds. Now the server agent that runs at sign-in
+  (`Maktaba.exe --server-agent`) does it itself:
+  - it downloads the release's installer from that release's own page;
+  - it checks the installer with the app's key, and checks that the signature carries the
+    ordered version and names that very installer;
+  - at the home's go, it runs the installer.
+
+  The server no longer sends the link, and the window app only shows the update.
 - **A channel's stream follows library access (security, Epic 48 story 48.3).** The web
   port's `/stream/channel/{id}/…` checked only that someone was signed in, so a viewer
   limited to some libraries could watch another library's channel by its id. The gate now

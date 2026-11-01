@@ -585,6 +585,28 @@ transcripts were not traced one by one; their work is in the PRs cited.
   home's database within about a minute and ends replication workers that won't stop. Both are
   in progress there; their PRs go in its own later entry.
 
+### 2026-10-31 · PC · c17dd289 · Windows node updates by the agent; the copy stall (done)
+
+- [#456] (merged, be9ba4ef): the 10-28 copy stall. A table's first copy waited 15 min on the
+  restarting home, and every fresh copy failed with "workers did not stop within 30s". Quiesce
+  now ends workers still there after its wait, and its switch-off waits for the subscription's
+  lock at most that wait (review finding). Tested against real Postgres, red before and green
+  after.
+- [#457]: the Windows server agent (`Maktaba.exe --server-agent`) answers the home's order
+  instead of the window app. It stages from the release's own `latest.json`: a setup .exe on that
+  release's page, checked with the app's key, its signed version (`requireSignedVersion`) and
+  signed file name. At the go it starts the installer out of its own job. The server sends no
+  `maktaba://` link (`MAKTABA_AGENT_ORDERS=1`); on Windows the window app only shows the order
+  and no longer settles the orders' attempts.
+- What it rests on, proved on CI's Windows runner (`check-task-children.ps1`), never on the
+  owner's PC: once a task's process exits, the task is `Ready` even with its child still running;
+  the task runs again meanwhile; the child outlives it. Two review rounds; fixed in the PR were
+  answers that only move forward (`autoinstall::advance`), the window app's settle race, and a
+  stricter signature and URL check.
+- Neither PR is tagged: the next release is held (§5), and #457 touches the update path. Until
+  a release carries #457, the PC needs the owner to open Maktaba once (or run the v0.3.44
+  installer) to take v0.3.44.
+
 [#48]: https://github.com/Hamza-Labs-Core/Maktaba/pull/48
 [#52]: https://github.com/Hamza-Labs-Core/Maktaba/pull/52
 [#55]: https://github.com/Hamza-Labs-Core/Maktaba/pull/55
@@ -643,6 +665,8 @@ transcripts were not traced one by one; their work is in the PRs cited.
 [#307]: https://github.com/Hamza-Labs-Core/Maktaba/pull/307
 [#320]: https://github.com/Hamza-Labs-Core/Maktaba/pull/320
 [#362]: https://github.com/Hamza-Labs-Core/Maktaba/pull/362
+[#456]: https://github.com/Hamza-Labs-Core/Maktaba/pull/456
+[#457]: https://github.com/Hamza-Labs-Core/Maktaba/pull/457
 
 ---
 
