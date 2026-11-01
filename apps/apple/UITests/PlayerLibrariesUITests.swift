@@ -177,6 +177,46 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         shot("series")
     }
 
+    // MARK: accessibility (NFR-6)
+
+    /// Apple's accessibility audit (labels, roles, contrast, Dynamic Type, clipped text, hit
+    /// regions) on the Libraries root, a library and a series, in English and Arabic.
+    func testAccessibilityAudit() {
+        let pages: [(open: String?, ready: String)] = [(nil, "library.lib-docs"), ("library/lib-docs", "library.row.continue"),
+                                                       ("series/s-seerah", "series.continue")]
+        for language in ["en", "ar"] {
+            for page in pages {
+                let name = "\(language) \(page.open ?? "root")"
+                launchSignedIn(language, open: page.open)
+                XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
+                // the posters loaded: no shimmer moving under the contrast check
+                waitFor(timeout: 2) { false }
+                audit(name)
+                app.terminate()
+            }
+        }
+    }
+
+    private func audit(_ page: String) {
+        let window = app.windows.firstMatch.frame
+        // every issue of the page in one failure (the audit itself stops at the first)
+        var found: [String] = []
+        do {
+            try app.performAccessibilityAudit { issue in
+                // a progress bar is a reading, not a control: no 44-pt target (as 48.14's audit)
+                if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
+                // a card half off the screen's edge (a row scrolls sideways): the audit samples
+                // pixels beyond it; the cards fully on screen are still checked (as 48.14's audit)
+                if issue.auditType == .contrast, let f = issue.element?.frame, !window.contains(f) { return true }
+                found.append("\(issue.compactDescription) [\(issue.element?.identifier ?? "")|\(issue.element?.label ?? "")]")
+                return true
+            }
+        } catch {
+            found.append("\(error)")
+        }
+        XCTAssertTrue(found.isEmpty, "\(page): " + found.joined(separator: "; "))
+    }
+
     // MARK: helpers
 
     /// `a` comes before `b` in reading order: above it, or on the same row on its leading side

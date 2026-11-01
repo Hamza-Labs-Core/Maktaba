@@ -161,15 +161,27 @@ private struct EpisodeRow: View {
     let progress: Double
     let toggle: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var number: Int? { episode.episode ?? episode.absoluteNumber }
+
+    /// The picture beside the text; at the accessibility sizes, above it (the text keeps the
+    /// row's width and wraps in full, NFR-7).
+    private var layout: AnyLayout {
+        typeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: MaktabaTokens.Spacing.s2))
+            : AnyLayout(HStackLayout(spacing: MaktabaTokens.Spacing.s3))
+    }
+
     var body: some View {
         HStack(spacing: MaktabaTokens.Spacing.s3) {
             NavigationLink(value: PlayerRoute.video(id: episode.videoID)) {
-                HStack(spacing: MaktabaTokens.Spacing.s3) {
+                layout {
                     PosterArt(url: LibraryArt.poster(client, video: episode.videoID), title: episode.title, progress: progress)
                         .aspectRatio(16 / 9, contentMode: .fit)
-                        .frame(width: 128)
+                        .frame(width: typeSize.isAccessibilitySize ? 200 : 128)
                     VStack(alignment: .leading, spacing: 2) {
-                        if let n = episode.episode ?? episode.absoluteNumber {
+                        if let n = number {
                             Text("Episode \(n)", tableName: "Libraries", comment: "An episode's number")
                                 .font(.maktabaBody(12, weight: .semibold, relativeTo: .caption))
                                 .foregroundStyle(Color.mktBrassText)
@@ -191,7 +203,10 @@ private struct EpisodeRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityElement(children: .combine)
+            // one element, as a PosterCard: the number, title and length, the progress as its value
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+            .accessibilityAddTraits(.isButton)
             .accessibilityValue(progress > 0 ? ProgressStrip.spoken(progress) : Text(verbatim: ""))
             .accessibilityIdentifier("episode.\(episode.videoID)")
 
@@ -209,5 +224,11 @@ private struct EpisodeRow: View {
             .accessibilityValue(watched ? Text("Watched", tableName: "Libraries", comment: "An episode's mark: watched") : Text(verbatim: ""))
             .accessibilityIdentifier("episode.mark.\(episode.videoID)")
         }
+    }
+
+    private var label: Text {
+        let rest = Text(verbatim: ([episode.title] + [episode.durationSec.map(VideoCard.length)].compactMap { $0 }).joined(separator: ", "))
+        guard let number else { return rest }
+        return Text("Episode \(number)", tableName: "Libraries", comment: "An episode's number") + Text(verbatim: ", ") + rest
     }
 }
