@@ -690,6 +690,16 @@ Append here: date, session, one to five lines on what changed. Newest last.
     no one signed in still gets 403. The other video routes still say 403.
   - Changed: the query reads `library_id` without `::text`, so the handler runs on the SQLite
     test table too (lib/pq scans a uuid into a string either way, as `trickplay.go` does).
+- 2026-10-31 · Epic 48 story 48.4 agent of `b743b7d4`: [#468] lists a video session's sidecar
+  subtitles as HLS `SUBTITLES` renditions in its master (one-segment WebVTT playlist at
+  `subs-{lang}/index.m3u8` over the sidecar route), so AVPlayer, AirPlay and Cast can show them.
+  No `stream_gate.go` change: both paths fit its patterns (a test copies the regexes).
+  - Failed first: without `X-TIMESTAMP-MAP` AVPlayer and hls.js showed every cue 1.4 s early
+    (ffmpeg's MPEG-TS starts 1.4 s in; `-output_ts_offset` keeps video time). Fix: the sidecar
+    route with `?hls=1` adds `MPEGTS:126000`; checked with AVPlayer on a real transcode from 30 s
+    (cues on time) and a real-ffmpeg test in `tools/media-e2e.sh`.
+  - Found: the API never sends `session.subtitles`, so the web's `<track>` list was always
+    empty; hls.js now gives the web subtitles through the renditions.
 - 2026-10-31 · Epic 48 story 48.3 agent of `b743b7d4`: closes G1. `stream_gate.go` asks
   `GET /api/channels/{id}` (the channels handler's `canRead`, the same rule as the guide's
   `visibleChannels`) for every non-admin `/stream/channel/{id}/…` and
@@ -853,3 +863,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#468]: https://github.com/Hamza-Labs-Core/Maktaba/pull/468

@@ -54,6 +54,9 @@ type ManifestHandler struct {
 	// 404 then ends playback in a player that does not retry it (Safari's own HLS,
 	// AVPlayer), though the playlist is a second away.
 	FirstWrite time.Duration
+	// Subtitles lists the session's sidecar subtitles, which an HLS master
+	// also lists as subtitle renditions (subtitle_playlist.go). Nil: none.
+	Subtitles SubtitleLister
 }
 
 // writtenSoon waits up to FirstWrite for path (under base) while sub's transcode
@@ -170,6 +173,11 @@ func (h *ManifestHandler) ServeMaster(w http.ResponseWriter, r *http.Request) {
 			written = info.ModTime()
 		}
 		data = transcodeMPD(data, dir, written, h.now())
+	}
+	if !wantDASH {
+		if set, ok := h.subtitles(r); ok {
+			data = WithSubtitleRenditions(data, set.Langs)
+		}
 	}
 	if sig := r.URL.Query().Get("sig"); sig != "" {
 		if wantDASH {
