@@ -24,7 +24,12 @@ import MaktabaKit
         RunLoop.main.run(until: .now.addingTimeInterval(0.2))
         let host = try #require(Self.find(PlayerHostView.self, in: hosting))
         #expect(host.player === player)
-        #expect(Self.find(AVPlayerView.self, in: host)?.player === player)
+        let view = try #require(Self.find(AVPlayerView.self, in: host))
+        #expect(view.player === player)
+        // FR-43: the controls offer picture in picture, a window that floats above every app,
+        // and full screen
+        #expect(view.allowsPictureInPicturePlayback)
+        #expect(view.showsFullScreenToggleButton)
     }
 
     static func find<V: NSView>(_: V.Type, in view: NSView) -> V? {

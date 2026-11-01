@@ -1,0 +1,138 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Enter Full Screen" : {
+      "comment" : "View menu (Control-Command-F): the window on a space of its own",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدخول إلى ملء الشاشة"
+          }
+        }
+      }
+    },
+    "Exit Full Screen" : {
+      "comment" : "View menu (Control-Command-F) while full screen",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الخروج من ملء الشاشة"
+          }
+        }
+      }
+    },
+    "Next Episode" : {
+      "comment" : "Playback menu (N)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحلقة التالية"
+          }
+        }
+      }
+    },
+    "Play/Pause" : {
+      "comment" : "Playback menu (space)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل/إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Playback" : {
+      "comment" : "The Playback menu",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل"
+          }
+        }
+      }
+    },
+    "Search…" : {
+      "comment" : "View menu: go to search and type (Command-F)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ابحث…"
+          }
+        }
+      }
+    },
+    "Skip Back 10 Seconds" : {
+      "comment" : "Playback menu (left arrow)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رجوع 10 ثوانٍ"
+          }
+        }
+      }
+    },
+    "Skip Back 30 Seconds" : {
+      "comment" : "Playback menu (Shift-left arrow)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رجوع 30 ثانية"
+          }
+        }
+      }
+    },
+    "Skip Forward 10 Seconds" : {
+      "comment" : "Playback menu (right arrow)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقديم 10 ثوانٍ"
+          }
+        }
+      }
+    },
+    "Skip Forward 30 Seconds" : {
+      "comment" : "Playback menu (Shift-right arrow)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تقديم 30 ثانية"
+          }
+        }
+      }
+    },
+    "Stop" : {
+      "comment" : "Playback menu (Command-period)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف"
+          }
+        }
+      }
+    },
+    "Subtitles" : {
+      "comment" : "Playback menu (S): the subtitle choices",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

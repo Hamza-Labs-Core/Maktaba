@@ -35,7 +35,8 @@ struct PlayerApp: App {
         .defaultSize(width: 1200, height: 780)
         #endif
         .commands {
-            PlaybackCommands()
+            PlayerViewCommands()
+            PlayerPlaybackCommands()
             AccountCommands(session: session, theme: $theme)
         }
     }

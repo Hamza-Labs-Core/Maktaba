@@ -70,7 +70,7 @@ jobs:
   # simulator is made for the run and deleted after it (never a shared device); the
   # screenshots (dark, English and Arabic) are kept as an artifact.
   player-ui-tests:
-    name: Player UI tests (iPhone, iPad)
+    name: Player UI tests (iPhone, iPad, Mac)
     runs-on: macos-26
     timeout-minutes: 60
     env:
@@ -125,6 +125,24 @@ jobs:
           run "Maktaba Player" "Maktaba Player UITests" "iphone"
           run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad"
           exit $status
+
+      # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
+      # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the
+      # build is ad-hoc signed, everything with the UI tests' entitlements (sandbox, network
+      # client and server): the app's own add a keychain group, which needs a provisioning
+      # profile. The Mac keychain test needs that group, so it is not among the classes here.
+      - name: Run the Mac Player tests
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
+            -destination platform=macOS -derivedDataPath "$DERIVED-mac" \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
+            CODE_SIGN_ENTITLEMENTS="$PWD/PlayerMacTests/UI/PlayerMacUITests.entitlements" \
+            -resultBundlePath "$RESULTS/mac.xcresult" \
+            -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
+            -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
+            -only-testing "Maktaba Player Mac UITests"
 
       - name: Keep the screenshots and results
         if: always()

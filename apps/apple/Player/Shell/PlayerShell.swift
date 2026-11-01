@@ -63,6 +63,8 @@ struct PlayerShell: View {
         .sheet(isPresented: Binding { linked != nil } set: { if !$0 { linked = nil } }) {
             if let linked { LinkedRouteSheet(context: context, route: linked) }
         }
+        // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
+        .playerMenuTarget(sections: sections, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
     }
