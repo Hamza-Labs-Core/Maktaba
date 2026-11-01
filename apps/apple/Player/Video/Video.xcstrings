@@ -1,0 +1,171 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Chapters" : {
+      "comment" : "A video's chapters, a heading",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفصول"
+          }
+        }
+      }
+    },
+    "Couldn't save that. Try again." : {
+      "comment" : "A favorite or watched mark the home did not take",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الحفظ. حاول مرة أخرى."
+          }
+        }
+      }
+    },
+    "Done" : {
+      "comment" : "Closes a page opened from a link",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم"
+          }
+        }
+      }
+    },
+    "Episode %lld" : {
+      "comment" : "An episode's number in a series with no seasons",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحلقة %lld"
+          }
+        }
+      }
+    },
+    "Favorite" : {
+      "comment" : "Keep the video among the person's favorites (a toggle)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المفضلة"
+          }
+        }
+      }
+    },
+    "From the transcript" : {
+      "comment" : "A few lines of a video's transcript, a heading",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من النص المفرَّغ"
+          }
+        }
+      }
+    },
+    "It may have been removed, or your account can't see it." : {
+      "comment" : "Why a video is not available",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ربما حُذف، أو لا يملك حسابك صلاحية مشاهدته."
+          }
+        }
+      }
+    },
+    "Mark watched" : {
+      "comment" : "Mark the video watched (a toggle)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تمييز كمُشاهَد"
+          }
+        }
+      }
+    },
+    "Next episodes" : {
+      "comment" : "The episodes after this one, a row's title",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحلقات التالية"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "Play the video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Play from %@" : {
+      "comment" : "What a chapter or transcript line does: play from its time",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل من %@"
+          }
+        }
+      }
+    },
+    "Play from start" : {
+      "comment" : "Play a started video from its beginning",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل من البداية"
+          }
+        }
+      }
+    },
+    "Resume from %@" : {
+      "comment" : "Play on from where the person stopped; the time",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "استئناف من %@"
+          }
+        }
+      }
+    },
+    "Season %lld, Episode %lld" : {
+      "comment" : "An episode's place in its series",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموسم %1$lld، الحلقة %2$lld"
+          }
+        }
+      }
+    },
+    "This video isn't available" : {
+      "comment" : "A video that does not exist or this person may not see",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الفيديو غير متاح"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}
