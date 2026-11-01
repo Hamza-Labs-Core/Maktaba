@@ -1,0 +1,378 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld lessons" : {
+      "comment" : "The hero's detail: how many lessons the series has",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lesson"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld lessons"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عدد الدروس: %lld"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عدد الدروس: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عدد الدروس: %lld"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عدد الدروس: %lld"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عدد الدروس: %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "عدد الدروس: %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld new lessons" : {
+      "comment" : "A Recently Added series: how many lessons are new",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new lesson"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld new lessons"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دروس جديدة: %lld"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دروس جديدة: %lld"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دروس جديدة: %lld"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دروس جديدة: %lld"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دروس جديدة: %lld"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "دروس جديدة: %lld"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Add a library under Manage libraries on the home's web page and scan it; its videos then show here." : {
+      "comment" : "Home with no video, said to an admin",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضف مكتبة من إدارة المكتبات في صفحة الجهاز الرئيسي على الويب وافحصها، فتظهر مقاطعها هنا."
+          }
+        }
+      }
+    },
+    "Continue Watching" : {
+      "comment" : "Home's row of videos the person stopped part way",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تابع المشاهدة"
+          }
+        }
+      }
+    },
+    "Could not tell the home. Try again." : {
+      "comment" : "Not interested did not reach the home; the card is back",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر إبلاغ الجهاز الرئيسي. أعد المحاولة."
+          }
+        }
+      }
+    },
+    "Couldn't refresh — showing the last rows." : {
+      "comment" : "Home's refresh failed; the rows shown are the last ones read",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر التحديث — تُعرض آخر الصفوف."
+          }
+        }
+      }
+    },
+    "Details" : {
+      "comment" : "The hero's button: open the video's or series' page",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التفاصيل"
+          }
+        }
+      }
+    },
+    "Favorites" : {
+      "comment" : "Home's row of the person's favorite videos",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المفضلة"
+          }
+        }
+      }
+    },
+    "Featured" : {
+      "comment" : "The hero's line above the title: an admin picked it",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مختار"
+          }
+        }
+      }
+    },
+    "For You" : {
+      "comment" : "Home's row of recommendations",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مقترح لك"
+          }
+        }
+      }
+    },
+    "From your library" : {
+      "comment" : "Home's row of recommendations from the person's libraries",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "من مكتبتك"
+          }
+        }
+      }
+    },
+    "New series" : {
+      "comment" : "The hero's line above the title: the newest series",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سلسلة جديدة"
+          }
+        }
+      }
+    },
+    "No content right now" : {
+      "comment" : "A channel with nothing scheduled now",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد محتوى الآن"
+          }
+        }
+      }
+    },
+    "Not interested" : {
+      "comment" : "A recommendation's menu: show it no more",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير مهتم"
+          }
+        }
+      }
+    },
+    "Nothing to watch yet" : {
+      "comment" : "Home with no video the person may watch: the title",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء للمشاهدة بعد"
+          }
+        }
+      }
+    },
+    "On Deck" : {
+      "comment" : "Home's row of each series' next lesson",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدرس التالي"
+          }
+        }
+      }
+    },
+    "Open Libraries to see the videos you may watch. Pin the libraries you watch most to see them here." : {
+      "comment" : "Home with no video, said to a viewer",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "افتح المكتبات لترى المقاطع المتاحة لك. وثبّت المكتبات التي تشاهدها كثيرًا لتظهر هنا."
+          }
+        }
+      }
+    },
+    "Recently Added" : {
+      "comment" : "Home's row of the newest videos",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضيف حديثًا"
+          }
+        }
+      }
+    },
+    "Recently Watched" : {
+      "comment" : "Home's row of the videos watched last",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد مؤخرًا"
+          }
+        }
+      }
+    },
+    "Refresh" : {
+      "comment" : "Reads Home again (⌘R on the Mac)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تحديث"
+          }
+        }
+      }
+    },
+    "Sign out" : {
+      "comment" : "Sign out of this home",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الخروج"
+          }
+        }
+      }
+    },
+    "Switch home" : {
+      "comment" : "Choose another home",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبديل الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "Untitled series" : {
+      "comment" : "A series with no name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سلسلة بلا عنوان"
+          }
+        }
+      }
+    },
+    "What's On Now" : {
+      "comment" : "Home's row of what each Live TV channel shows now",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما يُعرض الآن"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

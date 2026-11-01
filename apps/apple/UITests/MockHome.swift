@@ -11,6 +11,7 @@ import Network
 ///   to a file shaped as the Go handler answers). `{{now}}` / `{{now-600}}` in a fixture
 ///   become RFC 3339 times relative to now, so what is on Live TV straddles the clock.
 ///   Posters, backdrops and channel logos are a small PNG.
+/// - A test holds a route's answers until it says (`hold`, `release`): a latch, not a timer.
 /// - A test changes an answer with `stub` (a status, a body, a delay) and checks what the
 ///   app asked with `requests` (method, path, query, body) or `seen` ("GET /api/home").
 final class MockHome: @unchecked Sendable {
@@ -50,6 +51,10 @@ final class MockHome: @unchecked Sendable {
     private var stubs: [String: Answer] = [:]
     /// Latency added to `METHOD /path` after its answer is chosen (`delay`).
     private var delays: [String: TimeInterval] = [:]
+    /// `METHOD /path`s whose answers wait for `release` (`hold`).
+    private var held: Set<String> = []
+    /// The answers waiting for `release`, ready to send.
+    private var parked: [() -> Void] = []
     private let routes: [Route]
     private let fixtures: Bundle
     private(set) var port: UInt16 = 0
@@ -110,8 +115,27 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { delays["\(method) \(path)"] = delay }
     }
 
-    /// Forgets every stub and delay.
-    func reset() { lock.withLock { stubs = [:]; delays = [:] } }
+    /// From now on, `method path` (any query) is answered only when the test calls `release`:
+    /// a latch, so "before the home answers" never races a timer on a slow runner.
+    func hold(_ method: String, _ path: String) {
+        lock.withLock { _ = held.insert("\(method) \(path)") }
+    }
+
+    /// Sends every held answer and stops holding.
+    func release() {
+        let waiting = lock.withLock {
+            held = []
+            defer { parked = [] }
+            return parked
+        }
+        waiting.forEach { $0() }
+    }
+
+    /// Forgets every stub and delay, and lets held answers go.
+    func reset() {
+        lock.withLock { stubs = [:]; delays = [:] }
+        release()
+    }
 
     /// A fixture's JSON as it is served (times filled in), for a test to compare with.
     func fixture(named name: String) -> String? {
@@ -120,7 +144,10 @@ final class MockHome: @unchecked Sendable {
             .map { Self.fillTimes(String(decoding: $0, as: UTF8.self)) }
     }
 
-    func stop() { listener.cancel() }
+    func stop() {
+        release()
+        listener.cancel()
+    }
 
     private func serve(_ c: NWConnection) {
         c.start(queue: queue)
@@ -147,6 +174,12 @@ final class MockHome: @unchecked Sendable {
                     var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\nContent-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
                     response.append(a.body)
                     let send = { c.send(content: response, completion: .contentProcessed { _ in c.cancel() }) }
+                    let parked = lock.withLock {
+                        guard held.contains("\(request.method) \(request.path)") else { return false }
+                        self.parked.append(send)
+                        return true
+                    }
+                    if parked { return }
                     if a.delay > 0 {
                         queue.asyncAfter(deadline: .now() + a.delay, execute: send)
                     } else {

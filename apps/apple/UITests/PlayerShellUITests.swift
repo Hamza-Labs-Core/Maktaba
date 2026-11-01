@@ -12,20 +12,22 @@ final class PlayerShellUITests: PlayerUITestCase {
     /// The first of `/api/videos` in the fixtures (`Fixtures/videos.json`).
     private let newestVideo = "Scholars of the Silk Road"
 
-    /// A TestFlight build shows `PlayerSection.enabled` only: Libraries, today's browser,
-    /// reading the home's libraries; no section that has not merged.
+    /// A TestFlight build shows `PlayerSection.enabled` only: Home (story 48.17) first, then
+    /// Libraries, today's browser reading the home's libraries; no section that has not merged.
     func testOnlyTheEnabledSectionsShow() {
         launchSignedIn()
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 15), "Home, the first section")
+        XCTAssertTrue(element("player.shell").exists, "more than one section: the tab bar")
+        for label in ["Live TV", "Profile"] {
+            XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
+            XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
+        }
+        sectionButton("Libraries").tap()
         // today's browser: the videos of every library (on a phone, its libraries one step back)
         XCTAssertTrue(app.staticTexts[newestVideo].firstMatch.waitForExistence(timeout: 15), "today's library browser")
         XCTAssertTrue(home.seen.contains("GET /api/libraries"))
         XCTAssertTrue(home.seen.contains("GET /api/videos"))
-        for label in ["Home", "Live TV", "Profile"] {
-            XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
-            XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
-        }
-        XCTAssertFalse(element("player.shell").exists, "one section: no tab bar")
-        shot("libraries-only")
+        shot("enabled-sections")
     }
 
     /// Every section shown: a tab bar at the bottom of an iPhone, tabs at the top of an iPad;
@@ -99,7 +101,7 @@ final class PlayerShellUITests: PlayerUITestCase {
         for label in arabic { XCTAssertTrue(sectionButton(label).exists, label) }
         // right to left: Home leads from the right, Libraries after it
         XCTAssertGreaterThan(first.frame.midX, sectionButton(arabic[1]).frame.midX, "Home is right of Libraries")
-        XCTAssertTrue(app.staticTexts["هذه الشاشة قادمة قريبًا."].exists, "the placeholder in Arabic")
+        XCTAssertTrue(app.staticTexts["تابع المشاهدة"].waitForExistence(timeout: 10), "Home's rows in Arabic")
         shot("sections")
     }
 }
