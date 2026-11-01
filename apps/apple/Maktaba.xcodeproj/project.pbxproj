@@ -3172,7 +3172,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_CFBundleDisplayName = Remote;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
@@ -3301,7 +3301,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_CFBundleDisplayName = Remote;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
@@ -3492,7 +3492,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPad.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_CFBundleDisplayName = Remote;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";
@@ -3661,7 +3661,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPad.plist";
-				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
+				INFOPLIST_KEY_CFBundleDisplayName = Remote;
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Maktaba scans your home's QR code to connect to it, and a device's sign-in QR code to approve it.";

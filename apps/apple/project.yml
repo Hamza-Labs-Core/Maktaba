@@ -197,7 +197,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
         TARGETED_DEVICE_FAMILY: "1"
-        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
+        INFOPLIST_KEY_CFBundleDisplayName: Remote
     info:
       path: Remote/Info-iPhone.plist
   Maktaba Remote iPad:
@@ -211,7 +211,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
         TARGETED_DEVICE_FAMILY: "2"
-        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
+        INFOPLIST_KEY_CFBundleDisplayName: Remote
     info:
       path: Remote/Info-iPad.plist
 

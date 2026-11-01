@@ -52,7 +52,9 @@ class LibrariesScreenshotTest {
         compose.setLibraries(home)
         waitForTag("library-l1")
         compose.onNodeWithTag("library-l1").performClick()
-        waitForTag("video-v2")
+        // the grid's second page (v3, v4) is asked for once the first is drawn: shoot once its
+        // last video is in, or a slow run captures the first page alone
+        waitForTag("video-v4")
         shoot("library_phone")
     }
 
