@@ -14,6 +14,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.setShell
+import com.hamzalabs.maktaba.player.live.liveSections
 import com.hamzalabs.maktaba.player.shell.PlayerSection
 import com.hamzalabs.maktaba.player.shell.ShellNavigation
 import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
@@ -33,12 +34,16 @@ class LibrariesSectionTest {
     @get:Rule(order = 0) val home = FakeHome()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
+    // the sections as the app offers them to a user with no channel (the fake home lists none):
+    // Live TV (48.30) is hidden then (FR-5)
+    private val shipped = liveSections(PlayerSection.enabled, hasChannels = false)
+
     private fun waitFor(text: String) =
         compose.waitUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     @Test
     fun theShippedShellOpensOnTheLibrariesWithTheHomesVideos() {
-        compose.setShell(home, sections = PlayerSection.enabled)
+        compose.setShell(home, sections = shipped)
         waitFor("The Message")
         compose.onNodeWithText("The Message").assertIsDisplayed()
         compose.onNodeWithText("Lion of the Desert").assertIsDisplayed()
@@ -49,7 +54,7 @@ class LibrariesSectionTest {
 
     @Test
     fun aVideoOpensItsPageAndBackReturnsToTheList() {
-        compose.setShell(home, sections = PlayerSection.enabled)
+        compose.setShell(home, sections = shipped)
         waitFor("Omar, Episode 1")
         compose.onNodeWithText("Omar, Episode 1").performClick()
         waitFor("A film about Omar, Episode 1.")

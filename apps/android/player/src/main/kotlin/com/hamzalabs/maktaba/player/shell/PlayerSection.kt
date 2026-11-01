@@ -42,6 +42,7 @@ enum class PlayerSection(
          */
         val enabled: List<PlayerSection> = listOf(
             Libraries,
+            LiveTv,
         )
 
         /** The section whose root is [route], if it is one. */

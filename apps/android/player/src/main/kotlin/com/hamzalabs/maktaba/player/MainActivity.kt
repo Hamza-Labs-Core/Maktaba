@@ -17,6 +17,7 @@ import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
+import com.hamzalabs.maktaba.player.live.rememberShownSections
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerShell
@@ -43,9 +44,9 @@ class MainActivity : ComponentActivity() {
                             val home = remember(user, client) { PlayerHome(app.session, user, client, app.themes, onPlaying = { playing = it }) }
                             // this home's pictures, with its token, in the app's shared caches (NFR-4)
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
-                            // the sections (a bar, a rail or a drawer, by the window); hidden while a video plays full screen
+                            // the sections (a bar, a rail or a drawer, by the window), Live TV only with a channel (FR-5); hidden while a video plays full screen
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
-                                PlayerShell(immersive = playing)
+                                PlayerShell(sections = rememberShownSections(home), immersive = playing)
                             }
                         }
                     }
