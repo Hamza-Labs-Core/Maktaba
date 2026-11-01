@@ -90,7 +90,10 @@ export interface VerifyCheck {
   check: string;
   channel_id?: string;
   result: CheckResult;
+  /** The home's English; `code` names it and `params` fill it (tvchanges.value.<code>). */
   value?: string;
+  code?: string;
+  params?: Record<string, string>;
 }
 
 export interface VerifyReport {

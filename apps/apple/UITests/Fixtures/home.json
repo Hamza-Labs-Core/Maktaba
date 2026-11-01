@@ -1,0 +1,550 @@
+{
+ "continue_watching": [
+  {
+   "id": "v2",
+   "title": "السيرة النبوية، الدرس ١١",
+   "filename": "seerah-11.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2980,
+   "state": "ready",
+   "created_at": "{{now-1641600}}",
+   "published_at": "{{now-33955200}}",
+   "position_sec": 1240,
+   "completed": false,
+   "last_watched_at": "{{now-1800}}"
+  },
+  {
+   "id": "v5",
+   "title": "Tafsir al-Kahf, part 2",
+   "filename": "kahf-02.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2700,
+   "state": "ready",
+   "created_at": "{{now-1209600}}",
+   "published_at": "{{now-16675200}}",
+   "position_sec": 600,
+   "completed": false,
+   "last_watched_at": "{{now-5400}}"
+  },
+  {
+   "id": "v9",
+   "title": "رحلة إلى مكة",
+   "filename": "journey-to-makkah.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 3300,
+   "state": "ready",
+   "created_at": "{{now-864000}}",
+   "published_at": "{{now-60480000}}",
+   "position_sec": 1500,
+   "completed": false,
+   "last_watched_at": "{{now-172800}}"
+  }
+ ],
+ "recently_added": [
+  {
+   "id": "v12",
+   "title": "Scholars of the Silk Road",
+   "filename": "silk-road-scholars.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 2580,
+   "state": "ready",
+   "created_at": "{{now-3600}}",
+   "published_at": null
+  },
+  {
+   "id": "v11",
+   "title": "بيت الحكمة في بغداد",
+   "filename": "house-of-wisdom.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 3060,
+   "state": "ready",
+   "created_at": "{{now-7200}}",
+   "published_at": "{{now-56160000}}"
+  },
+  {
+   "id": "v10",
+   "title": "Manuscripts of Timbuktu",
+   "filename": "manuscripts-of-timbuktu.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 2940,
+   "state": "ready",
+   "created_at": "{{now-86400}}",
+   "published_at": "{{now-51840000}}"
+  },
+  {
+   "id": "v6",
+   "title": "تفسير سورة الكهف، الجزء ٣",
+   "filename": "kahf-03.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2810,
+   "state": "ready",
+   "created_at": "{{now-90000}}",
+   "published_at": "{{now-16070400}}"
+  },
+  {
+   "id": "v3",
+   "title": "السيرة النبوية، الدرس ١٢",
+   "filename": "seerah-12.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 3305,
+   "state": "ready",
+   "created_at": "{{now-100000}}",
+   "published_at": "{{now-33350400}}"
+  },
+  {
+   "id": "v9",
+   "title": "رحلة إلى مكة",
+   "filename": "journey-to-makkah.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 3300,
+   "state": "ready",
+   "created_at": "{{now-864000}}",
+   "published_at": "{{now-60480000}}"
+  },
+  {
+   "id": "v5",
+   "title": "Tafsir al-Kahf, part 2",
+   "filename": "kahf-02.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2700,
+   "state": "ready",
+   "created_at": "{{now-1209600}}",
+   "published_at": "{{now-16675200}}"
+  },
+  {
+   "id": "v4",
+   "title": "Tafsir al-Kahf, part 1",
+   "filename": "kahf-01.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2650,
+   "state": "ready",
+   "created_at": "{{now-1296000}}",
+   "published_at": "{{now-17280000}}"
+  },
+  {
+   "id": "v2",
+   "title": "السيرة النبوية، الدرس ١١",
+   "filename": "seerah-11.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2980,
+   "state": "ready",
+   "created_at": "{{now-1641600}}",
+   "published_at": "{{now-33955200}}"
+  },
+  {
+   "id": "v1",
+   "title": "السيرة النبوية، الدرس ١٠",
+   "filename": "seerah-10.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 3120,
+   "state": "ready",
+   "created_at": "{{now-1728000}}",
+   "published_at": "{{now-34560000}}"
+  },
+  {
+   "id": "v7",
+   "title": "The Fiqh of Fasting",
+   "filename": "fiqh-of-fasting.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 1820,
+   "state": "ready",
+   "created_at": "{{now-2592000}}",
+   "published_at": "{{now-43200000}}"
+  },
+  {
+   "id": "v8",
+   "title": "The Libraries of Cordoba",
+   "filename": "libraries-of-cordoba.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 3480,
+   "state": "ready",
+   "created_at": "{{now-3456000}}",
+   "published_at": "{{now-77760000}}"
+  }
+ ],
+ "recently_watched": [
+  {
+   "id": "v2",
+   "title": "السيرة النبوية، الدرس ١١",
+   "filename": "seerah-11.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2980,
+   "state": "ready",
+   "created_at": "{{now-1641600}}",
+   "published_at": "{{now-33955200}}",
+   "position_sec": 1240,
+   "completed": false,
+   "last_watched_at": "{{now-1800}}"
+  },
+  {
+   "id": "v5",
+   "title": "Tafsir al-Kahf, part 2",
+   "filename": "kahf-02.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2700,
+   "state": "ready",
+   "created_at": "{{now-1209600}}",
+   "published_at": "{{now-16675200}}",
+   "position_sec": 600,
+   "completed": false,
+   "last_watched_at": "{{now-5400}}"
+  },
+  {
+   "id": "v9",
+   "title": "رحلة إلى مكة",
+   "filename": "journey-to-makkah.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 3300,
+   "state": "ready",
+   "created_at": "{{now-864000}}",
+   "published_at": "{{now-60480000}}",
+   "position_sec": 1500,
+   "completed": false,
+   "last_watched_at": "{{now-172800}}"
+  },
+  {
+   "id": "v1",
+   "title": "السيرة النبوية، الدرس ١٠",
+   "filename": "seerah-10.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 3120,
+   "state": "ready",
+   "created_at": "{{now-1728000}}",
+   "published_at": "{{now-34560000}}",
+   "position_sec": 3120,
+   "completed": true,
+   "last_watched_at": "{{now-259200}}"
+  },
+  {
+   "id": "v4",
+   "title": "Tafsir al-Kahf, part 1",
+   "filename": "kahf-01.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2650,
+   "state": "ready",
+   "created_at": "{{now-1296000}}",
+   "published_at": "{{now-17280000}}",
+   "position_sec": 2650,
+   "completed": true,
+   "last_watched_at": "{{now-345600}}"
+  },
+  {
+   "id": "v8",
+   "title": "The Libraries of Cordoba",
+   "filename": "libraries-of-cordoba.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 3480,
+   "state": "ready",
+   "created_at": "{{now-3456000}}",
+   "published_at": "{{now-77760000}}",
+   "position_sec": 3480,
+   "completed": true,
+   "last_watched_at": "{{now-518400}}"
+  }
+ ],
+ "pinned": [
+  {
+   "library": {
+    "id": "lib-lectures",
+    "name": "Lectures"
+   },
+   "recently_added": [
+    {
+     "id": "v6",
+     "title": "تفسير سورة الكهف، الجزء ٣",
+     "filename": "kahf-03.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 2810,
+     "state": "ready",
+     "created_at": "{{now-90000}}",
+     "published_at": "{{now-16070400}}"
+    },
+    {
+     "id": "v3",
+     "title": "السيرة النبوية، الدرس ١٢",
+     "filename": "seerah-12.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 3305,
+     "state": "ready",
+     "created_at": "{{now-100000}}",
+     "published_at": "{{now-33350400}}"
+    },
+    {
+     "id": "v5",
+     "title": "Tafsir al-Kahf, part 2",
+     "filename": "kahf-02.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 2700,
+     "state": "ready",
+     "created_at": "{{now-1209600}}",
+     "published_at": "{{now-16675200}}"
+    },
+    {
+     "id": "v4",
+     "title": "Tafsir al-Kahf, part 1",
+     "filename": "kahf-01.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 2650,
+     "state": "ready",
+     "created_at": "{{now-1296000}}",
+     "published_at": "{{now-17280000}}"
+    },
+    {
+     "id": "v2",
+     "title": "السيرة النبوية، الدرس ١١",
+     "filename": "seerah-11.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 2980,
+     "state": "ready",
+     "created_at": "{{now-1641600}}",
+     "published_at": "{{now-33955200}}"
+    },
+    {
+     "id": "v1",
+     "title": "السيرة النبوية، الدرس ١٠",
+     "filename": "seerah-10.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 3120,
+     "state": "ready",
+     "created_at": "{{now-1728000}}",
+     "published_at": "{{now-34560000}}"
+    },
+    {
+     "id": "v7",
+     "title": "The Fiqh of Fasting",
+     "filename": "fiqh-of-fasting.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 1820,
+     "state": "ready",
+     "created_at": "{{now-2592000}}",
+     "published_at": "{{now-43200000}}"
+    }
+   ],
+   "continue_watching": [
+    {
+     "id": "v2",
+     "title": "السيرة النبوية، الدرس ١١",
+     "filename": "seerah-11.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 2980,
+     "state": "ready",
+     "created_at": "{{now-1641600}}",
+     "published_at": "{{now-33955200}}",
+     "position_sec": 1240,
+     "completed": false,
+     "last_watched_at": "{{now-1800}}"
+    },
+    {
+     "id": "v5",
+     "title": "Tafsir al-Kahf, part 2",
+     "filename": "kahf-02.mp4",
+     "library_id": "lib-lectures",
+     "duration_sec": 2700,
+     "state": "ready",
+     "created_at": "{{now-1209600}}",
+     "published_at": "{{now-16675200}}",
+     "position_sec": 600,
+     "completed": false,
+     "last_watched_at": "{{now-5400}}"
+    }
+   ]
+  }
+ ],
+ "on_deck": [
+  {
+   "id": "v3",
+   "title": "السيرة النبوية، الدرس ١٢",
+   "filename": "seerah-12.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 3305,
+   "state": "ready",
+   "created_at": "{{now-100000}}",
+   "published_at": "{{now-33350400}}",
+   "series": {
+    "id": "s-seerah",
+    "name": "Seerah"
+   }
+  },
+  {
+   "id": "v6",
+   "title": "تفسير سورة الكهف، الجزء ٣",
+   "filename": "kahf-03.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 2810,
+   "state": "ready",
+   "created_at": "{{now-90000}}",
+   "published_at": "{{now-16070400}}",
+   "series": {
+    "id": "s-tafsir",
+    "name": "Tafsir al-Kahf"
+   }
+  }
+ ],
+ "favorites": [
+  {
+   "id": "v10",
+   "title": "Manuscripts of Timbuktu",
+   "filename": "manuscripts-of-timbuktu.mkv",
+   "library_id": "lib-docs",
+   "duration_sec": 2940,
+   "state": "ready",
+   "created_at": "{{now-86400}}",
+   "published_at": "{{now-51840000}}"
+  },
+  {
+   "id": "v3",
+   "title": "السيرة النبوية، الدرس ١٢",
+   "filename": "seerah-12.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 3305,
+   "state": "ready",
+   "created_at": "{{now-100000}}",
+   "published_at": "{{now-33350400}}"
+  },
+  {
+   "id": "v7",
+   "title": "The Fiqh of Fasting",
+   "filename": "fiqh-of-fasting.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 1820,
+   "state": "ready",
+   "created_at": "{{now-2592000}}",
+   "published_at": "{{now-43200000}}"
+  }
+ ],
+ "recently_added_grouped": [
+  {
+   "kind": "video",
+   "video": {
+    "id": "v12",
+    "title": "Scholars of the Silk Road",
+    "filename": "silk-road-scholars.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 2580,
+    "state": "ready",
+    "created_at": "{{now-3600}}",
+    "published_at": null
+   }
+  },
+  {
+   "kind": "video",
+   "video": {
+    "id": "v11",
+    "title": "بيت الحكمة في بغداد",
+    "filename": "house-of-wisdom.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3060,
+    "state": "ready",
+    "created_at": "{{now-7200}}",
+    "published_at": "{{now-56160000}}"
+   }
+  },
+  {
+   "kind": "video",
+   "video": {
+    "id": "v10",
+    "title": "Manuscripts of Timbuktu",
+    "filename": "manuscripts-of-timbuktu.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 2940,
+    "state": "ready",
+    "created_at": "{{now-86400}}",
+    "published_at": "{{now-51840000}}"
+   }
+  },
+  {
+   "kind": "series",
+   "video": {
+    "id": "v6",
+    "title": "تفسير سورة الكهف، الجزء ٣",
+    "filename": "kahf-03.mp4",
+    "library_id": "lib-lectures",
+    "duration_sec": 2810,
+    "state": "ready",
+    "created_at": "{{now-90000}}",
+    "published_at": "{{now-16070400}}"
+   },
+   "series": {
+    "id": "s-tafsir",
+    "name": "Tafsir al-Kahf"
+   },
+   "count": 3
+  },
+  {
+   "kind": "series",
+   "video": {
+    "id": "v3",
+    "title": "السيرة النبوية، الدرس ١٢",
+    "filename": "seerah-12.mp4",
+    "library_id": "lib-lectures",
+    "duration_sec": 3305,
+    "state": "ready",
+    "created_at": "{{now-100000}}",
+    "published_at": "{{now-33350400}}"
+   },
+   "series": {
+    "id": "s-seerah",
+    "name": "Seerah"
+   },
+   "count": 3
+  },
+  {
+   "kind": "video",
+   "video": {
+    "id": "v9",
+    "title": "رحلة إلى مكة",
+    "filename": "journey-to-makkah.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3300,
+    "state": "ready",
+    "created_at": "{{now-864000}}",
+    "published_at": "{{now-60480000}}"
+   }
+  },
+  {
+   "kind": "video",
+   "video": {
+    "id": "v7",
+    "title": "The Fiqh of Fasting",
+    "filename": "fiqh-of-fasting.mp4",
+    "library_id": "lib-lectures",
+    "duration_sec": 1820,
+    "state": "ready",
+    "created_at": "{{now-2592000}}",
+    "published_at": "{{now-43200000}}"
+   }
+  },
+  {
+   "kind": "video",
+   "video": {
+    "id": "v8",
+    "title": "The Libraries of Cordoba",
+    "filename": "libraries-of-cordoba.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3480,
+    "state": "ready",
+    "created_at": "{{now-3456000}}",
+    "published_at": "{{now-77760000}}"
+   }
+  }
+ ],
+ "featured": {
+  "kind": "series",
+  "video": {
+   "id": "v1",
+   "title": "السيرة النبوية، الدرس ١٠",
+   "filename": "seerah-10.mp4",
+   "library_id": "lib-lectures",
+   "duration_sec": 3120,
+   "state": "ready",
+   "created_at": "{{now-1728000}}",
+   "published_at": "{{now-34560000}}"
+  },
+  "series": {
+   "id": "s-seerah",
+   "name": "Seerah",
+   "episodes": 3
+  },
+  "picked": false
+ }
+}

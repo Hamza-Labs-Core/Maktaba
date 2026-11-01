@@ -431,7 +431,7 @@ const HomeCard = memo(function HomeCard({
   onChanged: () => void;
   jobs: number | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const fmt = useFmt();
   const showError = useErrorToast();
   const [busy, setBusy] = useState(false);
@@ -479,7 +479,10 @@ const HomeCard = memo(function HomeCard({
       />
       {!home.roles_supported ? (
         <p className="mkt-mc-note" role="note">
-          {home.roles_reason || t("machines.home.unsupported")}
+          {(home.roles_reason_code &&
+          lookupMessage(locale, `machines.home.reason.${home.roles_reason_code}`) !== undefined
+            ? t(`machines.home.reason.${home.roles_reason_code}`, home.roles_reason_params ?? {})
+            : home.roles_reason) || t("machines.home.unsupported")}
         </p>
       ) : (
         // one line whether open or closed

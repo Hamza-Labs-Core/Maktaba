@@ -56,6 +56,8 @@ public struct ProcessStatus: Decodable, Identifiable, Sendable {
     public let detail: String?
     /// The same as a code from a fixed list (port_taken, venv_building, db_migrating, ...).
     public let detailCode: String?
+    /// The values its code's words take (`{to}`, `{percent}`, ...).
+    public let detailParams: [String: String]
     public let adopted: Bool
 
     public var id: String { instance.map { "\(role)/\($0)" } ?? role }
@@ -68,6 +70,7 @@ public struct ProcessStatus: Decodable, Identifiable, Sendable {
         case nextRestartAt = "next_restart_at"
         case lastProbe = "last_probe"
         case detailCode = "detail_code"
+        case detailParams = "detail_params"
     }
 
     public init(from decoder: Decoder) throws {
@@ -88,6 +91,7 @@ public struct ProcessStatus: Decodable, Identifiable, Sendable {
         detail = (d ?? "").isEmpty ? nil : d
         let code: String? = c.lenient(.detailCode)
         detailCode = (code ?? "").isEmpty ? nil : code
+        detailParams = c.lenientFields(.detailParams)
         adopted = c.lenient(.adopted) ?? false
     }
 
@@ -96,9 +100,15 @@ public struct ProcessStatus: Decodable, Identifiable, Sendable {
 
     public var stateText: String { words(StatusWords.processStates, "health.processes.state.", state) }
 
-    /// Its detail in words: the English the supervisor wrote, else its code.
-    public var detailText: String? {
-        detail ?? detailCode.map { $0.replacingOccurrences(of: "_", with: " ") }
+    /// Its detail in words: its code's (the web's setup.starting.detail.<code>) with its
+    /// values, else the English the supervisor wrote, else its code.
+    public var detailText: String? { detailText() }
+
+    public func detailText(locale: Locale = AppLanguage.locale) -> String? {
+        if let detailCode, StatusWords.processDetails[detailCode] != nil {
+            return filled(StatusWords.processDetails, "setup.starting.detail.", detailCode, detailParams, locale)
+        }
+        return detail ?? detailCode.map { $0.replacingOccurrences(of: "_", with: " ") }
     }
 }
 

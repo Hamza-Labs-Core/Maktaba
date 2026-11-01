@@ -1,0 +1,51 @@
+{
+ "seasons": [
+  {
+   "season": 1,
+   "episodes": [
+    {
+     "video_id": "v6",
+     "season": 1,
+     "episode": 3,
+     "title": "تفسير سورة الكهف، الجزء ٣",
+     "thumbnail": "/api/videos/v6/poster",
+     "duration_sec": 2810,
+     "progress_pct": 0,
+     "watched": false
+    },
+    {
+     "video_id": "v5",
+     "season": 1,
+     "episode": 2,
+     "title": "Tafsir al-Kahf, part 2",
+     "thumbnail": "/api/videos/v5/poster",
+     "duration_sec": 2700,
+     "progress_pct": 22.22,
+     "watched": false
+    },
+    {
+     "video_id": "v4",
+     "season": 1,
+     "episode": 1,
+     "title": "Tafsir al-Kahf, part 1",
+     "thumbnail": "/api/videos/v4/poster",
+     "duration_sec": 2650,
+     "progress_pct": 100,
+     "watched": true
+    }
+   ]
+  }
+ ],
+ "numbering": "season",
+ "sort": "added",
+ "next_episode": {
+  "video_id": "v5",
+  "season": 1,
+  "episode": 2,
+  "title": "Tafsir al-Kahf, part 2",
+  "thumbnail": "/api/videos/v5/poster",
+  "duration_sec": 2700,
+  "progress_pct": 22.22,
+  "watched": false
+ }
+}

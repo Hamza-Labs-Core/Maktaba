@@ -157,7 +157,13 @@ fn stop_event_set(name: &str) -> bool {
     unsafe { WaitForSingleObject(ev.0, 0) == WAIT_OBJECT_0 }
 }
 
-/// Whether an agent of this session holds the mutex.
+/// Whether an agent of this session holds the mutex: owns it, not only has it
+/// open. An agent that is exiting has released it but keeps its handle (so
+/// the mutex still exists) until its process is gone, and Task Scheduler
+/// counts that instance as running until then; taking it for a running agent
+/// sent Resume's one /Run into IgnoreNew and left the server stopped. Never
+/// asked on the thread that owns it (a mutex is recursive: that would say
+/// "free").
 fn mutex_held(name: &str) -> bool {
     let n = wide(OsStr::new(name));
     // SAFETY: as in open_event.
@@ -165,8 +171,18 @@ fn mutex_held(name: &str) -> bool {
     if h.is_null() {
         return false;
     }
-    drop(Owned(h));
-    true
+    let m = Owned(h);
+    // SAFETY: m is a live mutex handle opened with SYNCHRONIZE; a zero timeout
+    // only tries to take it.
+    match unsafe { WaitForSingleObject(m.0, 0) } {
+        WAIT_OBJECT_0 | WAIT_ABANDONED_0 => {
+            // no one owned it (or its owner died): give it back at once
+            // SAFETY: this thread owns the mutex after the successful wait.
+            unsafe { ReleaseMutex(m.0) };
+            false
+        }
+        _ => true, // WAIT_TIMEOUT: an agent owns it
+    }
 }
 
 /// Whether a mutex of this name exists in this session, even one this process may not open
@@ -805,9 +821,10 @@ fn run_task(name: &str) -> Result<(), String> {
 
 /// Run the task once the agent that is stopping (a Pause a moment ago) has
 /// exited: while it runs, Task Scheduler ignores /Run (IgnoreNew), and it
-/// would then exit and leave the server stopped. With no agent at all the
-/// /Run is asked again too: one that exited a moment ago (its mutex free, its
-/// process not yet gone) makes Task Scheduler ignore the first.
+/// would then exit and leave the server stopped. With no agent owning the
+/// mutex the /Run is asked again too: one that exited a moment ago (its mutex
+/// released, its process and handle not yet gone) makes Task Scheduler
+/// ignore the first.
 fn start_task(name: &str, mutex: &str, stop: &str) -> Result<(), String> {
     if !mutex_held(mutex) {
         return run_after_stop(name, mutex);
@@ -1167,6 +1184,57 @@ fn join_kill_on_close_job() -> Result<Owned, String> {
     }
 }
 
+/// The home's update orders, answered by this agent (agent_orders.rs) on a thread of its
+/// own for as long as it runs: the installer it starts at the home's go stops this agent
+/// (--server-stop). The attempt an installer it started left is settled first. Whether the
+/// orders are answered (own_job: this agent holds its kill-on-close job).
+fn start_orders(log: &Path, own_job: bool) -> bool {
+    let Some(root) = super::state_root() else {
+        return false;
+    };
+    let build = super::orders::Build::here();
+    super::orders::settle(&root, &build);
+    let log = log.to_path_buf();
+    let say = move |msg: &str| {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+        {
+            let _ = writeln!(f, "{} [agent] {msg}", utc_now());
+        }
+    };
+    let started = std::thread::Builder::new()
+        .name("orders".into())
+        .spawn(move || {
+            let mut orders = super::orders::Orders::new(
+                root,
+                build,
+                super::orders::Net { own_job },
+                super::paused_flag,
+                Box::new(say),
+            );
+            loop {
+                // a look that panics is logged and the next one runs
+                crate::applog::keep_going("the server agent's look at the home's order", || {
+                    orders.tick()
+                });
+                std::thread::sleep(super::orders::EVERY);
+            }
+        });
+    if let Err(e) = &started {
+        crate::applog::error("the server agent cannot answer the home's update orders", e);
+    }
+    started.is_ok()
+}
+
+/// This process in a kill-on-close job as the agent's, kept until it exits (agent_orders'
+/// test of an installer that outlives its agent).
+#[cfg(test)]
+pub(super) fn join_job_for_tests() -> Result<(), String> {
+    join_kill_on_close_job().map(std::mem::forget)
+}
+
 /// What ended one wait of the agent.
 enum Woke {
     Stop,
@@ -1225,6 +1293,7 @@ pub fn run_server_agent() -> Result<i32, String> {
         signin_delay: SIGNIN_DELAY,
         job: true,
         backoff_min: BACKOFF_MIN,
+        orders: true,
     })
 }
 
@@ -1248,6 +1317,8 @@ struct AgentRun {
     /// put itself (so the launcher's whole tree) in a kill-on-close job
     job: bool,
     backoff_min: Duration,
+    /// answer the home's update orders (agent_orders.rs), and tell the server so
+    orders: bool,
 }
 
 impl AgentRun {
@@ -1328,16 +1399,23 @@ fn run_agent(run: &AgentRun) -> Result<i32, String> {
             ));
         }
     }
+    let mut own_job = false;
     if run.job {
         match join_kill_on_close_job() {
             // kept open until this process exits: closing it ends every
             // process in the job, this one included
-            Ok(job) => std::mem::forget(job),
+            Ok(job) => {
+                std::mem::forget(job);
+                own_job = true;
+            }
             Err(e) => say(&format!(
                 "no job for the server's tree ({e}): it may outlive a killed agent"
             )),
         }
     }
+    // the home's orders, once this agent is in its job (an installer it starts leaves it);
+    // the server is told only when they are answered
+    let orders = run.orders && start_orders(&run.log, own_job);
     let early = signin_wait(run.signin, filetime(SystemTime::now()), run.signin_delay);
     if !early.is_zero() {
         say(&format!(
@@ -1356,8 +1434,12 @@ fn run_agent(run: &AgentRun) -> Result<i32, String> {
         let child = open_log()
             .and_then(|f| Ok((f.try_clone()?, f)))
             .and_then(|(out, err)| {
-                Command::new(&run.program)
-                    .args(&run.args)
+                let mut cmd = Command::new(&run.program);
+                if orders {
+                    // the server opens no window for an order: this agent answers it
+                    cmd.env(super::orders::AGENT_ORDERS_ENV, "1");
+                }
+                cmd.args(&run.args)
                     .current_dir(&run.workdir)
                     .stdin(Stdio::null())
                     .stdout(out)
@@ -1717,6 +1799,36 @@ mod tests {
         owner.join().unwrap();
     }
 
+    /// An agent that is exiting has released its mutex but still has it open:
+    /// it no longer runs (Resume must ask Task Scheduler again, not take it for
+    /// a running agent), and a wait for a new agent does not end on it.
+    #[test]
+    fn a_released_mutex_still_open_is_not_held() {
+        let name = unique("Exiting");
+        let (released_tx, released_rx) = std::sync::mpsc::channel();
+        let (close_tx, close_rx) = std::sync::mpsc::channel::<()>();
+        let owner_name = name.clone();
+        let owner = std::thread::spawn(move || {
+            let n = wide(OsStr::new(&owner_name));
+            // SAFETY: test-only, a valid name; owned by this thread.
+            let m = Owned(unsafe { CreateMutexW(std::ptr::null(), 1, n.as_ptr()) });
+            // SAFETY: this thread owns it.
+            unsafe { ReleaseMutex(m.0) };
+            released_tx.send(()).unwrap();
+            close_rx.recv().unwrap();
+            drop(m);
+        });
+        released_rx.recv().unwrap();
+        assert!(mutex_exists(&name), "the exiting agent's handle keeps it");
+        assert!(!mutex_held(&name), "released: no agent runs");
+        assert!(!wait_mutex_held(&name, Duration::from_millis(150)));
+        assert!(mutex_exists(&name), "asking did not take it away");
+        assert!(wait_mutex_free(&name, Duration::from_millis(10)));
+        close_tx.send(()).unwrap();
+        owner.join().unwrap();
+        assert!(!mutex_exists(&name));
+    }
+
     fn stand_in(tmp: &Path, script: &str) -> AgentRun {
         AgentRun {
             program: PathBuf::from("powershell.exe"),
@@ -1733,6 +1845,7 @@ mod tests {
             signin_delay: Duration::ZERO,
             job: false,
             backoff_min: Duration::from_millis(50),
+            orders: false,
         }
     }
 

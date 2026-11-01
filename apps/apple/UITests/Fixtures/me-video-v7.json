@@ -1,0 +1,13 @@
+{
+ "video_id": "v7",
+ "position_sec": 0,
+ "completed": false,
+ "favorite": true,
+ "playlists": [
+  {
+   "id": "pl-1",
+   "name": "رمضان"
+  }
+ ],
+ "series": null
+}

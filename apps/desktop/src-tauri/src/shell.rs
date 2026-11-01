@@ -577,13 +577,21 @@ pub fn install_requested(app: &AppHandle) {
     let path = autoinstall::request_path(&root);
     let req = autoinstall::read(&path);
     *sh.order.locked() = req.clone();
+    let server_side = matches!(sh.mode(), Some(AppMode::Server { .. }));
+    // Windows: the server agent answers the order, keeps what it stages and installs it
+    // (agent_orders.rs: an update never waits for this window); the window only says it
+    if cfg!(windows) && server_side {
+        if let Some(r) = &req {
+            notify_ready(app, r);
+        }
+        return;
+    }
     let Some(r) = req else {
         // no order (withdrawn, or installed): what was staged goes
         autoinstall::clean_staged(&root, None);
         return;
     };
     let staged = autoinstall::staged_path(&root, &r.version);
-    let server_side = matches!(sh.mode(), Some(AppMode::Server { .. }));
     // a locally built app can take no release: the order says so at once (a machine that
     // needs a person: its release installed by hand once), recorded once per order
     if server_side
@@ -1850,6 +1858,14 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             return;
         };
         let sh = shell(&handle);
+        // Windows: the server agent settles what it installed for the home's orders
+        // (agent_orders.rs); this window, opened while one runs, must not fail it
+        if cfg!(windows)
+            && matches!(sh.mode(), Some(AppMode::Server { .. }))
+            && attempts::newest(&rec).is_some_and(|a| a.trigger == attempts::TRIGGER_ORDER)
+        {
+            return;
+        }
         let server = match sh.mode() {
             Some(AppMode::Server {
                 web_url,

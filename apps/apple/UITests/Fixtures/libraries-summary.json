@@ -1,0 +1,34 @@
+{
+ "items": [
+  {
+   "id": "lib-docs",
+   "name": "Documentaries",
+   "videos": 5,
+   "duration_sec": 15360,
+   "poster_video_ids": [
+    "v12",
+    "v11",
+    "v10",
+    "v9"
+   ],
+   "latest_added_at": "{{now-3600}}",
+   "pinned": false,
+   "pin_position": null
+  },
+  {
+   "id": "lib-lectures",
+   "name": "Lectures",
+   "videos": 7,
+   "duration_sec": 19385,
+   "poster_video_ids": [
+    "v6",
+    "v3",
+    "v5",
+    "v4"
+   ],
+   "latest_added_at": "{{now-90000}}",
+   "pinned": true,
+   "pin_position": 0
+  }
+ ]
+}

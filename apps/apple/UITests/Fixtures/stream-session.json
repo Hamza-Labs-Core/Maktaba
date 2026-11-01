@@ -1,0 +1,33 @@
+{
+ "session_id": "ss-1",
+ "mode": "transcode",
+ "manifest_url": "/stream/ss-1/manifest.m3u8?sig=uitest-signature",
+ "expires_at": "{{now+14400}}",
+ "ladder": [
+  {
+   "height": 1080,
+   "width": 1920,
+   "bitrate_kbps": 6000,
+   "codec": "h264"
+  },
+  {
+   "height": 720,
+   "width": 1280,
+   "bitrate_kbps": 3000,
+   "codec": "h264"
+  },
+  {
+   "height": 480,
+   "width": 854,
+   "bitrate_kbps": 1200,
+   "codec": "h264"
+  }
+ ],
+ "current_rendition": {
+  "height": 1080,
+  "width": 1920,
+  "bitrate_kbps": 6000,
+  "codec": "h264"
+ },
+ "duration_sec": 3120
+}

@@ -915,6 +915,16 @@
         }
       }
     },
+    "Started by" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدأه"
+          }
+        }
+      }
+    },
     "State" : {
       "localizations" : {
         "ar" : {
@@ -1031,6 +1041,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "هذا الجهاز الرئيسي"
+          }
+        }
+      }
+    },
+    "This home cannot take machines." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يقبل هذا الجهاز الرئيسي أجهزة أخرى."
           }
         }
       }

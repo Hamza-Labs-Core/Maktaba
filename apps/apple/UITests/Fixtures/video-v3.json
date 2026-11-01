@@ -1,0 +1,20 @@
+{
+ "id": "v3",
+ "library_id": "lib-lectures",
+ "path": "/Volumes/Media/Lectures/seerah-12.mp4",
+ "filename": "seerah-12.mp4",
+ "title": "السيرة النبوية، الدرس ١٢",
+ "description": "الدرس الثاني عشر من سلسلة السيرة النبوية.",
+ "state": "ready",
+ "detected_language": "ar",
+ "duration_sec": 3305,
+ "size_bytes": 826250000,
+ "content_hash": "5690063988abb7287cb193ecc1a362e71b7cc139e73f670f267f81b33e04feb1",
+ "created_at": "{{now-100000}}",
+ "updated_at": "{{now-99400}}",
+ "playable": true,
+ "tags": [
+  "seerah"
+ ],
+ "latest_transcript_id": "tr-v3"
+}

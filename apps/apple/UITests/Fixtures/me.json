@@ -1,0 +1,7 @@
+{
+ "id": "u1",
+ "username": "tester",
+ "email": "tester@example.com",
+ "display_name": "UI Tester",
+ "is_admin": true
+}

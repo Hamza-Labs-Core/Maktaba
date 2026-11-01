@@ -1,0 +1,14 @@
+{
+ "user_id": "u1",
+ "is_admin": true,
+ "libraries": [],
+ "id": "u1",
+ "username": "tester",
+ "user": {
+  "id": "u1",
+  "username": "tester",
+  "is_admin": true,
+  "must_change_password": false
+ },
+ "home_name": "UI Test Home"
+}
