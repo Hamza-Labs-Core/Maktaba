@@ -20,11 +20,7 @@ const HOME: DiscoveryHome = {
   id: "0a1b2c3d-0000-4000-8000-000000000000",
   name: "Kitchen & Den",
   version: "1.6.0",
-  urls: [
-    "http://192.168.1.5:8088",
-    "http://studio.local:8088",
-    "https://kitchen.relay.maktaba.tv",
-  ],
+  urls: ["http://192.168.1.5:8088", "http://studio.local:8088", "https://kitchen.relay.maktaba.tv"],
   sign_in: { password: true, code: true },
 };
 

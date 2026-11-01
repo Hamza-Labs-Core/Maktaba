@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -14,6 +15,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.setShell
 import com.hamzalabs.maktaba.player.shell.PlayerSection
+import com.hamzalabs.maktaba.player.shell.ShellNavigation
+import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
