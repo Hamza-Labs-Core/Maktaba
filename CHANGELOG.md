@@ -12,6 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
+  serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
+  for an hour like the full one. A viewer without the video's library now gets 404 (as for a
+  missing video) instead of 403, for both sizes.
 - **The server sends codes, not English, for what the admin screens say.** Each TV change
   check now carries a `code` and `params` beside its English `value` (for example
   `slot.release_mismatch` for "the staging slot runs another release"), and the move that
