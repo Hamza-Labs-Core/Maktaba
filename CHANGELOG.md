@@ -12,6 +12,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **AirPlay and Cast can play through the web port.** A video's signed URL (`?sig=`) passes
+  the web port without a sign-in cookie; live TV channels still need a signed-in session
+  (Epic 48 story 48.12, [#474]).
+- **Apple apps wear the brand.** Dark (Ink & Brass) by default, branded start screens in
+  English and Arabic, and an ink launch screen with the logo (48.10, [#480]).
+- **Android apps wear the brand.** Dark on first launch, and an ink launch screen with the logo
+  even when the phone is in light mode (48.11, [#479]).
+
 - **MaktabaKit: the Player's browse client (Epic 48, story 48.6).** `Browse.swift` adds the
   calls and models for Home (rows, rails, Not interested), Libraries (cards, pins), a library
   (hub, the grid by cursor with facets and sort, its series), Series, a video's page (detail,
@@ -148,6 +156,15 @@ don't append a line here; docs-only PRs are exempt.
   builds its streaming binary with TV staging, as the release does.
 
 ### Fixed
+
+- **Videos play with sound again.** A video whose audio track was recorded by transcription
+  before the probe ran streamed with no sound on every player (32,381 videos on the owner's
+  home). The probe now fills in an existing track, and slot 0171 repairs the tracks already
+  affected ([#477]).
+- A machine that connects just after the home's check gets the home's database certificate at
+  once, instead of waiting up to 30 s and restarting ([#473]).
+- The cloud relay records a home online before routing to it, and a home that reconnects
+  quickly is no longer left showing offline ([#475]).
 
 - **A Windows node installs the home's updates even when the Maktaba window is closed.** Until
   now the window app downloaded and installed each update. The server only tried to open it
