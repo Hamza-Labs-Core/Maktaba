@@ -221,7 +221,8 @@ func TestJoinUnsupportedRoles(t *testing.T) {
 	}
 	var ov Overview
 	decode(t, f.do("GET", "/api/cluster", "", admin()), 200, &ov)
-	if ov.Home.RolesSupported || ov.Home.RolesReason == nil || *ov.Home.RolesReason != cluster.ReasonCannotCreate {
+	if ov.Home.RolesSupported || ov.Home.RolesReason == nil || *ov.Home.RolesReason != cluster.ReasonCannotCreate ||
+		ov.Home.RolesReasonCode != "cannot_create_roles" {
 		t.Errorf("home = %+v", ov.Home)
 	}
 }

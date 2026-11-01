@@ -1,0 +1,26 @@
+{
+ "stream_base_url": "http://192.168.1.10:8081",
+ "hdhr_address": "192.168.1.10:8081",
+ "xmltv_url": "http://192.168.1.10:8081/xmltv.xml",
+ "m3u_url": "http://192.168.1.10:8081/lineup.m3u",
+ "base_from_config": false,
+ "xmltv_path": "/xmltv.xml",
+ "m3u_path": "/lineup.m3u",
+ "hls_path_template": "/stream/channel/{id}/index.m3u8",
+ "remote": {
+  "available": true,
+  "reason": null,
+  "via_relay": false,
+  "max_streams": 2,
+  "token_ttl_minutes": 60
+ },
+ "cluster": {
+  "hosts_on_air": 1
+ },
+ "staging": {
+  "enabled": false,
+  "live_release": null,
+  "live_gen": 0,
+  "change_in_flight": null
+ }
+}

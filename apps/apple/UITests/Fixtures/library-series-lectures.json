@@ -1,0 +1,31 @@
+{
+ "library": {
+  "id": "lib-lectures",
+  "name": "Lectures"
+ },
+ "sort": "name",
+ "items": [
+  {
+   "id": "s-seerah",
+   "name": "Seerah",
+   "poster_video_id": "v1",
+   "episodes": 3,
+   "watched": 1,
+   "in_progress": 1,
+   "latest_added_at": "{{now-100000}}",
+   "last_watched_at": "{{now-1800}}"
+  },
+  {
+   "id": "s-tafsir",
+   "name": "Tafsir al-Kahf",
+   "poster_video_id": "v4",
+   "episodes": 3,
+   "watched": 1,
+   "in_progress": 1,
+   "latest_added_at": "{{now-90000}}",
+   "last_watched_at": "{{now-5400}}"
+  }
+ ],
+ "total": 2,
+ "next": null
+}

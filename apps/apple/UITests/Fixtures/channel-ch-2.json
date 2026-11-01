@@ -1,0 +1,41 @@
+{
+ "id": "ch-2",
+ "library_id": "lib-lectures",
+ "number": 2,
+ "name": "قناة السيرة",
+ "slug": "channel",
+ "logo_path": "/srv/maktaba/channel-art/ch-2/logo.png",
+ "logo_url": "/api/channels/ch-2/logo",
+ "art": {
+  "logo": {
+   "url": "/api/channels/ch-2/art/logo?v=2eab3163",
+   "path": "/srv/maktaba/channel-art/ch-2/logo.png",
+   "overridden": false
+  },
+  "watermark": {
+   "overridden": false,
+   "position": "top-right",
+   "width_pct": 12,
+   "margin_pct": 2
+  },
+  "loading": {
+   "overridden": false
+  },
+  "strip": null
+ },
+ "category": "general",
+ "mode": "shuffle",
+ "mode_config": {},
+ "transition": "cut",
+ "enabled": true,
+ "sort_order": 2,
+ "created_at": "{{now-17280000}}",
+ "updated_at": "{{now-864000}}",
+ "now_playing": {
+  "title": "السيرة النبوية، الدرس ١١",
+  "start_at": "{{now-800}}",
+  "end_at": "{{now+2500}}",
+  "progress": 0.2424
+ },
+ "guide_until": "{{now+86400}}"
+}

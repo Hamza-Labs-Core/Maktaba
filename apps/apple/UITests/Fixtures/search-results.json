@@ -1,0 +1,45 @@
+{
+ "search_id": "sr-1",
+ "expires_at": "{{now+1800}}",
+ "q": "السيرة",
+ "mode": "hybrid",
+ "list": "titles",
+ "offset": 0,
+ "limit": 20,
+ "total": 3,
+ "items": [
+  {
+   "video_id": "v3",
+   "title": "السيرة النبوية، الدرس ١٢",
+   "duration_sec": 3305,
+   "library_id": "lib-lectures",
+   "library_name": "Lectures",
+   "poster_url": "/api/videos/v3/poster",
+   "score": 0.82,
+   "in_transcripts": true,
+   "title_snippet": "<mark>السيرة</mark> النبوية، الدرس ١٢"
+  },
+  {
+   "video_id": "v2",
+   "title": "السيرة النبوية، الدرس ١١",
+   "duration_sec": 2980,
+   "library_id": "lib-lectures",
+   "library_name": "Lectures",
+   "poster_url": "/api/videos/v2/poster",
+   "score": 0.82,
+   "in_transcripts": false,
+   "title_snippet": "<mark>السيرة</mark> النبوية، الدرس ١١"
+  },
+  {
+   "video_id": "v1",
+   "title": "السيرة النبوية، الدرس ١٠",
+   "duration_sec": 3120,
+   "library_id": "lib-lectures",
+   "library_name": "Lectures",
+   "poster_url": "/api/videos/v1/poster",
+   "score": 0.82,
+   "in_transcripts": true,
+   "title_snippet": "<mark>السيرة</mark> النبوية، الدرس ١٠"
+  }
+ ]
+}

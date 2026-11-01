@@ -1,0 +1,127 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Channel" : {
+      "comment" : "A channel's page, not built yet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القناة"
+          }
+        }
+      }
+    },
+    "Home" : {
+      "comment" : "The Home section's tab",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرئيسية"
+          }
+        }
+      }
+    },
+    "Libraries" : {
+      "comment" : "The Libraries section's tab",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبات"
+          }
+        }
+      }
+    },
+    "Library" : {
+      "comment" : "A library's page, not built yet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبة"
+          }
+        }
+      }
+    },
+    "Live TV" : {
+      "comment" : "The Live TV section's tab",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث المباشر"
+          }
+        }
+      }
+    },
+    "Player" : {
+      "comment" : "The video player, not built yet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المشغّل"
+          }
+        }
+      }
+    },
+    "Profile" : {
+      "comment" : "The Profile section's tab",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الملف الشخصي"
+          }
+        }
+      }
+    },
+    "Search" : {
+      "comment" : "The Search section's tab",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث"
+          }
+        }
+      }
+    },
+    "Series" : {
+      "comment" : "A series' page, not built yet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المسلسل"
+          }
+        }
+      }
+    },
+    "This screen is on its way." : {
+      "comment" : "A section or page not built yet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذه الشاشة قادمة قريبًا."
+          }
+        }
+      }
+    },
+    "Video" : {
+      "comment" : "A video's page, not built yet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفيديو"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

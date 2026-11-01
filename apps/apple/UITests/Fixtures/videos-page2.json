@@ -1,0 +1,85 @@
+{
+ "items": [
+  {
+   "id": "v2",
+   "library_id": "lib-lectures",
+   "path": "/Volumes/Media/Lectures/seerah-11.mp4",
+   "filename": "seerah-11.mp4",
+   "title": "السيرة النبوية، الدرس ١١",
+   "description": "الدرس الحادي عشر من سلسلة السيرة النبوية.",
+   "state": "ready",
+   "detected_language": "ar",
+   "duration_sec": 2980,
+   "size_bytes": 745000000,
+   "content_hash": "a921a8b8565ec6c39070dc11c56a7a0c70b247293390cc26c99eb6db3937efdc",
+   "created_at": "{{now-1641600}}",
+   "updated_at": "{{now-1641000}}",
+   "playback_state": {
+    "position_sec": 1240,
+    "completed": false,
+    "updated_at": "{{now-1800}}"
+   },
+   "published_at": "{{now-33955200}}"
+  },
+  {
+   "id": "v1",
+   "library_id": "lib-lectures",
+   "path": "/Volumes/Media/Lectures/seerah-10.mp4",
+   "filename": "seerah-10.mp4",
+   "title": "السيرة النبوية، الدرس ١٠",
+   "description": "الدرس العاشر من سلسلة السيرة النبوية.",
+   "state": "ready",
+   "detected_language": "ar",
+   "duration_sec": 3120,
+   "size_bytes": 780000000,
+   "content_hash": "f4c269b09d0ce5c2957ddf37c612bc57568772f32f100086cfcf1939b34f7e49",
+   "created_at": "{{now-1728000}}",
+   "updated_at": "{{now-1727400}}",
+   "playback_state": {
+    "position_sec": 3120,
+    "completed": true,
+    "updated_at": "{{now-259200}}"
+   },
+   "published_at": "{{now-34560000}}"
+  },
+  {
+   "id": "v7",
+   "library_id": "lib-lectures",
+   "path": "/Volumes/Media/Lectures/fiqh-of-fasting.mp4",
+   "filename": "fiqh-of-fasting.mp4",
+   "title": "The Fiqh of Fasting",
+   "description": "The rulings of the fast, from intention to breaking it.",
+   "state": "ready",
+   "detected_language": "en",
+   "duration_sec": 1820,
+   "size_bytes": 455000000,
+   "content_hash": "e15d3463fb5abffcf1cf0b3a0f31786688cff7b49c8363b1735120946ef27609",
+   "created_at": "{{now-2592000}}",
+   "updated_at": "{{now-2591400}}",
+   "published_at": "{{now-43200000}}",
+   "favorite": true
+  },
+  {
+   "id": "v8",
+   "library_id": "lib-docs",
+   "path": "/Volumes/Media/Documentaries/libraries-of-cordoba.mkv",
+   "filename": "libraries-of-cordoba.mkv",
+   "title": "The Libraries of Cordoba",
+   "description": "How a medieval city kept hundreds of thousands of books.",
+   "state": "ready",
+   "detected_language": "en",
+   "duration_sec": 3480,
+   "size_bytes": 870000000,
+   "content_hash": "58580d134b665f53ca5614a4367f7e2b42e632d838e1390e1ebe9dc89869c9d5",
+   "created_at": "{{now-3456000}}",
+   "updated_at": "{{now-3455400}}",
+   "playback_state": {
+    "position_sec": 3480,
+    "completed": true,
+    "updated_at": "{{now-518400}}"
+   },
+   "published_at": "{{now-77760000}}"
+  }
+ ],
+ "next": null
+}

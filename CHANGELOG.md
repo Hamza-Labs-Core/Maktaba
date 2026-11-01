@@ -12,6 +12,28 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
+  serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
+  for an hour like the full one. A viewer without the video's library now gets 404 (as for a
+  missing video) instead of 403, for both sizes.
+- **The server sends codes, not English, for what the admin screens say.** Each TV change
+  check now carries a `code` and `params` beside its English `value` (for example
+  `slot.release_mismatch` for "the staging slot runs another release"), and the move that
+  fails a change carries `report_code`/`report_params`. The home's "cannot take machines"
+  reason carries `roles_reason_code`/`roles_reason_params`. The web, Android Remote and Apple
+  apps say these in English and Arabic, and show the English when they don't know a code
+  (older apps keep reading `value`). Who started an update (`auto`, `manual`, `catch_up`,
+  `retry`) now has words on Android and iPhone, the TV check names have words on the
+  Updates page and in the apps, and the iPhone's Processes screen says the supervisor's
+  `detail_code` in words instead of its English. Only fields were added: TV staging behaves
+  as before.
+- **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
+  Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
+  a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,
+  Live TV, Search and Profile, each keeping its own screens and scroll position. A section
+  appears only once its screen is built, so for now the app opens on today's Libraries as
+  before. CI now runs the Player's unit and UI tests on a fake home, with dark English and
+  Arabic screenshots checked against references.
 - **Subtitles show on Apple TV, AirPlay and Cast (story 48.4).** A video session's master
   playlist now lists each subtitle file beside the video as an HLS subtitle track (language,
   its own name, off by default). Each track is a one-file playlist over the existing subtitle
@@ -25,6 +47,12 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **Maktaba Player (Apple) has its sections' shell (Epic 48, story 48.13).** It has Home,
+  Libraries, Live TV, Search and Profile in a tab bar on iPhone that becomes a sidebar on
+  iPad, Mac and an open iPhone Duo. A section shows only once its screen has shipped, so
+  today's builds still open straight on the libraries. CI now runs the Player's UI tests,
+  in English and Arabic, on throwaway iPhone and iPad simulators against a mock home, and
+  keeps their screenshots.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes

@@ -9,7 +9,9 @@ translation in state "translated" (each plural or device variation too) with the
 arguments, and a key that is not its own English (one added by hand, extractionState
 "manual") its English as well. With --stringsdata, the .stringsdata Xcode writes as it
 builds (SWIFT_EMIT_LOC_STRINGS) are read too: every key the code uses must be in its
-target's catalog, so a new Text("...") without its Arabic fails here, not in a review.
+target's catalog for its table (Localizable, or a screen's own, such as the Player's
+Shell.xcstrings; a table with no catalog fails too), so a new Text("...") without its
+Arabic fails here, not in a review.
 """
 import argparse
 import glob
@@ -21,17 +23,23 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 CATALOG_DIRS = ["apps/apple", "apps/tv/tvos"]
 LANGUAGES = ["ar"]
-# a target's build folder (its .stringsdata) -> its Localizable catalog
+# a target's build folder (its .stringsdata) -> the folders of its sources. A table the code
+# names (`Text("…", tableName: "Shell")`, `LocalizedStringResource(_:table:)`) is the catalog
+# of that name in those folders (`Player/Shell/Shell.xcstrings`); the default table is
+# Localizable. The Player's screens (Epic 48) each have their own table, and a new table
+# needs no change here.
 TARGETS = {
-    "Maktaba Remote": "apps/apple/Remote/Localizable.xcstrings",
-    "Maktaba Remote iPad": "apps/apple/Remote/Localizable.xcstrings",
-    "Maktaba Player": "apps/apple/Player/Localizable.xcstrings",
-    "Maktaba Player iPad": "apps/apple/Player/Localizable.xcstrings",
-    "Maktaba Player Mac": "apps/apple/Player/Localizable.xcstrings",
-    "Maktaba TV": "apps/tv/tvos/MaktabaTV/Localizable.xcstrings",
-    "MaktabaKit-t": "apps/apple/MaktabaKit/Sources/MaktabaKit/Localizable.xcstrings",
-    "MaktabaKit": "apps/apple/MaktabaKit/Sources/MaktabaKit/Localizable.xcstrings",
+    "Maktaba Remote": ["apps/apple/Remote"],
+    "Maktaba Remote iPad": ["apps/apple/Remote"],
+    "Maktaba Player": ["apps/apple/Player"],
+    "Maktaba Player iPad": ["apps/apple/Player"],
+    "Maktaba Player Mac": ["apps/apple/Player"],
+    "Maktaba TV": ["apps/tv/tvos/MaktabaTV"],
+    "MaktabaKit-t": ["apps/apple/MaktabaKit/Sources/MaktabaKit"],
+    "MaktabaKit": ["apps/apple/MaktabaKit/Sources/MaktabaKit"],
 }
+# catalogs that are not string tables of the code (the Info.plist's own keys)
+NOT_TABLES = {"InfoPlist"}
 
 SPEC = re.compile(r"%(?:(\d+)\$)?(@|ll[du]|l[du]|[du]|f|\.\d+f)")
 
@@ -89,27 +97,49 @@ def check_catalog(path, errors, warnings):
     return set(strings)
 
 
+def tables(target, errors):
+    """A target's string tables: {"Localizable": path, "Shell": path, …}."""
+    found = {}
+    for d in TARGETS[target]:
+        for path in sorted(glob.glob(os.path.join(ROOT, d, "**", "*.xcstrings"), recursive=True)):
+            if "/build/" in path or "/DerivedData/" in path:
+                continue
+            name = os.path.basename(path)[: -len(".xcstrings")]
+            if name in NOT_TABLES:
+                continue
+            if name in found:
+                errors.append(f"{target}: two catalogs named {name}.xcstrings: "
+                              f"{os.path.relpath(found[name], ROOT)} and {os.path.relpath(path, ROOT)}")
+                continue
+            found[name] = path
+    return found
+
+
 def check_code(dd, catalogs, errors):
-    """Every key a target's code uses is in its catalog."""
+    """Every key a target's code uses is in the catalog of its table."""
     seen = 0
     for build in glob.glob(os.path.join(dd, "Build", "Intermediates.noindex", "*", "*", "*.build")):
         target = os.path.basename(build)[: -len(".build")]
-        cat = TARGETS.get(target)
-        if not cat:
+        if target not in TARGETS:
             continue
-        keys = catalogs.get(os.path.join(ROOT, cat), set())
+        mine = tables(target, errors)
         for f in glob.glob(os.path.join(build, "Objects-normal", "*", "*.stringsdata")):
             # the symbols Xcode generates from a catalog's own keys
             if os.path.basename(f).startswith("GeneratedStringSymbols"):
                 continue
             seen += 1
+            src = os.path.basename(f).replace(".stringsdata", ".swift")
             for table, entries in json.load(open(f, encoding="utf-8")).get("tables", {}).items():
-                if table != "Localizable":
+                path = mine.get(table)
+                if not path:
+                    errors.append(f"{target}: {src} uses the table {table!r}, but there is no {table}.xcstrings in "
+                                  f"{', '.join(TARGETS[target])}")
                     continue
+                keys = catalogs.get(path, set())
+                cat = os.path.relpath(path, ROOT)
                 for e in entries:
                     if e["key"] not in keys:
                         loc = e.get("location", {})
-                        src = os.path.basename(f).replace(".stringsdata", ".swift")
                         errors.append(f"{cat}: {e['key']!r} ({target}, {src}:{loc.get('startingLine', '?')}) is not in the catalog")
     if seen == 0:
         errors.append(f"{dd}: no .stringsdata of the Apple apps (build them with SWIFT_EMIT_LOC_STRINGS=YES)")
@@ -125,9 +155,9 @@ def main():
             if "/build/" in path or "/DerivedData/" in path:
                 continue
             catalogs[path] = check_catalog(path, errors, warnings)
-    for want in sorted(set(TARGETS.values())):
-        if os.path.join(ROOT, want) not in catalogs:
-            errors.append(f"{want}: missing")
+    for target in sorted(TARGETS):
+        if "Localizable" not in tables(target, errors):
+            errors.append(f"{target}: no Localizable.xcstrings in {', '.join(TARGETS[target])}")
     if args.stringsdata:
         check_code(args.stringsdata, catalogs, errors)
     # each architecture's build writes its own .stringsdata: one line per problem

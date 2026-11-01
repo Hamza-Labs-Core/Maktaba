@@ -1,0 +1,22 @@
+{
+ "items": [
+  {
+   "id": "sess-1",
+   "created_at": "{{now-432000}}",
+   "last_seen_at": "{{now-60}}",
+   "expires_at": "{{now+2160000}}",
+   "ip": "192.168.1.20",
+   "user_agent": "Maktaba/1.0 (iPhone; iOS 26.0)",
+   "current": false
+  },
+  {
+   "id": "sess-2",
+   "created_at": "{{now-1036800}}",
+   "last_seen_at": "{{now-172800}}",
+   "expires_at": "{{now+1555200}}",
+   "ip": null,
+   "user_agent": null,
+   "current": false
+  }
+ ]
+}

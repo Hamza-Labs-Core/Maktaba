@@ -1,0 +1,207 @@
+{
+ "library": {
+  "id": "lib-docs",
+  "name": "Documentaries",
+  "videos": 5
+ },
+ "rows": {
+  "continue_watching": [
+   {
+    "id": "v9",
+    "title": "رحلة إلى مكة",
+    "filename": "journey-to-makkah.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3300,
+    "state": "ready",
+    "created_at": "{{now-864000}}",
+    "published_at": "{{now-60480000}}",
+    "position_sec": 1500,
+    "completed": false,
+    "last_watched_at": "{{now-172800}}"
+   }
+  ],
+  "recently_added": [
+   {
+    "id": "v12",
+    "title": "Scholars of the Silk Road",
+    "filename": "silk-road-scholars.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 2580,
+    "state": "ready",
+    "created_at": "{{now-3600}}",
+    "published_at": null
+   },
+   {
+    "id": "v11",
+    "title": "بيت الحكمة في بغداد",
+    "filename": "house-of-wisdom.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3060,
+    "state": "ready",
+    "created_at": "{{now-7200}}",
+    "published_at": "{{now-56160000}}"
+   },
+   {
+    "id": "v10",
+    "title": "Manuscripts of Timbuktu",
+    "filename": "manuscripts-of-timbuktu.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 2940,
+    "state": "ready",
+    "created_at": "{{now-86400}}",
+    "published_at": "{{now-51840000}}"
+   },
+   {
+    "id": "v9",
+    "title": "رحلة إلى مكة",
+    "filename": "journey-to-makkah.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3300,
+    "state": "ready",
+    "created_at": "{{now-864000}}",
+    "published_at": "{{now-60480000}}"
+   },
+   {
+    "id": "v8",
+    "title": "The Libraries of Cordoba",
+    "filename": "libraries-of-cordoba.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3480,
+    "state": "ready",
+    "created_at": "{{now-3456000}}",
+    "published_at": "{{now-77760000}}"
+   }
+  ],
+  "recently_watched": [
+   {
+    "id": "v9",
+    "title": "رحلة إلى مكة",
+    "filename": "journey-to-makkah.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3300,
+    "state": "ready",
+    "created_at": "{{now-864000}}",
+    "published_at": "{{now-60480000}}",
+    "position_sec": 1500,
+    "completed": false,
+    "last_watched_at": "{{now-172800}}"
+   },
+   {
+    "id": "v8",
+    "title": "The Libraries of Cordoba",
+    "filename": "libraries-of-cordoba.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3480,
+    "state": "ready",
+    "created_at": "{{now-3456000}}",
+    "published_at": "{{now-77760000}}",
+    "position_sec": 3480,
+    "completed": true,
+    "last_watched_at": "{{now-518400}}"
+   }
+  ],
+  "most_watched": [
+   {
+    "id": "v8",
+    "title": "The Libraries of Cordoba",
+    "filename": "libraries-of-cordoba.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3480,
+    "state": "ready",
+    "created_at": "{{now-3456000}}",
+    "published_at": "{{now-77760000}}",
+    "plays": 7
+   },
+   {
+    "id": "v9",
+    "title": "رحلة إلى مكة",
+    "filename": "journey-to-makkah.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 3300,
+    "state": "ready",
+    "created_at": "{{now-864000}}",
+    "published_at": "{{now-60480000}}",
+    "plays": 5
+   }
+  ],
+  "series": [],
+  "years": [
+   {
+    "year": 2024,
+    "videos": 3
+   },
+   {
+    "year": 2023,
+    "videos": 1
+   }
+  ],
+  "on_deck": [],
+  "recently_added_grouped": [
+   {
+    "kind": "video",
+    "video": {
+     "id": "v12",
+     "title": "Scholars of the Silk Road",
+     "filename": "silk-road-scholars.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 2580,
+     "state": "ready",
+     "created_at": "{{now-3600}}",
+     "published_at": null
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v11",
+     "title": "بيت الحكمة في بغداد",
+     "filename": "house-of-wisdom.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 3060,
+     "state": "ready",
+     "created_at": "{{now-7200}}",
+     "published_at": "{{now-56160000}}"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v10",
+     "title": "Manuscripts of Timbuktu",
+     "filename": "manuscripts-of-timbuktu.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 2940,
+     "state": "ready",
+     "created_at": "{{now-86400}}",
+     "published_at": "{{now-51840000}}"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v9",
+     "title": "رحلة إلى مكة",
+     "filename": "journey-to-makkah.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 3300,
+     "state": "ready",
+     "created_at": "{{now-864000}}",
+     "published_at": "{{now-60480000}}"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v8",
+     "title": "The Libraries of Cordoba",
+     "filename": "libraries-of-cordoba.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 3480,
+     "state": "ready",
+     "created_at": "{{now-3456000}}",
+     "published_at": "{{now-77760000}}"
+    }
+   }
+  ]
+ }
+}
