@@ -1,25 +1,23 @@
 import XCTest
 
 /// The Player's shell (Epic 48 story 48.13) on iPhone and iPad, against `MockHome`:
-/// - only the sections turned on show (today Libraries alone: the app is today's library
-///   browser, no tab bar);
+/// - only the sections turned on show (today Libraries alone, story 48.18's screens, no tab
+///   bar);
 /// - all five sections: a bottom tab bar on an iPhone, tabs at the top on an iPad (they
 ///   become the sidebar there), right to left in Arabic;
 /// - every route opens its screen; choosing the chosen section again pops its stack.
 final class PlayerShellUITests: PlayerUITestCase {
     private let sections = ["Home", "Libraries", "Live TV", "Search", "Profile"]
     private let arabic = ["الرئيسية", "المكتبات", "البث المباشر", "البحث", "الملف الشخصي"]
-    /// The first of `/api/videos` in the fixtures (`Fixtures/videos.json`).
-    private let newestVideo = "Scholars of the Silk Road"
+    /// A library card of `Fixtures/libraries-summary.json` (the Libraries root, story 48.18).
+    private let libraryCard = "library.lib-docs"
 
-    /// A TestFlight build shows `PlayerSection.enabled` only: Libraries, today's browser,
-    /// reading the home's libraries; no section that has not merged.
+    /// A TestFlight build shows `PlayerSection.enabled` only: Libraries, reading the home's
+    /// library cards; no section that has not merged.
     func testOnlyTheEnabledSectionsShow() {
         launchSignedIn()
-        // today's browser: the videos of every library (on a phone, its libraries one step back)
-        XCTAssertTrue(app.staticTexts[newestVideo].firstMatch.waitForExistence(timeout: 15), "today's library browser")
-        XCTAssertTrue(home.seen.contains("GET /api/libraries"))
-        XCTAssertTrue(home.seen.contains("GET /api/videos"))
+        XCTAssertTrue(element(libraryCard).waitForExistence(timeout: 15), "the Libraries root")
+        XCTAssertTrue(home.seen.contains("GET /api/libraries/summary"))
         for label in ["Home", "Live TV", "Profile"] {
             XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
             XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
@@ -52,7 +50,7 @@ final class PlayerShellUITests: PlayerUITestCase {
             XCTAssertTrue(element(id).waitForExistence(timeout: 5), "\(label) opens its screen")
         }
         sectionButton("Libraries").tap()
-        XCTAssertTrue(app.staticTexts[newestVideo].firstMatch.waitForExistence(timeout: 10), "Libraries is today's browser")
+        XCTAssertTrue(element(libraryCard).waitForExistence(timeout: 10), "Libraries shows its cards")
         shot("sections-libraries")
     }
 
