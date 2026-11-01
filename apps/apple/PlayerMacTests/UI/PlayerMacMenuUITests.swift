@@ -97,8 +97,9 @@ final class PlayerMacMenuUITests: XCTestCase {
     func testThePlayerFillsTheWindowAndGoesFullScreen() throws {
         launchSignedIn(sections: "all", section: "home")
         // an On Deck card: a video not started, so its page offers Play
-        let card = element("home.card.v3")
+        let card = app.buttons["home.card.v3"].firstMatch
         XCTAssertTrue(card.waitForExistence(timeout: 15), "Home's On Deck row")
+        reveal(card)
         card.click()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
         let play = element("video.play")
@@ -165,6 +166,14 @@ final class PlayerMacMenuUITests: XCTestCase {
     }
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
+
+    /// Scrolls Home down until `element` is on screen (the On Deck row is below the window's fold).
+    private func reveal(_ element: XCUIElement) {
+        for _ in 0..<10 where !element.isHittable {
+            self.element("screen.home").scroll(byDeltaX: 0, deltaY: -200)
+        }
+        XCTAssertTrue(element.isHittable, "scrolled to \(element)")
+    }
 
     /// Clicks a menu bar item, then one of its items.
     private func menu(_ top: String, _ item: String) {
