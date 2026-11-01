@@ -20,7 +20,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -72,6 +72,9 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = "w411dp-h891dp")
 class ProfileScreenTest {
     @get:Rule(order = 0) val home = FakeHome()
+    // v2: a call the fake home answers resumes on the test's main thread, never on OkHttp's.
+    // The v1 rule resumed it on the thread that answered, so a list changed there and
+    // Compose redrew off the main thread (CalledFromWrongThreadException, now and then).
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val app: Application get() = ApplicationProvider.getApplicationContext()
