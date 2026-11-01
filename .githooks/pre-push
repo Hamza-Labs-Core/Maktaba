@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Maktaba pre-push hook: code that changes needs its tests changed too.
+#
+# Install once:   tools/affected-tests/install-hook.sh
+# What it does:   tools/affected-tests `check` on what you push (the whole branch against
+#                 origin/main): lists the affected tests by platform, blocks when a changed
+#                 source file has none of its tests changed (or a test still uses a string
+#                 the code no longer has), then builds and runs the affected tests that are
+#                 safe here: Go, Python, web, Android/JVM and MaktabaKit unit tests. Apple UI
+#                 test targets are only compiled (build-for-testing, unsigned); no UI test
+#                 and no simulator ever runs from here.
+# No test change is right?  Add a trailer to a commit:  No-Test-Change: <why>
+# Gate only, run nothing:   AFFECTED_TESTS_NO_RUN=1 git push
+# Skip once:                git push --no-verify   (CI's affected-tests job still checks the PR)
+set -uo pipefail
+
+root=$(git rev-parse --show-toplevel)
+zero=0000000000000000000000000000000000000000
+cache="$(git rev-parse --git-common-dir)/affected-tests"
+bin="$cache/affected-tests"
+
+if ! command -v go >/dev/null 2>&1; then
+  echo "pre-push: go is not installed; affected-tests skipped (CI checks the pull request)" >&2
+  exit 0
+fi
+mkdir -p "$cache"
+if ! (cd "$root/tools/affected-tests" && go build -o "$bin" .); then
+  echo "pre-push: tools/affected-tests does not build" >&2
+  exit 1
+fi
+
+head=$(git rev-parse HEAD)
+status=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  [ "$local_sha" = "$zero" ] && continue # a branch delete
+  case "$local_ref" in refs/tags/*) continue ;; esac
+
+  # a branch: everything it has that main does not (what CI checks on its pull request);
+  # main itself, or no origin/main here: what this push adds
+  if [ "$remote_ref" != refs/heads/main ] && git rev-parse -q --verify origin/main >/dev/null; then
+    range="origin/main...$local_sha"
+  elif [ "$remote_sha" != "$zero" ] && git cat-file -e "$remote_sha^{commit}" 2>/dev/null; then
+    range="$remote_sha..$local_sha"
+  else
+    echo "pre-push: $local_ref: nothing to compare with (no origin/main); skipped" >&2
+    continue
+  fi
+
+  args=(check -C "$root" --range "$range")
+  if [ -n "${AFFECTED_TESTS_NO_RUN:-}" ]; then
+    args+=(--no-run)
+  elif [ "$local_sha" != "$head" ]; then
+    # the tests run on the files here, which are not the commit being pushed
+    echo "pre-push: $local_ref is not checked out here: the gate only, no test run" >&2
+    args+=(--no-run)
+  elif [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "pre-push: note: uncommitted changes are in the tree the tests run on" >&2
+  fi
+
+  echo "pre-push: affected-tests for $local_ref ($range)"
+  # </dev/null: the refs come on stdin; a test run must not read them
+  "$bin" "${args[@]}" </dev/null || status=1
+done
+
+if [ "$status" -ne 0 ]; then
+  echo >&2
+  echo "pre-push: blocked. Update the tests, add a 'No-Test-Change: <why>' trailer, or fix the failing tests." >&2
+fi
+exit "$status"

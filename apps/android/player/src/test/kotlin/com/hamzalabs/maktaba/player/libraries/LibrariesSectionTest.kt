@@ -40,12 +40,15 @@ class LibrariesSectionTest {
     @Before fun routes() = home.answerLibraries()
 
     // Every wait is for the app to settle: the fake home has answered each call (its idling
-    // resource) and Compose is idle. No length of time is assumed, so a busy runner is only
-    // slower, never wrong.
+    // resource), Compose is idle, and what is looked for is there. The screen can start its
+    // next call a moment after Compose turns idle (its coroutine hops dispatchers first), so
+    // one look after idle can come too early on a busy runner: the check is what decides, and
+    // the time is only a ceiling, so a busy runner is only slower, never wrong.
     @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
 
     private fun settled(what: String, check: () -> Boolean) {
         compose.waitForIdle()
+        runCatching { compose.waitUntil(10_000) { check() } }
         assertTrue(what, check())
     }
 

@@ -1,0 +1,25 @@
+// tools/affected-tests/android-coverage.gradle: JaCoCo for the JVM unit tests, for the
+// coverage map only. CI's Android job passes it with --init-script on a push to main; no
+// build file changes, and pull requests build as before.
+//
+// Android modules: debug unit tests run with coverage (enableUnitTestCoverage), and
+// create<Variant>UnitTestCoverageReport writes build/reports/coverage/test/<variant>/report.xml.
+// Plain Kotlin/JVM modules (:client): the jacoco plugin; jacocoTestReport writes
+// build/reports/jacoco/test/jacocoTestReport.xml.
+
+allprojects { p ->
+    ['com.android.application', 'com.android.library'].each { id ->
+        p.plugins.withId(id) {
+            p.android.buildTypes.matching { it.name == 'debug' }.configureEach {
+                it.enableUnitTestCoverage = true
+            }
+        }
+    }
+    p.plugins.withId('org.jetbrains.kotlin.jvm') {
+        p.apply plugin: 'jacoco'
+        p.tasks.matching { it.name == 'jacocoTestReport' }.configureEach {
+            it.reports.xml.required = true
+            it.dependsOn(p.tasks.named('test'))
+        }
+    }
+}

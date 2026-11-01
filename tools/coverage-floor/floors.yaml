@@ -38,6 +38,7 @@ shared/go/ports:     95    # measured 95.2 (2026-10-31, the port registry)
 # --- Go tooling modules ---
 tools/test-budget:   70    # measured 70.4
 tools/log-lint:      53    # measured 53.1
+tools/affected-tests: 76   # measured 76.6 (2026-11-01, the affected-tests gate)
 tools/release:       65    # measured 65.4 (2026-10-19, story 35.1)
 
 # --- Python pipeline ---
