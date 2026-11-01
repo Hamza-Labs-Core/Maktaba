@@ -166,17 +166,18 @@ class ApiClient(
 
     suspend fun video(id: String): Video = get("/api/videos/$id")
 
-    /** Opens a stream session (the home picks direct, remux or transcode). */
     /**
-     * Opens a stream session. [profile] names what this player can play (the streaming
-     * service's profiles: the desktop player's JavaFX `desktop-player`); none lets the home
-     * pick for a generic player.
+     * Opens a stream session (the home picks direct, remux or transcode). [profile] names what
+     * this player can play (the streaming service's profiles: the desktop player's JavaFX
+     * `desktop-player`); none lets the home pick for a generic player. [maxBitrateKbps] caps
+     * the stream (a player's quality choice, FR-35); none is the home's own ceiling.
      */
-    suspend fun openStream(video: String, startSec: Int = 0, profile: String? = null): StreamSession {
+    suspend fun openStream(video: String, startSec: Int = 0, profile: String? = null, maxBitrateKbps: Int? = null): StreamSession {
         val body = buildJsonObject {
             put("video_id", video)
             if (startSec > 0) put("start_sec", startSec)
             if (profile != null) put("client_profile", profile)
+            if (maxBitrateKbps != null && maxBitrateKbps > 0) put("max_bitrate_kbps", maxBitrateKbps)
         }
         return decode(send(request("POST", "/api/stream/sessions", body = body)))
     }

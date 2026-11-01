@@ -96,6 +96,26 @@ class ApiClientTest {
     }
 
     @Test
+    fun aQualityChoiceCapsTheStreamAndTheLadderIsRead() = runBlocking {
+        route = {
+            json(201, """{"session_id":"s1","mode":"transcode","manifest_url":"/stream/s1/master.m3u8?sig=x",
+                "ladder":[{"height":1080,"width":1920,"bitrate_kbps":8000,"codec":"h264"},{"height":720,"width":1280,"bitrate_kbps":4000,"codec":"h264"}],
+                "current_rendition":{"height":720,"width":1280,"bitrate_kbps":4000,"codec":"h264"}}""")
+        }
+        val c = client(MemoryTokens(fresh, "r1"))
+        val s = c.openStream("v1", 95, maxBitrateKbps = 4000)
+        val body = seen.last().body!!.utf8()
+        assertTrue(body, body.contains("\"max_bitrate_kbps\":4000"))
+        assertTrue(body, body.contains("\"start_sec\":95"))
+        assertEquals(listOf(1080, 720), s.ladder.map { it.height })
+        assertEquals(8000, s.ladder.first().bitrateKbps)
+        assertEquals(720, s.currentRendition?.height)
+        // Auto sends no cap
+        c.openStream("v1")
+        assertFalse(seen.last().body!!.utf8().contains("max_bitrate_kbps"))
+    }
+
+    @Test
     fun theVideoListAsksNewestFirstWithASortTheHomeAccepts() {
         val q = ApiClient.videoListQuery("lib1", null, "c2")
         assertEquals(mapOf("limit" to "60", "sort" to "created_at", "library" to "lib1", "cursor" to "c2"), q)
