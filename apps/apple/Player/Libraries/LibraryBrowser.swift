@@ -1,37 +1,28 @@
 import MaktabaKit
 import SwiftUI
 
-/// Libraries, their videos, a video, and what is playing. The layout follows the device:
-/// - a NavigationSplitView (Apple's guidance for iPhone Duo: one column folded, columns
-///   open flat, as on iPad and the Mac; on an iPad in Split View or Slide Over it folds to
-///   one column like a phone), with the player full screen over it (on the Mac, over the
-///   window);
-/// - a half-folded iPhone Duo: an ArrangementView split at the hinge, the navigation (a
-///   library menu and the videos) on one half and the page on the other, the player taking
-///   the page's half while it plays, so browsing goes on beside it.
+/// The Libraries section (Epic 48, story 48.18): Libraries and Series, a library, a series,
+/// and today's video page and player.
+/// - A phone (and a folded iPhone Duo, an iPad in Slide Over): one stack, the Libraries root
+///   first, a card pushing its page.
+/// - A wide window (iPad, the Mac, an open Duo): the Libraries root as the list beside the
+///   chosen library's (or the Series grid's) page, which keeps its own stack (FR-15).
+///
+/// A video opens its page through `PlayerRoute.video`. Until the new video page (48.19) and
+/// player (48.23) land, this section maps that route to today's page (`VideoDetail`) and plays
+/// with today's `Playback`, full screen (on the Mac, over the window), so a build never loses
+/// playback. The shell keeps calling this view by its old name; the section owns its stack.
 struct LibraryBrowser: View {
     let session: AppSession
     let user: User
     let client: APIClient
     @Binding var playing: Bool
 
-    @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
     @State private var playback: Playback
-    @State private var halfFolded = false
+    @State private var model: LibrariesModel
+    @State private var path: [PlayerRoute]
+    @State private var choice: LibrariesChoice?
     @Environment(\.horizontalSizeClass) private var width
-    @State private var libraries: [Library] = []
-    @State private var library: String? = Self.all
-    @State private var videos: [Video] = []
-    @State private var next: String?
-    @State private var video: Video?
-    @State private var query = ""
-    @State private var problem: HomeFailure?
-    /// The list is being read (the first page of a library or a search).
-    @State private var loading = true
-    /// Pages opened from the list while the player holds the other half.
-    @State private var browsing: [Video] = []
-
-    static let all = "all"
 
     init(session: AppSession, user: User, client: APIClient, playing: Binding<Bool>) {
         self.session = session
@@ -39,288 +30,147 @@ struct LibraryBrowser: View {
         self.client = client
         _playing = playing
         _playback = State(initialValue: Playback(client: client))
+        _model = State(initialValue: LibrariesModel(client: client, signedOut: { session.signedOut() }))
+        // a Debug build's `-maktaba-open library/lib-docs` (the UI tests): opened at launch
+        let start = ShellLaunch.section()
+        _path = State(initialValue: (start == nil || start == .libraries) ? ShellLaunch.route().map { [$0] } ?? [] : [])
     }
+
+    private var context: PlayerContext { PlayerContext(session: session, user: user, client: client) }
 
     var body: some View {
         layout
             .environment(playback)
-            .task { await loadLibraries() }
-            .task(id: "\(library ?? "")|\(query)") { await reload() }
             .focusedSceneValue(\.playback, playback)
             .onChange(of: playback.video != nil) { playing = $1 }
             .onDisappear { playback.stop(); playing = false }
     }
 
     @ViewBuilder private var layout: some View {
-        // the iPhone Duo's arrangement needs the iOS 27.1 SDK (Xcode 27, Swift 6.4); an older
-        // Xcode (CI's runners until they carry Xcode 27) builds the three columns alone
-        #if os(iOS) && compiler(>=6.4)
-        if #available(iOS 27.1, *) {
-            Group {
-                if halfFolded { split } else { columns }
+        if width == .compact {
+            NavigationStack(path: $path) {
+                LibrariesScreen(context: context, model: model)
+                    .toolbar { LibrariesAccountMenu(context: context) }
+                    .librariesDestinations(context)
             }
-            .onHingeChange { _, now in halfFolded = now.hinge?.status == .partiallyOpen }
+            .player(playback, session: session)
         } else {
-            columns
-        }
-        #else
-        columns
-        #endif
-    }
-
-    /// Flat, folded, iPad, Mac: three columns, the player full screen.
-    private var columns: some View {
-        NavigationSplitView {
-            List(selection: $library) {
-                Label("All videos", systemImage: "square.grid.2x2").tag(Self.all)
-                Section("Libraries") {
-                    ForEach(libraries) { lib in
-                        Label(lib.name, systemImage: "books.vertical").tag(lib.id)
-                    }
+            NavigationSplitView(columnVisibility: .constant(.all)) {
+                LibrariesScreen(context: context, model: model, choice: $choice)
+                    .toolbar { LibrariesAccountMenu(context: context) }
+                    #if os(macOS)
+                    .navigationSplitViewColumnWidth(min: 300, ideal: 360, max: 480)
+                    #else
+                    .navigationSplitViewColumnWidth(min: 320, ideal: 360, max: 480)
+                    #endif
+            } detail: {
+                NavigationStack(path: $path) {
+                    page.librariesDestinations(context)
                 }
             }
-            .navigationTitle("Libraries")
-            .toolbar { accountMenu }
-        } content: {
-            List(selection: $video) {
-                ForEach(videos) { v in
-                    VideoRow(client: client, video: v).tag(v)
-                        .onAppear { if v == videos.last { Task { await loadMore() } } }
-                }
+            .navigationSplitViewStyle(.balanced)
+            .onChange(of: choice) { old, _ in if old != nil { path = [] } }
+            .onChange(of: model.libraries.first?.id, initial: true) { _, first in
+                // a wide window shows a page, not an empty column
+                if choice == nil, let first { choice = .library(first) }
             }
-            .maktabaSurface()
-            .overlay { listState }
-            .searchable(text: $query, prompt: "Search titles")
-            .navigationTitle(title)
-            .refreshable { await reload() }
+            .player(playback, session: session)
             #if os(macOS)
-            // room for a poster and a title beside it
-            .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 460)
+            .frame(minWidth: 760, minHeight: 480)
             #endif
-        } detail: {
-            page
         }
-        #if os(iOS)
-        .fullScreenCover(isPresented: watching) { WatchView(playback: playback, session: session) }
-        #else
-        // the Mac: the video fills the window (it resizes with it; the green button or
-        // Control-Command-F makes it full screen), the toolbar out of the way
-        .overlay {
-            if playback.video != nil {
-                WatchView(playback: playback, session: session).transition(.opacity)
-            }
-        }
-        .toolbar(playback.video != nil ? .hidden : .automatic, for: .windowToolbar)
-        .animation(.easeInOut(duration: 0.2), value: playback.video != nil)
-        .frame(minWidth: 760, minHeight: 480)
-        #endif
     }
 
-    #if os(iOS) && compiler(>=6.4)
-    /// Half folded: every half used. The first half (the upright one when the Duo stands
-    /// like a laptop) holds what is looked at, the second what is touched:
-    /// - nothing chosen: the libraries | their videos;
-    /// - a video chosen: its page | the videos;
-    /// - playing: the player | the videos, where a tap opens that video's page (play there
-    ///   switches what plays), so browsing goes on beside the video.
-    @available(iOS 27.1, *)
-    private var split: some View {
-        ArrangementView {
-            if playback.video != nil {
-                WatchView(playback: playback, session: session)
-            } else if video != nil {
-                NavigationStack {
-                    page.toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Libraries", systemImage: "books.vertical") { video = nil }
-                        }
-                    }
-                }
-            } else {
-                NavigationStack {
-                    List {
-                        ForEach([LibraryChoice(id: Self.all, name: String(localized: "All videos"))] + libraries.map { LibraryChoice(id: $0.id, name: $0.name) }) { lib in
-                            Button { library = lib.id } label: {
-                                Label {
-                                    Text(lib.name).foregroundStyle(Color.primary)
-                                } icon: {
-                                    Image(systemName: lib.id == Self.all ? "square.grid.2x2" : "books.vertical")
-                                        .foregroundStyle(Color.brass)
-                                }
-                            }
-                            .listRowBackground(lib.id == library ? Color.mktChosen : Color.mktSurface)
-                        }
-                    }
-                    .maktabaSurface()
-                    .navigationTitle("Libraries")
-                }
-            }
-        } secondary: {
-            NavigationStack(path: $browsing) {
-                List {
-                    ForEach(videos) { v in
-                        Button {
-                            if playback.video != nil { browsing = [v] } else { video = v }
-                        } label: { VideoRow(client: client, video: v).foregroundStyle(Color.primary) }
-                        .listRowBackground(v.id == (playback.video ?? video)?.id ? Color.mktChosen : Color.mktSurface)
-                        .onAppear { if v == videos.last { Task { await loadMore() } } }
-                    }
-                }
-                .maktabaSurface()
-                .overlay { listState }
-                .searchable(text: $query, prompt: "Search titles")
-                .navigationTitle(title)
-                .refreshable { await reload() }
-                .navigationDestination(for: Video.self) { VideoDetail(client: client, video: $0) }
-                .toolbar {
-                    if playback.video != nil || video != nil {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Picker("Library", systemImage: "books.vertical", selection: $library) {
-                                Text("All videos").tag(Optional(Self.all))
-                                ForEach(libraries) { lib in Text(lib.name).tag(Optional(lib.id)) }
-                            }
-                            .pickerStyle(.menu)
-                        }
-                    }
-                    accountMenu
-                }
-            }
-        }
-        .arrangementViewStyle(.split)
-        // a video that starts playing is the page to come back to when it stops
-        .onChange(of: playback.video?.id) { browsing = []; if let v = playback.video { video = v } }
-    }
-    #endif
-
+    /// The page beside the list.
     @ViewBuilder private var page: some View {
-        if let video {
-            VideoDetail(client: client, video: video)
-        } else {
-            ContentUnavailableView("Choose a video", systemImage: "play.rectangle")
-        }
-    }
-
-    @ViewBuilder private var listState: some View {
-        if let problem {
-            HomeErrorView(problem, video: false) { _ in Task { await loadLibraries(); await reload() } }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if loading, videos.isEmpty {
-            ProgressView()
-        } else if videos.isEmpty {
-            if query.isEmpty {
-                ContentUnavailableView("No videos", systemImage: "film")
-            } else {
-                ContentUnavailableView.search(text: query)
-            }
-        }
-    }
-
-    /// The full-screen player is up while something plays (and the screen is not split).
-    private var watching: Binding<Bool> {
-        Binding(get: { playback.video != nil && !halfFolded },
-                set: { if !$0, !halfFolded { playback.stop() } })
-    }
-
-    private var title: String {
-        libraries.first { $0.id == library }?.name ?? String(localized: "All videos")
-    }
-
-    private var accountMenu: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
-            Menu {
-                Text(user.username)
-                if let home = session.current { Text(home.name) }
-                // a TV, phone or computer showing a sign-in code (Epic 42 story 42.6)
-                Button(ConnectStrings.forPreferredLanguages().text(.approveMenu), systemImage: "checkmark.shield") {
-                    session.approvingSignIn = true
+        switch choice {
+        case let .library(id): LibraryScreen(context: context, id: id).id(id)
+        case .series: SeriesPage(context: context, model: model)
+        case nil:
+            ContentUnavailableView {
+                Label { Text("Choose a library", tableName: "Libraries", comment: "A wide window's page before a library is chosen") } icon: {
+                    Image(systemName: "books.vertical")
                 }
-                .accessibilityIdentifier("account.approve")
-                ThemePicker(mode: $theme)
-                Button("Switch home", systemImage: "house") { session.switchHome() }
-                Button("Sign out", systemImage: "rectangle.portrait.and.arrow.right") { session.signOut() }
-            } label: {
-                Label("Account", systemImage: "person.crop.circle")
             }
         }
-    }
-
-    private func loadLibraries() async {
-        do {
-            libraries = try await client.libraries()
-        } catch {
-            failed("load libraries", error)
-        }
-    }
-
-    private func reload() async {
-        loading = true
-        defer { loading = false }
-        do {
-            let page = try await client.videos(library: library == Self.all ? nil : library, query: query)
-            videos = page.items
-            next = page.next
-            problem = nil
-            // a wide screen (open flat, iPad, Mac) shows a page, not an empty column; folded
-            // (one column) and half folded (the libraries beside the videos) keep the list
-            if width != .compact, !halfFolded, video == nil || !videos.contains(where: { $0.id == video?.id }) {
-                video = videos.first
-            }
-        } catch {
-            failed("load videos", error)
-        }
-    }
-
-    private func loadMore() async {
-        guard let next else { return }
-        self.next = nil
-        do {
-            let page = try await client.videos(library: library == Self.all ? nil : library, query: query, cursor: next)
-            videos += page.items
-            self.next = page.next
-        } catch {
-            // the list so far stays; the next time its end shows, it asks again
-            self.next = next
-            Log.failure("load more videos", error)
-            if case APIError.signedOut = error { session.signedOut() }
-        }
-    }
-
-    /// A read that did not work: signed out goes back to signing in; a cancelled one (the
-    /// library or the search changed) is nothing; anything else is the list's error screen.
-    private func failed(_ what: StaticString, _ error: Error) {
-        if case APIError.signedOut = error {
-            session.signedOut()
-            return
-        }
-        guard !Log.isCancellation(error) else { return }
-        Log.failure(what, error)
-        problem = HomeFailure(error)
     }
 }
 
-struct VideoRow: View {
-    let client: APIClient
-    let video: Video
+private extension View {
+    /// The section's routes. `video` (and `watch`) open today's video page and player until
+    /// 48.19's page and 48.23's player land; the rest open as in every section.
+    func librariesDestinations(_ context: PlayerContext) -> some View {
+        navigationDestination(for: PlayerRoute.self) { route in
+            switch route {
+            case let .video(id), let .watch(id, _): VideoBridge(context: context, id: id)
+            case let .series(id): SeriesScreen(context: context, id: id)
+            case let .library(id): LibraryScreen(context: context, id: id)
+            case let .channel(id): ChannelScreen(context: context, id: id)
+            }
+        }
+    }
+
+    /// Today's player over the section while something plays: full screen on iOS, the
+    /// window on the Mac (the green button or Control-Command-F makes it full screen).
+    func player(_ playback: Playback, session: AppSession) -> some View {
+        modifier(PlayerOverlay(playback: playback, session: session))
+    }
+}
+
+private struct PlayerOverlay: ViewModifier {
+    let playback: Playback
+    let session: AppSession
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content.fullScreenCover(isPresented: Binding(get: { playback.video != nil }, set: { if !$0 { playback.stop() } })) {
+            WatchView(playback: playback, session: session)
+        }
+        #else
+        content
+            .overlay {
+                if playback.video != nil {
+                    WatchView(playback: playback, session: session).transition(.opacity)
+                }
+            }
+            .toolbar(playback.video != nil ? .hidden : .automatic, for: .windowToolbar)
+            .animation(.easeInOut(duration: 0.2), value: playback.video != nil)
+        #endif
+    }
+}
+
+/// A video's page, as today: the video read from the home, then `VideoDetail` (play there
+/// hands it to the section's `Playback`). Replaced by 48.19's `VideoScreen` once it lands.
+private struct VideoBridge: View {
+    let context: PlayerContext
+    let id: String
+
+    @State private var video: Video?
+    @State private var problem: LoadProblem?
 
     var body: some View {
-        HStack(spacing: 12) {
-            AuthorizedImage(client: client, video: video.id)
-                .frame(width: 120)
-                .clipShape(.rect(cornerRadius: 6))
-            VStack(alignment: .leading, spacing: 4) {
-                Text(video.displayTitle).font(.headline).lineLimit(2)
-                if let d = video.durationSec {
-                    Text(Duration.seconds(d).formatted(.time(pattern: d >= 3600 ? .hourMinuteSecond : .minuteSecond)))
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                }
+        Group {
+            if let video {
+                VideoDetail(client: context.client, video: video)
+            } else if let problem {
+                ProblemView(problem: problem) { Task { await load() } }
+                    .maktabaSurface()
+            } else {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).maktabaSurface()
             }
         }
-        .padding(.vertical, 4)
+        .accessibilityIdentifier("screen.videoDetail")
+        .task { if video == nil { await load() } }
     }
-}
 
-/// A row of the half-folded libraries list ("All videos" or a library).
-private struct LibraryChoice: Identifiable {
-    let id: String
-    let name: String
+    private func load() async {
+        problem = nil
+        await loading("player video page", signedOut: { context.session.signedOut() }, problem: { problem = $0 }) {
+            do {
+                video = try await context.client.video(id)
+            } catch let APIError.status(code, _, _) where code == 404 || code == 403 {
+                throw BrowseError.notAvailable
+            }
+        }
+    }
 }

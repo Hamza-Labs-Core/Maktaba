@@ -5,11 +5,16 @@ import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.CloudException
 import com.hamzalabs.maktaba.core.session.CloudHome
 import com.hamzalabs.maktaba.core.session.CloudSession
+import com.hamzalabs.maktaba.core.session.ConnectProgress
+import com.hamzalabs.maktaba.core.session.FoundHome
 import com.hamzalabs.maktaba.core.session.Home
 import com.hamzalabs.maktaba.core.session.HomeProbe
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -196,6 +201,89 @@ class CloudTest {
         } catch (e: CloudException) {
             assertEquals("not_a_cloud_address", e.code)
         }
+    }
+
+    /**
+     * Kept under a name that no longer resolves (its `.local` name changed), while the app
+     * browses: "Looking for your home on this network…", then asked where its id is announced
+     * and its entry moved there. Its tokens stay with the address that issued them, so it
+     * signs in afresh. Another home's id moves nothing.
+     */
+    @Test
+    fun aHomeAtADeadAddressIsFoundAgainThroughDiscovery() = runBlocking {
+        val tokens = mutableMapOf<String, MemoryTokens>()
+        val store = MapStore()
+        val dead = "http://127.0.0.1:1"
+        tokens.getOrPut(dead) { MemoryTokens() }.save(AuthTokens("old-name-token", "r0"))
+        val network = MutableStateFlow<List<FoundHome>>(emptyList())
+        val s = AppSession(store, CoroutineScope(Dispatchers.Unconfined), { tokens.getOrPut(it) { MemoryTokens() } })
+        s.probe = HomeProbe()
+        s.discovery = { network }
+        s.discover(true)
+        s.use(Home(dead, "Kitchen", homeId, nickname = "Grandma's"))
+        withTimeout(10_000) { while (s.progress.value !is ConnectProgress.LookingNearby) delay(20) }
+        assertNull("no failure while it is looked for", s.restoreProblem.value)
+        network.value = listOf(FoundHome("Studio", relayUrl, "another-home-id", "0.40.0"))
+        assertEquals("another home is not asked", dead, s.current.value?.url)
+        network.value = listOf(FoundHome("Studio", relayUrl, homeId, "0.40.0"))
+        withTimeout(10_000) { while (s.current.value?.url != relayUrl) delay(20) }
+        val moved = s.homes.value.single()
+        assertEquals(relayUrl, moved.url)
+        assertEquals(listOf(dead), moved.addresses)
+        assertEquals("the person's name stays", "Grandma's", moved.nickname)
+        assertEquals("the next launch starts there", relayUrl, AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() }).current.value?.url)
+        assertEquals("signed in afresh there", AppSession.Phase.SigningIn, s.phase.value)
+        assertNull(s.restoreProblem.value)
+        assertTrue("the old token never went to the new address", seen.none { it.second.headers["Authorization"] == "Bearer old-name-token" })
+        assertEquals("old-name-token", tokens.getValue(dead).access)
+    }
+
+    /** Not announced while it is looked for: why, and Retry; announced later, asked there. */
+    @Test
+    fun aHomeNotAnnouncedSaysWhyThenIsAskedWhenItIs() = runBlocking {
+        val dead = "http://127.0.0.1:1"
+        val network = MutableStateFlow<List<FoundHome>>(emptyList())
+        // the look's time passes at once
+        val s = AppSession(MapStore(), CoroutineScope(Dispatchers.Unconfined), { if (it == dead) MemoryTokens().apply { save(AuthTokens("t", "r")) } else MemoryTokens() }, sleep = { })
+        s.probe = HomeProbe()
+        s.discovery = { network }
+        s.discover(true)
+        s.use(Home(dead, "Kitchen", homeId))
+        withTimeout(10_000) { while (s.restoreProblem.value == null) delay(20) }
+        assertTrue(s.progress.value is ConnectProgress.Failed)
+        network.value = listOf(FoundHome("Studio", relayUrl, homeId, "0.40.0"))
+        withTimeout(10_000) { while (s.current.value?.url != relayUrl) delay(20) }
+        assertEquals(1, s.homes.value.size)
+    }
+
+    /**
+     * Discovery runs while the app is in front: stopped when it leaves, browsed afresh when it
+     * comes back, and what it hears then still reaches the saved homes.
+     */
+    @Test
+    fun discoveryStartsAgainWhenTheAppComesBack() = runBlocking {
+        val network = MutableStateFlow<List<FoundHome>>(emptyList())
+        var browses = 0
+        val s = AppSession(MapStore(), CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() })
+        s.discovery = { browses++; network }
+        s.use(Home(relayUrl, "Kitchen", homeId))
+        s.discover(true)
+        assertEquals(1, browses)
+        network.value = listOf(FoundHome("Studio", "http://studio.test:8088", homeId, "0.40.0"))
+        assertEquals(listOf("http://studio.test:8088"), s.nearby.value.map { it.url })
+        s.discover(false)
+        assertTrue("stopped in the background", s.nearby.value.isEmpty())
+        network.value = listOf(FoundHome("Other", "http://other.test:8088", "another-home-id", "0.40.0"))
+        assertTrue("nothing heard while stopped", s.nearby.value.isEmpty())
+        s.discover(true)
+        assertEquals("browsed afresh in front again", 2, browses)
+        network.value = listOf(FoundHome("Studio", "http://studio.test:8088", homeId, "0.40.0"))
+        assertEquals(listOf("http://studio.test:8088"), s.nearby.value.map { it.url })
+        // a home that answers where it is stays there; the announced address is kept among its others
+        assertEquals(relayUrl, s.current.value?.url)
+        assertEquals(listOf("http://studio.test:8088"), s.homes.value.single().addresses)
+        s.rediscover()
+        assertEquals("another network: browsed afresh", 3, browses)
     }
 
     @Test

@@ -149,6 +149,7 @@ targets:
     platform: macOS
     sources:
       - path: PlayerMacTests
+        excludes: ["UI/**"]
     dependencies:
       - target: Maktaba Player Mac
       - package: MaktabaKit
@@ -158,6 +159,31 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Maktaba Player Mac.app/Contents/MacOS/Maktaba Player Mac"
         BUNDLE_LOADER: "$(TEST_HOST)"
+        ARCHS: arm64
+  # the Mac Player driven from outside (story 48.25: its menus, full screen, the player
+  # filling the window), signed in to MockHome as the iPhone and iPad UI tests are:
+  #   xcodebuild test -scheme "Maktaba Player Mac" -only-testing "Maktaba Player Mac UITests"
+  Maktaba Player Mac UITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: PlayerMacTests/UI
+      - path: UITests/MockHome.swift
+      - path: UITests/Fixtures
+    dependencies: [{ target: Maktaba Player Mac }]
+    # the runner is sandboxed: MockHome listens on the loopback inside it. CI's ad-hoc signed
+    # run signs the app with this file too: the app's own adds a keychain group, which needs
+    # a provisioning profile
+    entitlements:
+      path: PlayerMacTests/UI/PlayerMacUITests.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
+        com.apple.security.network.server: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac.uitests
+        TEST_TARGET_NAME: Maktaba Player Mac
         ARCHS: arm64
 
   # ---- Maktaba Remote: iPhone (iPhone Duo too), iPad -------------------------------------
@@ -193,7 +219,8 @@ targets:
   # UITests/Player*.swift are the Player's own (Epic 48: its shell and screens, against
   # MockHome and UITests/Fixtures); the Remote's targets leave them out. The Player's test
   # targets also compile the shell's plain types (sections, routes, launch arguments) and
-  # the components' image cache and placeholder timing for their unit tests.
+  # the components' image cache and placeholder timing, and the player's decisions and its
+  # track handling (played on MockHome's real HLS stream), for their unit tests.
   Maktaba Player UITests:
     type: bundle.ui-testing
     platform: iOS
@@ -204,6 +231,8 @@ targets:
       - path: Player/Shell/ShellLaunch.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
+      - path: Player/Watch/WatchLogic.swift
+      - path: Player/Watch/PlayerTracks.swift
     dependencies: [{ target: Maktaba Player }]
     settings:
       base:
@@ -231,6 +260,8 @@ targets:
       - path: Player/Shell/ShellLaunch.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
+      - path: Player/Watch/WatchLogic.swift
+      - path: Player/Watch/PlayerTracks.swift
     dependencies: [{ target: Maktaba Player iPad }]
     settings:
       base:
@@ -306,7 +337,7 @@ schemes:
       targets: { Maktaba Player Mac: all }
     run: { config: Debug }
     test:
-      targets: [Maktaba Player Mac Tests]
+      targets: [Maktaba Player Mac Tests, Maktaba Player Mac UITests]
     archive: { config: Release }
   Maktaba Remote:
     build:

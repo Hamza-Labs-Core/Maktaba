@@ -128,6 +128,7 @@ fun SessionGate(
     app: MaktabaApp,
     content: @Composable (user: User, client: ApiClient) -> Unit,
 ) {
+    KeepDiscovering(session)
     when (val phase = session.phase.collectAsState().value) {
         AppSession.Phase.ChoosingHome -> HomePicker(session, app)
         AppSession.Phase.SigningIn -> SignIn(session, app)
@@ -277,7 +278,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
     val permissions = rememberPermissions(listOf(AppPermissions.LocalNetwork), rememberPermissionMemory())
     val network = permissions.rows.first()
     val granted = network.state.ok
-    var found by remember { mutableStateOf<List<FoundHome>>(emptyList()) }
+    val found by session.nearby.collectAsState()
     var searched by remember { mutableStateOf(false) }
     var typing by rememberSaveable { mutableStateOf(false) }
     var address by rememberSaveable { mutableStateOf("") }
@@ -293,9 +294,9 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
 
     LaunchedEffect(granted) {
         if (!granted) return@LaunchedEffect
-        launch { delay(6_000); searched = true }
-        runCatching { HomeDiscovery(context.applicationContext).homes().collect { found = it } }
-            .onFailure { if (it is CancellationException) throw it else AppLog.failure("home discovery", it) }
+        // the app's own browse (KeepDiscovering), afresh now that it may browse
+        session.rediscover()
+        delay(6_000)
         searched = true
     }
 
@@ -728,7 +729,7 @@ internal fun ConnectProgress.showsOnPicker(): Boolean = when (this) {
 /** A step shown over the sign-in form: on launch (reconnecting, busy, other addresses), found, or why. */
 internal fun ConnectProgress.showsOverSignIn(): Boolean = when (this) {
     is ConnectProgress.Reconnecting, is ConnectProgress.HomeBusy, is ConnectProgress.Found,
-    is ConnectProgress.Finding, is ConnectProgress.Trying,
+    is ConnectProgress.Finding, is ConnectProgress.Trying, is ConnectProgress.LookingNearby,
     -> true
     is ConnectProgress.Failed -> stage == ConnectStage.Restore || stage == ConnectStage.Cloud
     else -> false

@@ -39,16 +39,24 @@ class LibrariesSectionTest {
 
     @Before fun routes() = home.answerLibraries()
 
-    // each wait is a fake-home round trip over a real socket; CI runs this beside the other
-    // modules' tests and lint on a busy runner, where a first screen can take over 5 s
+    // Every wait is for the app to settle: the fake home has answered each call (its idling
+    // resource) and Compose is idle. No length of time is assumed, so a busy runner is only
+    // slower, never wrong.
+    @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
+
+    private fun settled(what: String, check: () -> Boolean) {
+        compose.waitForIdle()
+        assertTrue(what, check())
+    }
+
     private fun waitForTag(tag: String) =
-        compose.waitUntil(WAIT) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        settled("$tag shows") { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitForText(text: String) =
-        compose.waitUntil(WAIT) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
+        settled("\"$text\" shows") { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitForRequest(what: String, test: (mockwebserver3.RecordedRequest) -> Boolean) =
-        compose.waitUntil(WAIT) { home.requests.any(test) }.also { assertTrue(what, home.requests.any(test)) }
+        settled(what) { home.requests.any(test) }
 
     private fun back() = compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
 
@@ -93,15 +101,15 @@ class LibrariesSectionTest {
         waitForRequest("a PUT of the pins") { it.method == "PUT" && it.url.encodedPath == "/api/me/pinned-libraries" }
         val put = home.requests.last { it.method == "PUT" }
         assertEquals(listOf("l2"), put.ids("library_ids"))
-        compose.waitUntil(WAIT) { first("library-l2", "library-l1") }
+        settled("Series leads after the pin") { first("library-l2", "library-l1") }
         compose.onNodeWithText("3 videos · Pinned").assertIsDisplayed()
         compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Unpin Lessons"))).assertExists()
 
         // and Unpin puts it back
         compose.onNodeWithTag("pin-l2").performClick()
-        compose.waitUntil(WAIT) { home.requests.count { it.method == "PUT" } == 2 }
+        settled("a second PUT of the pins") { home.requests.count { it.method == "PUT" } == 2 }
         assertEquals(emptyList<String>(), home.requests.last { it.method == "PUT" }.ids("library_ids"))
-        compose.waitUntil(WAIT) { first("library-l1", "library-l2") }
+        settled("Films leads again") { first("library-l1", "library-l2") }
     }
 
     /** True when [a] comes before [b] in reading order (above, or beside it on the same row). */
@@ -139,7 +147,7 @@ class LibrariesSectionTest {
         compose.onNodeWithTag(tag).performClick()
         waitForText(option)
         compose.onNodeWithText(option).performClick()
-        compose.waitUntil(WAIT) { compose.onAllNodes(hasText(option)).fetchSemanticsNodes().isEmpty() }
+        settled("the menu closed") { compose.onAllNodes(hasText(option)).fetchSemanticsNodes().isEmpty() }
     }
 
     @Test
@@ -158,7 +166,7 @@ class LibrariesSectionTest {
 
         // Any language takes the facet off again
         choose("filter-language", "Any language")
-        compose.waitUntil(WAIT) {
+        settled("the language facet is off") {
             home.requests.last { it.url.encodedPath == "/api/videos" }.url.queryParameter("language") == null
         }
     }
@@ -170,7 +178,7 @@ class LibrariesSectionTest {
         compose.onNodeWithTag("video-v1").performClick()
         waitForText("A film about The Message.")
         back()
-        compose.waitUntil(WAIT) { compose.onAllNodes(hasText("A film about The Message.")).fetchSemanticsNodes().isEmpty() }
+        settled("back off the video's page") { compose.onAllNodes(hasText("A film about The Message.")).fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithTag("library-page").assertIsDisplayed()
         // and Back again: the libraries
         back()
@@ -232,7 +240,7 @@ class LibrariesSectionTest {
         compose.onNodeWithTag("season-2").performClick()
         waitForTag("episode-v4")
         compose.onNodeWithTag("mark-v4").performClick()
-        compose.waitUntil(WAIT) { home.requests.count { it.method == "POST" } == 2 }
+        settled("a second POST of the season") { home.requests.count { it.method == "POST" } == 2 }
         assertEquals(listOf("v4"), home.requests.last { it.method == "POST" }.ids("video_ids"))
         compose.onNode(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Mark not watched, The Night Journey"))).assertExists()
     }
@@ -262,9 +270,5 @@ class LibrariesSectionTest {
                     n.children.none { ch -> !ch.config.getOrNull(SemanticsProperties.ContentDescription).isNullOrEmpty() || !ch.config.getOrNull(SemanticsProperties.Text).isNullOrEmpty() }
             }
         assertTrue("controls without words: ${unnamed.map { it.config }}", unnamed.isEmpty())
-    }
-
-    private companion object {
-        const val WAIT = 15_000L
     }
 }

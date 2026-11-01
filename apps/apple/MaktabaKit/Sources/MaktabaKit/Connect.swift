@@ -198,11 +198,14 @@ public struct HomeProbe: Sendable {
     }
 
     /// The first of `candidates` that is a home (and is the home `expectedID` names, when
-    /// it says its id), tried one after the other.
-    public func reach(_ candidates: [URL], expectedID: String? = nil) async -> Result<ReachedHome, ReachFailure> {
+    /// it says its id), tried one after the other. `trying` hears each address before it is
+    /// asked, with its place (from 1) and the count (story 48.37: "Trying … — 1 of 3").
+    public func reach(_ candidates: [URL], expectedID: String? = nil,
+                      trying: (@Sendable (URL, Int, Int) async -> Void)? = nil) async -> Result<ReachedHome, ReachFailure> {
         var failure = ReachFailure.unreachable("no address")
-        for url in candidates {
+        for (i, url) in candidates.enumerated() {
             if Task.isCancelled { break }
+            await trying?(url, i + 1, candidates.count)
             switch await check(url) {
             case let .success(home):
                 if let expectedID, let id = home.id, id.lowercased() != expectedID.lowercased() {

@@ -120,9 +120,40 @@ public final class AppSession {
     /// How the current home lets one sign in (nil: it has not said, or is from before).
     public private(set) var signInMethods: SignInMethods?
     /// Addresses are being tried (a typed address, a scanned code, an opened link).
-    public private(set) var connecting = false
-    /// Why the last address, code or link did not lead to a home (cleared by the screens).
-    public var connectProblem: ReachFailure?
+    public var connecting: Bool { connects > 0 }
+    /// The connects under way (one ending as the next begins: a saved home found on the network).
+    private var connects = 0
+    /// The homes announced on this network now, while the app is in front (`discover`).
+    public private(set) var nearby: [HomeBrowser.Found] = []
+    /// Browsing for homes (the app in front).
+    private var discovering = false
+    private let discovery: any HomeDiscovering
+    /// A saved home none of whose addresses answered, waited for on the network (`lookingNearby`).
+    private var looking: (id: UUID, homeID: String, saved: URL, tried: [URL])?
+    /// How long a saved home is looked for on the network before why it was not found shows.
+    static let lookFor: Duration = .seconds(15)
+    /// Why the last address, code or link did not lead to a home (cleared by the screens;
+    /// clearing it clears the failed `progress` it came with).
+    public var connectProblem: ReachFailure? {
+        didSet {
+            if connectProblem == nil, progressFromConnect, progress?.isWorking == false {
+                progress = nil
+                progressFromConnect = false
+            }
+        }
+    }
+    /// What connecting, restoring or signing in by password is doing now (story 48.37), step
+    /// by step; nil: nothing in flight and nothing failed. The start screens draw it.
+    public private(set) var progress: ConnectProgress?
+    /// The failed `progress` is a connect's (cleared with `connectProblem`).
+    private var progressFromConnect = false
+    /// Which attempt the current connect, restore or sign-in is (a Retry adds one).
+    private var attempt = 1
+    /// The last addresses asked (Retry asks them again), and the saved home's address when
+    /// they were a saved home's (it moves to the address that answers).
+    private var lastConnect: (candidates: [URL], name: String?, homeID: String?, saved: URL?)?
+    /// Hears every `progress` published, in order (the tests' transition log).
+    var progressObserver: (@MainActor (ConnectProgress?) -> Void)?
     /// The "Approve a sign-in" sheet is up (the account menus open it).
     public var approvingSignIn = false
     /// The saved sign-in is being checked with the home (at launch, on picking a home).
@@ -164,9 +195,15 @@ public final class AppSession {
     /// The homes' URL session (a stub in tests).
     private let homeSession: URLSession
 
+    /// The time restoring waits on after a Retry-After (a fake one in tests).
+    private let clock: ConnectClock
+
     public init(app: String, defaults: UserDefaults = .standard, probe: HomeProbe = HomeProbe(), asksHomes: Bool = true,
-                homeSession: URLSession = .shared, cloudSession: URLSession? = nil) {
+                homeSession: URLSession = .shared, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
+                discovery: (any HomeDiscovering)? = nil) {
         self.app = app
+        self.discovery = discovery ?? BonjourDiscovery()
+        self.clock = clock
         self.defaults = defaults
         self.probe = probe
         self.asksHomes = asksHomes
@@ -181,8 +218,10 @@ public final class AppSession {
         }
         #endif
         homes = Self.decodeHomes(defaults.data(forKey: "homes"), defaults: defaults)
+        // asked at each of its addresses, not only the saved one: a home whose name on the
+        // network changed answers at another
         if let last = defaults.url(forKey: "home"), let h = homes.first(where: { $0.url == last }) {
-            use(h)
+            open(h)
         }
     }
 
@@ -204,6 +243,8 @@ public final class AppSession {
         restoreProblem = nil
         // checked at once: no sign-in form flashes while it is
         restoring = tokens.access != nil
+        attempt = 1
+        publish(restoring ? .reconnecting(name: home.name) : nil)
         if restoring {
             Task { await restore(thenCloud: quietCloud) }
         } else if quietCloud {
@@ -219,33 +260,171 @@ public final class AppSession {
         }
     }
 
-    /// Picks a known home: at its address, or the first of its others that answers.
+    /// Picks a known home: at its address, or the first of its others where the same home
+    /// answers (the entry moves there), each step in `progress`.
     public func open(_ home: Home) {
-        guard let others = home.addresses, !others.isEmpty else { return use(home) }
         connectTask?.cancel()
-        connectTask = Task { await connect(to: [home.url] + others, name: home.name, homeID: home.homeID) }
+        connectTask = Task { await reconnect(home) }
+    }
+
+    /// `home`'s addresses (`first` before them: where it was just announced), asked in order.
+    @discardableResult
+    func reconnect(_ home: Home, first: URL? = nil) async -> ReachFailure? {
+        var candidates: [URL] = []
+        for u in [first, home.url].compactMap(\.self) + (home.addresses ?? []) where !candidates.contains(u) { candidates.append(u) }
+        attempt = 1
+        lastConnect = (candidates, home.name, home.homeID, home.url)
+        return await reachAndUse(candidates, name: home.name, homeID: home.homeID, saved: home.url)
+    }
+
+    /// Browses for homes while the app is in front (`SessionGate` calls it as the app comes
+    /// and goes): afresh each time it comes back, stopped in the background.
+    public func discover(_ front: Bool) {
+        if front {
+            discovering = true
+            discovery.start { [weak self] in self?.heard($0) }
+        } else {
+            discovering = false
+            discovery.stop()
+            nearby = []
+        }
+    }
+
+    /// The homes announced now. The saved homes are matched to them by id: an address a
+    /// saved home is announced at is kept among its others; a saved home that did not answer
+    /// (its connect failed, or is waiting on the network; its saved sign-in could not be
+    /// checked) is asked where it is announced, and its entry moves there when it answers.
+    /// A home that answers where it is is not moved: its tokens are that address's.
+    private func heard(_ found: [HomeBrowser.Found]) {
+        nearby = found
+        learn(found)
+        if let l = looking, let home = homes.first(where: { $0.url == l.saved }),
+           let at = announced(l.homeID, in: found, besides: l.tried) {
+            looking = nil
+            ask(home, at: at)
+        } else if !connecting, connectProblem != nil, let last = lastConnect, let saved = last.saved, let id = last.homeID,
+                  let home = homes.first(where: { $0.url == saved }), let at = announced(id, in: found, besides: last.candidates) {
+            ask(home, at: at)
+        } else if restoreProblem != nil, let home = current, let id = home.homeID,
+                  let at = announced(id, in: found, besides: [home.url]) {
+            ask(home, at: at)
+        }
+    }
+
+    private func ask(_ home: Home, at url: URL) {
+        connectTask?.cancel()
+        connectTask = Task { await reconnect(home, first: url) }
+    }
+
+    /// Where the home with `homeID` is announced, other than `besides`.
+    private func announced(_ homeID: String, in found: [HomeBrowser.Found], besides: [URL]) -> URL? {
+        found.first { $0.homeID?.lowercased() == homeID.lowercased() && !besides.contains($0.url) }?.url
+    }
+
+    /// Saved homes announced at an address they do not list: kept among their others (asked
+    /// at the next launch when their own does not answer).
+    private func learn(_ found: [HomeBrowser.Found]) {
+        var changed = false
+        for f in found {
+            guard let id = f.homeID?.lowercased() else { continue }
+            for i in homes.indices where homes[i].homeID?.lowercased() == id && homes[i].url != f.url
+                && !(homes[i].addresses ?? []).contains(f.url) {
+                homes[i].addresses = (homes[i].addresses ?? []) + [f.url]
+                if current?.url == homes[i].url { current = homes[i] }
+                changed = true
+            }
+        }
+        if changed { save() }
     }
 
     /// Tries `candidates` in order and uses the first that is a Maktaba home (the one
     /// `homeID` names, when given). nil: connected; else why not (also in `connectProblem`).
     @discardableResult
     public func connect(to candidates: [URL], name: String? = nil, homeID: String? = nil) async -> ReachFailure? {
-        connecting = true
+        attempt = 1
+        lastConnect = (candidates, name, homeID, nil)
+        return await reachAndUse(candidates, name: name, homeID: homeID, saved: nil)
+    }
+
+    /// Asks the last addresses again (the progress's Retry after a failed connect): the same
+    /// steps, the attempt one more.
+    @discardableResult
+    public func retryConnect() async -> ReachFailure? {
+        guard let last = lastConnect else { return nil }
+        attempt += 1
+        return await reachAndUse(last.candidates, name: last.name, homeID: last.homeID, saved: last.saved)
+    }
+
+    /// Publishes looking, each address tried, and found (or why not), then uses the home
+    /// (`saved`'s entry, moved to the address that answered).
+    private func reachAndUse(_ candidates: [URL], name: String?, homeID: String?, saved: URL?) async -> ReachFailure? {
+        connects += 1
         connectProblem = nil
-        defer { connecting = false }
-        switch await probe.reach(candidates, expectedID: homeID) {
+        looking = nil
+        defer { connects -= 1 }
+        // a saved home that does not answer is looked for on the network, while the app browses
+        let lookable = saved.flatMap { u in homes.first { $0.url == u } }.flatMap { h in homeID.map { (h, $0) } }
+        switch await reach(candidates, expectedID: homeID, sayFailure: !(discovering && lookable != nil)) {
         case let .success(r):
+            publish(.found(name: r.name ?? name ?? r.url.host() ?? r.url.progressAddress))
             var others: [URL] = []
             for u in r.addresses + candidates where u != r.url && !others.contains(u) { others.append(u) }
             let fallback = r.url.host() ?? r.url.absoluteString
+            if let saved, saved != r.url { move(saved, to: r.url) }
             use(Home(url: r.url, name: r.name ?? name ?? fallback, homeID: r.id ?? homeID,
                      addresses: others.isEmpty ? nil : others), ask: false)
             signInMethods = r.signIn
             return nil
         case let .failure(f):
+            if let (home, id) = lookable, discovering, !Task.isCancelled {
+                if let at = announced(id, in: nearby, besides: candidates) { return await reconnect(home, first: at) }
+                return await lookNearby(home, homeID: id, tried: candidates, failure: f)
+            }
             if !Task.isCancelled { connectProblem = f }
             return f
         }
+    }
+
+    /// None of a saved home's addresses answered: "Looking for your home on this network…"
+    /// until it is announced (`heard` asks it there) or `lookFor` passes (then why, and Retry).
+    private func lookNearby(_ home: Home, homeID: String, tried: [URL], failure: ReachFailure) async -> ReachFailure? {
+        let id = UUID()
+        looking = (id, homeID, home.url, tried)
+        publish(.lookingNearby)
+        try? await clock.sleep(Self.lookFor)
+        // found and asked where it is announced, or something else began
+        guard looking?.id == id else { return nil }
+        looking = nil
+        guard !Task.isCancelled else { return failure }
+        sayFailure(failure, tried)
+        connectProblem = failure
+        return failure
+    }
+
+    /// `probe.reach`, publishing each step (story 48.37): looking, then each address with
+    /// its place, then (on failure) why, with every address tried.
+    private func reach(_ candidates: [URL], expectedID: String?, sayFailure say: Bool = true) async -> Result<ReachedHome, ReachFailure> {
+        publish(.finding)
+        let result = await probe.reach(candidates, expectedID: expectedID) { [weak self] url, i, n in
+            await self?.publish(.trying(address: url.progressAddress, index: i, count: n))
+        }
+        if case let .failure(f) = result, !Task.isCancelled, say { sayFailure(f, candidates) }
+        return result
+    }
+
+    private func sayFailure(_ f: ReachFailure, _ tried: [URL]) {
+        publish(.failed(reason: ConnectProgress.failure(f), tried: tried.map(\.progressAddress)))
+        progressFromConnect = true
+    }
+
+    /// The progress now (nil: nothing to show), heard by `progressObserver`.
+    private func publish(_ step: ConnectProgress.Step?) {
+        let next = step.map { ConnectProgress($0, attempt: attempt) }
+        // the same step again (restoring right after picking the home) is no transition
+        guard next != progress else { return }
+        progressFromConnect = false
+        progress = next
+        progressObserver?(progress)
     }
 
     /// A connect link opened from outside the app, waiting for the person to say yes
@@ -298,7 +477,8 @@ public final class AppSession {
     }
 
     public func forget(_ home: Home) {
-        TokenStore(app: app, home: home.url).clear()
+        // its old addresses may still hold the tokens they issued (`move`)
+        for u in [home.url] + (home.addresses ?? []) { TokenStore(app: app, home: u).clear() }
         homes.removeAll { $0.url == home.url }
         save()
         if current?.url == home.url { switchHome() }
@@ -306,6 +486,8 @@ public final class AppSession {
 
     public func switchHome() {
         connectTask?.cancel()
+        looking = nil
+        publish(nil)
         current = nil
         client = nil
         signInMethods = nil
@@ -317,8 +499,24 @@ public final class AppSession {
 
     public func signIn(username: String, password: String) async throws {
         guard let client else { return }
-        _ = try await client.signIn(username: username, password: password)
-        signedIn(try await client.whoami())
+        // a second try after a failed one is the next attempt
+        if progress?.isWorking == false { attempt += 1 }
+        restoreProblem = nil
+        publish(.signingIn(home: current?.name ?? client.home.progressAddress))
+        do {
+            _ = try await client.signIn(username: username, password: password)
+            signedIn(try await client.whoami())
+        } catch {
+            guard self.client === client else { throw error }
+            if Log.isCancellation(error) {
+                publish(nil)
+            } else if case .status(401, _, _)? = error as? APIError {
+                publish(.failed(reason: .wrongPassword, tried: []))
+            } else {
+                publish(.failed(reason: ConnectProgress.failure(HomeFailure(error)), tried: [client.home.progressAddress]))
+            }
+            throw error
+        }
     }
 
     /// This device was signed in some other way (its code, approved on another device):
@@ -332,6 +530,7 @@ public final class AppSession {
         if let current { TokenStore(app: app, home: current.url).clear() }
         approvingSignIn = false
         restoreProblem = nil
+        publish(nil)
         phase = .signingIn
     }
 
@@ -340,12 +539,14 @@ public final class AppSession {
     public func signedOut() {
         approvingSignIn = false
         restoreProblem = nil
+        publish(nil)
         phase = .signingIn
         Task { await signInQuietlyThroughCloud() }
     }
 
     /// Checks the saved sign-in again (the sign-in screen's Try again after `restoreProblem`).
     public func retryRestore() async {
+        attempt += 1
         await restore()
     }
 
@@ -353,26 +554,46 @@ public final class AppSession {
     /// not answer leaves the tokens and says so (`restoreProblem`): the person is not
     /// signed out because the home was off for a moment. `thenCloud`: tokens the home no
     /// longer takes are followed by a sign-in through the cloud, when it vouches for the address.
+    ///
+    /// A home that is busy or still starting (a 503 or 429 with Retry-After) is asked again
+    /// by itself when it said, the attempt one more; the wait is published (`homeBusy`) so
+    /// the screen counts down to it.
     private func restore(thenCloud: Bool = false) async {
         guard let client else { return }
         restoring = true
         restoreProblem = nil
         defer { if self.client === client { restoring = false } }
-        do {
-            let me = try await client.whoami()
-            guard self.client === client else { return }
-            signedIn(me)
-        } catch {
-            guard self.client === client else { return }
-            Log.failure("restore sign-in", error, logger: Log.session)
-            // signed out: the client cleared the tokens, the sign-in screen it is (or the cloud's)
-            if case APIError.signedOut = error {
-                if thenCloud { await signInQuietlyThroughCloud() }
+        let name = current?.name ?? client.home.progressAddress
+        while true {
+            publish(.reconnecting(name: name))
+            do {
+                let me = try await client.whoami()
+                guard self.client === client else { return }
+                signedIn(me)
+                return
+            } catch {
+                guard self.client === client else { return }
+                Log.failure("restore sign-in", error, logger: Log.session)
+                // signed out: the client cleared the tokens, the sign-in screen it is (or the cloud's)
+                if case APIError.signedOut = error {
+                    publish(nil)
+                    if thenCloud { await signInQuietlyThroughCloud() }
+                    return
+                }
+                guard !Log.isCancellation(error) else { return publish(nil) }
+                let f = HomeFailure(error)
+                if case let .busy(after?) = f.kind {
+                    publish(.homeBusy(retryAt: clock.now().addingTimeInterval(TimeInterval(after))))
+                    do { try await clock.sleep(.seconds(after)) } catch { return }
+                    guard self.client === client, phase == .signingIn else { return }
+                    attempt += 1
+                    continue
+                }
+                if f.kind == .signedOut { return publish(nil) }
+                restoreProblem = f
+                publish(.failed(reason: ConnectProgress.failure(f), tried: [client.home.progressAddress]))
                 return
             }
-            guard !Log.isCancellation(error) else { return }
-            let f = HomeFailure(error)
-            if f.kind != .signedOut { restoreProblem = f }
         }
     }
 
@@ -428,20 +649,23 @@ public final class AppSession {
     public func signIn(through home: CloudHome) async throws {
         guard home.canSignIn else { throw CloudError.notLinked }
         connectTask?.cancel()
-        connecting = true
+        connects += 1
         connectProblem = nil
-        defer { connecting = false }
+        defer { connects -= 1 }
+        attempt = 1
         let r: ReachedHome
-        switch await probe.reach(home.addresses) {
+        switch await reach(home.addresses, expectedID: nil) {
         case let .success(x): r = x
         case let .failure(f): throw f
         }
+        publish(.found(name: r.name ?? home.name))
         var others: [URL] = []
         for u in r.addresses + home.addresses where u != r.url && !others.contains(u) { others.append(u) }
         use(Home(url: r.url, name: r.name ?? home.name, homeID: r.id, addresses: others.isEmpty ? nil : others,
                  cloudServerID: home.serverID), ask: false, quietCloud: false)
         signInMethods = r.signIn
         guard let client else { return }
+        if !restoring { publish(.signingIn(home: current?.name ?? home.name)) }
         if TokenStore(app: app, home: r.url).access != nil, let me = try? await client.whoami() {
             signedIn(me)
             return
@@ -484,6 +708,7 @@ public final class AppSession {
 
     private func signedIn(_ me: Me) {
         restoreProblem = nil
+        publish(nil)
         named(me.homeName)
         phase = .signedIn(me.user)
     }
@@ -516,6 +741,20 @@ public final class AppSession {
         homes.append(entry)
         save()
         return entry
+    }
+
+    /// A saved home answered at another of its addresses (or where it was announced): the
+    /// entry moves there, its name and the person's kept, the old address among its others.
+    /// Tokens stay with the address that issued them: the new one is signed in to afresh
+    /// (its own tokens when it has some), as `remember` never moves them either.
+    private func move(_ old: URL, to new: URL) {
+        guard let i = homes.firstIndex(where: { $0.url == old }), !homes.contains(where: { $0.url == new }) else { return }
+        // the old host was its name until the home said one: the new host is, now
+        if homes[i].hasPlaceholderName { homes[i].name = new.host() ?? new.absoluteString }
+        homes[i].addresses = merged([old] + (homes[i].addresses ?? []), [], without: new)
+        homes[i].url = new
+        if current?.url == old { current = homes[i] }
+        save()
     }
 
     private func merged(_ a: [URL], _ b: [URL], without: URL) -> [URL]? {

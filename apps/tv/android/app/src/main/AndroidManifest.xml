@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- the network the device is on: the homes are browsed afresh on another one -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Android 17 and later: reaching a home on the local network is a runtime permission
          (shown as «Nearby devices»); the permissions walkthrough asks for it (tv/permissions). -->
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />

@@ -17,6 +17,8 @@ public final class PlayerHostView: NSView {
         super.init(frame: .zero)
         playerView.controlsStyle = .floating
         playerView.showsFullScreenToggleButton = true
+        // the controls' picture-in-picture button: the video floats above every app (FR-43)
+        playerView.allowsPictureInPicturePlayback = true
         playerView.player = player
         playerView.frame = bounds
         playerView.autoresizingMask = [.width, .height]

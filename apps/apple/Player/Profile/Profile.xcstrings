@@ -1,0 +1,807 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld videos" : {
+      "comment" : "A playlist's number of videos",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld فيديوهات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld فيديو"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "فيديو واحد"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld فيديو"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "فيديوهان"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld فيديو"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld video"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld videos"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "1080p" : {
+      "comment" : "A streaming quality",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "1080p"
+          }
+        }
+      }
+    },
+    "480p" : {
+      "comment" : "A streaming quality",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "480p"
+          }
+        }
+      }
+    },
+    "720p" : {
+      "comment" : "A streaming quality",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "720p"
+          }
+        }
+      }
+    },
+    "A browser" : {
+      "comment" : "A session whose browser is not known",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متصفح"
+          }
+        }
+      }
+    },
+    "Account" : {
+      "comment" : "A Profile group: sessions, switching home, signing out",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحساب"
+          }
+        }
+      }
+    },
+    "Arabic" : {
+      "comment" : "A language, named in Arabic",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العربية"
+          }
+        }
+      }
+    },
+    "Browsers signed in to the home as you. Sign out any you do not recognise." : {
+      "comment" : "Above the sessions list",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتصفحات المسجَّل دخولها إلى «الجهاز الرئيسي» باسمك. سجّل خروج أي متصفح لا تعرفه."
+          }
+        }
+      }
+    },
+    "Diagnostics" : {
+      "comment" : "The crash reports kept on this device",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشخيص"
+          }
+        }
+      }
+    },
+    "English" : {
+      "comment" : "A language, named in English",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإنجليزية"
+          }
+        }
+      }
+    },
+    "Favorites" : {
+      "comment" : "The favorites page",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المفضلة"
+          }
+        }
+      }
+    },
+    "Help" : {
+      "comment" : "Opens the home's help page for this app",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المساعدة"
+          }
+        }
+      }
+    },
+    "Help and about" : {
+      "comment" : "A Profile group: help, versions, diagnostics",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المساعدة وحول التطبيق"
+          }
+        }
+      }
+    },
+    "Language" : {
+      "comment" : "The app's language; opens the system's page for it",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اللغة"
+          }
+        }
+      }
+    },
+    "Large" : {
+      "comment" : "A subtitle size",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كبير"
+          }
+        }
+      }
+    },
+    "Linked" : {
+      "comment" : "A cloud account is linked",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرتبط"
+          }
+        }
+      }
+    },
+    "Linked as %@" : {
+      "comment" : "The cloud account this person linked",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرتبط باسم %@"
+          }
+        }
+      }
+    },
+    "Maktaba Cloud" : {
+      "comment" : "The linked cloud account row's title",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سحابة مكتبة"
+          }
+        }
+      }
+    },
+    "Maktaba Player %@ (build %@)" : {
+      "comment" : "About: this app's version and build",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشغّل مكتبة %1$@ (البناء %2$@)"
+          }
+        }
+      }
+    },
+    "Medium" : {
+      "comment" : "A subtitle size",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوسط"
+          }
+        }
+      }
+    },
+    "No browser is signed in as you" : {
+      "comment" : "The sessions, empty",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يوجد متصفح مسجَّل دخوله باسمك"
+          }
+        }
+      }
+    },
+    "No favorites yet" : {
+      "comment" : "The favorites, empty",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا مفضلات بعد"
+          }
+        }
+      }
+    },
+    "No playlists yet. Make one on the home's web page." : {
+      "comment" : "The playlists, empty",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا قوائم تشغيل بعد. أنشئ واحدة من صفحة «الجهاز الرئيسي» على الويب."
+          }
+        }
+      }
+    },
+    "No problems recorded" : {
+      "comment" : "Diagnostics: no crash report kept",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تُسجَّل أي مشكلة"
+          }
+        }
+      }
+    },
+    "Not linked. Link one on the home's web page." : {
+      "comment" : "No cloud account linked; where to link one",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير مرتبط. اربط حسابًا من صفحة «الجهاز الرئيسي» على الويب."
+          }
+        }
+      }
+    },
+    "Nothing watched yet" : {
+      "comment" : "The history, empty",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم تشاهد شيئًا بعد"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "comment" : "Closes a message",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسنًا"
+          }
+        }
+      }
+    },
+    "Opens the system's settings for this app" : {
+      "comment" : "What the Language row does, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يفتح إعدادات النظام لهذا التطبيق"
+          }
+        }
+      }
+    },
+    "Original" : {
+      "comment" : "A streaming quality: the file as it is, no cap",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأصلية"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "Plays a playlist from its first video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Play the next episode automatically" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل الحلقة التالية تلقائيًا"
+          }
+        }
+      }
+    },
+    "Playback" : {
+      "comment" : "The playback settings page",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل"
+          }
+        }
+      }
+    },
+    "Playlists" : {
+      "comment" : "The playlists page",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قوائم التشغيل"
+          }
+        }
+      }
+    },
+    "Problems this app recorded on this device, without anything personal. Share one with whoever runs the home if they ask." : {
+      "comment" : "Under the diagnostics list",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشكلات سجّلها هذا التطبيق على هذا الجهاز، دون أي بيانات شخصية. شارك واحدة مع من يدير «الجهاز الرئيسي» إن طلبها."
+          }
+        }
+      }
+    },
+    "Quality on Wi-Fi" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجودة على Wi-Fi"
+          }
+        }
+      }
+    },
+    "Quality on mobile data" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجودة على بيانات الجوال"
+          }
+        }
+      }
+    },
+    "Remove" : {
+      "comment" : "Removes a video from the history",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة"
+          }
+        }
+      }
+    },
+    "Remove %@ from history" : {
+      "comment" : "The history row's remove button, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة %@ من السجل"
+          }
+        }
+      }
+    },
+    "Resume without asking" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتابعة دون سؤال"
+          }
+        }
+      }
+    },
+    "Sessions" : {
+      "comment" : "The signed-in browsers page",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجلسات"
+          }
+        }
+      }
+    },
+    "Settings on this device" : {
+      "comment" : "A Profile group: theme, language, playback",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعدادات هذا الجهاز"
+          }
+        }
+      }
+    },
+    "Show more" : {
+      "comment" : "Loads the next page of a list",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض المزيد"
+          }
+        }
+      }
+    },
+    "Sign out" : {
+      "comment" : "Signs out of this home",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الخروج"
+          }
+        }
+      }
+    },
+    "Sign out of %@?" : {
+      "comment" : "Asks before signing out; the home's name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تسجيل الخروج من %@؟"
+          }
+        }
+      }
+    },
+    "Small" : {
+      "comment" : "A subtitle size",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صغير"
+          }
+        }
+      }
+    },
+    "Subtitle language" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لغة الترجمة"
+          }
+        }
+      }
+    },
+    "Subtitle size" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حجم الترجمة"
+          }
+        }
+      }
+    },
+    "Subtitles on by default" : {
+      "comment" : "A playback setting",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة مفعّلة افتراضيًا"
+          }
+        }
+      }
+    },
+    "Switch home" : {
+      "comment" : "Goes back to choosing a home",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تبديل «الجهاز الرئيسي»"
+          }
+        }
+      }
+    },
+    "That did not work" : {
+      "comment" : "A change the home refused",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم ينجح ذلك"
+          }
+        }
+      }
+    },
+    "The app's language" : {
+      "comment" : "Subtitle language: the language the app speaks",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لغة التطبيق"
+          }
+        }
+      }
+    },
+    "The home: %@" : {
+      "comment" : "About: the home's version",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "«الجهاز الرئيسي»: %@"
+          }
+        }
+      }
+    },
+    "Theme" : {
+      "comment" : "The theme setting: dark, light or the system's",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المظهر"
+          }
+        }
+      }
+    },
+    "This playlist is empty" : {
+      "comment" : "A playlist with no videos",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قائمة التشغيل هذه فارغة"
+          }
+        }
+      }
+    },
+    "Untitled" : {
+      "comment" : "A video with no title",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بلا عنوان"
+          }
+        }
+      }
+    },
+    "Watch history" : {
+      "comment" : "The watch history page",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سجل المشاهدة"
+          }
+        }
+      }
+    },
+    "Watched" : {
+      "comment" : "History: watched to the end",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تمت المشاهدة"
+          }
+        }
+      }
+    },
+    "Watched %lld times" : {
+      "comment" : "History: how many times",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "شوهد %lld مرات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "شوهد %lld مرة"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "شوهد مرة واحدة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "شوهد %lld مرة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "شوهد مرتين"
+                }
+              },
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "شوهد %lld مرة"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Watched once"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Watched %lld times"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "You can sign in again with your password or a code." : {
+      "comment" : "Under the sign-out question",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يمكنك تسجيل الدخول مجددًا بكلمة المرور أو برمز."
+          }
+        }
+      }
+    },
+    "Your library" : {
+      "comment" : "A Profile group: history, favorites, playlists",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبتك"
+          }
+        }
+      }
+    },
+    "last used %@" : {
+      "comment" : "A session: when it was last used",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آخر استخدام %@"
+          }
+        }
+      }
+    },
+    "this browser" : {
+      "comment" : "A session: the one this request came with",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا المتصفح"
+          }
+        }
+      }
+    },
+    "unknown" : {
+      "comment" : "The home's version, not known",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير معروف"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

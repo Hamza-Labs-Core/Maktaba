@@ -12,7 +12,6 @@ import UIKit
 /// address or a pasted `maktaba://connect` link, asked whether it is a Maktaba home first.
 struct TVHomePicker: View {
     @Bindable var session: AppSession
-    @State private var browser = HomeBrowser()
     @State private var address = ""
     @State private var problem: String?
     @State private var renaming: Home?
@@ -58,8 +57,6 @@ struct TVHomePicker: View {
             }
         }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
-        .onAppear { browser.start() }
-        .onDisappear { browser.stop() }
         .alert(words.text(.renameTitle), isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField(tv.text(.renamed), text: $newName)
             Button(words.text(.save)) {
@@ -97,7 +94,7 @@ struct TVHomePicker: View {
 
     private var nearby: some View {
         TVSection(words.text(.onThisNetwork), footer: tv.text(.nearbyHint)) {
-            let list = TVStart.nearby(browser.found, known: session.homes)
+            let list = TVStart.nearby(session.nearby, known: session.homes)
             ForEach(list) { home in
                 TVHomeRow(name: home.name, address: Home(url: home.url, name: home.name).displayAddress, systemImage: "wifi") {
                     clearProblems()

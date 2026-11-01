@@ -359,6 +359,108 @@ extension RouteStub.Answer {
             #expect(s.phase == .signingIn, "signed in afresh at the new address")
         }
 
+        /// A home saved under a name that no longer resolves (its `.local` name changed) is
+        /// asked at its other addresses at launch, and its entry moves to the one that answers.
+        @Test func aSavedHomeAtADeadAddressConnectsThroughItsOther() async throws {
+            RouteStub.reset()
+            RouteStub.on("GET lan.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            let dead = URL(string: "http://oldname.test:8088")!, lan = URL(string: "http://lan.test:8088")!
+            let defaults = try saved(Home(url: dead, name: "Grandma's", homeID: "home-1", addresses: [lan]), renamed: true)
+            let old = TokenStore(app: "test.homes.moved", home: dead), new = TokenStore(app: "test.homes.moved", home: lan)
+            new.clear()
+            old.save(AuthTokens(accessToken: "issued.by.oldname", refreshToken: "r", user: nil))
+            defer { old.clear(); new.clear() }
+            let s = launched("test.homes.moved", defaults)
+            for _ in 0..<100 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url == lan, "reached at its other address")
+            #expect(s.homes.count == 1, "the same entry, moved")
+            #expect(s.homes.first?.addresses?.contains(dead) == true, "the old address among its others")
+            #expect(s.homes.first?.name == "Grandma's" && s.homes.first?.renamed == true)
+            #expect(defaults.url(forKey: "home") == lan, "the next launch starts there")
+            // tokens stay with the address that issued them: signed in afresh at the new one
+            #expect(new.access == nil && old.access == "issued.by.oldname")
+            #expect(s.phase == .signingIn)
+        }
+
+        /// A saved home that answers at none of its addresses, while the app browses: "Looking
+        /// for your home on this network…", then asked where its id is announced, the entry
+        /// moved there. Another home's id moves nothing.
+        @Test func aSavedHomeAtADeadAddressIsFoundAgainThroughDiscovery() async throws {
+            RouteStub.reset()
+            let dead = URL(string: "http://oldname.test:8088")!, lan = URL(string: "http://lan.test:8088")!
+            let defaults = try saved(Home(url: dead, name: "oldname.test", homeID: "home-1"))
+            let network = FakeDiscovery()
+            let s = launched("test.homes.browsed", defaults, discovery: network)
+            s.discover(true)
+            for _ in 0..<100 where s.progress?.step != .lookingNearby { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.progress?.step == .lookingNearby && s.connectProblem == nil, "looked for on the network, no failure yet")
+            RouteStub.on("GET lan.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            RouteStub.on("GET other.test/api/discovery/home", .json(200, #"{"id":"neighbour","urls":[]}"#))
+            network.announce([HomeBrowser.Found(name: "Neighbour", url: URL(string: "http://other.test:8088")!, homeID: "neighbour")])
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(s.current == nil && !RouteStub.seen.contains { $0.route.contains("other.test") }, "another home is not asked")
+            // the announcement's id as the TXT record says it (lower-cased)
+            network.announce([HomeBrowser.Found(name: "Studio", url: lan, homeID: "HOME-1".lowercased())])
+            for _ in 0..<100 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url == lan)
+            #expect(s.homes.map(\.url) == [lan] && s.homes.first?.addresses?.contains(dead) == true)
+            #expect(s.homes.first?.name == "Living room", "the placeholder name gives way to the home's")
+            #expect(s.connectProblem == nil && s.phase == .signingIn)
+        }
+
+        /// Not announced while it is looked for: why, and Retry. Announced later: asked there.
+        @Test func aSavedHomeNotAnnouncedSaysWhyThenIsAskedWhenItIs() async throws {
+            RouteStub.reset()
+            let dead = URL(string: "http://oldname.test:8088")!, lan = URL(string: "http://lan.test:8088")!
+            let defaults = try saved(Home(url: dead, name: "Living room", homeID: "home-1"))
+            let network = FakeDiscovery()
+            // the look's time passes at once
+            let s = launched("test.homes.unannounced", defaults, discovery: network, clock: ConnectClock(now: { Date() }, sleep: { _ in }))
+            s.discover(true)
+            for _ in 0..<100 where s.connectProblem == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.progress == ConnectProgress(.failed(reason: .unreachable, tried: ["http://oldname.test:8088"])))
+            RouteStub.on("GET lan.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            network.announce([HomeBrowser.Found(name: "Studio", url: lan, homeID: "home-1")])
+            for _ in 0..<100 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url == lan && s.homes.count == 1)
+        }
+
+        /// Discovery runs while the app is in front: stopped in the background, browsed afresh
+        /// when it comes back, and what it hears then still reaches the saved homes.
+        @Test func discoveryStartsAgainWhenTheAppComesBack() throws {
+            let lan = URL(string: "http://lan.test:8088")!, studio = URL(string: "http://studio.test:8088")!
+            let network = FakeDiscovery()
+            let s = launched("test.homes.front", try saved(Home(url: lan, name: "Living room", homeID: "home-1")), discovery: network)
+            s.switchHome()
+            s.discover(true)
+            #expect(network.starts == 1)
+            network.announce([HomeBrowser.Found(name: "Studio", url: studio, homeID: "home-1")])
+            #expect(s.nearby.map(\.url) == [studio])
+            s.discover(false)
+            #expect(network.stops == 1 && s.nearby.isEmpty && !network.browsing, "stopped in the background")
+            s.discover(true)
+            #expect(network.starts == 2 && network.browsing, "browsed afresh in front again")
+            network.announce([HomeBrowser.Found(name: "Studio", url: studio, homeID: "home-1")])
+            #expect(s.nearby.map(\.url) == [studio])
+            // a saved home that answers where it is stays there; the announced address is kept among its others
+            #expect(s.homes.map(\.url) == [lan] && s.homes.first?.addresses == [studio])
+        }
+
+        private func saved(_ home: Home, renamed: Bool = false) throws -> UserDefaults {
+            let defaults = try #require(UserDefaults(suiteName: "maktabakit.test.\(UUID().uuidString)"))
+            var h = home
+            if renamed { h.renamed = true }
+            defaults.set(try JSONEncoder().encode([h]), forKey: "homes")
+            defaults.set(h.url, forKey: "home")
+            return defaults
+        }
+
+        private func launched(_ app: String, _ defaults: UserDefaults, discovery: FakeDiscovery = FakeDiscovery(),
+                              clock: ConnectClock = .system) -> AppSession {
+            AppSession(app: app, defaults: defaults, probe: HomeProbe(session: RouteStub.session(), timeout: 2), asksHomes: false,
+                       clock: clock, discovery: discovery)
+        }
+
         @Test func thePersonsNameStays() throws {
             let (s, _) = try session()
             s.use(Home(url: URL(string: "http://lan.test:8088")!, name: "lan.test", homeID: "home-1"))
@@ -577,4 +679,23 @@ extension RouteStub.Answer {
         #expect(ConnectStrings(.ar).isRightToLeft && !ConnectStrings(.en).isRightToLeft)
         #expect(ConnectStrings(.en).text(.unreachable, "timed out") == "Could not reach the home: timed out")
     }
+}
+
+/// The homes on the network as a test announces them.
+@MainActor final class FakeDiscovery: HomeDiscovering {
+    private(set) var starts = 0, stops = 0
+    private var found: (@MainActor ([HomeBrowser.Found]) -> Void)?
+    var browsing: Bool { found != nil }
+
+    func start(_ found: @escaping @MainActor ([HomeBrowser.Found]) -> Void) {
+        starts += 1
+        self.found = found
+    }
+
+    func stop() {
+        stops += 1
+        found = nil
+    }
+
+    func announce(_ list: [HomeBrowser.Found]) { found?(list) }
 }
