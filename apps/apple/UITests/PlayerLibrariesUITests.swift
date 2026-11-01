@@ -17,7 +17,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     /// Pin moves a library first and calls PUT with the new pins; the home's answer is kept.
     func testPinMovesALibraryFirstAndCallsPut() {
         home.stub("GET", "/api/libraries/summary", body: Self.nonePinned)
-        launchSignedIn()
+        launchSignedIn(section: "libraries")
         let docs = element("library.lib-docs")
         let lectures = element("library.lib-lectures")
         XCTAssertTrue(docs.waitForExistence(timeout: 20), "the library cards")
@@ -42,7 +42,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     /// The Series tab: every series the person may see (`GET /api/series`), with progress;
     /// one opens its page.
     func testSeriesTabListsEverySeries() {
-        launchSignedIn()
+        launchSignedIn(section: "libraries")
         XCTAssertTrue(element("libraries.tabs").waitForExistence(timeout: 20))
         element("libraries.tabs").buttons["Series"].tap()
         let seerah = element("series.s-seerah")
@@ -59,7 +59,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// The hub rows show (an empty one is left out), and the grid pages by cursor to the end.
     func testTheGridPagesByCursorToTheEnd() {
-        launchSignedIn(open: "library/lib-docs")
+        launchSignedIn(section: "libraries", open: "library/lib-docs")
         XCTAssertTrue(element("screen.library").waitForExistence(timeout: 20), "the library's page")
         XCTAssertTrue(element("library.row.continue").waitForExistence(timeout: 10), "Continue Watching")
         XCTAssertTrue(element("library.row.recentlyAdded").exists, "Recently Added")
@@ -81,7 +81,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// Sort and the facets (language, speaker) change the grid's request.
     func testFacetsAndSortChangeTheRequestsQuery() {
-        launchSignedIn(open: "library/lib-docs")
+        launchSignedIn(section: "libraries", open: "library/lib-docs")
         XCTAssertTrue(element("screen.library").waitForExistence(timeout: 20))
         XCTAssertNotNil(waitForRequest { self.isDocs($0) && $0.value("sort") == "created_at" && $0.value("order") == "desc" },
                         "newest first")
@@ -104,7 +104,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     /// A library the person may not see (404) says so.
     func testALibraryGoneIsNotAvailable() {
         home.stub("GET", "/api/libraries/lib-gone/hub", status: 404, body: #"{"title":"not found","status":404}"#)
-        launchSignedIn(open: "library/lib-gone")
+        launchSignedIn(section: "libraries", open: "library/lib-gone")
         XCTAssertTrue(element("libraries.notAvailable").waitForExistence(timeout: 20), "Not available")
     }
 
@@ -112,7 +112,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// Continue opens the series' next episode (`next_episode`: v2), on today's video page.
     func testASeriesContinueOpensItsNextEpisode() {
-        launchSignedIn(open: "series/s-seerah")
+        launchSignedIn(section: "libraries", open: "series/s-seerah")
         let go = element("series.continue")
         XCTAssertTrue(go.waitForExistence(timeout: 20), "Continue")
         XCTAssertTrue(element("episode.v1").exists && element("episode.v2").exists && element("episode.v3").exists)
@@ -125,7 +125,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// Mark watched on the season marks each of its episodes; on one episode, that one.
     func testMarkWatchedOnASeasonMarksEachEpisode() {
-        launchSignedIn(open: "series/s-seerah")
+        launchSignedIn(section: "libraries", open: "series/s-seerah")
         let season = element("series.markSeason")
         XCTAssertTrue(season.waitForExistence(timeout: 20))
         XCTAssertEqual(element("episode.mark.v1").label, "Mark not watched", "v1 is watched already")
@@ -156,7 +156,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// The section in Arabic, right to left: the root, a library, a series.
     func testLibrariesInArabic() {
-        launchSignedIn("ar")
+        launchSignedIn("ar", section: "libraries")
         let docs = element("library.lib-docs")
         XCTAssertTrue(docs.waitForExistence(timeout: 20))
         XCTAssertTrue(element("libraries.tabs").buttons["المسلسلات"].exists, "the Series tab in Arabic")
@@ -166,12 +166,12 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         XCTAssertTrue(before(element("library.lib-lectures"), docs), "pinned first, from the right")
         shot("libraries")
 
-        launchSignedIn("ar", open: "library/lib-docs")
+        launchSignedIn("ar", section: "libraries", open: "library/lib-docs")
         XCTAssertTrue(element("library.row.continue").waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["تابع المشاهدة"].exists, "the row's title in Arabic")
         shot("library")
 
-        launchSignedIn("ar", open: "series/s-seerah")
+        launchSignedIn("ar", section: "libraries", open: "series/s-seerah")
         XCTAssertTrue(element("series.continue").waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["الموسم 1"].exists || app.staticTexts["الموسم ١"].exists, "the season in Arabic")
         shot("series")
@@ -187,7 +187,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             for page in pages {
                 let name = "\(language) \(page.open ?? "root")"
-                launchSignedIn(language, open: page.open)
+                launchSignedIn(language, section: "libraries", open: page.open)
                 XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
                 // the posters loaded: no shimmer moving under the contrast check
                 waitFor(timeout: 2) { false }
@@ -197,8 +197,53 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         }
     }
 
+    /// The episode rows at the third accessibility size (AX3): each shows in full, the
+    /// picture above the text, nothing cut at the screen's sides. The audit's Dynamic Type
+    /// check cannot follow rows that larger text pushes below the screen (see `audit`), so
+    /// this checks them at that size directly, scrolling to each.
+    func testEpisodesAtAX3() {
+        launchAtAX3(open: "series/s-seerah")
+        XCTAssertTrue(element("series.continue").waitForExistence(timeout: 30))
+        let window = app.windows.firstMatch.frame
+        shot("series-ax3")
+        for v in ["v3", "v2", "v1"] {
+            let row = element("episode.\(v)")
+            for _ in 0 ..< 8 where !(row.exists && window.contains(row.frame)) { app.swipeUp() }
+            XCTAssertTrue(row.exists && window.contains(row.frame), "\(v) shows in full at AX3")
+            XCTAssertTrue(row.label.contains("السيرة النبوية"), "\(v): its title, not cut: \(row.label)")
+            XCTAssertTrue(element("episode.mark.\(v)").isHittable, "\(v): its mark can be tapped")
+        }
+        shot("series-ax3-end")
+
+        // a library's filters (sort, language, speaker) grow too and stay tappable
+        launchAtAX3(open: "library/lib-docs")
+        let sort = element("library.sort")
+        XCTAssertTrue(element("screen.library").waitForExistence(timeout: 30))
+        for _ in 0 ..< 12 where !(sort.exists && window.contains(sort.frame)) { app.swipeUp() }
+        XCTAssertTrue(sort.exists && window.contains(sort.frame), "the sort menu shows at AX3")
+        XCTAssertTrue(sort.isHittable, "the sort menu can be tapped at AX3")
+        shot("library-ax3-filters")
+    }
+
+    /// A first run at AX3, signed in (the larger start screens can take longer on a loaded runner).
+    private func launchAtAX3(open: String) {
+        launch("en", section: "libraries", open: open,
+               extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        XCTAssertTrue(app.textFields["picker.address"].waitForExistence(timeout: 30), "the home picker at AX3")
+        signIn()
+    }
+
     private func audit(_ page: String) {
         let window = app.windows.firstMatch.frame
+        // Dynamic Type exemption, for the episode rows and a library's filter row only: the
+        // audit grows the text, and what sits low on the page then moves below the screen,
+        // which it reports as "partially unsupported" (on iPhone the lowest episode row fails,
+        // a row higher up passes, and scrolled up the next one passes; on iPad the filters at
+        // the page's foot fail the same way). Both use scaled fonts with no fixed height, and
+        // testEpisodesAtAX3 checks them at AX3 directly.
+        let lowOnThePage = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'episode.v' OR identifier == 'library.filters'"))
+            .allElementsBoundByIndex.map(\.frame)
         // every issue of the page in one failure (the audit itself stops at the first)
         var found: [String] = []
         do {
@@ -208,6 +253,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
                 // a card half off the screen's edge (a row scrolls sideways): the audit samples
                 // pixels beyond it; the cards fully on screen are still checked (as 48.14's audit)
                 if issue.auditType == .contrast, let f = issue.element?.frame, !window.contains(f) { return true }
+                if issue.auditType == .dynamicType, let f = issue.element?.frame, lowOnThePage.contains(where: { $0.contains(f) }) { return true }
                 found.append("\(issue.compactDescription) [\(issue.element?.identifier ?? "")|\(issue.element?.label ?? "")]")
                 return true
             }

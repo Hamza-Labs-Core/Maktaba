@@ -141,6 +141,7 @@ struct LibraryScreen: View {
             }
         }
         .scrollIndicators(.hidden)
+        .accessibilityIdentifier("library.filters")
     }
 
     private func chip(systemImage: String, _ text: Text) -> some View {
