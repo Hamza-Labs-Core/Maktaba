@@ -41,8 +41,9 @@ class PlayerUITestCase: XCTestCase {
     /// Opens the app. `fresh`: as a first run (no homes, the permissions walkthrough passed
     /// with its checks faked); otherwise the home and the sign-in of the last launch are kept
     /// (in a signed build only: an unsigned one, as on CI, keeps no token in the Keychain).
+    /// `extra`: more launch arguments (the components' gallery, a Dynamic Type size).
     func launch(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
-                fresh: Bool = true) {
+                fresh: Bool = true, extra: [String] = []) {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale,
@@ -54,7 +55,7 @@ class PlayerUITestCase: XCTestCase {
         if let sections { args += ["-maktaba-sections", sections.joined(separator: ",")] }
         if let section { args += ["-maktaba-section", section] }
         if let open { args += ["-maktaba-open", open] }
-        app.launchArguments = args
+        app.launchArguments = args + extra
         app.launch()
         if fresh {
             let walkthrough = element("permissions.walkthrough")

@@ -17,12 +17,16 @@ struct PlayerApp: App {
 
     var body: some Scene {
         WindowGroup {
-            SessionGate(session: session, title: "Maktaba Player") { user, client in
-                // the sections (PlayerSection.enabled); today Libraries alone
-                PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing)
+            #if DEBUG
+            // the UI tests' component pages (`-maktaba-gallery poster`); never in a release build
+            if let gallery = ComponentGallery(arguments: CommandLine.arguments) {
+                gallery.maktabaTheme(theme)
+            } else {
+                signedIn
             }
-            .maktabaTheme(theme, forceDark: playing)
-            .permissionsWalkthrough()
+            #else
+            signedIn
+            #endif
         }
         #if os(macOS)
         .defaultSize(width: 1200, height: 780)
@@ -31,6 +35,15 @@ struct PlayerApp: App {
             PlaybackCommands()
             AccountCommands(session: session, theme: $theme)
         }
+    }
+
+    private var signedIn: some View {
+        SessionGate(session: session, title: "Maktaba Player") { user, client in
+            // the sections (PlayerSection.enabled); today Libraries alone
+            PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing)
+        }
+        .maktabaTheme(theme, forceDark: playing)
+        .permissionsWalkthrough()
     }
 }
 
