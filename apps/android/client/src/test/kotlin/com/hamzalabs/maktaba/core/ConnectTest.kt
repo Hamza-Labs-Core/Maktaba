@@ -95,11 +95,11 @@ class ConnectTest {
     @Test
     fun aConnectLinkKeepsItsAddressesInOrder() {
         val link = ConnectLink.parse(
-            "maktaba://connect?id=28e21b45&n=Darwish%20home&u=http%3A%2F%2F192.168.1.5%3A8088&u=https%3A%2F%2Fdarwish.maktaba.dev%2F&u=http%3A%2F%2F192.168.1.5%3A8088",
+            "maktaba://connect?id=28e21b45&n=Darwish%20home&u=http%3A%2F%2F192.168.1.5%3A8088&u=https%3A%2F%2Fdarwish.maktaba.tv%2F&u=http%3A%2F%2F192.168.1.5%3A8088",
         )!!
         assertEquals("28e21b45", link.id)
         assertEquals("Darwish home", link.name)
-        assertEquals("local first, then the others, once each", listOf("http://192.168.1.5:8088", "https://darwish.maktaba.dev"), link.urls)
+        assertEquals("local first, then the others, once each", listOf("http://192.168.1.5:8088", "https://darwish.maktaba.tv"), link.urls)
     }
 
     @Test
