@@ -136,6 +136,15 @@ don't append a line here; docs-only PRs are exempt.
   the viewer may not read, or no such channel, is a 403. Admins skip the check; the verdict
   is cached per viewer and channel for 30 s, so segments cost no extra API call; the API not
   answering stays a 502. Video sessions and the admins' staging preview are unchanged.
+- **Resume on Windows starts the server right after it stopped, and three flaky tests are
+  fixed at the root.** The desktop app took an agent that had let go of its lock but was still
+  exiting for a running one, so Resume asked Task Scheduler once, was ignored, and the server
+  stayed stopped. Now only an agent that holds the lock counts as running. The enrich test
+  near midnight now allows exactly the 60 s minimum wait, reads the date before the run, and
+  keeps both runs on one budget day. After one slow run, the unit tier now runs the test again
+  as a whole, with fresh fixtures. Before, it ran only the test body again on the first run's
+  fixtures, met its own files, and failed every time. The retention test also writes fewer
+  files.
 - **A full node's copy of the home's database starts afresh even when a worker hangs.** On
   2026-10-28 a table's first copy was mid-way when the home's database restarted. Its
   connection never dropped, so the worker waited 15 minutes for rows that never came, and
