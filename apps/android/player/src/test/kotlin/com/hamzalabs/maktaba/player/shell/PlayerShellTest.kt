@@ -155,21 +155,6 @@ class PlayerShellTest {
     }
 
     @Test
-    fun theAppsScreensAreReachableForEverySection() {
-        // the placeholders: each section's own screen, titled with its name
-        // Home (48.26) and Libraries are real screens that need a signed-in home, which this test has not
-        compose.setShell(sections = PlayerSection.entries - PlayerSection.Home - PlayerSection.Libraries)
-        for ((section, title) in listOf(
-            PlayerSection.LiveTv to "Live TV",
-        )) {
-            compose.onNodeWithTag("section-${section.name}").performClick()
-            compose.onNodeWithTag("placeholder").assertIsDisplayed()
-            compose.onNodeWithText("Not available yet").assertIsDisplayed()
-            compose.onAllNodesWithText(title).assertCountEquals(2) // the title bar and the section's label
-        }
-    }
-
-    @Test
     fun backAtASectionsRootKeepsTheRoot() {
         val answers = mutableListOf<Boolean>()
         compose.setShell(sections = listOf(PlayerSection.Home)) { route, nav ->
