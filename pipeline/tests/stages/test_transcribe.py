@@ -266,6 +266,106 @@ async def test_the_probe_s_default_audio_track_stands(
     assert [(r["track_index"], bool(r["is_default"])) for r in rows] == [(0, False), (1, True)]
 
 
+FFPROBE = {
+    "format": {"format_name": "matroska,webm"},
+    "streams": [
+        {"codec_type": "video", "codec_name": "h264"},
+        {
+            "codec_type": "audio",
+            "codec_name": "opus",
+            "channels": 2,
+            "sample_rate": "48000",
+            "tags": {"language": "ara", "title": "Arabic"},
+            "disposition": {"default": 1},
+        },
+    ],
+}
+
+
+async def _track(db: Database, vid: Any) -> Any:
+    rows = await db.fetch(
+        "SELECT id, track_index, codec, channels, sample_rate, language, title, is_default"
+        " FROM audio_tracks WHERE video_id = $1",
+        str(vid),
+    )
+    assert len(rows) == 1
+    return rows[0]
+
+
+@pytest.mark.asyncio
+async def test_transcribed_before_the_probe_the_probe_s_codec_still_lands(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    """The silent streams of 2026-10-31: transcribe recorded track 0 before the video
+    was probed, the probe's insert did nothing on the conflict, and streaming read a
+    track with no codec as no audio. Now the probe's facts land on transcribe's row."""
+    from uuid import UUID
+
+    from maktaba_pipeline.audio.probe import commit_probe, parse_ffprobe_json
+
+    if not is_pg(db):
+        pytest.skip("the probe's commit (media_info, now()) runs on a Postgres home")
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    bare = await _track(db, vid)
+    assert bare["codec"] is None and bare["channels"] is None  # nothing probed yet
+
+    await commit_probe(db, video_id=UUID(str(vid)), result=parse_ffprobe_json(FFPROBE))
+    row = await _track(db, vid)
+    assert row["id"] == bare["id"]  # the transcript's track, filled in place
+    got = (row["codec"], row["channels"], row["sample_rate"], row["language"], row["title"])
+    assert got == ("opus", 2, 48000, "ara", "Arabic")
+    assert bool(row["is_default"])
+    t = await db.fetchval(
+        "SELECT audio_track_id FROM transcripts WHERE video_id = $1 AND is_active", str(vid)
+    )
+    assert t == row["id"]
+
+
+@pytest.mark.asyncio
+async def test_transcribe_records_the_probed_stream_s_facts(
+    db: Database, tmp_path: Path, fake: FakeTranscriber
+) -> None:
+    """Probed but with no track row (a merge took it, a probe of an older schema):
+    transcribe's row carries the probe's facts, not a bare row streaming reads as
+    silent; a bare row already there is filled, a row with facts keeps them."""
+    from maktaba_pipeline.engine.sql import dumps
+    from maktaba_pipeline.stt.settings import WhisperSettings
+
+    silence = np.zeros(16000, np.float32)
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    cast = "::jsonb" if is_pg(db) else ""
+    await db.execute(
+        f"INSERT INTO media_info (video_id, container, video_codec, raw_ffprobe)"
+        f" VALUES ($1, 'matroska,webm', 'h264', $2{cast})",
+        str(vid),
+        dumps(FFPROBE),
+    )
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    row = await _track(db, vid)
+    got = (row["track_index"], row["codec"], row["channels"], row["sample_rate"], row["language"])
+    assert got == (0, "opus", 2, 48000, "ara")
+
+    # a bare row from before the fix: the next transcription fills it
+    await db.execute(
+        "UPDATE audio_tracks SET codec = NULL, channels = NULL, sample_rate = NULL"
+        " WHERE video_id = $1",
+        str(vid),
+    )
+    await tr._store(db, vid, await fake.transcribe(silence), WhisperSettings())
+    row = await _track(db, vid)
+    assert (row["codec"], row["channels"], row["sample_rate"]) == ("opus", 2, 48000)
+
+    # a row with its own facts keeps them
+    await db.execute("UPDATE audio_tracks SET codec = 'aac' WHERE video_id = $1", str(vid))
+    await tr._store(db, vid, await fake.transcribe(silence), WhisperSettings())
+    assert (await _track(db, vid))["codec"] == "aac"
+
+
 @pytest.mark.asyncio
 async def test_progress_is_saved_while_it_runs_and_a_new_attempt_resumes_from_it(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch

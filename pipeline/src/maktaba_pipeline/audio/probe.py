@@ -268,7 +268,24 @@ INSERT INTO audio_tracks
        (video_id, track_index, codec, channels, sample_rate, language, title,
         is_default, disposition)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-ON CONFLICT (video_id, track_index) DO NOTHING
+ON CONFLICT (video_id, track_index) DO UPDATE SET
+    codec        = EXCLUDED.codec,
+    channels     = EXCLUDED.channels,
+    sample_rate  = EXCLUDED.sample_rate,
+    language     = EXCLUDED.language,
+    title        = EXCLUDED.title,
+    is_default   = EXCLUDED.is_default,
+    disposition  = EXCLUDED.disposition
+"""
+# The probe is the authority on a track's stream facts: a row someone else wrote first
+# (transcribe records the stream it decoded as track 0 with no codec, convert_mp4 sets
+# codec 'aac', a dedup merge moves a loser's row over) takes the probe's facts, and the
+# probe's choice of default holds across the video's tracks. Rows past the file's audio
+# streams (a file replaced by one with fewer) stay, as transcripts may name them, but
+# are no longer its default.
+_CLEAR_STALE_DEFAULT = """
+UPDATE audio_tracks SET is_default = false
+ WHERE video_id = $1 AND track_index >= $2 AND is_default
 """
 
 _SELECT_STATE_SQL = "SELECT state FROM videos WHERE id = $1"
@@ -294,8 +311,8 @@ async def commit_probe(
     """Persist a :class:`ProbeResult` and advance the video state.
 
     Returns the new ``videos.state``. Idempotent: running twice writes the
-    same media_info via UPSERT and skips audio_tracks via the unique
-    constraint; the FSM advance uses ``advance_after_stage`` whose
+    same media_info and audio_tracks facts via UPSERT (a track row another
+    stage wrote first takes the probe's facts); the FSM advance uses ``advance_after_stage`` whose
     terminal-drop guard handles double calls.
 
     The ``extract`` job is enqueued only when at least one audio track
@@ -331,11 +348,13 @@ async def commit_probe(
                 track.is_default,
                 json.dumps(track.disposition),
             )
+        if result.audio:
+            await db.execute(_CLEAR_STALE_DEFAULT, video_id, len(result.audio))
 
     # Idempotency: a re-probe on an already-advanced row is a no-op
-    # for the FSM. The UPSERT/DO-NOTHING above already rejected the
-    # duplicate writes; we just need to skip the advance + enqueue
-    # rather than raise IllegalStateTransition.
+    # for the FSM. The UPSERTs above rewrite the same facts; we just
+    # need to skip the advance + enqueue rather than raise
+    # IllegalStateTransition.
     state_row = await db.fetchrow(_SELECT_STATE_SQL, video_id)
     current_state = State(state_row["state"]) if state_row is not None else None
 
