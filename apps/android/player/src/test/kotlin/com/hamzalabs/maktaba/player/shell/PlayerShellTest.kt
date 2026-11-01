@@ -161,7 +161,6 @@ class PlayerShellTest {
         for ((section, title) in listOf(
             PlayerSection.Home to "Home",
             PlayerSection.LiveTv to "Live TV",
-            PlayerSection.Search to "Search",
         )) {
             compose.onNodeWithTag("section-${section.name}").performClick()
             compose.onNodeWithTag("placeholder").assertIsDisplayed()

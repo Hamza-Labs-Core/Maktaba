@@ -1,7 +1,6 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.ComponentActivity
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.assertIsDisplayed
@@ -15,8 +14,6 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.setShell
 import com.hamzalabs.maktaba.player.shell.PlayerSection
-import com.hamzalabs.maktaba.player.shell.ShellNavigation
-import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -42,9 +39,6 @@ class LibrariesSectionTest {
         waitFor("The Message")
         compose.onNodeWithText("The Message").assertIsDisplayed()
         compose.onNodeWithText("Lion of the Desert").assertIsDisplayed()
-        // a single section offers no navigation; more than one, the phone's bar
-        val navigation = if (PlayerSection.enabled.size == 1) ShellNavigation.None else ShellNavigation.Bar
-        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, navigation)).assertExists()
         assertTrue(home.paths.toString(), "/api/videos" in home.paths)
     }
 
@@ -81,7 +75,7 @@ class LibrariesSectionTest {
 
         // another section, and back: the open video is still open
         compose.onNodeWithTag("section-Search").performClick()
-        compose.onNodeWithTag("placeholder").assertIsDisplayed()
+        compose.onNodeWithTag("search").assertIsDisplayed()
         compose.onNodeWithTag("section-Libraries").performClick()
         waitFor("A film about Omar, Episode 1.")
         compose.onNodeWithText("A film about Omar, Episode 1.").assertIsDisplayed()

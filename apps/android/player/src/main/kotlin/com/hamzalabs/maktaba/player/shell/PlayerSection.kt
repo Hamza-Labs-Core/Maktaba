@@ -42,6 +42,7 @@ enum class PlayerSection(
          */
         val enabled: List<PlayerSection> = listOf(
             Libraries,
+            Search,
             Profile,
         )
 
