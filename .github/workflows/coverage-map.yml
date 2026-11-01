@@ -1,4 +1,4 @@
-# The affected-tests coverage map (tools/affected-tests, docs/ci.md): for each source
+# The affected-tests coverage map (tools/affected-tests, CONTRIBUTING.md): for each source
 # file, the tests that execute it. Published as the artifact `affected-tests-map`, which
 # `affected-tests` (the pre-push hook, CI's affected-tests job) fetches with gh.
 #
@@ -7,10 +7,15 @@
 #
 #   go      each Go package's unit tests with -coverpkg over its module (collect-go.sh)
 #   python  the pipeline's tests with pytest-cov --cov-context=test (one context per test)
-#   map     builds the map from those two and from the fragments CI's own jobs left on the
-#           same commit (MaktabaKit and the Mac Player via xccov, the Android modules via
-#           JaCoCo; those jobs run only when their apps change), on top of the previous map,
-#           so a platform not measured this time keeps its last measurement.
+#   map     builds the map from those two and from the fragments CI's own jobs left on main
+#           (MaktabaKit and the Mac Player via xccov, the Android modules via JaCoCo; those
+#           jobs run only when their apps change), on top of the previous map, so a platform
+#           not measured this time keeps its last measurement.
+#
+# Trust: it runs with main's code only. It checks out this workflow's own commit (main's
+# head; never the triggering run's head_sha), runs only for a CI run of a push to main in
+# this repository, restores and saves no cache (no setup-* cache, no actions/cache), and
+# reads the downloaded artifacts as data: JSON and XML the map builder parses, nothing run.
 #
 # Nothing here gates anything: a failing test leaves its tests unmapped, nothing more.
 
@@ -34,22 +39,23 @@ concurrency:
 
 jobs:
   go:
-    # main's pushes only (a workflow_run on main from a pull request's run never comes here,
-    # but say so), whatever CI concluded: the map measures, the gates judge
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push'
+    # a CI run of a push to main in this repository, or a manual run on main
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cloud/go.sum
+          cache: false
       - name: Per-package coverage
         run: |
           set -euo pipefail
@@ -63,20 +69,24 @@ jobs:
           retention-days: 3
 
   python:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push'
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-22.04
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
       - uses: astral-sh/setup-uv@v8.1.0
         with:
-          enable-cache: true
-          cache-dependency-glob: pipeline/uv.lock
+          enable-cache: false
       - name: Install pipeline deps
         working-directory: pipeline
         run: uv sync --frozen --all-extras
@@ -104,55 +114,66 @@ jobs:
 
   map:
     needs: [go, python]
-    if: always() && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.event == 'push')
+    if: >-
+      always()
+      && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+          || (github.event_name == 'workflow_run'
+              && github.event.workflow_run.event == 'push'
+              && github.event.workflow_run.head_branch == 'main'
+              && github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
           cache: false
+      # build the tool from main's checkout before any artifact arrives
+      - name: Build the map builder
+        working-directory: tools/affected-tests
+        run: go build -o "$RUNNER_TEMP/affected-tests" .
+      # data only from here on: coverage reports the builder parses, never run
       - uses: actions/download-artifact@v8.0.1
         continue-on-error: true
         with:
           name: coverage-go
-          path: build/coverage-go
+          path: ${{ runner.temp }}/data/coverage-go
       - uses: actions/download-artifact@v8.0.1
         continue-on-error: true
         with:
           name: coverage-python
-          path: build/coverage-python
-      # the xccov and JaCoCo fragments CI's Apple and Android jobs left on this commit
+          path: ${{ runner.temp }}/data/coverage-python
+      # the xccov and JaCoCo fragments CI's Apple and Android jobs left on main
       - uses: actions/download-artifact@v8.0.1
         if: github.event_name == 'workflow_run'
         continue-on-error: true
         with:
           pattern: coverage-fragment-*
-          path: build/coverage-fragments
+          path: ${{ runner.temp }}/data/coverage-fragments
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
       - name: Build the map
-        working-directory: tools/affected-tests
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          ws="$GITHUB_WORKSPACE"
-          args=(map -C "$ws" --out "$ws/build/affected-tests-map.json" --commit "$SHA")
+          bin="$RUNNER_TEMP/affected-tests"
+          data="$RUNNER_TEMP/data"
+          args=(map -C "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/affected-tests-map.json" --commit "$SHA")
           # the previous map: its sections this run did not measure are kept
-          if go run . fetch-map -C "$ws"; then
-            args+=(--previous "$(git -C "$ws" rev-parse --git-common-dir)/affected-tests/affected-tests-map.json")
+          if "$bin" fetch-map -C "$GITHUB_WORKSPACE"; then
+            args+=(--previous "$GITHUB_WORKSPACE/.git/affected-tests/affected-tests-map.json")
           fi
-          [ -f "$ws/build/coverage-go/index.tsv" ] && args+=(--go "$ws/build/coverage-go")
-          [ -f "$ws/build/coverage-python/python.coverage.json" ] && args+=(--python "$ws/build/coverage-python/python.coverage.json")
-          [ -d "$ws/build/coverage-fragments" ] && args+=(--fragments "$ws/build/coverage-fragments")
-          go run . "${args[@]}"
+          [ -f "$data/coverage-go/index.tsv" ] && args+=(--go "$data/coverage-go")
+          [ -f "$data/coverage-python/python.coverage.json" ] && args+=(--python "$data/coverage-python/python.coverage.json")
+          [ -d "$data/coverage-fragments" ] && args+=(--fragments "$data/coverage-fragments")
+          "$bin" "${args[@]}"
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: affected-tests-map
-          path: build/affected-tests-map.json
+          path: ${{ runner.temp }}/affected-tests-map.json
           retention-days: 90
