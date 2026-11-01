@@ -6,9 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -26,6 +26,9 @@ import com.hamzalabs.maktaba.tv.ui.screens.AccountScreen
 import com.hamzalabs.maktaba.tv.ui.screens.HomeScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibrariesScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibraryScreen
+import com.hamzalabs.maktaba.tv.ui.screens.LivePlayerScreen
+import com.hamzalabs.maktaba.tv.ui.screens.LiveScreen
+import com.hamzalabs.maktaba.tv.ui.screens.LiveState
 import com.hamzalabs.maktaba.tv.ui.screens.LocalChooseHome
 import com.hamzalabs.maktaba.tv.ui.screens.PlayerScreen
 import com.hamzalabs.maktaba.tv.ui.screens.SearchScreen
@@ -38,15 +41,28 @@ sealed interface Place {
     data class Library(val id: String, val name: String) : Place
     data class Video(val id: String) : Place
     data class Player(val id: String, val title: String, val startMs: Long) : Place
+    data class LivePlayer(val channelId: String) : Place
 }
 
-/** Signed in at a home: the tab bar (Home, Libraries, Search, Account) and what opens from it. */
+/** The tab bar's sections, in order. */
+enum class TvTab { Home, Libraries, Search, Live, Account }
+
+/** The tabs shown: Live TV only when this user may watch a channel ([hasLive]). */
+fun tvTabs(hasLive: Boolean): List<TvTab> = TvTab.entries.filter { it != TvTab.Live || hasLive }
+
+/** Signed in at a home: the tab bar (Home, Libraries, Search, Live TV, Account) and what opens from it. */
 @Composable
 fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
     val api = remember(client) { TvApi(client) }
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
     val search = remember(client) { SearchState() }
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val live = remember(client) { LiveState() }
+    // Live TV shows once the home says this user has a channel to watch
+    var hasLive by remember(client) { mutableStateOf(false) }
+    LaunchedEffect(api) { hasLive = api.hasChannels() }
+    val shown = tvTabs(hasLive)
+    var chosen by rememberSaveable { mutableStateOf(TvTab.Home) }
+    val tab = if (chosen in shown) chosen else TvTab.Home
     // a tab's first item takes focus at launch and back from a screen; not while the tab bar has it
     var focusContent by remember(client) { mutableStateOf(true) }
     val signedOut = { app.session.signedOut() }
@@ -58,25 +74,35 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
     fun back() { if (stack.size > 1) stack.removeAt(stack.lastIndex) }
     BackHandler(enabled = stack.size > 1) { back() }
 
-    val tabs = listOf(
-        stringResource(R.string.tab_home),
-        stringResource(R.string.tab_libraries),
-        stringResource(R.string.tab_search),
-        stringResource(R.string.tab_account),
-    )
+    val tabs = shown.map {
+        stringResource(
+            when (it) {
+                TvTab.Home -> R.string.tab_home
+                TvTab.Libraries -> R.string.tab_libraries
+                TvTab.Search -> R.string.tab_search
+                TvTab.Live -> R.string.tab_live
+                TvTab.Account -> R.string.tab_account
+            },
+        )
+    }
 
     // a failure that says the home does not answer offers another home
     CompositionLocalProvider(LocalChooseHome provides { app.session.switchHome() }) {
         when (val top = stack.last()) {
             Place.Tabs -> Box(Modifier.fillMaxSize()) {
-                if (tab == 0) LibraryBackdrop()
+                if (tab == TvTab.Home) LibraryBackdrop()
                 Column(Modifier.fillMaxSize()) {
-                    TopBar(tabs = tabs, selectedIndex = tab, onSelect = { if (it != tab) focusContent = false; tab = it })
+                    TopBar(
+                        tabs = tabs,
+                        selectedIndex = shown.indexOf(tab),
+                        onSelect = { i -> shown.getOrNull(i)?.let { if (it != tab) focusContent = false; chosen = it } },
+                    )
                     when (tab) {
-                        0 -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                        1 -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
-                        2 -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                        else -> AccountScreen(app, user)
+                        TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                        TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
+                        TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
+                        TvTab.Live -> LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+                        TvTab.Account -> AccountScreen(app, user)
                     }
                 }
             }
@@ -89,6 +115,7 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
                 onBack = ::back,
             )
             is Place.Player -> PlayerScreen(app, client, top.id, top.title, top.startMs, onBack = ::back, signedOut = signedOut)
+            is Place.LivePlayer -> LivePlayerScreen(app, api, top.channelId, onBack = ::back, signedOut = signedOut)
         }
     }
 }
