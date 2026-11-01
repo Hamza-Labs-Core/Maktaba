@@ -39,11 +39,32 @@ jobs:
 
       # xcodebuild, not `swift test`: the runner's SwiftPM copies Localizable.xcstrings
       # as-is instead of compiling it, so its Arabic and plural forms would not resolve
+      # with code coverage: on a push to main it feeds the affected-tests map (below)
       - name: MaktabaKit tests
         working-directory: apps/apple/MaktabaKit
         run: |
           xcodebuild test -scheme MaktabaKit -destination 'platform=macOS' \
-            -derivedDataPath "$RUNNER_TEMP/maktabakit" CODE_SIGNING_ALLOWED=NO
+            -derivedDataPath "$RUNNER_TEMP/maktabakit" CODE_SIGNING_ALLOWED=NO \
+            -enableCodeCoverage YES -resultBundlePath "$RUNNER_TEMP/maktabakit.xcresult"
+
+      # tools/affected-tests: which source files MaktabaKit's tests execute (coverage-map.yml
+      # builds the map from it). Never fails the gate.
+      - name: Coverage for the affected-tests map
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p build/coverage-fragment
+          xcrun xccov view --report --json "$RUNNER_TEMP/maktabakit.xcresult" >build/coverage-fragment/maktabakit.xccov.json
+          echo "apple-kit:apps/apple/MaktabaKit/Tests/MaktabaKitTests" >build/coverage-fragment/maktabakit.xccov.json.id
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-fragment-apple-kit
+          path: build/coverage-fragment
+          if-no-files-found: ignore
+          retention-days: 3
 
       # unsigned simulator and Mac builds: compiling each app writes its .stringsdata
       - name: Build the apps
@@ -145,14 +166,37 @@ jobs:
         working-directory: apps/apple
         run: |
           set -euo pipefail
+          # a push to main measures coverage for the affected-tests map
+          cover=()
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then cover=(-enableCodeCoverage YES); fi
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
-            -destination platform=macOS -derivedDataPath "$DERIVED-mac" \
+            -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
             CODE_SIGN_ENTITLEMENTS="$PWD/PlayerMacTests/UI/PlayerMacUITests.entitlements" \
             -resultBundlePath "$RESULTS/mac.xcresult" \
             -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
             -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
             -only-testing "Maktaba Player Mac UITests"
+
+      # tools/affected-tests: which source files the Mac Player's tests execute. The iPhone and
+      # iPad runs are not measured (they take most of an hour as it is): their tests are
+      # found by the UI search and by name.
+      - name: Coverage for the affected-tests map
+        if: matrix.device == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p build/coverage-fragment
+          xcrun xccov view --report --json "$RESULTS/mac.xcresult" >build/coverage-fragment/player-mac.xccov.json
+          echo "apple-mac:apps/apple/PlayerMacTests" >build/coverage-fragment/player-mac.xccov.json.id
+      - if: matrix.device == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-fragment-apple-mac
+          path: build/coverage-fragment
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: Keep the screenshots and results
         if: always()

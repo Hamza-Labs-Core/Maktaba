@@ -172,6 +172,81 @@ to gatekeep.
 
 ---
 
+## Changed code needs its tests changed (affected-tests)
+
+The rule: a push that changes app or service code also changes the tests
+that cover that code. It exists because PR #469 changed the Apple Player's
+sign-in and the Mac UI tests that tap it were left stale.
+
+Install the pre-push hook once (it covers every worktree of the clone, and
+leaves the pre-commit hooks alone):
+
+```sh
+tools/affected-tests/install-hook.sh
+```
+
+On `git push` it runs [`tools/affected-tests`](tools/affected-tests/main.go)
+on your branch against `origin/main`. It prints the affected tests by platform,
+then blocks the push in two cases:
+
+- a changed source file has **none of its tests changed**, or
+- a test still uses a string or accessibility identifier that **no source has
+  any more**. That test is stale and will fail.
+
+A UI change also needs a change on each test platform whose tests use the
+identifier or phrase it touched. Updating the iPhone UITests does not cover
+the Mac UI tests.
+
+When the push passes, the hook builds and runs the affected tests that are
+safe to run locally: Go (`-short`), Python, web (vitest), Android/JVM unit
+tests and MaktabaKit. Apple UI test targets are **only compiled**
+(`xcodebuild build-for-testing`, `CODE_SIGNING_ALLOWED=NO`). No UI test and
+no simulator ever runs from the hook. CI runs those.
+
+- When no test change is right, add a trailer to any commit in the push:
+  `No-Test-Change: <why>`.
+- To run the gate without the tests: `AFFECTED_TESTS_NO_RUN=1 git push`.
+- To skip the hook once: `git push --no-verify`. CI's `affected-tests` job
+  applies the same gate to the pull request, and it honours the same trailer.
+- To ask without pushing: `cd tools/affected-tests && go run . list` (or
+  `gate`, or `check`; `--range a...b`, `--json`).
+
+**How it finds a file's tests.** It uses three sources, and the web adds a
+fourth:
+
+1. **The coverage map.** After CI on each push to `main`,
+   [`coverage-map.yml`](.github/workflows/coverage-map.yml) measures which
+   tests execute which files and publishes the artifact `affected-tests-map`.
+   The tool fetches it with `gh` and caches it for 6 hours in
+   `.git/affected-tests/`. Without `gh`, or with no map yet, it works from
+   the searches alone. Granularity by platform:
+
+   | Platform                         | Measured as                                                                                                                                   |
+   | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+   | Go                               | Per package. Each package's `-short` tests run with `-coverpkg` over the whole module, so tests in other packages are found too.              |
+   | Python pipeline                  | Per test (pytest-cov `--cov-context=test`; import-time lines are left out).                                                                   |
+   | Web                              | Per test file. The static import graph, the same one `vitest related` walks. It is read live, with no CI step.                                |
+   | MaktabaKit                       | Per test target (xccov).                                                                                                                      |
+   | Mac Player                       | Per test target (xccov over the Mac tests and Mac UI tests run).                                                                              |
+   | Android Player/Remote            | Per module (JaCoCo over each module's JVM unit tests, that module's own classes).                                                             |
+   | iPhone/iPad UITests, TV, desktop | Not measured: the iPhone run already takes most of an hour. Found by the UI search and by name.                                               |
+
+2. **The UI search.** For a changed UI file it collects the accessibility
+   identifiers (`.accessibilityIdentifier`, Compose `testTag`, web
+   `data-testid`) and the user-visible strings on the changed lines. It
+   resolves keyed strings through the string tables: `words.text(.byCode)`
+   becomes "With a code", and `t("key")` becomes its text in `en.json`.
+   Then it looks for those strings in the tests.
+3. **Naming.** `foo.go` → `foo_test.go` (and the package's other tests),
+   `Foo.swift` → `FooTests.swift`, a Player screen folder `Home/` →
+   `PlayerHomeUITests.swift`, `foo.py` → `test_foo.py`, `Foo.kt` →
+   `FooTest.kt`, `foo.ts` → `foo.test.ts`, `x.sh` → `x-test.sh`.
+
+A changed source file with no test found by any source passes when some test
+of its project changed. Rust files count their own `#[cfg(test)]` module.
+
+---
+
 ## Troubleshooting
 
 **`make dev` is taking forever on a cold cache.**
@@ -230,6 +305,10 @@ gates from [Story 22.1](specs/epics/22-devops/story-22-01-ci-pipeline.md):
 5. `perf-ci` — reduced perf suite (sub-2-minute fixture).
 6. `build-artifacts` — cross-compile for linux/amd64, linux/arm64,
    darwin/arm64.
+
+It also holds `affected-tests`: changed code needs its tests changed, or a
+`No-Test-Change: <reason>` trailer. See
+[Changed code needs its tests changed](#changed-code-needs-its-tests-changed-affected-tests).
 
 If you need to merge without all six green (production fire, etc.),
 add the `force-merge` label and a `force-merge: <reason>` line to the

@@ -297,6 +297,36 @@ jobs:
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_pr-body-check.yml
 
+  # Code that changes needs its tests changed too (tools/affected-tests, docs/ci.md): the
+  # same gate as the pre-push hook (.githooks/pre-push), so a push that skipped the hook
+  # cannot get past it. A commit in the pull request with a `No-Test-Change: <reason>`
+  # trailer lets it through. The coverage map comes from coverage-map.yml (main); without
+  # one the gate works from its searches. Seconds: it reads git, it runs no test.
+  affected-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # the coverage map artifact
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      - name: The hook and scripts
+        run: shellcheck -x .githooks/pre-push tools/affected-tests/*.sh
+      - name: Changed code has its tests changed
+        working-directory: tools/affected-tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: go run . gate -C ../.. --range "$BASE...$HEAD"
+
   fork-rerun-comment:
     # EC2: bot comment on fork PRs telling maintainers how to rerun
     # the gated jobs once they've reviewed the diff.
@@ -354,6 +384,7 @@ jobs:
       - desktop-player
       - apple-apps
       - pr-body-check
+      - affected-tests
     if: always()
     runs-on: ubuntu-22.04
     steps:
@@ -370,7 +401,7 @@ jobs:
           changes=$(echo "$RESULTS" | jq -r '.changes.result // "missing"')
           echo "  changes: $changes"
           if [ "$changes" != success ]; then fail=1; fi
-          for gate in lint unit integration replica e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app android-apps android-tv desktop-player apple-apps pr-body-check; do
+          for gate in lint unit integration replica e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app android-apps android-tv desktop-player apple-apps pr-body-check affected-tests; do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in

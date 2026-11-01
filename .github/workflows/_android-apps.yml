@@ -64,6 +64,36 @@ jobs:
             :core:lintDebug :player:lintPhoneDebug :remote:lintPhoneDebug \
             assembleDebug
 
+      # tools/affected-tests: which source files each module's unit tests execute (JaCoCo,
+      # added by an init script: no build file changes). On a push to main only, after the
+      # gate above, and never failing it; coverage-map.yml builds the map from it.
+      - name: Coverage for the affected-tests map
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --quiet --init-script ../../tools/affected-tests/android-coverage.gradle \
+            :client:jacocoTestReport :core:createDebugUnitTestCoverageReport \
+            :remote:createPhoneDebugUnitTestCoverageReport :player:createPhoneDebugUnitTestCoverageReport
+          out=../../build/coverage-fragment
+          mkdir -p "$out"
+          for m in client core remote player; do
+            # build/reports/jacoco/test/jacocoTestReport.xml (JVM), build/reports/coverage/test/<variant>/report.xml
+            report=$(find "$m/build/reports/jacoco" "$m/build/reports/coverage" -name '*.xml' 2>/dev/null | head -n1 || true)
+            if [ -z "$report" ]; then echo "::warning::no coverage report for $m"; continue; fi
+            cp "$report" "$out/$m.jacoco.xml"
+            echo "android:apps/android/$m/src/test" >"$out/$m.jacoco.xml.id"
+          done
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        continue-on-error: true
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-fragment-android
+          path: build/coverage-fragment
+          if-no-files-found: ignore
+          retention-days: 3
+
       - name: Reports
         if: failure()
         uses: actions/upload-artifact@v7.0.1
