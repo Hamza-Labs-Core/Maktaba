@@ -77,7 +77,14 @@ final class PlayerShellUITests: PlayerUITestCase {
             launchSignedIn(sections: ["all"], section: "search", open: route)
             XCTAssertTrue(element(id).waitForExistence(timeout: 15), "\(route) opens \(id)")
         }
-        XCTAssertTrue(app.staticTexts["v3 @ 90"].exists, "the player's route carries its time")
+        // the player's route carries its time: the stream opens at 90 s (story 48.23)
+        let opened = { self.home.requests.contains { r in
+            r.method == "POST" && r.path == "/api/stream/sessions"
+                && (try? JSONSerialization.jsonObject(with: r.body) as? [String: Any]).map { $0["video_id"] as? String == "v3" && $0["start_sec"] as? Int == 90 } == true
+        } }
+        let end = Date().addingTimeInterval(15)
+        while !opened(), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.25)) }
+        XCTAssertTrue(opened(), "the player's route carries its time")
         shot("route-watch")
     }
 
