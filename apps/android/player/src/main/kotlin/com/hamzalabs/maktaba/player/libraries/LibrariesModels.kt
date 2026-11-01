@@ -24,7 +24,7 @@ import com.hamzalabs.maktaba.core.api.librarySummaries
 import com.hamzalabs.maktaba.core.api.markWatched
 import com.hamzalabs.maktaba.core.api.series
 import com.hamzalabs.maktaba.core.api.seriesEpisodes
-import com.hamzalabs.maktaba.core.api.seriesList
+import com.hamzalabs.maktaba.core.api.seriesPage
 import com.hamzalabs.maktaba.core.api.setPinnedLibraries
 import com.hamzalabs.maktaba.core.api.videoFacets
 import com.hamzalabs.maktaba.core.api.videoPage
@@ -110,10 +110,37 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
         librariesLoaded = true
     }
 
-    suspend fun loadSeries() = loading(signedOut, "player series", { seriesProblem = it }) {
-        series = client.seriesList()
-        seriesProblem = null
-        seriesLoaded = true
+    /** The Series tab's next page, null once the home sent a short one. */
+    private var seriesNext: Int? = null
+    private var seriesBusy = false
+    val moreSeries: Boolean get() = seriesNext != null
+
+    /** The Series tab from its first page (the first look, a refresh, Try again). */
+    suspend fun loadSeries() = seriesPage(0)
+
+    /**
+     * The Series tab's next page, asked for as the grid nears its end: a home with thousands of
+     * series shows the first at once and the rest as the person scrolls.
+     */
+    suspend fun loadMoreSeries() {
+        val page = seriesNext ?: return
+        if (!seriesBusy) seriesPage(page)
+    }
+
+    private suspend fun seriesPage(page: Int) {
+        seriesBusy = true
+        try {
+            loading(signedOut, "player series", { seriesProblem = it }) {
+                val r = client.seriesPage(page)
+                val have = if (page == 0) emptySet() else series.map { it.id }.toSet()
+                series = (if (page == 0) emptyList() else series) + r.items.filter { it.id !in have }
+                seriesNext = if (r.more) page + 1 else null
+                seriesProblem = null
+                seriesLoaded = true
+            }
+        } finally {
+            seriesBusy = false
+        }
     }
 
     /**

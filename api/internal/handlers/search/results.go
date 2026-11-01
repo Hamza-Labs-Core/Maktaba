@@ -579,8 +579,13 @@ func placeholders[T any](vals []T, args *[]any) string {
 // occurs in the segment ($2 is the lowercased query).
 const sqliteScore = `((length(lower(s.text)) - length(replace(lower(s.text), $2, ''))) * 1.0 / max(length($2), 1))`
 
-// runFTSVideos groups the full-text matches per video: every matching segment
-// of every video's active transcript is counted (no cap on the passages), the
+// ftsCandidates caps the matching segments one keyword search ranks. A word in
+// millions of segments (الله in a lecture library) would otherwise rank them all
+// and take a minute; a rarer word has fewer matches and loses none.
+var ftsCandidates = 5000
+
+// runFTSVideos groups the full-text matches per video: the matching segments of
+// every video's active transcript are counted (up to ftsCandidates of them), the
 // best rank is the video's match quality. Postgres: the GIN index on
 // search_tsv finds the segments; SQLite: LIKE on the text.
 func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filters) ([]savedVideo, error) {
@@ -603,16 +608,21 @@ func (h *Handler) runFTSVideos(ctx context.Context, q string, limit int, f Filte
 		args = []any{q}
 		where := append([]string{`s.search_tsv @@ plainto_tsquery('maktaba_search', $1)`}, whereVideos(f, &args)...)
 		args = append(args, limit)
+		args = append(args, ftsCandidates)
 		query = `
-			SELECT t.video_id::text, count(*),
-			       max(ts_rank(s.search_tsv, plainto_tsquery('maktaba_search', $1))) AS best
-			FROM transcript_segments s
-			JOIN transcripts t ON t.id = s.transcript_id AND t.is_active
-			JOIN videos v ON v.id = t.video_id AND v.deleted_at IS NULL
-			WHERE ` + strings.Join(where, " AND ") + `
-			GROUP BY t.video_id
-			ORDER BY best DESC, count(*) DESC, max(v.created_at) DESC, t.video_id
-			LIMIT $` + strconv.Itoa(len(args))
+			SELECT m.video_id::text, count(*),
+			       max(ts_rank(m.search_tsv, plainto_tsquery('maktaba_search', $1))) AS best
+			FROM (
+				SELECT t.video_id, v.created_at, s.search_tsv
+				FROM transcript_segments s
+				JOIN transcripts t ON t.id = s.transcript_id AND t.is_active
+				JOIN videos v ON v.id = t.video_id AND v.deleted_at IS NULL
+				WHERE ` + strings.Join(where, " AND ") + `
+				LIMIT $` + strconv.Itoa(len(args)) + `
+			) m
+			GROUP BY m.video_id
+			ORDER BY best DESC, count(*) DESC, max(m.created_at) DESC, m.video_id
+			LIMIT $` + strconv.Itoa(len(args)-1)
 	}
 	rows, err := h.DB.QueryContext(ctx, query, args...)
 	if err != nil {
