@@ -173,14 +173,20 @@ class PlayerShellTest {
 
     @Test
     fun backAtASectionsRootKeepsTheRoot() {
-        var answer: Boolean? = null
+        val answers = mutableListOf<Boolean>()
         compose.setShell(sections = listOf(PlayerSection.Home)) { route, nav ->
-            Text("root $route", Modifier.testTag("root").clickable { answer = nav.back() })
+            when (route) {
+                // a pushed screen that goes back twice in one tap: the second reaches the root
+                is Route.Video -> Text("video", Modifier.testTag("video").clickable { answers += nav.back(); answers += nav.back() })
+                else -> Text("root $route", Modifier.testTag("root").clickable {
+                    if (nav.canGoBack) answers += nav.back() else nav.open(Route.Video("v1"))
+                })
+            }
         }
         compose.onNodeWithTag("root").performClick()
-        compose.onNodeWithTag("root").performClick()
+        compose.onNodeWithTag("video").performClick()
 
-        assertEquals("nothing to go back to", false, answer)
+        assertEquals("back once, then nothing to go back to", listOf(true, false), answers)
         compose.onNodeWithText("root Home").assertIsDisplayed()
     }
 }

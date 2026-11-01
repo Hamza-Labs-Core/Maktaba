@@ -700,6 +700,10 @@ Append here: date, session, one to five lines on what changed. Newest last.
     `strings_<screen>.xml` tables are checked by the new `PlayerTranslationsTest` (and lint).
   - Gotcha: with many agents building at once the Gradle daemon died of GC thrashing; pass
     `-Dorg.gradle.jvmargs=-Xmx6g`.
+  - Review fixes: the Libraries browser's state is kept per signed-in home (`PlayerHome.keep`), so
+    a section switch keeps its open video, library and search, and re-selecting Libraries closes
+    the video (`OnReselect`); `PlayerNavigator.back()` never pops a section's root (Navigation
+    Compose will pop it and leave the section blank); `FakeHome.requests` is a locked copy.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
