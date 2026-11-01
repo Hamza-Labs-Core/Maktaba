@@ -42,8 +42,9 @@ class LibrariesSectionTest {
         waitFor("The Message")
         compose.onNodeWithText("The Message").assertIsDisplayed()
         compose.onNodeWithText("Lion of the Desert").assertIsDisplayed()
-        // a single section offers no navigation
-        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, ShellNavigation.None)).assertExists()
+        // a single section offers no navigation; more than one, the phone's bar
+        val navigation = if (PlayerSection.enabled.size == 1) ShellNavigation.None else ShellNavigation.Bar
+        compose.onNode(SemanticsMatcher.expectValue(ShellNavigationKey, navigation)).assertExists()
         assertTrue(home.paths.toString(), "/api/videos" in home.paths)
     }
 

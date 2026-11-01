@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- الملف الشخصي والإعدادات في مكتبة المشغّل (Epic 48.31). -->
+<resources>
+    <string name="profile_library">مكتبتك</string>
+    <string name="profile_history">سجل المشاهدة</string>
+    <string name="profile_favorites">المفضلة</string>
+    <string name="profile_playlists">قوائم التشغيل</string>
+    <string name="profile_account">الحساب</string>
+    <string name="profile_sessions">الجلسات</string>
+    <string name="profile_settings">إعدادات هذا الجهاز</string>
+    <string name="profile_theme">المظهر</string>
+    <string name="profile_language">اللغة</string>
+    <string name="profile_language_system">لغة النظام</string>
+    <string name="profile_language_english">English</string>
+    <string name="profile_language_arabic">العربية</string>
+    <string name="profile_language_system_settings">اللغة في إعدادات أندرويد</string>
+    <string name="profile_playback">التشغيل</string>
+    <string name="profile_help_about">المساعدة وحول التطبيق</string>
+    <string name="profile_help">المساعدة</string>
+    <string name="profile_about_version">مكتبة المشغّل %1$s (البناء %2$s)</string>
+    <string name="profile_about_home_version">الجهاز الرئيسي: %1$s</string>
+    <string name="profile_unknown">غير معروف</string>
+    <string name="profile_diagnostics">التشخيص</string>
+    <string name="profile_diagnostics_about">آخر مشكلة سجّلها هذا التطبيق على هذا الجهاز، دون أي بيانات شخصية. شاركها مع من يدير الجهاز الرئيسي إن طلبها.</string>
+    <string name="profile_diagnostics_none">لم تُسجَّل أي مشكلة</string>
+    <string name="profile_diagnostics_clear">مسح</string>
+    <string name="profile_sign_out_title">تسجيل الخروج من %1$s؟</string>
+    <string name="profile_sign_out_body">يمكنك تسجيل الدخول مجددًا بكلمة المرور أو برمز.</string>
+    <string name="profile_cancel">إلغاء</string>
+    <string name="profile_untitled">بلا عنوان</string>
+    <string name="profile_load_more">عرض المزيد</string>
+
+    <string name="profile_history_empty">لم تشاهد شيئًا بعد</string>
+    <string name="profile_history_watched">تمت المشاهدة</string>
+    <plurals name="profile_history_times">
+        <item quantity="zero">شوهد %1$d مرة</item>
+        <item quantity="one">شوهد مرة واحدة</item>
+        <item quantity="two">شوهد مرتين</item>
+        <item quantity="few">شوهد %1$d مرات</item>
+        <item quantity="many">شوهد %1$d مرة</item>
+        <item quantity="other">شوهد %1$d مرة</item>
+    </plurals>
+    <string name="profile_history_remove">إزالة %1$s من السجل</string>
+
+    <string name="profile_favorites_empty">لا مفضلات بعد</string>
+    <string name="profile_playlists_empty">لا قوائم تشغيل بعد. أنشئ واحدة من صفحة الجهاز الرئيسي على الويب.</string>
+    <string name="profile_playlist_empty">قائمة التشغيل هذه فارغة</string>
+    <string name="profile_playlist_play">تشغيل</string>
+    <string name="profile_playlist_play_named">تشغيل %1$s</string>
+
+    <string name="profile_sessions_about">المتصفحات المسجَّل دخولها إلى الجهاز الرئيسي باسمك. سجّل خروج أي متصفح لا تعرفه.</string>
+    <string name="profile_sessions_empty">لا يوجد متصفح مسجَّل دخوله باسمك</string>
+    <string name="profile_session_unknown">متصفح</string>
+    <string name="profile_session_last_seen">آخر استخدام %1$s</string>
+    <string name="profile_session_current">هذا المتصفح</string>
+    <string name="profile_session_sign_out">تسجيل الخروج</string>
+
+    <string name="profile_autoplay_next">تشغيل الحلقة التالية تلقائيًا</string>
+    <string name="profile_resume_without_asking">المتابعة دون سؤال</string>
+    <string name="profile_subtitles_on">الترجمة مفعّلة افتراضيًا</string>
+    <string name="profile_subtitle_language">لغة الترجمة</string>
+    <string name="profile_subtitle_language_default">لغة الفيديو نفسه</string>
+    <string name="profile_subtitle_size">حجم الترجمة</string>
+    <string name="profile_subtitle_small">صغير</string>
+    <string name="profile_subtitle_medium">متوسط</string>
+    <string name="profile_subtitle_large">كبير</string>
+    <string name="profile_quality_wifi">الجودة على Wi-Fi</string>
+    <string name="profile_quality_mobile">الجودة على بيانات الجوال</string>
+    <string name="profile_quality_original">الأصلية</string>
+    <string name="profile_quality_1080">1080p</string>
+    <string name="profile_quality_720">720p</string>
+    <string name="profile_quality_480">480p</string>
+
+    <string name="profile_just_now">الآن</string>
+    <plurals name="profile_minutes_ago">
+        <item quantity="zero">منذ %1$d دقيقة</item>
+        <item quantity="one">منذ دقيقة</item>
+        <item quantity="two">منذ دقيقتين</item>
+        <item quantity="few">منذ %1$d دقائق</item>
+        <item quantity="many">منذ %1$d دقيقة</item>
+        <item quantity="other">منذ %1$d دقيقة</item>
+    </plurals>
+    <plurals name="profile_hours_ago">
+        <item quantity="zero">منذ %1$d ساعة</item>
+        <item quantity="one">منذ ساعة</item>
+        <item quantity="two">منذ ساعتين</item>
+        <item quantity="few">منذ %1$d ساعات</item>
+        <item quantity="many">منذ %1$d ساعة</item>
+        <item quantity="other">منذ %1$d ساعة</item>
+    </plurals>
+    <plurals name="profile_days_ago">
+        <item quantity="zero">منذ %1$d يوم</item>
+        <item quantity="one">منذ يوم</item>
+        <item quantity="two">منذ يومين</item>
+        <item quantity="few">منذ %1$d أيام</item>
+        <item quantity="many">منذ %1$d يومًا</item>
+        <item quantity="other">منذ %1$d يوم</item>
+    </plurals>
+    <plurals name="profile_videos">
+        <item quantity="zero">%1$d فيديو</item>
+        <item quantity="one">فيديو واحد</item>
+        <item quantity="two">فيديوهان</item>
+        <item quantity="few">%1$d فيديوهات</item>
+        <item quantity="many">%1$d فيديو</item>
+        <item quantity="other">%1$d فيديو</item>
+    </plurals>
+</resources>

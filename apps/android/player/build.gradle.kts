@@ -52,6 +52,13 @@ android {
     androidResources {
         generateLocaleConfig = true
     }
+    // Before Android 13 the language is chosen in the app (48.31): a store install keeps every
+    // language's resources, so Arabic is there when chosen on an English phone
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
 
     buildFeatures {
         compose = true
