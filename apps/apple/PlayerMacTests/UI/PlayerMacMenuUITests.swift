@@ -93,7 +93,7 @@ final class PlayerMacMenuUITests: XCTestCase {
     // MARK: the player
 
     /// Playing: the player covers the whole window, then the whole screen on ⌃⌘F, and back;
-    /// Playback ▸ Stop closes it. Its items are off until the video plays.
+    /// Playback ▸ Stop closes it. Its items are on while the player is open.
     func testThePlayerFillsTheWindowAndGoesFullScreen() throws {
         launchSignedIn(sections: "all", section: "home")
         // an On Deck card: a video not started, so its page offers Play
@@ -110,7 +110,8 @@ final class PlayerMacMenuUITests: XCTestCase {
 
         app.menuBars.menuBarItems["Playback"].click()
         XCTAssertTrue(app.menuBars.menuItems["Stop"].isEnabled, "Stop while a video is open")
-        XCTAssertFalse(app.menuBars.menuItems["Play/Pause"].isEnabled, "no picture yet (the mock has no video)")
+        // the watch screen makes its player as it opens, before a picture: Play/Pause is on
+        XCTAssertTrue(app.menuBars.menuItems["Play/Pause"].isEnabled, "Play/Pause while the player is open")
         app.typeKey(.escape, modifierFlags: [])
 
         let window = app.windows.firstMatch
