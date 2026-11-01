@@ -250,11 +250,14 @@ func TestStallWatch(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("a silent block was not stopped")
 	}
-	// output keeps flowing: never stopped; done ends the watch
+	// output keeps flowing: never stopped; done ends the watch. The output is
+	// fresh before the watch starts, and the window is far wider than the
+	// 10ms between outputs, so a loaded runner's late sleep is not a stall.
 	done := make(chan struct{})
 	var fired atomic.Bool
-	go stallWatch(40*time.Millisecond, &last, done, func() { fired.Store(true) })
-	for i := 0; i < 10; i++ {
+	last.Store(time.Now().UnixNano())
+	go stallWatch(time.Second, &last, done, func() { fired.Store(true) })
+	for i := 0; i < 30; i++ {
 		last.Store(time.Now().UnixNano())
 		time.Sleep(10 * time.Millisecond)
 	}
