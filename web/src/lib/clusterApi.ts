@@ -11,6 +11,9 @@ export interface ClusterHome {
   /** false on a home that cannot take machines (e.g. SQLite) */
   roles_supported: boolean;
   roles_reason: string | null;
+  /** roles_reason's code (machines.home.reason.<code>) and its params */
+  roles_reason_code?: string;
+  roles_reason_params?: Record<string, string>;
   /** story 31.3: the home's own storage check, per share */
   storage?: NodeStorage | null;
   /** the home's "share -> local mount" override; absent: its own mounts */

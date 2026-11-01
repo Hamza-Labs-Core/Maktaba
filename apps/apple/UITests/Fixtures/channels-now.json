@@ -1,0 +1,127 @@
+{
+ "server_time": "{{now}}",
+ "channels": [
+  {
+   "channel": {
+    "id": "ch-1",
+    "number": 1,
+    "name": "Lectures TV",
+    "slug": "lectures-tv",
+    "logo_url": "/api/channels/ch-1/logo"
+   },
+   "current": {
+    "channel_id": "ch-1",
+    "kind": "program",
+    "start": "{{now-2200}}",
+    "stop": "{{now+500}}",
+    "title": "Tafsir al-Kahf, part 2",
+    "sub_title": "Tafsir al-Kahf, part 2",
+    "desc": "The story of the people of the cave.",
+    "poster": "/api/videos/v5/poster",
+    "series": "Tafsir al-Kahf",
+    "season": 1,
+    "episode": 2,
+    "on_air": "Tafsir al-Kahf, part 2",
+    "strip_title": "Tafsir al-Kahf, part 2",
+    "strip_series": "Tafsir al-Kahf",
+    "is_live": true,
+    "progress": 0.8148
+   },
+   "next": {
+    "channel_id": "ch-1",
+    "kind": "program",
+    "start": "{{now+500}}",
+    "stop": "{{now+3200}}",
+    "title": "تفسير سورة الكهف، الجزء ٣",
+    "sub_title": "تفسير سورة الكهف، الجزء ٣",
+    "desc": "قصة صاحب الجنتين.",
+    "poster": "/api/videos/v6/poster",
+    "series": "Tafsir al-Kahf",
+    "season": 1,
+    "episode": 3,
+    "on_air": "تفسير سورة الكهف، الجزء ٣",
+    "strip_title": "تفسير سورة الكهف، الجزء ٣",
+    "strip_series": "Tafsir al-Kahf"
+   },
+   "on_air": true
+  },
+  {
+   "channel": {
+    "id": "ch-2",
+    "number": 2,
+    "name": "قناة السيرة",
+    "slug": "channel",
+    "logo_url": "/api/channels/ch-2/logo"
+   },
+   "current": {
+    "channel_id": "ch-2",
+    "kind": "program",
+    "start": "{{now-800}}",
+    "stop": "{{now+2500}}",
+    "title": "السيرة النبوية، الدرس ١١",
+    "sub_title": "السيرة النبوية، الدرس ١١",
+    "desc": "الدرس الحادي عشر من سلسلة السيرة النبوية.",
+    "poster": "/api/videos/v2/poster",
+    "series": "Seerah",
+    "season": 1,
+    "episode": 11,
+    "on_air": "السيرة النبوية، الدرس ١١",
+    "strip_title": "السيرة النبوية، الدرس ١١",
+    "strip_series": "Seerah",
+    "is_live": true,
+    "progress": 0.2424
+   },
+   "next": {
+    "channel_id": "ch-2",
+    "kind": "program",
+    "start": "{{now+2500}}",
+    "stop": "{{now+5800}}",
+    "title": "السيرة النبوية، الدرس ١٢",
+    "sub_title": "السيرة النبوية، الدرس ١٢",
+    "desc": "الدرس الثاني عشر من سلسلة السيرة النبوية.",
+    "poster": "/api/videos/v3/poster",
+    "series": "Seerah",
+    "season": 1,
+    "episode": 12,
+    "on_air": "السيرة النبوية، الدرس ١٢",
+    "strip_title": "السيرة النبوية، الدرس ١٢",
+    "strip_series": "Seerah"
+   },
+   "on_air": true
+  },
+  {
+   "channel": {
+    "id": "ch-3",
+    "number": 3,
+    "name": "Documentaries",
+    "slug": "documentaries",
+    "logo_url": "/api/channels/ch-3/logo"
+   },
+   "current": {
+    "channel_id": "ch-3",
+    "kind": "program",
+    "start": "{{now-2700}}",
+    "stop": "{{now+300}}",
+    "title": "رحلة إلى مكة",
+    "desc": "فيلم وثائقي عن طريق الحج القديم.",
+    "poster": "/api/videos/v9/poster",
+    "on_air": "رحلة إلى مكة",
+    "strip_title": "رحلة إلى مكة",
+    "is_live": true,
+    "progress": 0.9
+   },
+   "next": {
+    "channel_id": "ch-3",
+    "kind": "program",
+    "start": "{{now+300}}",
+    "stop": "{{now+3300}}",
+    "title": "Manuscripts of Timbuktu",
+    "desc": "The private libraries of a Saharan city.",
+    "poster": "/api/videos/v10/poster",
+    "on_air": "Manuscripts of Timbuktu",
+    "strip_title": "Manuscripts of Timbuktu"
+   },
+   "on_air": true
+  }
+ ]
+}

@@ -152,7 +152,7 @@ private fun LazyListScope.updatesRows(ov: UpdatesOverview, run: UpdateRunView?, 
             Callout(
                 say.tv(tv.state, tv.heldOn, tv.version),
                 error = (tv.state ?: "held") == "held",
-                detail = tv.checks.map(say::tvCheck).ifEmpty { tv.failed.map(Say::spaced) }.joinToString("\n").ifEmpty { null },
+                detail = tv.checks.map(say::tvCheck).ifEmpty { tv.failed.map(say::tvCheckName) }.joinToString("\n").ifEmpty { null },
             )
         }
     }
@@ -245,7 +245,7 @@ private fun RunDetail(v: UpdateRunView) {
         Fact(stringResource(R.string.version), versions(v.fromVersion, v.version))
         Fact(stringResource(R.string.state), say.runState(v.state))
         if (v.step.isNotEmpty()) Fact(stringResource(R.string.step), say.step(v.step))
-        if (v.trigger.isNotEmpty()) Fact(stringResource(R.string.started_by), Say.spaced(v.trigger))
+        if (v.trigger.isNotEmpty()) Fact(stringResource(R.string.started_by), say.trigger(v.trigger))
         v.startedAt?.let { Fact(stringResource(R.string.started), say.whenText(it)) }
         v.finishedAt?.let { Fact(stringResource(R.string.ended), say.whenText(it)) }
         v.detail.waiting?.takeIf { it.isNotEmpty() }?.let { Text(say.runWaiting(it), color = MaterialTheme.colorScheme.onSurfaceVariant) }

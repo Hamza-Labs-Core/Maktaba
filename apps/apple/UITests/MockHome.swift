@@ -2,15 +2,56 @@ import Foundation
 import Network
 
 /// A home for the UI tests, served by the test runner on 127.0.0.1 (the app on the same
-/// simulator reaches it): `/api/discovery/home`, a sign-in code that is approved when the
-/// test says so, and empty lists for the screens after signing in. No real home and no
-/// real account is involved.
+/// simulator reaches it). No real home and no real account is involved.
+/// - Connecting and signing in: `/api/discovery/home`, a sign-in code that is approved when
+///   the test says so, `/api/auth/me`.
+/// - The Remote's screens: made-up queues, updates, processes and running jobs (below).
+/// - The Player's screens (Epic 48): every browse and live route answers from
+///   `UITests/Fixtures` (`routes.json` maps a method and a path, `{id}` matching one segment,
+///   to a file shaped as the Go handler answers). `{{now}}` / `{{now-600}}` in a fixture
+///   become RFC 3339 times relative to now, so what is on Live TV straddles the clock.
+///   Posters, backdrops and channel logos are a small PNG.
+/// - A test changes an answer with `stub` (a status, a body, a delay) and checks what the
+///   app asked with `requests` (method, path, query, body) or `seen` ("GET /api/home").
 final class MockHome: @unchecked Sendable {
+    /// One request the app made.
+    struct Request: Sendable {
+        let method: String
+        let path: String
+        /// The query string, without "?" ("library=lib-docs&cursor=c2"), or "".
+        let query: String
+        let body: Data
+
+        /// One query parameter's value.
+        func value(_ name: String) -> String? {
+            URLComponents(string: "/?\(query)")?.queryItems?.first { $0.name == name }?.value
+        }
+    }
+
+    private struct Answer {
+        var status: Int
+        var body: Data
+        var contentType = "application/json"
+        var delay: TimeInterval = 0
+    }
+
+    private struct Route: Decodable {
+        let method: String
+        let path: String
+        let status: Int
+        let file: String?
+    }
+
     private let listener: NWListener
-    private let queue = DispatchQueue(label: "maktaba.uitests.mockhome")
+    private let queue = DispatchQueue(label: "maktaba.uitests.mockhome", attributes: .concurrent)
     private let lock = NSLock()
     private var approved = false
-    private var seenRoutes: [String] = []
+    private var log: [Request] = []
+    private var stubs: [String: Answer] = [:]
+    /// Latency added to `METHOD /path` after its answer is chosen (`delay`).
+    private var delays: [String: TimeInterval] = [:]
+    private let routes: [Route]
+    private let fixtures: Bundle
     private(set) var port: UInt16 = 0
 
     static let code = "TEST-2345"
@@ -19,10 +60,17 @@ final class MockHome: @unchecked Sendable {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: params)
+        fixtures = Bundle(for: MockHome.self)
+        routes = fixtures.url(forResource: "routes", withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+            .flatMap { try? JSONDecoder().decode([Route].self, from: $0) } ?? []
     }
 
     var url: String { "http://127.0.0.1:\(port)" }
-    var seen: [String] { lock.withLock { seenRoutes } }
+    /// Every request so far as "METHOD /path" (no query).
+    var seen: [String] { lock.withLock { log.map { "\($0.method) \($0.path)" } } }
+    /// Every request so far, in order.
+    var requests: [Request] { lock.withLock { log } }
 
     func start() throws {
         let ready = DispatchSemaphore(value: 0)
@@ -37,6 +85,29 @@ final class MockHome: @unchecked Sendable {
 
     /// The person approved the code on another device.
     func approve() { lock.withLock { approved = true } }
+
+    /// From now on, `method path` (exact, no query) answers `status` and `body` (JSON),
+    /// after `delay` seconds. Wins over the fixtures.
+    func stub(_ method: String, _ path: String, status: Int = 200, body: String = "", delay: TimeInterval = 0) {
+        lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), delay: delay) }
+    }
+
+    /// From now on, `method path` (any query) answers as it would anyway, but after `delay`
+    /// seconds. Only the timing is kept here: the answer is still chosen per request, so a
+    /// query (`cursor=c2`) or a stub still decides what comes back.
+    func delay(_ method: String, _ path: String, by delay: TimeInterval) {
+        lock.withLock { delays["\(method) \(path)"] = delay }
+    }
+
+    /// Forgets every stub and delay.
+    func reset() { lock.withLock { stubs = [:]; delays = [:] } }
+
+    /// A fixture's JSON as it is served (times filled in), for a test to compare with.
+    func fixture(named name: String) -> String? {
+        fixtures.url(forResource: name, withExtension: "json")
+            .flatMap { try? Data(contentsOf: $0) }
+            .map { Self.fillTimes(String(decoding: $0, as: UTF8.self)) }
+    }
 
     func stop() { listener.cancel() }
 
@@ -58,10 +129,18 @@ final class MockHome: @unchecked Sendable {
                 if buf.count - end.upperBound >= length || done {
                     let parts = (lines.first ?? "").split(separator: " ")
                     let method = parts.first.map(String.init) ?? ""
-                    let path = parts.count > 1 ? String(parts[1].split(separator: "?", maxSplits: 1)[0]) : "/"
-                    let (status, body) = answer(method, path)
-                    let response = "HTTP/1.1 \(status) OK\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
-                    c.send(content: Data(response.utf8), completion: .contentProcessed { _ in c.cancel() })
+                    let target = parts.count > 1 ? parts[1].split(separator: "?", maxSplits: 1).map(String.init) : ["/"]
+                    let request = Request(method: method, path: target[0], query: target.count > 1 ? target[1] : "",
+                                          body: Data(buf[end.upperBound...].prefix(length)))
+                    let a = answer(request)
+                    var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\nContent-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
+                    response.append(a.body)
+                    let send = { c.send(content: response, completion: .contentProcessed { _ in c.cancel() }) }
+                    if a.delay > 0 {
+                        queue.asyncAfter(deadline: .now() + a.delay, execute: send)
+                    } else {
+                        send()
+                    }
                     return
                 }
             }
@@ -73,11 +152,77 @@ final class MockHome: @unchecked Sendable {
         }
     }
 
-    private func answer(_ method: String, _ path: String) -> (Int, String) {
-        let ok = lock.withLock {
-            seenRoutes.append("\(method) \(path)")
-            return approved
+    private func answer(_ r: Request) -> Answer {
+        let (ok, latency) = lock.withLock {
+            log.append(r)
+            return (approved, delays["\(r.method) \(r.path)"])
         }
+        var a = resolve(r, approved: ok)
+        if let latency { a.delay = max(a.delay, latency) }
+        return a
+    }
+
+    /// What a request gets, before any `delay`: a stub, the connect and Remote routes, an
+    /// image, the fixture for this path and query, or 404.
+    private func resolve(_ r: Request, approved ok: Bool) -> Answer {
+        if let stubbed = lock.withLock({ stubs["\(r.method) \(r.path)"] }) { return stubbed }
+        if let fixed = remote(r.method, r.path, approved: ok) {
+            return Answer(status: fixed.0, body: Data(fixed.1.utf8))
+        }
+        if r.method == "GET", Self.isImage(r.path) {
+            return Answer(status: 200, body: Self.png, contentType: "image/png")
+        }
+        if let a = fixture(r.method, r.path, query: r.query) { return a }
+        return Answer(status: 404, body: Data(#"{"title":"not found","status":404}"#.utf8))
+    }
+
+    /// The Player's browse and live routes, from `Fixtures/routes.json`.
+    private func fixture(_ method: String, _ path: String, query: String) -> Answer? {
+        // the videos' second (last) page
+        if method == "GET", path == "/api/videos", query.contains("cursor=c2") {
+            return file("videos-page2").map { Answer(status: 200, body: $0) }
+        }
+        guard let route = routes.first(where: { $0.method == method && Self.matches($0.path, path) }) else { return nil }
+        guard let name = route.file else { return Answer(status: route.status, body: Data()) }
+        return file((name as NSString).deletingPathExtension).map { Answer(status: route.status, body: $0) }
+    }
+
+    private func file(_ name: String) -> Data? {
+        fixture(named: name).map { Data($0.utf8) }
+    }
+
+    /// `/api/videos/{id}/chapters` matches `/api/videos/v1/chapters`.
+    private static func matches(_ pattern: String, _ path: String) -> Bool {
+        let p = pattern.split(separator: "/", omittingEmptySubsequences: false)
+        let s = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard p.count == s.count else { return false }
+        return zip(p, s).allSatisfy { a, b in (a.hasPrefix("{") && a.hasSuffix("}") && !b.isEmpty) || a == b }
+    }
+
+    private static func isImage(_ path: String) -> Bool {
+        path.hasPrefix("/api/") && (path.hasSuffix("/poster") || path.hasSuffix("/backdrop") || path.hasSuffix("/logo") || path.hasSuffix("/art"))
+    }
+
+    /// `{{now}}`, `{{now-600}}`, `{{now+1800}}`: RFC 3339 times, seconds from now.
+    static func fillTimes(_ json: String, now: Date = Date()) -> String {
+        let f = ISO8601DateFormatter()
+        var out = ""
+        var rest = Substring(json)
+        while let open = rest.range(of: "{{now") {
+            out += rest[..<open.lowerBound]
+            guard let close = rest[open.upperBound...].range(of: "}}") else { break }
+            let offset = TimeInterval(rest[open.upperBound ..< close.lowerBound].replacingOccurrences(of: "+", with: "")) ?? 0
+            out += f.string(from: now.addingTimeInterval(offset))
+            rest = rest[close.upperBound...]
+        }
+        return out + rest
+    }
+
+    /// A 32 × 48 poster-shaped PNG in the theme's brass-brown.
+    static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAACAAAAAwCAIAAAD/zu84AAAAMElEQVR42u3NMQ0AAAgDsElBAjf+haGCg6RJ/2a6TkUgEAgEAoFAIBAIBAKBQPApWAeEPC5/X6goAAAAAElFTkSuQmCC")!
+
+    /// Connecting, signing in and the Remote's screens.
+    private func remote(_ method: String, _ path: String, approved ok: Bool) -> (Int, String)? {
         switch (method, path) {
         case ("GET", "/api/discovery/home"):
             return (200, #"{"id":"ui-home","name":"UI Test Home","version":"0.0.0","urls":[],"sign_in":{"password":true,"code":true}}"#)
@@ -88,10 +233,6 @@ final class MockHome: @unchecked Sendable {
             return ok ? (200, #"{"access_token":"ui.test.token","refresh_token":"ui-refresh"}"#) : (202, #"{"status":"pending"}"#)
         case ("GET", "/api/auth/me"):
             return (200, #"{"id":"u1","username":"tester","is_admin":true,"home_name":"UI Test Home"}"#)
-        case ("GET", "/api/libraries"), ("GET", "/api/videos"):
-            return (200, #"{"items":[],"next":null}"#)
-        case ("GET", "/api/recommendations"):
-            return (200, #"{"rails":[]}"#)
         case ("GET", "/api/issues"):
             return (200, #"{"groups":[]}"#)
         case ("GET", "/api/queues"):
@@ -111,7 +252,7 @@ final class MockHome: @unchecked Sendable {
         case ("GET", "/api/queues/running"):
             return (200, Self.running)
         default:
-            return (404, #"{"title":"not found","status":404}"#)
+            return nil
         }
     }
 
@@ -140,7 +281,8 @@ final class MockHome: @unchecked Sendable {
            {"id":"n2","name":"Attic","role":"node","version":"0.3.40","state":"needs_person","target":"0.3.43","platform":"linux/amd64",
             "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf has no entry for host 192.168.1.20"}}],
          "tv_held":{"run_id":"r9","version":"0.3.40","outcome":"held","number":12,"held_on":"0.3.39","state":"held",
-                    "failed":["slot.health"],"checks":[{"check":"slot.health","result":"fail","value":"the staging slot runs another release"}]}}
+                    "failed":["slot.health"],"checks":[{"check":"slot.health","result":"fail","code":"slot.release_mismatch",
+                              "value":"the staging slot runs another release (release_mismatch)"}]}}
         """#
     }
 

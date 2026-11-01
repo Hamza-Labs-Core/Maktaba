@@ -1,0 +1,104 @@
+{
+ "languages": [
+  {
+   "code": "ar",
+   "videos": 6
+  },
+  {
+   "code": "en",
+   "videos": 6
+  }
+ ],
+ "tags": [
+  {
+   "id": "t-history",
+   "name": "history",
+   "videos": 5
+  },
+  {
+   "id": "t-seerah",
+   "name": "seerah",
+   "videos": 3
+  },
+  {
+   "id": "t-tafsir",
+   "name": "tafsir",
+   "videos": 3
+  },
+  {
+   "id": "t-ramadan",
+   "name": "ramadan",
+   "videos": 1
+  }
+ ],
+ "speakers": [
+  {
+   "name": "Lecturer A",
+   "videos": 4
+  },
+  {
+   "name": "المحاضر ب",
+   "videos": 3
+  }
+ ],
+ "letters": [
+  {
+   "letter": "ا",
+   "videos": 3
+  },
+  {
+   "letter": "ب",
+   "videos": 1
+  },
+  {
+   "letter": "ت",
+   "videos": 1
+  },
+  {
+   "letter": "ر",
+   "videos": 1
+  },
+  {
+   "letter": "M",
+   "videos": 1
+  },
+  {
+   "letter": "S",
+   "videos": 1
+  },
+  {
+   "letter": "T",
+   "videos": 4
+  }
+ ],
+ "durations": [
+  {
+   "value": "medium",
+   "videos": 12
+  }
+ ],
+ "added": [
+  {
+   "value": "week",
+   "videos": 3
+  },
+  {
+   "value": "month",
+   "videos": 10
+  },
+  {
+   "value": "year",
+   "videos": 12
+  }
+ ],
+ "resolutions": [
+  {
+   "value": "hd",
+   "videos": 7
+  },
+  {
+   "value": "fhd",
+   "videos": 5
+  }
+ ]
+}

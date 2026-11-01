@@ -2177,14 +2177,18 @@ dependencies = [
 name = "maktaba-desktop"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "block2",
  "libc",
  "mdns-sd",
+ "minisign-verify",
  "objc2",
  "objc2-foundation",
  "objc2-service-management",
  "objc2-web-kit",
+ "reqwest",
  "rust-ini",
+ "rustls",
  "serde",
  "serde_json",
  "tauri",

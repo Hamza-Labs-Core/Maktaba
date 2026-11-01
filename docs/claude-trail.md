@@ -585,6 +585,28 @@ transcripts were not traced one by one; their work is in the PRs cited.
   home's database within about a minute and ends replication workers that won't stop. Both are
   in progress there; their PRs go in its own later entry.
 
+### 2026-10-31 · PC · c17dd289 · Windows node updates by the agent; the copy stall (done)
+
+- [#456] (merged, be9ba4ef): the 10-28 copy stall. A table's first copy waited 15 min on the
+  restarting home, and every fresh copy failed with "workers did not stop within 30s". Quiesce
+  now ends workers still there after its wait, and its switch-off waits for the subscription's
+  lock at most that wait (review finding). Tested against real Postgres, red before and green
+  after.
+- [#457]: the Windows server agent (`Maktaba.exe --server-agent`) answers the home's order
+  instead of the window app. It stages from the release's own `latest.json`: a setup .exe on that
+  release's page, checked with the app's key, its signed version (`requireSignedVersion`) and
+  signed file name. At the go it starts the installer out of its own job. The server sends no
+  `maktaba://` link (`MAKTABA_AGENT_ORDERS=1`); on Windows the window app only shows the order
+  and no longer settles the orders' attempts.
+- What it rests on, proved on CI's Windows runner (`check-task-children.ps1`), never on the
+  owner's PC: once a task's process exits, the task is `Ready` even with its child still running;
+  the task runs again meanwhile; the child outlives it. Two review rounds; fixed in the PR were
+  answers that only move forward (`autoinstall::advance`), the window app's settle race, and a
+  stricter signature and URL check.
+- Neither PR is tagged: the next release is held (§5), and #457 touches the update path. Until
+  a release carries #457, the PC needs the owner to open Maktaba once (or run the v0.3.44
+  installer) to take v0.3.44.
+
 [#48]: https://github.com/Hamza-Labs-Core/Maktaba/pull/48
 [#52]: https://github.com/Hamza-Labs-Core/Maktaba/pull/52
 [#55]: https://github.com/Hamza-Labs-Core/Maktaba/pull/55
@@ -643,6 +665,8 @@ transcripts were not traced one by one; their work is in the PRs cited.
 [#307]: https://github.com/Hamza-Labs-Core/Maktaba/pull/307
 [#320]: https://github.com/Hamza-Labs-Core/Maktaba/pull/320
 [#362]: https://github.com/Hamza-Labs-Core/Maktaba/pull/362
+[#456]: https://github.com/Hamza-Labs-Core/Maktaba/pull/456
+[#457]: https://github.com/Hamza-Labs-Core/Maktaba/pull/457
 
 ---
 
@@ -664,6 +688,25 @@ Append here: date, session, one to five lines on what changed. Newest last.
     and deleted it afterwards.
   - Known, unrelated failures: run on iOS, MaktabaKit's `thisPlatformAsksForLocalNetwork`
     expects the Mac's list; an unsigned run fails the Mac Player keychain test.
+- 2026-10-31 · server-words-as-codes agent of `b743b7d4`: [#460] (not merged; the owner's
+  session merges it). Server texts the admin screens show now go out as **code + params beside
+  the English**: every TV check (`Check.Code`/`Params`, 48 codes, web key
+  `tvchanges.value.<code>`), the failing move (`report_code`), the home's `roles_reason_code`.
+  Web, Android and Apple render the code and fall back to the English. Triggers and check names
+  got words on Android and iPhone; the iPhone now uses the supervisor's `detail_code`.
+  - Decided: params are strings (`map[string]string`), already formatted by Go, so no client
+    has to format numbers. The English `value` stays for older apps. A settling position check
+    becomes `<code>_settling`; a budget with channels waiting becomes `<code>_rolling`.
+  - Rule for new codes: `TestEveryCheckCodeHasItsWords` fails when a code in
+    `verify.go`/`streamverify.go` has no en/ar words in `web/src/i18n`.
+  - Left alone, see the PR: the streaming binary's own check values, update `error.detail` / step
+    details (machine-written), `copy.detail`, `last_check_error`, events' `message`.
+  - TV-staging code, additive only: `update-rehearsal` must pass on the exact commit before a
+    release carries it.
+  - Tooling: throwaway sim `maktaba-codes-throwaway` (iOS 27.0), deleted. `xcodebuild` needs
+    `TEST_RUNNER_MAKTABA_SHOTS` to pass `MAKTABA_SHOTS` to UI tests. The Android Remote has
+    flavors: run `:remote:testPhoneDebugUnitTest`, not `testDebugUnitTest`. The web uses pnpm
+    (`pnpm install --frozen-lockfile`); `npm ci` fails, because there is no npm lockfile.
 - 2026-10-31 · Epic 48 spec agent of `b743b7d4`: [#458] writes `specs/epics/48-native-players/`
   after the owner found the Players thin ("is that epic really DONE???"). Epic 42 asked only for
   libraries and playback, so its checks passed with no Home, nav, Live TV or brand.
@@ -691,6 +734,34 @@ Append here: date, session, one to five lines on what changed. Newest last.
     `LiveStub`, separate from the shared `Stub` that other suites use.
   - Left to 48.21: the encoder warm-up retry on the LAN path, and the AVPlayer side of
     `rewrite(_:)` (a resource loader or proxy).
+- 2026-10-31 · Story 48.2 agent of `b743b7d4`: [#462], one token source. `tokens.json` /
+  `tokens.dark.json` now hold the shipped Ink & Brass (values copied from
+  `web/src/styles/tokens.css`, which stays hand-written and is what the web ships), plus
+  `accent-fg`, `accent-text`, `accent-soft`, `border`, `running`, `info`, `type.size.*`,
+  `spacing.5`, and the apps-only `raised`, `nav`, `scrim`, `chosen`. `build-tokens.mjs` also
+  writes `MaktabaKit/Tokens.swift` (`MaktabaTokens.Colors.*` as 0xRRGGBBAA light/dark pairs
+  with a dynamic SwiftUI `.color`) and core's `ui/Tokens.kt` (`MaktabaTokens.Light/Dark`,
+  Compose `Color`/`dp`/`sp`). CI's unit job runs `make test-tokens`: `--check` stale test,
+  CSS parity, contrast on 70 text/surface pairs, and self-tests that each check catches a bad
+  input.
+  - Decided: generate, not replace, `tokens.css` (its glass/art/shadow values are web-only
+    and a swap would touch every screen); light `raised` is `#FFFDF8`, because `#F8EFDB` put
+    light `running` text at 4.38:1. `scrim` is not contrast-checked: its text sits on the
+    library art, which 48.10 / 48.11 check in screenshots.
+  - Gotcha: a MaktabaKit test suite named `Tokens` clashes with an existing one (keychain
+    tests); it is `DesignTokens`.
+- 2026-10-31 · Epic 48 story 48.5 agent of `b743b7d4`: `?size=small` on
+  `GET /api/videos/{id}/poster` (`api/internal/handlers/videos/poster.go`, tests in
+  `poster_size_test.go`).
+  - Decided: small = the pipeline's `thumb_small` copy (`<hash>/small.jpg`, then the import's
+    staged `imported/<id>.jpg`), else the full chain. The API generates nothing: the pipeline
+    makes each size once and keeps it in the thumbnail cache, and both sizes keep
+    `Cache-Control: private, max-age=3600`. An unknown `size` is a 400.
+  - Decided: the spec asks 404 for a viewer without the library, so the poster route now
+    answers a signed-in viewer without access exactly as a missing video (it said 403 before);
+    no one signed in still gets 403. The other video routes still say 403.
+  - Changed: the query reads `library_id` without `::text`, so the handler runs on the SQLite
+    test table too (lib/pq scans a uuid into a string either way, as `trickplay.go` does).
 - 2026-10-31 · Epic 48 story 48.4 agent of `b743b7d4`: [#468] lists a video session's sidecar
   subtitles as HLS `SUBTITLES` renditions in its master (one-segment WebVTT playlist at
   `subs-{lang}/index.m3u8` over the sidecar route), so AVPlayer, AirPlay and Cast can show them.
@@ -714,7 +785,80 @@ Append here: date, session, one to five lines on what changed. Newest last.
     nothing tested `Get`'s library rule, and the gate now depends on it.
   - Needs the update-rehearsal CI green on its exact commit before merge, because it changes
     the front door.
+- 2026-10-31 · flaky-tests agent of `b743b7d4`: [#470] fixes three flakes at the root.
+  - Enrich near midnight: the test, not the product. `seconds_to_next_day` floors at 60 s, so
+    `not_before` can be exactly now + 60 s. Read the clock *before* the run, bound inclusively.
+  - Windows Resume: a product bug. `mutex_held` meant "the mutex exists". An exiting agent has
+    released it but keeps the handle until its process is gone (Task Scheduler still counts it
+    running), so `start_task` sent one `/Run` into IgnoreNew. Now "held" means owned (a
+    zero-timeout wait).
+  - Unit-tier soft cap: its run-again reused the first run's `tmp_path`, so any test that
+    `mkdir`s or appends there failed the run-again, and one runner stall failed the test. Now
+    the run-again gets a fresh `tmp_path`. A "> 3x soft cap" failure with no "run again" time
+    means the run-again raised, not that the test was slow twice.
+  - Cross-check Windows Rust from this Mac: rustup's cargo (Homebrew's shadows it), the
+    `x86_64-pc-windows-msvc` target, `CC_x86_64_pc_windows_msvc=clang-cl` from Homebrew LLVM,
+    `AR_…=llvm-lib`, plus stub `assert.h`/`string.h`/`stdlib.h` via `CFLAGS_…="/imsvc <dir>"`
+    so `ring` builds. `cargo check` and `cargo clippy` then work. No linking, no running.
+  - 2026-10-31, later (review of [#470]): swapping only `tmp_path` left fixtures built on it
+    (e.g. `_settings` in `tests/models/test_fetch_cli.py`) on the first folder. The soft cap
+    now runs a slow test again through `runtestprotocol` (setup, call, teardown, all
+    function-scoped fixtures afresh, as pytest-rerunfailures does) and logs the reports only
+    after judging. A forced re-run of all 274 cluster unit tests passes. Before, 66 failed.
+    Also pinned the enrich test's budget clock, so midnight between its two runs gives no
+    fresh allowance. The same signature failed `test_linux_nfs_mount_found_through_proc_mounts`
+    on #467: 0.945 s and no run-again time, because the re-run raised.
+  - Not mine, seen on #470's integration run: `TestRowCacheInvalidationPostgres`
+    (`api/internal/handlers/browse`): "a scan's videos: …b's entry dropped too". Likely a late
+    notice of an earlier write dropping libB after `fill()` saw both rows cached.
+- 2026-10-31 · Story 48.13 agent of `b743b7d4`: the Apple Player shell and its UI-test harness
+  (branch `feat/48.13-apple-player-shell`).
+  - Built: `Player/Shell/` holds `PlayerShell` (a `TabView` with `.sidebarAdaptable`, one
+    `[PlayerRoute]` stack per section; choosing the chosen tab pops it), `PlayerSection`
+    (`enabled` = `[.libraries]`), `PlayerRoute` (video, series, library, channel, watch) with
+    one `playerDestinations`, and `Shell.xcstrings`. Placeholder files sit in each screen's
+    folder (`Home/`, `Libraries/`, `Video/`, `Search/`, `Live/`, `Profile/`, `Watch/`); each
+    screen story owns its file. `LibraryBrowser.swift` moved to `Libraries/`.
+  - Decided: with one section enabled, the shell shows that screen alone (no one-tab bar), so
+    TestFlight builds look exactly as before until a second section merges. Debug-only launch
+    arguments (`-maktaba-sections all`, `-maktaba-section`, `-maktaba-open video/v1`) let the
+    tests reach screens that are not turned on yet; Release builds ignore them.
+  - Decided: MockHome serves `UITests/Fixtures/*.json` (shapes taken from the Go handlers,
+    with a `{{now±N}}` time token) through `routes.json`. It adds `stub`, `delay` and
+    `requests` (with query and body). The string guard now checks every table of a target
+    against the `<table>.xcstrings` in its folders, so a screen's new table needs no guard edit.
+  - CI: a new `player-ui-tests` job in `_apple-apps.yml` runs every `UITests/Player*Tests.swift`
+    class on throwaway iPhone and iPad simulators (deleted after) and uploads the screenshots.
+  - Failed, then fixed: relaunching without `-maktaba-session-reset` went back to sign-in,
+    because an unsigned test build keeps no Keychain token. So every UI test signs in fresh.
+    The Duo hinge split was only built with Xcode 27 (it is `LibraryBrowser`'s and unchanged);
+    it was not exercised on a Duo simulator.
 
+- 2026-10-31 · Epic 48.15 agent of `b743b7d4`: the Android Player shell. `player/…/shell/`:
+  `PlayerShell` (Material's `NavigationSuiteScaffold`: bar compact or tabletop, rail medium,
+  permanent drawer expanded with medium height; a phone on its side keeps the rail), one
+  Navigation Compose `NavHost` per section kept by a `SaveableStateHolder` (each section's stack
+  and scroll survive switching; re-select pops to root; Back at another section's root goes to
+  the first), typed `Route`s (`video`, `series`, `library`, `channel`, `watch` as on Apple), and
+  `PlayerSection.enabled` = Libraries only. `LibraryBrowser.kt` moved to `libraries/`; the
+  Libraries section is that browser until 48.27. Placeholder screens live in each screen's own
+  folder (`home/`, `video/`, `search/`, `live/`, `profile/`, `watch/`) so the screen stories
+  only replace their own file.
+  - Decided: one reachable section shows no navigation at all (a bar of one is no choice), so
+    the shipped app looks as before until a second screen merges.
+  - Harness: Robolectric 4.17 + Compose UI tests + Roborazzi on the JVM, a `FakeHome`
+    (MockWebServer) in `player/src/test/…/harness/`. CI runs `:player:testPhoneDebugUnitTest`
+    and `:player:verifyRoborazziPhoneDebug`; references in `player/src/test/screenshots/`.
+  - Gotcha: Robolectric's SDK 36 needs Java 21; CI builds with 17, so `robolectric.properties`
+    pins `sdk=35`. The references were recorded on the Mac (2 % pixel tolerance for Linux text).
+  - Gotcha: core's `TranslationsTest` reads only `strings.xml`; the per-screen
+    `strings_<screen>.xml` tables are checked by the new `PlayerTranslationsTest` (and lint).
+  - Gotcha: with many agents building at once the Gradle daemon died of GC thrashing; pass
+    `-Dorg.gradle.jvmargs=-Xmx6g`.
+  - Review fixes: the Libraries browser's state is kept per signed-in home (`PlayerHome.keep`), so
+    a section switch keeps its open video, library and search, and re-selecting Libraries closes
+    the video (`OnReselect`); `PlayerNavigator.back()` never pops a section's root (Navigation
+    Compose will pop it and leave the section blank); `FakeHome.requests` is a locked copy.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -863,5 +1007,8 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#452]: https://github.com/Hamza-Labs-Core/Maktaba/pull/452
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
+[#460]: https://github.com/Hamza-Labs-Core/Maktaba/pull/460
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#462]: https://github.com/Hamza-Labs-Core/Maktaba/pull/462
+[#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470
 [#468]: https://github.com/Hamza-Labs-Core/Maktaba/pull/468

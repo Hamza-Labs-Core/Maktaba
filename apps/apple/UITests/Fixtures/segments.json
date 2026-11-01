@@ -1,0 +1,45 @@
+{
+ "items": [
+  {
+   "id": 3001,
+   "seq": 0,
+   "start_sec": 0,
+   "end_sec": 6.5,
+   "text": "\u2068بسم الله الرحمن الرحيم\u2069",
+   "updated_at": "0001-01-01T00:00:00Z"
+  },
+  {
+   "id": 3002,
+   "seq": 1,
+   "start_sec": 6.5,
+   "end_sec": 14.2,
+   "text": "\u2068نبدأ اليوم الدرس العاشر من السيرة النبوية\u2069",
+   "updated_at": "0001-01-01T00:00:00Z"
+  },
+  {
+   "id": 3003,
+   "seq": 2,
+   "start_sec": 14.2,
+   "end_sec": 22.8,
+   "text": "\u2068and we pick up the story at the Hijrah\u2069",
+   "updated_at": "0001-01-01T00:00:00Z"
+  },
+  {
+   "id": 3004,
+   "seq": 3,
+   "start_sec": 22.8,
+   "end_sec": 31,
+   "text": "\u2068خرج النبي صلى الله عليه وسلم من مكة ليلاً\u2069",
+   "updated_at": "0001-01-01T00:00:00Z"
+  },
+  {
+   "id": 3005,
+   "seq": 4,
+   "start_sec": 31,
+   "end_sec": 40.4,
+   "text": "\u2068with his companion, towards the cave of Thawr\u2069",
+   "updated_at": "0001-01-01T00:00:00Z"
+  }
+ ],
+ "partial": false
+}
