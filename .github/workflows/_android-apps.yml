@@ -1,5 +1,7 @@
 # Reusable gate for the native Android apps (Epic 42.3, `apps/android`): the portable client's
 # tests (the module the desktop Player shares) and the core module's unit tests (the API client, token storage, the stream's authorization, the fold layout),
+# the Player's unit and Compose UI tests on the JVM (Robolectric, against a fake home) with its
+# screenshots checked against the references (Roborazzi, Epic 48.15),
 # Android lint on every module, and a debug build of each app for each form factor
 # (Maktaba Player and Maktaba Remote; phone, foldable and tablet).
 
@@ -58,6 +60,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace \
             :client:test :core:testDebugUnitTest :remote:testPhoneDebugUnitTest \
+            :player:testPhoneDebugUnitTest :player:verifyRoborazziPhoneDebug \
             :core:lintDebug :player:lintPhoneDebug :remote:lintPhoneDebug \
             assembleDebug
 
@@ -69,4 +72,5 @@ jobs:
           path: |
             apps/android/*/build/reports/
             apps/android/*/build/test-results/
+            apps/android/player/build/outputs/roborazzi/
           retention-days: 7

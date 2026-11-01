@@ -12,6 +12,13 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
+  Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
+  a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,
+  Live TV, Search and Profile, each keeping its own screens and scroll position. A section
+  appears only once its screen is built, so for now the app opens on today's Libraries as
+  before. CI now runs the Player's unit and UI tests on a fake home, with dark English and
+  Arabic screenshots checked against references.
 - **Subtitles show on Apple TV, AirPlay and Cast (story 48.4).** A video session's master
   playlist now lists each subtitle file beside the video as an HLS subtitle track (language,
   its own name, off by default). Each track is a one-file playlist over the existing subtitle
