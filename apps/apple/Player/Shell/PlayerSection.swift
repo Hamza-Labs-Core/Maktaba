@@ -15,7 +15,7 @@ enum PlayerSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     /// before the shell (no tab bar of one tab).
     static let enabled: [PlayerSection] = [
         .home,
-        .libraries,
+        .libraries, // 48.18: Libraries, a library, Series, a series
     ]
 
     var id: String { rawValue }
