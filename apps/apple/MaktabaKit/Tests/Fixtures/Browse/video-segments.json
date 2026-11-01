@@ -1,0 +1,31 @@
+{
+ "items": [
+  {
+   "end_sec": 6.5,
+   "id": 1,
+   "seq": 1,
+   "speaker": "SPEAKER_00",
+   "start_sec": 0,
+   "text": "⁨بسم الله الرحمن الرحيم⁩",
+   "updated_at": "0001-01-01T00:00:00Z"
+  },
+  {
+   "end_sec": 14.2,
+   "id": 2,
+   "seq": 2,
+   "speaker": "SPEAKER_00",
+   "start_sec": 6.5,
+   "text": "⁨الحمد لله رب العالمين، الرحمن الرحيم⁩",
+   "updated_at": "0001-01-01T00:00:00Z"
+  },
+  {
+   "end_sec": 22,
+   "id": 3,
+   "seq": 3,
+   "start_sec": 14.2,
+   "text": "⁨today we speak about prayer and its meaning⁩",
+   "updated_at": "0001-01-01T00:00:00Z"
+  }
+ ],
+ "partial": false
+}

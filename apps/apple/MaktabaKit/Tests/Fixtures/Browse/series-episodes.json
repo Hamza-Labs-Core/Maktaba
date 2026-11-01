@@ -1,0 +1,56 @@
+{
+ "next_episode": {
+  "duration_sec": 3000,
+  "episode": 2,
+  "progress_pct": 25.15,
+  "season": 1,
+  "thumbnail": "/api/videos/00000000-0000-4000-8000-000000000002/poster",
+  "title": "تفسير سورة البقرة ١",
+  "video_id": "00000000-0000-4000-8000-000000000002",
+  "watched": false
+ },
+ "numbering": "season",
+ "seasons": [
+  {
+   "episodes": [
+    {
+     "duration_sec": 3600,
+     "episode": 1,
+     "progress_pct": 100,
+     "season": 1,
+     "thumbnail": "/api/videos/00000000-0000-4000-8000-000000000001/poster",
+     "title": "تفسير سورة الفاتحة",
+     "video_id": "00000000-0000-4000-8000-000000000001",
+     "watched": true
+    },
+    {
+     "duration_sec": 3000,
+     "episode": 2,
+     "progress_pct": 25.15,
+     "season": 1,
+     "thumbnail": "/api/videos/00000000-0000-4000-8000-000000000002/poster",
+     "title": "تفسير سورة البقرة ١",
+     "video_id": "00000000-0000-4000-8000-000000000002",
+     "watched": false
+    }
+   ],
+   "season": 1
+  },
+  {
+   "episodes": [
+    {
+     "duration_sec": 2700,
+     "episode": 1,
+     "progress_pct": 0,
+     "season": 2,
+     "thumbnail": "/api/videos/00000000-0000-4000-8000-000000000003/poster",
+     "title": "تفسير سورة آل عمران",
+     "video_id": "00000000-0000-4000-8000-000000000003",
+     "watched": false
+    }
+   ],
+   "season": 2
+  }
+ ],
+ "sort": "episode"
+}

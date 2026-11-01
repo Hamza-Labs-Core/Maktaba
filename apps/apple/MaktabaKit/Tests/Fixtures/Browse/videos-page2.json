@@ -1,0 +1,42 @@
+{
+ "items": [
+  {
+   "content_hash": "3333333333333333333333333333333333333333333333333333333333333333",
+   "created_at": "2026-10-03T06:00:00-04:00",
+   "detected_language": "ar",
+   "duration_sec": 2700,
+   "filename": "Tafsir S02E01.mp4",
+   "id": "00000000-0000-4000-8000-000000000003",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "metadata": {},
+   "path": "/media/tafsir/s02e01.mp4",
+   "published_at": "2026-01-03T05:00:00Z",
+   "size_bytes": 1000,
+   "state": "ready",
+   "title": "تفسير سورة آل عمران",
+   "updated_at": "2026-10-03T06:00:00-04:00"
+  },
+  {
+   "content_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+   "created_at": "2026-10-02T06:00:00-04:00",
+   "detected_language": "ar",
+   "duration_sec": 3000,
+   "filename": "Tafsir S01E02.mp4",
+   "id": "00000000-0000-4000-8000-000000000002",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "metadata": {},
+   "path": "/media/tafsir/s01e02.mp4",
+   "playback_state": {
+    "completed": false,
+    "position_sec": 754.5,
+    "updated_at": "2026-10-31T22:48:50.707433Z"
+   },
+   "published_at": "2026-01-02T05:00:00Z",
+   "size_bytes": 1000,
+   "state": "ready",
+   "title": "تفسير سورة البقرة ١",
+   "updated_at": "2026-10-02T06:00:00-04:00"
+  }
+ ],
+ "next": "eyJzIjoiY3JlYXRlZF9hdCIsIm8iOiJkZXNjIiwiayI6IjIwMjYtMTAtMDJUMTA6MDA6MDBaIiwiaSI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMiJ9"
+}

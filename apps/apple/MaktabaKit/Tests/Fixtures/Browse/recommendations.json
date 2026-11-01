@@ -1,0 +1,28 @@
+{
+ "cache_hit": false,
+ "expires_at": "2026-10-31T23:50:13.048674Z",
+ "generated_at": "2026-10-31T23:49:13.048674Z",
+ "rails": [
+  {
+   "id": "continue",
+   "items": [
+    {
+     "duration_sec": 3000,
+     "last_watched_at": "2026-10-31T18:48:50.707433-04:00",
+     "position_sec": 754.5,
+     "remaining_sec": 2245.5,
+     "video_id": "00000000-0000-4000-8000-000000000002"
+    },
+    {
+     "duration_sec": 1800,
+     "last_watched_at": "2026-10-31T16:48:50.707433-04:00",
+     "position_sec": 300,
+     "remaining_sec": 1500,
+     "video_id": "00000000-0000-4000-8000-000000000004"
+    }
+   ],
+   "reason_kind": "continue_watching",
+   "title": "Continue Watching"
+  }
+ ]
+}

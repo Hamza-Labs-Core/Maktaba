@@ -1,0 +1,291 @@
+{
+ "continue_watching": [
+  {
+   "completed": false,
+   "created_at": "2026-10-02T10:00:00Z",
+   "duration_sec": 3000,
+   "filename": "Tafsir S01E02.mp4",
+   "id": "00000000-0000-4000-8000-000000000002",
+   "last_watched_at": "2026-10-31T22:48:50.707433Z",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "position_sec": 754.5,
+   "published_at": "2026-01-02T05:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة البقرة ١"
+  },
+  {
+   "completed": false,
+   "created_at": "2026-10-04T10:00:00Z",
+   "duration_sec": 1800,
+   "filename": "qa-night.mp4",
+   "id": "00000000-0000-4000-8000-000000000004",
+   "last_watched_at": "2026-10-31T20:48:50.707433Z",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "position_sec": 300,
+   "published_at": "2026-01-04T05:00:00Z",
+   "state": "ready",
+   "title": "Questions and answers on prayer"
+  }
+ ],
+ "favorites": [
+  {
+   "completed": false,
+   "created_at": "2026-10-04T10:00:00Z",
+   "duration_sec": 1800,
+   "filename": "qa-night.mp4",
+   "id": "00000000-0000-4000-8000-000000000004",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "position_sec": 300,
+   "published_at": "2026-01-04T05:00:00Z",
+   "state": "ready",
+   "title": "Questions and answers on prayer"
+  }
+ ],
+ "featured": {
+  "kind": "series",
+  "picked": false,
+  "series": {
+   "episodes": 3,
+   "id": "5e000000-0000-4000-8000-000000000001",
+   "name": "Tafsir"
+  },
+  "video": {
+   "created_at": "2026-10-01T10:00:00Z",
+   "duration_sec": 3600,
+   "filename": "Tafsir S01E01.mp4",
+   "id": "00000000-0000-4000-8000-000000000001",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "published_at": "2025-12-01T00:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة الفاتحة"
+  }
+ },
+ "on_deck": [],
+ "pinned": [
+  {
+   "continue_watching": [
+    {
+     "completed": false,
+     "created_at": "2026-10-02T10:00:00Z",
+     "duration_sec": 3000,
+     "filename": "Tafsir S01E02.mp4",
+     "id": "00000000-0000-4000-8000-000000000002",
+     "last_watched_at": "2026-10-31T22:48:50.707433Z",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "position_sec": 754.5,
+     "published_at": "2026-01-02T05:00:00Z",
+     "state": "ready",
+     "title": "تفسير سورة البقرة ١"
+    },
+    {
+     "completed": false,
+     "created_at": "2026-10-04T10:00:00Z",
+     "duration_sec": 1800,
+     "filename": "qa-night.mp4",
+     "id": "00000000-0000-4000-8000-000000000004",
+     "last_watched_at": "2026-10-31T20:48:50.707433Z",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "position_sec": 300,
+     "published_at": "2026-01-04T05:00:00Z",
+     "state": "ready",
+     "title": "Questions and answers on prayer"
+    }
+   ],
+   "library": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "name": "Tafsir Lessons"
+   },
+   "recently_added": [
+    {
+     "created_at": "2026-10-05T10:00:00Z",
+     "duration_sec": null,
+     "filename": "untitled-lecture.mp4",
+     "id": "00000000-0000-4000-8000-000000000005",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "published_at": "2026-01-05T05:00:00Z",
+     "state": "ready",
+     "title": null
+    },
+    {
+     "created_at": "2026-10-04T10:00:00Z",
+     "duration_sec": 1800,
+     "filename": "qa-night.mp4",
+     "id": "00000000-0000-4000-8000-000000000004",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "published_at": "2026-01-04T05:00:00Z",
+     "state": "ready",
+     "title": "Questions and answers on prayer"
+    },
+    {
+     "created_at": "2026-10-03T10:00:00Z",
+     "duration_sec": 2700,
+     "filename": "Tafsir S02E01.mp4",
+     "id": "00000000-0000-4000-8000-000000000003",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "published_at": "2026-01-03T05:00:00Z",
+     "state": "ready",
+     "title": "تفسير سورة آل عمران"
+    },
+    {
+     "created_at": "2026-10-02T10:00:00Z",
+     "duration_sec": 3000,
+     "filename": "Tafsir S01E02.mp4",
+     "id": "00000000-0000-4000-8000-000000000002",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "published_at": "2026-01-02T05:00:00Z",
+     "state": "ready",
+     "title": "تفسير سورة البقرة ١"
+    },
+    {
+     "created_at": "2026-10-01T10:00:00Z",
+     "duration_sec": 3600,
+     "filename": "Tafsir S01E01.mp4",
+     "id": "00000000-0000-4000-8000-000000000001",
+     "library_id": "11111111-1111-4111-8111-111111111111",
+     "published_at": "2025-12-01T00:00:00Z",
+     "state": "ready",
+     "title": "تفسير سورة الفاتحة"
+    }
+   ]
+  }
+ ],
+ "recently_added": [
+  {
+   "created_at": "2026-10-05T10:00:00Z",
+   "duration_sec": null,
+   "filename": "untitled-lecture.mp4",
+   "id": "00000000-0000-4000-8000-000000000005",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "published_at": "2026-01-05T05:00:00Z",
+   "state": "ready",
+   "title": null
+  },
+  {
+   "created_at": "2026-10-04T10:00:00Z",
+   "duration_sec": 1800,
+   "filename": "qa-night.mp4",
+   "id": "00000000-0000-4000-8000-000000000004",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "published_at": "2026-01-04T05:00:00Z",
+   "state": "ready",
+   "title": "Questions and answers on prayer"
+  },
+  {
+   "created_at": "2026-10-03T10:00:00Z",
+   "duration_sec": 2700,
+   "filename": "Tafsir S02E01.mp4",
+   "id": "00000000-0000-4000-8000-000000000003",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "published_at": "2026-01-03T05:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة آل عمران"
+  },
+  {
+   "created_at": "2026-10-02T10:00:00Z",
+   "duration_sec": 3000,
+   "filename": "Tafsir S01E02.mp4",
+   "id": "00000000-0000-4000-8000-000000000002",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "published_at": "2026-01-02T05:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة البقرة ١"
+  },
+  {
+   "created_at": "2026-10-01T10:00:00Z",
+   "duration_sec": 3600,
+   "filename": "Tafsir S01E01.mp4",
+   "id": "00000000-0000-4000-8000-000000000001",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "published_at": "2025-12-01T00:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة الفاتحة"
+  }
+ ],
+ "recently_added_grouped": [
+  {
+   "kind": "video",
+   "video": {
+    "created_at": "2026-10-05T10:00:00Z",
+    "duration_sec": null,
+    "filename": "untitled-lecture.mp4",
+    "id": "00000000-0000-4000-8000-000000000005",
+    "library_id": "11111111-1111-4111-8111-111111111111",
+    "published_at": "2026-01-05T05:00:00Z",
+    "state": "ready",
+    "title": null
+   }
+  },
+  {
+   "kind": "video",
+   "video": {
+    "created_at": "2026-10-04T10:00:00Z",
+    "duration_sec": 1800,
+    "filename": "qa-night.mp4",
+    "id": "00000000-0000-4000-8000-000000000004",
+    "library_id": "11111111-1111-4111-8111-111111111111",
+    "published_at": "2026-01-04T05:00:00Z",
+    "state": "ready",
+    "title": "Questions and answers on prayer"
+   }
+  },
+  {
+   "count": 3,
+   "kind": "series",
+   "series": {
+    "id": "5e000000-0000-4000-8000-000000000001",
+    "name": "Tafsir"
+   },
+   "video": {
+    "created_at": "2026-10-03T10:00:00Z",
+    "duration_sec": 2700,
+    "filename": "Tafsir S02E01.mp4",
+    "id": "00000000-0000-4000-8000-000000000003",
+    "library_id": "11111111-1111-4111-8111-111111111111",
+    "published_at": "2026-01-03T05:00:00Z",
+    "state": "ready",
+    "title": "تفسير سورة آل عمران"
+   }
+  }
+ ],
+ "recently_watched": [
+  {
+   "completed": false,
+   "created_at": "2026-10-02T10:00:00Z",
+   "duration_sec": 3000,
+   "filename": "Tafsir S01E02.mp4",
+   "id": "00000000-0000-4000-8000-000000000002",
+   "last_watched_at": "2026-10-31T22:48:50.707433Z",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "position_sec": 754.5,
+   "published_at": "2026-01-02T05:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة البقرة ١"
+  },
+  {
+   "completed": false,
+   "created_at": "2026-10-04T10:00:00Z",
+   "duration_sec": 1800,
+   "filename": "qa-night.mp4",
+   "id": "00000000-0000-4000-8000-000000000004",
+   "last_watched_at": "2026-10-31T20:48:50.707433Z",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "position_sec": 300,
+   "published_at": "2026-01-04T05:00:00Z",
+   "state": "ready",
+   "title": "Questions and answers on prayer"
+  },
+  {
+   "completed": true,
+   "created_at": "2026-10-01T10:00:00Z",
+   "duration_sec": 3600,
+   "filename": "Tafsir S01E01.mp4",
+   "id": "00000000-0000-4000-8000-000000000001",
+   "last_watched_at": "2026-10-29T23:48:50.707433Z",
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "position_sec": 3590,
+   "published_at": "2025-12-01T00:00:00Z",
+   "state": "ready",
+   "title": "تفسير سورة الفاتحة"
+  }
+ ]
+}
