@@ -67,6 +67,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.core.ui.ErrorState
@@ -98,6 +99,8 @@ fun WatchScreen(
     next: Video? = null,
     autoplayNext: Boolean = false,
     onPlayNext: (Video) -> Unit = { playback.play(it) },
+    /** The subtitles' size, as a scale of the player's own (Settings, FR-31). */
+    subtitleScale: Float = 1f,
 ) {
     if (fullScreen) ImmersiveWhileShown()
     // where the video is drawn, in the window: the picture-in-picture window grows out of it
@@ -131,7 +134,10 @@ fun WatchScreen(
                             keepScreenOn = true
                         }
                     },
-                    update = { it.player = player },
+                    update = {
+                        it.player = player
+                        it.subtitleView?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subtitleScale)
+                    },
                     onRelease = { it.player = null },
                     modifier = Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
                         val r = coordinates.boundsInWindow()

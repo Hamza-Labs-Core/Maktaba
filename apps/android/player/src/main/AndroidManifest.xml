@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Wi-Fi or mobile data: Settings' quality for each (FR-31). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- A video's sound goes on with the screen off (FR-39, story 48.33): the media session's
          service runs in the foreground while it plays, and the stream keeps loading. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

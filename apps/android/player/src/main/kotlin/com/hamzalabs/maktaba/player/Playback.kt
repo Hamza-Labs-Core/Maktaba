@@ -29,7 +29,7 @@ import com.hamzalabs.maktaba.player.media.NowPlaying
 import com.hamzalabs.maktaba.player.media.SEEK_INCREMENT_MS
 import com.hamzalabs.maktaba.player.media.castable
 import com.hamzalabs.maktaba.player.media.isRemote
-import com.hamzalabs.maktaba.player.watch.PlaybackPrefs
+import com.hamzalabs.maktaba.player.profile.PlaybackValues
 import com.hamzalabs.maktaba.player.watch.TrackChoice
 import com.hamzalabs.maktaba.player.watch.TrackOption
 import com.hamzalabs.maktaba.player.watch.applyChoice
@@ -121,7 +121,9 @@ class Playback(
     var choice by mutableStateOf(TrackChoice())
         private set
     /** The Settings the player starts each video with (subtitles on or off, their language). */
-    var prefs: PlaybackPrefs.Values = PlaybackPrefs.Values()
+    var prefs: PlaybackValues = PlaybackValues()
+    /** The person chose a quality in the player: the Settings' no longer apply. */
+    private var qualityChosen = false
 
     private var session: String? = null
     /** Where the video was opened (Try again opens there). */
@@ -194,6 +196,7 @@ class Playback(
      * [kbps] as its `max_bitrate_kbps` (null: Auto, the home's own ceiling).
      */
     fun setQuality(kbps: Int?) {
+        qualityChosen = true
         if (kbps == maxBitrateKbps) return
         maxBitrateKbps = kbps
         val p = control ?: return
@@ -203,6 +206,14 @@ class Playback(
             opening.withLock { open(fromMs = at) }
             if (!wasPlaying) control?.playWhenReady = false
         }
+    }
+
+    /**
+     * The quality a new video starts at, from Settings (FR-31: Wi-Fi's or mobile data's), unless
+     * the person chose one in the player, which is kept for the next video.
+     */
+    fun startAt(kbps: Int?) {
+        if (!qualityChosen) maxBitrateKbps = kbps
     }
 
     /** Plays the subtitle or audio track [option]; kept for the next video. */

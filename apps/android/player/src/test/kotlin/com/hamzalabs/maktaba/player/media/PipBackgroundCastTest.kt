@@ -2,6 +2,8 @@
 
 package com.hamzalabs.maktaba.player.media
 
+import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.player.profile.LocalPlaybackSettings
 import android.app.PictureInPictureParams
 import android.content.pm.PackageManager
 import android.content.res.Configuration
@@ -52,9 +54,7 @@ import com.hamzalabs.maktaba.player.shell.PlayerSection
 import com.hamzalabs.maktaba.player.shell.PlayerShell
 import com.hamzalabs.maktaba.player.shell.Route
 import com.hamzalabs.maktaba.player.watch.FakeStreams
-import com.hamzalabs.maktaba.player.watch.LocalPlaybackPrefs
 import com.hamzalabs.maktaba.player.watch.LocalPlayerBuild
-import com.hamzalabs.maktaba.player.watch.PlaybackPrefs
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -108,7 +108,7 @@ class PipBackgroundCastTest {
                 Surface {
                     CompositionLocalProvider(
                         LocalPlayerHome provides home.home,
-                        LocalPlaybackPrefs provides PlaybackPrefs(MapStore()),
+                        LocalPlaybackSettings provides PlaybackSettings(MapStore()),
                         LocalPlayerBuild provides { b: ExoPlayer.Builder ->
                             b.setClock(clock).setRenderersFactory(CapturingRenderersFactory(app, clock))
                         },

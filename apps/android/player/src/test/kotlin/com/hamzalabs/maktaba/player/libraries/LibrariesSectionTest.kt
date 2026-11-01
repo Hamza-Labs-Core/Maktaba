@@ -14,6 +14,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.setShell
 import com.hamzalabs.maktaba.player.shell.PlayerSection
+import com.hamzalabs.maktaba.player.shell.ShellNavigation
+import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
+import androidx.compose.ui.test.SemanticsMatcher
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
