@@ -83,7 +83,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -160,7 +159,7 @@ internal fun StartFrame(app: MaktabaApp, content: @Composable ColumnScope.() -> 
     }
 }
 
-/** The web's library art (light or dark, tall or wide) under a scrim, filling the screen. */
+/** The web's library art (light or dark, tall or wide) under the tokens' scrim, filling the screen. */
 @Composable
 internal fun StartBackdrop(content: @Composable () -> Unit) {
     val colors = MaterialTheme.colorScheme
@@ -174,11 +173,8 @@ internal fun StartBackdrop(content: @Composable () -> Unit) {
             else -> R.drawable.library_light_phone
         }
         Image(painterResource(art), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(listOf(colors.background.copy(alpha = 0.45f), colors.background.copy(alpha = 0.85f))),
-            ),
-        )
+        // the tokens' scrim (`color.semantic.scrim`): the layer over the library art
+        Box(Modifier.fillMaxSize().background(MaktabaTheme.brand.scrim).testTag("start-scrim"))
         content()
     }
 }
@@ -200,14 +196,14 @@ internal fun StartBrand(app: MaktabaApp) {
     }
 }
 
-/** The start screens' panel: the surface, a hairline border, rounded. */
+/** The start screens' panel: a raised sheet (`color.semantic.raised`), a hairline border, rounded. */
 @Composable
 internal fun StartPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     val colors = MaterialTheme.colorScheme
     Column(
         modifier.fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
-            .background(colors.surface.copy(alpha = 0.86f))
+            .background(MaktabaTheme.brand.raised.copy(alpha = 0.86f))
             .border(1.dp, colors.outlineVariant, RoundedCornerShape(20.dp))
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),

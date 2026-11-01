@@ -30,10 +30,10 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
         // TranslationsTest reads every Android module's strings (and the TV app's): it runs again
-        // whenever one of them changes, not only the core's
+        // whenever one of them changes, not only the core's; LaunchThemeTest reads the launch theme
         unitTests.all { test ->
             test.inputs.files(
-                fileTree(projectDir.parentFile) { include("*/src/main/res/values*/strings.xml") },
+                fileTree(projectDir.parentFile) { include("*/src/main/res/values*/strings.xml", "core/src/main/res/values*/themes.xml", "core/src/main/res/drawable/maktaba_window.xml") },
                 fileTree(projectDir.resolve("../../tv/android/app/src/main/res")) { include("values*/strings.xml") },
             ).withPropertyName("strings").withPathSensitivity(PathSensitivity.RELATIVE)
         }

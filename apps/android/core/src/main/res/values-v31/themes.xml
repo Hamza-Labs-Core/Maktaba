@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12 and later draw the system's launch screen: ink with the logo (the launcher
+         icon's foreground, whose safe zone is the splash icon's), in light mode too (FR-3). The
+         window under it is plain ink, so nothing jumps when the splash leaves. -->
+    <style name="Theme.Maktaba" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/maktaba_background</item>
+        <item name="android:colorBackground">@color/maktaba_background</item>
+        <item name="android:colorAccent">@color/maktaba_accent</item>
+        <item name="android:statusBarColor">@color/maktaba_background</item>
+        <item name="android:navigationBarColor">@color/maktaba_background</item>
+        <item name="android:windowSplashScreenBackground">@color/maktaba_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/maktaba_background</item>
+    </style>
+</resources>
