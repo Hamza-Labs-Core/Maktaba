@@ -146,9 +146,10 @@ func TestStreamGateSignedURLPassesWithoutASession(t *testing.T) {
 }
 
 // Role tests: no session and no sig 401; another session's (or another video's)
-// sig 403; an expired sig 403; a token for the other path family 403; something
-// that is not a token 401; a channel's path or the staging preview with any sig
-// 401 (a session is needed). Nothing refused reaches streaming.
+// sig 403; a token for the other path family 403; something that is not a token
+// 401; a channel's path or the staging preview with any sig 401 (a session is
+// needed). Nothing refused reaches streaming. An expired sig is the streaming
+// service's 403: TestStreamGateLeavesExpiryToStreaming.
 func TestStreamGateSignedURLRoles(t *testing.T) {
 	g, be, _ := signedGate(t, nil)
 	future, past := signedNow.Add(time.Hour), signedNow.Add(-2*time.Hour)
@@ -170,12 +171,10 @@ func TestStreamGateSignedURLRoles(t *testing.T) {
 		{"another session's sig", withSig(manifest, fakeToken(t, audSession, otherSess, future)), http.StatusForbidden},
 		{"another session's sig: segment", withSig(seg, fakeToken(t, audSession, otherSess, future)), http.StatusForbidden},
 		{"another video's sig", withSig(direct, fakeToken(t, audDirect, otherSess, future)), http.StatusForbidden},
-		{"expired sig: session", withSig(manifest, fakeToken(t, audSession, sessID, past)), http.StatusForbidden},
-		{"expired sig: direct", withSig(direct, fakeToken(t, audDirect, videoID, past)), http.StatusForbidden},
+		{"another session's sig, also expired", withSig(manifest, fakeToken(t, audSession, otherSess, past)), http.StatusForbidden},
 		{"direct token on a session path", withSig(manifest, fakeToken(t, audDirect, sessID, future)), http.StatusForbidden},
 		{"session token on direct play", withSig(direct, fakeToken(t, audSession, videoID, future)), http.StatusForbidden},
 		{"another audience", withSig(manifest, fakeToken(t, "streaming-static", sessID, future)), http.StatusForbidden},
-		{"no exp", withSig(manifest, fakeToken(t, audSession, sessID, time.Unix(0, 0))), http.StatusForbidden},
 		{"not a token", withSig(manifest, "letmein"), http.StatusUnauthorized},
 		{"not base64", withSig(manifest, "a.!!!.c"), http.StatusUnauthorized},
 		{"not JSON", withSig(manifest, "a."+base64.RawURLEncoding.EncodeToString([]byte("nope"))+".c"), http.StatusUnauthorized},
@@ -197,15 +196,69 @@ func TestStreamGateSignedURLRoles(t *testing.T) {
 			t.Errorf("refused request reached streaming: %s", r.URL)
 		}
 	}
-	// within the streaming service's clock-skew leeway the gate does not refuse:
-	// the streaming service decides
-	justPast := withSig(manifest, fakeToken(t, audSession, sessID, signedNow.Add(-signedLeeway/2)))
-	if rec := do(g, http.MethodGet, justPast, nil); rec.Code != http.StatusOK {
-		t.Errorf("expired within the leeway: %d, want 200", rec.Code)
+}
+
+// An expired sig is the streaming service's 403 (Story 23.2 AC-3, proved in
+// streaming/internal/auth TestSignedURL_Expired and httpx
+// TestWriteSignedURLError_ExpiredIs403), with its own configurable leeway
+// (MAKTABA_CLOCK_SKEW_LEEWAY_SEC; for via-home, the home's). The gate has no
+// second, differently-tuned expiry check: whatever the token's age, it passes
+// the token untouched and relays the streaming service's answer. The stand-in
+// here applies the streaming rule (now - leeway > exp, in Unix seconds) with a
+// non-default 120 s leeway.
+func TestStreamGateLeavesExpiryToStreaming(t *testing.T) {
+	const leeway = 120 * time.Second
+	streamNow := signedNow
+	var mu sync.Mutex
+	var forwarded []string
+	streaming := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sig := r.URL.Query().Get("sig")
+		mu.Lock()
+		forwarded = append(forwarded, sig)
+		mu.Unlock()
+		parts := strings.Split(sig, ".")
+		raw, _ := base64.RawURLEncoding.DecodeString(parts[1])
+		var c struct{ Exp int64 }
+		_ = json.Unmarshal(raw, &c)
+		if streamNow.Add(-leeway).Unix() > c.Exp {
+			http.Error(w, `{"type":"signed-url-expired"}`, http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, "ok")
+	})
+	api := &fakeAPI{}
+	au, _ := url.Parse(api.server(t).URL)
+	g := newStreamGate(streaming, au)
+	g.now = func() time.Time { return signedNow }
+	manifest := "/stream/" + sessID + "/manifest.m3u8"
+	direct := "/stream/direct/" + videoID
+	cases := []struct {
+		name string
+		path string
+		aud  string
+		sub  string
+		age  time.Duration // how long ago the token expired
+		want int
+	}{
+		{"live", manifest, audSession, sessID, -time.Hour, http.StatusOK},
+		{"expired 30 s ago", manifest, audSession, sessID, 30 * time.Second, http.StatusOK},
+		{"expired 90 s ago (past the 60 s default, within 120 s)", manifest, audSession, sessID, 90 * time.Second, http.StatusOK},
+		{"expired exactly the leeway ago", manifest, audSession, sessID, leeway, http.StatusOK},
+		{"expired the leeway and a second ago", manifest, audSession, sessID, leeway + time.Second, http.StatusForbidden},
+		{"expired two hours ago", manifest, audSession, sessID, 2 * time.Hour, http.StatusForbidden},
+		{"direct, expired two hours ago", direct, audDirect, videoID, 2 * time.Hour, http.StatusForbidden},
+		{"direct, expired 90 s ago", direct, audDirect, videoID, 90 * time.Second, http.StatusOK},
 	}
-	beyond := withSig(manifest, fakeToken(t, audSession, sessID, signedNow.Add(-signedLeeway)))
-	if rec := do(g, http.MethodGet, beyond, nil); rec.Code != http.StatusForbidden {
-		t.Errorf("expired by the leeway: %d, want 403", rec.Code)
+	for _, c := range cases {
+		tok := fakeToken(t, c.aud, c.sub, signedNow.Add(-c.age))
+		if rec := do(g, http.MethodGet, withSig(c.path, tok), nil); rec.Code != c.want {
+			t.Errorf("%s: %d, want %d", c.name, rec.Code, c.want)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(forwarded) != len(cases) {
+		t.Fatalf("the gate refused %d expired tokens itself", len(cases)-len(forwarded))
 	}
 }
 
@@ -242,6 +295,8 @@ func TestStreamGateSignedURLViaHome(t *testing.T) {
 		withSig("/stream/via-home/"+sessID+"/manifest.m3u8", fakeToken(t, audSession, sessID, future)),
 		withSig("/stream/via-home/"+sessID+"/v0/seg-2.ts", fakeToken(t, audSession, sessID, future)),
 		withSig("/stream/via-home/direct/"+videoID, fakeToken(t, audDirect, videoID, future)),
+		// expired: the home's streaming service judges it with the home's leeway
+		withSig("/stream/via-home/"+sessID+"/manifest.m3u8", fakeToken(t, audSession, sessID, signedNow.Add(-90*time.Second))),
 	}
 	for _, target := range ok {
 		if rec := do(g, http.MethodGet, target, nil); rec.Code != http.StatusOK {

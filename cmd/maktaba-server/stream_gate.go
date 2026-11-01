@@ -26,10 +26,11 @@ package main
 //     (Epic 48 story 48.12, gap G2): an AirPlay or Cast receiver fetches the
 //     URL itself and carries neither. The gate reads the token's claims (it
 //     holds no key): the audience must be the path family's (streaming /
-//     streaming-direct), the subject the session or video in the path, and it
-//     must not be expired; otherwise 403 (unreadable: 401). The streaming
-//     service still verifies it in full (signature, audience, subject, expiry
-//     with its leeway, LibraryGuard), as for every session and direct path.
+//     streaming-direct) and the subject the session or video in the path;
+//     otherwise 403 (unreadable: 401). The streaming service still verifies it
+//     in full (signature, audience, subject, expiry with its configured leeway:
+//     an expired token is its 403, LibraryGuard), as for every session and
+//     direct path.
 //     A channel's path has no ?sig= and still needs a session; so does the
 //     staging preview. No viewer is named for a signed request;
 //   - strips Cookie and Authorization before proxying, so the session
@@ -231,12 +232,6 @@ func (g *streamGate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.next.ServeHTTP(w, out)
 }
 
-// signedLeeway is the clock skew the gate forgives on a signed URL's exp: the
-// streaming service's default (MAKTABA_CLOCK_SKEW_LEEWAY_SEC, 60 s), so the
-// gate never refuses a token the streaming service would still take. The
-// streaming service applies its own leeway after the gate.
-const signedLeeway = 60 * time.Second
-
 // signedTokenMax bounds the ?sig= the gate reads (a minted token is ~700 bytes).
 const signedTokenMax = 4096
 
@@ -258,14 +253,19 @@ type signedVerdict int
 const (
 	signedOK         signedVerdict = iota
 	signedUnreadable               // not a token at all: 401
-	signedRefused                  // a token, but not this path's, or expired: 403
+	signedRefused                  // a token, but not this path's: 403
 )
 
 // checkSigned reads the claims of a signed URL's token (no signature check: the
 // gate has no key; the streaming service verifies it) and reports whether it is
-// this path's: aud the path family's, sub the session or video in the path, exp
-// not past (with signedLeeway).
-func checkSigned(path, sig string, now time.Time) signedVerdict {
+// this path's: aud the path family's, sub the session or video in the path.
+//
+// Expiry is left to the streaming service, which checks it on every request
+// with its own configurable leeway (MAKTABA_CLOCK_SKEW_LEEWAY_SEC; on a node's
+// via-home path, the home's) and answers an expired token 403 (Story 23.2
+// AC-3). A second, differently-tuned check here would only refuse tokens the
+// streaming service still accepts.
+func checkSigned(path, sig string) signedVerdict {
 	m := signedPathRe.FindStringSubmatch(path)
 	if m == nil {
 		return signedRefused
@@ -288,15 +288,11 @@ func checkSigned(path, sig string, now time.Time) signedVerdict {
 	var c struct {
 		Aud string `json:"aud"`
 		Sub string `json:"sub"`
-		Exp int64  `json:"exp"`
 	}
 	if err := json.Unmarshal(raw, &c); err != nil {
 		return signedUnreadable
 	}
-	if c.Aud != wantAud || !strings.EqualFold(c.Sub, wantSub) || c.Exp == 0 {
-		return signedRefused
-	}
-	if !now.Before(time.Unix(c.Exp, 0).Add(signedLeeway)) {
+	if c.Aud != wantAud || !strings.EqualFold(c.Sub, wantSub) {
 		return signedRefused
 	}
 	return signedOK
@@ -311,12 +307,12 @@ func (g *streamGate) serveSigned(w http.ResponseWriter, r *http.Request, sig str
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	}
-	switch checkSigned(r.URL.Path, sig, g.now()) {
+	switch checkSigned(r.URL.Path, sig) {
 	case signedUnreadable:
 		pagetheme.Error(w, r, "sign in to watch", http.StatusUnauthorized)
 		return
 	case signedRefused:
-		pagetheme.Error(w, r, "this link has expired or is not for this video", http.StatusForbidden)
+		pagetheme.Error(w, r, "this link is not for this video", http.StatusForbidden)
 		return
 	}
 	out := r.Clone(r.Context())
