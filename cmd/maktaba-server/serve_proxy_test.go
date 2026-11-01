@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,14 +40,80 @@ func (b *streamBackend) server(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// fakeAPI answers /api/auth/me: 200 for the "good" session.
+// fakeAPI answers /api/auth/me and GET /api/channels/{id} for these sessions:
+//
+//   - mkt_sess=admin: an admin (user "a");
+//   - mkt_sess=good or Bearer good: a viewer with access to all libraries ("u");
+//   - mkt_sess=lib-a: a viewer limited to library A ("v").
+//
+// The channels: chanID (library A), chanB (library B), chanMulti (no library:
+// a multi-library channel, every viewer's). /api/channels/{id} applies the
+// channels handler's canRead (api/internal/handlers/channels), answering 404
+// for a channel the viewer may not read, as the API does.
 type fakeAPI struct {
-	mu    sync.Mutex
-	calls int
+	mu        sync.Mutex
+	calls     int // /api/auth/me
+	chanCalls int // /api/channels/{id}
+	chanDown  bool
+}
+
+const (
+	chanB     = "0a1b2c3d-0000-4000-8000-00000000bbbb"
+	chanMulti = "0a1b2c3d-0000-4000-8000-00000000cccc"
+)
+
+type fakeViewer struct {
+	user      string
+	admin     bool
+	allLibs   bool
+	libraries []string
+}
+
+func (a *fakeAPI) viewer(r *http.Request) *fakeViewer {
+	if c, err := r.Cookie("mkt_sess"); err == nil {
+		switch c.Value {
+		case "admin":
+			return &fakeViewer{user: "a", admin: true, allLibs: true}
+		case "good":
+			return &fakeViewer{user: "u", allLibs: true}
+		case "lib-a":
+			return &fakeViewer{user: "v", libraries: []string{"A"}}
+		}
+	}
+	if r.Header.Get("Authorization") == "Bearer good" {
+		return &fakeViewer{user: "u", allLibs: true}
+	}
+	return nil
 }
 
 func (a *fakeAPI) server(t *testing.T) *httptest.Server {
+	libraryOf := map[string]*string{chanID: libPtr("A"), chanB: libPtr("B"), chanMulti: nil}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v := a.viewer(r)
+		if id, ok := strings.CutPrefix(r.URL.Path, "/api/channels/"); ok {
+			a.mu.Lock()
+			a.chanCalls++
+			down := a.chanDown
+			a.mu.Unlock()
+			if down {
+				http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+				return
+			}
+			if v == nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			lib, known := libraryOf[id]
+			// canRead: admins and all-library viewers read every channel, a
+			// multi-library channel is every viewer's, else the viewer's library
+			readable := known && (v.admin || v.allLibs || lib == nil || slices.Contains(v.libraries, *lib))
+			if !readable {
+				http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+				return
+			}
+			_, _ = io.WriteString(w, `{"id":"`+id+`"}`)
+			return
+		}
 		a.mu.Lock()
 		a.calls++
 		a.mu.Unlock()
@@ -53,23 +121,21 @@ func (a *fakeAPI) server(t *testing.T) *httptest.Server {
 			http.NotFound(w, r)
 			return
 		}
-		if c, err := r.Cookie("mkt_sess"); err == nil && c.Value == "admin" {
-			_, _ = io.WriteString(w, `{"user_id":"a","is_admin":true}`)
+		if v == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		if c, err := r.Cookie("mkt_sess"); err == nil && c.Value == "good" {
-			_, _ = io.WriteString(w, `{"user_id":"u"}`)
+		if v.admin {
+			_, _ = io.WriteString(w, `{"user_id":"`+v.user+`","is_admin":true}`)
 			return
 		}
-		if r.Header.Get("Authorization") == "Bearer good" {
-			_, _ = io.WriteString(w, `{"user_id":"u"}`)
-			return
-		}
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `{"user_id":"`+v.user+`"}`)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
 }
+
+func libPtr(s string) *string { return &s }
 
 // webMux is the web port's live-TV wiring (as startWebServer builds it).
 func webMux(t *testing.T) (*http.ServeMux, *streamBackend, *fakeAPI, *streamGate) {

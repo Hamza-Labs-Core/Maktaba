@@ -696,6 +696,19 @@ Append here: date, session, one to five lines on what changed. Newest last.
     its counts as 0 (only the list counts): a series page must count its episodes.
   - Failed first: `initdb` without `-E UTF8` made a SQL_ASCII database, and the facets route
     500'd on Arabic first letters; recreated the DB as UTF8 (not an API bug).
+- 2026-10-31 · Epic 48 story 48.3 agent of `b743b7d4`: closes G1. `stream_gate.go` asks
+  `GET /api/channels/{id}` (the channels handler's `canRead`, the same rule as the guide's
+  `visibleChannels`) for every non-admin `/stream/channel/{id}/…` and
+  `/stream/via-home/channel/{id}/…`, caching allowed and refused verdicts per credential hash
+  and channel for `streamAuthTTL` (30 s).
+  - Decided: 404 and 403 from the API both become a 403, so the gate does not tell which ids
+    exist. A 401 from the channel check drops the cached session too. A 5xx is a 502 and is
+    never cached. Admins skip the check: the admin's staging `Get` reads draft rows, and
+    admins see everything anyway.
+  - Added an API role test (`api/internal/handlers/channels/get_access_test.go`). Before it,
+    nothing tested `Get`'s library rule, and the gate now depends on it.
+  - Needs the update-rehearsal CI green on its exact commit before merge, because it changes
+    the front door.
 
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
