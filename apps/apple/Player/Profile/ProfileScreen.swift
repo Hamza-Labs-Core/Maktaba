@@ -65,7 +65,7 @@ struct ProfileScreen: View {
             }
         }
         #endif
-        .onAppear { PlaybackSettings.resetIfAsked() }
+        .onAppear { PlaybackPreferences.resetIfAsked() }
         .task { await model.loadRoot() }
     }
 

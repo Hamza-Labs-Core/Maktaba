@@ -2,12 +2,14 @@ import Foundation
 import Observation
 
 // FR-31's playback settings, kept on this device. The Profile's Playback page (story 48.22)
-// changes them; the player (story 48.23) reads them through `PlaybackSettings.shared`:
+// changes them. The player (story 48.23) already reads three of them itself, on the same
+// keys (`Watch/PlaybackSettings.swift`: `playback.autoplay_next`, `playback.subtitles_on`,
+// `playback.subtitle_language`); the rest it can bind to here, `PlaybackPreferences.shared`:
 //
-//     let s = PlaybackSettings.shared
+//     let s = PlaybackPreferences.shared
 //     s.autoplayNext                       // Up next counts down (FR-33); off: stop at the end
 //     s.resumeWithoutAsking                // open at playback_state.position without asking
-//     s.subtitlesOn, s.subtitleLanguage.tag // pick a subtitle at start (nil tag: the video's own)
+//     s.subtitlesOn, s.subtitleLanguage.tag // pick a subtitle at start (nil tag: the app's language)
 //     s.subtitleSize.scale                 // the VTT's / the renditions' text scale
 //     s.maxBitrateKbps(expensive: path.isExpensive) // `max_bitrate_kbps` (nil: no cap)
 //
@@ -67,20 +69,20 @@ enum StreamQuality: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// The subtitle language to prefer: the video's own default, English or Arabic.
+/// The subtitle language to prefer: the app's language, English or Arabic.
 enum SubtitleLanguage: String, CaseIterable, Identifiable, Sendable {
-    case videoDefault = "default"
+    case appLanguage = "app"
     case english = "en"
     case arabic = "ar"
 
     var id: String { rawValue }
 
-    /// The language tag to match a subtitle track against (nil: the video's default track).
-    var tag: String? { self == .videoDefault ? nil : rawValue }
+    /// The language tag stored (nil: none stored; the player then uses the app's language).
+    var tag: String? { self == .appLanguage ? nil : rawValue }
 
     var label: LocalizedStringResource {
         switch self {
-        case .videoDefault: LocalizedStringResource("The video's own", table: "Profile", comment: "Subtitle language: the video's default")
+        case .appLanguage: LocalizedStringResource("The app's language", table: "Profile", comment: "Subtitle language: the language the app speaks")
         case .english: LocalizedStringResource("English", table: "Profile", comment: "A language, named in English")
         case .arabic: LocalizedStringResource("Arabic", table: "Profile", comment: "A language, named in Arabic")
         }
@@ -90,9 +92,9 @@ enum SubtitleLanguage: String, CaseIterable, Identifiable, Sendable {
 /// The playback settings on this device (`playback.*` keys in the app's defaults, beside the
 /// theme). Each change is written at once. Observable: a view reading one redraws on change.
 @MainActor @Observable
-final class PlaybackSettings {
+final class PlaybackPreferences {
     /// The app's one store.
-    static let shared = PlaybackSettings()
+    static let shared = PlaybackPreferences()
 
     enum Key {
         static let autoplayNext = "playback.autoplay_next"
@@ -110,7 +112,7 @@ final class PlaybackSettings {
     var autoplayNext: Bool { didSet { defaults.set(autoplayNext, forKey: Key.autoplayNext) } }
     /// Start each video with subtitles. Off by default.
     var subtitlesOn: Bool { didSet { defaults.set(subtitlesOn, forKey: Key.subtitlesOn) } }
-    /// Stored as the language tag ("en", "ar"), the key removed for the video's own: the
+    /// Stored as the language tag ("en", "ar"), the key removed for the app's language: the
     /// player (48.23) reads the tag as it is.
     var subtitleLanguage: SubtitleLanguage {
         didSet {
@@ -135,7 +137,7 @@ final class PlaybackSettings {
         }
         autoplayNext = bool(Key.autoplayNext, true)
         subtitlesOn = bool(Key.subtitlesOn, false)
-        subtitleLanguage = value(Key.subtitleLanguage, SubtitleLanguage.videoDefault)
+        subtitleLanguage = value(Key.subtitleLanguage, SubtitleLanguage.appLanguage)
         subtitleSize = value(Key.subtitleSize, SubtitleSize.medium)
         qualityWifi = value(Key.qualityWifi, StreamQuality.original)
         qualityMobile = value(Key.qualityMobile, StreamQuality.p720)
@@ -164,7 +166,7 @@ final class PlaybackSettings {
 
     /// Reads every setting again from the defaults.
     func reload() {
-        let now = PlaybackSettings(defaults: defaults)
+        let now = PlaybackPreferences(defaults: defaults)
         autoplayNext = now.autoplayNext
         subtitlesOn = now.subtitlesOn
         subtitleLanguage = now.subtitleLanguage

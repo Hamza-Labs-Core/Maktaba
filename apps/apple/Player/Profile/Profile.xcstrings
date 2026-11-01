@@ -605,6 +605,17 @@
         }
       }
     },
+    "The app's language" : {
+      "comment" : "Subtitle language: the language the app speaks",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لغة التطبيق"
+          }
+        }
+      }
+    },
     "The home: %@" : {
       "comment" : "About: the home's version",
       "localizations" : {
@@ -612,17 +623,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "«الجهاز الرئيسي»: %@"
-          }
-        }
-      }
-    },
-    "The video's own" : {
-      "comment" : "Subtitle language: the video's default",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لغة الفيديو نفسه"
           }
         }
       }

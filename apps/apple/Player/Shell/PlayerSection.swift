@@ -14,8 +14,9 @@ enum PlayerSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     /// story adds its one line here. With one section the app shows that screen alone, as
     /// before the shell (no tab bar of one tab).
     static let enabled: [PlayerSection] = [
-        .libraries,
-        .profile,
+        .home,
+        .libraries, // 48.18: Libraries, a library, Series, a series
+        .profile, // 48.22: Profile and Settings
     ]
 
     var id: String { rawValue }

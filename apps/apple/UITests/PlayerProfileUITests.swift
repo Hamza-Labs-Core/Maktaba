@@ -163,7 +163,10 @@ final class PlayerProfileUITests: PlayerUITestCase {
         XCTAssertTrue(element("playlist.play").waitForExistence(timeout: 10), "the playlist's page")
         element("playlist.play").tap()
         XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 5), "Play opens the player")
-        XCTAssertTrue(app.staticTexts["v10 @ 0"].exists, "at its first video, from the start")
+        // the player (48.23) opens a stream session for the playlist's first video, from the start
+        XCTAssertTrue(waitFor({ self.openedStreams().contains { $0["video_id"] as? String == "v10" } }, timeout: 10), "at its first video")
+        let opened = openedStreams().first { $0["video_id"] as? String == "v10" }
+        XCTAssertEqual(opened?["start_sec"] as? Int ?? 0, 0, "from the start")
     }
 
     func testPlaybackSettingsAreKept() {
@@ -235,6 +238,12 @@ final class PlayerProfileUITests: PlayerUITestCase {
     {"playlist":{"id":"pl-2","name":"Weekend documentaries","description":"","videos":1,"duration_sec":2940,"poster_video_ids":["v10"]},
      "items":[{"id":"v10","title":"The Libraries of Timbuktu","filename":"timbuktu.mp4","duration_sec":2940}]}
     """#
+
+    /// The stream sessions the app opened (`POST /api/stream/sessions`), their bodies in order.
+    private func openedStreams() -> [[String: Any]] {
+        home.requests.filter { $0.method == "POST" && $0.path == "/api/stream/sessions" }
+            .compactMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+    }
 
     private func expect(_ e: XCUIElement, selected: Bool, _ message: String) {
         let p = expectation(for: NSPredicate(format: "isSelected == %@", NSNumber(value: selected)), evaluatedWith: e)

@@ -11,26 +11,6 @@
         }
       }
     },
-    "All videos" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "كل المقاطع"
-          }
-        }
-      }
-    },
-    "Choose a video" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اختر مقطعًا"
-          }
-        }
-      }
-    },
     "Close" : {
       "localizations" : {
         "ar" : {
@@ -47,36 +27,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تعذّر بدء التشغيل على هذا الجهاز."
-          }
-        }
-      }
-    },
-    "Libraries" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المكتبات"
-          }
-        }
-      }
-    },
-    "Library" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المكتبة"
-          }
-        }
-      }
-    },
-    "No videos" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "لا توجد مقاطع"
           }
         }
       }
@@ -117,16 +67,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التشغيل"
-          }
-        }
-      }
-    },
-    "Search titles" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ابحث في العناوين"
           }
         }
       }

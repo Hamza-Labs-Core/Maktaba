@@ -6,9 +6,13 @@ import SwiftUI
 /// flat, the iPad, the Mac) or one half of a half-folded iPhone Duo with the library on the
 /// other, so the stream lives here and not in a view.
 ///
-/// Opens a stream session, plays its signed URL, reports progress every 10 s, reopens
-/// before the signed URL ends (the home signs it for the video's length plus an hour, so
-/// normally never) or when the item fails, and closes the session when stopped.
+/// Opens a stream session at the resume position, plays its signed URL, reports progress
+/// every 10 s, on pause and on stop (and `completed` at the end), reopens before the signed
+/// URL ends (the home signs it for the video's length plus an hour, so normally never), when
+/// the item fails, or at another quality (`max_bitrate_kbps`), and closes the session when
+/// stopped. It lists the item's subtitles and audio and keeps the person's choice for the
+/// next video, makes sure a video with sound plays with sound (FR-39a), and finds the
+/// series' next episode for Up next (story 48.23).
 @MainActor @Observable
 final class Playback {
     let client: APIClient
@@ -16,6 +20,37 @@ final class Playback {
     private(set) var player: AVPlayer?
     /// Why it does not play (the watch screen says it and what can be done).
     private(set) var failure: HomeFailure?
+
+    // What the controls show.
+    private(set) var position: Double = 0
+    private(set) var duration: Double = 0
+    private(set) var isPlaying = false
+    /// The video played to its end.
+    private(set) var ended = false
+    /// The item's subtitle renditions and audio tracks, and the ones selected (no subtitle:
+    /// off).
+    private(set) var subtitles: [TrackChoice] = []
+    private(set) var audioTracks: [TrackChoice] = []
+    private(set) var subtitle: TrackChoice?
+    private(set) var audio: TrackChoice?
+    /// The sound the item plays now: its audio codec (nil: no audio track enabled) and
+    /// whether the player is audible.
+    private(set) var sound = Sound(codec: nil, audible: true)
+    /// The qualities the session offers (empty: direct play).
+    private(set) var ladder: [Rendition] = []
+    /// The quality asked for (nil: Auto, the home chooses).
+    private(set) var maxBitrateKbps: Int?
+    /// The series' next episode (nil: not an episode, or the last).
+    private(set) var next: Episode?
+    /// Seconds left before Up next plays `next` (nil: not counting down).
+    private(set) var upNextCountdown: Int?
+    /// Settings' playback values, read when a video starts.
+    private(set) var settings = PlaybackSettings.read()
+
+    struct Sound: Equatable {
+        let codec: String?
+        let audible: Bool
+    }
 
     private var session: String?
     /// When to reopen: just before the signed URL ends.
@@ -26,12 +61,34 @@ final class Playback {
     /// user's token as it is now (see `StreamProxy`).
     private var proxy: StreamProxy?
 
+    private var timeObserver: Any?
+    private var itemObservers: [NSObjectProtocol] = []
+    private var statusObservation: NSKeyValueObservation?
+    private var groupsTask: Task<Void, Never>?
+    private var legible: AVMediaSelectionGroup?
+    private var audible: AVMediaSelectionGroup?
+    private var nextTask: Task<Void, Never>?
+    private var upNextTask: Task<Void, Never>?
+    /// The person cancelled Up next for this video.
+    private var upNextDismissed = false
+    private var reportedCompleted = false
+    /// The person's subtitle choice, kept for the next video by language: nil, not chosen
+    /// (Settings decide); `.some(nil)`, off.
+    private var chosenSubtitle: String??
+    /// The person's audio choice, by language.
+    private var chosenAudio: String?
+
     init(client: APIClient) {
         self.client = client
     }
 
-    func play(_ v: Video) {
-        if v.id == video?.id, failure == nil { return }
+    /// Plays `v` from `start` seconds; nil: where the person left off (a finished video
+    /// starts again).
+    func play(_ v: Video, from start: Double? = nil) {
+        if v.id == video?.id, failure == nil {
+            if let start { seek(to: start) }
+            return
+        }
         stop()
         #if os(iOS)
         // the app declares background audio: with the playback category the sound goes on
@@ -40,7 +97,8 @@ final class Playback {
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
         video = v
-        running = Task { await run() }
+        settings = PlaybackSettings.read()
+        running = Task { await run(v, asked: start) }
     }
 
     /// Opens the same video again, after it failed.
@@ -48,10 +106,18 @@ final class Playback {
         if let v = video { play(v) }
     }
 
-    /// Play or pause what is open (the keyboard's space, the Playback menu).
+    /// Play or pause what is open (the keyboard's space, the Playback menu, the controls).
+    /// Pausing reports the position.
     func togglePause() {
         guard let p = player else { return }
-        if p.rate > 0 { p.pause() } else { p.play() }
+        if p.rate > 0 {
+            p.pause()
+            report()
+        } else {
+            if ended { seek(to: 0) }
+            p.play()
+        }
+        isPlaying = p.rate > 0
     }
 
     /// Moves `seconds` forward (back when negative), not before the start nor past the end.
@@ -59,14 +125,85 @@ final class Playback {
         guard let p = player else { return }
         let now = p.currentTime().seconds
         guard now.isFinite else { return }
-        var to = max(0, now + seconds)
+        seek(to: now + seconds)
+    }
+
+    /// Goes to `seconds`, not before the start nor past the end.
+    func seek(to seconds: Double) {
+        guard let p = player else { return }
+        var to = max(0, seconds)
         if let end = p.currentItem?.duration.seconds, end.isFinite { to = min(to, max(0, end - 1)) }
+        position = to
+        ended = false
         p.seek(to: CMTime(seconds: to, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    /// Selects a subtitle rendition (nil: off), kept for the next video.
+    func selectSubtitle(_ choice: TrackChoice?) {
+        guard let item = player?.currentItem else { return }
+        PlayerTracks.select(choice, in: legible, of: item)
+        chosenSubtitle = .some(choice.map { $0.language ?? $0.name })
+        refreshTracks()
+    }
+
+    /// Selects an audio track, kept for the next video.
+    func selectAudio(_ choice: TrackChoice) {
+        guard let p = player, let item = p.currentItem else { return }
+        PlayerTracks.select(choice, in: audible, of: item)
+        chosenAudio = choice.language ?? choice.name
+        PlayerTracks.ensureAudio(player: p, item: item, audible: audible)
+        refreshTracks()
+    }
+
+    /// Reopens at the same position with the quality capped at `kbps` (nil: Auto), paused if
+    /// it was paused.
+    func setQuality(_ kbps: Int?) {
+        guard kbps != maxBitrateKbps, let p = player else { return }
+        maxBitrateKbps = kbps
+        let at = p.currentTime().seconds
+        let wasPlaying = p.rate > 0
+        running?.cancel()
+        running = Task {
+            await open(from: at.isFinite ? at : position)
+            if !wasPlaying { player?.pause() }
+            guard player != nil else { return }
+            await watch()
+        }
+    }
+
+    /// Plays the next episode now (Up next's Play now, the Next button).
+    func playNext() {
+        guard let n = next else { return }
+        upNextTask?.cancel()
+        upNextTask = nil
+        upNextCountdown = nil
+        Task {
+            do {
+                let v = try await client.video(n.videoID)
+                play(v)
+            } catch {
+                failure = HomeFailure(error)
+            }
+        }
+    }
+
+    /// Up next's Cancel: this video stops at its end.
+    func cancelUpNext() {
+        upNextTask?.cancel()
+        upNextTask = nil
+        upNextCountdown = nil
+        upNextDismissed = true
     }
 
     func stop() {
         running?.cancel()
         running = nil
+        groupsTask?.cancel()
+        nextTask?.cancel()
+        upNextTask?.cancel()
+        unobserveItem()
+        if let timeObserver, let player { player.removeTimeObserver(timeObserver) }
+        timeObserver = nil
         player?.pause()
         if let session {
             let at = player?.currentTime().seconds ?? 0
@@ -81,11 +218,50 @@ final class Playback {
         video = nil
         proxy?.stop()
         proxy = nil
+        position = 0
+        duration = 0
+        isPlaying = false
+        ended = false
+        subtitles = []
+        audioTracks = []
+        subtitle = nil
+        audio = nil
+        sound = Sound(codec: nil, audible: true)
+        ladder = []
+        maxBitrateKbps = nil
+        next = nil
+        upNextCountdown = nil
+        upNextDismissed = false
+        reportedCompleted = false
+        legible = nil
+        audible = nil
     }
 
-    private func run() async {
-        await open(from: 0)
+    /// The state the UI tests read (the video's accessibility value in a Debug build).
+    var testState: String {
+        [
+            "position=\(Int(position.isFinite ? position : 0))",
+            "playing=\(isPlaying)",
+            "sound=\(sound.codec ?? "none")",
+            "audible=\(sound.audible)",
+            "audio=\(audio?.language ?? audio?.name ?? "-")",
+            "subtitle=\(subtitle?.language ?? subtitle?.name ?? "off")",
+            "quality=\(maxBitrateKbps.map(String.init) ?? "auto")",
+            "ended=\(ended)",
+        ].joined(separator: ";")
+    }
+
+    private func run(_ v: Video, asked: Double?) async {
+        var state = v.playbackState
+        if asked == nil, state == nil {
+            // a list's video carries no position: the video's own page does
+            state = try? await client.video(v.id).playbackState
+        }
+        guard !Task.isCancelled else { return }
+        let start = WatchLogic.start(asked: asked, resume: state?.positionSec, completed: state?.completed ?? false)
+        await open(from: start)
         guard player != nil else { return }
+        findNext(after: v)
         await watch()
     }
 
@@ -95,7 +271,7 @@ final class Playback {
     private func open(from start: Double) async {
         guard let video else { return }
         do {
-            let s = try await client.openStream(video: video.id, startSec: Int(start))
+            let s = try await client.openStream(video: video.id, startSec: Int(start), maxBitrateKbps: maxBitrateKbps)
             guard let url = s.playbackURL(home: client.home) else {
                 failure = HomeFailure(kind: .server, detail: String(localized: "The home gave no address to play."))
                 return
@@ -112,16 +288,21 @@ final class Playback {
                 Task { [client] in await client.closeStream(old) }
             }
             session = s.sessionID
+            ladder = s.ladder ?? []
             try await client.waitUntilPlayable(url, headers: auth.headers)
             try Task.checkCancellation()
             openedAt = .now
             renewAt = (s.expires ?? .distantFuture).addingTimeInterval(-60)
             let item = AVPlayerItem(url: local)
             let p = player ?? AVPlayer()
+            observe(item, of: p)
             p.replaceCurrentItem(with: item)
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
-            player = p
+            position = start
+            if player == nil { player = p; observeTime(of: p) }
+            ended = false
             p.play()
+            isPlaying = true
         } catch is CancellationError {
             return
         } catch {
@@ -136,9 +317,8 @@ final class Playback {
     private func watch() async {
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(10))
-            guard !Task.isCancelled, let p = player, let session else { return }
-            let at = p.currentTime().seconds
-            if at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at)) }
+            guard !Task.isCancelled, let p = player, session != nil else { return }
+            if p.rate > 0 { report() }
             let failed = p.currentItem?.status == .failed
             if failed, Date.now.timeIntervalSince(openedAt) < 30 {
                 p.pause()
@@ -147,65 +327,163 @@ final class Playback {
                 return
             }
             if failed || Date.now >= renewAt {
+                let at = p.currentTime().seconds
                 let wasPlaying = p.rate > 0
                 await open(from: at.isFinite ? at : 0)
                 if !wasPlaying { player?.pause() }
             }
         }
     }
-}
 
-/// The video with its title and a close button over it (AVKit's own controls on the
-/// video; Esc closes). Full screen, the Mac's whole window, or one half of a half-folded
-/// iPhone Duo.
-struct WatchView: View {
-    let playback: Playback
-    let session: AppSession
-
-    var body: some View {
-        ZStack(alignment: .top) {
-            ZStack {
-                Color.black
-                if let player = playback.player {
-                    PlayerSurface(player: player)
-                } else if let failure = playback.failure {
-                    HomeErrorView(failure) { act($0) }
-                        .environment(\.colorScheme, .dark)
-                        .accessibilityIdentifier("player.error")
-                } else {
-                    ProgressView().tint(.white)
-                }
-            }
-            .ignoresSafeArea()
-            HStack {
-                Button("Close", systemImage: "xmark") { playback.stop() }
-                    .keyboardShortcut(.cancelAction)
-                    .labelStyle(.iconOnly)
-                    .font(.title2)
-                    .padding(12)
-                    .background(.ultraThinMaterial, in: .circle)
-                Text(playback.video?.displayTitle ?? "")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .foregroundStyle(.white)
-                    .shadow(radius: 4)
-                Spacer()
-            }
-            .padding()
-        }
-        .background(.black)
+    /// Reports where it is now (best effort).
+    private func report(completed: Bool = false) {
+        guard let session, let p = player else { return }
+        var at = p.currentTime().seconds
+        if completed, duration > 0 { at = duration }
+        guard at.isFinite, at > 0 || completed else { return }
+        Task { [client] in await client.reportProgress(session: session, positionSec: Int(at), completed: completed) }
     }
 
-    private func act(_ a: ErrorAction) {
-        switch a {
-        case .tryAgain: playback.retry()
-        case .back: playback.stop()
-        case .signInAgain:
-            playback.stop()
-            session.signedOut()
-        case .chooseAnotherHome:
-            playback.stop()
-            session.switchHome()
+    // MARK: the item
+
+    private func observeTime(of p: AVPlayer) {
+        timeObserver = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+    }
+
+    /// Twice a second: the position, the length, playing or not, the sound, Up next.
+    private func tick() {
+        guard let p = player, let item = p.currentItem else { return }
+        let at = p.currentTime().seconds
+        if at.isFinite, abs(at - position) >= 0.25 { position = at }
+        let length = item.duration.seconds.isFinite ? item.duration.seconds : (video?.durationSec ?? 0)
+        if length != duration { duration = length }
+        let playing = p.rate > 0
+        if playing != isPlaying { isPlaying = playing }
+        refreshSound()
+        checkUpNext()
+    }
+
+    private func observe(_ item: AVPlayerItem, of p: AVPlayer) {
+        unobserveItem()
+        statusObservation = item.observe(\.status, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in self?.itemStatusChanged() }
+        }
+        let center = NotificationCenter.default
+        itemObservers = [
+            center.addObserver(forName: AVPlayerItem.didPlayToEndTimeNotification, object: item, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.playedToEnd() }
+            },
+            center.addObserver(forName: AVPlayerItem.mediaSelectionDidChangeNotification, object: item, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshTracks() }
+            },
+        ]
+        legible = nil
+        audible = nil
+        groupsTask = Task { [weak self] in
+            let groups = await PlayerTracks.groups(of: item)
+            guard !Task.isCancelled, let self, self.player?.currentItem === item || self.player == nil else { return }
+            self.legible = groups.legible
+            self.audible = groups.audible
+            self.applyChoices(to: item, of: p)
+        }
+    }
+
+    private func unobserveItem() {
+        statusObservation?.invalidate()
+        statusObservation = nil
+        for o in itemObservers { NotificationCenter.default.removeObserver(o) }
+        itemObservers = []
+        groupsTask?.cancel()
+        groupsTask = nil
+    }
+
+    private func itemStatusChanged() {
+        guard let p = player, let item = p.currentItem, item.status == .readyToPlay else { return }
+        PlayerTracks.ensureAudio(player: p, item: item, audible: audible)
+        refreshTracks()
+    }
+
+    /// A new item starts with the person's choices (or Settings' subtitles), and with sound.
+    private func applyChoices(to item: AVPlayerItem, of p: AVPlayer) {
+        let subtitleLanguage: String? = chosenSubtitle ?? (settings.subtitlesOn ? settings.language : nil)
+        if let language = subtitleLanguage, let c = PlayerTracks.choice(in: legible, language: language) {
+            PlayerTracks.select(c, in: legible, of: item)
+        } else {
+            PlayerTracks.select(nil, in: legible, of: item)
+        }
+        if let language = chosenAudio, let c = PlayerTracks.choice(in: audible, language: language) {
+            PlayerTracks.select(c, in: audible, of: item)
+        }
+        PlayerTracks.ensureAudio(player: p, item: item, audible: audible)
+        refreshTracks()
+    }
+
+    private func refreshTracks() {
+        guard let item = player?.currentItem else { return }
+        let subs = PlayerTracks.choices(in: legible)
+        let auds = PlayerTracks.choices(in: audible)
+        if subs != subtitles { subtitles = subs }
+        if auds != audioTracks { audioTracks = auds }
+        let sub = PlayerTracks.selected(in: legible, of: item)
+        let aud = PlayerTracks.selected(in: audible, of: item)
+        if sub != subtitle { subtitle = sub }
+        if aud != audio { audio = aud }
+        if let p = player, item.status == .readyToPlay { PlayerTracks.ensureAudio(player: p, item: item, audible: audible) }
+        refreshSound()
+    }
+
+    private func refreshSound() {
+        guard let p = player, let item = p.currentItem else { return }
+        let now = PlayerTracks.sound(player: p, item: item)
+        let s = Sound(codec: now.codec, audible: now.audible)
+        if s != sound { sound = s }
+    }
+
+    private func playedToEnd() {
+        ended = true
+        isPlaying = false
+        if let d = player?.currentItem?.duration.seconds, d.isFinite { position = d }
+        if !reportedCompleted {
+            reportedCompleted = true
+            report(completed: true)
+        }
+        checkUpNext()
+    }
+
+    // MARK: Up next
+
+    /// The series' next episode: the video's series (`/api/me/videos/{id}`), then its
+    /// episodes in order.
+    private func findNext(after v: Video) {
+        nextTask?.cancel()
+        nextTask = Task { [client] in
+            do {
+                guard let series = try await client.myVideo(v.id).series else { return }
+                let all = try await client.episodes(series: series.id).episodes
+                let keys = all.map { WatchLogic.EpisodeKey(id: $0.videoID, season: $0.season, episode: $0.episode, absolute: $0.absoluteNumber) }
+                guard !Task.isCancelled, video?.id == v.id, let id = WatchLogic.next(after: v.id, in: keys) else { return }
+                next = all.first { $0.videoID == id }
+            } catch {
+                // not an episode, or the home could not say: no Up next
+            }
+        }
+    }
+
+    /// In the last seconds (or at the end), with autoplay on: count down, then play next.
+    private func checkUpNext() {
+        guard settings.autoplayNext, next != nil, upNextCountdown == nil, !upNextDismissed,
+              WatchLogic.upNextDue(position: position, duration: duration, ended: ended) else { return }
+        upNextCountdown = WatchLogic.upNextSeconds
+        upNextTask = Task {
+            while let left = upNextCountdown, left > 0 {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                upNextCountdown = left - 1
+            }
+            guard !Task.isCancelled else { return }
+            playNext()
         }
     }
 }

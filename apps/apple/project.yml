@@ -191,7 +191,8 @@ targets:
   # UITests/Player*.swift are the Player's own (Epic 48: its shell and screens, against
   # MockHome and UITests/Fixtures); the Remote's targets leave them out. The Player's test
   # targets also compile the shell's plain types (sections, routes, launch arguments) and
-  # the components' image cache and placeholder timing for their unit tests.
+  # the components' image cache and placeholder timing, and the player's decisions and its
+  # track handling (played on MockHome's real HLS stream), for their unit tests.
   Maktaba Player UITests:
     type: bundle.ui-testing
     platform: iOS
@@ -202,6 +203,8 @@ targets:
       - path: Player/Shell/ShellLaunch.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
+      - path: Player/Watch/WatchLogic.swift
+      - path: Player/Watch/PlayerTracks.swift
     dependencies: [{ target: Maktaba Player }]
     settings:
       base:
@@ -229,6 +232,8 @@ targets:
       - path: Player/Shell/ShellLaunch.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
+      - path: Player/Watch/WatchLogic.swift
+      - path: Player/Watch/PlayerTracks.swift
     dependencies: [{ target: Maktaba Player iPad }]
     settings:
       base:

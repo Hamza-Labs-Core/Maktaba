@@ -333,9 +333,9 @@ enum SessionNames {
 
 // MARK: playback
 
-/// FR-31, kept on this device (`PlaybackSettings`); the player reads them.
+/// FR-31, kept on this device (`PlaybackPreferences`); the player reads them.
 struct PlaybackPage: View {
-    @Bindable private var settings = PlaybackSettings.shared
+    @Bindable private var settings = PlaybackPreferences.shared
 
     var body: some View {
         Form {
