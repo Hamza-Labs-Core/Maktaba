@@ -124,7 +124,7 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
   it("SUB-04: a refused license shows the server's plain reason", async () => {
     post.mockRejectedValue(
       new ApiError({
-        type: "https://maktaba.dev/problems/license-invalid",
+        type: "https://maktaba.tv/problems/license-invalid",
         status: 400,
         title: "License not accepted",
         detail: "This license has expired.",

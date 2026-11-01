@@ -221,7 +221,7 @@ func (h *Handler) PlexRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if e := h.plexExtension(r.Context()); !e.Enabled || !e.Configured {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/plex-not-configured",
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/plex-not-configured",
 			"turn on the Plex extension and sign in with Plex first"))
 		return
 	}
@@ -236,7 +236,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	if e := h.plexExtension(ctx); !e.Enabled || !e.Configured {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/plex-not-configured",
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/plex-not-configured",
 			"turn on the Plex extension and sign in with Plex first"))
 		return
 	}
@@ -246,7 +246,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !d.Enabled {
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/tuner-off",
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/tuner-off",
 			"turn the HDHomeRun tuner on first"))
 		return
 	}
@@ -257,7 +257,7 @@ func (h *Handler) PlexRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	if mk, ok := cur.Status["maktaba"].(map[string]any); ok {
 		if reg, _ := mk["registered"].(bool); reg {
-			httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/plex-already-registered",
+			httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/plex-already-registered",
 				"Plex already has a DVR with Maktaba's tuner"))
 			return
 		}
@@ -285,7 +285,7 @@ func (h *Handler) queuePlex(w http.ResponseWriter, r *http.Request, why string) 
 	case queues.OutcomeInserted, queues.OutcomeCoalesced, queues.OutcomeRerunRequested:
 		common.WriteJSON(w, r, http.StatusAccepted, PlexAction{Queued: true, Outcome: outcome, JobID: id})
 	default: // disabled / unknown_stage: no worker has synced the stage, or it is off
-		httperror.Write(w, r, httperror.Conflict("https://maktaba.dev/problems/plex-stage-off",
+		httperror.Write(w, r, httperror.Conflict("https://maktaba.tv/problems/plex-stage-off",
 			"the Plex Live TV stage is not available ("+outcome+"): start a worker with the Plex extension on"))
 	}
 }

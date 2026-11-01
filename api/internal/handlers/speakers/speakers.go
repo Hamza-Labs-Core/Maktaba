@@ -152,7 +152,7 @@ func (h *Handler) Rename(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.dev/problems/speaker-name-exists",
+				Type:   "https://maktaba.tv/problems/speaker-name-exists",
 				Title:  "speaker name already exists",
 				Status: http.StatusConflict,
 				Detail: "merge the speakers instead",

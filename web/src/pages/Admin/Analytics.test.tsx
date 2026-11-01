@@ -496,7 +496,7 @@ describe("AdminAnalytics (test-cases/admin-analytics.md)", () => {
     open({
       apps: () => {
         throw new ApiError({
-          type: "https://maktaba.dev/problems/license-required",
+          type: "https://maktaba.tv/problems/license-required",
           title: "Not included in this home's plan",
           status: 403,
           detail:

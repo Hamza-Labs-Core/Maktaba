@@ -134,7 +134,7 @@ func CheckRootsOverlapV2(
 		for j := i + 1; j < len(canon); j++ {
 			if pathsOverlap(canon[i], canon[j]) {
 				return &httperror.Error{
-					Type:   "https://maktaba.dev/problems/library-roots-overlap",
+					Type:   "https://maktaba.tv/problems/library-roots-overlap",
 					Title:  "library roots overlap (within library)",
 					Status: http.StatusUnprocessableEntity,
 					Detail: canon[i] + " overlaps " + canon[j] + " in same library",
@@ -162,7 +162,7 @@ func CheckRootsOverlapV2(
 		for _, p := range canon {
 			if pathsOverlap(existing, p) {
 				return &httperror.Error{
-					Type:   "https://maktaba.dev/problems/library-roots-overlap",
+					Type:   "https://maktaba.tv/problems/library-roots-overlap",
 					Title:  "library roots overlap",
 					Status: http.StatusUnprocessableEntity,
 					Detail: overlapDetail(p, existing),

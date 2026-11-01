@@ -67,12 +67,12 @@ const DefaultAccessTTL = 15 * time.Minute
 // Problem-type URIs surfaced by the auth handler. Aligned with the
 // spec's `type:` strings so clients can branch on the URL fragment.
 const (
-	TypeInvalidCredentials = "https://maktaba.dev/problems/invalid-credentials"
-	TypeTokenExpired       = "https://maktaba.dev/problems/token-expired"
-	TypeRefreshExpired     = "https://maktaba.dev/problems/refresh-expired"
-	TypeRefreshReplayed    = "https://maktaba.dev/problems/refresh-replayed"
-	TypeRefreshInvalid     = "https://maktaba.dev/problems/refresh-invalid"
-	TypeCSRFMismatch       = "https://maktaba.dev/problems/csrf-mismatch"
+	TypeInvalidCredentials = "https://maktaba.tv/problems/invalid-credentials"
+	TypeTokenExpired       = "https://maktaba.tv/problems/token-expired"
+	TypeRefreshExpired     = "https://maktaba.tv/problems/refresh-expired"
+	TypeRefreshReplayed    = "https://maktaba.tv/problems/refresh-replayed"
+	TypeRefreshInvalid     = "https://maktaba.tv/problems/refresh-invalid"
+	TypeCSRFMismatch       = "https://maktaba.tv/problems/csrf-mismatch"
 )
 
 // LibraryACL is the read-side seam the token minter uses to snapshot
@@ -545,7 +545,7 @@ func (h *Handler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	}
 	if userID == "" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/unauthorized",
+			Type:   "https://maktaba.tv/problems/unauthorized",
 			Title:  "unauthorized",
 			Status: http.StatusUnauthorized,
 			Detail: "authentication required",
@@ -597,7 +597,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/unauthorized",
+			Type:   "https://maktaba.tv/problems/unauthorized",
 			Title:  "unauthorized",
 			Status: http.StatusUnauthorized,
 			Detail: "authentication required",
@@ -649,7 +649,7 @@ func (h *Handler) SecurityAudit(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/unauthorized",
+			Type:   "https://maktaba.tv/problems/unauthorized",
 			Title:  "unauthorized",
 			Status: http.StatusUnauthorized,
 		})
@@ -940,7 +940,7 @@ func (h *Handler) refreshReplayed() *httperror.Error {
 func writeAdminGate(w http.ResponseWriter, r *http.Request, p *principal.Principal) {
 	if p == nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/unauthorized",
+			Type:   "https://maktaba.tv/problems/unauthorized",
 			Title:  "unauthorized",
 			Status: http.StatusUnauthorized,
 		})

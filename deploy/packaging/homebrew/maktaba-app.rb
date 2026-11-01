@@ -17,7 +17,7 @@ cask "maktaba-app" do
   url "https://github.com/Hamza-Labs-Core/Maktaba/releases/download/v#{version}/Maktaba_#{version}_aarch64.app.tar.gz"
   name "Maktaba"
   desc "Self-hosted Islamic / Arabic media library with transcription + search"
-  homepage "https://maktaba.dev"
+  homepage "https://maktaba.tv"
 
   livecheck do
     url :url

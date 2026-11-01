@@ -78,7 +78,7 @@ final class BrowseStub: URLProtocol, @unchecked Sendable {
             Self.routes[key] = list
             return first
         }
-        let (code, text) = answer ?? (404, #"{"type":"https://maktaba.dev/problems/not-found","status":404,"title":"no stub"}"#)
+        let (code, text) = answer ?? (404, #"{"type":"https://maktaba.tv/problems/not-found","status":404,"title":"no stub"}"#)
         let resp = HTTPURLResponse(url: url, statusCode: code, httpVersion: "HTTP/1.1",
                                    headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
@@ -596,7 +596,7 @@ enum BrowseHome {
             #expect(await Self.failure { _ = try await c.videoDetail(BrowseHome.v9) } as? BrowseError == .notAvailable)
             try BrowseHome.answer("POST", "/api/me/favorites", "mark-404", status: 404)
             #expect(await Self.failure { _ = try await c.markFavorite([BrowseHome.v9]) } as? BrowseError == .notAvailable)
-            BrowseStub.on("GET", "/api/series/\(BrowseHome.series)", (404, #"{"type":"https://maktaba.dev/problems/not-found","status":404}"#))
+            BrowseStub.on("GET", "/api/series/\(BrowseHome.series)", (404, #"{"type":"https://maktaba.tv/problems/not-found","status":404}"#))
             #expect(await Self.failure { _ = try await c.series(BrowseHome.series) } as? BrowseError == .notAvailable)
             #expect(BrowseError.notAvailable.errorDescription == ErrorStrings.forPreferredLanguages().sentence(.notFound))
         }
@@ -605,11 +605,11 @@ enum BrowseHome {
         /// "home unreachable" stays unreachable; a 500 stays a server error.
         @Test func otherRefusalsKeepTheirKind() async throws {
             let c = BrowseHome.client().0
-            BrowseStub.on("GET", "/api/home", (403, #"{"type":"https://maktaba.dev/problems/forbidden","status":403}"#))
+            BrowseStub.on("GET", "/api/home", (403, #"{"type":"https://maktaba.tv/problems/forbidden","status":403}"#))
             #expect((await Self.failure { _ = try await c.home() } as? APIError)?.kind == .noAccess)
-            BrowseStub.on("GET", "/api/home", (404, #"{"type":"https://maktaba.dev/problems/home-unreachable","status":404}"#))
+            BrowseStub.on("GET", "/api/home", (404, #"{"type":"https://maktaba.tv/problems/home-unreachable","status":404}"#))
             #expect((await Self.failure { _ = try await c.home() } as? APIError)?.kind == .unreachable)
-            BrowseStub.on("GET", "/api/home", (500, #"{"type":"https://maktaba.dev/problems/internal","status":500}"#))
+            BrowseStub.on("GET", "/api/home", (500, #"{"type":"https://maktaba.tv/problems/internal","status":500}"#))
             #expect((await Self.failure { _ = try await c.home() } as? APIError)?.kind == .server)
             BrowseStub.on("GET", "/api/home", (200, "<html>"))
             let e = await Self.failure { _ = try await c.home() }
@@ -620,7 +620,7 @@ enum BrowseHome {
         }
 
         @Test func anExpiredSearchRunsAgain() async throws {
-            BrowseStub.on("GET", "/api/search/results/old", (410, #"{"type":"https://maktaba.dev/problems/search-expired","status":410}"#))
+            BrowseStub.on("GET", "/api/search/results/old", (410, #"{"type":"https://maktaba.tv/problems/search-expired","status":410}"#))
             let e = await Self.failure { _ = try await BrowseHome.client().0.searchResults("old", list: .titles, offset: 24, limit: 24) }
             #expect(e as? BrowseError == .searchExpired)
         }

@@ -63,7 +63,7 @@ logged once, not twice.
 | `api/cmd/api/main.go` | Process entrypoint: config load, signal handling, graceful shutdown loop. |
 | `api/internal/router/router.go` | Constructs the `chi.Mux`, mounts the canonical middleware stack, exposes a `New(deps Deps) http.Handler`. |
 | `api/internal/httperror/httperror.go` | `Error` type, `Write(w, err)`, well-known `Type` constants. |
-| `api/internal/httperror/types.go` | All problem-type URIs as `const` (`https://maktaba.dev/problems/...`). One source of truth. |
+| `api/internal/httperror/types.go` | All problem-type URIs as `const` (`https://maktaba.tv/problems/...`). One source of truth. |
 | `api/internal/reqid/reqid.go` | Request-ID context key + `RequestIDFromContext` helper. Lives in its own package so both `httperror` and `middleware` can import it without a cycle. |
 | `api/internal/middleware/requestid.go` | RequestID middleware (UUID v7 mint/parse), stores into `reqid` ctx key. |
 | `api/internal/middleware/recoverer.go` | Panic-to-500-problem+json. |
@@ -99,7 +99,7 @@ import (
 // this kind (or wrap into it). Bare strings or stdlib errors are flagged by
 // the forbidhttperror analyzer.
 type Error struct {
-    Type     string         `json:"type"`              // "https://maktaba.dev/problems/<slug>"
+    Type     string         `json:"type"`              // "https://maktaba.tv/problems/<slug>"
     Title    string         `json:"title"`             // human-readable, stable
     Status   int            `json:"status"`            // HTTP status
     Detail   string         `json:"detail,omitempty"`  // human-readable, may carry params
@@ -177,28 +177,28 @@ func Write(w http.ResponseWriter, r *http.Request, err error) {
 package httperror
 
 const (
-    TypeBadRequest          = "https://maktaba.dev/problems/bad-request"
-    TypeInvalidJSON         = "https://maktaba.dev/problems/invalid-json"
-    TypeInvalidQueryParam   = "https://maktaba.dev/problems/invalid-query-parameter"
-    TypeInvalidCursor       = "https://maktaba.dev/problems/invalid-cursor"
-    TypeCursorUnsupported   = "https://maktaba.dev/problems/cursor-unsupported-version"
-    TypeNotFound            = "https://maktaba.dev/problems/not-found"
-    TypeValidation          = "https://maktaba.dev/problems/validation"
-    TypeIdempotencyConflict = "https://maktaba.dev/problems/idempotency-key-conflict"
-    TypeConfirmationReq     = "https://maktaba.dev/problems/confirmation-required"
-    TypeInternal            = "https://maktaba.dev/problems/internal"
-    TypeUnavailable         = "https://maktaba.dev/problems/unavailable"
-    TypeForbidden           = "https://maktaba.dev/problems/forbidden"
-    TypeConflict            = "https://maktaba.dev/problems/conflict"
-    TypeBodyTooLarge        = "https://maktaba.dev/problems/body-too-large"
-    TypeRateLimited         = "https://maktaba.dev/problems/rate-limited"
-    TypeUnsupportedMediaType= "https://maktaba.dev/problems/unsupported-media-type"
-    TypeStreamingUnavailable= "https://maktaba.dev/problems/streaming-unavailable"
-    TypeStageNotPerVideo    = "https://maktaba.dev/problems/stage-not-per-video"
-    TypeJobTerminalOrMissing= "https://maktaba.dev/problems/job-terminal-or-missing"
-    TypeNotRuntime          = "https://maktaba.dev/problems/not-runtime"
-    TypeAdminOnly           = "https://maktaba.dev/problems/admin-only"
-    TypeCircuitOpen         = "https://maktaba.dev/problems/circuit-open"
+    TypeBadRequest          = "https://maktaba.tv/problems/bad-request"
+    TypeInvalidJSON         = "https://maktaba.tv/problems/invalid-json"
+    TypeInvalidQueryParam   = "https://maktaba.tv/problems/invalid-query-parameter"
+    TypeInvalidCursor       = "https://maktaba.tv/problems/invalid-cursor"
+    TypeCursorUnsupported   = "https://maktaba.tv/problems/cursor-unsupported-version"
+    TypeNotFound            = "https://maktaba.tv/problems/not-found"
+    TypeValidation          = "https://maktaba.tv/problems/validation"
+    TypeIdempotencyConflict = "https://maktaba.tv/problems/idempotency-key-conflict"
+    TypeConfirmationReq     = "https://maktaba.tv/problems/confirmation-required"
+    TypeInternal            = "https://maktaba.tv/problems/internal"
+    TypeUnavailable         = "https://maktaba.tv/problems/unavailable"
+    TypeForbidden           = "https://maktaba.tv/problems/forbidden"
+    TypeConflict            = "https://maktaba.tv/problems/conflict"
+    TypeBodyTooLarge        = "https://maktaba.tv/problems/body-too-large"
+    TypeRateLimited         = "https://maktaba.tv/problems/rate-limited"
+    TypeUnsupportedMediaType= "https://maktaba.tv/problems/unsupported-media-type"
+    TypeStreamingUnavailable= "https://maktaba.tv/problems/streaming-unavailable"
+    TypeStageNotPerVideo    = "https://maktaba.tv/problems/stage-not-per-video"
+    TypeJobTerminalOrMissing= "https://maktaba.tv/problems/job-terminal-or-missing"
+    TypeNotRuntime          = "https://maktaba.tv/problems/not-runtime"
+    TypeAdminOnly           = "https://maktaba.tv/problems/admin-only"
+    TypeCircuitOpen         = "https://maktaba.tv/problems/circuit-open"
     // (each later story adds its own constants in this same file.)
 )
 ```

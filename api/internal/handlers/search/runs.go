@@ -26,7 +26,7 @@ import (
 
 // ProblemSearchExpired is the problem type of a search_id whose results are no
 // longer kept (or that is not the caller's): search again.
-const ProblemSearchExpired = "https://maktaba.dev/problems/search-expired"
+const ProblemSearchExpired = "https://maktaba.tv/problems/search-expired"
 
 // errExpired: the search_id is unknown, not the caller's, or its results
 // expired.

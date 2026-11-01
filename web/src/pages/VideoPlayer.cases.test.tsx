@@ -188,7 +188,7 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     servePost(() =>
       Promise.reject(
         new ApiError({
-          type: "https://maktaba.dev/problems/insufficient-storage",
+          type: "https://maktaba.tv/problems/insufficient-storage",
           title: "not enough disk space to prepare this video",
           status: 507,
           code: "insufficient_storage",
@@ -208,7 +208,7 @@ describe("VideoPlayer (test-cases/video-player.md)", () => {
     servePost(() =>
       Promise.reject(
         new ApiError({
-          type: "https://maktaba.dev/problems/video-unavailable-offline",
+          type: "https://maktaba.tv/problems/video-unavailable-offline",
           title: "this video isn't available while the home is unreachable",
           status: 503,
           code: "video_unavailable_offline",

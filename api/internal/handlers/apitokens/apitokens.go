@@ -112,7 +112,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	// an API token outlives a cloud link (Epic 42 story 42.7): only a
 	// sign-in on the home makes one
 	if p.ViaCloud() {
-		httperror.Write(w, r, httperror.Forbidden("https://maktaba.dev/problems/cloud-session",
+		httperror.Write(w, r, httperror.Forbidden("https://maktaba.tv/problems/cloud-session",
 			"a sign-in through Maktaba Cloud cannot make an API token; sign in on the home"))
 		return
 	}
@@ -172,7 +172,7 @@ func (h *Handler) Revoke(w http.ResponseWriter, r *http.Request) {
 
 func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
 	httperror.Write(w, r, &httperror.Error{
-		Type:   "https://maktaba.dev/problems/unauthorized",
+		Type:   "https://maktaba.tv/problems/unauthorized",
 		Title:  "unauthorized",
 		Status: http.StatusUnauthorized,
 	})

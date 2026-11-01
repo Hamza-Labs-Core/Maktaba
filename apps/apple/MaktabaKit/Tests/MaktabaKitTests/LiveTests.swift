@@ -180,7 +180,7 @@ private func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
     /// A channel the viewer may not read is the home's 404, said as not found (FR-24).
     @Test func aChannelTheViewerMayNotReadIsNotFound() async throws {
         LiveStub.on("GET /api/channels/c9/guide", 404,
-                    #"{"type":"https://maktaba.dev/problems/not-found","title":"Not Found","status":404,"detail":"channel c9"}"#)
+                    #"{"type":"https://maktaba.tv/problems/not-found","title":"Not Found","status":404,"detail":"channel c9"}"#)
         await #expect(throws: APIError.self) { _ = try await LiveStub.client().channelGuide("c9") }
         do {
             _ = try await LiveStub.client().channelGuide("c9")
@@ -254,7 +254,7 @@ private func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
     /// A refused tune keeps the home's code for the screen to word.
     @Test func aRefusedTuneSaysWhy() async throws {
         LiveStub.on("POST /api/tv/remote/tune", 429,
-                    #"{"type":"https://maktaba.dev/problems/user-streams-full","title":"Too Many Requests","status":429,"detail":"two streams already","code":"user_streams_full"}"#)
+                    #"{"type":"https://maktaba.tv/problems/user-streams-full","title":"Too Many Requests","status":429,"detail":"two streams already","code":"user_streams_full"}"#)
         do {
             _ = try await LiveStub.client().tune(channel: "c1", device: "d")
             Issue.record("a refused tune decoded")

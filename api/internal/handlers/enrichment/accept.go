@@ -81,7 +81,7 @@ func (h *Handler) applyAccept(r *http.Request, videoID, externalID, version, act
 		return res, httperror.Internal("load video")
 	}
 	if version != "" && !versionMatches(v.UpdatedAt, version) {
-		return res, httperror.Conflict("https://maktaba.dev/problems/stale-version", "video changed since you loaded it")
+		return res, httperror.Conflict("https://maktaba.tv/problems/stale-version", "video changed since you loaded it")
 	}
 	cands, err := h.loadCandidates(r, videoID, externalID)
 	if err != nil {

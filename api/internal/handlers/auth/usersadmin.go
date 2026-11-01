@@ -21,13 +21,13 @@ import (
 // AC-Edge). The store enforces the invariants; these map its sentinel
 // errors onto the wire.
 const (
-	TypeUsernameExists = "https://maktaba.dev/problems/username-exists"
-	TypeLastAdmin      = "https://maktaba.dev/problems/last-admin"
+	TypeUsernameExists = "https://maktaba.tv/problems/username-exists"
+	TypeLastAdmin      = "https://maktaba.tv/problems/last-admin"
 	// TypeSeatLimit is returned when provisioning another user would
 	// exceed the licensed seat cap (Epic 16 Story 16.2). It is a 403:
 	// the request is well-formed and the caller is authorised, but the
 	// instance's entitlement forbids the action.
-	TypeSeatLimit = "https://maktaba.dev/problems/seat-limit"
+	TypeSeatLimit = "https://maktaba.tv/problems/seat-limit"
 )
 
 // SeatLimiter reports the maximum number of provisionable user seats

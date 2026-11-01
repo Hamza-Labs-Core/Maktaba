@@ -155,7 +155,7 @@ func (h *Handler) Patch(w http.ResponseWriter, r *http.Request) {
 		}
 		if !ok {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.dev/problems/setting-not-runtime",
+				Type:   "https://maktaba.tv/problems/setting-not-runtime",
 				Title:  "not a runtime setting",
 				Status: http.StatusForbidden,
 				Detail: k + " is read-only at runtime",
@@ -209,7 +209,7 @@ func (h *Handler) STTTest(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.Pipeline == nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/unavailable",
+			Type:   "https://maktaba.tv/problems/unavailable",
 			Title:  "pipeline unavailable",
 			Status: http.StatusServiceUnavailable,
 		})

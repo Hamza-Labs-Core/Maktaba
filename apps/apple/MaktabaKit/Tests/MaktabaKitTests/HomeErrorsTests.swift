@@ -9,8 +9,8 @@ let renditionNotFound = #"{"type":"https://maktaba.invalid/problems/rendition-no
 @Suite struct ErrorKinds {
     @Test(arguments: [
         (404, renditionNotFound, ErrorKind.notReady),
-        (404, #"{"type":"https://maktaba.dev/problems/manifest-not-found","status":404}"#, .notReady),
-        (404, #"{"type":"https://maktaba.dev/problems/video-not-found","title":"no such video","status":404}"#, .notFound),
+        (404, #"{"type":"https://maktaba.tv/problems/manifest-not-found","status":404}"#, .notReady),
+        (404, #"{"type":"https://maktaba.tv/problems/video-not-found","title":"no such video","status":404}"#, .notFound),
         (404, "404 page not found", .notFound),
         (410, #"{"title":"gone"}"#, .notFound),
         (401, #"{"type":"https://maktaba.invalid/problems/unauthorized","status":401,"code":"signin_required"}"#, .signedOut),
@@ -18,7 +18,7 @@ let renditionNotFound = #"{"type":"https://maktaba.invalid/problems/rendition-no
         (503, #"{"type":"https://maktaba.invalid/problems/home-unreachable","status":503,"code":"home_unreachable"}"#, .unreachable),
         (503, #"{"title":"home unreachable","code":"home_unreachable"}"#, .unreachable),
         (504, #"{"title":"home timed out","code":"home_timeout"}"#, .unreachable),
-        (409, #"{"type":"https://maktaba.dev/problems/video-unavailable-offline","status":409}"#, .unreachable),
+        (409, #"{"type":"https://maktaba.tv/problems/video-unavailable-offline","status":409}"#, .unreachable),
         (503, #"{"title":"paused","code":"paused"}"#, .busy(retryAfter: nil)),
         (429, #"{"title":"too many requests","status":429}"#, .busy(retryAfter: nil)),
         (500, #"{"title":"internal error","status":500}"#, .server),
@@ -55,7 +55,7 @@ let renditionNotFound = #"{"type":"https://maktaba.invalid/problems/rendition-no
         #expect(HomeFailure(CocoaError(.fileReadUnknown)).kind == .server)
     }
 
-    @Test(arguments: ["https://maktaba.invalid/problems/rendition-not-found", "https://maktaba.dev/problems/rendition-not-found",
+    @Test(arguments: ["https://maktaba.invalid/problems/rendition-not-found", "https://maktaba.tv/problems/rendition-not-found",
                       "https://x.example/problems/rendition-not-found/", "https://x.example/problems/Rendition-Not-Found?x=1"])
     func theTypesNameWhateverTheDomain(type: String) {
         #expect(Problem(type: type).slug == "rendition-not-found")

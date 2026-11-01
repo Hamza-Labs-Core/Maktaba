@@ -340,7 +340,7 @@ class ConnectTest {
         assertEquals("nothing switches until the person confirms", "http://10.0.0.2:8088", s.current.value?.url)
         assertEquals("nothing is added either", 1, s.homes.value.size)
         assertFalse(s.openLink(null))
-        assertFalse(s.openLink("https://maktaba.dev/help"))
+        assertFalse(s.openLink("https://maktaba.tv/help"))
         s.dismissLink()
         assertNull(s.link.value)
     }

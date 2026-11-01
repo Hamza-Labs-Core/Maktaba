@@ -184,7 +184,7 @@ func (h *Handler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	p := principal.FromContext(r.Context())
 	if p == nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/unauthorized",
+			Type:   "https://maktaba.tv/problems/unauthorized",
 			Title:  "unauthorized",
 			Status: http.StatusUnauthorized,
 		})

@@ -51,7 +51,7 @@ func viewerOf(p *principal.Principal) remote.Viewer {
 func signedIn(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) {
 	p := principal.FromContext(r.Context())
 	if p == nil || p.UserID == "" {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/unauthorized",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/unauthorized",
 			Title: "Unauthorized", Status: http.StatusUnauthorized, Detail: "sign in to watch away from home"})
 		return nil, false
 	}
@@ -65,7 +65,7 @@ func writeTuneError(w http.ResponseWriter, r *http.Request, err error, what stri
 		if te.Status == http.StatusServiceUnavailable || te.Status == http.StatusTooManyRequests {
 			w.Header().Set("Retry-After", "30")
 		}
-		e := (&httperror.Error{Type: "https://maktaba.dev/problems/" + strings.ReplaceAll(te.Code, "_", "-"),
+		e := (&httperror.Error{Type: "https://maktaba.tv/problems/" + strings.ReplaceAll(te.Code, "_", "-"),
 			Title: http.StatusText(te.Status), Status: te.Status, Detail: te.Detail}).With("code", te.Code)
 		if te.Hint != "" {
 			e = e.With("hint", te.Hint)
@@ -78,7 +78,7 @@ func writeTuneError(w http.ResponseWriter, r *http.Request, err error, what stri
 
 func (h *Handler) remoteReady(w http.ResponseWriter, r *http.Request) bool {
 	if h.Remote == nil {
-		httperror.Write(w, r, (&httperror.Error{Type: "https://maktaba.dev/problems/remote-unavailable",
+		httperror.Write(w, r, (&httperror.Error{Type: "https://maktaba.tv/problems/remote-unavailable",
 			Title: "Service Unavailable", Status: http.StatusServiceUnavailable,
 			Detail: "remote viewing is not available on this server"}).With("code", "remote_unavailable"))
 		return false

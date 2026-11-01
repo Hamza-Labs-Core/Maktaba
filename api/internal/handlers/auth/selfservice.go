@@ -79,7 +79,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	bootstrap := !hasUser
 	if !bootstrap && !h.openRegistration(r) {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/registration-closed",
+			Type:   "https://maktaba.tv/problems/registration-closed",
 			Title:  "registration closed",
 			Status: http.StatusForbidden,
 			Detail: "self-service registration is disabled",
@@ -99,7 +99,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	// the ambiguous username/email unique violation from Create.
 	if _, err := h.Users.IDByEmail(r.Context(), req.Email); err == nil {
 		httperror.Write(w, r, httperror.Conflict(
-			"https://maktaba.dev/problems/email-exists", "email already registered"))
+			"https://maktaba.tv/problems/email-exists", "email already registered"))
 		return
 	} else if !errors.Is(err, users.ErrNotFound) {
 		httperror.Write(w, r, httperror.Internal("registration check"))
@@ -116,10 +116,10 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, users.ErrUsernameExists):
 			httperror.Write(w, r, httperror.Conflict(
-				"https://maktaba.dev/problems/username-exists", "username already taken"))
+				"https://maktaba.tv/problems/username-exists", "username already taken"))
 		case errors.Is(err, users.ErrEmailExists):
 			httperror.Write(w, r, httperror.Conflict(
-				"https://maktaba.dev/problems/email-exists", "email already registered"))
+				"https://maktaba.tv/problems/email-exists", "email already registered"))
 		default:
 			httperror.Write(w, r, httperror.Internal("create user"))
 		}
@@ -294,7 +294,7 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, users.ErrEmailExists):
 			httperror.Write(w, r, httperror.Conflict(
-				"https://maktaba.dev/problems/email-exists", "email already registered"))
+				"https://maktaba.tv/problems/email-exists", "email already registered"))
 		case errors.Is(err, users.ErrNotFound):
 			httperror.Write(w, r, httperror.NotFound("user"))
 		default:
@@ -342,7 +342,7 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if verr := u.VerifyPassword(req.CurrentPassword); verr != nil {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/invalid-credentials",
+			Type:   "https://maktaba.tv/problems/invalid-credentials",
 			Title:  "invalid credentials",
 			Status: http.StatusUnauthorized,
 			Detail: "current password is incorrect",
@@ -391,7 +391,7 @@ func (h *Handler) writeProfile(w http.ResponseWriter, r *http.Request, userID st
 
 func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
 	httperror.Write(w, r, &httperror.Error{
-		Type:   "https://maktaba.dev/problems/unauthorized",
+		Type:   "https://maktaba.tv/problems/unauthorized",
 		Title:  "unauthorized",
 		Status: http.StatusUnauthorized,
 		Detail: "authentication required",

@@ -301,7 +301,7 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 		return true
 	}
 	if !csrfOK(req, csrf) {
-		writeProblem(w, http.StatusForbidden, "https://maktaba.dev/problems/csrf-mismatch", "csrf token mismatch", "")
+		writeProblem(w, http.StatusForbidden, "https://maktaba.tv/problems/csrf-mismatch", "csrf token mismatch", "")
 		return true
 	}
 	if !known {
@@ -335,7 +335,7 @@ func (r *Resolver) SignOutHere(w http.ResponseWriter, req *http.Request) bool {
 		if r.Logger != nil {
 			r.Logger.Warn("node: a sign-out made here was not saved", "err", err, "event", "node_sign_out_failed")
 		}
-		writeProblem(w, http.StatusInternalServerError, "https://maktaba.dev/problems/internal", "sign-out failed", "")
+		writeProblem(w, http.StatusInternalServerError, "https://maktaba.tv/problems/internal", "sign-out failed", "")
 		return true
 	}
 	rv := delegation.Revoked{SessionSHA256: []string{key}}

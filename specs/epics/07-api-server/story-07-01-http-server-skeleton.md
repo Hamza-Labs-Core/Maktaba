@@ -42,7 +42,7 @@ shutdown. Every later story assumes this scaffold.
 
 **Test cases:**
 - Unit: `httperror.Write` serializes a `NotFoundError` to a body with
-  `status: 404` and `type: "https://maktaba.dev/problems/not-found"`.
+  `status: 404` and `type: "https://maktaba.tv/problems/not-found"`.
 - Unit: missing `X-Request-Id` header → middleware sets a v7 UUID; a
   malformed `X-Request-Id` → middleware overwrites with a fresh v7.
 - Integration: a request panicking in a handler returns 500 with a

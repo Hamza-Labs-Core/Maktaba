@@ -16,7 +16,7 @@
 # `brew upgrade` brings a new launcher (and its release, when newer); nothing else needs it.
 class Maktaba < Formula
   desc "Self-hosted Islamic / Arabic media library with transcription + search"
-  homepage "https://maktaba.dev"
+  homepage "https://maktaba.tv"
   version "__VERSION__"
   license "MIT"
 

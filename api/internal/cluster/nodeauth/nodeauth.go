@@ -781,7 +781,7 @@ func (r *Resolver) Me(w http.ResponseWriter, req *http.Request) bool {
 		}
 	}
 	if dp == nil {
-		writeProblem(w, http.StatusUnauthorized, "https://maktaba.dev/problems/unauthorized", "unauthorized",
+		writeProblem(w, http.StatusUnauthorized, "https://maktaba.tv/problems/unauthorized", "unauthorized",
 			"authentication required")
 		return true
 	}
@@ -838,7 +838,7 @@ func (r *Resolver) Home(proxy http.Handler) http.Handler {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
-			writeProblem(w, http.StatusUnauthorized, "https://maktaba.dev/problems/unauthorized", "unauthorized",
+			writeProblem(w, http.StatusUnauthorized, "https://maktaba.tv/problems/unauthorized", "unauthorized",
 				"authentication required")
 			return
 		}
@@ -931,7 +931,7 @@ func keepSignIn(req *http.Request) *http.Request {
 func writeSignInAgain(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/signin-required",
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/signin-required",
 		"title": "sign in again", "status": http.StatusUnauthorized, "code": "signin_required",
 		"detail": "you signed in on this machine while the home was away; sign in again to make changes"})
 }
@@ -959,7 +959,7 @@ func CSRF(next http.Handler) http.Handler {
 			subtle.ConstantTimeCompare([]byte(hex.EncodeToString(sum[:])), []byte(want)) != 1 {
 			w.Header().Set("Content-Type", "application/problem+json")
 			w.WriteHeader(http.StatusForbidden)
-			_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/csrf-mismatch",
+			_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/csrf-mismatch",
 				"title": "csrf token mismatch", "status": http.StatusForbidden})
 			return
 		}
@@ -977,7 +977,7 @@ func writeUnreachable(w http.ResponseWriter, readable bool) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Retry-After", "5")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	body := map[string]any{"type": "https://maktaba.dev/problems/home-unreachable",
+	body := map[string]any{"type": "https://maktaba.tv/problems/home-unreachable",
 		"title": "the home is not reachable", "status": http.StatusServiceUnavailable, "code": "home_unreachable",
 		"detail": "this machine cannot reach its home to check the sign-in; it tries again"}
 	if !readable {
