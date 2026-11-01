@@ -19,11 +19,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 )
 
-const fixtureDir = "../../../../apps/apple/MaktabaKit/Tests/Fixtures/Browse"
+const appleFixtureDir = "../../../../apps/apple/MaktabaKit/Tests/Fixtures/Browse"
 
 func decodeStrict(t *testing.T, name string, into any) {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(fixtureDir, name+".json"))
+	raw, err := os.ReadFile(filepath.Join(appleFixtureDir, name+".json"))
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
