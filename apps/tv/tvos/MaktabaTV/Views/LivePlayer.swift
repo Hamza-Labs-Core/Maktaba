@@ -102,7 +102,9 @@ final class LivePlayback {
     private func play(_ id: String) async {
         let source = LiveSource(api: client, channel: id)
         await run(source)
-        await source.close()
+        // in a task of its own: this one is cancelled by now (leaving, another channel), and a
+        // cancelled task's request would never reach the home
+        await Task { await source.close() }.value
     }
 
     private func run(_ source: LiveSource) async {
