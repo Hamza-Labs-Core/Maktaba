@@ -219,15 +219,19 @@ func ServeTunnels(reg *Registry, store TunnelStore, logger *slog.Logger) http.Ha
 		}
 
 		t := NewTunnel(sv.ID, sv.Slug, &wsConn{c: c}, opts...)
-		reg.Register(sv.Slug, t)
+		// online first, then routable: whatever finds the tunnel finds the server online
+		if !reg.Up(sv.Slug, t, func() { markOnline(logger, store, sv.ID, true) }) {
+			// gone while it waited its turn, or a newer connection is in: nothing to record
+			t.Close()
+			logger.Info("relay: a stale tunnel attempt dropped", "server_id", sv.ID, "slug", sv.Slug, "event", "tunnel_stale")
+			return
+		}
 		logger.Info("relay: tunnel up", "server_id", sv.ID, "slug", sv.Slug, "flow", flow, "event", "tunnel_up")
-		markOnline(logger, store, sv.ID, true)
 		go func() {
 			<-t.Done()
 			// a tunnel a reconnect replaced is not the server going offline
-			if reg.Unregister(sv.Slug, t) {
+			if reg.Down(sv.Slug, t, func() { markOnline(logger, store, sv.ID, false) }) {
 				logger.Info("relay: tunnel down", "server_id", sv.ID, "slug", sv.Slug, "event", "tunnel_down")
-				markOnline(logger, store, sv.ID, false)
 			}
 		}()
 	}
