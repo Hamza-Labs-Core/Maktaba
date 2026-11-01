@@ -7,8 +7,8 @@ final class PlayerShellTests: XCTestCase {
     /// TestFlight uploads every tag: only Libraries (today's screen) is on until the other
     /// screens merge, each turning its own section on.
     func testOnlyTheMergedSectionsAreTurnedOn() {
-        XCTAssertEqual(PlayerSection.enabled, [.libraries, .liveTV])
-        XCTAssertEqual(PlayerSection.visible(arguments: []), [.libraries, .liveTV])
+        XCTAssertEqual(PlayerSection.enabled, [.home, .libraries, .liveTV])
+        XCTAssertEqual(PlayerSection.visible(arguments: []), [.home, .libraries, .liveTV])
     }
 
     /// Live TV only when the person may watch a channel (story 48.21): not while the home has

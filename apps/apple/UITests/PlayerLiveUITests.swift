@@ -52,7 +52,8 @@ final class PlayerLiveUITests: PlayerUITestCase {
     func testNoChannelsHidesTheSection() {
         home.stub("GET", "/api/channels/now", body: #"{"server_time":"2026-11-01T10:00:00Z","channels":[]}"#)
         launchSignedIn()
-        XCTAssertTrue(app.staticTexts["Scholars of the Silk Road"].firstMatch.waitForExistence(timeout: 20), "the libraries")
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 20), "signed in: Home")
+        XCTAssertTrue(sectionButton("Libraries").exists, "the other sections show")
         XCTAssertTrue(home.seen.contains("GET /api/channels/now"), "the home was asked")
         XCTAssertFalse(app.tabBars.buttons["Live TV"].exists, "no Live TV tab")
         XCTAssertFalse(app.buttons["Live TV"].exists, "no Live TV section")

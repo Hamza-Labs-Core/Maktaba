@@ -11,6 +11,11 @@ import Network
 ///   to a file shaped as the Go handler answers). `{{now}}` / `{{now-600}}` in a fixture
 ///   become RFC 3339 times relative to now, so what is on Live TV straddles the clock.
 ///   Posters, backdrops and channel logos are a small PNG.
+/// - A test holds a route's answers until it says (`hold`, `release`): a latch, not a timer.
+/// - The player (story 48.23): a real HLS stream under `/stream/{session}/` made of the 2 s
+///   segments in `Fixtures/Stream` (64 × 36 video with AAC sound, en/ar subtitle renditions
+///   shaped as the home's since 48.4), repeated for `streamSeconds` so a resume point or the
+///   last seconds of a long video can be reached. Progress and closing a session answer 204.
 /// - A test changes an answer with `stub` (a status, a body, a delay) and checks what the
 ///   app asked with `requests` (method, path, query, body) or `seen` ("GET /api/home").
 final class MockHome: @unchecked Sendable {
@@ -50,10 +55,30 @@ final class MockHome: @unchecked Sendable {
     private var stubs: [String: Answer] = [:]
     /// Latency added to `METHOD /path` after its answer is chosen (`delay`).
     private var delays: [String: TimeInterval] = [:]
+    /// `METHOD /path`s whose answers wait for `release` (`hold`).
+    private var held: Set<String> = []
+    /// The answers waiting for `release`, ready to send.
+    private var parked: [() -> Void] = []
     private let routes: [Route]
     private let fixtures: Bundle
     private(set) var port: UInt16 = 0
     private var startFailure: Error?
+    private var master = "master"
+    private var seconds = 3120
+
+    /// What `/stream/{session}/manifest.m3u8` serves: `master` (the home's shape: the sound
+    /// in the video's segments, two subtitle renditions) or `master-two-audio` (English and
+    /// Arabic audio renditions besides the subtitles).
+    var streamMaster: String {
+        get { lock.withLock { master } }
+        set { lock.withLock { master = newValue } }
+    }
+
+    /// How long the test stream lasts, in seconds (even).
+    var streamSeconds: Int {
+        get { lock.withLock { seconds } }
+        set { lock.withLock { seconds = newValue } }
+    }
 
     static let code = "TEST-2345"
 
@@ -112,8 +137,27 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { delays["\(method) \(path)"] = delay }
     }
 
-    /// Forgets every stub and delay.
-    func reset() { lock.withLock { stubs = [:]; delays = [:] } }
+    /// From now on, `method path` (any query) is answered only when the test calls `release`:
+    /// a latch, so "before the home answers" never races a timer on a slow runner.
+    func hold(_ method: String, _ path: String) {
+        lock.withLock { _ = held.insert("\(method) \(path)") }
+    }
+
+    /// Sends every held answer and stops holding.
+    func release() {
+        let waiting = lock.withLock {
+            held = []
+            defer { parked = [] }
+            return parked
+        }
+        waiting.forEach { $0() }
+    }
+
+    /// Forgets every stub and delay, and lets held answers go.
+    func reset() {
+        lock.withLock { stubs = [:]; delays = [:] }
+        release()
+    }
 
     /// A fixture's JSON as it is served (times filled in), for a test to compare with.
     func fixture(named name: String) -> String? {
@@ -122,7 +166,10 @@ final class MockHome: @unchecked Sendable {
             .map { Self.fillTimes(String(decoding: $0, as: UTF8.self)) }
     }
 
-    func stop() { listener.cancel() }
+    func stop() {
+        release()
+        listener.cancel()
+    }
 
     private func serve(_ c: NWConnection) {
         c.start(queue: queue)
@@ -149,6 +196,12 @@ final class MockHome: @unchecked Sendable {
                     var response = Data("HTTP/1.1 \(a.status) \(a.status < 400 ? "OK" : "Error")\r\nContent-Type: \(a.contentType)\r\nContent-Length: \(a.body.count)\r\nConnection: close\r\n\r\n".utf8)
                     response.append(a.body)
                     let send = { c.send(content: response, completion: .contentProcessed { _ in c.cancel() }) }
+                    let parked = lock.withLock {
+                        guard held.contains("\(request.method) \(request.path)") else { return false }
+                        self.parked.append(send)
+                        return true
+                    }
+                    if parked { return }
                     if a.delay > 0 {
                         queue.asyncAfter(deadline: .now() + a.delay, execute: send)
                     } else {
@@ -182,6 +235,7 @@ final class MockHome: @unchecked Sendable {
         if let fixed = remote(r.method, r.path, approved: ok) {
             return Answer(status: fixed.0, body: Data(fixed.1.utf8))
         }
+        if let streamed = stream(r.method, r.path) { return streamed }
         if r.method == "GET", Self.isImage(r.path) {
             return Answer(status: 200, body: Self.png, contentType: "image/png")
         }
@@ -204,6 +258,45 @@ final class MockHome: @unchecked Sendable {
         guard let route = routes.first(where: { $0.method == method && Self.matches($0.path, path) }) else { return nil }
         guard let name = route.file else { return Answer(status: route.status, body: Data()) }
         return file((name as NSString).deletingPathExtension).map { Answer(status: route.status, body: $0) }
+    }
+
+    /// The test stream, its progress reports and its closing.
+    private func stream(_ method: String, _ path: String) -> Answer? {
+        if method == "POST", Self.matches("/api/stream/sessions/{id}/progress", path) { return Answer(status: 204, body: Data()) }
+        if method == "DELETE", Self.matches("/api/stream/sessions/{id}", path) { return Answer(status: 204, body: Data()) }
+        guard method == "GET" || method == "HEAD", Self.matches("/stream/{session}/{file}", path) else { return nil }
+        let name = String(path.split(separator: "/").last ?? "")
+        let (master, seconds) = lock.withLock { (self.master, self.seconds) }
+        let playlist = "application/vnd.apple.mpegurl"
+        let base = (name as NSString).deletingPathExtension
+        switch name {
+        case "manifest.m3u8":
+            return resource(master, "m3u8").map { Answer(status: 200, body: $0, contentType: playlist) }
+        case "video.m3u8", "picture.m3u8", "audio-en.m3u8", "audio-ar.m3u8":
+            return Answer(status: 200, body: Data(Self.segments(base, seconds: seconds).utf8), contentType: playlist)
+        case "subs-en.m3u8", "subs-ar.m3u8":
+            let text = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:\(seconds)\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:\(seconds).000,\n\(base).vtt\n#EXT-X-ENDLIST\n"
+            return Answer(status: 200, body: Data(text.utf8), contentType: playlist)
+        default:
+            let ext = (name as NSString).pathExtension
+            let type = ext == "ts" ? "video/mp2t" : ext == "vtt" ? "text/vtt" : "application/octet-stream"
+            return resource(base, ext).map { Answer(status: 200, body: $0, contentType: type) }
+        }
+    }
+
+    /// A media playlist of `seconds`: `<prefix>-0.ts` and `<prefix>-1.ts` in turn, each pair
+    /// after a discontinuity (their timestamps start again).
+    static func segments(_ prefix: String, seconds: Int) -> String {
+        var out = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n"
+        for i in 0 ..< max(1, seconds / 2) {
+            if i > 0, i % 2 == 0 { out += "#EXT-X-DISCONTINUITY\n" }
+            out += "#EXTINF:2.000,\n\(prefix)-\(i % 2).ts\n"
+        }
+        return out + "#EXT-X-ENDLIST\n"
+    }
+
+    private func resource(_ name: String, _ ext: String) -> Data? {
+        fixtures.url(forResource: name, withExtension: ext).flatMap { try? Data(contentsOf: $0) }
     }
 
     private func file(_ name: String) -> Data? {
@@ -240,6 +333,17 @@ final class MockHome: @unchecked Sendable {
     /// A 32 × 48 poster-shaped PNG in the theme's brass-brown.
     static let png = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAACAAAAAwCAIAAAD/zu84AAAAMElEQVR42u3NMQ0AAAgDsElBAjf+haGCg6RJ/2a6TkUgEAgEAoFAIBAIBAKBQPApWAeEPC5/X6goAAAAAElFTkSuQmCC")!
 
+    /// The access token the mock hands out: shaped as a JWT good for a day (unsigned), since
+    /// the player reads its `exp` before it hands a stream to AVPlayer (`playbackHeaders`).
+    static var accessToken: String {
+        func b64(_ s: String) -> String {
+            Data(s.utf8).base64EncodedString().replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+        }
+        let exp = Int(Date().timeIntervalSince1970) + 86400
+        return "\(b64(#"{"alg":"none","typ":"JWT"}"#)).\(b64(#"{"sub":"u1","exp":\#(exp)}"#)).uitest"
+    }
+
     /// Connecting, signing in and the Remote's screens.
     private func remote(_ method: String, _ path: String, approved ok: Bool) -> (Int, String)? {
         switch (method, path) {
@@ -249,7 +353,9 @@ final class MockHome: @unchecked Sendable {
             let exp = ISO8601DateFormatter().string(from: Date().addingTimeInterval(600))
             return (201, #"{"code":"\#(Self.code)","device_code":"dc","expires_at":"\#(exp)","verify_path":"/pair?code=\#(Self.code)","interval":1}"#)
         case ("POST", "/api/pairing/device/token"):
-            return ok ? (200, #"{"access_token":"ui.test.token","refresh_token":"ui-refresh"}"#) : (202, #"{"status":"pending"}"#)
+            return ok ? (200, #"{"access_token":"\#(Self.accessToken)","refresh_token":"ui-refresh"}"#) : (202, #"{"status":"pending"}"#)
+        case ("POST", "/api/auth/refresh"):
+            return (200, #"{"access_token":"\#(Self.accessToken)","refresh_token":"ui-refresh"}"#)
         case ("GET", "/api/auth/me"):
             return (200, #"{"id":"u1","username":"tester","is_admin":true,"home_name":"UI Test Home"}"#)
         case ("GET", "/api/issues"):
