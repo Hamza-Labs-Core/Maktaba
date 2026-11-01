@@ -35,6 +35,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.media3.common.C
+import com.hamzalabs.maktaba.player.watch.PlayerClock
+import com.hamzalabs.maktaba.player.watch.PlayerControls
+import com.hamzalabs.maktaba.player.watch.UpNext
+import com.hamzalabs.maktaba.player.watch.upNextDue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,29 +67,70 @@ import com.hamzalabs.maktaba.core.ui.Poster
 import com.hamzalabs.maktaba.core.ui.formatDuration
 
 /**
- * The video with its title and a close button over it (Media3's own controls on the video).
- * Full screen (the system bars hidden until a swipe), or one half of a half-folded foldable.
+ * The video with the player's own controls over it ([PlayerControls]: close and the title,
+ * subtitles and audio, quality, play / pause, ±10 s, the scrubber, Next) and Up next near the
+ * end. Full screen (the system bars hidden until a swipe), or one half of a half-folded foldable.
+ *
+ * [next] is the video after this one (the series' next episode), if any: the Next button plays
+ * it, and so does Up next's countdown when [autoplayNext] (Settings, FR-31) is on.
  */
 @OptIn(UnstableApi::class)
 @Composable
-fun WatchScreen(playback: Playback, fullScreen: Boolean, onSignIn: () -> Unit, onChooseHome: () -> Unit) {
+fun WatchScreen(
+    playback: Playback,
+    fullScreen: Boolean,
+    onSignIn: () -> Unit,
+    onChooseHome: () -> Unit,
+    onClose: () -> Unit = playback::stop,
+    next: Video? = null,
+    autoplayNext: Boolean = false,
+    onPlayNext: (Video) -> Unit = { playback.play(it) },
+) {
     if (fullScreen) ImmersiveWhileShown()
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player
         val problem = playback.problem
+        val title = playback.video?.displayTitle ?: ""
         when {
-            player != null -> AndroidView(
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                        setShowSubtitleButton(true)
-                        keepScreenOn = true
+            player != null -> {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            // the controls are the app's own (PlayerControls); the view draws the video and its subtitles
+                            useController = false
+                            setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                            keepScreenOn = true
+                        }
+                    },
+                    update = { it.player = player },
+                    onRelease = { it.player = null },
+                    modifier = Modifier.fillMaxSize(),
+                )
+                val clock = remember(player) { PlayerClock() }
+                LaunchedEffect(player) {
+                    while (true) {
+                        clock.positionMs = player.currentPosition
+                        clock.durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+                            ?: playback.video?.durationSec?.let { (it * 1000).toLong() } ?: 0L
+                        delay(500)
                     }
-                },
-                update = { it.player = player },
-                onRelease = { it.player = null },
-                modifier = Modifier.fillMaxSize(),
-            )
+                }
+                PlayerControls(
+                    playback,
+                    clock,
+                    title = title,
+                    onClose = onClose,
+                    hasNext = next != null,
+                    onNext = { next?.let(onPlayNext) },
+                )
+                UpNext(
+                    next = next,
+                    due = upNextDue(clock.positionMs, clock.durationMs, playback.ended),
+                    autoplay = autoplayNext,
+                    onPlay = onPlayNext,
+                    modifier = Modifier.align(Alignment.BottomEnd).safeDrawingPadding().padding(16.dp).padding(bottom = 72.dp),
+                )
+            }
             problem != null -> CompositionLocalProvider(LocalContentColor provides Color.White) {
                 ErrorState(
                     problem,
@@ -91,27 +140,30 @@ fun WatchScreen(playback: Playback, fullScreen: Boolean, onSignIn: () -> Unit, o
                     onRetry = playback::retry,
                     onSignIn = { playback.stop(); onSignIn() },
                     onChooseHome = { playback.stop(); onChooseHome() },
-                    onBack = playback::stop,
+                    onBack = onClose,
                 )
             }
             else -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = InkAndBrass.Brass)
         }
-        Row(
-            Modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            IconButton(
-                onClick = playback::stop,
-                modifier = Modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
-            ) { Icon(Icons.Filled.Close, stringResource(CoreR.string.close), tint = Color.White) }
-            Text(
-                playback.video?.displayTitle ?: "",
-                color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+        // while it opens, or failed: close and the title (the controls carry them once it plays)
+        if (player == null) {
+            Row(
+                Modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.clip(CircleShape).background(Color.Black.copy(alpha = 0.45f)),
+                ) { Icon(Icons.Filled.Close, stringResource(CoreR.string.close), tint = Color.White) }
+                Text(
+                    title,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

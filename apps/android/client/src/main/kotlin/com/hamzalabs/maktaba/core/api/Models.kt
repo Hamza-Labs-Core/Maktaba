@@ -78,6 +78,10 @@ data class StreamSession(
     @SerialName("manifest_url") val manifestUrl: String? = null,
     @SerialName("direct_url") val directUrl: String? = null,
     @SerialName("expires_at") val expiresAt: String? = null,
+    /** The qualities a transcode can be capped to (empty: none offered, as for direct play). */
+    val ladder: List<Rendition> = emptyList(),
+    /** The quality this session plays at, when the home says. */
+    @SerialName("current_rendition") val currentRendition: Rendition? = null,
 ) {
     /** When the signed URL stops working, in epoch milliseconds (null: the home did not say). */
     val expiresMillis: Long?
@@ -96,6 +100,15 @@ data class StreamSession(
 
     val isHls: Boolean get() = directUrl == null && manifestUrl != null
 }
+
+/** A rung of a stream session's `ladder`: a quality the home can transcode to. */
+@Serializable
+data class Rendition(
+    val height: Int = 0,
+    val width: Int = 0,
+    @SerialName("bitrate_kbps") val bitrateKbps: Int = 0,
+    val codec: String = "",
+)
 
 /** A group of failed jobs in "Needs attention" (`GET /api/issues`). */
 @Serializable

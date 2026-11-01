@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The player (Epic 48.32: resume, next, tracks, quality).
+     Its Arabic is in values-ar/strings_watch.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="watch_play">Play</string>
+    <string name="watch_pause">Pause</string>
+    <string name="watch_back_10">Back 10 seconds</string>
+    <string name="watch_forward_10">Forward 10 seconds</string>
+    <string name="watch_position">Position</string>
+    <string name="watch_next">Next</string>
+    <string name="watch_tracks">Subtitles and audio</string>
+    <string name="watch_subtitles">Subtitles</string>
+    <string name="watch_subtitles_off">Off</string>
+    <string name="watch_audio">Audio</string>
+    <string name="watch_quality">Quality</string>
+    <string name="watch_quality_auto">Auto</string>
+    <string name="watch_quality_height">%1$dp</string>
+    <string name="watch_track_n">Track %1$d</string>
+    <string name="watch_up_next">Up next</string>
+    <string name="watch_up_next_in">Up next in %1$d s</string>
+    <string name="watch_play_now">Play now</string>
+    <string name="watch_cancel">Cancel</string>
+</resources>
