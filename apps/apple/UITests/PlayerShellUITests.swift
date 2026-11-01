@@ -13,19 +13,19 @@ final class PlayerShellUITests: PlayerUITestCase {
     private let newestVideo = "Scholars of the Silk Road"
 
     /// A TestFlight build shows `PlayerSection.enabled` only: Libraries, today's browser,
-    /// reading the home's libraries; no section that has not merged.
+    /// reading the home's libraries, first; Search (48.20); no section that has not merged.
     func testOnlyTheEnabledSectionsShow() {
         launchSignedIn()
         // today's browser: the videos of every library (on a phone, its libraries one step back)
         XCTAssertTrue(app.staticTexts[newestVideo].firstMatch.waitForExistence(timeout: 15), "today's library browser")
         XCTAssertTrue(home.seen.contains("GET /api/libraries"))
         XCTAssertTrue(home.seen.contains("GET /api/videos"))
+        XCTAssertTrue(sectionButton("Search").exists, "Search is turned on")
         for label in ["Home", "Live TV", "Profile"] {
             XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
             XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
         }
-        XCTAssertFalse(element("player.shell").exists, "one section: no tab bar")
-        shot("libraries-only")
+        shot("enabled-sections")
     }
 
     /// Every section shown: a tab bar at the bottom of an iPhone, tabs at the top of an iPad;
