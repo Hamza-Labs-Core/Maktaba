@@ -1,0 +1,67 @@
+{
+ "degraded": true,
+ "expires_at": "2026-11-01T00:04:13.019945Z",
+ "filters": {
+  "library_id": [
+   "11111111-1111-4111-8111-111111111111"
+  ]
+ },
+ "hits": [
+  {
+   "end_sec": 22,
+   "score": 0.01639344262295082,
+   "segment_id": 3,
+   "snippet": "today we speak about <mark>prayer</mark> and its meaning",
+   "start_sec": 14.2,
+   "video_id": "00000000-0000-4000-8000-000000000001"
+  }
+ ],
+ "mode": "hybrid",
+ "page_size": 24,
+ "passages_page_size": 20,
+ "q": "prayer",
+ "search_id": "GzrxeRrax489Zl2zdRr9PqV6",
+ "took_ms": {
+  "fts": 2,
+  "fusion": 0,
+  "semantic": 200
+ },
+ "total": 1,
+ "transcript_total": 1,
+ "transcript_videos": [
+  {
+   "best_score": 0.01639344262295082,
+   "duration_sec": 3600,
+   "in_title": false,
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "library_name": "Tafsir Lessons",
+   "matches": 1,
+   "passages": [
+    {
+     "end_sec": 22,
+     "score": 0.01639344262295082,
+     "segment_id": 3,
+     "snippet": "today we speak about <mark>prayer</mark> and its meaning",
+     "start_sec": 14.2
+    }
+   ],
+   "poster_url": "/api/videos/00000000-0000-4000-8000-000000000001/poster",
+   "title": "تفسير سورة الفاتحة",
+   "video_id": "00000000-0000-4000-8000-000000000001"
+  }
+ ],
+ "videos": [
+  {
+   "duration_sec": 1800,
+   "in_transcripts": false,
+   "library_id": "11111111-1111-4111-8111-111111111111",
+   "library_name": "Tafsir Lessons",
+   "poster_url": "/api/videos/00000000-0000-4000-8000-000000000004/poster",
+   "score": 0.23333333,
+   "title": "Questions and answers on prayer",
+   "title_snippet": "Questions and answers on <mark>prayer</mark>",
+   "video_id": "00000000-0000-4000-8000-000000000004"
+  }
+ ],
+ "videos_total": 1
+}

@@ -1,0 +1,8 @@
+{
+ "detail": "library 22222222-2222-4222-8222-222222222222",
+ "instance": "/api/libraries/22222222-2222-4222-8222-222222222222/hub",
+ "requestId": "01a1945e-08e3-7e67-a115-b1b743bd022d",
+ "status": 404,
+ "title": "not found",
+ "type": "https://maktaba.dev/problems/not-found"
+}

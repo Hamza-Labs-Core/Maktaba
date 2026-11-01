@@ -1,0 +1,27 @@
+{
+ "items": [
+  {
+   "end_sec": 600,
+   "id": 1,
+   "seq": 1,
+   "source": "inferred",
+   "start_sec": 0,
+   "title": "المقدمة"
+  },
+  {
+   "end_sec": 1800,
+   "id": 2,
+   "seq": 2,
+   "source": "inferred",
+   "start_sec": 600,
+   "title": "بسم الله الرحمن الرحيم"
+  },
+  {
+   "id": 3,
+   "seq": 3,
+   "source": "inferred",
+   "start_sec": 1800,
+   "title": "الحمد لله رب العالمين"
+  }
+ ]
+}

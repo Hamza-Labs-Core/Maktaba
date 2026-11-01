@@ -1,0 +1,49 @@
+{
+ "added": [
+  {
+   "value": "month",
+   "videos": 4
+  },
+  {
+   "value": "year",
+   "videos": 5
+  }
+ ],
+ "durations": [
+  {
+   "value": "medium",
+   "videos": 3
+  },
+  {
+   "value": "long",
+   "videos": 1
+  }
+ ],
+ "languages": [
+  {
+   "code": "ar",
+   "videos": 4
+  },
+  {
+   "code": "en",
+   "videos": 1
+  }
+ ],
+ "letters": [
+  {
+   "letter": "#",
+   "videos": 1
+  },
+  {
+   "letter": "Q",
+   "videos": 1
+  },
+  {
+   "letter": "ت",
+   "videos": 3
+  }
+ ],
+ "resolutions": [],
+ "speakers": [],
+ "tags": []
+}

@@ -777,6 +777,24 @@ Append here: date, session, one to five lines on what changed. Newest last.
     library art, which 48.10 / 48.11 check in screenshots.
   - Gotcha: a MaktabaKit test suite named `Tokens` clashes with an existing one (keychain
     tests); it is `DesignTokens`.
+- 2026-11-01 · story 48.6 agent of `b743b7d4`: [#467] MaktabaKit `Browse.swift`, the browse client
+  (Home to Profile, not Live, which is 48.7, nor the player's session options, which stay
+  `openStream` until 48.23 needs more).
+  - Decided: fixtures are real answers. The branch API ran on a scratch Postgres (port 55486,
+    a viewer of one library of two, seeded series, chapters, transcript, playlist, search),
+    recorded by a script as that viewer into `MaktabaKit/Tests/Fixtures/Browse/` (outside the
+    test target, read by `#filePath`, so `Package.swift`, owned by 48.10, is untouched). A Go
+    test (`browse/native_fixtures_apple_test.go`) decodes them into the handlers' types with unknown
+    fields refused, so renaming a field fails in the PR that renames it.
+  - Decided: `send` and `sendRaw` in `APIClient.swift` lost `private` (an extension in another
+    file needs them; 48.7 needs the same two-word change, which git merges cleanly).
+  - Decided: new model names avoid the apps' views (`BrowseVideo`, `VideoInfo`,
+    `VideoListPage`: the Player has a `VideoDetail` view, tvOS `VideoCard` and `VideoPage`).
+  - Found: a hidden video answers **403**, not 404 (`videos.canRead`), against FR-18's premise;
+    the client maps a video route's 403 to `.notAvailable` too. `GET /api/series/{id}` answers
+    its counts as 0 (only the list counts): a series page must count its episodes.
+  - Failed first: `initdb` without `-E UTF8` made a SQL_ASCII database, and the facets route
+    500'd on Arabic first letters; recreated the DB as UTF8 (not an API bug).
 - 2026-10-31 · Epic 48 story 48.5 agent of `b743b7d4`: `?size=small` on
   `GET /api/videos/{id}/poster` (`api/internal/handlers/videos/poster.go`, tests in
   `poster_size_test.go`).
@@ -1038,5 +1056,6 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
 [#464]: https://github.com/Hamza-Labs-Core/Maktaba/pull/464
 [#462]: https://github.com/Hamza-Labs-Core/Maktaba/pull/462
+[#467]: https://github.com/Hamza-Labs-Core/Maktaba/pull/467
 [#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470
 [#468]: https://github.com/Hamza-Labs-Core/Maktaba/pull/468
