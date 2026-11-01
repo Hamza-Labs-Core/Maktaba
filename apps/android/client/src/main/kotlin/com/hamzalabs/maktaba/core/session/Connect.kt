@@ -110,8 +110,11 @@ private data class VersionInfo(
 /** A home that answered at [url], and what it said. */
 data class Reached(val url: String, val info: HomeInfo)
 
-/** Why no address of a home answered as one. */
-class NotAHome(val tried: List<String>, val why: String?) :
+/**
+ * Why no address of a home answered as one: [reason] as a person reads it (story 48.37), [why]
+ * for the log.
+ */
+class NotAHome(val tried: List<String>, val why: String?, val reason: FailReason = FailReason.NotAHome) :
     Exception("No Maktaba home answered at ${tried.joinToString()}" + (why?.let { ": $it" } ?: ""))
 
 /**
@@ -146,27 +149,44 @@ class HomeProbe(private val get: suspend (HttpUrl) -> Pair<Int, String> = ::defa
      * Tries [urls] in order and keeps the first that answers as a home (a home's local address
      * first, then its others). With [expectId] (a link names its home), an address where
      * another home answers is passed over: a local address reused by another home on this
-     * network. [NotAHome] when none does.
+     * network. [onTry] hears each address as it is tried (the address, its place from 1, how
+     * many). [NotAHome] when none does, its reason the most telling of what answered: another
+     * home, else something that is not a home, else nothing.
      */
-    suspend fun first(urls: List<String>, expectId: String? = null): Reached {
+    suspend fun first(
+        urls: List<String>,
+        expectId: String? = null,
+        onTry: (url: String, index: Int, count: Int) -> Unit = { _, _, _ -> },
+    ): Reached {
         var why: String? = null
-        for (u in urls) {
+        var reason = FailReason.NoAnswer
+        // NoAnswer < NotAHome < OtherHome: their order in FailReason
+        fun worse(r: FailReason) {
+            if (r.ordinal > reason.ordinal) reason = r
+        }
+        urls.forEachIndexed { i, u ->
+            onTry(u, i + 1, urls.size)
             try {
                 val info = probe(u)
                 if (expectId != null && info.id != null && !sameHome(expectId, info.id)) {
                     why = "another home answered at $u"
-                    continue
+                    worse(FailReason.OtherHome)
+                    return@forEachIndexed
                 }
                 return Reached(u, info)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: NotAHome) {
                 why = e.why
+                worse(e.reason)
+            } catch (e: ApiException.Transport) {
+                why = e.message
             } catch (e: ApiException) {
                 why = e.message
+                worse(FailReason.NotAHome)
             }
         }
-        throw NotAHome(urls, why)
+        throw NotAHome(urls, why, reason)
     }
 
     companion object {

@@ -67,7 +67,8 @@ class StartScreensScreenshotTest {
         }
         server.start()
         // the home shows at its fixed address; its requests go to the mock
-        session = AppSession(MapStore(), scope, { MemoryTokens() }, { _, tokens -> ApiClient(server.url("/"), tokens) })
+        // a fixed clock: the code's countdown reads the same on every run
+        session = AppSession(MapStore(), scope, { MemoryTokens() }, { _, tokens -> ApiClient(server.url("/"), tokens) }, now = { 1_793_527_200_000L })
     }
 
     @After
