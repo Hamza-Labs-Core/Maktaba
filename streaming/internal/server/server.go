@@ -117,6 +117,19 @@ func New(deps Deps) http.Handler {
 				return handlers.ReadSidecar(path, lang, deps.Files)
 			}
 			sub.Get("/subs/sidecar/{lang}.vtt", subs.ServeSidecar)
+			// Story 48.4 — the sidecars as HLS subtitle renditions too, for
+			// players that cannot side-load (AVPlayer, AirPlay, Cast)
+			manifestHandler.Subtitles = func(ctx context.Context) (handlers.SubtitleSet, error) {
+				row, err := sessionProbe(ctx, deps.Sessions, deps.Probe)
+				if err != nil {
+					return handlers.SubtitleSet{}, err
+				}
+				return handlers.SubtitleSet{
+					DurationSec: row.DurationSec,
+					Langs:       handlers.ListSidecars(pathmap.Resolve(row.Path), os.ReadDir),
+				}, nil
+			}
+			sub.Get("/subs-{lang}/index.m3u8", manifestHandler.ServeSubtitlePlaylist)
 		}
 		if deps.Transcripts != nil {
 			sub.Get("/subs/auto.vtt", func(w http.ResponseWriter, req *http.Request) {
@@ -265,20 +278,26 @@ func videoIDForSession(ctx context.Context, s session.Store) (string, error) {
 // session store then the probe row. Used by the sidecar subtitle
 // reader, which needs the directory the source file lives in.
 func sessionVideoPath(ctx context.Context, s session.Store, p *probe.Cache) (string, error) {
-	sid := auth.SubjectFromContext(ctx)
-	id, err := uuid.Parse(sid)
-	if err != nil {
-		return "", err
-	}
-	row, ok, err := s.Get(ctx, id)
-	if err != nil || !ok {
-		return "", errors.New("session not found")
-	}
-	probeRow, err := p.Lookup(ctx, row.VideoID)
+	probeRow, err := sessionProbe(ctx, s, p)
 	if err != nil {
 		return "", err
 	}
 	return pathmap.Resolve(probeRow.Path), nil // story 31.3: canonical -> this machine
+}
+
+// sessionProbe is the probe row of the session's video (the SignedURL
+// subject for session-scoped routes).
+func sessionProbe(ctx context.Context, s session.Store, p *probe.Cache) (*probe.Row, error) {
+	sid := auth.SubjectFromContext(ctx)
+	id, err := uuid.Parse(sid)
+	if err != nil {
+		return nil, err
+	}
+	row, ok, err := s.Get(ctx, id)
+	if err != nil || !ok {
+		return nil, errors.New("session not found")
+	}
+	return p.Lookup(ctx, row.VideoID)
 }
 
 // EnsureCacheRoot creates the cache root if it doesn't exist. Called
