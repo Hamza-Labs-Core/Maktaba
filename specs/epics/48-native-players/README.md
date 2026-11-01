@@ -604,6 +604,10 @@ Android (after 48.15 and 48.16; Files: `player/…/<screen>/*` and `values*/stri
   - [ ] A `MediaSessionService`: sound continues with the screen off; notification controls.
   - [ ] Cast: the button shows when a receiver is on the network; casting hands the signed URL to
         the Default Media Receiver; progress still reports (unit test with a fake `CastPlayer`).
+  - [ ] If the URL handed to a receiver is DASH, the web port's gate lets its signed top-level
+        segments through (`/stream/{session}/init-*.m4s`, `chunk-*.m4s`, not on 48.12's
+        allow-list); a gate test in `cmd/maktaba-server/stream_gate_signed_test.go`. The same
+        applies to 48.24 if AirPlay is ever handed DASH. Found while writing 48.12's tests.
 
 TV (own track):
 
