@@ -70,15 +70,26 @@ jobs:
   # simulator is made for the run and deleted after it (never a shared device); the
   # screenshots (dark, English and Arabic) are kept as an artifact.
   #
-  # One job per device, side by side: the iPhone's run alone takes most of an hour.
+  # Three jobs per device, side by side (each its own simulator), and one for the Mac: the
+  # iPhone's classes in one job outgrew the hour.
   player-ui-tests:
-    name: Player UI tests (${{ matrix.device }})
+    name: Player UI tests (${{ matrix.device }}${{ matrix.shard != 0 && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }})
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
       fail-fast: false
+      # The iPhone and iPad classes are split over `shards` jobs that run side by side: in
+      # one job they outgrew the hour. Each class goes, heaviest first, to the shard with
+      # the fewest tests so far, so the shards stay even as classes are added.
       matrix:
-        device: [iphone, ipad, mac]
+        include:
+          - { device: iphone, shard: 1, shards: 3 }
+          - { device: iphone, shard: 2, shards: 3 }
+          - { device: iphone, shard: 3, shards: 3 }
+          - { device: ipad, shard: 1, shards: 3 }
+          - { device: ipad, shard: 2, shards: 3 }
+          - { device: ipad, shard: 3, shards: 3 }
+          - { device: mac, shard: 0, shards: 0 }
     env:
       DERIVED: ${{ github.workspace }}/build/player-ui-derived
       SHOTS: ${{ github.workspace }}/build/player-shots
@@ -99,9 +110,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$SHOTS" "$RESULTS"
+          # this shard's classes: heaviest first (by test count) to the lightest shard
           only=()
-          for f in UITests/Player*Tests.swift; do only+=("$(basename "$f" .swift)"); done
-          echo "classes: ${only[*]}"
+          while IFS= read -r c; do only+=("$c"); done < <(python3 ../../tools/apple/ui-shard.py "${{ matrix.shard }}" "${{ matrix.shards }}" UITests/Player*Tests.swift)
+          echo "shard ${{ matrix.shard }}/${{ matrix.shards }} classes: ${only[*]}"
           runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
           # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
           devtype() {
@@ -117,7 +129,7 @@ jobs:
           status=0
           run() { # scheme, test target, device-type prefix
             local udid args=()
-            udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$3" "$(devtype "$3")" "$runtime")
+            udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$3-${{ matrix.shard }}" "$(devtype "$3")" "$runtime")
             made+=("$udid")
             xcrun simctl boot "$udid"
             xcrun simctl ui "$udid" appearance dark
@@ -125,7 +137,7 @@ jobs:
             echo "::group::$1 on $3"
             TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "$1" \
               -destination "id=$udid" -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO \
-              -resultBundlePath "$RESULTS/$3.xcresult" "${args[@]}" || status=1
+              -resultBundlePath "$RESULTS/$3-${{ matrix.shard }}.xcresult" "${args[@]}" || status=1
             echo "::endgroup::"
             xcrun simctl shutdown "$udid" || true
           }
@@ -158,7 +170,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: player-ui-tests-${{ matrix.device }}
+          name: player-ui-tests-${{ matrix.device }}${{ matrix.shard != 0 && format('-{0}', matrix.shard) || '' }}
           path: |
             build/player-shots
             build/player-results

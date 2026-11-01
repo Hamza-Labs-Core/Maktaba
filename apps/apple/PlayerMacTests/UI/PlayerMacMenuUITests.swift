@@ -12,8 +12,6 @@ final class PlayerMacMenuUITests: XCTestCase {
     private var app: XCUIApplication!
     private var home: MockHome!
     private var language = "en"
-    /// The first of `/api/videos` in the fixtures (`UITests/Fixtures/videos.json`).
-    private let newestVideo = "Scholars of the Silk Road"
 
     override func setUp() async throws {
         continueAfterFailure = false
@@ -44,14 +42,10 @@ final class PlayerMacMenuUITests: XCTestCase {
         XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 5), "View ▸ Profile")
         shot("view-menu")
 
-        let screens = ["screen.home", nil, "screen.liveTV", "screen.search", "screen.profile"]
+        let screens = ["screen.home", "screen.libraries", "screen.liveTV", "screen.search", "screen.profile"]
         for (i, id) in screens.enumerated().reversed() {
             app.typeKey("\(i + 1)", modifierFlags: .command)
-            if let id {
-                XCTAssertTrue(element(id).waitForExistence(timeout: 5), "⌘\(i + 1) opens \(id)")
-            } else {
-                XCTAssertTrue(app.staticTexts[newestVideo].firstMatch.waitForExistence(timeout: 10), "⌘2 opens Libraries")
-            }
+            XCTAssertTrue(element(id).waitForExistence(timeout: 5), "⌘\(i + 1) opens \(id)")
         }
 
         // ⌘F: from any section to Search
@@ -99,21 +93,25 @@ final class PlayerMacMenuUITests: XCTestCase {
     // MARK: the player
 
     /// Playing: the player covers the whole window, then the whole screen on ⌃⌘F, and back;
-    /// Playback ▸ Stop closes it. Its items are off until the video plays.
+    /// Playback ▸ Stop closes it. Its items are on while the player is open.
     func testThePlayerFillsTheWindowAndGoesFullScreen() throws {
-        launchSignedIn()
-        let row = app.staticTexts[newestVideo].firstMatch
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "the library browser")
-        row.click()
-        let play = app.buttons["Play"].firstMatch
-        XCTAssertTrue(play.waitForExistence(timeout: 10), "the video's page")
+        launchSignedIn(sections: "all", section: "home")
+        // an On Deck card: a video not started, so its page offers Play
+        let card = app.buttons["home.card.v3"].firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "Home's On Deck row")
+        reveal(card)
+        card.click()
+        XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
+        let play = element("video.play")
+        XCTAssertTrue(play.waitForExistence(timeout: 10), "the video's Play")
         play.click()
         let close = app.buttons["Close"].firstMatch
         XCTAssertTrue(close.waitForExistence(timeout: 10), "the player")
 
         app.menuBars.menuBarItems["Playback"].click()
         XCTAssertTrue(app.menuBars.menuItems["Stop"].isEnabled, "Stop while a video is open")
-        XCTAssertFalse(app.menuBars.menuItems["Play/Pause"].isEnabled, "no picture yet (the mock has no video)")
+        // the watch screen makes its player as it opens, before a picture: Play/Pause is on
+        XCTAssertTrue(app.menuBars.menuItems["Play/Pause"].isEnabled, "Play/Pause while the player is open")
         app.typeKey(.escape, modifierFlags: [])
 
         let window = app.windows.firstMatch
@@ -138,7 +136,11 @@ final class PlayerMacMenuUITests: XCTestCase {
     /// to the mock home by a code.
     private func launchSignedIn(_ language: String = "en", sections: String? = nil, section: String? = nil) {
         self.language = language
-        var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
+        // AppKit reads arguments as `-key value` pairs: a flag with no value takes the next
+        // one, and a word left over (`granted`) is opened as a document, so SwiftUI opens no
+        // window. Xcode's own runs pass this too.
+        var args = ["-NSTreatUnknownArgumentsAsOpen", "NO",
+                    "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
                     "-theme", "dark",
                     "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
         if let sections { args += ["-maktaba-sections", sections] }
@@ -156,7 +158,8 @@ final class PlayerMacMenuUITests: XCTestCase {
         field.click()
         field.typeText(home.url)
         app.buttons["picker.connect"].click()
-        let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
+        // the sign-in way is a segmented choice: on the Mac its segments are radio buttons
+        let byCode = app.radioButtons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10), "the sign-in screen offers a code")
         byCode.click()
         home.approve()
@@ -164,6 +167,14 @@ final class PlayerMacMenuUITests: XCTestCase {
     }
 
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
+
+    /// Scrolls Home down until `element` is on screen (the On Deck row is below the window's fold).
+    private func reveal(_ element: XCUIElement) {
+        for _ in 0..<10 where !element.isHittable {
+            self.element("screen.home").scroll(byDeltaX: 0, deltaY: -200)
+        }
+        XCTAssertTrue(element.isHittable, "scrolled to \(element)")
+    }
 
     /// Clicks a menu bar item, then one of its items.
     private func menu(_ top: String, _ item: String) {
