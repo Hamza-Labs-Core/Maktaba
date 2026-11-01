@@ -97,10 +97,12 @@ public actor APIClient {
         try await get("/api/videos/\(id)")
     }
 
-    /// Opens a stream session (the home picks direct, remux or transcode).
-    public func openStream(video: String, startSec: Int = 0) async throws -> StreamSession {
+    /// Opens a stream session (the home picks direct, remux or transcode). `maxBitrateKbps`
+    /// caps the quality (a rung of the session's `ladder`); nil lets the home choose.
+    public func openStream(video: String, startSec: Int = 0, maxBitrateKbps: Int? = nil) async throws -> StreamSession {
         var body: [String: Any] = ["video_id": video]
         if startSec > 0 { body["start_sec"] = startSec }
+        if let maxBitrateKbps, maxBitrateKbps > 0 { body["max_bitrate_kbps"] = maxBitrateKbps }
         return try await send(request("POST", "/api/stream/sessions", body: body))
     }
 

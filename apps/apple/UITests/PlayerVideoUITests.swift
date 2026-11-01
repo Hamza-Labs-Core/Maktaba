@@ -6,8 +6,8 @@ import XCTest
 /// available", the poster at the top at its own shape (the small copy on a phone, the full one
 /// on an iPad; a placeholder of the same size on a 404), and `maktaba://video/{id}`.
 ///
-/// The player (`PlayerRoute.watch`) is still story 48.23's placeholder, which shows the route
-/// it was opened with ("v2 @ 1240"): that is what these tests read.
+/// Where the player (`PlayerRoute.watch`, 48.23) opens is read from the stream session it asks
+/// the home for (`POST /api/stream/sessions`: `start_sec`, left out at 0).
 ///
 /// `v2` in the fixtures: "السيرة النبوية، الدرس ١١", 2980 s, stopped at 1240 s (20:40), episode
 /// 11 of Seerah, not a favorite; its chapters start at 0, 420, 1500 and 2600 s. The mock's
@@ -23,6 +23,30 @@ final class PlayerVideoUITests: PlayerUITestCase {
 
     private func back() {
         app.navigationBars.buttons.firstMatch.tap()
+    }
+
+    /// The player opened `video` at `start` seconds (the last stream session asked for).
+    private func playerOpened(_ video: String, at start: Int, _ why: String) {
+        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 10), "the player")
+        var last: [String: Any]?
+        waitUntil("a stream session") {
+            last = home.requests.last { $0.method == "POST" && $0.path == "/api/stream/sessions" }
+                .flatMap { try? JSONSerialization.jsonObject(with: $0.body) as? [String: Any] }
+            return last != nil
+        }
+        XCTAssertEqual(last?["video_id"] as? String, video)
+        XCTAssertEqual(last?["start_sec"] as? Int ?? 0, start, why)
+    }
+
+    /// Close on the player's controls (they show on a tap) back to the page.
+    private func closePlayer() {
+        let close = app.buttons["player.close"]
+        if !close.waitForExistence(timeout: 3) {
+            element("screen.watch").coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15)).tap()
+        }
+        XCTAssertTrue(close.waitForExistence(timeout: 5), "the player's Close")
+        close.tap()
+        XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "back on the page")
     }
 
     private func count(_ method: String, _ path: String) -> Int {
@@ -58,15 +82,13 @@ final class PlayerVideoUITests: PlayerUITestCase {
         XCTAssertEqual(resume.label, "Resume from 20:40", "the position from playback_state")
         XCTAssertTrue(element("progress.strip").exists, "how far it was watched")
         resume.tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["v2 @ 1240"].exists, "the player opens at the saved position")
+        playerOpened("v2", at: 1240, "the player opens at the saved position")
 
-        back()
+        closePlayer()
         let fromStart = app.buttons["video.playFromStart"]
         XCTAssertTrue(fromStart.waitForExistence(timeout: 5))
         fromStart.tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["v2 @ 0"].exists, "Play from start opens at 0")
+        playerOpened("v2", at: 0, "Play from start opens at 0")
     }
 
     func testAFinishedVideoOffersPlay() {
@@ -104,8 +126,7 @@ final class PlayerVideoUITests: PlayerUITestCase {
         scrollTo(chapter)
         XCTAssertTrue(chapter.label.contains("Hijrah to Madinah"), chapter.label)
         chapter.tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["v2 @ 420"].exists, "the chapter's time")
+        playerOpened("v2", at: 420, "the chapter's time")
     }
 
     // MARK: Favorite and Mark watched
@@ -143,8 +164,8 @@ final class PlayerVideoUITests: PlayerUITestCase {
         home.stub("GET", "/api/videos/v2", body: #"{"id":"v2","filename":"seerah-11.mp4","title":"\#(title)","duration_sec":2980,"playback_state":{"position_sec":0,"completed":true}}"#)
         let reads = count("GET", "/api/me/videos/v2")
         app.buttons["video.play"].tap()
-        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 5))
-        back()
+        XCTAssertTrue(element("screen.watch").waitForExistence(timeout: 10))
+        closePlayer()
         waitUntil("the page read the home again") { count("GET", "/api/me/videos/v2") > reads }
         XCTAssertTrue(favorite.waitForExistence(timeout: 5))
         waitUntil("still a favorite") { favorite.isSelected }
@@ -251,11 +272,10 @@ final class PlayerVideoUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 5), "back to where the link found the app")
     }
 
-    /// As a TestFlight build is today (Libraries alone, its own split view): the page opens in
-    /// a sheet with Done.
+    /// Over Libraries, whose browser keeps its own stack: the page opens in a sheet with Done.
     func testADeepLinkOverLibrariesOpensInASheet() throws {
-        launchSignedIn()
-        XCTAssertTrue(app.staticTexts["Scholars of the Silk Road"].firstMatch.waitForExistence(timeout: 15), "Libraries")
+        launchSignedIn(sections: ["libraries"])
+        XCTAssertTrue(element("library.lib-docs").waitForExistence(timeout: 15), "Libraries")
         try openLink("maktaba://video/v2")
         XCTAssertTrue(element("video.title").waitForExistence(timeout: 10), "the linked page")
         app.buttons["link.done"].tap()
