@@ -258,7 +258,7 @@ enum BrowseHome {
             let all = try await c.seriesList()
             #expect(all.map(\.id) == [BrowseHome.series] && all.first?.progress == 1.0 / 3)
             _ = try await c.seriesList(library: BrowseHome.lib)
-            #expect(BrowseStub.last?.query == ["library_id": BrowseHome.lib])
+            #expect(BrowseStub.last?.query == ["library_id": BrowseHome.lib, "page": "0"])
             let one = try await c.series(BrowseHome.series)
             // the one-series answer carries no counts (the home leaves them 0): a page reads its episodes
             #expect(one.name == "Tafsir" && one.year == 2025 && one.numbering == "season" && one.posterVideoID == BrowseHome.v1)

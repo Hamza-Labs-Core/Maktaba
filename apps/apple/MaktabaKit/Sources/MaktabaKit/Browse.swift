@@ -54,6 +54,7 @@ public struct BrowseVideo: Decodable, Identifiable, Hashable, Sendable {
         case publishedAt = "published_at"
         case positionSec = "position_sec"
         case lastWatchedAt = "last_watched_at"
+        case playbackState = "playback_state"
     }
 
     public init(from decoder: Decoder) throws {
@@ -66,9 +67,12 @@ public struct BrowseVideo: Decodable, Identifiable, Hashable, Sendable {
         state = c.lenient(.state)
         createdAt = c.lenient(.createdAt)
         publishedAt = c.lenient(.publishedAt)
-        positionSec = c.lenient(.positionSec)
-        completed = c.lenient(.completed)
-        lastWatchedAt = c.lenient(.lastWatchedAt)
+        // Home's rows put the playback on the card; `GET /api/videos` nests it under
+        // `playback_state` (its time as `updated_at`)
+        let nested = try? c.nestedContainer(keyedBy: AnyKey.self, forKey: .playbackState)
+        positionSec = c.lenient(.positionSec) ?? nested?.lenient(AnyKey(stringValue: "position_sec"))
+        completed = c.lenient(.completed) ?? nested?.lenient(AnyKey(stringValue: "completed"))
+        lastWatchedAt = c.lenient(.lastWatchedAt) ?? nested?.lenient(AnyKey(stringValue: "updated_at"))
         plays = c.lenient(.plays)
         series = c.lenient(.series)
     }
@@ -150,7 +154,7 @@ public struct HomeRows: Decodable, Sendable {
     /// Nothing at all to show (no library visible, or nothing in them).
     public var isEmpty: Bool {
         featured == nil && continueWatching.isEmpty && onDeck.isEmpty && favorites.isEmpty
-            && recentlyAdded.isEmpty && recentlyWatched.isEmpty
+            && recentlyAdded.isEmpty && recentlyAddedGrouped.isEmpty && recentlyWatched.isEmpty
             && pinned.allSatisfy { $0.recentlyAdded.isEmpty && $0.continueWatching.isEmpty }
     }
 }
@@ -433,6 +437,8 @@ public struct VideoQuery: Sendable, Equatable {
     public var series: String?
     /// `unwatched`, `in_progress` or `watched`.
     public var watched: String?
+    /// Only the person's favorites (true); false or nil: every video (the home accepts only
+    /// `favorite=true`).
     public var favorite: Bool?
     public var cursor: String?
     public var limit: Int
@@ -471,7 +477,7 @@ public struct VideoQuery: Sendable, Equatable {
             ("library", library), ("language", language), ("speaker", speaker), ("tag", tag),
             ("year", year.map(String.init)), ("duration", duration), ("added", added),
             ("resolution", resolution), ("letter", letter), ("series", series), ("watched", watched),
-            ("favorite", favorite.map { $0 ? "true" : "false" }), ("cursor", cursor),
+            ("favorite", favorite == true ? "true" : nil), ("cursor", cursor),
         ]
         for case let (k, v?) in optional where !v.isEmpty { q[k] = v }
         return q
@@ -621,8 +627,12 @@ public struct SeriesSummary: Decodable, Identifiable, Hashable, Sendable {
 
 struct SeriesList: Decodable {
     let items: [SeriesSummary]
+    /// How many the home sent (an item that cannot be read still counts toward a full page).
+    let sent: Int
     init(from decoder: Decoder) throws {
-        items = try decoder.container(keyedBy: AnyKey.self).lenientList(AnyKey(stringValue: "items"))
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        items = c.lenientList(AnyKey(stringValue: "items"))
+        sent = (try? c.nestedUnkeyedContainer(forKey: AnyKey(stringValue: "items")))?.count ?? items.count
     }
 }
 
@@ -1014,7 +1024,14 @@ public struct SearchPage<Item: Decodable & Sendable>: Decodable, Sendable {
     }
 
     /// The next page's offset (nil: the end).
-    public var nextOffset: Int? { offset + items.count < total && !items.isEmpty ? offset + items.count : nil }
+    /// It steps by the page's `limit`, not by the items read: the home leaves out a video the
+    /// person may no longer see, and a row that cannot be read is dropped here, so a short
+    /// page is not the last.
+    public var nextOffset: Int? {
+        let step = limit > 0 ? limit : items.count
+        guard step > 0, offset + step < total else { return nil }
+        return offset + step
+    }
 }
 
 /// A search the person ran (`GET /api/search/recent`).
@@ -1275,9 +1292,11 @@ public extension APIClient {
         try await browse(request("GET", "/api/libraries/\(Self.segment(library))/hub"), missing: Self.oneThing)
     }
 
-    /// A page of a library's grid (`GET /api/videos`).
+    /// A page of a library's grid (`GET /api/videos`). The favorites filter is read on
+    /// `GET /api/me/videos` (the same list, from the home itself): a joined machine serving
+    /// `/api/videos` has no favorites and refuses it (the web's `videosUrl` does the same).
     func videos(_ query: VideoQuery) async throws -> VideoListPage {
-        try await browse(request("GET", "/api/videos", query: query.items))
+        try await browse(request("GET", query.favorite == true ? "/api/me/videos" : "/api/videos", query: query.items))
     }
 
     /// What the grid can be narrowed by (`GET /api/videos/facets`), for one library or all.
@@ -1296,10 +1315,31 @@ public extension APIClient {
 
     // Series
 
-    /// Every series the person may see, or one library's.
+    /// The home's page size for `GET /api/series`.
+    static let seriesPageSize = 60
+
+    /// One page (from 0) of the series the person may see, or of one library's.
+    func seriesList(library: String? = nil, page: Int) async throws -> [SeriesSummary] {
+        try await seriesPage(library: library, page: page).items
+    }
+
+    /// Every series the person may see, or one library's: page after page until a short one.
     func seriesList(library: String? = nil) async throws -> [SeriesSummary] {
-        let r: SeriesList = try await browse(request("GET", "/api/series", query: library.map { ["library_id": $0] } ?? [:]))
-        return r.items
+        var all: [SeriesSummary] = []
+        var page = 0
+        while true {
+            let r = try await seriesPage(library: library, page: page)
+            all += r.items
+            // the home's count, not the items read (one this client could not read is dropped)
+            if r.sent < Self.seriesPageSize { return all }
+            page += 1
+        }
+    }
+
+    private func seriesPage(library: String?, page: Int) async throws -> SeriesList {
+        var q = ["page": String(max(0, page))]
+        if let library { q["library_id"] = library }
+        return try await browse(request("GET", "/api/series", query: q))
     }
 
     func series(_ id: String) async throws -> SeriesSummary {
@@ -1343,12 +1383,14 @@ public extension APIClient {
                                 missing: Self.oneThing)
     }
 
-    /// The scrubber's thumbnails; nil when the video has none yet (the home answers 404).
+    /// The scrubber's thumbnails; nil when the video has none yet (the home answers 404). A
+    /// video the person may not see (the route's 403) is `BrowseError.notAvailable`.
     func trickplay(video: String) async throws -> TrickplayIndex? {
         do {
-            return try await browse(request("GET", "/api/videos/\(Self.segment(video))/trickplay"))
-        } catch BrowseError.notAvailable {
-            return nil
+            return try await send(request("GET", "/api/videos/\(Self.segment(video))/trickplay"))
+        } catch let e as APIError {
+            if case .status(404, _, _) = e, e.kind == .notFound { return nil }
+            throw Self.browseError(e, missing: Self.oneThing)
         }
     }
 
