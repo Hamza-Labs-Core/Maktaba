@@ -57,11 +57,26 @@ func (r *Registry) lockSlug(slug string) func() {
 // Up records t's server online (record), then installs t (Register): whatever finds
 // the tunnel finds its server online. It runs one at a time with the slug's Down, so a
 // reconnect's online is never overwritten by the tunnel it replaced going offline.
-func (r *Registry) Up(slug string, t *Tunnel, record func()) {
+//
+// An attempt that waited its turn may be stale by then: its connection already gone
+// (its reader closed it), or a newer connection for the slug installed meanwhile. Up
+// refuses it and records nothing (false): installing it would close the live tunnel
+// for a dead one, whose Down would then record the server offline.
+func (r *Registry) Up(slug string, t *Tunnel, record func()) bool {
 	unlock := r.lockSlug(slug)
 	defer unlock()
+	if t.closed.Load() {
+		return false
+	}
+	r.mu.RLock()
+	cur, ok := r.conns[slug]
+	r.mu.RUnlock()
+	if ok && cur.seq > t.seq {
+		return false
+	}
 	record()
 	r.Register(slug, t)
+	return true
 }
 
 // Down removes t when it is the slug's live tunnel (Unregister), then records its

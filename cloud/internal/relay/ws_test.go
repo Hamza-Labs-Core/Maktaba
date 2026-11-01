@@ -224,3 +224,107 @@ func TestServeTunnels_ReconnectEndsOnline(t *testing.T) {
 		t.Fatalf("states: %v, want online, offline, online (the server ends online)", s)
 	}
 }
+
+// Up refuses an attempt that went stale while it waited its turn, recording nothing: one
+// whose connection is gone, and one older than the tunnel installed meanwhile. Either
+// installed would close the live tunnel for one that is dead or replaced.
+func TestRegistry_UpRefusesAStaleAttempt(t *testing.T) {
+	reg := NewRegistry()
+	var recorded int
+	record := func() { recorded++ }
+
+	dead := NewTunnel("s", "x", newChanConn())
+	older := NewTunnel("s", "x", newChanConn())
+	defer older.Close()
+	live := NewTunnel("s", "x", newChanConn())
+	defer live.Close()
+	dead.Close() // its home disconnected while it waited
+
+	if !reg.Up("x", live, record) {
+		t.Fatal("the newest attempt was refused")
+	}
+	if reg.Up("x", dead, record) {
+		t.Fatal("an attempt whose connection is gone was installed")
+	}
+	if reg.Up("x", older, record) {
+		t.Fatal("an attempt older than the installed tunnel was installed")
+	}
+	if cur, _ := reg.Lookup("x"); cur != live || live.closed.Load() {
+		t.Fatal("a stale attempt replaced or closed the live tunnel")
+	}
+	if recorded != 1 {
+		t.Fatalf("recorded %d times, want once (the live tunnel's online)", recorded)
+	}
+	// with nothing installed, an open attempt is installed (an older live one included)
+	if !reg.Down("x", live, record) || !reg.Up("x", older, record) {
+		t.Fatal("an open attempt with nothing newer installed was refused")
+	}
+}
+
+// waiters is how many hold or wait for slug's turn (Up, Down).
+func (r *Registry) waiters(slug string) int {
+	r.locksMu.Lock()
+	defer r.locksMu.Unlock()
+	if l := r.slugLocks[slug]; l != nil {
+		return l.users
+	}
+	return 0
+}
+
+// The home disconnects while its new attempt waits its turn behind the old tunnel's
+// offline, then reconnects, and that reconnect waits too: whichever gets its turn first,
+// the reconnect ends the one live tunnel and the server ends online, recorded offline
+// once and online once after it. (A stale attempt installed after the reconnect would
+// close it, and its Down would record the server offline.)
+func TestRegistry_DisconnectThenReconnectWhileUpWaits(t *testing.T) {
+	reg := NewRegistry()
+	var mu sync.Mutex
+	var states []bool
+	record := func(online bool) func() {
+		return func() { mu.Lock(); states = append(states, online); mu.Unlock() }
+	}
+	old := NewTunnel("s", "x", newChanConn())
+	if !reg.Up("x", old, record(true)) {
+		t.Fatal("the first tunnel was refused")
+	}
+	old.Close() // the cloud drops it; its offline holds the slug's turn
+	release, held := make(chan struct{}), make(chan struct{})
+	downDone := make(chan bool, 1)
+	go func() {
+		downDone <- reg.Down("x", old, func() { close(held); <-release; record(false)() })
+	}()
+	<-held
+
+	attempt := NewTunnel("s", "x", newChanConn()) // the home's new attempt...
+	reconnect := NewTunnel("s", "x", newChanConn())
+	defer reconnect.Close()
+	ups := make(chan bool, 2)
+	go func() { ups <- reg.Up("x", attempt, record(true)) }()
+	waitFor(t, "the attempt waiting its turn", func() bool { return reg.waiters("x") == 2 })
+	attempt.Close() // ...gone while it waits (its reader closed it)
+	<-attempt.Done()
+	go func() { ups <- reg.Up("x", reconnect, record(true)) }()
+	waitFor(t, "the reconnect waiting its turn", func() bool { return reg.waiters("x") == 3 })
+	close(release)
+
+	if !<-downDone {
+		t.Fatal("the dropped tunnel's Down did not record")
+	}
+	installed := 0
+	for range 2 {
+		if <-ups {
+			installed++
+		}
+	}
+	if installed != 1 {
+		t.Fatalf("%d attempts installed, want 1 (the reconnect)", installed)
+	}
+	if cur, err := reg.Lookup("x"); err != nil || cur != reconnect || reconnect.closed.Load() {
+		t.Fatalf("the live tunnel is not the open reconnect: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(states) != 3 || !states[0] || states[1] || !states[2] {
+		t.Fatalf("states: %v, want online, offline, online", states)
+	}
+}
