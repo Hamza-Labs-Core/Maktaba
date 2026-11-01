@@ -26,13 +26,13 @@ Every installer's job is the same:
 3. Run the **first-run setup wizard** which:
    a. Generates a host keypair.
    b. Asks the user for the **8-char claim code** they get from
-      https://app.maktaba.app → "Add server".
+      https://app.maktaba.tv → "Add server".
    c. Calls `POST /v1/servers/claims/redeem` to exchange the code for
       a `server_id` + `server_secret`.
    d. Stores the secret in the platform secret store (Keychain on macOS,
       DPAPI on Windows, `secret-service`/`gnome-keyring` on Linux, file
       at `/etc/maktaba/secret` mode 0600 on headless boxes).
-4. Connect to the relay (`wss://relay.maktaba.app/v1/relay/ws`).
+4. Connect to the relay (`wss://relay.maktaba.tv/v1/relay/ws`).
 
 ## Signing
 
@@ -48,7 +48,7 @@ Every installer's job is the same:
 
 Each installer registers an update channel:
 
-- macOS → Sparkle XML feed at `https://releases.maktaba.app/macos/appcast.xml`
+- macOS → Sparkle XML feed at `https://releases.maktaba.tv/macos/appcast.xml`
 - Windows → Squirrel feed
 - Linux → distro package repo
 - Docker → none: the container updates the runtime on its volume itself, from the verified releases (docs/updates.md)

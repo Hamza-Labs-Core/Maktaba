@@ -25,7 +25,7 @@ const AccessTTL = 15 * time.Minute
 
 // Issuer is the `iss` claim baked into every token. Verifiers reject
 // tokens with a different issuer.
-const Issuer = "https://api.maktaba.app"
+const Issuer = "https://api.maktaba.tv"
 
 var (
 	ErrMalformed = errors.New("token: malformed")

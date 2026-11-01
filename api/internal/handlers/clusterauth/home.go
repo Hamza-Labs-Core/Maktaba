@@ -80,7 +80,7 @@ func (h *Home) Mount(r chi.Router) {
 }
 
 func unauthorized(w http.ResponseWriter, r *http.Request, detail string) {
-	httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/unauthorized",
+	httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/unauthorized",
 		Title: "unauthorized", Status: http.StatusUnauthorized, Detail: detail})
 }
 

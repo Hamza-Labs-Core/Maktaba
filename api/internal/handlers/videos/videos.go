@@ -253,7 +253,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, ok := listSorts[sort]; !ok && !random && sort != sortRelevance {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/invalid-sort",
+			Type:   "https://maktaba.tv/problems/invalid-sort",
 			Title:  "invalid sort",
 			Status: http.StatusBadRequest,
 			Detail: "sort must be one of: " + listSortNames,
@@ -827,7 +827,7 @@ func (h *Handler) Reprocess(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.FromStage == "scan" {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/stage-not-per-video",
+			Type:   "https://maktaba.tv/problems/stage-not-per-video",
 			Title:  "stage not per-video",
 			Status: http.StatusBadRequest,
 			Detail: "scan is library-scoped",

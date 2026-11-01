@@ -38,13 +38,13 @@ func getLink(t *testing.T, h http.Handler, server, nonce, ret string) *httptest.
 // A home's Account page sends the browser here: it always lands on this cloud's own
 // confirm page, carrying what the page needs.
 func TestLinkRedirectsToTheCloudsOwnConfirmPage(t *testing.T) {
-	h := linkRouter(&Deps{WebURL: "https://maktaba.app/"})
+	h := linkRouter(&Deps{WebURL: "https://maktaba.tv/"})
 	rec := getLink(t, h, linkServer, linkNonce, "http://192.168.1.5:8088/account#old")
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status %d: %s", rec.Code, rec.Body)
 	}
 	loc, err := url.Parse(rec.Header().Get("Location"))
-	if err != nil || loc.Scheme != "https" || loc.Host != "maktaba.app" || loc.Path != "/link-home" {
+	if err != nil || loc.Scheme != "https" || loc.Host != "maktaba.tv" || loc.Path != "/link-home" {
 		t.Fatalf("Location %q", rec.Header().Get("Location"))
 	}
 	q := loc.Query()
@@ -57,7 +57,7 @@ func TestLinkRedirectsToTheCloudsOwnConfirmPage(t *testing.T) {
 }
 
 func TestLinkRefusesWhatIsNotALinkStart(t *testing.T) {
-	h := linkRouter(&Deps{WebURL: "https://maktaba.app"})
+	h := linkRouter(&Deps{WebURL: "https://maktaba.tv"})
 	for name, tc := range map[string]struct{ server, nonce, ret string }{
 		"no nonce":             {linkServer, "", "https://home.example/account"},
 		"a short nonce":        {linkServer, "abc", "https://home.example/account"},

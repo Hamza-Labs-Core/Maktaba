@@ -1,6 +1,6 @@
 package relay
 
-// The relay's own pages: what a browser sees at <slug>.relay.maktaba.app
+// The relay's own pages: what a browser sees at <slug>.relay.maktaba.tv
 // when the request never reaches the home server (offline, unknown, over
 // its plan). They follow the browser's prefers-color-scheme, dark when it
 // states no preference, with CSS only (no script) — the rule every

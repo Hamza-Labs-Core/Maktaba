@@ -5844,9 +5844,9 @@
           "type": {
             "type": "string",
             "format": "uri",
-            "description": "Stable problem identifier (`https://maktaba.dev/problems/<slug>`).",
+            "description": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`).",
             "examples": [
-              "https://maktaba.dev/problems/validation"
+              "https://maktaba.tv/problems/validation"
             ]
           },
           "title": {

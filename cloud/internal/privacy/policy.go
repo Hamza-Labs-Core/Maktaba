@@ -25,7 +25,7 @@ type Policy struct {
 func CurrentPolicy() Policy {
 	return Policy{
 		Controller: "Hamza Labs",
-		Contact:    "privacy@maktaba.app",
+		Contact:    "privacy@maktaba.tv",
 		Purpose: "Operate and secure the Maktaba cloud relay: capacity " +
 			"planning, abuse prevention, and aggregate service health.",
 		DataCategories: []string{

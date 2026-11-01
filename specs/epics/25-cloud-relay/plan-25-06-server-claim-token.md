@@ -10,7 +10,7 @@
 | Token-hash storage | `server_claims.token_hash = SHA-256(uppercased token)`. Plaintext never stored on cloud. |
 | Server pubkey | Ed25519 from Epic 10 Story 10.18 (server identity). Reused unchanged. The local server generates the keypair on first boot (plan-10-18 §3), seals the private half at rest via plan-10-14 sealing, and publishes the public half to this endpoint. |
 | Long-lived bearer | 32-byte random, returned once to server on redemption, hashed with bcrypt cost 10 in a server-side credential table. For tunnel-side lookups, see plan-25-08 §4 (HMAC-prefix lookup, not bcrypt-per-row). |
-| Tunnel endpoint | `wss://relay.maktaba.app/tunnel/v1/connect`. Set in claim response so server doesn't hardcode. |
+| Tunnel endpoint | `wss://relay.maktaba.tv/tunnel/v1/connect`. Set in claim response so server doesn't hardcode. |
 | Init endpoint TLS pin | Server pins Cloudflare R3 intermediate CA. |
 | `update_available` column | Added in `00040002_status_extras.sql` (plan-25-16 sub-migration), not here. |
 | Out of scope | The tunnel itself (25.7, 25.8). The entitlement *content* (25.26 defines shape; we just include the first signed blob). Subdomain (25.22 — left NULL here). |
@@ -79,7 +79,7 @@ DROP TABLE IF EXISTS server_health, server_claims, servers;
 
 ```
 POST /api/servers/claim/init     # server-only; from the user's box
-POST /api/servers/claim          # user-authenticated; from app.maktaba.app
+POST /api/servers/claim          # user-authenticated; from app.maktaba.tv
 GET  /api/servers                 # already in 25.16 plan; list of user's servers
 DELETE /api/servers/{id}         # already in 25.16 plan; unlink
 ```
@@ -129,7 +129,7 @@ Behavior (in a single Postgres txn):
     {
       "server_id": "<uuid>",
       "server_token": "<base64>",        // only delivery
-      "cloud_endpoint": "wss://relay.maktaba.app/tunnel/v1/connect",
+      "cloud_endpoint": "wss://relay.maktaba.tv/tunnel/v1/connect",
       "entitlement": "<compact-JWS>"
     }
     ```
@@ -153,7 +153,7 @@ func InitClaim(ctx context.Context, cfg *Config, identity *Identity) (string, *h
 The local UI page `web/src/pages/admin/cloud-link.tsx`:
 
 1. Calls local API `POST /admin/cloud-link/init` → it calls `InitClaim` → local UI displays token + QR.
-2. User signs into `app.maktaba.app`, pastes/scans, redeems.
+2. User signs into `app.maktaba.tv`, pastes/scans, redeems.
 3. Cloud responds with `server_token` + entitlement; user's app POSTs this to local API `POST /admin/cloud-link/store-token` over loopback.
 4. Local API persists token (encrypted at rest via Epic 10.14 data key) and opens the tunnel (25.7).
 
@@ -231,7 +231,7 @@ Brute force math: 40-bit space × 10-min window × 10/min/IP rate cap × 5 diffe
 |---|---|---|
 | Typo-friendly base32 | Alphabet excludes 0/1/I/O. | Spec. |
 | No internet at `init` | Server UI shows error; offers retry; no cloud row created. | Local UI test. |
-| Corp network blocks `*.maktaba.app` | Init fails; manual signed-CSR path is future-work. | Doc. |
+| Corp network blocks `*.maktaba.tv` | Init fails; manual signed-CSR path is future-work. | Doc. |
 | Re-claim after unlink | Old server row deleted; new claim creates new row + new bearer. | `TestReclaimAfterUnlink`. |
 | Clock skew ±60s | 10-min TTL absorbs comfortably. | Spec. |
 | Profanity in token | Alphabet `A-Z2-7` rarely produces English words; not filtered. | Doc. |

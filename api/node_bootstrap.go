@@ -754,7 +754,7 @@ func (rt *nodeRuntime) dbDownReads(next http.Handler) http.Handler {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.Header().Set("Retry-After", "5")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/home-unreachable",
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/home-unreachable",
 			"title": "the home's database is not reachable", "status": http.StatusServiceUnavailable,
 			"code":   "home_unreachable",
 			"detail": "this page reads the home's database, which does not answer; videos this machine can read still play"})

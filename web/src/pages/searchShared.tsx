@@ -23,7 +23,7 @@ export function readMode(): Mode {
 }
 
 /** A 410 answer for a search whose saved results are gone. */
-export const PROBLEM_SEARCH_EXPIRED = "https://maktaba.dev/problems/search-expired";
+export const PROBLEM_SEARCH_EXPIRED = "https://maktaba.tv/problems/search-expired";
 export const isSearchExpired = (e: unknown): boolean =>
   e instanceof ApiError && e.status === 410 && e.problem.type === PROBLEM_SEARCH_EXPIRED;
 

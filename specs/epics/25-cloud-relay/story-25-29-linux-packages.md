@@ -11,10 +11,10 @@ through every channel; only the packaging diverges.
 Channels:
 
 1. **`.deb`** — Debian / Ubuntu / Mint / Pop!_OS via our APT repo
-   `deb https://apt.maktaba.app stable main`. GPG-signed by the
+   `deb https://apt.maktaba.tv stable main`. GPG-signed by the
    release key. `apt install maktaba`.
 2. **`.rpm`** — Fedora / RHEL / CentOS Stream / openSUSE via DNF
-   repo `https://rpm.maktaba.app/maktaba.repo`. GPG-signed.
+   repo `https://rpm.maktaba.tv/maktaba.repo`. GPG-signed.
    `dnf install maktaba`.
 3. **Snap** — Canonical Snap Store, `snap install maktaba`.
    Confined; auto-updates by default.

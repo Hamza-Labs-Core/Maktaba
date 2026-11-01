@@ -52,11 +52,11 @@ type CloudLinking struct {
 }
 
 // TypeNotCloudLinked: this home is not claimed in Maktaba Cloud.
-const TypeNotCloudLinked = "https://maktaba.dev/problems/not-cloud-linked"
+const TypeNotCloudLinked = "https://maktaba.tv/problems/not-cloud-linked"
 
 // TypeCloudSession: the request came from a cloud sign-in and the route
 // needs a sign-in made on the home.
-const TypeCloudSession = "https://maktaba.dev/problems/cloud-session"
+const TypeCloudSession = "https://maktaba.tv/problems/cloud-session"
 
 func notCloudLinked() *httperror.Error {
 	return &httperror.Error{Type: TypeNotCloudLinked, Title: "not linked to Maktaba Cloud",
@@ -76,7 +76,7 @@ func RefuseCloudSession(w http.ResponseWriter, r *http.Request, p *principal.Pri
 }
 
 func unauthorized() *httperror.Error {
-	return &httperror.Error{Type: "https://maktaba.dev/problems/unauthorized", Title: "unauthorized",
+	return &httperror.Error{Type: "https://maktaba.tv/problems/unauthorized", Title: "unauthorized",
 		Status: http.StatusUnauthorized, Detail: "authentication required"}
 }
 

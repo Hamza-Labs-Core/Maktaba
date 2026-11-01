@@ -9,11 +9,11 @@ func TestSlugFromHost(t *testing.T) {
 	cases := []struct {
 		host, public, want string
 	}{
-		{"abc.relay.maktaba.app", "relay.maktaba.app", "abc"},
-		{"abc.relay.maktaba.app:443", "relay.maktaba.app", "abc"},
-		{"relay.maktaba.app", "relay.maktaba.app", ""},
-		{"abc.example.com", "relay.maktaba.app", ""},
-		{"abc.def.relay.maktaba.app", "relay.maktaba.app", "abc.def"},
+		{"abc.relay.maktaba.tv", "relay.maktaba.tv", "abc"},
+		{"abc.relay.maktaba.tv:443", "relay.maktaba.tv", "abc"},
+		{"relay.maktaba.tv", "relay.maktaba.tv", ""},
+		{"abc.example.com", "relay.maktaba.tv", ""},
+		{"abc.def.relay.maktaba.tv", "relay.maktaba.tv", "abc.def"},
 	}
 	for _, c := range cases {
 		got := slugFromHost(c.host, c.public)
@@ -37,11 +37,11 @@ func TestCloudCookiesStayOffHomes(t *testing.T) {
 		t.Fatalf("Cookie kept: %q", only.Values("Cookie"))
 	}
 	for v, ok := range map[string]bool{
-		"mkt_sess=a; Path=/; HttpOnly; SameSite=Lax":    true,
-		"mkt_sess=a; Path=/; Domain=.relay.maktaba.app": false,
-		"x=1; domain=maktaba.app":                       false,
-		"maktaba_refresh=evil; Path=/":                  false,
-		"oauth_pkce=evil; Path=/":                       false,
+		"mkt_sess=a; Path=/; HttpOnly; SameSite=Lax":   true,
+		"mkt_sess=a; Path=/; Domain=.relay.maktaba.tv": false,
+		"x=1; domain=maktaba.tv":                       false,
+		"maktaba_refresh=evil; Path=/":                 false,
+		"oauth_pkce=evil; Path=/":                      false,
 	} {
 		if hostOnlyCookie(v) != ok {
 			t.Errorf("hostOnlyCookie(%q) = %v", v, !ok)

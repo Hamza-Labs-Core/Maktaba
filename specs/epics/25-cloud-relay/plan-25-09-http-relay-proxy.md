@@ -69,7 +69,7 @@ type hostRoute struct {
 }
 
 func (h *HostRouter) Resolve(ctx context.Context, host string) (*hostRoute, error) {
-    name, err := extractSubdomain(host)         // strip ".maktaba.app"
+    name, err := extractSubdomain(host)         // strip ".maktaba.tv"
     if err != nil { return nil, errBadHost }
     if v, ok := h.cache.Get(strings.ToLower(name)); ok && time.Since(v.fetchedAt) < 60*time.Second {
         return v, nil
@@ -90,7 +90,7 @@ func extractSubdomain(host string) (string, error) {
     if host == "" { return "", errBadHost }
     // Strip optional port
     if i := strings.IndexByte(host, ':'); i >= 0 { host = host[:i] }
-    suffix := ".maktaba.app"
+    suffix := ".maktaba.tv"
     if !strings.HasSuffix(host, suffix) { return "", errBadHost }
     name := strings.TrimSuffix(host, suffix)
     if !subdomainRegex.MatchString(name) { return "", errBadHost }
@@ -283,7 +283,7 @@ type ProxyMetrics struct {
 
 | Test | Pins |
 |---|---|
-| `TestExtractSubdomain` | `mahmoud.maktaba.app` → `mahmoud`; `..maktaba.app` → error; `evil.com` → error. |
+| `TestExtractSubdomain` | `mahmoud.maktaba.tv` → `mahmoud`; `..maktaba.tv` → error; `evil.com` → error. |
 | `TestHostRegexBoundaries` | Valid + invalid pairs per 25.22. |
 | `TestSanitizeStripsHopByHop` | Connection / Proxy-* / Transfer-Encoding removed. |
 | `TestSanitizeRejectsSmuggle` | Duplicate CL or CL+TE → 400. |
@@ -301,7 +301,7 @@ type ProxyMetrics struct {
 | `TestSuspendedSubdomain` | 503 with billing-reference body. |
 | `TestOfflineServer503` | `Retry-After: 60` + `last_seen_at` body. |
 | `TestUnknownHost404` | Unclaimed name. |
-| `TestMisdirectedRequest421` | Host doesn't match `*.maktaba.app` → 421. (Edge LB normally rejects; relay defensive 400.) |
+| `TestMisdirectedRequest421` | Host doesn't match `*.maktaba.tv` → 421. (Edge LB normally rejects; relay defensive 400.) |
 | `TestWSUpgradePassthrough` | `/ws/library/{id}` bidirectional. |
 | `TestRangeRequest206` | Range header forwarded; partial content returned. |
 
@@ -310,7 +310,7 @@ type ProxyMetrics struct {
 | Test | Pins |
 |---|---|
 | `TestNullByteInPath` | `/path%00x` → 400. |
-| `TestHostInjection` | `Host: a..b.maktaba.app` → 400. |
+| `TestHostInjection` | `Host: a..b.maktaba.tv` → 400. |
 | `TestEmbeddedCRLF` | Header value with `\r\n` → 400. |
 | `TestPipeliningGracefullyHandled` | HTTP/1.1 pipelining (rare) → safe. |
 
@@ -343,7 +343,7 @@ type ProxyMetrics struct {
 
 ## 11. Acceptance checklist
 
-- [ ] `Proxy.serve` routes `*.maktaba.app` through tunnel.
+- [ ] `Proxy.serve` routes `*.maktaba.tv` through tunnel.
 - [ ] Subdomain LRU cache + LISTEN invalidation.
 - [ ] Header sanitization + smuggling defenses.
 - [ ] WS pass-through bidirectional.

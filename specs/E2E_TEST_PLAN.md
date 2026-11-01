@@ -331,7 +331,7 @@ pass / fail. Flow IDs are stable (referenced by §5 acceptance mapping).
 **Stack overlay:** `deploy/compose/cloud.yml` (overrides `test.yml`) adds:
 - `relay` — `maktaba-cloud --role=relay` stub bound to `*.relay.test` (TLS via self-signed CA injected into the browser project).
 - `cloud-api` — `--role=api` stub backed by Postgres `cloud_test`.
-- A local CCNS proxy so `{user}.maktaba.app` resolves to the relay container.
+- A local CCNS proxy so `{user}.maktaba.tv` resolves to the relay container.
 
 These flows mock external dependencies (Stripe, APNs/FCM, Postmark) via
 local fakes; see `tests/e2e/cloud/fakes/` (created by Epic 25 plans).
@@ -360,7 +360,7 @@ local fakes; see `tests/e2e/cloud/fakes/` (created by Epic 25 plans).
 
 | Step | Action | Assertion |
 |------|--------|-----------|
-| 1 | Browser hits `https://alice.maktaba.app/api/libraries` | Cloud edge → relay → tunnel → local API → tunnel → cloud edge → browser. Round trip < 200 ms with relay running on same host. |
+| 1 | Browser hits `https://alice.maktaba.tv/api/libraries` | Cloud edge → relay → tunnel → local API → tunnel → cloud edge → browser. Round trip < 200 ms with relay running on same host. |
 | 2 | Response correctness | Body identical to the LAN-direct response. |
 | 3 | Range request through relay | Backpressure works: per-stream `WINDOW_UPDATE` frames flow; throughput throttles correctly. |
 
@@ -396,7 +396,7 @@ local fakes; see `tests/e2e/cloud/fakes/` (created by Epic 25 plans).
 
 **Pack:** cloud.
 **Stories:** 25.7 frame `0x20 REVOKE`, 25.16.
-**Assertion:** Admin revokes a server in the cloud; relay sends `REVOKE`; tunnel closes; subsequent client `{user}.maktaba.app` calls return `404` from cloud edge.
+**Assertion:** Admin revokes a server in the cloud; relay sends `REVOKE`; tunnel closes; subsequent client `{user}.maktaba.tv` calls return `404` from cloud edge.
 
 ### 1.6 Admin pack
 

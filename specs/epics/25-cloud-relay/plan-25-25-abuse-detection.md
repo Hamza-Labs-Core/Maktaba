@@ -193,7 +193,7 @@ func HotLinkMiddleware(repo *Repo) func(http.Handler) http.Handler {
             if !repo.HotLinkActive(sub) { next.ServeHTTP(w, r); return }
             if !validReferer(r.Header.Get("Referer"), sub) && !hasInAppToken(r) {
                 w.Header().Set("Content-Type", "application/json")
-                writeJSON(w, 451, map[string]string{"error":"hot_link_blocked","reset_url": "https://app.maktaba.app/r/"+sub})
+                writeJSON(w, 451, map[string]string{"error":"hot_link_blocked","reset_url": "https://app.maktaba.tv/r/"+sub})
                 return
             }
             next.ServeHTTP(w, r)

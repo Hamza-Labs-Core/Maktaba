@@ -17,7 +17,7 @@ import (
 // defaultLicenseServer is Maktaba Cloud's API, the license server a home
 // asks for the revocation list when it is not claimed in a cloud of its
 // own (MAKTABA_LICENSE_SERVER overrides; "off" asks no one).
-const defaultLicenseServer = "https://api.maktaba.app"
+const defaultLicenseServer = "https://api.maktaba.tv"
 
 // licenseRefresher builds the Epic 16 story 16.4 refresher: the signed
 // revocation list daily from the license server, and, for a home the

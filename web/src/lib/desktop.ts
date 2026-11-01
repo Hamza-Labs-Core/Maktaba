@@ -43,7 +43,7 @@ export type MenuAction =
   | { kind: "external"; url: string }
   | { kind: "big-screen" };
 
-const DOCS_URL = "https://maktaba.dev/docs";
+const DOCS_URL = "https://maktaba.tv/docs";
 
 /**
  * The static custom menu-item ids this layer knows how to resolve.

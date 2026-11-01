@@ -15,8 +15,8 @@ but for the *cloud-side* binary. By the end of this story:
   cloud schema in its own DB (separate from any local server DB).
 - Migrations run via `goose` against `cloud/migrations/`, claiming
   slots `0001`–`0010` for Epic 25 (see README).
-- Cloudflare DNS points `cloud.maktaba.app` (the bootstrapping admin
-  hostname) and `api.maktaba.app` (the public API host) at the
+- Cloudflare DNS points `cloud.maktaba.tv` (the bootstrapping admin
+  hostname) and `api.maktaba.tv` (the public API host) at the
   Hetzner LB; TLS is terminated at Cloudflare for these two hosts.
 - The binary takes a single `--config /etc/maktaba/cloud.toml`
   pointing at `[database]`, `[oauth]`, `[stripe]`, `[apns]`, `[fcm]`,
@@ -71,8 +71,8 @@ sees a process, a DB, and a 200 OK.
 | T04   | integration | binary with `MAKTABA_CLOUD_DB_URL=invalid://` | start | exits 1 within 5s, log line includes "db unreachable" |
 | T05   | integration | start with `--role=api` | scrape `/metrics` | exposes `http_requests_total`, `go_*` |
 | T06   | integration | concurrent requests, 100 RPS for 30s | inspect log lines | every line has matching `request_id` for its request |
-| T07   | smoke       | deploy to staging | curl `https://api.maktaba.app/healthz` | 200, valid TLS chain |
-| T08   | smoke       | deploy to staging | curl `-H 'Host: cloud.maktaba.app' https://<lb-ip>/healthz` | 200 (admin host responds) |
+| T07   | smoke       | deploy to staging | curl `https://api.maktaba.tv/healthz` | 200, valid TLS chain |
+| T08   | smoke       | deploy to staging | curl `-H 'Host: cloud.maktaba.tv' https://<lb-ip>/healthz` | 200 (admin host responds) |
 | T09   | unit        | TOML missing `[database]` | start | exits 2, "missing required section: database" |
 | T10   | regression  | run `--role=worker` (no API endpoints) | curl `/healthz` | 404 (no HTTP listener for worker role) |
 

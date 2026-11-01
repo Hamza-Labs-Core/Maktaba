@@ -104,10 +104,10 @@ class TvConnectTest {
             listOf("https://nas.example.com/maktaba", "https://nas.example.com"),
             HomeChoices.typed("https://nas.example.com/maktaba")!!.urls,
         )
-        val link = HomeChoices.typed("maktaba://connect?id=h1&n=Den&u=http%3A%2F%2F10.0.0.2%3A8088&u=https%3A%2F%2Fden.relay.maktaba.app")!!
+        val link = HomeChoices.typed("maktaba://connect?id=h1&n=Den&u=http%3A%2F%2F10.0.0.2%3A8088&u=https%3A%2F%2Fden.relay.maktaba.tv")!!
         assertEquals("Den", link.name)
         assertEquals("h1", link.id)
-        assertEquals(listOf("http://10.0.0.2:8088", "https://den.relay.maktaba.app"), link.urls)
+        assertEquals(listOf("http://10.0.0.2:8088", "https://den.relay.maktaba.tv"), link.urls)
     }
 
     @Test

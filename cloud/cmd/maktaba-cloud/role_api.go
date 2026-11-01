@@ -226,8 +226,8 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			Google:    googleFlow,
 			Apple:     appleFlow,
 			WebURL:    cfg.Server.WebURL,
-			// Host-only: a Domain=.maktaba.app cookie would also go to
-			// every home server behind *.relay.maktaba.app.
+			// Host-only: a Domain=.maktaba.tv cookie would also go to
+			// every home server behind *.relay.maktaba.tv.
 			CookieDomain: "",
 			Secure:       true,
 		})

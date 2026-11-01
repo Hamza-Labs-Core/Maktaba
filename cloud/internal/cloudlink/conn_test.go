@@ -118,9 +118,9 @@ func (s *strWriter) Write(p []byte) (int, error) { return s.b.Write(p) }
 
 func TestHTTPEndpointFromWS(t *testing.T) {
 	cases := map[string]string{
-		"wss://relay.maktaba.app/v1/relay/ws": "https://relay.maktaba.app/v1/relay/ws",
-		"ws://127.0.0.1:9000/v1/relay/ws":     "http://127.0.0.1:9000/v1/relay/ws",
-		"https://already":                     "https://already",
+		"wss://relay.maktaba.tv/v1/relay/ws": "https://relay.maktaba.tv/v1/relay/ws",
+		"ws://127.0.0.1:9000/v1/relay/ws":    "http://127.0.0.1:9000/v1/relay/ws",
+		"https://already":                    "https://already",
 	}
 	for in, want := range cases {
 		if got := httpEndpointFromWS(in); got != want {

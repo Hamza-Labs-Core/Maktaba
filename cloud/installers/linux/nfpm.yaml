@@ -9,7 +9,7 @@ description: |
   This package installs the on-prem server agent which connects to the
   Maktaba cloud relay for remote access.
 vendor: Hamza Labs
-homepage: https://maktaba.app
+homepage: https://maktaba.tv
 license: Apache-2.0
 
 contents:

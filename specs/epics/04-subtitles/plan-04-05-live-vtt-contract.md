@@ -631,7 +631,7 @@ HTTP/1.1 404 Not Found
 Content-Type: application/problem+json
 
 {
-  "type":   "https://maktaba.dev/problems/no-transcript-for-lang",
+  "type":   "https://maktaba.tv/problems/no-transcript-for-lang",
   "title":  "no transcript for the requested language",
   "status": 404,
   "detail": "no active transcript with language=fr",

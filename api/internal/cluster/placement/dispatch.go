@@ -117,7 +117,7 @@ func WritePaused(w http.ResponseWriter, reason string) {
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.Header().Set("Retry-After", "30")
 	w.WriteHeader(http.StatusServiceUnavailable)
-	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/node-paused",
+	_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/node-paused",
 		"title": "this machine is waiting for its update", "status": http.StatusServiceUnavailable,
 		"code": "paused", "reason": reason})
 }

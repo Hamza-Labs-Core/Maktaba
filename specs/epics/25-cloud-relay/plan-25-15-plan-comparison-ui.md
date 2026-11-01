@@ -99,7 +99,7 @@ export function Upgrade() {
 
 async function handleCta(plan, sub, onIOSApp) {
     if (onIOSApp) {
-        window.open("https://maktaba.app/manage-on-web", "_blank");
+        window.open("https://maktaba.tv/manage-on-web", "_blank");
         return;
     }
     if (sub.plan === "free") {
@@ -166,7 +166,7 @@ export function BillingSuccess() {
 
 ## 7. Marketing-page caching
 
-Pricing page is server-side rendered (or pre-rendered at build) and the resulting HTML is cached at Cloudflare 5 min. Prices come from the static JSON at build time and fall back to live JSON in case of cache-miss. Pre-warm cache on deploy via `curl -s -o /dev/null https://maktaba.app/pricing` post-deploy.
+Pricing page is server-side rendered (or pre-rendered at build) and the resulting HTML is cached at Cloudflare 5 min. Prices come from the static JSON at build time and fall back to live JSON in case of cache-miss. Pre-warm cache on deploy via `curl -s -o /dev/null https://maktaba.tv/pricing` post-deploy.
 
 ## 8. Accessibility
 

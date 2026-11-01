@@ -97,7 +97,7 @@
 - **Priority:** P2
 - **Category:** Error
 - **Covered by existing test?** Yes (`Users.test.tsx`)
-- **Preconditions / data:** `POST /api/users` → 409, `Content-Type: application/problem+json`, `{ "type": "https://maktaba.dev/problems/username-exists", "title": "conflict", "status": 409, "detail": "username already exists" }`
+- **Preconditions / data:** `POST /api/users` → 409, `Content-Type: application/problem+json`, `{ "type": "https://maktaba.tv/problems/username-exists", "title": "conflict", "status": 409, "detail": "username already exists" }`
 - **Steps:**
   1. Create user "alice".
 - **Expected:** error toast "username already exists". Dialog stays open with values kept; Save no longer loading. Roster unchanged.
@@ -141,7 +141,7 @@
 - **Priority:** P1
 - **Category:** Permissions
 - **Covered by existing test?** Yes (`Users.test.tsx`)
-- **Preconditions / data:** roster has alice (only admin). `PATCH /api/users/u1` → 409 problem `{ "type": "https://maktaba.dev/problems/last-admin", "title": "conflict", "status": 409, "detail": "operation would leave the system with no admin" }`
+- **Preconditions / data:** roster has alice (only admin). `PATCH /api/users/u1` → 409 problem `{ "type": "https://maktaba.tv/problems/last-admin", "title": "conflict", "status": 409, "detail": "operation would leave the system with no admin" }`
 - **Steps:**
   1. Edit alice, uncheck "Administrator", Save.
 - **Expected:** error toast "operation would leave the system with no admin". Dialog stays open. Roster badge still "Administrator"; localStorage not changed.

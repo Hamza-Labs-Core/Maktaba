@@ -140,7 +140,7 @@ type Offline interface {
 
 // ProblemUnavailableOffline is the problem of a video a node cannot play while
 // the home's database does not answer (it is not in the node's catalog).
-const ProblemUnavailableOffline = "https://maktaba.dev/problems/video-unavailable-offline"
+const ProblemUnavailableOffline = "https://maktaba.tv/problems/video-unavailable-offline"
 
 // offlineDBTimeout bounds a node's database call: past it the catalog answers.
 const offlineDBTimeout = 3 * time.Second
@@ -209,7 +209,7 @@ func streamingNotFound(err error) bool {
 
 // ProblemInsufficientStorage: the streaming service has too little free on its
 // cache's disk to prepare (transcode) the video.
-const ProblemInsufficientStorage = "https://maktaba.dev/problems/insufficient-storage"
+const ProblemInsufficientStorage = "https://maktaba.tv/problems/insufficient-storage"
 
 // streamingNoDiskSpace reports whether the streaming service refused a transcode
 // for want of disk space (it answers "insufficient-storage" in band).
@@ -370,7 +370,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 	}
 	if !p.AccessAllLibraries && !p.HasLibrary(libraryID) {
 		httperror.Write(w, r, &httperror.Error{
-			Type:   "https://maktaba.dev/problems/access-denied",
+			Type:   "https://maktaba.tv/problems/access-denied",
 			Title:  "access denied",
 			Status: http.StatusForbidden,
 			Detail: "no access to this library",
@@ -412,7 +412,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 				"start_sec", req.StartSec, "err", err.Error(), "event", "stream_open_failed")
 			w.Header().Set("Retry-After", "5")
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.dev/problems/streaming-unavailable",
+				Type:   "https://maktaba.tv/problems/streaming-unavailable",
 				Title:  "streaming unavailable",
 				Status: http.StatusServiceUnavailable,
 				Detail: err.Error(),
@@ -443,7 +443,7 @@ func (h *Handler) OpenSession(w http.ResponseWriter, r *http.Request) {
 			if signErr != nil {
 				w.Header().Set("Retry-After", "5")
 				httperror.Write(w, r, &httperror.Error{
-					Type:   "https://maktaba.dev/problems/signing-unavailable",
+					Type:   "https://maktaba.tv/problems/signing-unavailable",
 					Title:  "signing unavailable",
 					Status: http.StatusServiceUnavailable,
 					Detail: signErr.Error(),

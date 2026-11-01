@@ -182,12 +182,12 @@ func (h *Handler) FollowPlan(w http.ResponseWriter, r *http.Request) {
 		FollowPlanHash, id)
 	if err != nil {
 		httperror.Write(w, r, httperror.Conflict(
-			"https://maktaba.dev/problems/channel-not-planned", "no lineup plan owns this channel"))
+			"https://maktaba.tv/problems/channel-not-planned", "no lineup plan owns this channel"))
 		return
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		httperror.Write(w, r, httperror.Conflict(
-			"https://maktaba.dev/problems/channel-not-planned", "no lineup plan owns this channel"))
+			"https://maktaba.tv/problems/channel-not-planned", "no lineup plan owns this channel"))
 		return
 	}
 	_, _ = h.DB.ExecContext(r.Context(), `UPDATE channels SET edited_at = NULL WHERE id = $1`, id)

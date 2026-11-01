@@ -340,7 +340,7 @@ func (h *Handler) SaveSearch(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			httperror.Write(w, r, &httperror.Error{
-				Type:   "https://maktaba.dev/problems/saved-search-name-exists",
+				Type:   "https://maktaba.tv/problems/saved-search-name-exists",
 				Title:  "name already exists",
 				Status: http.StatusConflict,
 				Detail: req.Name + " is already saved",

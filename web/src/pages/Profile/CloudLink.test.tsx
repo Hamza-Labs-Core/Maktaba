@@ -37,7 +37,7 @@ function open(user: User = memberUser) {
 }
 
 function state(link: typeof LINK | null, available = true) {
-  return { available, server_id: SERVER, cloud_api: "https://api.maktaba.app", link };
+  return { available, server_id: SERVER, cloud_api: "https://api.maktaba.tv", link };
 }
 
 let to: ReturnType<typeof vi.spyOn>;
@@ -74,14 +74,14 @@ describe("Linked accounts", () => {
     post.mockResolvedValue({
       nonce: "n0nce-aaaaaaaaaaaaaaaa",
       server_id: SERVER,
-      cloud_api: "https://api.maktaba.app/",
+      cloud_api: "https://api.maktaba.tv/",
     });
     open();
     await userEvent.click(await screen.findByRole("button", { name: en["cloudLink.link"] }));
     expect(post).toHaveBeenCalledWith("/api/me/cloud-link/start", {});
     await waitFor(() => expect(to).toHaveBeenCalledTimes(1));
     const u = new URL(to.mock.calls[0][0] as string);
-    expect(u.origin + u.pathname).toBe(`https://api.maktaba.app/v1/homes/${SERVER}/link`);
+    expect(u.origin + u.pathname).toBe(`https://api.maktaba.tv/v1/homes/${SERVER}/link`);
     expect(u.searchParams.get("nonce")).toBe("n0nce-aaaaaaaaaaaaaaaa");
     expect(u.searchParams.get("return")).toBe(`${window.location.origin}/account`);
   });

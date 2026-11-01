@@ -3,7 +3,7 @@
 ## Cross-platform design
 
 The cloud publishes signed release manifests at
-`https://releases.maktaba.app/v1/channels/{channel}/manifest.json` for
+`https://releases.maktaba.tv/v1/channels/{channel}/manifest.json` for
 each platform. A manifest looks like:
 
 ```json
@@ -13,7 +13,7 @@ each platform. A manifest looks like:
   "released_at": "2026-04-30T10:14:00Z",
   "assets": {
     "linux-amd64-deb": {
-      "url": "https://releases.maktaba.app/v1/files/maktaba-server-0.2.1-amd64.deb",
+      "url": "https://releases.maktaba.tv/v1/files/maktaba-server-0.2.1-amd64.deb",
       "sha256": "abc123...",
       "size": 17839224,
       "min_supported": "0.1.0",

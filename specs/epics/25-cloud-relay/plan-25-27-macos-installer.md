@@ -11,7 +11,7 @@
 | Python venv | `uv`-built; copied into `Contents/Resources/python/`. |
 | FFmpeg | Static build embedded at `Contents/Resources/ffmpeg`. |
 | Auto-start | LaunchAgent `app.maktaba.server.plist` at `~/Library/LaunchAgents/`. |
-| Updater | Sparkle 2; appcast at `https://releases.maktaba.app/macos/appcast.xml` (EdDSA-signed). |
+| Updater | Sparkle 2; appcast at `https://releases.maktaba.tv/macos/appcast.xml` (EdDSA-signed). |
 | Distribution | DMG (drag-to-Applications) + Homebrew cask. |
 | Signing | Apple Developer Team `HAMZALABS_TEAM_ID`; hardened runtime + notarization. |
 | Out of scope | Mac App Store (sandbox conflicts). |
@@ -143,7 +143,7 @@ Installed on first launch via `loadLaunchAgent()` helper. Removed on uninstall.
 
 ## 5. Sparkle 2
 
-`appcast.xml` published at `https://releases.maktaba.app/macos/appcast.xml`; EdDSA key public-bundled in app. Sparkle reads, validates, applies on quit.
+`appcast.xml` published at `https://releases.maktaba.tv/macos/appcast.xml`; EdDSA key public-bundled in app. Sparkle reads, validates, applies on quit.
 
 The app respects `--update-channel beta` flag (also written to UserDefaults) to swap appcast URL.
 
@@ -155,9 +155,9 @@ The app respects `--update-channel beta` flag (also written to UserDefaults) to 
 cask "maktaba" do
   version "1.0.0"
   sha256 "..."
-  url "https://releases.maktaba.app/macos/Maktaba-#{version}.dmg"
+  url "https://releases.maktaba.tv/macos/Maktaba-#{version}.dmg"
   name "Maktaba"
-  homepage "https://maktaba.app"
+  homepage "https://maktaba.tv"
   app "Maktaba.app"
   zap trash: [
     "~/Library/Application Support/Maktaba",

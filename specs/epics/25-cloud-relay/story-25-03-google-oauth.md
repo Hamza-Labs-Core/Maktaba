@@ -26,7 +26,7 @@ End-to-end UX:
 5. Cloud finds-or-creates the user, issues the same
    `(access_token, refresh_token)` pair as 25.2.
 6. Cloud redirects to `next` (validated against an allow-list of
-   `*.maktaba.app` hosts and `app.maktaba.local`).
+   `*.maktaba.tv` hosts and `app.maktaba.local`).
 
 Account-collision behavior:
 
@@ -99,7 +99,7 @@ Account-collision behavior:
 | T07 | integration | verified email collision | callback | 302 to `/oauth/merge?token=` |
 | T08 | integration | unverified email collision | callback | 409 `verify_password_first` |
 | T09 | unit        | `next=https://attacker.tld/x` | start | 400 `bad_redirect` |
-| T10 | unit        | `next=https://my.maktaba.app/dashboard` | start | accepted |
+| T10 | unit        | `next=https://my.maktaba.tv/dashboard` | start | accepted |
 | T11 | regression  | mobile flow with `ASWebAuthenticationSession` | sign in | tokens delivered to app via deep-link `maktaba://oauth/done?...` |
 | T12 | integration | clock skew 30s vs Google JWKS | verify | within tolerance, accepted |
 
@@ -126,7 +126,7 @@ Account-collision behavior:
 - **Mobile redirect.** iOS/Android use `ASWebAuthenticationSession`
   / `Custom Tabs`; the redirect URI is a custom scheme
   (`maktaba://oauth/done`). Cloud accepts both
-  `https://app.maktaba.app/oauth/done` (web) and the custom
+  `https://app.maktaba.tv/oauth/done` (web) and the custom
   scheme; we sign tokens into a query fragment so they don't
   appear in server logs.
 - **GDPR right-to-erasure for OAuth-only users.** Delete cascades

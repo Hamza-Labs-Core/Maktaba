@@ -324,7 +324,7 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 	}
 	if err := json.NewDecoder(src).Decode(&body); err != nil ||
 		strings.TrimSpace(body.Username) == "" || body.Password == "" {
-		writeProblem(w, http.StatusBadRequest, "https://maktaba.dev/problems/bad-request",
+		writeProblem(w, http.StatusBadRequest, "https://maktaba.tv/problems/bad-request",
 			"username and password required", "")
 		return true
 	}
@@ -357,7 +357,7 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 	case errors.Is(err, ErrNotLive):
 		r.failed(name)
 		pad()
-		writeProblem(w, http.StatusUnauthorized, "https://maktaba.dev/problems/invalid-credentials",
+		writeProblem(w, http.StatusUnauthorized, "https://maktaba.tv/problems/invalid-credentials",
 			"invalid credentials", "")
 		return true
 	case err != nil:
@@ -380,7 +380,7 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.Header().Set("Retry-After", "5")
 		w.WriteHeader(http.StatusServiceUnavailable)
-		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.dev/problems/password-change-waits",
+		_ = json.NewEncoder(w).Encode(map[string]any{"type": "https://maktaba.tv/problems/password-change-waits",
 			"title": "the password change waits for the home", "status": http.StatusServiceUnavailable,
 			"code":   "password_change_waits",
 			"detail": "this account must change its password, which waits for the home"})
@@ -388,7 +388,7 @@ func (r *Resolver) SignIn(w http.ResponseWriter, req *http.Request) bool {
 	}
 	id, csrf, expires, err := r.Sessions.Create(dp.UserID, dp.Username, r.localTTL())
 	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "https://maktaba.dev/problems/internal", "sign-in failed", "")
+		writeProblem(w, http.StatusInternalServerError, "https://maktaba.tv/problems/internal", "sign-in failed", "")
 		return true
 	}
 	if r.Logger != nil {
@@ -429,7 +429,7 @@ func (r *Resolver) SignOut(w http.ResponseWriter, req *http.Request) bool {
 	}
 	user, csrf, live := r.Sessions.Lookup(id)
 	if live && !csrfOK(req, csrf) {
-		writeProblem(w, http.StatusForbidden, "https://maktaba.dev/problems/csrf-mismatch", "csrf token mismatch", "")
+		writeProblem(w, http.StatusForbidden, "https://maktaba.tv/problems/csrf-mismatch", "csrf token mismatch", "")
 		return true
 	}
 	through, known := false, false
@@ -499,7 +499,7 @@ func (r *Resolver) setCookies(w http.ResponseWriter, id, csrf string, expires ti
 }
 
 func writeLocked(w http.ResponseWriter) {
-	writeProblem(w, http.StatusLocked, "https://maktaba.dev/problems/account-locked", "account locked",
+	writeProblem(w, http.StatusLocked, "https://maktaba.tv/problems/account-locked", "account locked",
 		"too many failed sign-ins: try again later")
 }
 

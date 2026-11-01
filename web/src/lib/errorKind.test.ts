@@ -21,7 +21,7 @@ describe("problemSlug", () => {
     expect(problemSlug("https://maktaba.invalid/problems/rendition-not-found")).toBe(
       "rendition-not-found"
     );
-    expect(problemSlug("https://maktaba.dev/problems/home-unreachable")).toBe("home-unreachable");
+    expect(problemSlug("https://maktaba.tv/problems/home-unreachable")).toBe("home-unreachable");
     expect(problemSlug("about:blank")).toBe("");
     expect(problemSlug(undefined)).toBe("");
   });
@@ -59,7 +59,7 @@ describe("classifyError", () => {
     ["", 422, undefined, "server"],
   ])("%s %i (code %s) is %s", (slug, status, code, kind) => {
     const e = new ApiError({
-      type: slug ? `https://maktaba.dev/problems/${slug}` : "about:blank",
+      type: slug ? `https://maktaba.tv/problems/${slug}` : "about:blank",
       title: "t",
       status,
       ...(code ? { code } : {}),

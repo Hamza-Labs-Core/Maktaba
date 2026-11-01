@@ -195,7 +195,7 @@ describe("Switching the home", () => {
     );
     post.mockRejectedValueOnce(
       new ApiError({
-        type: "https://maktaba.dev/problems/switchover-no-answer",
+        type: "https://maktaba.tv/problems/switchover-no-answer",
         title: "conflict",
         status: 409,
       })

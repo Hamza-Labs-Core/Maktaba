@@ -16,7 +16,7 @@ Targets:
    - Image bakes Ubuntu 22.04 + Docker + our compose file.
    - On droplet boot, `cloud-init` writes a random Postgres
      password, brings compose up, exposes ports 80/443 via
-     Caddy with auto-LE for `<droplet>.maktaba.app` (assigned
+     Caddy with auto-LE for `<droplet>.maktaba.tv` (assigned
      by our cloud after the user enters their cloud claim
      token in the welcome web flow).
 2. **Hetzner Cloud "App".**
@@ -28,7 +28,7 @@ Targets:
      volumes; user supplies a cloud claim token via env var.
 4. **Generic shell installer.**
    - For any Linux VPS (Linode, OVH, Vultr, AWS Lightsail):
-     `curl -sSL https://get.maktaba.app/vps.sh | sudo bash`
+     `curl -sSL https://get.maktaba.tv/vps.sh | sudo bash`
      — installs Docker, brings compose up, prompts for
      library volume, prints a claim token URL.
 
@@ -57,7 +57,7 @@ The "default vps profile" preconfigures:
 - **Given** a user clicks "Deploy on DigitalOcean" from
   our marketing page,
   **when** the droplet boots,
-  **then** within 5 minutes `https://<droplet>.maktaba.app`
+  **then** within 5 minutes `https://<droplet>.maktaba.tv`
   serves the welcome page asking for a cloud claim token.
 - **Given** the user enters the claim token,
   **when** the welcome page submits it,
@@ -94,7 +94,7 @@ The "default vps profile" preconfigures:
 | T05 | unit        | cloud-init script | feed minimal env | exits 0 |
 | T06 | regression  | re-provision over existing volume | recover | DB intact |
 | T07 | smoke       | shell installer on Lightsail | run | works |
-| T08 | regression  | Caddy auto-TLS DNS-01 against `*.maktaba.app` | observe | issues cert |
+| T08 | regression  | Caddy auto-TLS DNS-01 against `*.maktaba.tv` | observe | issues cert |
 | T09 | manual      | UFW firewall left default | check | only 22, 80, 443 open |
 | T10 | regression  | unattended-upgrades during running container | observe | no service downtime |
 
@@ -114,7 +114,7 @@ The "default vps profile" preconfigures:
   user-controlled backup.
 - **DDoS at the VPS.** Vendor-level protection varies; our
   Cloudflare proxy applies on the cloud side
-  (`maktaba.app`), not the VPS direct IP. Document.
+  (`maktaba.tv`), not the VPS direct IP. Document.
 - **IPv6.** Hetzner provides IPv6 by default; DO and
   Railway too. Caddy listens on both.
 - **Custom domain instead of subdomain.** Out for v1.
@@ -134,7 +134,7 @@ The "default vps profile" preconfigures:
 - `packaging/cloud/hetzner-cloud/` — same.
 - `packaging/cloud/railway/template.json`.
 - `packaging/cloud/vps/get-maktaba-vps.sh`.
-- Marketing: `https://maktaba.app/host` page links to
+- Marketing: `https://maktaba.tv/host` page links to
   each option.
 
 ## Open questions

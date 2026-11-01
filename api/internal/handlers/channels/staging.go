@@ -255,7 +255,7 @@ func conflictsIn(lineup map[string]Channel) string {
 }
 
 func numberConflict(what string) *httperror.Error {
-	return httperror.Conflict("https://maktaba.dev/problems/channel-number-exists",
+	return httperror.Conflict("https://maktaba.tv/problems/channel-number-exists",
 		"the draft would have two channels with "+what)
 }
 

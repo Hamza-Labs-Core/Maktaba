@@ -6,11 +6,11 @@ import Testing
 
 @Suite struct ConnectLinks {
     @Test func readsAHomesLink() throws {
-        let link = try #require(ConnectLink(string: "maktaba://connect?id=home-1&n=Living%20room&u=http://192.168.1.20:8088&u=https://abc.relay.maktaba.dev/&u=http://192.168.1.20:8088&u=ftp://x&u=notaurl%20at%20all"))
+        let link = try #require(ConnectLink(string: "maktaba://connect?id=home-1&n=Living%20room&u=http://192.168.1.20:8088&u=https://abc.relay.maktaba.tv/&u=http://192.168.1.20:8088&u=ftp://x&u=notaurl%20at%20all"))
         #expect(link.homeID == "home-1")
         #expect(link.name == "Living room")
         // in the link's order (local first), once each, http(s) only, no trailing slash
-        #expect(link.urls.map(\.absoluteString) == ["http://192.168.1.20:8088", "https://abc.relay.maktaba.dev"])
+        #expect(link.urls.map(\.absoluteString) == ["http://192.168.1.20:8088", "https://abc.relay.maktaba.tv"])
     }
 
     @Test func keepsAHomesBasePath() throws {
@@ -138,9 +138,9 @@ import Testing
 
 @Suite struct Pairings {
     @Test func theQRCodeHoldsTheHomesOwnAddressWhenItGivesOne() throws {
-        let json = #"{"code":"ABCD-1234","device_code":"dc","expires_at":"2099-01-01T00:00:00.5Z","verify_path":"/pair?code=ABCD-1234","interval":2,"verify_url":"https://abc.relay.maktaba.dev/pair?code=ABCD-1234"}"#
+        let json = #"{"code":"ABCD-1234","device_code":"dc","expires_at":"2099-01-01T00:00:00.5Z","verify_path":"/pair?code=ABCD-1234","interval":2,"verify_url":"https://abc.relay.maktaba.tv/pair?code=ABCD-1234"}"#
         let p = try JSONDecoder().decode(DevicePairing.self, from: Data(json.utf8))
-        #expect(p.verifyURL(home: URL(string: "http://192.168.1.20:8088")!)?.absoluteString == "https://abc.relay.maktaba.dev/pair?code=ABCD-1234")
+        #expect(p.verifyURL(home: URL(string: "http://192.168.1.20:8088")!)?.absoluteString == "https://abc.relay.maktaba.tv/pair?code=ABCD-1234")
         #expect(p.expiresAt > .now)
     }
 

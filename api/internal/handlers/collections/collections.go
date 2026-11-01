@@ -806,7 +806,7 @@ func scanCollection(rs rowScanner) (Collection, error) {
 
 func nameExists() *httperror.Error {
 	return &httperror.Error{
-		Type:   "https://maktaba.dev/problems/collection-name-exists",
+		Type:   "https://maktaba.tv/problems/collection-name-exists",
 		Title:  "name already exists",
 		Status: http.StatusConflict,
 	}

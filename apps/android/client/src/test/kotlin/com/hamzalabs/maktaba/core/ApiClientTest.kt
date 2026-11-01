@@ -248,7 +248,7 @@ class ApiClientTest {
         val asks = AtomicInteger()
         route = { r ->
             if (r.url.encodedPath.endsWith("master.m3u8")) json(200, "#EXTM3U\nv0.m3u8\n")
-            else { asks.incrementAndGet(); json(403, """{"type":"https://maktaba.dev/problems/forbidden","status":403}""") }
+            else { asks.incrementAndGet(); json(403, """{"type":"https://maktaba.tv/problems/forbidden","status":403}""") }
         }
         try {
             client(MemoryTokens(fresh, "r1")).waitUntilPlayable(server.url("/stream/s1/master.m3u8"), intervalMs = 1)

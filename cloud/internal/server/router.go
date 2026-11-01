@@ -93,9 +93,9 @@ func versionHandler(build BuildInfo) http.HandlerFunc {
 // operator passes their own through config in a future story.
 func DefaultOrigins(_ config.Config) []string {
 	return []string{
-		"https://app.maktaba.app",
-		"https://web.maktaba.app",
-		"https://admin.maktaba.app",
-		"https://maktaba.app",
+		"https://app.maktaba.tv",
+		"https://web.maktaba.tv",
+		"https://admin.maktaba.tv",
+		"https://maktaba.tv",
 	}
 }

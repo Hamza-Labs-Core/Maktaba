@@ -7,11 +7,11 @@
 A user-facing surface that explains what cloud features exist, who they
 are for, and how to upgrade. Two contexts:
 
-1. **Public marketing page.** `https://maktaba.app/pricing` —
+1. **Public marketing page.** `https://maktaba.tv/pricing` —
    anonymous-accessible HTML page rendered server-side; the place
    we link to from the website's nav. Pure presentation; reads
    prices from a static JSON published by 25.13.
-2. **In-app upgrade screen.** `app.maktaba.app/upgrade` — same
+2. **In-app upgrade screen.** `app.maktaba.tv/upgrade` — same
    plan card but with the user's *current* plan highlighted, a
    "What you're using now" box (servers linked, devices, current
    month's relay GB), and one-click checkout (25.13).
@@ -121,7 +121,7 @@ Accessibility:
   show usage (servers, GB) but never billing card data
   (Stripe does that).
 - **Server-rendered prices.** Prices come from a static
-  JSON `https://api.maktaba.app/api/billing/plans` that
+  JSON `https://api.maktaba.tv/api/billing/plans` that
   the marketing page fetches at build time and at request
   time as a fallback. If the JSON fetch fails, we show
   the last known prices (cached 24h).

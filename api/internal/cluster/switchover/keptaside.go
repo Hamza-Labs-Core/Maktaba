@@ -285,7 +285,7 @@ func (o *Orchestrator) getPlan(w http.ResponseWriter, r *http.Request) {
 	}
 	var plan json.RawMessage
 	if err := o.Supervisor.Call(r.Context(), "kept-plan", map[string]any{"report": id}, &plan); err != nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/kept-aside", Title: "no plan",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/kept-aside", Title: "no plan",
 			Status: http.StatusConflict, Detail: err.Error()})
 		return
 	}
@@ -315,7 +315,7 @@ func (o *Orchestrator) postApply(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := o.Supervisor.Call(r.Context(), "kept-apply", map[string]any{"report": id, "plan": req.Plan,
 		"by": "user:" + p.UserID}, &out); err != nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/kept-aside", Title: "not applied",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/kept-aside", Title: "not applied",
 			Status: http.StatusConflict, Detail: err.Error()})
 		return
 	}
@@ -341,7 +341,7 @@ func (o *Orchestrator) postDismiss(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := o.Supervisor.Call(r.Context(), "kept-dismiss", map[string]any{"report": id, "by": "user:" + p.UserID},
 		nil); err != nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/kept-aside", Title: "not set aside",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/kept-aside", Title: "not set aside",
 			Status: http.StatusConflict, Detail: err.Error()})
 		return
 	}
@@ -350,7 +350,7 @@ func (o *Orchestrator) postDismiss(w http.ResponseWriter, r *http.Request) {
 
 func (o *Orchestrator) supervised(w http.ResponseWriter, r *http.Request) bool {
 	if o.Supervisor == nil {
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/switchover-unavailable",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/switchover-unavailable",
 			Title: "not available here", Status: http.StatusConflict,
 			Detail: "this home does not run under Maktaba's supervisor with its own Postgres"})
 		return false

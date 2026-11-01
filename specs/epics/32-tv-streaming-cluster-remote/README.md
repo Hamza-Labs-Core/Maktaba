@@ -240,7 +240,7 @@ that the LAN stream does not have.
 - Killing the PC's `maktaba-server` moves its channels to the home within 20 s; Plex resumes
   without re-tuning; a browser viewer continues after a short stall at the right programme position.
 - With Cloudflare set up and remote enabled, a phone on mobile data opens
-  `https://<user>.maktaba.app`, tunes channel 105, and plays it from `customer-….cloudflarestream.com`
+  `https://<user>.maktaba.tv`, tunes channel 105, and plays it from `customer-….cloudflarestream.com`
   within 25 s; a second phone tuning 105 does not start a second push.
 - Three minutes after both phones stop, the push ends, the input is disabled and the recording is
   gone from the Cloudflare account.
@@ -255,7 +255,7 @@ that the LAN stream does not have.
                          LAN                                                     Internet
  ┌──────────────── HOME (Mac Studio, VideoToolbox) ─────────────────┐
  │ web port   ── /stream/ gate ──────┐                               │   ┌── Epic 25 relay (Hetzner) ─┐
- │ streaming port ─ FRONT DOOR ◄─────┘   SSDP / discover / lineup    │   │ https://<user>.maktaba.app │
+ │ streaming port ─ FRONT DOOR ◄─────┘   SSDP / discover / lineup    │   │ https://<user>.maktaba.tv │
  │   │  placement service (balancer, leases, fencing)                │◄──┤  API only: guide, tune,    │
  │   │  HDHR /auto/v{n}  → proxy  ───────────────┐                    │   │  heartbeat (JSON)          │
  │   │  HLS /stream/channel/… → proxy|redirect ──┤                    │   └─────────────▲──────────────┘

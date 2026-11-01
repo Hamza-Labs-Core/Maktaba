@@ -10,7 +10,7 @@ manager. Each NAS vendor has a different idiom; we support the four
 that matter:
 
 1. **Synology DSM** — `.spk` package in our own repository.
-   Users add `https://syno.maktaba.app` to Package Center →
+   Users add `https://syno.maktaba.tv` to Package Center →
    Settings → Package Sources. SPK includes a JSON manifest, an
    embedded set of Docker images (or native binaries depending on
    DSM version), an entry in the DSM control panel, and a port

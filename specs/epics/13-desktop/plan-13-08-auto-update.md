@@ -14,7 +14,7 @@
 | Updater | `tauri-plugin-updater`. |
 | Signing | Ed25519; private key in CI secret; public key bundled in `tauri.conf.json`. |
 | Channel selection | Setting written to `~/Library/Application Support/com.maktaba.desktop/channel` (or platform equivalent); changes take effect on next check. |
-| Manifest URL | `https://updates.maktaba.app/v1/{platform}-{arch}/{channel}.json`. (Static JSON; can be hosted on Cloudflare/S3.) |
+| Manifest URL | `https://updates.maktaba.tv/v1/{platform}-{arch}/{channel}.json`. (Static JSON; can be hosted on Cloudflare/S3.) |
 | Version skew display | Settings → About reads server's `/api/system/version` and compares with bundled version. |
 | Out of scope | Server hosting of updates (post-v1 ops); rollback distribution. |
 
@@ -25,7 +25,7 @@
   "updater": {
     "active": true,
     "endpoints": [
-      "https://updates.maktaba.app/v1/stable/{{target}}-{{arch}}/{{current_version}}.json"
+      "https://updates.maktaba.tv/v1/stable/{{target}}-{{arch}}/{{current_version}}.json"
     ],
     "dialog": false,
     "pubkey": "PUBLIC_ED25519_KEY_BASE64",
@@ -45,7 +45,7 @@ boot time after reading the local channel file (see §4):
 fn build_updater(app: &AppHandle) -> Result<Updater> {
     let channel = read_channel_file(app)?;  // "stable" or "beta"
     let endpoint = format!(
-        "https://updates.maktaba.app/v1/{channel}/{{target}}-{{arch}}/{{current_version}}.json",
+        "https://updates.maktaba.tv/v1/{channel}/{{target}}-{{arch}}/{{current_version}}.json",
         channel = channel,
     );
     app.updater_builder().endpoints(vec![endpoint])?.build()
@@ -66,7 +66,7 @@ drafts of this plan referred to it; ignore.)
   "platforms": {
     "darwin-universal": {
       "signature": "<ed25519 base64>",
-      "url": "https://updates.maktaba.app/v1/stable/Maktaba_1.4.2_universal.app.tar.gz"
+      "url": "https://updates.maktaba.tv/v1/stable/Maktaba_1.4.2_universal.app.tar.gz"
     },
     "windows-x86_64": { "signature": "...", "url": "..." },
     "linux-x86_64":   { "signature": "...", "url": "..." }

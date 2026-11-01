@@ -517,7 +517,7 @@ describe("AppShell (test-cases/app-shell.md)", () => {
   it("SHL-14b: sign out refused with the home unreachable keeps the user and says so", async () => {
     post.mockRejectedValue(
       new ApiError({
-        type: "https://maktaba.dev/problems/home-unreachable",
+        type: "https://maktaba.tv/problems/home-unreachable",
         title: "the home is not reachable",
         status: 503,
         code: "home_unreachable",
@@ -535,7 +535,7 @@ describe("AppShell (test-cases/app-shell.md)", () => {
   it("SHL-14c: a sign-out the home did not answer in time keeps the user and says so", async () => {
     post.mockRejectedValue(
       new ApiError({
-        type: "https://maktaba.dev/problems/home-timeout",
+        type: "https://maktaba.tv/problems/home-timeout",
         title: "the home is slow to answer",
         status: 504,
         code: "home_timeout",
@@ -1040,7 +1040,7 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
   it("MOR-08b: sign out refused with the home unreachable keeps the user and says so", async () => {
     post.mockRejectedValue(
       new ApiError({
-        type: "https://maktaba.dev/problems/home-unreachable",
+        type: "https://maktaba.tv/problems/home-unreachable",
         title: "the home is not reachable",
         status: 503,
         code: "home_unreachable",

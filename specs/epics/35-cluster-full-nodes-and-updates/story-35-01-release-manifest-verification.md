@@ -8,7 +8,7 @@ the exact tag it claims, and to refuse anything else without asking me.*
 Today the home's self-update (Epic 28.3, `api/internal/system/selfupdate.go`) checks the archive's
 SHA-256 against `checksums.txt` but never checks the cosign signature over `checksums.txt`, so whoever can
 replace both files is trusted. The CLI `maktaba-server update` reads a different feed
-(`releases.maktaba.app/manifest.json`). This story makes the release publish a machine-readable
+(`releases.maktaba.tv/manifest.json`). This story makes the release publish a machine-readable
 `release.json` and a Sigstore bundle, and adds one in-process verification package that every installer
 uses: the API's Updater, the supervisor's orchestrator, the node's machine agent, the CLI and the
 launcher's offline re-check.
@@ -47,7 +47,7 @@ Design: [design.md](design.md) §3.1–§3.5; README R3, R10.1, R10.2.
   with the embedded root as anchor, kept in `<data_dir>/sigstore/`; a failed refresh keeps the last good
   root; an expired root raises a critical notification and verification fails closed.
 - **AC9** Epic 28.3's `POST /api/admin/system/update` and `maktaba-server update` call `releaseverify`;
-  their own checksum code is removed; the CLI no longer reads `releases.maktaba.app/manifest.json`.
+  their own checksum code is removed; the CLI no longer reads `releases.maktaba.tv/manifest.json`.
 
 ## Test cases
 

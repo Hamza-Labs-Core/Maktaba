@@ -155,7 +155,7 @@ class LiveSourceTest {
     fun aSessionTheHomeEndedStopsTheBeat() = runTest {
         val home = FakeHome()
         home.beats += {
-            throw ApiException.Status(410, """{"type":"https://maktaba.dev/problems/session-ended","title":"Gone","status":410,"code":"session_ended"}""")
+            throw ApiException.Status(410, """{"type":"https://maktaba.tv/problems/session-ended","title":"Gone","status":410,"code":"session_ended"}""")
         }
         var ended: LiveStream.Relay? = null
         val src = source(home) { ended = it }
@@ -226,7 +226,7 @@ class LiveSourceTest {
         val home = object : RemoteTv {
             override suspend fun info() = TvInfo(remote = TvRemote(available = true, viaRelay = true))
             override suspend fun tune(channelId: String, device: String): RemoteTuned =
-                throw ApiException.Status(402, """{"type":"https://maktaba.dev/problems/budget-exhausted","title":"Payment Required","status":402,"code":"budget_exhausted"}""")
+                throw ApiException.Status(402, """{"type":"https://maktaba.tv/problems/budget-exhausted","title":"Payment Required","status":402,"code":"budget_exhausted"}""")
             override suspend fun heartbeat(sessionId: String) = RemoteBeat()
             override suspend fun end(sessionId: String) {}
         }

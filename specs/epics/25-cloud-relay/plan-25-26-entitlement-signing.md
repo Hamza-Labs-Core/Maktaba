@@ -85,7 +85,7 @@ JCS via `github.com/cyberphone/json-canonicalization`.
 
 ```go
 type Payload struct {
-    Iss         string                 `json:"iss"`           // "cloud.maktaba.app"
+    Iss         string                 `json:"iss"`           // "cloud.maktaba.tv"
     Sub         string                 `json:"sub"`           // server_id
     UserID      string                 `json:"user_id"`
     Tier        string                 `json:"tier"`          // 'free' | 'pro' | 'family' (matches architecture.md §13.10)

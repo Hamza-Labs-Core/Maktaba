@@ -14,8 +14,8 @@ The home enforces every gate in its API, whatever the client:
 
 | Feature | Gate | Refusal |
 |---|---|---|
-| more than one user | `POST /api/users` and open registration (`POST /api/auth/register` after the first user) | `403 https://maktaba.dev/problems/seat-limit`, e.g. _This home's Free plan allows 1 user and it has 1. Adding users needs the Home plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription._ |
-| remote access | every request the cloud relay forwards (`X-Maktaba-Via`), health probes excepted | `403 https://maktaba.dev/problems/license-required` (`feature: cloud_relay`) |
+| more than one user | `POST /api/users` and open registration (`POST /api/auth/register` after the first user) | `403 https://maktaba.tv/problems/seat-limit`, e.g. _This home's Free plan allows 1 user and it has 1. Adding users needs the Home plan (4 users) or Pro (unlimited): apply a license in Settings → Subscription._ |
+| remote access | every request the cloud relay forwards (`X-Maktaba-Via`), health probes excepted | `403 https://maktaba.tv/problems/license-required` (`feature: cloud_relay`) |
 | analytics | `/api/admin/analytics/*` with a range beyond 30 days, `/users`, `/export` | `403 license-required` (`feature: advanced_analytics`) |
 | cloud backup, federation | `subscriptions.RequireFeature` (the routes do not exist yet: stories 24.5 / 15.3 mount behind it) | `403 license-required` |
 
@@ -71,7 +71,7 @@ security find-generic-password -s maktaba-license-signing -w | maktaba-cloud lic
 The home's API (`subscriptions.Refresher`, started in `api/license.go`):
 
 - **Revocation list**, daily, from the license server: the cloud the home is claimed
-  in, else `MAKTABA_LICENSE_SERVER` (default `https://api.maktaba.app`; `off` asks
+  in, else `MAKTABA_LICENSE_SERVER` (default `https://api.maktaba.tv`; `off` asks
   no one). It is signed; the home keeps the last one it verified (slot 0155,
   `license_state`) and uses it while offline. A listed license locks at once.
 - **Plan license**, every minute, for a home whose relay agent claimed it in the

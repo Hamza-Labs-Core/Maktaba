@@ -21,6 +21,6 @@ if [ ! -s /var/lib/maktaba/secret ]; then
 
       sudo maktaba-server setup
 
-  Or get a claim code from https://app.maktaba.app -> "Add server".
+  Or get a claim code from https://app.maktaba.tv -> "Add server".
 MSG
 fi

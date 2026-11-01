@@ -81,8 +81,8 @@ describe("linking a home account", () => {
   });
 
   it("reads only an http(s) return without credentials", () => {
-    expect(linkReturn("https://kitchen.relay.maktaba.app/maktaba/account#x")?.toString()).toBe(
-      "https://kitchen.relay.maktaba.app/maktaba/account"
+    expect(linkReturn("https://kitchen.relay.maktaba.tv/maktaba/account#x")?.toString()).toBe(
+      "https://kitchen.relay.maktaba.tv/maktaba/account"
     );
     expect(linkReturn("javascript:alert(1)")).toBeNull();
     expect(linkReturn("/account")).toBeNull();

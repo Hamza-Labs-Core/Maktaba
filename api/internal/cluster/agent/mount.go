@@ -51,7 +51,7 @@ func (h *Hub) ProcessesHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func errUnauthorized() *httperror.Error {
-	return &httperror.Error{Type: "https://maktaba.dev/problems/unauthorized", Title: "unauthorized",
+	return &httperror.Error{Type: "https://maktaba.tv/problems/unauthorized", Title: "unauthorized",
 		Status: http.StatusUnauthorized, Detail: "authentication required"}
 }
 
@@ -110,7 +110,7 @@ func (h *Hub) CmdHTTP(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrBadCommand):
 		httperror.Write(w, r, httperror.BadRequest("name must be drain, undrain, reload_stages, log_level (args.level) or disconnect"))
 	case errors.Is(err, ErrCmdTimeout):
-		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.dev/problems/cmd-timeout", Title: "no answer",
+		httperror.Write(w, r, &httperror.Error{Type: "https://maktaba.tv/problems/cmd-timeout", Title: "no answer",
 			Status: http.StatusGatewayTimeout, Detail: "the process did not answer within 10 s"})
 	case err != nil:
 		httperror.Write(w, r, httperror.Internal("command failed").Wrap(err))

@@ -194,7 +194,7 @@ Errors are typed (`ErrSignature`, `ErrIdentity`, `ErrTlog`, `ErrChecksum`, `ErrM
 together; it is a startup setting, never an API field.
 
 Epic 28.3's `selfupdate.go` and `cmd/maktaba-server/internal/selfupdate` lose their own download and
-checksum code and call this package; the CLI stops reading `releases.maktaba.app/manifest.json`
+checksum code and call this package; the CLI stops reading `releases.maktaba.tv/manifest.json`
 (Epic 25.34's mirror stays a possible future source behind the same verification).
 
 **Releases published before this story** have no Sigstore bundle. They are verified with their
