@@ -1,0 +1,211 @@
+# Epic 49: Search that answers like Google: ranked, instant, and Arabic-aware
+
+## 1. Why
+
+Searching what was said is what Maktaba is for: type a word, get the best videos, jump to the
+moment it is spoken. On the home (45,339 videos, 23.1 M transcript lines) it does not work:
+
+- **It is slow, and sometimes fails.** A common word (الله) matches millions of lines. The keyword
+  query ranks every matching line (`ts_rank` per segment, `max` per video) before it answers:
+  23-60 s, and a 500 when the 60 s statement timeout cancels it (server log, 2026-11-01). The app
+  waits it out, so "search doesn't work in the app". PR #513 caps the ranking at 5,000 matching
+  lines as a stopgap (91 ms); this epic replaces the cap.
+- **It ranks the wrong thing.** It ranks lines, and for one word every line scores about the
+  same. What should differ is the video: a lecture that says الصبر 200 times against one that
+  says it once, in a short talk against a three-hour one. That is what BM25 does, per document.
+- **It misses Arabic spellings.** `maktaba_search` is `unaccent + simple`. `unaccent` does not
+  touch Arabic, so اسلام does not find إسلام, هدي does not find هدى, مدرسه does not find مدرسة,
+  and a line with harakat (اللَّهُ) does not match الله. Hamza forms (أ إ آ) appear in about
+  half the lines (a sample of 20,000).
+- **It is not "Google-like".** No did-you-mean, no suggestions as you type (the suggest
+  endpoint returns only the caller's own history, and was empty on the home), no phrase
+  preference, no facets.
+
+## 2. Research (2026-11-01)
+
+| Option | Ranked from the index | Verdict |
+|---|---|---|
+| Today: GIN + `ts_rank` on segments | No: ranking reads every matching row from the heap | The cause of the 60 s |
+| [pg_textsearch](https://github.com/timescale/pg_textsearch) (Timescale, PostgreSQL licence, v1.5.1) | Yes: BM25, Block-Max WAND top-k | **Chosen.** Needs PostgreSQL 17/18 and `shared_preload_libraries`; uses a Postgres text search configuration, so our Arabic config applies |
+| [RUM](https://supabase.com/docs/guides/database/extensions/rum) (PostgreSQL licence) | Yes: positions in the index, `<=>` order | Fallback: works on 16, but ranks with `ts_rank`-style scores (no IDF, no length normalisation), and is larger and slower to write |
+| VectorChord-bm25, ParadeDB pg_search | Yes | No: AGPL / ELv2, and weak Arabic tokenisation |
+| A custom per-video term table | Yes, ranked at build time | No: code we would own forever, for what pg_textsearch does |
+| A separate engine (Meilisearch, Typesense, OpenSearch) | Yes | No: another process on every machine, a second copy to keep in sync, library ACLs mirrored outside Postgres, and nothing in switchover, node copies or backups covers it |
+
+**Benchmark** (scratch PostgreSQL 18.6 + pg_textsearch 1.5.1, 5,000 of the home's videos, 2.6 M
+lines, one document per video, `text_config = public.maktaba_search`):
+
+| Query | Today's query on the same sample | Per-video BM25 |
+|---|---|---|
+| الله (one very common word), top 200 | 85 ms warm (23-60 s on the full, busy home) | 0.3-0.7 ms |
+| الصبر عند المصيبة (a sentence) | not run | 0.3 ms |
+| الاستغفار (rare) | not run | 0.2 ms |
+| الله, one library's videos | not run | 1.0 ms |
+| Index build | GIN 7.0 s, 85 MB | 7.0 s, 51 MB |
+
+The plan is a plain index scan (`Order By: body <@> bm25query`, 377 buffers). At the home's size
+(45 k documents) the build is about a minute and the index about 0.5 GB.
+
+## 3. Goals
+
+1. A keyword search answers in under 50 ms at p95 on the home at full size, for one word, a
+   sentence or a rare word, filtered by the caller's libraries. No cap, no timeout, no 500.
+2. Videos are ranked by BM25 over the whole transcript (plus title, description, speakers),
+   with phrase and proximity preferred; within a video, passages are ranked and timed for the
+   jump.
+3. Arabic spelling variants match: hamza forms, alef maqsura and ya, ta marbuta and ha, harakat
+   and tatweel, and Arabic-Indic digits.
+4. Google-like help: suggestions as you type (under 50 ms), did-you-mean on a misspelling, and
+   facets (library, language, speaker, year, duration) with counts.
+5. Hybrid keeps working: BM25 and meaning search (pgvector) fused by RRF, with a local-LLM
+   re-rank of the top results as an opt-in.
+6. Indexing goes through the queue: a `keyword_index` stage after transcription; the existing
+   videos are backfilled through the queue at low priority, one at a time.
+7. PostgreSQL 18 everywhere, upgraded in place by the updater, proven in update-rehearsal first.
+8. Every client gets it with no new endpoint shape: web, Apple, Android, TV, big screen.
+
+## 4. Non-goals
+
+- A separate search service (see research).
+- Typo tolerance inside the index (fuzzy BM25). Did-you-mean covers misspellings.
+- Searching inside video frames (OCR) or audio events.
+- SQLite installs get the new Arabic normalisation and the per-video document, but rank with
+  FTS5's `bm25()`; no PostgreSQL extension there.
+
+## 5. Design
+
+### 5.1 PostgreSQL 18 and pg_textsearch in every bundle
+
+- Pins move to PostgreSQL 18.x (theseus-rs binaries, as today) in `tools/release/{mac,linux,win}-app/pins.env`,
+  Docker and CI images (`pgvector/pgvector:*-pg18`), deb/rpm `pgbin`.
+- `payload.sh` builds pgvector and pg_textsearch from pinned source tags (SHA-256), `with_llvm=no`,
+  as pgvector is built today; Windows with `Makefile.win`.
+- `shared_preload_libraries = 'pg_textsearch'` in the bundled server's start flags (`pgbundle`).
+- Licences: both PostgreSQL licence; added to `licenses/`.
+
+### 5.2 Upgrading a home and its machines (16 → 18)
+
+- The updater gains a major-version step: stop, `pg_upgrade --link` from the old bundle's
+  binaries (kept for this step) to the new, `vacuumdb --analyze-in-stages`, start. Minutes, not a
+  copy. The pre-update backup (`pgbundle`) runs first, and a failed upgrade restores it.
+- Node replicas: logical replication works across 16 → 18, so the home upgrades first and the
+  machines follow in the cluster rollout (Epic 35.12). A machine on 16 keeps serving; search on it
+  uses the old path until it upgrades.
+- Proven in CI before any live update: update-rehearsal gains "16 → 18 with data, then roll back".
+
+### 5.3 Arabic normalisation (`maktaba_search` v2)
+
+A text search configuration that every index and query share (BM25, the GIN on lines, titles,
+suggestions):
+
+- strips harakat (U+064B-U+0652, U+0670), tatweel (U+0640);
+- folds أ إ آ ٱ → ا, ى → ي, ة → ه, ؤ → و, ئ → ي;
+- Arabic-Indic and Persian digits → ASCII;
+- keeps `unaccent` for Latin.
+
+Implemented as a custom `unaccent` rules file (`maktaba_arabic.rules`, shipped with the bundle) in
+front of `simple`, so it is a dictionary change, not code. Changing the config rebuilds the
+generated `search_tsv` and the indexes once (a migration, run in the queue's quiet hours on the home).
+No stemming in v1: Arabic stemmers (light10, ISRI) are an open question for the owner.
+
+### 5.4 One search document per video
+
+```sql
+CREATE TABLE video_search_docs (
+    video_id    UUID PRIMARY KEY REFERENCES videos(id) ON DELETE CASCADE,
+    library_id  UUID NOT NULL,
+    language    TEXT,
+    title       TEXT NOT NULL DEFAULT '',
+    speakers    TEXT NOT NULL DEFAULT '',
+    body        TEXT NOT NULL,            -- the active transcript, lines in order
+    transcript_id UUID NOT NULL,          -- what body was built from
+    built_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX video_search_docs_bm25 ON video_search_docs
+    USING bm25 ((ARRAY[title, speakers, body])) WITH (text_config = 'public.maktaba_search');
+CREATE INDEX ON video_search_docs (library_id);
+```
+
+- Title and speakers weigh more than body (pg_textsearch multi-field; weights tuned on the
+  owner's test queries, story 49.9).
+- Lines stay where they are (`transcript_segments` + GIN): they give the passages and the jump
+  times for the top videos only, so that query is bounded by video ids.
+- Not copied to the machines' replicas if they do not serve search (`cluster_copy_excluded`), as
+  `segment_embeddings` is not; a machine that serves search builds its own through the queue.
+
+### 5.5 The `keyword_index` stage (queue)
+
+- A new stage in the stage graph, after `transcribe` (beside `index`, the meaning stage), pool
+  `index`. It builds the video's document from the active transcript and upserts it.
+- Enqueued when a transcript becomes active, when a title or speakers change, and when the config
+  version changes (stage version bump re-queues done items, as other stages do).
+- Backfill: a stage version bump on deploy queues every video with an active transcript at low
+  priority (`priority 10`), one at a time; the Queues page shows it like any stage.
+- Until a video has a document, its keyword results come from the line path (with the 5,000 cap
+  from #513), so search works during the backfill. The cap is removed when the backfill is done.
+
+### 5.6 The query
+
+- **Keyword:** `ORDER BY doc <@> to_bm25query($q, 'video_search_docs_bm25') LIMIT $k` with the
+  library filter (`library_id = ANY($libs)`); a non-admin with few libraries pre-filters by the
+  `library_id` index (pg_textsearch's documented pattern).
+- **Phrase and proximity:** for the top 100 videos, a phrase match (`<->`) on their lines adds a
+  boost; a sentence whose words appear together ranks above one whose words are scattered.
+- **Passages:** the top passages per shown video from their lines (GIN, `video_id = ANY`), with
+  `<mark>` and times, as today.
+- **Hybrid:** BM25 videos and meaning-search videos fused by RRF (k=60, today's weights).
+- **Re-rank (opt-in):** the local LLM (Epic 36.11) re-orders the top 20 by the query and their
+  best passages; off by default, per home setting, with a 300 ms budget, falling back to the
+  fused order.
+
+### 5.7 Google-like help
+
+- **Suggestions as you type:** a terms dictionary (`search_terms(term, df)`) maintained by the
+  `keyword_index` stage, plus titles and speakers; prefix match with `pg_trgm`, ranked by document
+  frequency; the caller's recent searches first. Under 50 ms.
+- **Did-you-mean:** when a query has few results, the closest frequent term by trigram similarity
+  per word (`similarity > 0.4`), shown as "Did you mean …" and one tap away.
+- **Facets:** counts by library, language, speaker, year and duration band over the matching
+  videos (the top 1,000), returned with the first page.
+- **Sort:** relevance (default), newest, most matches.
+
+### 5.8 API and clients
+
+- `POST /api/search` keeps its request and response; new optional fields: `facets`,
+  `did_you_mean`, `took_ms` per leg. `GET /api/search/suggest` returns terms, titles and history.
+- Web, Apple, Android, TV and big screen: suggestions list, did-you-mean row, facet chips,
+  sort. English and Arabic for every string.
+
+## 6. Stories
+
+| # | Story | Acceptance |
+|---|---|---|
+| 49.1 | **PostgreSQL 18 + pg_textsearch in every bundle** (mac, linux x86_64/aarch64, windows, Docker, CI, deb/rpm) | Each payload's `postgres --version` is 18.x; `CREATE EXTENSION pg_textsearch` works; the bundle's start flags preload it; licences shipped |
+| 49.2 | **Major upgrade in the updater (16 → 18)** with backup first and restore on failure | update-rehearsal upgrades a 16 home with data to 18 and rolls back, green on the exact commit before any live update |
+| 49.3 | **Cluster: machines upgrade after the home**; a 16 machine keeps serving | two-machine e2e: home on 18, node on 16 replicating, then the node upgrades |
+| 49.4 | **Arabic normalisation (`maktaba_search` v2)** | اسلام finds إسلام, هدي finds هدى, مدرسه finds مدرسة, الله finds اللَّهُ; tests on Postgres and SQLite; the migration rebuilds `search_tsv` |
+| 49.5 | **`video_search_docs` + BM25 index** (migration, SQLite twin with FTS5) | schema up/down on scratch PG and SQLite; index uses `maktaba_search` |
+| 49.6 | **`keyword_index` queue stage** and backfill through the queue | a new transcript queues it; a title change queues it; a version bump queues every video at priority 10; shown on the Queues page; one item at a time |
+| 49.7 | **The query: BM25 videos, phrase boost, passages, hybrid** | p95 < 50 ms on a 45 k-document fixture; الله, a sentence and a rare word; ACL filter test for a limited user; hybrid order unchanged where BM25 and today agree on the obvious case |
+| 49.8 | **Suggestions, did-you-mean, facets, sort** (API) | suggest < 50 ms on the fixture; a misspelled Arabic word gets the right did-you-mean; facet counts match the result set; role tests |
+| 49.9 | **Relevance check on the owner's queries** | a list of 30 owner queries (Arabic and English) with expected top results; field weights and phrase boost tuned until they pass; kept as a regression test |
+| 49.10 | **Web search page**: suggestions, did-you-mean, facets, sort | English and Arabic; axe; screenshots dark |
+| 49.11 | **Apple and Android apps, TV, big screen** | same features; UI tests on a throwaway simulator / emulator |
+| 49.12 | **LLM re-rank (opt-in)** | off by default; on, it re-orders the top 20 within 300 ms or falls back; a home setting with help text |
+| 49.13 | **Remove the stopgap** | the 5,000 cap and the per-line ranking path are gone once every video has a document; help pages and docs updated |
+
+## 7. Acceptance
+
+- On the home after the upgrade and backfill: الله, الصبر عند المصيبة and a rare word each answer
+  in under 50 ms from the app; no search 500 in a week of logs.
+- اسلام and إسلام return the same videos.
+- Typing three letters shows suggestions; a misspelling shows did-you-mean.
+- The update to 18 went through update-rehearsal on the exact commit before the live home.
+
+## 8. Open questions for the owner
+
+1. Arabic stemming (light10 or ISRI) so that الصابرين finds الصبر: wanted in v1, or after the
+   relevance check (49.9)?
+2. The LLM re-rank: worth the latency on the home Mac, or keep it off until asked?
+3. The 30 relevance queries (49.9): will you write them, or should we draft them from the most
+   searched terms for your review?
