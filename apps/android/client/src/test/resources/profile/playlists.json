@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "id": "cccccccc-0000-4000-8000-000000000001",
+      "name": "رمضان",
+      "description": "دروس الشهر",
+      "videos": 2,
+      "duration_sec": 5650,
+      "poster_video_ids": ["11111111-0000-4000-8000-000000000001", "11111111-0000-4000-8000-000000000002"],
+      "created_at": "2026-10-01T09:00:00Z",
+      "updated_at": "2026-10-29T09:00:00Z",
+      "hand_ordered": true
+    },
+    {
+      "id": "cccccccc-0000-4000-8000-000000000002",
+      "name": "Weekend documentaries",
+      "description": "",
+      "videos": 0,
+      "duration_sec": 0,
+      "poster_video_ids": [],
+      "created_at": "2026-10-10T09:00:00Z",
+      "updated_at": "2026-10-10T09:00:00Z",
+      "hand_ordered": false
+    }
+  ]
+}
