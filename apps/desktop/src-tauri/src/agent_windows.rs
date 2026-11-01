@@ -1184,6 +1184,57 @@ fn join_kill_on_close_job() -> Result<Owned, String> {
     }
 }
 
+/// The home's update orders, answered by this agent (agent_orders.rs) on a thread of its
+/// own for as long as it runs: the installer it starts at the home's go stops this agent
+/// (--server-stop). The attempt an installer it started left is settled first. Whether the
+/// orders are answered (own_job: this agent holds its kill-on-close job).
+fn start_orders(log: &Path, own_job: bool) -> bool {
+    let Some(root) = super::state_root() else {
+        return false;
+    };
+    let build = super::orders::Build::here();
+    super::orders::settle(&root, &build);
+    let log = log.to_path_buf();
+    let say = move |msg: &str| {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+        {
+            let _ = writeln!(f, "{} [agent] {msg}", utc_now());
+        }
+    };
+    let started = std::thread::Builder::new()
+        .name("orders".into())
+        .spawn(move || {
+            let mut orders = super::orders::Orders::new(
+                root,
+                build,
+                super::orders::Net { own_job },
+                super::paused_flag,
+                Box::new(say),
+            );
+            loop {
+                // a look that panics is logged and the next one runs
+                crate::applog::keep_going("the server agent's look at the home's order", || {
+                    orders.tick()
+                });
+                std::thread::sleep(super::orders::EVERY);
+            }
+        });
+    if let Err(e) = &started {
+        crate::applog::error("the server agent cannot answer the home's update orders", e);
+    }
+    started.is_ok()
+}
+
+/// This process in a kill-on-close job as the agent's, kept until it exits (agent_orders'
+/// test of an installer that outlives its agent).
+#[cfg(test)]
+pub(super) fn join_job_for_tests() -> Result<(), String> {
+    join_kill_on_close_job().map(std::mem::forget)
+}
+
 /// What ended one wait of the agent.
 enum Woke {
     Stop,
@@ -1242,6 +1293,7 @@ pub fn run_server_agent() -> Result<i32, String> {
         signin_delay: SIGNIN_DELAY,
         job: true,
         backoff_min: BACKOFF_MIN,
+        orders: true,
     })
 }
 
@@ -1265,6 +1317,8 @@ struct AgentRun {
     /// put itself (so the launcher's whole tree) in a kill-on-close job
     job: bool,
     backoff_min: Duration,
+    /// answer the home's update orders (agent_orders.rs), and tell the server so
+    orders: bool,
 }
 
 impl AgentRun {
@@ -1345,16 +1399,23 @@ fn run_agent(run: &AgentRun) -> Result<i32, String> {
             ));
         }
     }
+    let mut own_job = false;
     if run.job {
         match join_kill_on_close_job() {
             // kept open until this process exits: closing it ends every
             // process in the job, this one included
-            Ok(job) => std::mem::forget(job),
+            Ok(job) => {
+                std::mem::forget(job);
+                own_job = true;
+            }
             Err(e) => say(&format!(
                 "no job for the server's tree ({e}): it may outlive a killed agent"
             )),
         }
     }
+    // the home's orders, once this agent is in its job (an installer it starts leaves it);
+    // the server is told only when they are answered
+    let orders = run.orders && start_orders(&run.log, own_job);
     let early = signin_wait(run.signin, filetime(SystemTime::now()), run.signin_delay);
     if !early.is_zero() {
         say(&format!(
@@ -1373,8 +1434,12 @@ fn run_agent(run: &AgentRun) -> Result<i32, String> {
         let child = open_log()
             .and_then(|f| Ok((f.try_clone()?, f)))
             .and_then(|(out, err)| {
-                Command::new(&run.program)
-                    .args(&run.args)
+                let mut cmd = Command::new(&run.program);
+                if orders {
+                    // the server opens no window for an order: this agent answers it
+                    cmd.env(super::orders::AGENT_ORDERS_ENV, "1");
+                }
+                cmd.args(&run.args)
                     .current_dir(&run.workdir)
                     .stdin(Stdio::null())
                     .stdout(out)
@@ -1780,6 +1845,7 @@ mod tests {
             signin_delay: Duration::ZERO,
             job: false,
             backoff_min: Duration::from_millis(50),
+            orders: false,
         }
     }
 

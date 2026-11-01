@@ -3,7 +3,7 @@
 // visible-only poll.
 import { useCallback, useEffect, useRef } from "react";
 import { ApiError } from "../../../lib/api";
-import { lookupMessage, useI18n } from "../../../lib/i18n";
+import { lookupMessage, useI18n, type Locale } from "../../../lib/i18n";
 import {
   checksSummary,
   type ChangeState,
@@ -21,6 +21,34 @@ export function useTk(): (key: string, fallback: string) => string {
     (key: string, fallback: string) => lookupMessage(locale, key) ?? fallback,
     [locale]
   );
+}
+
+/** A check's value as the home sends it: its English, and the code and params naming it. */
+export interface CheckValue {
+  code?: string;
+  params?: Record<string, string>;
+  value?: string;
+}
+
+/**
+ * A check's value in this language: its code's words (tvchanges.value.<code>) with its
+ * params, else the home's English (a home before the codes, or a code this web does not know).
+ */
+export function checkValue(
+  locale: Locale,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+  c: CheckValue
+): string {
+  if (c.code && lookupMessage(locale, `tvchanges.value.${c.code}`) !== undefined) {
+    return t(`tvchanges.value.${c.code}`, c.params ?? {});
+  }
+  return c.value ?? "";
+}
+
+/** checkValue in this page's language. */
+export function useCheckValue(): (c: CheckValue) => string {
+  const { locale, t } = useI18n();
+  return useCallback((c: CheckValue) => checkValue(locale, t, c), [locale, t]);
 }
 
 /** How often an open Changes page re-reads (story 33.11 AC5: poll 2 s). */

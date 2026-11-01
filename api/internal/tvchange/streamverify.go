@@ -186,17 +186,26 @@ func (c *Controller) stageSlot(ctx context.Context, cfg Config, ch *Change) erro
 		return nil // starting
 	}
 	why := "the staging slot did not become healthy on the release"
+	k := Check{Check: "slot.health", Result: ResultFail}.coded("slot.not_healthy")
 	if err != nil {
 		why = "the staging slot did not start: " + err.Error()
+		k = k.coded("slot.start_failed", "error", err.Error())
 	} else if v != nil && v.Status != nil && v.Status.Mismatch {
 		why = "the staging slot runs another release (release_mismatch)"
+		k = k.coded("slot.release_mismatch")
 	}
-	report := map[string]any{"checks": []Check{{Check: "slot.health", Result: ResultFail, Value: why}},
+	k.Value = why
+	report := map[string]any{"checks": []Check{k},
 		"passed": false, "warnings": 0, "failures": 1, "at": c.now().Format(time.RFC3339), "runtime": "slots"}
 	if err := c.Store.Set(ctx, c.DB, ch.ID, map[string]any{"verify_report": report}); err != nil {
 		return err
 	}
-	if err := c.failToDraft(ctx, ch, map[string]any{"report": why}, "slot_not_healthy"); err != nil {
+	// the move's report: the English, and its code and params (the check's)
+	moveDetail := map[string]any{"report": why, "report_code": k.Code}
+	if k.Params != nil {
+		moveDetail["report_params"] = k.Params
+	}
+	if err := c.failToDraft(ctx, ch, moveDetail, "slot_not_healthy"); err != nil {
 		return err
 	}
 	c.forgetSlotAsked(ch.ID)
@@ -377,7 +386,8 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 		st = &SlotStatus{}
 	}
 	add(Check{Check: "slot.health", Result: ResultPass, Value: fmt.Sprintf("%s healthy on release %s, version %s, pid %d",
-		v.Slot, short(plan.ReleaseID), st.Version, st.PID)})
+		v.Slot, short(plan.ReleaseID), st.Version, st.PID)}.
+		coded("slot.healthy", "slot", v.Slot, "release", short(plan.ReleaseID), "version", st.Version, "pid", st.PID))
 	pushed := c.pushedChannels(ctx)
 	lowLatency := remoteFlags(ctx, c.DB)
 	inRelease, removed, changed := map[string]bool{}, map[string]bool{}, map[string]bool{}
@@ -422,7 +432,8 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 		id := w.Channel
 		if !inRelease[id] && !removed[id] {
 			add(Check{Check: "lineup.sanity", ChannelID: id, Result: ResultFail,
-				Value: "on the air for viewers but missing from the release (the change does not remove it)"})
+				Value: "on the air for viewers but missing from the release (the change does not remove it)"}.
+				coded("lineup.missing_from_release"))
 			continue
 		}
 		smp := v.Samples[id]
@@ -430,7 +441,8 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 			ev.pending = append(ev.pending, "sample of "+short(id))
 			if now.Sub(w.Since) > firstSegmentTimeout {
 				add(Check{Check: "channel.first_segment", ChannelID: id, Result: ResultFail,
-					Value: fmt.Sprintf("not measured %.0f s after the warm-up began", now.Sub(w.Since).Seconds())})
+					Value: fmt.Sprintf("not measured %.0f s after the warm-up began", now.Sub(w.Since).Seconds())}.
+					coded("segment.not_measured", "seconds", fmt.Sprintf("%.0f", now.Sub(w.Since).Seconds())))
 			}
 			continue
 		}
@@ -449,6 +461,13 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 			}
 			k.Result = ResultWarn
 			k.Value += fmt.Sprintf(" (settling: %.0f s after the first segment)", sampled.Sub(first).Seconds())
+			if k.Code != "" { // a coded value says it settles in its own words: <code>_settling
+				p := map[string]string{"settle": fmt.Sprintf("%.0f", sampled.Sub(first).Seconds())}
+				for n, x := range k.Params {
+					p[n] = x
+				}
+				k.Code, k.Params = k.Code+"_settling", p
+			}
 			if !sj.probed { // a rolling probe that ended is not measured again
 				ev.pending = append(ev.pending, k.Check+" of "+short(id)+" (settling)")
 			}
@@ -465,6 +484,7 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 				if r.Check == "channel.first_segment" && now.Sub(w.Since) > firstSegmentTimeout {
 					k.Result = ResultFail
 					k.Value = fmt.Sprintf("no segment %.0f s after the warm-up began (%s)", now.Sub(w.Since).Seconds(), r.Value)
+					k = k.coded("segment.none", "seconds", fmt.Sprintf("%.0f", now.Sub(w.Since).Seconds()))
 					add(k)
 					continue
 				}
@@ -503,7 +523,8 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 				}
 				d := ref.Sub(at).Seconds()
 				pos := Check{Check: "channel.position", ChannelID: id, Result: ResultPass,
-					Value: fmt.Sprintf("output at %+.3f s from the wall clock", -d)}
+					Value: fmt.Sprintf("output at %+.3f s from the wall clock", -d)}.
+					coded("position.offset", "seconds", fmt.Sprintf("%+.3f", -d))
 				if math.Abs(d) > 2 {
 					pos.Result = ResultFail
 					settle(&pos)
@@ -518,50 +539,61 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 			switch {
 			case nb == nil && blk.Synthetic:
 				add(Check{Check: "channel.block", ChannelID: id, Result: ResultPass, Value: "a slate where generation " +
-					fmt.Sprint(gen) + " has nothing scheduled"})
+					fmt.Sprint(gen) + " has nothing scheduled"}.coded("block.slate_empty", "gen", gen))
 			case nb == nil:
 				add(Check{Check: "channel.block", ChannelID: id, Result: ResultFail,
-					Value: fmt.Sprintf("airs %q but generation %d has nothing at %s", blk.Title, gen, at.Format(time.RFC3339))})
+					Value: fmt.Sprintf("airs %q but generation %d has nothing at %s", blk.Title, gen, at.Format(time.RFC3339))}.
+					coded("block.nothing_scheduled", "title", blk.Title, "gen", gen, "at", at.Format(time.RFC3339)))
 			case blk.Synthetic && blk.StandInFor != 0 && blk.StandInFor == nb.seq:
 				// the scheduled block's file cannot be read on this host: a filler (or a
 				// slate) airs in its place, as on live (Feeder.standIn). A host matter,
 				// not the release's — unless live reads that very file.
 				k := Check{Check: "channel.block", ChannelID: id, Result: ResultWarn,
 					Value: fmt.Sprintf("the file of %q (seq %d, generation %d) cannot be read on this host: %q airs in its place",
-						nb.title, nb.seq, gen, blk.Title)}
+						nb.title, nb.seq, gen, blk.Title)}.
+					coded("block.unreadable", "title", nb.title, "seq", nb.seq, "gen", gen, "filler", blk.Title)
 				if smp.LiveStation != nil && smp.LiveStation.Block != nil {
 					lb := smp.LiveStation.Block
 					if !lb.Synthetic && lb.VideoID == nb.video.String && lb.StartAt.Equal(nb.start.T) {
 						k.Result = ResultFail
 						k.Value = fmt.Sprintf("airs %q in place of %q, whose file live reads", blk.Title, nb.title)
+						k = k.coded("block.instead_of_live", "title", blk.Title, "scheduled", nb.title)
 					}
 				}
 				add(k)
 			case !sameBlock(blk, nb.video.String, nb.start.T, nb.end.T):
 				if blk.Synthetic && nb.video.String == "" {
-					add(Check{Check: "channel.block", ChannelID: id, Result: ResultPass, Value: "a slate, as scheduled"})
+					add(Check{Check: "channel.block", ChannelID: id, Result: ResultPass, Value: "a slate, as scheduled"}.
+						coded("block.slate"))
 					break
 				}
 				add(Check{Check: "channel.block", ChannelID: id, Result: ResultFail,
 					Value: fmt.Sprintf("airs %q (%s–%s), generation %d schedules %q (%s–%s)", blk.Title,
 						blk.StartAt.Format("15:04:05"), blk.EndAt.Format("15:04:05"), gen, nb.title,
-						nb.start.T.Format("15:04:05"), nb.end.T.Format("15:04:05"))})
+						nb.start.T.Format("15:04:05"), nb.end.T.Format("15:04:05"))}.
+					coded("block.mismatch", "title", blk.Title, "start", blk.StartAt.Format("15:04:05"),
+						"end", blk.EndAt.Format("15:04:05"), "gen", gen, "scheduled", nb.title,
+						"scheduled_start", nb.start.T.Format("15:04:05"), "scheduled_end", nb.end.T.Format("15:04:05")))
 			default:
 				val := fmt.Sprintf("the block of generation %d at now (seq %d)", gen, blk.Seq)
 				res := ResultPass
+				code, kv := "block.scheduled", []any{"gen", gen, "seq", blk.Seq}
 				if !changed[id] && smp.LiveStation != nil && smp.LiveStation.Block != nil {
 					lb := smp.LiveStation.Block
 					if lb.Synthetic != blk.Synthetic || lb.VideoID != blk.VideoID || !lb.StartAt.Equal(blk.StartAt) {
 						res, val = ResultFail, fmt.Sprintf("unchanged channel airs %q on staging, %q on live", blk.Title, lb.Title)
+						code, kv = "block.differs_from_live", []any{"title", blk.Title, "live", lb.Title}
 					} else {
 						val += ", the same block as live"
+						code = "block.same_as_live"
 					}
 				}
-				add(Check{Check: "channel.block", ChannelID: id, Result: res, Value: val})
+				add(Check{Check: "channel.block", ChannelID: id, Result: res, Value: val}.coded(code, kv...))
 			}
 			if nb != nil && !blk.Synthetic {
 				gv := Check{Check: "guide.vs_stream", ChannelID: id, Result: ResultPass,
-					Value: fmt.Sprintf("guide %q = stream %q", nb.title, blk.Title)}
+					Value: fmt.Sprintf("guide %q = stream %q", nb.title, blk.Title)}.
+					coded("guide.vs_stream", "guide", nb.title, "stream", blk.Title)
 				if nb.title != blk.Title {
 					gv.Result = ResultFail
 				}
@@ -577,8 +609,9 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 			issues = append(issues, s)
 		}
 		cf := Check{Check: "cloudflare.ingest", ChannelID: id, Result: ResultPass,
-			Value: "H.264, AAC, closed GOP 2–10 s, 2–14 Mb/s"}
+			Value: "H.264, AAC, closed GOP 2–10 s, 2–14 Mb/s"}.coded("cloudflare.ok")
 		if len(issues) > 0 {
+			cf = cf.coded("cloudflare.issues", "issues", strings.Join(issues, "; "))
 			cf.Result, cf.Value = ResultWarn, strings.Join(issues, "; ")
 			if pushed[id] {
 				cf.Result = ResultFail
@@ -586,12 +619,15 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 		}
 		add(cf)
 		if pushed[id] {
-			pc := Check{Check: "push.continuity", ChannelID: id, Result: ResultPass, Value: "seamless: the push keeps its session"}
+			pc := Check{Check: "push.continuity", ChannelID: id, Result: ResultPass, Value: "seamless: the push keeps its session"}.
+				coded("push.seamless")
 			if len(smp.Params) > 0 {
 				pc.Value = "param_change: " + strings.Join(smp.Params, ", ")
 				if cfg.ParamChangePush == "defer" {
+					pc = pc.coded("push.param_change_deferred", "params", strings.Join(smp.Params, ", "))
 					pc.Result, pc.Value = ResultWarn, pc.Value+" (deferred until the push ends)"
 				} else {
+					pc = pc.coded("push.param_change", "params", strings.Join(smp.Params, ", "))
 					pc.Result, pc.Value = ResultFail, pc.Value+" (simulcast outputs may reconnect: acknowledge it in the approval)"
 				}
 			}
@@ -603,10 +639,12 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 				run.Restarts0[id] = stn.Restarts
 			}
 			ec := Check{Check: "encoders", ChannelID: id, Result: ResultPass,
-				Value: fmt.Sprintf("%s, no muxer restart, no fallback", orDash(stn.Encoder))}
+				Value: fmt.Sprintf("%s, no muxer restart, no fallback", orDash(stn.Encoder))}.
+				coded("encoders.ok", "encoder", orDash(stn.Encoder))
 			if d := stn.Restarts - run.Restarts0[id]; d > 0 || stn.NVENCFallbacks > 0 {
 				ec.Result = ResultWarn
 				ec.Value = fmt.Sprintf("%s, %d muxer restarts, %d hardware fallbacks", orDash(stn.Encoder), d, stn.NVENCFallbacks)
+				ec = ec.coded("encoders.restarts", "encoder", orDash(stn.Encoder), "restarts", d, "fallbacks", stn.NVENCFallbacks)
 			}
 			add(ec)
 		}
@@ -626,6 +664,22 @@ func (c *Controller) evaluate(ctx context.Context, cfg Config, plan StagingPlan,
 		bud.Result = ResultWarn
 		bud.Value = "no encoder left for staging: " + bud.Value
 	}
+	// its code: budget.none (no encoder left), else budget.over, else budget.ok; with
+	// channels waiting for an encoder, <code>_rolling
+	bcode := "budget.ok"
+	if stagingStations > v.Budget && v.Budget >= 0 {
+		bcode = "budget.over"
+	}
+	if v.Budget == 0 {
+		bcode = "budget.none"
+	}
+	bkv := []any{"staging", stagingStations, "budget", v.Budget, "capacity", v.Capacity, "live", v.LiveOnAir,
+		"standby", v.StandbyWarm}
+	if len(v.Deferred) > 0 {
+		bcode += "_rolling"
+		bkv = append(bkv, "waiting", len(v.Deferred))
+	}
+	bud = bud.coded(bcode, bkv...)
 	add(bud)
 	ev.budget = bud.Value
 	for _, id := range v.Pending {
@@ -667,16 +721,17 @@ func (c *Controller) verifyStream(ctx context.Context, cfg Config, ch *Change) e
 	if !slotHealthy(v, plan) {
 		// a crash: the watchdog restarts it; three during a run fail the change
 		if now.Sub(run.Started) > slotStartTimeout && (v == nil || !v.Healthy) {
-			return c.failRun(ctx, ch, run, []Check{{Check: "slot.health", Result: ResultFail,
-				Value: "the staging slot is down"}}, "slot_not_healthy")
+			return c.failRun(ctx, ch, run, []Check{Check{Check: "slot.health", Result: ResultFail,
+				Value: "the staging slot is down"}.coded("slot.down")}, "slot_not_healthy")
 		}
 		return c.saveRun(ctx, ch, run, nil, "the staging slot is not answering")
 	}
 	if pid := v.Status.PID; len(run.PIDs) == 0 || run.PIDs[len(run.PIDs)-1] != pid {
 		run.PIDs = append(run.PIDs, pid)
 		if len(run.PIDs) > slotCrashLoop {
-			return c.failRun(ctx, ch, run, []Check{{Check: "slot.health", Result: ResultFail,
-				Value: fmt.Sprintf("the staging slot restarted %d times during verification", len(run.PIDs)-1)}}, "slot_crash_loop")
+			return c.failRun(ctx, ch, run, []Check{Check{Check: "slot.health", Result: ResultFail,
+				Value: fmt.Sprintf("the staging slot restarted %d times during verification", len(run.PIDs)-1)}.
+				coded("slot.restarted", "count", len(run.PIDs)-1)}, "slot_crash_loop")
 		}
 	}
 	db, _, _, err := c.Verify(ctx, ch)
@@ -759,7 +814,8 @@ func (c *Controller) verifyStream(ctx context.Context, cfg Config, ch *Change) e
 		3*firstSegmentTimeout
 	if now.Sub(run.Started) > limit {
 		checks = append(checks, Check{Check: "soak", Result: ResultFail,
-			Value: "verification did not finish: still measuring " + strings.Join(ev.pending, ", ")})
+			Value: "verification did not finish: still measuring " + strings.Join(ev.pending, ", ")}.
+			coded("soak.unfinished", "pending", strings.Join(ev.pending, ", ")))
 		return c.failRun(ctx, ch, run, checks, "verification_timeout")
 	}
 	status := "soaking"

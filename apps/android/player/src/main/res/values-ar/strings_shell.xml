@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's shell in Arabic, in the web's words (web/src/i18n/ar.json: nav.home, big.tab.live). -->
+<resources>
+    <string name="section_home">الرئيسية</string>
+    <string name="section_live_tv">البث المباشر</string>
+    <string name="section_search">البحث</string>
+    <string name="section_profile">الملف الشخصي</string>
+    <string name="shell_video">المقطع</string>
+    <string name="shell_not_ready">غير متاح بعد</string>
+</resources>

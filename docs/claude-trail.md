@@ -585,6 +585,28 @@ transcripts were not traced one by one; their work is in the PRs cited.
   home's database within about a minute and ends replication workers that won't stop. Both are
   in progress there; their PRs go in its own later entry.
 
+### 2026-10-31 · PC · c17dd289 · Windows node updates by the agent; the copy stall (done)
+
+- [#456] (merged, be9ba4ef): the 10-28 copy stall. A table's first copy waited 15 min on the
+  restarting home, and every fresh copy failed with "workers did not stop within 30s". Quiesce
+  now ends workers still there after its wait, and its switch-off waits for the subscription's
+  lock at most that wait (review finding). Tested against real Postgres, red before and green
+  after.
+- [#457]: the Windows server agent (`Maktaba.exe --server-agent`) answers the home's order
+  instead of the window app. It stages from the release's own `latest.json`: a setup .exe on that
+  release's page, checked with the app's key, its signed version (`requireSignedVersion`) and
+  signed file name. At the go it starts the installer out of its own job. The server sends no
+  `maktaba://` link (`MAKTABA_AGENT_ORDERS=1`); on Windows the window app only shows the order
+  and no longer settles the orders' attempts.
+- What it rests on, proved on CI's Windows runner (`check-task-children.ps1`), never on the
+  owner's PC: once a task's process exits, the task is `Ready` even with its child still running;
+  the task runs again meanwhile; the child outlives it. Two review rounds; fixed in the PR were
+  answers that only move forward (`autoinstall::advance`), the window app's settle race, and a
+  stricter signature and URL check.
+- Neither PR is tagged: the next release is held (§5), and #457 touches the update path. Until
+  a release carries #457, the PC needs the owner to open Maktaba once (or run the v0.3.44
+  installer) to take v0.3.44.
+
 [#48]: https://github.com/Hamza-Labs-Core/Maktaba/pull/48
 [#52]: https://github.com/Hamza-Labs-Core/Maktaba/pull/52
 [#55]: https://github.com/Hamza-Labs-Core/Maktaba/pull/55
@@ -643,6 +665,8 @@ transcripts were not traced one by one; their work is in the PRs cited.
 [#307]: https://github.com/Hamza-Labs-Core/Maktaba/pull/307
 [#320]: https://github.com/Hamza-Labs-Core/Maktaba/pull/320
 [#362]: https://github.com/Hamza-Labs-Core/Maktaba/pull/362
+[#456]: https://github.com/Hamza-Labs-Core/Maktaba/pull/456
+[#457]: https://github.com/Hamza-Labs-Core/Maktaba/pull/457
 
 ---
 
@@ -664,6 +688,25 @@ Append here: date, session, one to five lines on what changed. Newest last.
     and deleted it afterwards.
   - Known, unrelated failures: run on iOS, MaktabaKit's `thisPlatformAsksForLocalNetwork`
     expects the Mac's list; an unsigned run fails the Mac Player keychain test.
+- 2026-10-31 · server-words-as-codes agent of `b743b7d4`: [#460] (not merged; the owner's
+  session merges it). Server texts the admin screens show now go out as **code + params beside
+  the English**: every TV check (`Check.Code`/`Params`, 48 codes, web key
+  `tvchanges.value.<code>`), the failing move (`report_code`), the home's `roles_reason_code`.
+  Web, Android and Apple render the code and fall back to the English. Triggers and check names
+  got words on Android and iPhone; the iPhone now uses the supervisor's `detail_code`.
+  - Decided: params are strings (`map[string]string`), already formatted by Go, so no client
+    has to format numbers. The English `value` stays for older apps. A settling position check
+    becomes `<code>_settling`; a budget with channels waiting becomes `<code>_rolling`.
+  - Rule for new codes: `TestEveryCheckCodeHasItsWords` fails when a code in
+    `verify.go`/`streamverify.go` has no en/ar words in `web/src/i18n`.
+  - Left alone, see the PR: the streaming binary's own check values, update `error.detail` / step
+    details (machine-written), `copy.detail`, `last_check_error`, events' `message`.
+  - TV-staging code, additive only: `update-rehearsal` must pass on the exact commit before a
+    release carries it.
+  - Tooling: throwaway sim `maktaba-codes-throwaway` (iOS 27.0), deleted. `xcodebuild` needs
+    `TEST_RUNNER_MAKTABA_SHOTS` to pass `MAKTABA_SHOTS` to UI tests. The Android Remote has
+    flavors: run `:remote:testPhoneDebugUnitTest`, not `testDebugUnitTest`. The web uses pnpm
+    (`pnpm install --frozen-lockfile`); `npm ci` fails, because there is no npm lockfile.
 - 2026-10-31 · Epic 48 spec agent of `b743b7d4`: [#458] writes `specs/epics/48-native-players/`
   after the owner found the Players thin ("is that epic really DONE???"). Epic 42 asked only for
   libraries and playback, so its checks passed with no Home, nav, Live TV or brand.
@@ -728,6 +771,31 @@ Append here: date, session, one to five lines on what changed. Newest last.
     (`api/internal/handlers/browse`): "a scan's videos: …b's entry dropped too". Likely a late
     notice of an earlier write dropping libB after `fill()` saw both rows cached.
 
+- 2026-10-31 · Epic 48.15 agent of `b743b7d4`: the Android Player shell. `player/…/shell/`:
+  `PlayerShell` (Material's `NavigationSuiteScaffold`: bar compact or tabletop, rail medium,
+  permanent drawer expanded with medium height; a phone on its side keeps the rail), one
+  Navigation Compose `NavHost` per section kept by a `SaveableStateHolder` (each section's stack
+  and scroll survive switching; re-select pops to root; Back at another section's root goes to
+  the first), typed `Route`s (`video`, `series`, `library`, `channel`, `watch` as on Apple), and
+  `PlayerSection.enabled` = Libraries only. `LibraryBrowser.kt` moved to `libraries/`; the
+  Libraries section is that browser until 48.27. Placeholder screens live in each screen's own
+  folder (`home/`, `video/`, `search/`, `live/`, `profile/`, `watch/`) so the screen stories
+  only replace their own file.
+  - Decided: one reachable section shows no navigation at all (a bar of one is no choice), so
+    the shipped app looks as before until a second screen merges.
+  - Harness: Robolectric 4.17 + Compose UI tests + Roborazzi on the JVM, a `FakeHome`
+    (MockWebServer) in `player/src/test/…/harness/`. CI runs `:player:testPhoneDebugUnitTest`
+    and `:player:verifyRoborazziPhoneDebug`; references in `player/src/test/screenshots/`.
+  - Gotcha: Robolectric's SDK 36 needs Java 21; CI builds with 17, so `robolectric.properties`
+    pins `sdk=35`. The references were recorded on the Mac (2 % pixel tolerance for Linux text).
+  - Gotcha: core's `TranslationsTest` reads only `strings.xml`; the per-screen
+    `strings_<screen>.xml` tables are checked by the new `PlayerTranslationsTest` (and lint).
+  - Gotcha: with many agents building at once the Gradle daemon died of GC thrashing; pass
+    `-Dorg.gradle.jvmargs=-Xmx6g`.
+  - Review fixes: the Libraries browser's state is kept per signed-in home (`PlayerHome.keep`), so
+    a section switch keeps its open video, library and search, and re-selecting Libraries closes
+    the video (`OnReselect`); `PlayerNavigator.back()` never pops a section's root (Navigation
+    Compose will pop it and leave the section blank); `FakeHome.requests` is a locked copy.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -876,6 +944,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#452]: https://github.com/Hamza-Labs-Core/Maktaba/pull/452
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
+[#460]: https://github.com/Hamza-Labs-Core/Maktaba/pull/460
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
 [#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470
 [#468]: https://github.com/Hamza-Labs-Core/Maktaba/pull/468

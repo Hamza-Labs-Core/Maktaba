@@ -1,4 +1,4 @@
-package com.hamzalabs.maktaba.player
+package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -16,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.GridView
@@ -27,7 +26,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -76,6 +74,11 @@ import com.hamzalabs.maktaba.core.ui.Message
 import com.hamzalabs.maktaba.core.ui.Poster
 import com.hamzalabs.maktaba.core.ui.ThemeStore
 import com.hamzalabs.maktaba.core.ui.formatDuration
+import com.hamzalabs.maktaba.player.Playback
+import com.hamzalabs.maktaba.player.PlayerApplication
+import com.hamzalabs.maktaba.player.R
+import com.hamzalabs.maktaba.player.VideoPage
+import com.hamzalabs.maktaba.player.WatchScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -183,12 +186,13 @@ fun LibraryBrowser(
     client: ApiClient,
     themes: ThemeStore,
     onPlaying: (Boolean) -> Unit,
+    /** What is chosen and loaded; the Libraries section keeps it across section switches. */
+    state: BrowserState = remember(client) { BrowserState(client, session::signedOut, session::switchHome) },
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val app = context.applicationContext as PlayerApplication
     val playback = remember(client) { Playback(app, client, scope, app.background, session::signedOut) }
-    val state = remember(client) { BrowserState(client, session::signedOut, session::switchHome) }
     val panes = currentPanes()
 
     DisposableEffect(playback) { onDispose { playback.stop() } }
@@ -422,10 +426,4 @@ private fun VideoRow(client: ApiClient, video: Video, chosen: Boolean, onClick: 
         }
     }
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-}
-
-/** A back arrow for a pane's title bar. */
-@Composable
-internal fun BackButton(onBack: () -> Unit) {
-    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(CoreR.string.error_back)) }
 }

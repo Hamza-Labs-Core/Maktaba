@@ -156,6 +156,25 @@ describe("Machines admin page", () => {
     expect(screen.getByRole("switch", { name: "Accept new machines" })).toBeDisabled();
   });
 
+  it("says why joins are unavailable from its code, in Arabic; an unknown code shows the home's English", async () => {
+    const v = fixture();
+    v.home.roles_supported = false;
+    v.home.roles_reason = "the database user cannot create roles";
+    v.home.roles_reason_code = "cannot_create_roles";
+    get.mockResolvedValue(v);
+    localStorage.setItem("mkt:locale", "ar");
+    const first = renderPage();
+    expect(
+      await screen.findByText("مستخدم قاعدة البيانات لا يستطيع إنشاء أدوار.")
+    ).toBeInTheDocument();
+    first.unmount();
+
+    v.home.roles_reason_code = "brand_new";
+    renderPage();
+    expect(await screen.findByText("the database user cannot create roles")).toBeInTheDocument();
+    localStorage.removeItem("mkt:locale");
+  });
+
   it("turns accepting new machines on", async () => {
     renderPage();
     await userEvent.click(await screen.findByRole("switch", { name: "Accept new machines" }));

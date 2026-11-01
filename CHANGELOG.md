@@ -12,6 +12,24 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **The server sends codes, not English, for what the admin screens say.** Each TV change
+  check now carries a `code` and `params` beside its English `value` (for example
+  `slot.release_mismatch` for "the staging slot runs another release"), and the move that
+  fails a change carries `report_code`/`report_params`. The home's "cannot take machines"
+  reason carries `roles_reason_code`/`roles_reason_params`. The web, Android Remote and Apple
+  apps say these in English and Arabic, and show the English when they don't know a code
+  (older apps keep reading `value`). Who started an update (`auto`, `manual`, `catch_up`,
+  `retry`) now has words on Android and iPhone, the TV check names have words on the
+  Updates page and in the apps, and the iPhone's Processes screen says the supervisor's
+  `detail_code` in words instead of its English. Only fields were added: TV staging behaves
+  as before.
+- **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
+  Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
+  a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,
+  Live TV, Search and Profile, each keeping its own screens and scroll position. A section
+  appears only once its screen is built, so for now the app opens on today's Libraries as
+  before. CI now runs the Player's unit and UI tests on a fake home, with dark English and
+  Arabic screenshots checked against references.
 - **Subtitles show on Apple TV, AirPlay and Cast (story 48.4).** A video session's master
   playlist now lists each subtitle file beside the video as an HLS subtitle track (language,
   its own name, off by default). Each track is a one-file playlist over the existing subtitle
@@ -89,6 +107,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node installs the home's updates even when the Maktaba window is closed.** Until
+  now the window app downloaded and installed each update. The server only tried to open it
+  with a `maktaba://` link, so an update waited until a window could be opened. On 2026-10-31
+  windows-pc's update to v0.3.44 sat waiting for eight hours, while Windows showed "Get an app
+  to open this 'maktaba' link" every 90 seconds. Now the server agent that runs at sign-in
+  (`Maktaba.exe --server-agent`) does it itself:
+  - it downloads the release's installer from that release's own page;
+  - it checks the installer with the app's key, and checks that the signature carries the
+    ordered version and names that very installer;
+  - at the home's go, it runs the installer.
+
+  The server no longer sends the link, and the window app only shows the update.
 - **A channel's stream follows library access (security, Epic 48 story 48.3).** The web
   port's `/stream/channel/{id}/…` checked only that someone was signed in, so a viewer
   limited to some libraries could watch another library's channel by its id. The gate now

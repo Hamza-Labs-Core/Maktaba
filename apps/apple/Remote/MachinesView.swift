@@ -22,7 +22,11 @@ struct MachinesView: View {
                     if home.acceptJoins, let until = home.acceptJoinsUntil {
                         Text("Open until \(until, style: .time). Each machine shows a six-digit code to approve it with.")
                     } else if !home.rolesSupported {
-                        Text(home.rolesReason ?? "This home cannot take machines.")
+                        if let why = home.reasonText() {
+                            Text(why)
+                        } else {
+                            Text("This home cannot take machines.")
+                        }
                     } else {
                         Text("Turn on, then run the installer on the new machine. It opens for an hour.")
                     }

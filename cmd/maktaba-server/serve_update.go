@@ -62,6 +62,21 @@ func runtimeOwner() string {
 // its place (a rolled-back app update).
 const envAppBundled = "MAKTABA_APP_BUNDLED"
 
+// envAgentOrders is set ("1") by a server agent that answers the home's update orders
+// itself (the Windows app's `Maktaba.exe --server-agent`, agent_orders.rs): an update
+// never waits for a window app.
+const envAgentOrders = "MAKTABA_AGENT_ORDERS"
+
+// appOpener is how the server starts the desktop app for an order it has not answered
+// (maktaba://install-update): none when the agent that started this server answers the
+// orders, so no window is opened, and no link Windows may not know is sent.
+func appOpener() func(context.Context, string) error {
+	if strings.TrimSpace(os.Getenv(envAgentOrders)) == "1" {
+		return nil
+	}
+	return updater.OpenURL
+}
+
 // updates is serve's update machinery.
 type updates struct {
 	m *updater.Machine
@@ -156,7 +171,7 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 			}
 			updates := filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 			return &updater.RuntimeInstaller{Runtime: rt, Source: src, Version: version.Version, LauncherRoot: lroot,
-				Owner: runtimeOwner(), Record: record, Container: config.Container(), Open: updater.OpenURL,
+				Owner: runtimeOwner(), Record: record, Container: config.Container(), Open: appOpener(),
 				WheelRoot: filepath.Join(updates, wheelhouseFolder)}, updates
 		}
 		bundled := strings.TrimSpace(os.Getenv(envAppBundled))
@@ -165,7 +180,7 @@ func installKind(cfg config.Config, releaseDir string, home bool, src updater.So
 		}
 		updates := filepath.Join(orDir(lroot, cfg.StateDir()), "updates")
 		return &updater.AppInstaller{Payload: bundle, Bundled: bundled, App: appOf(bundled), LauncherRoot: lroot,
-			Source: src, Version: version.Version, Record: record, Rehearse: home, Open: updater.OpenURL,
+			Source: src, Version: version.Version, Record: record, Rehearse: home, Open: appOpener(),
 			WheelRoot: filepath.Join(updates, wheelhouseFolder)}, updates
 	}
 	if releaseDir != "" {
