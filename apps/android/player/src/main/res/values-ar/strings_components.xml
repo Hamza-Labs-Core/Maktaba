@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's shared components in Arabic, in the web's words (web/src/i18n/ar.json: video.play,
+     video.resume, big.details, home.seeAll, big.watched, home.watchedPct, common.loading). -->
+<resources>
+    <string name="components_play">تشغيل</string>
+    <string name="components_resume">استئناف</string>
+    <string name="components_details">التفاصيل</string>
+    <string name="components_see_all">عرض الكل</string>
+    <string name="components_watched">شوهد</string>
+    <string name="components_watched_pct">شوهد %1$d٪</string>
+    <string name="components_loading">جارٍ التحميل…</string>
+</resources>

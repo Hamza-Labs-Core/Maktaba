@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Player's shared components (Epic 48.16: cards, rails, the hero, placeholders).
+     Its Arabic is in values-ar/strings_components.xml: PlayerTranslationsTest and lint fail without it. -->
+<resources>
+    <string name="components_play">Play</string>
+    <string name="components_resume">Resume</string>
+    <string name="components_details">Details</string>
+    <string name="components_see_all">See all</string>
+    <string name="components_watched">Watched</string>
+    <string name="components_watched_pct">%1$d%% watched</string>
+    <string name="components_loading">Loading…</string>
+</resources>
