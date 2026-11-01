@@ -6,9 +6,20 @@ import XCTest
 final class PlayerShellTests: XCTestCase {
     /// TestFlight uploads every tag: only Libraries (today's screen) is on until the other
     /// screens merge, each turning its own section on.
-    func testOnlyLibrariesIsTurnedOn() {
-        XCTAssertEqual(PlayerSection.enabled, [.libraries])
-        XCTAssertEqual(PlayerSection.visible(arguments: []), [.libraries])
+    func testOnlyTheMergedSectionsAreTurnedOn() {
+        XCTAssertEqual(PlayerSection.enabled, [.libraries, .liveTV])
+        XCTAssertEqual(PlayerSection.visible(arguments: []), [.libraries, .liveTV])
+    }
+
+    /// Live TV only when the person may watch a channel (story 48.21): not while the home has
+    /// not said, not with none, and never leaving no section.
+    func testLiveTVShowsOnlyWithAChannel() {
+        let all = PlayerSection.allCases
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: true), all)
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: false), [.home, .libraries, .search, .profile])
+        XCTAssertEqual(PlayerSection.shown([.libraries, .liveTV], hasChannels: nil), [.libraries])
+        XCTAssertEqual(PlayerSection.shown([.liveTV], hasChannels: false), [.liveTV], "never no section")
+        XCTAssertEqual(PlayerSection.shown([.libraries], hasChannels: true), [.libraries])
     }
 
     func testTheFiveSectionsInTheirOrder() {

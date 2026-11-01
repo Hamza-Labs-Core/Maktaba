@@ -20,11 +20,12 @@ final class PlayerShellUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts[newestVideo].firstMatch.waitForExistence(timeout: 15), "today's library browser")
         XCTAssertTrue(home.seen.contains("GET /api/libraries"))
         XCTAssertTrue(home.seen.contains("GET /api/videos"))
-        for label in ["Home", "Live TV", "Profile"] {
+        for label in ["Home", "Profile"] {
             XCTAssertFalse(app.tabBars.buttons[label].exists, "\(label) is not turned on")
             XCTAssertFalse(app.buttons[label].exists, "\(label) is not turned on")
         }
-        XCTAssertFalse(element("player.shell").exists, "one section: no tab bar")
+        // Live TV (48.21) is on, and shows because the mock home has channels
+        XCTAssertTrue(sectionButton("Live TV").exists, "Live TV is turned on")
         shot("libraries-only")
     }
 

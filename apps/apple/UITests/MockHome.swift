@@ -100,7 +100,9 @@ final class MockHome: @unchecked Sendable {
     /// From now on, `method path` (exact, no query) answers `status` and `body` (JSON),
     /// after `delay` seconds. Wins over the fixtures.
     func stub(_ method: String, _ path: String, status: Int = 200, body: String = "", delay: TimeInterval = 0) {
-        lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), delay: delay) }
+        // a playlist as the home's web port types it (AVPlayer reads it by its type)
+        let type = path.hasSuffix(".m3u8") ? "application/vnd.apple.mpegurl" : "application/json"
+        lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), contentType: type, delay: delay) }
     }
 
     /// From now on, `method path` (any query) answers as it would anyway, but after `delay`
@@ -182,6 +184,12 @@ final class MockHome: @unchecked Sendable {
         }
         if r.method == "GET", Self.isImage(r.path) {
             return Answer(status: 200, body: Self.png, contentType: "image/png")
+        }
+        // any HLS segment under /stream/: two seconds of the brand's ink (Fixtures/live-segment.ts),
+        // so a stubbed playlist really plays
+        if r.method == "GET", r.path.hasPrefix("/stream/"), r.path.hasSuffix(".ts"),
+           let seg = fixtures.url(forResource: "live-segment", withExtension: "ts").flatMap({ try? Data(contentsOf: $0) }) {
+            return Answer(status: 200, body: seg, contentType: "video/mp2t")
         }
         if let a = fixture(r.method, r.path, query: r.query) { return a }
         return Answer(status: 404, body: Data(#"{"title":"not found","status":404}"#.utf8))

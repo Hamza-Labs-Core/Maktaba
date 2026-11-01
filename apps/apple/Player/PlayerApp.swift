@@ -39,8 +39,8 @@ struct PlayerApp: App {
 
     private var signedIn: some View {
         SessionGate(session: session, title: "Maktaba Player") { user, client in
-            // the sections (PlayerSection.enabled); today Libraries alone
-            PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing)
+            // the sections (PlayerSection.enabled), Live TV only with a channel to watch (48.21)
+            LiveSectionGate(client: client) { PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing, sections: $0) }
         }
         .maktabaTheme(theme, forceDark: playing)
         .permissionsWalkthrough()
