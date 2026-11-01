@@ -13,7 +13,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -22,6 +21,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -44,6 +44,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.session.ConnectProgress
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.session.CloudException
 import com.hamzalabs.maktaba.core.session.CloudHome
@@ -158,7 +159,7 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
         TextButton(onClick = { advanced = true }) { Text(stringResource(R.string.cloud_advanced)) }
     }
     Button(onClick = ::signIn, enabled = !busy && email.isNotBlank() && password.isNotEmpty(), modifier = Modifier.fillMaxWidth().testTag("cloud-sign-in")) {
-        if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.cloud_sign_in))
+        Text(stringResource(if (busy) R.string.progress_signing_in_button else R.string.cloud_sign_in))
     }
     problem?.let { Problem(it) }
 }
@@ -170,6 +171,7 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
     var problem by remember { mutableStateOf<String?>(null) }
     var opening by remember { mutableStateOf<String?>(null) }
     var reload by remember { mutableIntStateOf(0) }
+    val progress by session.progress.collectAsState()
     val scope = rememberCoroutineScope()
     val unreachable = stringResource(R.string.cloud_home_unreachable)
     val refused = stringResource(R.string.cloud_home_refused)
@@ -222,7 +224,7 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
     Text(stringResource(R.string.cloud_your_homes), style = MaterialTheme.typography.titleMedium)
     val list = homes
     when {
-        list == null && problem == null -> CircularProgressIndicator(Modifier.size(24.dp))
+        list == null && problem == null -> StatusLine(stringResource(R.string.progress_cloud_loading))
         list != null && list.isEmpty() -> Text(stringResource(R.string.cloud_no_homes), style = MaterialTheme.typography.bodyMedium)
     }
     list?.forEach { home ->
@@ -243,9 +245,11 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            if (opening == home.serverId) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        // opening this home: finding it (its own address, then the relay), found, signing in
+        val step = progress
+        if (opening == home.serverId && step != null && step !is ConnectProgress.Failed) ConnectStatus(step, session.now)
     }
     if (list?.any { !it.linked } == true) {
         Text(stringResource(R.string.cloud_how_to_link), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -32,7 +32,10 @@ package main
 //     an expired token is its 403, LibraryGuard), as for every session and
 //     direct path.
 //     A channel's path has no ?sig= and still needs a session; so does the
-//     staging preview. No viewer is named for a signed request;
+//     staging preview. No viewer is named for a signed request. A signed
+//     answer allows any origin to read it (Access-Control-Allow-Origin: *):
+//     a Cast receiver reads the HLS with fetch from its own page (story
+//     48.33); the signed URL is the credential, never a cookie;
 //   - strips Cookie and Authorization before proxying, so the session
 //     never reaches the streaming service;
 //   - names the signed-in person to the streaming service in
@@ -315,6 +318,12 @@ func (g *streamGate) serveSigned(w http.ResponseWriter, r *http.Request, sig str
 		pagetheme.Error(w, r, "this link is not for this video", http.StatusForbidden)
 		return
 	}
+	// A Cast receiver (Google's Default Media Receiver, story 48.33) is a web
+	// page on the TV that reads the playlist and segments with fetch/XHR from
+	// its own origin, so it needs CORS to read them. Any origin may: the
+	// signed URL is the credential, no cookie is involved (a wildcard never
+	// carries credentials), and the streaming service verifies the token.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	out := r.Clone(r.Context())
 	out.Header.Del(viewerHeader)
 	g.next.ServeHTTP(w, out)

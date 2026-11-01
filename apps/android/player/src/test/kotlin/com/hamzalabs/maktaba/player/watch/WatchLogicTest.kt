@@ -1,5 +1,7 @@
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.player.profile.SubtitleLanguage
+import com.hamzalabs.maktaba.player.profile.PlaybackSettings
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Episode
@@ -97,12 +99,14 @@ class WatchLogicTest {
     @Test
     fun settingsStartWithAutoplayOnAndSubtitlesOffAndAreKept() {
         val store = MapStore()
-        val prefs = PlaybackPrefs(store)
-        assertEquals(PlaybackPrefs.Values(autoplayNext = true, subtitlesOn = false, subtitleLanguage = null), prefs.current)
-        prefs.setAutoplayNext(false)
-        prefs.setSubtitlesOn(true)
-        prefs.setSubtitleLanguage("ar")
-        assertEquals(PlaybackPrefs.Values(false, true, "ar"), PlaybackPrefs(store).current)
+        val prefs = PlaybackSettings(store)
+        assertEquals(true, prefs.current.autoplayNext)
+        assertEquals(false, prefs.current.subtitlesOn)
+        assertEquals(SubtitleLanguage.Default, prefs.current.subtitleLanguage)
+        prefs.update { it.copy(autoplayNext = false, subtitlesOn = true, subtitleLanguage = SubtitleLanguage.Arabic) }
+        val kept = PlaybackSettings(store).current
+        assertEquals(listOf(false, true), listOf(kept.autoplayNext, kept.subtitlesOn))
+        assertEquals(SubtitleLanguage.Arabic, kept.subtitleLanguage)
     }
 
     @Test

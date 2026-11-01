@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
@@ -36,8 +37,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.media3.common.C
+import com.hamzalabs.maktaba.player.media.pictureInPicture
 import com.hamzalabs.maktaba.player.watch.PlayerClock
 import com.hamzalabs.maktaba.player.watch.PlayerControls
 import com.hamzalabs.maktaba.player.watch.UpNext
@@ -49,7 +56,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -58,6 +67,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
+import androidx.media3.ui.SubtitleView
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Video
 import com.hamzalabs.maktaba.core.ui.ErrorState
@@ -73,6 +83,10 @@ import com.hamzalabs.maktaba.core.ui.formatDuration
  *
  * [next] is the video after this one (the series' next episode), if any: the Next button plays
  * it, and so does Up next's countdown when [autoplayNext] (Settings, FR-31) is on.
+ *
+ * Full screen, going Home while it plays shrinks it into a picture-in-picture window (FR-37,
+ * 48.33), which shows the video alone; closing the window pauses it. While a Cast receiver plays
+ * it (FR-38), the screen says so and the controls drive the receiver.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -85,10 +99,28 @@ fun WatchScreen(
     next: Video? = null,
     autoplayNext: Boolean = false,
     onPlayNext: (Video) -> Unit = { playback.play(it) },
+    /** The subtitles' size, as a scale of the player's own (Settings, FR-31). */
+    subtitleScale: Float = 1f,
 ) {
     if (fullScreen) ImmersiveWhileShown()
+    // where the video is drawn, in the window: the picture-in-picture window grows out of it
+    var videoRect by remember { mutableStateOf<android.graphics.Rect?>(null) }
+    val inPip = if (fullScreen) {
+        pictureInPicture(
+            player = playback.control,
+            playing = playback.isPlaying,
+            videoWidth = playback.videoSize.width,
+            videoHeight = playback.videoSize.height,
+            sourceRect = videoRect,
+            enabled = playback.player != null && !playback.casting,
+            onDismissed = { playback.control?.pause() },
+        )
+    } else {
+        false
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         val player = playback.player
+        val control = playback.control ?: player
         val problem = playback.problem
         val title = playback.video?.displayTitle ?: ""
         when {
@@ -102,19 +134,31 @@ fun WatchScreen(
                             keepScreenOn = true
                         }
                     },
-                    update = { it.player = player },
+                    update = {
+                        it.player = player
+                        it.subtitleView?.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subtitleScale)
+                    },
                     onRelease = { it.player = null },
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
+                        val r = coordinates.boundsInWindow()
+                        val rect = android.graphics.Rect(r.left.toInt(), r.top.toInt(), r.right.toInt(), r.bottom.toInt())
+                        if (rect != videoRect) videoRect = rect
+                    },
                 )
                 val clock = remember(player) { PlayerClock() }
-                LaunchedEffect(player) {
+                // where it plays: here, or on the receiver while casting
+                LaunchedEffect(control) {
+                    val c = control ?: return@LaunchedEffect
                     while (true) {
-                        clock.positionMs = player.currentPosition
-                        clock.durationMs = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+                        clock.positionMs = c.currentPosition
+                        clock.durationMs = c.duration.takeIf { it != C.TIME_UNSET && it > 0 }
                             ?: playback.video?.durationSec?.let { (it * 1000).toLong() } ?: 0L
                         delay(500)
                     }
                 }
+                if (playback.casting) Casting(title, Modifier.align(Alignment.Center))
+                // the window shows the video alone
+                if (inPip) return@Box
                 PlayerControls(
                     playback,
                     clock,
@@ -146,7 +190,7 @@ fun WatchScreen(
             else -> CircularProgressIndicator(Modifier.align(Alignment.Center), color = InkAndBrass.Brass)
         }
         // while it opens, or failed: close and the title (the controls carry them once it plays)
-        if (player == null) {
+        if (player == null && !inPip) {
             Row(
                 Modifier.fillMaxWidth().safeDrawingPadding().padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -165,6 +209,20 @@ fun WatchScreen(
                 )
             }
         }
+    }
+}
+
+/** A Cast receiver plays the video: the phone says so (the controls over it drive the receiver). */
+@Composable
+private fun Casting(title: String, modifier: Modifier) {
+    Column(
+        modifier.padding(32.dp).testTag("casting"),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Filled.Cast, null, tint = InkAndBrass.Brass, modifier = Modifier.size(56.dp))
+        Text(stringResource(R.string.watch_casting), color = Color.White, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Text(title, color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium, textAlign = TextAlign.Center)
     }
 }
 

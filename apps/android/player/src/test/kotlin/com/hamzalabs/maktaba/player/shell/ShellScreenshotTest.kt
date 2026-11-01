@@ -31,9 +31,12 @@ class ShellScreenshotTest {
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
     private fun shoot(window: Window, name: String) {
+        // the shell's chrome is what these show: Libraries with no library (no posters to load)
+        home.answer("/api/libraries/summary") { FakeHome.json("""{"items":[]}""") }
         compose.setShell(home, window = window)
         compose.onNodeWithTag("section-Libraries").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Lion of the Desert")).fetchSemanticsNodes().isNotEmpty() }
+        val empty = compose.activity.getString(com.hamzalabs.maktaba.player.R.string.libraries_empty)
+        compose.waitUntil(5_000) { compose.onAllNodes(hasText(empty)).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("src/test/screenshots/$name.png", roborazziOptions = options)
     }

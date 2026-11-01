@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"reflect"
+	"runtime"
 	"testing"
 	"time"
 
@@ -86,5 +87,23 @@ func TestRegisterAnnouncesBareHost(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Skip("the announcement was not heard (multicast blocked)")
+	}
+}
+
+// On a Mac the announced host is the Bonjour LocalHostName, not os.Hostname (which
+// follows the network and named a host that resolved to nothing).
+func TestHostNameIsTheMacLocalHostName(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS only")
+	}
+	was := macLocalHostName
+	t.Cleanup(func() { macLocalHostName = was })
+	macLocalHostName = func() string { return "Sara-Mac-mini" }
+	if got := bareHost(hostName()); got != "Sara-Mac-mini" {
+		t.Fatalf("host = %q, want the LocalHostName", got)
+	}
+	macLocalHostName = func() string { return "" } // unreadable: os.Hostname
+	if h, _ := os.Hostname(); hostName() != h {
+		t.Fatalf("host = %q, want os.Hostname %q", hostName(), h)
 	}
 }

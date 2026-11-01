@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.player.profile.PlaybackValues
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Player
@@ -65,7 +66,7 @@ data class TrackChoice(
  * The player's selection for a new video: the [choice] kept from the last one, else the
  * Settings' defaults (FR-31: subtitles off unless turned on, in the chosen language).
  */
-fun TrackSelectionParameters.Builder.applyChoice(choice: TrackChoice, prefs: PlaybackPrefs.Values): TrackSelectionParameters.Builder {
+fun TrackSelectionParameters.Builder.applyChoice(choice: TrackChoice, prefs: PlaybackValues): TrackSelectionParameters.Builder {
     clearOverrides()
     // sound is never turned off by a choice (FR-39a)
     setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false)
@@ -73,7 +74,7 @@ fun TrackSelectionParameters.Builder.applyChoice(choice: TrackChoice, prefs: Pla
     val textOn = choice.textOff?.not() ?: prefs.subtitlesOn
     setTrackTypeDisabled(C.TRACK_TYPE_TEXT, !textOn)
     if (textOn) {
-        val lang = choice.textLanguage ?: prefs.subtitleLanguage
+        val lang = choice.textLanguage ?: prefs.subtitleLanguage.tag
         if (lang != null) setPreferredTextLanguage(lang)
         setSelectUndeterminedTextLanguage(true)
     }

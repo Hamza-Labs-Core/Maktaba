@@ -20,4 +20,5 @@
     <string name="watch_up_next_in">التالي خلال %1$d ث</string>
     <string name="watch_play_now">شغّل الآن</string>
     <string name="watch_cancel">إلغاء</string>
+    <string name="watch_casting">يُعرض على التلفاز</string>
 </resources>

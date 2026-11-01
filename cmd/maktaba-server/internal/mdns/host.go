@@ -8,10 +8,14 @@ package mdns
 // have used. api/internal/discovery has the same helper (another module).
 
 import (
+	"context"
 	"errors"
 	"net"
 	"os"
+	"os/exec"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/grandcat/zeroconf"
 )
@@ -19,12 +23,38 @@ import (
 // register announces instance on port with this machine's bare host name, so the
 // service's target is "<host>.local.".
 func register(instance, service, domain string, port int, txt []string) (*zeroconf.Server, error) {
-	h, _ := os.Hostname()
+	h := hostName()
 	ips := interfaceIPs()
 	if len(ips) == 0 {
 		return nil, errors.New("no multicast interface has an address")
 	}
 	return zeroconf.RegisterProxy(instance, service, domain, port, bareHost(h), ips, txt, nil)
+}
+
+// hostName is the name this machine answers to in .local: on macOS the Bonjour
+// LocalHostName (`scutil --get LocalHostName`, which mDNSResponder answers for), since
+// os.Hostname there follows the network (a DHCP or reverse-DNS name such as
+// "MahmoudacStudio") and an announcement naming it pointed the apps at a host that
+// resolves to nothing; elsewhere os.Hostname.
+func hostName() string {
+	if runtime.GOOS == "darwin" {
+		if n := macLocalHostName(); n != "" {
+			return n
+		}
+	}
+	h, _ := os.Hostname()
+	return h
+}
+
+// macLocalHostName is `scutil --get LocalHostName` ("" when it cannot be read).
+var macLocalHostName = func() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "scutil", "--get", "LocalHostName").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // bareHost is a host name without its domain ("Studio.local." → "Studio"); an empty

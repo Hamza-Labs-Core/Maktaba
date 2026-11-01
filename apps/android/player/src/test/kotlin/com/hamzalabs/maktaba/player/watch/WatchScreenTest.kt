@@ -2,6 +2,10 @@
 
 package com.hamzalabs.maktaba.player.watch
 
+import com.hamzalabs.maktaba.player.profile.SubtitleSize
+import com.hamzalabs.maktaba.player.profile.StreamQuality
+import com.hamzalabs.maktaba.player.profile.PlaybackSettings
+import com.hamzalabs.maktaba.player.profile.LocalPlaybackSettings
 import android.os.Looper
 import androidx.activity.ComponentActivity
 import org.robolectric.Shadows.shadowOf
@@ -69,7 +73,7 @@ class WatchScreenTest {
     @get:Rule(order = 2) val compose = createAndroidComposeRule<ComponentActivity>()
 
     private lateinit var streams: FakeStreams
-    private val prefs = PlaybackPrefs(MapStore())
+    private val prefs = PlaybackSettings(MapStore())
     /** The players' clock: it moves only when the test moves it, so a 4-second stream keeps playing. */
     private val clock = FakeClock(false)
     private val app: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
@@ -92,7 +96,7 @@ class WatchScreenTest {
                 Surface {
                     CompositionLocalProvider(
                         LocalPlayerHome provides home.home,
-                        LocalPlaybackPrefs provides prefs,
+                        LocalPlaybackSettings provides prefs,
                         LocalPlayerBuild provides { b: ExoPlayer.Builder ->
                             b.setClock(clock).setRenderersFactory(CapturingRenderersFactory(app, clock))
                         },
@@ -197,6 +201,8 @@ class WatchScreenTest {
 
     @Test
     fun qualityReopensAtTheSamePositionWithMaxBitrate() {
+        // starts at Auto: Settings' quality is the original on either network (Robolectric's is metered)
+        prefs.update { it.copy(qualityWifi = StreamQuality.Original, qualityMobile = StreamQuality.Original) }
         streams.ladder = """[{"height":1080,"width":1920,"bitrate_kbps":6000,"codec":"h264"},{"height":720,"width":1280,"bitrate_kbps":3000,"codec":"h264"}]"""
         open(Route.Watch("v1", startSec = 2))
         untilPlaying()
@@ -208,6 +214,15 @@ class WatchScreenTest {
         val reopened = streams.opens()[1]
         assertEquals(3000, reopened.int("max_bitrate_kbps"))
         assertEquals(2, reopened.int("start_sec"))
+    }
+
+    @Test
+    fun theVideoStartsAtTheQualityChosenInProfilesSettings() {
+        // Profile's Settings writes the store the player reads (one store, 48.33)
+        prefs.update { it.copy(qualityWifi = StreamQuality.P480, qualityMobile = StreamQuality.P480, subtitleSize = SubtitleSize.Large) }
+        open(Route.Watch("v1", startSec = 0))
+        untilPlaying()
+        assertEquals(1_500, streams.opens().single().int("max_bitrate_kbps"))
     }
 
     @Test
@@ -262,7 +277,7 @@ class WatchScreenTest {
 
     @Test
     fun withAutoplayOffItStopsAtTheEndAndNextStays() {
-        prefs.setAutoplayNext(false)
+        prefs.update { it.copy(autoplayNext = false) }
         open(Route.Watch("v2", startSec = 0))
         untilPlaying()
         until { shown("next") }

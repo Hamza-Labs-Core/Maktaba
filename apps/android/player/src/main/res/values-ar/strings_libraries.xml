@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- قسم المكتبات (Epic 48.27). الصياغة من الويب (web/src/i18n/ar.json). -->
+<resources>
+    <string name="libraries_tab_series">المسلسلات</string>
+    <plurals name="libraries_videos_count">
+        <item quantity="zero">لا مقاطع</item>
+        <item quantity="one">مقطع واحد</item>
+        <item quantity="two">مقطعان</item>
+        <item quantity="few">%1$d مقاطع</item>
+        <item quantity="many">%1$d مقطعًا</item>
+        <item quantity="other">%1$d مقطع</item>
+    </plurals>
+    <string name="libraries_pinned">مثبّتة</string>
+    <string name="libraries_pin_named">ثبّت %1$s</string>
+    <string name="libraries_unpin_named">ألغِ تثبيت %1$s</string>
+    <string name="libraries_empty">لا توجد مكتبات بعد</string>
+    <string name="libraries_series_empty">لا توجد سلاسل بعد.</string>
+    <string name="libraries_series_untitled">سلسلة بلا عنوان</string>
+    <string name="libraries_series_progress">تمت مشاهدة %1$d من %2$d</string>
+    <plurals name="libraries_episodes">
+        <item quantity="zero">لا حلقات</item>
+        <item quantity="one">حلقة واحدة</item>
+        <item quantity="two">حلقتان</item>
+        <item quantity="few">%1$d حلقات</item>
+        <item quantity="many">%1$d حلقة</item>
+        <item quantity="other">%1$d حلقة</item>
+    </plurals>
+    <string name="libraries_not_available">غير متاح</string>
+    <string name="libraries_not_available_detail">ربما حُذف، أو لم يُشارَك معك.</string>
+    <string name="library_tab_videos">المقاطع</string>
+    <string name="library_row_on_deck">الدرس التالي</string>
+    <string name="library_row_continue">تابع المشاهدة</string>
+    <string name="library_row_recently_added">أضيف حديثًا</string>
+    <string name="library_row_recently_watched">شوهد مؤخرًا</string>
+    <string name="library_sort">ترتيب</string>
+    <string name="library_sort_newest">الأحدث</string>
+    <string name="library_sort_title">أ–ي</string>
+    <string name="library_language">اللغة</string>
+    <string name="library_any_language">كل اللغات</string>
+    <string name="library_speaker">المتحدث</string>
+    <string name="library_any_speaker">كل المتحدثين</string>
+    <string name="library_no_videos">لا توجد مقاطع بعد</string>
+    <string name="library_no_match">لا توجد مقاطع تطابق عوامل التصفية.</string>
+    <string name="series_continue">متابعة المشاهدة</string>
+    <string name="series_season">الموسم %1$d</string>
+    <string name="series_episode">الحلقة %1$d</string>
+    <string name="series_mark_watched">تعليم كمُشاهَد</string>
+    <string name="series_mark_unwatched">تعليم كغير مُشاهَد</string>
+    <string name="series_mark_season">تعليم الموسم كمُشاهَد</string>
+    <string name="series_unmark_season">تعليم الموسم كغير مُشاهَد</string>
+    <string name="series_watched">مُشاهَد</string>
+</resources>

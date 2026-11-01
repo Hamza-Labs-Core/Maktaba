@@ -423,7 +423,8 @@ func TestIngestRecordsNoAddress(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/v1/telemetry", nil)
 	req.RemoteAddr = addr + ":5000"
-	if k := senderKey(req); strings.Contains(k, addr) || strings.Contains(k, "203") {
+	// "203.0" and not "203": the key is a salted hex hash, which holds "203" by chance
+	if k := senderKey(req); strings.Contains(k, addr) || strings.Contains(k, "203.0") {
 		t.Errorf("the limiter's key holds the address: %s", k)
 	}
 	other := httptest.NewRequest(http.MethodPost, "/v1/telemetry", nil)
