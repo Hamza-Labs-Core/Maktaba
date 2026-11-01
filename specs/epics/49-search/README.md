@@ -58,12 +58,15 @@ The plan is a plain index scan (`Order By: body <@> bm25query`, 377 buffers). At
    with the exact word ranked above its other forms.
 4. Google-like help: suggestions as you type (under 50 ms), did-you-mean on a misspelling, and
    facets (library, language, speaker, year, duration) with counts.
-5. Hybrid keeps working: BM25 and meaning search (pgvector) fused by RRF, then the home's local
-   language model re-orders the top results by how well their passages answer the query.
-6. Indexing goes through the queue: a `keyword_index` stage after transcription; the existing
+5. Hybrid keeps working: BM25 and meaning search (pgvector) fused by RRF. Search itself never waits
+   on a language model.
+6. **AI mode**, like Google's: a separate tab the person chooses. The home's local language model
+   reads the best passages for the question and writes an answer, every sentence linked to the
+   video and moment it comes from.
+7. Indexing goes through the queue: a `keyword_index` stage after transcription; the existing
    videos are backfilled through the queue at low priority, one at a time.
-7. PostgreSQL 18 everywhere, upgraded in place by the updater, proven in update-rehearsal first.
-8. Every client gets it with no new endpoint shape: web, Apple, Android, TV, big screen.
+8. PostgreSQL 18 everywhere, upgraded in place by the updater, proven in update-rehearsal first.
+9. Every client gets it with no new endpoint shape: web, Apple, Android, TV, big screen.
 
 ## 4. Non-goals
 
@@ -166,10 +169,7 @@ CREATE INDEX ON video_search_docs (library_id);
 - **Passages:** the top passages per shown video from their lines (GIN, `video_id = ANY`), with
   `<mark>` and times, as today.
 - **Hybrid:** BM25 videos and meaning-search videos fused by RRF (k=60, today's weights).
-- **Re-rank:** the home's local language model (Epic 36.11) reads the query and the best passage
-  of each of the top 20 videos, and re-orders them by how well each answers it. It runs when the
-  model is available and answers within 300 ms; otherwise the fused order is shown as it is (never
-  a slower search). A home setting can turn it off.
+- No language model in this path: the results tab is always the fast, ranked search.
 
 ### 5.7 Google-like help
 
@@ -182,12 +182,39 @@ CREATE INDEX ON video_search_docs (library_id);
   videos (the top 1,000), returned with the first page.
 - **Sort:** relevance (default), newest, most matches.
 
-### 5.8 API and clients
+### 5.8 AI mode (a separate tab)
+
+The search page has two tabs: **Results** (the default, everything above) and **AI mode**. AI mode
+runs only when the person opens that tab or submits from it; Results never waits on it.
+
+- **Retrieval:** the same hybrid search, then the top 30 passages across the top videos (with the
+  passages around each for context), filtered by the caller's libraries as everywhere.
+- **Answer:** the home's local language model (Epic 36.11) is given the question and those
+  passages, and writes a short answer in the question's language. Every sentence carries a
+  citation: the video, the time, and the quoted words, which open the player at that moment.
+- **Grounded only:** the model is told to answer only from the passages; a sentence it cannot cite
+  is dropped, and when the passages do not answer the question it says so and shows the passages
+  instead. Nothing from outside the library.
+- **Streaming:** the answer appears as it is written (Server-Sent Events, as `/ws/jobs` does); the
+  sources show first, so there is something to read while it writes.
+- **Follow-ups:** the person can ask a follow-up in the same tab; the earlier question and answer
+  are part of the next prompt, and retrieval runs again for the new question.
+- **When there is no model:** a home without the language model shows the tab with a message
+  saying how to enable it (Settings, help link), not an error.
+- **Cost:** answers are not cached across people (permissions differ); one answer at a time per
+  home, others wait in line with their position shown, so the transcription queue is not starved.
+- **Roles:** the same library permissions as search; an admin can turn AI mode off for the home.
+
+### 5.9 API and clients
 
 - `POST /api/search` keeps its request and response; new optional fields: `facets`,
   `did_you_mean`, `took_ms` per leg. `GET /api/search/suggest` returns terms, titles and history.
-- Web, Apple, Android, TV and big screen: suggestions list, did-you-mean row, facet chips,
-  sort. English and Arabic for every string.
+- `POST /api/search/ai` (SSE): `{q, history?}` → `sources` event, then `text` events with citation
+  markers, then `done`; `409 ai-unavailable` when the home has no model; `429` with queue position
+  when another answer is being written.
+- Web, Apple, Android, TV and big screen: suggestions list, did-you-mean row, facet chips, sort,
+  and the AI mode tab with cited answers that open the player at the moment. English and Arabic for
+  every string.
 
 ## 6. Stories
 
@@ -204,7 +231,8 @@ CREATE INDEX ON video_search_docs (library_id);
 | 49.9 | **Relevance check** | 30 test searches (Arabic and English) drafted from the home's most searched words and the library's topics, each with the videos that should come first; the owner reviews the list once; field weights, the exact/stem balance and the phrase boost tuned until they pass; kept as a regression test |
 | 49.10 | **Web search page**: suggestions, did-you-mean, facets, sort | English and Arabic; axe; screenshots dark |
 | 49.11 | **Apple and Android apps, TV, big screen** | same features; UI tests on a throwaway simulator / emulator |
-| 49.12 | **Language-model re-rank** | re-orders the top 20 within 300 ms or shows the fused order; measured on the home Mac; a home setting to turn it off, with help text |
+| 49.12 | **AI mode: API** (retrieval, grounded answer, citations, streaming, follow-ups, one at a time) | every sentence has a citation that exists in the passages; an unanswerable question says so; no model → 409 with help; a limited user never gets a passage from another library (role test); measured first-token time on the home Mac |
+| 49.14 | **AI mode: the tab in every client** (web, Apple, Android, TV, big screen) | the tab streams the answer, sources first; a citation opens the player at its time; follow-up works; English and Arabic; UI tests |
 | 49.13 | **Remove the stopgap** | the 5,000 cap and the per-line ranking path are gone once every video has a document; help pages and docs updated |
 
 ## 7. Acceptance
@@ -217,5 +245,7 @@ CREATE INDEX ON video_search_docs (library_id);
 
 ## 8. Decisions
 
-- One delivery, no phases: word forms, re-rank and every client are in this epic (owner, 2026-11-01).
+- One delivery, no phases: word forms, AI mode and every client are in this epic (owner, 2026-11-01).
+- No language model in ordinary search; AI mode is a separate tab, run only when chosen, like
+  Google's AI mode (owner, 2026-11-01).
 - The relevance list is drafted by us and reviewed once by the owner (49.9).
