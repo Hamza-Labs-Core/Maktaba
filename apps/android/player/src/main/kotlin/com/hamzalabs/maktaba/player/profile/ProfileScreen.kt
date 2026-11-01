@@ -6,8 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import androidx.activity.OnBackPressedCallback
-import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,7 +110,6 @@ import com.hamzalabs.maktaba.player.ui.components.PosterSize
 import com.hamzalabs.maktaba.player.ui.components.ProgressStrip
 import com.hamzalabs.maktaba.player.ui.components.posterUrl
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Duration
@@ -134,7 +132,8 @@ fun ProfileScreen(nav: PlayerNavigator) {
     val state = home.keep("profile") { ProfileState(home.client, home.session::signedOut) }
     val page = state.page
     OnReselect(nav) { state.page = ProfilePage.Root }
-    PageBack(state)
+    // Back from a page to its parent; it comes before the shell's (PlayerShell registers its own first)
+    BackHandler(enabled = page != ProfilePage.Root) { state.page = state.page.parent }
 
     val snackbar = remember { SnackbarHostState() }
     val resources = LocalResources.current
@@ -166,32 +165,6 @@ fun ProfileScreen(nav: PlayerNavigator) {
                 ProfilePage.Playback -> PlaybackPage()
                 ProfilePage.Diagnostics -> DiagnosticsPage()
             }
-        }
-    }
-}
-
-/**
- * Back from one of the Profile's pages to its parent. The shell's own handler (Back at another
- * section's root returns to the first section) is composed after the section's screen and so
- * registers later, taking Back first; this one registers from an effect, after the shell's, and
- * again on each page, so the page's Back wins while a page is shown.
- */
-@Composable
-private fun PageBack(state: ProfileState) {
-    val dispatcher = LocalOnBackPressedDispatcherOwner.current?.onBackPressedDispatcher ?: return
-    val page = state.page
-    LaunchedEffect(dispatcher, page) {
-        if (page == ProfilePage.Root) return@LaunchedEffect
-        val callback = object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                state.page = state.page.parent
-            }
-        }
-        dispatcher.addCallback(callback)
-        try {
-            awaitCancellation()
-        } finally {
-            callback.remove()
         }
     }
 }

@@ -1,8 +1,13 @@
 package com.hamzalabs.maktaba.player.shell
 
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.SemanticsMatcher
@@ -19,6 +24,7 @@ import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.ListScreens
 import com.hamzalabs.maktaba.player.harness.Window
@@ -155,21 +161,6 @@ class PlayerShellTest {
     }
 
     @Test
-    fun theAppsScreensAreReachableForEverySection() {
-        // the placeholders: each section's own screen, titled with its name
-        // Home (48.26) and Libraries are real screens that need a signed-in home, which this test has not
-        compose.setShell(sections = PlayerSection.entries - PlayerSection.Home - PlayerSection.Libraries)
-        for ((section, title) in listOf(
-            PlayerSection.LiveTv to "Live TV",
-        )) {
-            compose.onNodeWithTag("section-${section.name}").performClick()
-            compose.onNodeWithTag("placeholder").assertIsDisplayed()
-            compose.onNodeWithText("Not available yet").assertIsDisplayed()
-            compose.onAllNodesWithText(title).assertCountEquals(2) // the title bar and the section's label
-        }
-    }
-
-    @Test
     fun backAtASectionsRootKeepsTheRoot() {
         val answers = mutableListOf<Boolean>()
         compose.setShell(sections = listOf(PlayerSection.Home)) { route, nav ->
@@ -185,6 +176,37 @@ class PlayerShellTest {
         compose.onNodeWithTag("video").performClick()
 
         assertEquals("back once, then nothing to go back to", listOf(true, false), answers)
+        compose.onNodeWithText("root Home").assertIsDisplayed()
+    }
+
+    /**
+     * A section's root screen with pages of its own (Profile's Settings) takes Back first: its
+     * page closes, and only then does Back return to the first section (48.31 found the shell's
+     * handler took it first and jumped to Home).
+     */
+    @Test
+    fun aScreensOwnBackComesBeforeTheShells() {
+        compose.setShell(sections = listOf(PlayerSection.Home, PlayerSection.LiveTv)) { route, _ ->
+            var inner by rememberSaveable { mutableStateOf(false) }
+            // composed from the start, as a screen's handler usually is (enabled when it has a page open)
+            BackHandler(enabled = inner) { inner = false }
+            if (inner) Text("inner $route", Modifier.testTag("inner"))
+            else Text("root $route", Modifier.testTag("root").clickable { inner = true })
+        }
+        compose.onNodeWithTag("section-LiveTv").performClick()
+        compose.onNodeWithText("root LiveTv").performClick()
+        compose.onNodeWithText("inner LiveTv").assertIsDisplayed()
+        // and still after the app was left and came back (each handler is registered again)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.CREATED)
+        compose.activityRule.scenario.moveToState(Lifecycle.State.RESUMED)
+        compose.waitForIdle()
+
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("root LiveTv").assertIsDisplayed()
+        compose.onNodeWithTag("section-LiveTv").assertIsSelected()
+
+        compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithTag("section-Home").assertIsSelected()
         compose.onNodeWithText("root Home").assertIsDisplayed()
     }
 }

@@ -12,9 +12,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import android.content.Context
+import android.net.ConnectivityManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.core.net.ConnectivityManagerCompat
+import com.hamzalabs.maktaba.player.profile.playbackSettings
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.hamzalabs.maktaba.core.api.ApiException
@@ -52,8 +54,9 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val build = LocalPlayerBuild.current
-    val prefs = playbackPrefs()
-    val settings by prefs.values.collectAsState()
+    // the one playback store, which Profile's Settings writes (FR-31)
+    val prefs = playbackSettings()
+    val settings by prefs.value.collectAsState()
     val playback = remember(client) {
         // work that outlives the screen (the last position, the session's close): the app's
         val background = (context.applicationContext as? PlayerApplication)?.background
@@ -69,7 +72,8 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
             home.onPlaying(false)
         }
     }
-    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { playback.player?.pause() }
+    // the screen off or the app left: the sound goes on (FR-39, the media session's service), and
+    // the notification pauses it; closing the picture-in-picture window pauses it (WatchScreen)
     LaunchedEffect(settings) { playback.prefs = settings }
     LaunchedEffect(videoId, startSec) {
         val detail = try {
@@ -80,6 +84,7 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
             null // the stream's own answer says why (Playback shows it)
         }
         playback.prefs = prefs.current
+        playback.startAt(prefs.current.startKbps(metered(context)))
         playback.play(detail?.asVideo() ?: Video(videoId), startSec ?: resumeSec(detail))
     }
     // the video after the one playing (it changes when Up next or Next plays the next)
@@ -99,8 +104,14 @@ fun WatchRouteScreen(videoId: String, startSec: Int?, nav: PlayerNavigator) {
         next = next,
         autoplayNext = settings.autoplayNext,
         onPlayNext = { playback.play(it) },
+        subtitleScale = settings.subtitleSize.scale,
     )
 }
+
+/** True on a metered network (mobile data): Settings' mobile quality applies. */
+fun metered(context: Context): Boolean = runCatching {
+    context.getSystemService(ConnectivityManager::class.java)?.let { ConnectivityManagerCompat.isActiveNetworkMetered(it) } ?: false
+}.getOrDefault(false)
 
 /** Where a video opened without a position starts: its resume point, else the start. */
 fun resumeSec(detail: VideoDetail?): Int = detail?.resumeAtSec?.toInt() ?: 0

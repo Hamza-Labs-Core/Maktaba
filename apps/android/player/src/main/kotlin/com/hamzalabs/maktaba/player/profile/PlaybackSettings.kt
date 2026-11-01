@@ -33,10 +33,26 @@ enum class SubtitleLanguage(val tag: String?, @param:StringRes val label: Int) {
     Default(null, R.string.profile_subtitle_language_default),
     English("en", R.string.profile_language_english),
     Arabic("ar", R.string.profile_language_arabic),
+    ;
+
+    companion object {
+        /**
+         * The stored value: a language tag ("en", "ar"; what is written), or the name 48.31
+         * wrote before the stores were one ("english", "arabic", "default").
+         */
+        fun of(stored: String?): SubtitleLanguage {
+            val v = stored?.trim()?.takeIf(String::isNotEmpty) ?: return Default
+            return entries.firstOrNull { it.tag.equals(v, ignoreCase = true) || it.name.equals(v, ignoreCase = true) } ?: Default
+        }
+    }
 }
 
-/** FR-31's playback settings, kept on this device; the player (48.32) reads them. */
-data class Playback(
+/**
+ * FR-31's playback settings, kept on this device: Profile's Settings writes them and the player
+ * reads them (autoplay next, subtitles on and their language and size, the quality to start at
+ * on Wi-Fi and on mobile data, resume without asking).
+ */
+data class PlaybackValues(
     val autoplayNext: Boolean = true,
     val subtitlesOn: Boolean = false,
     val subtitleLanguage: SubtitleLanguage = SubtitleLanguage.Default,
@@ -44,32 +60,41 @@ data class Playback(
     val qualityWifi: StreamQuality = StreamQuality.Original,
     val qualityMobile: StreamQuality = StreamQuality.P720,
     val resumeWithoutAsking: Boolean = true,
-)
+) {
+    /** The quality a video starts at (`max_bitrate_kbps`; null: the original): mobile data's on a metered network. */
+    fun startKbps(metered: Boolean): Int? = (if (metered) qualityMobile else qualityWifi).maxBitrateKbps
+}
 
-/** The playback settings on a device's store (`playback.*` keys, beside the theme). */
+/**
+ * The one store of the playback settings (`playback.*` keys in the app's "settings", beside the
+ * theme), which Profile's Settings and the player both read and write. 48.32's player kept its
+ * own on the same keys; the subtitle language was the one it wrote differently (a tag, where
+ * Profile wrote a name): both are read, a tag is written.
+ */
 class PlaybackSettings(private val store: KeyValueStore) {
     private val _value = MutableStateFlow(read())
-    val value: StateFlow<Playback> = _value.asStateFlow()
+    val value: StateFlow<PlaybackValues> = _value.asStateFlow()
+    val current: PlaybackValues get() = _value.value
 
-    fun update(change: (Playback) -> Playback) {
+    fun update(change: (PlaybackValues) -> PlaybackValues) {
         val next = change(_value.value)
         _value.value = next
         store.put(AUTOPLAY, next.autoplayNext.toString())
         store.put(SUBTITLES, next.subtitlesOn.toString())
-        store.put(SUBTITLE_LANGUAGE, next.subtitleLanguage.name.lowercase())
+        store.put(SUBTITLE_LANGUAGE, next.subtitleLanguage.tag)
         store.put(SUBTITLE_SIZE, next.subtitleSize.wire)
         store.put(QUALITY_WIFI, next.qualityWifi.wire)
         store.put(QUALITY_MOBILE, next.qualityMobile.wire)
         store.put(RESUME, next.resumeWithoutAsking.toString())
     }
 
-    private fun read(): Playback {
-        val d = Playback()
+    private fun read(): PlaybackValues {
+        val d = PlaybackValues()
         fun bool(key: String, default: Boolean) = store.get(key)?.toBooleanStrictOrNull() ?: default
-        return Playback(
+        return PlaybackValues(
             autoplayNext = bool(AUTOPLAY, d.autoplayNext),
             subtitlesOn = bool(SUBTITLES, d.subtitlesOn),
-            subtitleLanguage = SubtitleLanguage.entries.firstOrNull { it.name.equals(store.get(SUBTITLE_LANGUAGE), true) } ?: d.subtitleLanguage,
+            subtitleLanguage = SubtitleLanguage.of(store.get(SUBTITLE_LANGUAGE)),
             subtitleSize = SubtitleSize.entries.firstOrNull { it.wire == store.get(SUBTITLE_SIZE) } ?: d.subtitleSize,
             qualityWifi = StreamQuality.entries.firstOrNull { it.wire == store.get(QUALITY_WIFI) } ?: d.qualityWifi,
             qualityMobile = StreamQuality.entries.firstOrNull { it.wire == store.get(QUALITY_MOBILE) } ?: d.qualityMobile,

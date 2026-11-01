@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- البث المباشر في المشغّل (Epic 48.30): الآن، والدليل، ومشغّل القناة. -->
+<resources>
+    <string name="live_now">الآن</string>
+    <string name="live_guide">الدليل</string>
+    <string name="live_no_channels">لا قنوات</string>
+    <string name="live_no_channels_detail">لا توجد على «الجهاز الرئيسي» قناة يمكنك مشاهدتها.</string>
+    <string name="live_cant_load">تعذّر تحميل البث المباشر</string>
+    <string name="live_nothing_on">لا شيء في الجدول</string>
+    <string name="live_next">التالي في %1$s: %2$s</string>
+    <string name="live_next_label">التالي</string>
+    <string name="live_channel">القناة %1$d، %2$s</string>
+    <string name="live_progress">مضى %1$d%%</string>
+    <string name="live_time_range">%1$s – %2$s</string>
+    <string name="live_today">اليوم</string>
+    <string name="live_tomorrow">غدًا</string>
+    <string name="live_earlier">أبكر</string>
+    <string name="live_later">لاحقًا</string>
+    <string name="live_on_now">يُعرض الآن</string>
+    <string name="live_watch">شاهد</string>
+    <string name="live_badge">مباشر</string>
+    <string name="live_back_to_live">العودة إلى البث المباشر</string>
+    <string name="live_pause">إيقاف مؤقت</string>
+    <string name="live_play">تشغيل</string>
+    <string name="live_next_channel">القناة التالية</string>
+    <string name="live_previous_channel">القناة السابقة</string>
+    <string name="live_tuning">جارٍ الضبط…</string>
+    <string name="live_close">إغلاق</string>
+    <string name="live_try_again">حاول مرة أخرى</string>
+    <string name="live_cant_play">تعذّر تشغيل هذه القناة</string>
+    <string name="live_session_ended">انتهت جلسة المشاهدة عن بُعد.</string>
+    <string name="live_remote_unavailable">المشاهدة من خارج المنزل غير متاحة الآن.</string>
+    <string name="live_streams_full">تشاهد الآن على أقصى عدد مسموح به من الأجهزة.</string>
+    <string name="live_budget">استُنفد رصيد المشاهدة عن بُعد على «الجهاز الرئيسي».</string>
+    <string name="live_remote_timeout">استغرق بدء القناة وقتًا طويلًا.</string>
+    <string name="live_not_allowed">لا يمكنك المشاهدة من خارج المنزل.</string>
+    <string name="live_no_such_channel">هذه القناة غير متاحة.</string>
+</resources>

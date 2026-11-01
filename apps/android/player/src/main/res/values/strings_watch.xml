@@ -20,4 +20,5 @@
     <string name="watch_up_next_in">Up next in %1$d s</string>
     <string name="watch_play_now">Play now</string>
     <string name="watch_cancel">Cancel</string>
+    <string name="watch_casting">Playing on your TV</string>
 </resources>
