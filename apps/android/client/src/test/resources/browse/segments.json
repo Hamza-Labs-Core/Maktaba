@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "id": 10,
+      "seq": 0,
+      "start_sec": 0,
+      "end_sec": 4.2,
+      "text": "بسم الله الرحمن الرحيم",
+      "speaker": "SPEAKER_00",
+      "updated_at": "2026-10-02T09:00:00Z"
+    },
+    {
+      "id": 11,
+      "seq": 1,
+      "start_sec": 4.2,
+      "end_sec": 9,
+      "text": "today we begin",
+      "updated_at": "2026-10-02T09:00:00Z"
+    }
+  ],
+  "partial": true
+}

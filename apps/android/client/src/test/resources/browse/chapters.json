@@ -1,0 +1,19 @@
+{
+  "items": [
+    {
+      "id": 1,
+      "seq": 0,
+      "start_sec": 0,
+      "end_sec": 300,
+      "title": "المقدمة",
+      "source": "youtube"
+    },
+    {
+      "id": 2,
+      "seq": 1,
+      "start_sec": 300,
+      "title": "Wudu",
+      "source": "auto"
+    }
+  ]
+}

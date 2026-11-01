@@ -47,6 +47,12 @@ don't append a line here; docs-only PRs are exempt.
   four server gaps (a channel's stream must follow library access; signed stream URLs for
   AirPlay and Cast; subtitles as HLS renditions; small posters), 36 stories with testable
   checks, and the plan that runs them in parallel.
+- **The Android client can browse (Epic 48, story 48.8).** `apps/android/client`'s new
+  `Browse.kt` reads Home's rails and recommendations, the libraries and their pins, a library's
+  hub, grid, facets and series, the series and their episodes, a video's page (its state,
+  chapters, transcript, marks) and search (results, pages, suggestions, recent), tolerantly: a
+  missing row is empty and an unreadable card is left out. A 404 is `NotAvailable`. The test
+  fixtures are checked against the API's own response types by a Go test.
 - **MaktabaKit reads Live TV (story 48.7).** The Apple apps' shared kit can read what is on now,
   the guide for a time window, one channel's guide and logo, and where the TV streams. It
   plays a channel from the home's network at home, or through a remote session away from home,

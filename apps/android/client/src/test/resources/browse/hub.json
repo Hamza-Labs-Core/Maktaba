@@ -1,0 +1,70 @@
+{
+  "library": {
+    "id": "aaaaaaaa-0000-4000-8000-000000000001",
+    "name": "دروس",
+    "videos": 120
+  },
+  "rows": {
+    "continue_watching": [
+      {
+        "id": "11111111-0000-4000-8000-000000000002",
+        "title": null,
+        "filename": "fiqh-07.mkv",
+        "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+        "duration_sec": 2400,
+        "state": "ready",
+        "created_at": "2026-10-01T09:00:00Z",
+        "published_at": null,
+        "position_sec": 600,
+        "completed": false,
+        "last_watched_at": "2026-10-30T20:15:00Z"
+      }
+    ],
+    "recently_added": [
+      {
+        "id": "11111111-0000-4000-8000-000000000001",
+        "title": "سيرة ابن هشام ١",
+        "filename": "seerah-01.mp4",
+        "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+        "duration_sec": 3605.5,
+        "state": "ready",
+        "created_at": "2026-10-20T09:00:00Z",
+        "published_at": "2026-10-19T00:00:00Z"
+      }
+    ],
+    "recently_watched": [],
+    "most_watched": [
+      {
+        "id": "11111111-0000-4000-8000-000000000002",
+        "title": null,
+        "filename": "fiqh-07.mkv",
+        "library_id": "aaaaaaaa-0000-4000-8000-000000000001",
+        "duration_sec": 2400,
+        "state": "ready",
+        "created_at": "2026-10-01T09:00:00Z",
+        "published_at": null,
+        "plays": 14
+      }
+    ],
+    "series": [
+      {
+        "id": "bbbbbbbb-0000-4000-8000-000000000001",
+        "name": "سيرة ابن هشام",
+        "episodes": 24,
+        "poster_video_id": "11111111-0000-4000-8000-000000000001"
+      }
+    ],
+    "years": [
+      {
+        "year": 2026,
+        "videos": 80
+      },
+      {
+        "year": 2025,
+        "videos": 40
+      }
+    ],
+    "on_deck": [],
+    "recently_added_grouped": []
+  }
+}

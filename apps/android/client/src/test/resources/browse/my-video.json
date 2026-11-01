@@ -1,0 +1,13 @@
+{
+  "video_id": "11111111-0000-4000-8000-000000000002",
+  "position_sec": 600,
+  "completed": false,
+  "favorite": true,
+  "playlists": [
+    {
+      "id": "eeeeeeee-0000-4000-8000-000000000001",
+      "name": "Later"
+    }
+  ],
+  "series": null
+}
