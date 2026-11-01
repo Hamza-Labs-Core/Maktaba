@@ -190,8 +190,8 @@ targets:
   # ---- the permissions walkthrough's UI tests on iPhone (UITests/) ----------------------
   # UITests/Player*.swift are the Player's own (Epic 48: its shell and screens, against
   # MockHome and UITests/Fixtures); the Remote's targets leave them out. The Player's test
-  # targets also compile the shell's plain types (sections, routes, launch arguments) for
-  # their unit tests.
+  # targets also compile the shell's plain types (sections, routes, launch arguments) and
+  # the components' image cache and placeholder timing for their unit tests.
   Maktaba Player UITests:
     type: bundle.ui-testing
     platform: iOS
@@ -200,6 +200,8 @@ targets:
       - path: Player/Shell/PlayerSection.swift
       - path: Player/Shell/PlayerRoute.swift
       - path: Player/Shell/ShellLaunch.swift
+      - path: Player/Components/ImageCache.swift
+      - path: Player/Components/PlaceholderTiming.swift
     dependencies: [{ target: Maktaba Player }]
     settings:
       base:
@@ -225,6 +227,8 @@ targets:
       - path: Player/Shell/PlayerSection.swift
       - path: Player/Shell/PlayerRoute.swift
       - path: Player/Shell/ShellLaunch.swift
+      - path: Player/Components/ImageCache.swift
+      - path: Player/Components/PlaceholderTiming.swift
     dependencies: [{ target: Maktaba Player iPad }]
     settings:
       base:
