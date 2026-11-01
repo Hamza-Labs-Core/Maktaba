@@ -83,6 +83,8 @@ func (b *PGBackend) Close() {
 //     (its presence is what "probed" means)
 //   - audio_tracks  — the default/first track's codec + channels, which
 //     the capability matrix reasons over for direct-play vs transcode
+//   - has_audio     — any audio_tracks row, or an audio stream in raw_ffprobe:
+//     a track row with no codec is still audio (Row.NoAudio)
 //   - media_info.raw_ffprobe — the first video stream (not cover art): its
 //     colour and pixel format, for the transcode's tone-mapping
 //
@@ -110,7 +112,13 @@ SELECT
   COALESCE(vs.s->>'color_space', ''),
   COALESCE(vs.s->>'color_primaries', ''),
   COALESCE(vs.s->>'color_range', ''),
-  COALESCE(vs.s->>'pix_fmt', '')
+  COALESCE(vs.s->>'pix_fmt', ''),
+  (at.present IS NOT NULL OR EXISTS (
+     SELECT 1
+     FROM jsonb_array_elements(CASE WHEN jsonb_typeof(mi.raw_ffprobe->'streams') = 'array'
+                                    THEN mi.raw_ffprobe->'streams' ELSE '[]'::jsonb END) AS au(stream)
+     WHERE au.stream->>'codec_type' = 'audio'
+  )) AS has_audio
 FROM videos v
 LEFT JOIN media_info mi ON mi.video_id = v.id
 LEFT JOIN LATERAL (
@@ -122,7 +130,7 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) vs ON true
 LEFT JOIN LATERAL (
-  SELECT codec, channels
+  SELECT codec, channels, true AS present
   FROM audio_tracks
   WHERE video_id = v.id
   ORDER BY is_default DESC, track_index ASC
@@ -217,6 +225,7 @@ func lookupOn(ctx context.Context, q pgQuerier, videoID uuid.UUID) (*Row, error)
 		&row.ColorPrimaries,
 		&row.ColorRange,
 		&row.PixFmt,
+		&row.HasAudio,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

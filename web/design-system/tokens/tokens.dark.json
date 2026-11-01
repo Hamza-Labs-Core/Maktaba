@@ -1,11 +1,24 @@
 {
   "color": {
     "semantic": {
-      "bg": { "value": "{color.neutral.900}" },
-      "fg": { "value": "{color.neutral.50}" },
-      "muted": { "value": "{color.neutral.400}" },
-      "subtle": { "value": "{color.neutral.800}" },
-      "accent": { "value": "{color.brand.400}" }
+      "bg": { "value": "#0B111C", "description": "Ink." },
+      "fg": { "value": "#E8ECF3" },
+      "muted": { "value": "#A9B3C4" },
+      "subtle": { "value": "#131D2E" },
+      "raised": { "value": "#18243A" },
+      "nav": { "value": "#0F1725" },
+      "scrim": { "value": "#0B111C8F" },
+      "chosen": { "value": "#3A3020" },
+      "border": { "value": "#22304A" },
+      "accent": { "value": "{color.brand.500}" },
+      "accent-fg": { "value": "#1A1408" },
+      "accent-text": { "value": "{color.brand.500}" },
+      "accent-soft": { "value": "#E3B25224" },
+      "success": { "value": "#4CC38A" },
+      "warn": { "value": "#E0A53A" },
+      "error": { "value": "#F0707F" },
+      "running": { "value": "#FFB454" },
+      "info": { "value": "#6F93FF" }
     }
   }
 }

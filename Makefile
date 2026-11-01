@@ -509,12 +509,12 @@ build-web: build-tokens
 	pnpm -C $(WEB_DIR) run build
 
 .PHONY: build-tokens
-build-tokens:  ## Story 17.1 — generate CSS/TS/Swift/Kotlin/JSON outputs from web/design-system/tokens/tokens.json.
+build-tokens:  ## Stories 17.1 + 48.2 — generate dist/ CSS/TS/JSON and the apps' Tokens.swift / Tokens.kt from web/design-system/tokens/.
 	@echo "==> building design tokens"
 	@node $(WEB_DIR)/design-system/build/build-tokens.mjs
 
 .PHONY: test-tokens
-test-tokens:  ## Story 17.1 — assert the design-tokens build pipeline is green.
+test-tokens:  ## Stories 17.1 + 48.2 — fail on stale Tokens.swift/Tokens.kt, tokens.css drift from the JSON, or text under 4.5:1.
 	@node $(WEB_DIR)/design-system/build/verify-tokens.mjs
 
 # ---------------------------------------------------------------------------

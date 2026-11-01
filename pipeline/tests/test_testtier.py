@@ -6,8 +6,13 @@ honors the same I/O ban + soft-cap contract.
 
 from __future__ import annotations
 
+import os
+import re
 import socket
+import subprocess
+import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -82,3 +87,81 @@ def test_soft_cap_fails_only_a_test_slow_twice() -> None:
     assert not breached(0.55, 0.02, 0.3)  # a stall, then fast: the runner
     assert breached(0.55, 0.5, 0.3)  # slow twice: the test
     assert breached(0.55, None, 0.3)  # the second run failed or did not run
+
+
+_INNER_CONFTEST = """
+import sys
+sys.path.insert(0, {shared!r})
+import maktaba_testtier.softcap as sc
+from maktaba_testtier.softcap import pytest_runtest_protocol  # noqa: F401
+
+sc._platform_scale = lambda *a: 1.0  # hard cap 0.3 s on every OS
+sc._coverage_scale = lambda *a: 1.0
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "unit: unit tier")
+"""
+
+_INNER_TESTS = """
+import os
+import time
+from pathlib import Path
+
+import pytest
+
+RUNS = Path(os.environ["PROBE_RUNS"])
+
+
+@pytest.fixture
+def made(tmp_path):
+    d = tmp_path / "made-by-a-fixture"
+    d.mkdir()  # raises when the fixture is not made afresh
+    yield d
+    (d / "torn-down").write_text("")
+
+
+@pytest.mark.unit
+def test_stalls_once(made, tmp_path):
+    assert made.parent == tmp_path  # a fixture on tmp_path follows the fresh one
+    (tmp_path / "day").mkdir()
+    with open(made / "once", "x"):
+        pass
+    runs = int(RUNS.read_text()) if RUNS.exists() else 0
+    RUNS.write_text(str(runs + 1))
+    if runs == 0:
+        time.sleep(0.5)  # one stall of the runner
+
+
+@pytest.mark.unit
+def test_slow_twice():
+    time.sleep(0.5)
+"""
+
+
+@pytest.mark.integration  # runs a pytest of its own (a second Python process)
+def test_a_slow_test_runs_again_with_fresh_fixtures(tmp_path: Path) -> None:
+    """Over the hard cap, a test runs once more as a whole: its fixtures (``tmp_path``
+    and every one made on it) afresh, so a stall passes with a warning; slow twice fails.
+    Running the call alone again met the first run's files and failed every time."""
+    import maktaba_testtier
+
+    shared = str(Path(maktaba_testtier.__file__).resolve().parents[1])
+    inner = tmp_path / "inner"
+    inner.mkdir()
+    (inner / "conftest.py").write_text(_INNER_CONFTEST.format(shared=shared))
+    (inner / "test_inner.py").write_text(_INNER_TESTS)
+    env = {**os.environ, "PROBE_RUNS": str(tmp_path / "runs")}
+    out = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "-W", "always",
+         "--rootdir", str(inner), str(inner)],
+        cwd=inner, env=env, capture_output=True, text=True, timeout=120,
+    )  # fmt: skip
+    text = out.stdout + out.stderr
+    assert out.returncode == 1, text
+    assert "1 failed, 1 passed" in text, text
+    assert (tmp_path / "runs").read_text() == "2", text  # it did run again
+    assert "test_stalls_once: took" in text and "the runner's load, not the test" in text
+    assert "FAILED test_inner.py::test_slow_twice" in text, text
+    assert re.search(r"test took [\d.]+s > 3x soft cap 0\.100s \(Story 20\.1 AC4\), and "
+                     r"[\d.]+s run again", text), text  # fmt: skip

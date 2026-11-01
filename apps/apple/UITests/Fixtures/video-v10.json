@@ -1,0 +1,21 @@
+{
+ "id": "v10",
+ "library_id": "lib-docs",
+ "path": "/Volumes/Media/Documentaries/manuscripts-of-timbuktu.mkv",
+ "filename": "manuscripts-of-timbuktu.mkv",
+ "title": "Manuscripts of Timbuktu",
+ "description": "The private libraries of a Saharan city.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 2940,
+ "size_bytes": 735000000,
+ "content_hash": "f3380ec76a9471d90ef046348ac7290db92df4edddd2bd6df3f01521497264ad",
+ "created_at": "{{now-86400}}",
+ "updated_at": "{{now-85800}}",
+ "playable": true,
+ "tags": [
+  "history",
+  "manuscripts"
+ ],
+ "latest_transcript_id": "tr-v10"
+}

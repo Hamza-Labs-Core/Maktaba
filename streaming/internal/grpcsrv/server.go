@@ -342,7 +342,7 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			Format:      fmtStr,
 			MasterName:  "master.m3u8",
 			SourceCodec: row.VideoCodec,
-			NoAudio:     row.AudioCodec == "" && row.AudioChannels == 0,
+			NoAudio:     row.NoAudio(), // a track row with no codec is still audio
 			StartSec:    start,
 			Colour:      colour,
 		})

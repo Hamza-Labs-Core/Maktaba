@@ -12,6 +12,28 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **Small posters for phone grids (Epic 48, G4).** `GET /api/videos/{id}/poster?size=small`
+  serves the pipeline's 320 px copy from the thumbnail cache, else the full image, cacheable
+  for an hour like the full one. A viewer without the video's library now gets 404 (as for a
+  missing video) instead of 403, for both sizes.
+- **The server sends codes, not English, for what the admin screens say.** Each TV change
+  check now carries a `code` and `params` beside its English `value` (for example
+  `slot.release_mismatch` for "the staging slot runs another release"), and the move that
+  fails a change carries `report_code`/`report_params`. The home's "cannot take machines"
+  reason carries `roles_reason_code`/`roles_reason_params`. The web, Android Remote and Apple
+  apps say these in English and Arabic, and show the English when they don't know a code
+  (older apps keep reading `value`). Who started an update (`auto`, `manual`, `catch_up`,
+  `retry`) now has words on Android and iPhone, the TV check names have words on the
+  Updates page and in the apps, and the iPhone's Processes screen says the supervisor's
+  `detail_code` in words instead of its English. Only fields were added: TV staging behaves
+  as before.
+- **Android Player: the shell for its sections (Epic 48.15).** Maktaba Player on Android gets
+  Material's adaptive navigation (a bottom bar on a phone or a half-folded foldable on a table,
+  a rail on an open foldable or small tablet, a drawer on a large tablet) for Home, Libraries,
+  Live TV, Search and Profile, each keeping its own screens and scroll position. A section
+  appears only once its screen is built, so for now the app opens on today's Libraries as
+  before. CI now runs the Player's unit and UI tests on a fake home, with dark English and
+  Arabic screenshots checked against references.
 - **Subtitles show on Apple TV, AirPlay and Cast (story 48.4).** A video session's master
   playlist now lists each subtitle file beside the video as an HLS subtitle track (language,
   its own name, off by default). Each track is a one-file playlist over the existing subtitle
@@ -31,6 +53,24 @@ don't append a line here; docs-only PRs are exempt.
   chapters, transcript, marks) and search (results, pages, suggestions, recent), tolerantly: a
   missing row is empty and an unreadable card is left out. A 404 is `NotAvailable`. The test
   fixtures are checked against the API's own response types by a Go test.
+- **MaktabaKit reads Live TV (story 48.7).** The Apple apps' shared kit can read what is on now,
+  the guide for a time window, one channel's guide and logo, and where the TV streams. It
+  plays a channel from the home's network at home, or through a remote session away from home,
+  keeping that session alive and taking each new token without reopening the player. The
+  Player and the Apple TV app will both use it.
+- **One design-token source for web, Apple and Android (Story 48.2).**
+  `web/design-system/tokens/` now holds the shipped Ink & Brass (dark: ink `#0B111C`, brass
+  `#E3B252`) and its light set, plus the apps' surfaces (`raised`, `nav`, `scrim`, `chosen`).
+  `make build-tokens` also writes MaktabaKit's `Tokens.swift` and Android core's `Tokens.kt`
+  (colour pairs, spacing, radii, type sizes). `make test-tokens`, now run by CI's unit job,
+  fails when they are stale, when `web/src/styles/tokens.css` drifts from the JSON, or when a
+  text colour is under 4.5:1 on its surface in light or dark. No screen reads them yet.
+- **Maktaba Player (Apple) has its sections' shell (Epic 48, story 48.13).** It has Home,
+  Libraries, Live TV, Search and Profile in a tab bar on iPhone that becomes a sidebar on
+  iPad, Mac and an open iPhone Duo. A section shows only once its screen has shipped, so
+  today's builds still open straight on the libraries. CI now runs the Player's UI tests,
+  in English and Arabic, on throwaway iPhone and iPad simulators against a mock home, and
+  keeps their screenshots.
 - **The Apple apps speak Arabic.** Maktaba Remote (iPhone, iPad), Maktaba Player (iPhone,
   iPad, Mac) and Maktaba TV (Apple TV) ship in English and Arabic, right to left, on every
   screen: each app has a String Catalog, and MaktabaKit one of its own for the words it makes
@@ -95,6 +135,18 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **A Windows node installs the home's updates even when the Maktaba window is closed.** Until
+  now the window app downloaded and installed each update. The server only tried to open it
+  with a `maktaba://` link, so an update waited until a window could be opened. On 2026-10-31
+  windows-pc's update to v0.3.44 sat waiting for eight hours, while Windows showed "Get an app
+  to open this 'maktaba' link" every 90 seconds. Now the server agent that runs at sign-in
+  (`Maktaba.exe --server-agent`) does it itself:
+  - it downloads the release's installer from that release's own page;
+  - it checks the installer with the app's key, and checks that the signature carries the
+    ordered version and names that very installer;
+  - at the home's go, it runs the installer.
+
+  The server no longer sends the link, and the window app only shows the update.
 - **A channel's stream follows library access (security, Epic 48 story 48.3).** The web
   port's `/stream/channel/{id}/…` checked only that someone was signed in, so a viewer
   limited to some libraries could watch another library's channel by its id. The gate now
@@ -102,6 +154,15 @@ don't append a line here; docs-only PRs are exempt.
   the viewer may not read, or no such channel, is a 403. Admins skip the check; the verdict
   is cached per viewer and channel for 30 s, so segments cost no extra API call; the API not
   answering stays a 502. Video sessions and the admins' staging preview are unchanged.
+- **Resume on Windows starts the server right after it stopped, and three flaky tests are
+  fixed at the root.** The desktop app took an agent that had let go of its lock but was still
+  exiting for a running one, so Resume asked Task Scheduler once, was ignored, and the server
+  stayed stopped. Now only an agent that holds the lock counts as running. The enrich test
+  near midnight now allows exactly the 60 s minimum wait, reads the date before the run, and
+  keeps both runs on one budget day. After one slow run, the unit tier now runs the test again
+  as a whole, with fresh fixtures. Before, it ran only the test body again on the first run's
+  fixtures, met its own files, and failed every time. The retention test also writes fewer
+  files.
 - **A full node's copy of the home's database starts afresh even when a worker hangs.** On
   2026-10-28 a table's first copy was mid-way when the home's database restarted. Its
   connection never dropped, so the worker waited 15 minutes for rows that never came, and

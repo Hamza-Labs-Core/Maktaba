@@ -1,0 +1,125 @@
+{
+ "server_time": "{{now}}",
+ "channel": {
+  "id": "ch-3",
+  "number": 3,
+  "name": "Documentaries",
+  "slug": "documentaries",
+  "logo_url": "/api/channels/ch-3/logo"
+ },
+ "blocks": [
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now-5700}}",
+   "stop": "{{now-2700}}",
+   "title": "The Libraries of Cordoba",
+   "desc": "How a medieval city kept hundreds of thousands of books.",
+   "poster": "/api/videos/v8/poster",
+   "on_air": "The Libraries of Cordoba",
+   "strip_title": "The Libraries of Cordoba"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now-2700}}",
+   "stop": "{{now+300}}",
+   "title": "رحلة إلى مكة",
+   "desc": "فيلم وثائقي عن طريق الحج القديم.",
+   "poster": "/api/videos/v9/poster",
+   "on_air": "رحلة إلى مكة",
+   "strip_title": "رحلة إلى مكة",
+   "is_live": true,
+   "progress": 0.9
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+300}}",
+   "stop": "{{now+3300}}",
+   "title": "Manuscripts of Timbuktu",
+   "desc": "The private libraries of a Saharan city.",
+   "poster": "/api/videos/v10/poster",
+   "on_air": "Manuscripts of Timbuktu",
+   "strip_title": "Manuscripts of Timbuktu"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+3300}}",
+   "stop": "{{now+6300}}",
+   "title": "بيت الحكمة في بغداد",
+   "desc": "فيلم وثائقي عن الترجمة والعلم في بغداد العباسية.",
+   "poster": "/api/videos/v11/poster",
+   "on_air": "بيت الحكمة في بغداد",
+   "strip_title": "بيت الحكمة في بغداد"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+6300}}",
+   "stop": "{{now+9300}}",
+   "title": "Scholars of the Silk Road",
+   "desc": "Travelling scholars between Samarkand and Cairo.",
+   "poster": "/api/videos/v12/poster",
+   "on_air": "Scholars of the Silk Road",
+   "strip_title": "Scholars of the Silk Road"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+9300}}",
+   "stop": "{{now+12300}}",
+   "title": "The Libraries of Cordoba",
+   "desc": "How a medieval city kept hundreds of thousands of books.",
+   "poster": "/api/videos/v8/poster",
+   "on_air": "The Libraries of Cordoba",
+   "strip_title": "The Libraries of Cordoba"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+12300}}",
+   "stop": "{{now+15300}}",
+   "title": "رحلة إلى مكة",
+   "desc": "فيلم وثائقي عن طريق الحج القديم.",
+   "poster": "/api/videos/v9/poster",
+   "on_air": "رحلة إلى مكة",
+   "strip_title": "رحلة إلى مكة"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+15300}}",
+   "stop": "{{now+18300}}",
+   "title": "Manuscripts of Timbuktu",
+   "desc": "The private libraries of a Saharan city.",
+   "poster": "/api/videos/v10/poster",
+   "on_air": "Manuscripts of Timbuktu",
+   "strip_title": "Manuscripts of Timbuktu"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+18300}}",
+   "stop": "{{now+21300}}",
+   "title": "بيت الحكمة في بغداد",
+   "desc": "فيلم وثائقي عن الترجمة والعلم في بغداد العباسية.",
+   "poster": "/api/videos/v11/poster",
+   "on_air": "بيت الحكمة في بغداد",
+   "strip_title": "بيت الحكمة في بغداد"
+  },
+  {
+   "channel_id": "ch-3",
+   "kind": "program",
+   "start": "{{now+21300}}",
+   "stop": "{{now+24300}}",
+   "title": "Scholars of the Silk Road",
+   "desc": "Travelling scholars between Samarkand and Cairo.",
+   "poster": "/api/videos/v12/poster",
+   "on_air": "Scholars of the Silk Road",
+   "strip_title": "Scholars of the Silk Road"
+  }
+ ],
+ "horizon_until": "{{now+86400}}"
+}

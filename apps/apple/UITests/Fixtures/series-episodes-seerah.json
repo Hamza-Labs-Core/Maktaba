@@ -1,0 +1,51 @@
+{
+ "seasons": [
+  {
+   "season": 1,
+   "episodes": [
+    {
+     "video_id": "v3",
+     "season": 1,
+     "episode": 12,
+     "title": "السيرة النبوية، الدرس ١٢",
+     "thumbnail": "/api/videos/v3/poster",
+     "duration_sec": 3305,
+     "progress_pct": 0,
+     "watched": false
+    },
+    {
+     "video_id": "v2",
+     "season": 1,
+     "episode": 11,
+     "title": "السيرة النبوية، الدرس ١١",
+     "thumbnail": "/api/videos/v2/poster",
+     "duration_sec": 2980,
+     "progress_pct": 41.61,
+     "watched": false
+    },
+    {
+     "video_id": "v1",
+     "season": 1,
+     "episode": 10,
+     "title": "السيرة النبوية، الدرس ١٠",
+     "thumbnail": "/api/videos/v1/poster",
+     "duration_sec": 3120,
+     "progress_pct": 100,
+     "watched": true
+    }
+   ]
+  }
+ ],
+ "numbering": "season",
+ "sort": "added",
+ "next_episode": {
+  "video_id": "v2",
+  "season": 1,
+  "episode": 11,
+  "title": "السيرة النبوية، الدرس ١١",
+  "thumbnail": "/api/videos/v2/poster",
+  "duration_sec": 2980,
+  "progress_pct": 41.61,
+  "watched": false
+ }
+}

@@ -33,7 +33,13 @@ type Tunnel struct {
 	// Counters consumed by the bandwidth meter.
 	BytesIn  atomic.Int64
 	BytesOut atomic.Int64
+	// seq orders the tunnels as they were made (tunnelSeq): the later of two attempts
+	// for one slug is the newer connection (Registry.Up)
+	seq uint64
 }
+
+// tunnelSeq numbers the tunnels as they are made.
+var tunnelSeq atomic.Uint64
 
 // FrameConn abstracts the websocket. A test fake injects a pipe.
 type FrameConn interface {
@@ -52,7 +58,7 @@ func WithFlowControl() TunnelOption { return func(t *Tunnel) { t.flow = true } }
 // NewTunnel wires the read loop and returns immediately. Callers must
 // then call Register on the *Registry so the proxy can find it.
 func NewTunnel(serverID, slug string, conn FrameConn, opts ...TunnelOption) *Tunnel {
-	t := &Tunnel{ServerID: serverID, Slug: slug, conn: conn, done: make(chan struct{})}
+	t := &Tunnel{ServerID: serverID, Slug: slug, conn: conn, done: make(chan struct{}), seq: tunnelSeq.Add(1)}
 	for _, o := range opts {
 		o(t)
 	}

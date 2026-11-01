@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- The window behind Compose, until the first frame: the theme's background, no bar. -->
-    <style name="Theme.Maktaba" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">@color/maktaba_background</item>
-        <item name="android:colorAccent">#8A6212</item>
+    <!-- The window behind Compose until the first frame: ink with the logo, in the system's light
+         mode too (FR-2, FR-3: the apps open dark, with no white flash). The picked theme takes
+         over from the first frame. One theme for every mode, so there is no values-night. -->
+    <style name="Theme.Maktaba" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/maktaba_window</item>
+        <item name="android:colorBackground">@color/maktaba_background</item>
+        <item name="android:colorAccent">@color/maktaba_accent</item>
+        <item name="android:statusBarColor">@color/maktaba_background</item>
+        <item name="android:navigationBarColor">@color/maktaba_background</item>
     </style>
-    <color name="maktaba_background">#FFFFFF</color>
+    <!-- MaktabaTokens.Dark.bg and .accent (the generated Tokens.kt): LaunchThemeTest keeps them equal. -->
+    <color name="maktaba_background">#0B111C</color>
+    <color name="maktaba_accent">#E3B252</color>
 </resources>
