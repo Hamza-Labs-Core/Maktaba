@@ -20,17 +20,25 @@ import com.hamzalabs.maktaba.core.ui.SessionGate
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerShell
+import com.hamzalabs.maktaba.player.shell.Route
 import com.hamzalabs.maktaba.player.ui.components.ImageCache
 import com.hamzalabs.maktaba.player.ui.components.LocalHomeImages
+import com.hamzalabs.maktaba.player.video.VideoLink
 
 /** Maktaba Player: a home's sections (the shell) and what plays, on a phone, a foldable or a tablet. */
 class MainActivity : ComponentActivity() {
+    /** A screen a deep link asked for (`maktaba://video/{id}`), until the shell opens it (after sign-in, if need be). */
+    private val link = mutableStateOf<Route?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as PlayerApplication
         // opened by a home's link (maktaba://connect…): the app asks before it connects
-        if (savedInstanceState == null) app.session.openLink(intent?.dataString)
+        if (savedInstanceState == null) {
+            app.session.openLink(intent?.dataString)
+            link.value = VideoLink.route(intent?.dataString)
+        }
         setContent {
             val mode by app.themes.mode.collectAsState()
             var playing by remember { mutableStateOf(false) }
@@ -45,7 +53,7 @@ class MainActivity : ComponentActivity() {
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
                             // the sections (a bar, a rail or a drawer, by the window); hidden while a video plays full screen
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
-                                PlayerShell(immersive = playing)
+                                PlayerShell(immersive = playing, link = link.value, onLinkOpened = { link.value = null })
                             }
                         }
                     }
@@ -57,5 +65,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         (application as PlayerApplication).session.openLink(intent.dataString)
+        VideoLink.route(intent.dataString)?.let { link.value = it }
     }
 }
