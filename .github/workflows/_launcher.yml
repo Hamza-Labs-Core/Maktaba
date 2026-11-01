@@ -222,6 +222,9 @@ jobs:
           said "the service keeps running release 1.2.4"
           /usr/bin/maktaba-launcher --version | grep -q 'v1.2.2'
 
+      - name: rpm for the package check
+        timeout-minutes: 8
+        run: command -v rpm >/dev/null || { sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq rpm; }
       # A pre-release tag's packages (release.yml runs this nfpm.yaml with VERSION
       # 0.3.0-rc.1) carry nfpm's "~" form, 0.3.0~rc.1, which dpkg and rpm order before
       # the release, so apt and dnf upgrade an rc install to it. release.yml writes "."
@@ -230,7 +233,6 @@ jobs:
       - name: A pre-release's .deb and .rpm order before the release
         run: |
           set -euo pipefail
-          command -v rpm >/dev/null || { sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq && sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y -qq rpm; }
           rm -rf pkgroot out-pre && mkdir -p pkgroot out-pre
           for b in maktaba-server maktaba-launcher maktaba-api maktaba-streaming; do
             printf '#!/bin/sh\n' > "pkgroot/$b"
