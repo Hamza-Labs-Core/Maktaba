@@ -16,7 +16,8 @@ struct PlayerContext {
 /// `PlayerRoute`s; choosing the section already chosen takes it back to its first screen.
 ///
 /// Only `PlayerSection.enabled` shows. With one section (Libraries, until the other screens
-/// merge) the app is that screen alone, exactly as before the shell. The half-folded Duo's
+/// merge) the app is that section's stack alone with no tab bar, so Libraries looks exactly
+/// as it did before the shell, and any other single section still opens routes. The half-folded Duo's
 /// hinge split stays the Libraries screen's own (`LibraryBrowser`).
 struct PlayerShell: View {
     let context: PlayerContext
@@ -40,7 +41,8 @@ struct PlayerShell: View {
 
     var body: some View {
         if sections.count == 1, let only = sections.first {
-            root(only)
+            // its stack (and the routes) without a tab bar; Libraries stays its split view
+            stack(only)
         } else {
             tabs
         }

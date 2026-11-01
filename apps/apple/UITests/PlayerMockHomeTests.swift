@@ -134,6 +134,22 @@ final class PlayerMockHomeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 1.4)
     }
 
+    /// A delay keeps only the timing: a delayed `/api/videos` still answers its second page
+    /// for `cursor=c2`, so paging still ends.
+    func testADelayKeepsTheQuerysAnswer() async throws {
+        home.delay("GET", "/api/videos", by: 0.3)
+        let first = try JSONSerialization.jsonObject(with: try await call("GET", "/api/videos").1) as? [String: Any]
+        XCTAssertEqual(first?["next"] as? String, "c2")
+        let started = Date()
+        let last = try JSONSerialization.jsonObject(with: try await call("GET", "/api/videos?cursor=c2").1) as? [String: Any]
+        XCTAssertTrue(last?["next"] is NSNull, "the last page, not the first again")
+        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 0.25, "delayed too")
+        home.reset()
+        let quick = Date()
+        _ = try await call("GET", "/api/videos")
+        XCTAssertLessThan(Date().timeIntervalSince(quick), 0.25, "reset forgets the delay")
+    }
+
     func testTimesAreFilledRelativeToNow() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         XCTAssertEqual(MockHome.fillTimes(#"{"a":"{{now}}","b":"{{now-60}}","c":"{{now+3600}}"}"#, now: now),

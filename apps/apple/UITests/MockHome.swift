@@ -48,6 +48,8 @@ final class MockHome: @unchecked Sendable {
     private var approved = false
     private var log: [Request] = []
     private var stubs: [String: Answer] = [:]
+    /// Latency added to `METHOD /path` after its answer is chosen (`delay`).
+    private var delays: [String: TimeInterval] = [:]
     private let routes: [Route]
     private let fixtures: Bundle
     private(set) var port: UInt16 = 0
@@ -90,16 +92,15 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), delay: delay) }
     }
 
-    /// From now on, `method path` answers its fixture (or what it answered before any
-    /// stub) after `delay` seconds.
+    /// From now on, `method path` (any query) answers as it would anyway, but after `delay`
+    /// seconds. Only the timing is kept here: the answer is still chosen per request, so a
+    /// query (`cursor=c2`) or a stub still decides what comes back.
     func delay(_ method: String, _ path: String, by delay: TimeInterval) {
-        guard var a = fixture(method, path, query: "") else { return }
-        a.delay = delay
-        lock.withLock { stubs["\(method) \(path)"] = a }
+        lock.withLock { delays["\(method) \(path)"] = delay }
     }
 
     /// Forgets every stub and delay.
-    func reset() { lock.withLock { stubs = [:] } }
+    func reset() { lock.withLock { stubs = [:]; delays = [:] } }
 
     /// A fixture's JSON as it is served (times filled in), for a test to compare with.
     func fixture(named name: String) -> String? {
@@ -152,11 +153,19 @@ final class MockHome: @unchecked Sendable {
     }
 
     private func answer(_ r: Request) -> Answer {
-        let (ok, stubbed) = lock.withLock {
+        let (ok, latency) = lock.withLock {
             log.append(r)
-            return (approved, stubs["\(r.method) \(r.path)"])
+            return (approved, delays["\(r.method) \(r.path)"])
         }
-        if let stubbed { return stubbed }
+        var a = resolve(r, approved: ok)
+        if let latency { a.delay = max(a.delay, latency) }
+        return a
+    }
+
+    /// What a request gets, before any `delay`: a stub, the connect and Remote routes, an
+    /// image, the fixture for this path and query, or 404.
+    private func resolve(_ r: Request, approved ok: Bool) -> Answer {
+        if let stubbed = lock.withLock({ stubs["\(r.method) \(r.path)"] }) { return stubbed }
         if let fixed = remote(r.method, r.path, approved: ok) {
             return Answer(status: fixed.0, body: Data(fixed.1.utf8))
         }

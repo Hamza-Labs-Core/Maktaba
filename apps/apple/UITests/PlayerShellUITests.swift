@@ -81,6 +81,16 @@ final class PlayerShellUITests: PlayerUITestCase {
         shot("route-watch")
     }
 
+    /// One section on its own that is not Libraries (no tab bar) still has its stack: a route
+    /// opens on it, as it will when a screen story's section is the only one tested.
+    func testASingleSectionStillOpensRoutes() {
+        launchSignedIn(sections: ["home"], open: "video/v1")
+        XCTAssertTrue(element("screen.video").waitForExistence(timeout: 15), "the route on Home's own stack")
+        XCTAssertFalse(element("player.shell").exists, "one section: no tab bar")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 5), "back to Home")
+    }
+
     /// Arabic: the sections' names from the web's ar.json, laid out right to left.
     func testSectionsInArabic() {
         launchSignedIn("ar", sections: ["all"])
