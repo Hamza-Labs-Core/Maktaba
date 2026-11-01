@@ -135,3 +135,92 @@ func TestRegistry_UnregisterOnlyTheLiveTunnel(t *testing.T) {
 		t.Fatal("the live tunnel was not unregistered")
 	}
 }
+
+// gateStore is a memTunnelStore whose first SetOnline(gate) waits until release is
+// closed (a slow database write); entered is closed as that call starts.
+type gateStore struct {
+	memTunnelStore
+	gate    bool
+	once    sync.Once
+	entered chan struct{}
+	release chan struct{}
+}
+
+func newGateStore(gate bool) *gateStore {
+	return &gateStore{gate: gate, entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (g *gateStore) SetOnline(ctx context.Context, id string, online bool) error {
+	if online == g.gate {
+		first := false
+		g.once.Do(func() { first = true })
+		if first {
+			close(g.entered)
+			<-g.release
+		}
+	}
+	return g.memTunnelStore.SetOnline(ctx, id, online)
+}
+
+// A tunnel is routable only once its server is recorded online: whatever finds the
+// tunnel (the proxy, a test, the dashboard read after it) finds the server online.
+func TestServeTunnels_OnlineBeforeRoutable(t *testing.T) {
+	reg := NewRegistry()
+	store := newGateStore(true)
+	srv := httptest.NewServer(ServeTunnels(reg, store, nil))
+	defer srv.Close()
+
+	c, f := dialAuth(t, srv.URL, AuthPayload{ServerID: "srv-1", Secret: "sek"})
+	defer c.Close()
+	if f.Kind != KindAuthOK {
+		t.Fatalf("kind=%#x", f.Kind)
+	}
+	<-store.entered // recording it online, not done yet
+	if _, err := reg.Lookup("acme"); err == nil {
+		close(store.release)
+		t.Fatal("the tunnel is routable while its server is not yet recorded online")
+	}
+	close(store.release)
+	waitFor(t, "the tunnel", func() bool { _, err := reg.Lookup("acme"); return err == nil })
+	if s := store.states(); len(s) != 1 || !s[0] {
+		t.Fatalf("states when routable: %v", s)
+	}
+}
+
+// The cloud drops a home's tunnel and the home reconnects while the old tunnel's
+// offline is still being written: the server ends online (the old offline never lands
+// after the new online).
+func TestServeTunnels_ReconnectEndsOnline(t *testing.T) {
+	reg := NewRegistry()
+	store := newGateStore(false)
+	srv := httptest.NewServer(ServeTunnels(reg, store, nil))
+	defer srv.Close()
+
+	c1, f := dialAuth(t, srv.URL, AuthPayload{ServerID: "srv-1", Secret: "sek"})
+	defer c1.Close()
+	if f.Kind != KindAuthOK {
+		t.Fatalf("kind=%#x", f.Kind)
+	}
+	waitFor(t, "the tunnel", func() bool { _, err := reg.Lookup("acme"); return err == nil })
+	old, _ := reg.Lookup("acme")
+	old.Close()     // the cloud drops it
+	<-store.entered // its offline is being written
+
+	c2, f := dialAuth(t, srv.URL, AuthPayload{ServerID: "srv-1", Secret: "sek"})
+	defer c2.Close()
+	if f.Kind != KindAuthOK {
+		close(store.release)
+		t.Fatalf("reconnect: kind=%#x", f.Kind)
+	}
+	// where the reconnect's online can land before the old offline, let it (a second
+	// state shows); where it waits its turn none shows, and the bound lets the offline go
+	for end := time.Now().Add(300 * time.Millisecond); len(store.states()) < 2 && time.Now().Before(end); {
+		time.Sleep(5 * time.Millisecond)
+	}
+	close(store.release)
+	waitFor(t, "the reconnected tunnel", func() bool { tun, err := reg.Lookup("acme"); return err == nil && tun != old })
+	waitFor(t, "three states", func() bool { return len(store.states()) == 3 })
+	if s := store.states(); !s[0] || s[1] || !s[2] {
+		t.Fatalf("states: %v, want online, offline, online (the server ends online)", s)
+	}
+}
