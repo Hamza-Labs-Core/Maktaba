@@ -678,7 +678,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
-- 2026-11-01 · story 48.6 agent of `b743b7d4`: MaktabaKit `Browse.swift`, the browse client
+- 2026-11-01 · story 48.6 agent of `b743b7d4`: [#467] MaktabaKit `Browse.swift`, the browse client
   (Home to Profile, not Live, which is 48.7, nor the player's session options, which stay
   `openStream` until 48.23 needs more).
   - Decided: fixtures are real answers. The branch API ran on a scratch Postgres (port 55486,
@@ -846,3 +846,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#453]: https://github.com/Hamza-Labs-Core/Maktaba/pull/453
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#467]: https://github.com/Hamza-Labs-Core/Maktaba/pull/467
