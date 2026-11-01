@@ -3169,7 +3169,7 @@
 		4C1722D29D1BE7CD03890DFE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
@@ -3298,7 +3298,7 @@
 		A3178D3F96AD3E12441C4801 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPhone.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
@@ -3489,7 +3489,7 @@
 		CFC5FD20CE8A157296A1124B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPad.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";
@@ -3658,7 +3658,7 @@
 		F55D674A7E7FCD2954FE6C99 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Remote/Info-iPad.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Maktaba Remote";

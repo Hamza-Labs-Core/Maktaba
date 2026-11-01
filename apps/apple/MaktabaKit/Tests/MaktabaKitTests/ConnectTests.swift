@@ -408,6 +408,43 @@ extension RouteStub.Answer {
             #expect(s.connectProblem == nil && s.phase == .signingIn)
         }
 
+        /// A home saved at an address that never answered never said who it is (no id). While
+        /// it is looked for, the only home on the network is the one: asked there, the entry
+        /// moved, signed in afresh. Two homes on the network: which one cannot be told, none is
+        /// asked until one of them is gone.
+        @Test func aSavedHomeWithNoIdIsFoundAgainAsTheOnlyHomeNearby() async throws {
+            RouteStub.reset()
+            let dead = URL(string: "http://oldname.test:8088")!, lan = URL(string: "http://lan.test:8088")!
+            let neighbour = URL(string: "http://other.test:8088")!
+            let defaults = try saved(Home(url: dead, name: "oldname.test"))
+            let network = FakeDiscovery()
+            let s = launched("test.homes.noid", defaults, discovery: network)
+            s.discover(true)
+            for _ in 0..<100 where s.progress?.step != .lookingNearby { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.progress?.step == .lookingNearby && s.connectProblem == nil)
+            RouteStub.on("GET lan.test/api/discovery/home", .json(200, AgainstAStubHome.discovery))
+            RouteStub.on("GET other.test/api/discovery/home", .json(200, #"{"id":"neighbour","urls":[]}"#))
+            network.announce([HomeBrowser.Found(name: "Studio", url: lan, homeID: "home-1"),
+                              HomeBrowser.Found(name: "Neighbour", url: neighbour, homeID: "neighbour")])
+            try await Task.sleep(for: .milliseconds(100))
+            #expect(s.current == nil && !RouteStub.seen.contains { $0.route.contains("lan.test") || $0.route.contains("other.test") }, "two homes: none is asked")
+            network.announce([HomeBrowser.Found(name: "Studio", url: lan, homeID: "home-1")])
+            for _ in 0..<100 where s.current == nil { try await Task.sleep(for: .milliseconds(20)) }
+            #expect(s.current?.url == lan && s.homes.count == 1, "the same entry, moved")
+            #expect(s.homes.first?.homeID == "home-1", "and now it knows who it is")
+            #expect(s.connectProblem == nil && s.phase == .signingIn)
+        }
+
+        @Test func aHomeWithNoIdMatchesOnlyALoneAnnouncement() {
+            let a = HomeBrowser.Found(name: "A", url: URL(string: "http://a.test:8088")!, homeID: "a")
+            let b = HomeBrowser.Found(name: "B", url: URL(string: "http://b.test:8088")!, homeID: "b")
+            #expect(AppSession.announced(nil, in: [a], besides: []) == a.url)
+            #expect(AppSession.announced(nil, in: [a, b], besides: []) == nil)
+            #expect(AppSession.announced(nil, in: [a], besides: [a.url]) == nil, "already asked there")
+            #expect(AppSession.announced(nil, in: [], besides: []) == nil)
+            #expect(AppSession.announced("B", in: [a, b], besides: []) == b.url, "an id still picks by id")
+        }
+
         /// Not announced while it is looked for: why, and Retry. Announced later: asked there.
         @Test func aSavedHomeNotAnnouncedSaysWhyThenIsAskedWhenItIs() async throws {
             RouteStub.reset()
