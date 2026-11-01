@@ -721,6 +721,22 @@ Append here: date, session, one to five lines on what changed. Newest last.
     Apple Player's iOS picture is SwiftUI `VideoPlayer` (no PiP); CI builds the Apple apps but
     runs no UI tests, and runs no Android Player tests.
   - Waiting on the owner: review [#458] (not merged), and its five open questions.
+- 2026-10-31 · Story 48.2 agent of `b743b7d4`: [#462], one token source. `tokens.json` /
+  `tokens.dark.json` now hold the shipped Ink & Brass (values copied from
+  `web/src/styles/tokens.css`, which stays hand-written and is what the web ships), plus
+  `accent-fg`, `accent-text`, `accent-soft`, `border`, `running`, `info`, `type.size.*`,
+  `spacing.5`, and the apps-only `raised`, `nav`, `scrim`, `chosen`. `build-tokens.mjs` also
+  writes `MaktabaKit/Tokens.swift` (`MaktabaTokens.Colors.*` as 0xRRGGBBAA light/dark pairs
+  with a dynamic SwiftUI `.color`) and core's `ui/Tokens.kt` (`MaktabaTokens.Light/Dark`,
+  Compose `Color`/`dp`/`sp`). CI's unit job runs `make test-tokens`: `--check` stale test,
+  CSS parity, contrast on 70 text/surface pairs, and self-tests that each check catches a bad
+  input.
+  - Decided: generate, not replace, `tokens.css` (its glass/art/shadow values are web-only
+    and a swap would touch every screen); light `raised` is `#FFFDF8`, because `#F8EFDB` put
+    light `running` text at 4.38:1. `scrim` is not contrast-checked: its text sits on the
+    library art, which 48.10 / 48.11 check in screenshots.
+  - Gotcha: a MaktabaKit test suite named `Tokens` clashes with an existing one (keychain
+    tests); it is `DesignTokens`.
 - 2026-11-01 · story 48.6 agent of `b743b7d4`: [#467] MaktabaKit `Browse.swift`, the browse client
   (Home to Profile, not Live, which is 48.7, nor the player's session options, which stay
   `openStream` until 48.23 needs more).
@@ -728,7 +744,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
     a viewer of one library of two, seeded series, chapters, transcript, playlist, search),
     recorded by a script as that viewer into `MaktabaKit/Tests/Fixtures/Browse/` (outside the
     test target, read by `#filePath`, so `Package.swift`, owned by 48.10, is untouched). A Go
-    test (`browse/native_fixtures_test.go`) decodes them into the handlers' types with unknown
+    test (`browse/native_fixtures_apple_test.go`) decodes them into the handlers' types with unknown
     fields refused, so renaming a field fails in the PR that renames it.
   - Decided: `send` and `sendRaw` in `APIClient.swift` lost `private` (an extension in another
     file needs them; 48.7 needs the same two-word change, which git merges cleanly).
@@ -998,6 +1014,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#454]: https://github.com/Hamza-Labs-Core/Maktaba/pull/454
 [#460]: https://github.com/Hamza-Labs-Core/Maktaba/pull/460
 [#458]: https://github.com/Hamza-Labs-Core/Maktaba/pull/458
+[#462]: https://github.com/Hamza-Labs-Core/Maktaba/pull/462
 [#467]: https://github.com/Hamza-Labs-Core/Maktaba/pull/467
 [#470]: https://github.com/Hamza-Labs-Core/Maktaba/pull/470
 [#468]: https://github.com/Hamza-Labs-Core/Maktaba/pull/468
