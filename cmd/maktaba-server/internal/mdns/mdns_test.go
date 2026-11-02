@@ -3,8 +3,6 @@ package mdns
 import (
 	"strings"
 	"testing"
-
-	"github.com/grandcat/zeroconf"
 )
 
 func TestPortFromListen(t *testing.T) {
@@ -89,7 +87,7 @@ func TestAdvertiseTXTForTheHomePicker(t *testing.T) {
 // TC2 of story 35.11: the home publishes once, with schema_rev and join.
 func TestAdvertiseHomeSinglePublisher(t *testing.T) {
 	calls := 0
-	p := &Publisher{register: func(_, _, _ string, _ int, _ []string) (*zeroconf.Server, error) {
+	p := &Publisher{register: func(_, _, _ string, _ int, _ []string) (announcement, error) {
 		calls++
 		return nil, nil
 	}}
@@ -110,7 +108,7 @@ func TestAdvertiseHomeSinglePublisher(t *testing.T) {
 // TC3 of story 35.11: a new version re-publishes; the same machine does not.
 func TestAdvertiseRepublishOnVersionChange(t *testing.T) {
 	calls := 0
-	p := &Publisher{register: func(_, _, _ string, _ int, _ []string) (*zeroconf.Server, error) {
+	p := &Publisher{register: func(_, _, _ string, _ int, _ []string) (announcement, error) {
 		calls++
 		return nil, nil
 	}}
