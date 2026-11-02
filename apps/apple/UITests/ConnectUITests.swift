@@ -39,13 +39,11 @@ final class ConnectUITests: XCTestCase {
     func testTypedAddressThenSignInByCode() {
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText("ftp://nothing")
+        field.typeExactly("ftp://nothing", in: app)
         app.buttons["picker.connect"].tap()
         XCTAssertTrue(element("picker.problem").waitForExistence(timeout: 5), "not an address")
 
-        field.tap()
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20) + home.url)
+        field.typeExactly(home.url, in: app) // it clears what was typed first
         app.buttons["picker.connect"].tap()
 
         let byCode = app.buttons["With a code"]
@@ -111,8 +109,7 @@ final class ConnectUITests: XCTestCase {
     private func signInByCode() {
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(home.url)
+        field.typeExactly(home.url, in: app)
         app.buttons["picker.connect"].tap()
         let byCode = app.buttons["With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10))

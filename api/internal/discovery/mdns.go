@@ -5,8 +5,6 @@ import (
 	"errors"
 	"sort"
 	"sync"
-
-	"github.com/grandcat/zeroconf"
 )
 
 // ZeroconfPublisher is the production Publisher (Epic 31 design §2): it
@@ -16,7 +14,7 @@ import (
 // re-registers.
 type ZeroconfPublisher struct {
 	mu     sync.Mutex
-	server *zeroconf.Server
+	server announcement
 	last   Service
 }
 

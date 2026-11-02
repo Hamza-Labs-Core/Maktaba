@@ -10,6 +10,14 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Mac running Maktaba no longer gets renamed on the network** ("Mahmouds-Mac-Studio-2.local").
+  Each Maktaba process answered for the Mac's own Bonjour name alongside macOS, which macOS treats
+  as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder
+  (`dns-sd`), which publishes the service only. A renamed Mac can take its name back in System
+  Settings → General → Sharing → Local hostname.
+
 ### Security
 
 - **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is

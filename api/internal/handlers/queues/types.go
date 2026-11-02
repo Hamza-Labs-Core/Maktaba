@@ -98,12 +98,15 @@ type StageInfo struct {
 	Paused         bool       `json:"paused"`
 	PausedAt       *time.Time `json:"paused_at"`
 	PausedBy       *string    `json:"paused_by"`
-	DebounceSec    int        `json:"debounce_sec"`
-	Edges          []Edge     `json:"edges"`
-	MayRequest     []string   `json:"may_request"`
-	EntryFor       []string   `json:"entry_for"`
-	FedBy          []string   `json:"fed_by"`
-	GraphSyncedAt  *time.Time `json:"graph_synced_at"`
+	// PausedByName is the username behind a paused_by of "user:<id>" (an admin's
+	// pause), so the Queues page can say who paused the stage; nil otherwise.
+	PausedByName  *string    `json:"paused_by_name"`
+	DebounceSec   int        `json:"debounce_sec"`
+	Edges         []Edge     `json:"edges"`
+	MayRequest    []string   `json:"may_request"`
+	EntryFor      []string   `json:"entry_for"`
+	FedBy         []string   `json:"fed_by"`
+	GraphSyncedAt *time.Time `json:"graph_synced_at"`
 	// Extension names the optional extension owning this stage (nil = core).
 	Extension *string `json:"extension"`
 }

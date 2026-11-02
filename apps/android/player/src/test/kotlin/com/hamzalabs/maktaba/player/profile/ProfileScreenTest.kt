@@ -20,7 +20,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -43,6 +43,7 @@ import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.info
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.AppScreens
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
@@ -72,6 +73,9 @@ import org.robolectric.annotation.Config
 @Config(qualifiers = "w411dp-h891dp")
 class ProfileScreenTest {
     @get:Rule(order = 0) val home = FakeHome()
+    // v2: a call the fake home answers resumes on the test's main thread, never on OkHttp's.
+    // The v1 rule resumed it on the thread that answered, so a list changed there and
+    // Compose redrew off the main thread (CalledFromWrongThreadException, now and then).
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
     private val app: Application get() = ApplicationProvider.getApplicationContext()
@@ -90,13 +94,13 @@ class ProfileScreenTest {
     }
 
     private fun waitFor(text: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun gone(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty() }
 
     /** The first page's row [tag], scrolled into view. */
     private fun row(tag: String): SemanticsNodeInteraction {
@@ -177,7 +181,7 @@ class ProfileScreenTest {
         gone("history-v2")
         compose.onNodeWithTag("history-v1").assertExists()
         compose.onNodeWithTag("history-v4").assertExists()
-        compose.waitUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/history/v2" } }
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/history/v2" } }
     }
 
     @Test
@@ -187,7 +191,7 @@ class ProfileScreenTest {
         row("profile-history").performClick()
         waitForTag("history-v2")
         compose.onNodeWithTag("history-remove-v2").performClick()
-        compose.waitUntil(5_000) { home.requests.any { it.method == "DELETE" } }
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" } }
         waitForTag("history-v2")
     }
 

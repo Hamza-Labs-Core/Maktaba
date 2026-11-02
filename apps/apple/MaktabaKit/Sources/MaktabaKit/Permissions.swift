@@ -303,7 +303,10 @@ public final class PermissionsModel {
     /// The model an app uses. Debug builds take `-maktaba-permissions-reset` (forget the
     /// "seen" and "asked" flags) and `-maktaba-permissions-fake granted|denied|unknown`
     /// (a scripted browse) from the launch arguments, for the UI tests.
-    public static func forThisApp(arguments: [String] = CommandLine.arguments) -> PermissionsModel {
+    /// The host of in-process tests (`TestLaunch`) gets the "granted" script too: it may not
+    /// browse the real network.
+    public static func forThisApp(arguments: [String] = CommandLine.arguments,
+                                  environment: [String: String] = ProcessInfo.processInfo.environment) -> PermissionsModel {
         #if DEBUG
         if arguments.contains("-maktaba-permissions-reset") {
             UserDefaults.standard.removeObject(forKey: seenKey)
@@ -311,6 +314,10 @@ public final class PermissionsModel {
         }
         if let i = arguments.firstIndex(of: "-maktaba-permissions-fake"), i + 1 < arguments.count,
            let fake = ScriptedProbe(named: arguments[i + 1]) {
+            let quick = Timing(check: LocalNetworkVerdict(grace: .milliseconds(300), timeout: .seconds(2)), request: .seconds(2))
+            return PermissionsModel(probe: fake, timing: quick)
+        }
+        if TestLaunch.scriptsTheNetwork(arguments: arguments, environment: environment), let fake = ScriptedProbe(named: "granted") {
             let quick = Timing(check: LocalNetworkVerdict(grace: .milliseconds(300), timeout: .seconds(2)), request: .seconds(2))
             return PermissionsModel(probe: fake, timing: quick)
         }

@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "The home-screen name: short, so iOS shows it whole",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ريموت"
+          }
+        }
+      }
+    },
     "NSCameraUsageDescription" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {

@@ -12,7 +12,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -22,6 +22,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.MainActivity
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.Route
 import com.hamzalabs.maktaba.player.ui.components.PictureState
 import org.junit.Assert.assertEquals
@@ -55,15 +56,15 @@ class VideoScreenTest {
     }
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitForText(text: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun back() = compose.activityRule.scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }
 
     private fun posterState(state: PictureState) =
-        compose.waitUntil(5_000) {
+        compose.settledUntil(5_000) {
             compose.onAllNodes(hasTestTag("video-poster") and SemanticsMatcher.expectValue(PosterStateKey, state)).fetchSemanticsNodes().isNotEmpty()
         }
 
@@ -129,14 +130,14 @@ class VideoScreenTest {
         open("v1")
         waitForTag("video-favorite")
         compose.onNodeWithTag("video-favorite").assertIsNotSelected().performClick()
-        compose.waitUntil(5_000) { videos.favorite }
+        compose.settledUntil(5_000) { videos.favorite }
         compose.onNodeWithTag("video-favorite").assertIsSelected()
         val favorite = fake.requests.last { it.url.encodedPath == "/api/me/favorites" }
         assertEquals("POST", favorite.method)
         assertEquals("""{"video_ids":["v1"],"favorite":true}""", favorite.body?.utf8())
 
         compose.onNodeWithTag("video-watched").assertIsNotSelected().performClick()
-        compose.waitUntil(5_000) { videos.watched }
+        compose.settledUntil(5_000) { videos.watched }
         compose.onNodeWithTag("video-watched").assertIsSelected()
         // watched: the home starts it over, so Play, not Resume
         waitForTag("video-play")
@@ -147,14 +148,14 @@ class VideoScreenTest {
         compose.onNodeWithTag("video-play").performClick()
         waitForTag("watch")
         back()
-        compose.waitUntil(5_000) { count("/api/me/videos/v1") > reads }
+        compose.settledUntil(5_000) { count("/api/me/videos/v1") > reads }
         waitForTag("video-favorite")
         compose.onNodeWithTag("video-favorite").assertIsSelected()
         compose.onNodeWithTag("video-watched").assertIsSelected()
 
         // and off again
         compose.onNodeWithTag("video-favorite").performClick()
-        compose.waitUntil(5_000) { !videos.favorite }
+        compose.settledUntil(5_000) { !videos.favorite }
         compose.onNodeWithTag("video-favorite").assertIsNotSelected()
     }
 
