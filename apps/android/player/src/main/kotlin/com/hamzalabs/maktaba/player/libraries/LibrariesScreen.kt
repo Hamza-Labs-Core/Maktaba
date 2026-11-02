@@ -8,11 +8,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -31,7 +29,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,7 +54,7 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.LibrarySummary
 import com.hamzalabs.maktaba.core.api.SeriesItem
 import com.hamzalabs.maktaba.core.layout.HingeSplit
-import com.hamzalabs.maktaba.core.layout.ListPaneWidth
+import com.hamzalabs.maktaba.core.layout.ListDetailSplit
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.ui.AccountMenu
@@ -80,9 +77,11 @@ import kotlinx.coroutines.launch
 // The Libraries section (story 48.27, FR-14 to FR-17): the libraries and every series, a library's
 // page, a series' page. The layout follows the window (FR-8, core/layout/Panes.kt):
 // - one pane (a phone, a foldable folded): the grid; a library or series is pushed on the stack;
-// - 600 dp and wider: the list beside the chosen library's or series' page;
-// - half folded: split at the hinge, the page on the first half (looked at), the list on the
-//   second (touched).
+// - 600 dp and wider: the list beside the chosen library's or series' page, the divider dragged
+//   to give either more room;
+// - half folded like a book: split at the hinge, the list on the start page, the page on the other;
+// - half folded on a table: the page on the upright half (looked at), the list on the flat one
+//   (touched).
 
 /** The layout the section uses; null reads the window (tests give a hinge the JVM cannot fold). */
 internal val LocalLibrariesPanes = staticCompositionLocalOf<Panes?> { null }
@@ -105,12 +104,20 @@ fun LibrariesScreen(nav: PlayerNavigator) {
                     is Chosen.Series -> nav.open(Route.Series(c.id))
                 }
             })
-            Panes.ListDetail -> Row(Modifier.fillMaxSize()) {
-                RootList(state, home.client, grid = false, chosen = state.shown, onOpen = { state.chosen = it }, Modifier.width(ListPaneWidth).fillMaxHeight())
-                VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Box(Modifier.weight(1f).fillMaxHeight().testTag("libraries-detail")) { Detail(state, nav) }
-            }
-            is Panes.Tabletop, is Panes.Book -> HingeSplit(
+            // the divider between them can be dragged (core/layout/ListDetailSplit.kt)
+            Panes.ListDetail -> ListDetailSplit(
+                key = "libraries",
+                list = { RootList(state, home.client, grid = false, chosen = state.shown, onOpen = { state.chosen = it }, Modifier.fillMaxSize()) },
+                detail = { Box(Modifier.fillMaxSize().testTag("libraries-detail")) { Detail(state, nav) } },
+            )
+            // held like a book: the list on the start page (beside the rail), the page on the other
+            is Panes.Book -> HingeSplit(
+                panes,
+                first = { RootList(state, home.client, grid = false, chosen = state.shown, onOpen = { state.chosen = it }) },
+                second = { Box(Modifier.fillMaxSize().testTag("libraries-detail")) { Detail(state, nav) } },
+            )
+            // on a table: the page on the upright half (looked at), the list on the flat one (touched)
+            is Panes.Tabletop -> HingeSplit(
                 panes,
                 first = { Box(Modifier.fillMaxSize().testTag("libraries-detail")) { Detail(state, nav) } },
                 second = { RootList(state, home.client, grid = false, chosen = state.shown, onOpen = { state.chosen = it }) },

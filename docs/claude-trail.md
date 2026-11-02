@@ -1140,6 +1140,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+[#523]: https://github.com/Hamza-Labs-Core/Maktaba/pull/523
 [#524]: https://github.com/Hamza-Labs-Core/Maktaba/pull/524
 
 ## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
@@ -1184,6 +1185,16 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - The PR's first CI run (before main was merged in) failed for reasons outside this change. Mac PlayerMacMenuUITests:155 and Android LibrariesSectionTest were fixed by #510 and #508. The iPhone/iPad accessibility audits also failed (Libraries, Profile, Search). On the iPad run, `PlayerSignInKeyboardUITests` passed.
 - A local run of `LibrariesScreenshotTest.tabletEnglish` timed out once, under load from a parallel Xcode build. It passed on the re-run. Unrelated (FakeHome settling, #510).
 
+## 2026-11-02 — Android Player: a collapsible rail, a draggable list-detail divider, half-fold layouts ([#523])
+
+- Owner's report: on a foldable open flat (sideways, 841 dp) and a big tablet, Libraries showed a permanent 360 dp drawer, the list (380 dp) and the videos squeezed to ~100 dp. Cause: `navigationFor` gave expanded windows `NavigationDrawer`, and the list had a fixed 380 dp.
+- Decided: expanded windows and a book-held foldable get a collapsible rail (`shell/CollapsibleRail.kt`, material3 1.4.0's `WideNavigationRail`, no upgrade needed). It is 96 dp of icons and expands over the content (modal, with a scrim: chosen over push so the content never reflows). The menu button or a mouse hover opens it; choosing, a tap outside, Back or the mouse leaving close it. Compact and tabletop keep the bar, medium keeps the rail.
+- Decided: `core/layout/ListDetailSplit` is a draggable divider. List min 240, page min 320, default list 380 but at most 40 %. It has a 48 dp handle, TalkBack widen/narrow actions and arrow keys, and is mirrored in RTL. Kept in saved state and in SharedPreferences `maktaba.splits`. Used by Libraries and the Remote.
+- Decided (owner's follow-up "you do nothing on half fold in regard to nav"): in book posture the rail and the list sit on the start page and the list ends at the hinge. The split is the hinge (no drag handle: any other split puts a pane under it), and the expanded rail is capped to the start page. In tabletop, the page is on top and the list and bar on the bottom; non-splitting screens keep to the top half (`OffTheHinge` in PlayerShell). The shell passes its adaptive info down (`LocalAdaptiveInfo`), so tests fake hinges through `WindowAdaptiveInfo` (`harness.folded`).
+- Failed first: (1) the rail's Back didn't win over a section's Back. A BackHandler that is always composed keeps its old registration order; it is now composed only while open. (2) Swapping between NavigationSuiteScaffold and the rail frame recomposed the screens, and a live channel going full screen restarted. Both now share one tree. (3) The rail's IconButton was 40 dp, and HomeScreenTest's accessibility audit caught it.
+- Gotcha: `recordRoborazziDebug` rewrites every PNG, even unchanged ones (byte noise). Re-record only the tests that `verifyRoborazziDebug` fails. The before shots for the PR body live on the branch `screenshots/android-rail-before`.
+- Not verified on a real foldable or tablet, and no emulator run. Open: in book posture, Home/Search (screens that don't split) still span both pages.
+- CI failed the first push (run 41472993431): four LayoutScreenshotTest pictures had the library page scrolled down a row. That was unsettled content, not fonts or a layout bug. The hub rows can land after the first videos, and the grid then keeps the first video in view (scroll anchoring), so the picture depended on the order the answers arrived in. The test now waits for idle and scrolls the page to its top before each capture; the goldens are re-recorded and the tolerance is unchanged. The jump itself is still in `LibraryPage` (the rows can end up above the view on a slow home): a follow-up for that screen.
 ## 2026-11-02 — CI runs what a change touches (ci/run-what-changed)
 
 - Owner: "ci should only run if the change touches it". An Android-only PR ran pipeline integration, Go replica, e2e and all nine Player UI shards; a Remote rename ran the Player UI tests.
@@ -1205,6 +1216,12 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - the Queues API adds `paused_by_name`, and the web card and queue page say who paused a stage and when (English and Arabic)
 - Fairness: stride scheduling per pool (`claim_shares`, `engine/claim.py`) between priority classes, not stages. Each stage's head is due at `GREATEST(class pass + priority, pool clock)`, and the claim takes the head due first. Equal priorities stay in id order across stages. A first cut kept a share per stage, which round-robined equal stages, split fp_gate's batch and ran detect 4 times (`test_fingerprint_flow` seed 2, CI integration). Priority ≤ 50 (Process now) still goes first, strictly. 900 vs 100 gets 1 claim in 9. The new partial index `processing_jobs_claimable_idx` brought a claim with 203k claimable rows from 64 ms to 0.3–0.8 ms. Legacy `claim_one` (non-pool mode) is unchanged: it has a semaphore per stage, so no cross-stage starvation.
 - Live state: unchanged by this session. Extract resumes when a release with slot 0172 is installed (the owner tags and moves it live). Check `index` and `chapter_infer` then too: if they are still hand-paused, 0172 resumes them as well.
+
+## 2026-11-02 — extract writes no WAV on a streaming backend
+
+- Live: 1,323 extract jobs waiting (847 pending, 476 paused), stage paused by hand; each would write `~/.maktaba/cache/audio/<hash>.wav` (~115 MB/h) that nothing reads: the engine's transcribe decodes off the share, and the configured backend (`whisper-mlx`) streams.
+- Owner's call: code only, no migration. `extract_handler` asks `stt.transcribe.configured_backend_requires_file()` (backend name resolved as `default_select_backend` does; true only for a class with `requires_file = True`, today `openai-api`). Streaming: `commit_extract_skipped` (no ffmpeg, no file, no `audio_cache` row, no `last_extracted_at`), FSM `PROBED -> AUDIO_EXTRACTED` and the TRANSCRIBE enqueue as after a real extract, except the enqueue is left out when transcription is already handled (active transcript or live transcribe job, the #267 rule), logs `extract_skipped_streaming_backend`. So 0172 resuming the stage is harmless: the backlog finishes in ms.
+- Follow-up PR (not done): drop the probe→extract edge and probe's eager enqueue, transcribe requests extract via `may_request` when a backend needs a file, delete orphaned WAVs. Note for it: `--no-engine` mode chains probe→extract→legacy transcribe_handler, which reads `audio_cache`; on a streaming backend that handler now finds no artifact.
 
 ## 2026-11-02 — test_a_corrupt_input_fails_at_once got 'done': random bytes aren't always corrupt
 
