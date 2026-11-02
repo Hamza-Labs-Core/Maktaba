@@ -7,6 +7,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -54,6 +55,10 @@ class LayoutScreenshotTest {
         compose.settledUntil(10_000) { exists("section-Libraries") }
         compose.onNodeWithTag("section-Libraries").performClick()
         compose.settledUntil(10_000) { exists("libraries-detail") && exists("video-v1") }
+        // the hub's rows can land after the videos, and the grid then keeps the first video in
+        // view (scrolled down a row): every picture shows the page from its top
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-grid").performScrollToIndex(0)
     }
 
     private fun shoot(name: String) {
