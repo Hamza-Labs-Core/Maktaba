@@ -36,9 +36,6 @@ const (
 
 var (
 	repoRe = regexp.MustCompile(`^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$`)
-	// tagRe: vMAJOR.MINOR.PATCH with an optional prerelease suffix. Anything else
-	// (refs with slashes, spaces, …) never reaches the SAN.
-	tagRe = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$`)
 )
 
 // Identity is the pinned signer of a release: the release workflow of one
@@ -91,9 +88,6 @@ func (id Identity) RepoURI() string { return "https://github.com/" + id.Repo() }
 func (id Identity) SAN(tag string) string {
 	return id.RepoURI() + "/" + WorkflowPath + "@refs/tags/" + tag
 }
-
-// ValidTag reports whether tag is a release tag Verify accepts.
-func ValidTag(tag string) bool { return tagRe.MatchString(tag) }
 
 func (id Identity) certificateIdentity(tag string) (verify.CertificateIdentity, error) {
 	san, err := verify.NewSANMatcher(id.SAN(tag), "")
