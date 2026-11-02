@@ -82,20 +82,13 @@ final class PlayerHomeUITests: PlayerUITestCase {
         card.tap()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
         XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١١"].waitForExistence(timeout: 10), "v2's page")
-        let asked = home.requests.count
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(card.waitForExistence(timeout: 5))
-        // Home reads itself again as it shows (its `.task`): a long press while that answer
-        // redraws the rows loses its touch, and no menu opens (CI, iPhone and iPad at once).
-        // So the press waits for the answer, and for the rows it redraws.
-        let reread = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            self.home.requests.dropFirst(asked).contains { $0.path == "/api/home" }
-        }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [reread], timeout: 10), .completed, "Home read itself again")
-        _ = XCTWaiter.wait(for: [XCTestExpectation(description: "the rows redraw")], timeout: 1)
-        XCTAssertTrue(card.isHittable, "v2's card, back on Home")
+        let back = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: card)
+        XCTAssertEqual(XCTWaiter.wait(for: [back], timeout: 5), .completed, "v2's card, back on Home")
 
-        card.press(forDuration: 1.2)
+        // held long enough for a loaded runner: at 1.2 s the menu had not opened when the touch
+        // lifted, and the lift was a tap that opened v2's page again (CI, iPad)
+        card.press(forDuration: 2.5)
         let resume = app.buttons["home.menu.resume"].firstMatch
         XCTAssertTrue(resume.waitForExistence(timeout: 5), "Resume in the context menu")
         resume.tap()

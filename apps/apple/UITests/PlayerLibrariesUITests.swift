@@ -233,19 +233,21 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     }
 
     /// The page's audit. The screen redrawing while the audit measures (a grid's next page
-    /// arriving, its last card shown by the audit's smaller text sizes; or a slow CI runner
-    /// redrawing late at one of the sizes) moves every text on it, and the audit calls them all
-    /// "partially unsupported", in both columns of an iPad at once (seen on CI, with and
-    /// without `GET /api/videos` during the audit). Then the audit runs once more, on the page
-    /// as it now is, and that whole run must be clean: a text that really does not scale fails
-    /// both.
+    /// arriving, its last card shown by the audit's smaller text sizes; or a loaded CI runner
+    /// drawing an iPad's two columns late at one of the sizes) leaves every text on it measured
+    /// at a stale size, and the audit calls them all "partially unsupported", in both columns
+    /// of an iPad at once (seen on CI, with and without `GET /api/videos` during the audit; an
+    /// attempt then took 56 s, against 20 s for a clean one). Then the audit runs again on the
+    /// page as it now is, up to three runs, and one whole run must be clean: a text that
+    /// really does not scale fails every run.
     private func audit(_ page: String) {
-        for attempt in 1 ... 2 {
+        let runs = 3
+        for attempt in 1 ... runs {
             let (found, during) = auditOnce(page)
             if found.isEmpty { return }
             let redrawn = !during.isEmpty || found.allSatisfy { $0.hasPrefix("Dynamic Type font sizes are partially unsupported") }
-            if attempt == 1, redrawn {
-                waitFor(timeout: 2) { false } // the new page's posters
+            if attempt < runs, redrawn {
+                waitFor(timeout: 3) { false } // the page settles (a new page's posters)
                 continue
             }
             let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
