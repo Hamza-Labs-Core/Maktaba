@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -166,3 +167,34 @@ async def test_a_worker_without_the_share_never_checks_it(
     assert "queue-health" not in names
     assert failure_policy._share_probes is False
     assert {"worker-hb", "stage-selection", "reconciler"} <= set(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("closed", [False, True], ids=["open", "closed"])
+async def test_a_transaction_cancelled_in_its_begin_leaves_none_open(
+    tmp_path: Path, closed: bool
+) -> None:
+    """SQLite: aiosqlite runs a queued BEGIN even when its caller is cancelled. The
+    transaction is rolled back before the cancel goes on, and the cancel stays a cancel
+    when the connection was closed meanwhile (a loop that catches errors would otherwise
+    never stop)."""
+    db = await Database.connect(f"sqlite:///{tmp_path / 'c.db'}")
+    try:
+
+        async def tx() -> None:
+            async with db.transaction():
+                raise AssertionError("never reached: cancelled in the BEGIN")
+
+        task = asyncio.create_task(tx())
+        await asyncio.sleep(0)  # the BEGIN is queued, the task waits for it
+        task.cancel()
+        if closed:  # the shutdown race: the connection closes behind the queued BEGIN
+            await db._conn.close()  # noqa: SLF001
+        await asyncio.wait({task}, timeout=10.0)
+        assert task.cancelled()
+        if not closed:
+            assert not db._conn.in_transaction  # noqa: SLF001
+            await db.execute("CREATE TABLE t (x INTEGER)")  # autocommit works again
+            assert await db.fetchval("SELECT count(*) FROM t") == 0
+    finally:
+        await db.close()
