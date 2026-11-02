@@ -9,11 +9,11 @@ import org.junit.Assert.assertTrue
 /**
  * Waits up to [timeoutMs] for [check], letting the app settle before each look.
  *
- * A bare `waitUntil` only polls: under Robolectric the test runs on the main thread, and an
- * answer from the fake home that lands after the last idle (OkHttp resumes the screen's
- * coroutine on its own thread) is not applied to the screen until something idles the main
- * looper. On a busy runner nothing does for the whole timeout, and the screen stays on its
- * spinner with the answer in hand. `waitForIdle()` in each poll applies it.
+ * The tests use the v2 compose rules, whose test dispatcher queues the screens' coroutine
+ * work for the test's main thread (the v1 rules ran it unconfined: an answer from the fake
+ * home resumed the screen on OkHttp's thread and wrote its state from there, and on a busy
+ * runner the screen could stay on its spinner with the answer in hand). Queued work runs
+ * when the app is settled, so each look settles first; a bare `waitUntil` only polls.
  *
  * Not for waits on something that goes away by itself (controls that hide after a delay):
  * settling advances the clock, and the thing can come and go between two looks.
