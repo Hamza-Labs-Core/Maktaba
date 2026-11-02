@@ -29,9 +29,69 @@ class PlayerUITestCase: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
+        try warmUpOnce()
         home = try MockHome()
         try home.start()
         app = XCUIApplication()
+    }
+
+    // MARK: the simulator's first launches
+
+    /// Whether this test process has signed in once already (`warmUpOnce`).
+    private static var warmedUp = false
+
+    /// The simulator's first launches of the app under XCTest, paid once per test process,
+    /// before its first test.
+    ///
+    /// Each CI shard runs on a simulator made for it. Its first launch under XCTest sets up
+    /// the automation session (13 to 36 s on CI, 2 s at every later launch), and for a minute
+    /// or two after it the app answers each query slowly: a snapshot of the app took 14 to
+    /// 31 s, and the shell drew 70 s after sign-in. The first test of a shard bore all of it:
+    /// `PlayerLibrariesUITests.testAccessibilityAudit`, first in its shard, failed on its
+    /// page's 20 s wait ("en root") and on the audit's own deadline ("Audit failed to complete
+    /// in time"), on iPhone and iPad, while the next test, on the same simulator, signed in
+    /// in a third of the time and passed.
+    ///
+    /// So before the first test the app goes the way a test takes it, on a mock home of its
+    /// own (the test's mock sees none of it): launched, signed in, the shell drawn on
+    /// Libraries, and read until three snapshots running each come back within 2 s (a page
+    /// read at its usual pace); then closed. What it took is in the test log and the result
+    /// bundle. A later test process (after a crash) finds the simulator ready and pays one
+    /// sign-in.
+    private func warmUpOnce() throws {
+        guard !Self.warmedUp else { return }
+        Self.warmedUp = true
+        home = try MockHome()
+        try home.start()
+        app = XCUIApplication()
+        defer {
+            app.terminate()
+            home.stop()
+        }
+        XCTContext.runActivity(named: "The simulator's first launches of the app") { activity in
+            let start = Date()
+            launchSignedIn(section: "libraries")
+            let shell = element("player.shell").waitForExistence(timeout: 120)
+            let drawn = Date().timeIntervalSince(start)
+            var quick = 0
+            var looks: [String] = []
+            let end = Date().addingTimeInterval(180)
+            while shell, quick < 3, Date() < end {
+                let asked = Date()
+                _ = try? app.snapshot()
+                let took = Date().timeIntervalSince(asked)
+                looks.append(String(format: "%.1f", took))
+                quick = took < 2 ? quick + 1 : 0
+            }
+            let pace = !shell ? "no shell in 120 s" : quick >= 3 ? "read at its usual pace" : "still slow after 180 s"
+            let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s", drawn, pace,
+                              Date().timeIntervalSince(start), looks.joined(separator: ", "))
+            // in the test log, and kept with the result bundle
+            print("PlayerUITestCase warm-up: \(note)")
+            let kept = XCTAttachment(string: note)
+            kept.lifetime = .keepAlways
+            activity.add(kept)
+        }
     }
 
     override func tearDown() async throws {
