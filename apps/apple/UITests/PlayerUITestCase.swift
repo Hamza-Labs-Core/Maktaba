@@ -113,9 +113,11 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// A screenshot attached to the test, named `player-<iphone|ipad>-<language>-<name>`.
-    func shot(_ name: String) {
+    /// `wholeScreen`: the device's screen, not the app's window alone (the on-screen keyboard
+    /// is a window of its own, left out of the app's screenshot).
+    func shot(_ name: String, wholeScreen: Bool = false) {
         let full = "player-\(isPad ? "ipad" : "iphone")-\(language)-\(name)"
-        let png = app.screenshot().pngRepresentation
+        let png = (wholeScreen ? XCUIScreen.main.screenshot() : app.screenshot()).pngRepresentation
         let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
         a.name = full
         a.lifetime = .keepAlways
