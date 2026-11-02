@@ -3,9 +3,9 @@ import AppKit
 import Observation
 
 /// Full screen on the Mac (FR-42, FR-43): View ▸ Enter Full Screen (⌃⌘F) puts the focused
-/// window on a space of its own, where the player fills it as it fills the window. A SwiftUI
-/// app's View menu gets no full-screen item of its own when its commands make that menu, so
-/// the Player names it, and says Exit while the window is full screen.
+/// window on a space of its own, where the player fills it as it fills the window. The Player
+/// names the item itself (in its own language, Exit while the window is full screen) and
+/// turns off the one AppKit would add beside it (`NSFullScreenMenuItemEverywhere`, PlayerApp).
 @MainActor @Observable
 final class MacFullScreen {
     static let shared = MacFullScreen()
