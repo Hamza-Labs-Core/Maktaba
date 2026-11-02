@@ -60,10 +60,10 @@ func TestWindowsDNSAPIRegistersAndWithdraws(t *testing.T) {
 	}
 }
 
-// A home name with a "." (and a "\", and Arabic) goes on the wire as one label: the
-// escaped name DnsServiceConstructInstance gets is the one Windows probes and announces.
-// Windows answers no query of this machine's own, so what it sends is read off the
-// network adapter with pktmon (elevated: the CI runner is).
+// A home name with a "." (and a "\", and Arabic) goes on the wire as one label, the name
+// with U+2024 for its dots (windowsInstance). Windows answers no query of this machine's
+// own, so what it sends is read off the network adapter with pktmon (elevated: the CI
+// runner is). This is how Windows was seen to split an RFC 6763 "\." anyway.
 func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 	dir := t.TempDir()
 	etl := filepath.Join(dir, "mdns.etl")
@@ -98,7 +98,7 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 	name := "Maktaba v1.2 a\\b مكتبة " + time.Now().Format("150405.000000")
 	answered := make(chan error, 1)
 	svc := winService{
-		instance: escapeInstance(name) + "." + service + ".local",
+		instance: windowsInstance(name) + "." + service + ".local",
 		host:     announcedHost(systemResponder()) + ".local",
 		port:     18087,
 		keys:     []string{"role"},
@@ -144,7 +144,10 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 		capture = append(capture, b...)
 	}
 	// one label: its length, the name's bytes, then the service's label or a pointer to it
-	label := append([]byte{byte(len(name))}, name...)
+	// (Windows lowers the name's case in its probes)
+	wname := windowsInstance(name)
+	label := bytes.ToLower(append([]byte{byte(len(wname))}, wname...))
+	capture = bytes.ToLower(capture)
 	for rest := capture; ; {
 		i := bytes.Index(rest, label)
 		if i < 0 {
@@ -168,7 +171,7 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 		return seen
 	}
 	t.Fatalf("%d bytes captured; %q is not one label in them; around the name: %v; around the type: %v",
-		len(capture), name, around("Maktaba v1"), around("_maktaba-dot"))
+		len(capture), wname, around("maktaba v1"), around("_maktaba-dot"))
 }
 
 // Through the announcement: a new TXT and Shutdown on the real API, withdrawn when done.

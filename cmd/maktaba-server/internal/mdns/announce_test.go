@@ -105,22 +105,21 @@ func TestAnnouncedHost(t *testing.T) {
 	}
 }
 
-// A "." or "\" of a home's name is escaped where a whole name is given
-// (DnsServiceConstructInstance, RFC 6763 §4.3), so the instance stays one label; anything
-// else (Arabic among it) is as it was.
-func TestEscapeInstance(t *testing.T) {
+// Windows splits a whole name at every "." (no escape keeps one), so a home's "." is
+// U+2024 there; a "\" and Arabic stay as they are.
+func TestWindowsInstance(t *testing.T) {
 	t.Parallel()
 	cases := map[string]string{
 		"Maktaba (studio)":      "Maktaba (studio)",
-		"Maktaba (v1.2)":        `Maktaba (v1\.2)`,
-		`Maktaba (a\b)`:         `Maktaba (a\\b)`,
-		`.lead\.trail.`:         `\.lead\\\.trail\.`,
+		"Maktaba (v1.2)":        "Maktaba (v1\u20242)",
+		`Maktaba (a\b)`:         `Maktaba (a\b)`,
+		`.lead\.trail.`:         "\u2024lead\\\u2024trail\u2024",
 		"Maktaba (مكتبة البيت)": "Maktaba (مكتبة البيت)",
-		"مكتبة 2.0":             `مكتبة 2\.0`,
+		"مكتبة 2.0":             "مكتبة 2\u20240",
 	}
 	for in, want := range cases {
-		if got := escapeInstance(in); got != want {
-			t.Errorf("escapeInstance(%q) = %q, want %q", in, got, want)
+		if got := windowsInstance(in); got != want {
+			t.Errorf("windowsInstance(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -294,14 +293,23 @@ func TestDNSAPIAnnouncesChangesAndWithdraws(t *testing.T) {
 		t.Fatalf("registered again after Shutdown: %d", n)
 	}
 
-	// a "." or "\" of the name is escaped: Windows takes the whole name
+	// Windows takes the whole name: a "." of the instance's is not one there, a "\" is kept,
+	// and the label, so lengthened, still fits
 	b, err := startDNSAPI(api, `Maktaba (v1.2 a\b)`, "_maktaba._tcp", "local.", "Studio.local", 8080, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer b.Shutdown()
-	if got := api.registrations(t, 3)[2].svc.instance; got != `Maktaba (v1\.2 a\\b)._maktaba._tcp.local` {
+	if got := api.registrations(t, 3)[2].svc.instance; got != "Maktaba (v1\u20242 a\\b)._maktaba._tcp.local" {
 		t.Fatalf("dotted name: %q", got)
+	}
+	c, err := startDNSAPI(api, strings.Repeat(".", 40), "_maktaba._tcp", "local.", "Studio.local", 8080, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Shutdown()
+	if label, _, _ := strings.Cut(api.registrations(t, 4)[3].svc.instance, "._maktaba"); len(label) > 63 || label != strings.Repeat("\u2024", 21) {
+		t.Fatalf("long dotted name: %q (%d bytes)", label, len(label))
 	}
 }
 

@@ -281,20 +281,16 @@ func dnsLabel(s string, limit int) string {
 	return s
 }
 
-// escapeInstance is an instance name as a DNS-SD name's first label (RFC 6763 §4.3):
-// "." becomes "\." and "\" becomes "\\", so a home named "Studio 1.2" is one label, not two. Only
-// what takes a whole name needs it (DnsServiceConstructInstance); dns-sd -R,
-// avahi-publish-service and RegisterService take the instance name alone, and escape it
-// themselves.
-func escapeInstance(s string) string {
-	var b strings.Builder
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' || s[i] == '\\' {
-			b.WriteByte('\\')
-		}
-		b.WriteByte(s[i])
-	}
-	return b.String()
+// windowsInstance is an instance name as DnsServiceConstructInstance can take it.
+// Windows takes the whole name ("<instance>._maktaba._tcp.local") and splits it at every
+// ".", escaped or not: RFC 6763's "\." reaches the wire as a label ending in "\" and the
+// rest as another (read off the adapter in CI), so a home named "Studio 1.2" would be
+// announced as "Studio 1\" in a domain "2". No escape keeps a "." in the label there, so
+// a "." is U+2024 ONE DOT LEADER, which reads the same. A "\" Windows keeps as it is. Not
+// for dns-sd -R, avahi-publish-service and RegisterService: they take the instance name
+// alone, a "." in it included, and escape it themselves (dns-sd checked on macOS).
+func windowsInstance(s string) string {
+	return strings.ReplaceAll(s, ".", "\u2024")
 }
 
 // zeroconfInstance is an instance name as zeroconf takes it: the label as the DNS library
