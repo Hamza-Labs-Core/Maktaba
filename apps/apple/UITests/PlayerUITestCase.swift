@@ -163,7 +163,7 @@ class PlayerUITestCase: XCTestCase {
     /// Dynamic Type on the page open now, at the default size: `open` launches the app again
     /// with the launch arguments it is given (a text size) and opens the same page. Each text
     /// of the page, by its identifier or else its words, shown at the smallest size, the
-    /// default and AX3, must be taller at each step (a control's 44-pt minimum may hold it at the two
+    /// default and AX3, must be taller at each step (one allowance, a button's 44-pt minimum at the two
     /// smaller sizes: `grows`); one that is not fails, named with its three heights. The texts of the system's bars are UIKit's own (an iPad's tab bar keeps
     /// one size and shows the large content viewer instead) and are left out. Afterwards the
     /// page is open again at the default size, for the test to go on.
@@ -172,16 +172,17 @@ class PlayerUITestCase: XCTestCase {
         XCTAssertTrue(fixed.isEmpty, "\(page): Dynamic Type: " + fixed.joined(separator: "; "), file: file, line: line)
     }
 
-    /// The 44-pt minimum a control keeps (`frame(minHeight: 44)`, a hit region): a text that is
-    /// a button's label is read at its button's height, so at the smallest size and at the
-    /// default (Search's recent rows, the video page's Favorite and Mark watched) it is that
-    /// minimum both times, its words smaller inside.
-    static let controlMinimum: ClosedRange<CGFloat> = 43 ... 44.5
+    /// The 44-pt minimum height of a button (`frame(minHeight: 44)`, its hit region), give or
+    /// take a point. A text that is a button's label is read at its button's height, so at
+    /// the smallest size and at the default (Search's recent rows, the video page's Favorite
+    /// and Mark watched) it can be that minimum both times, its words smaller inside it.
+    static let buttonMinimum: ClosedRange<CGFloat> = 43 ... 45
 
-    /// Taller at each step; at the two smaller sizes a control's 44-pt minimum may hold the
-    /// text's height (`controlMinimum`), and then only AX3 must be taller.
-    static func grows(_ small: CGFloat, _ normal: CGFloat, _ large: CGFloat) -> Bool {
-        if small == normal, controlMinimum.contains(normal) { return normal < large }
+    /// Taller at each step. The one allowance: a text inside a button whose heights at the
+    /// smallest size and the default both sit at the button's 44-pt minimum (`buttonMinimum`);
+    /// then the step to AX3 must still be taller. Any other text must grow at both steps.
+    static func grows(_ small: CGFloat, _ normal: CGFloat, _ large: CGFloat, inButton: Bool) -> Bool {
+        if inButton, buttonMinimum.contains(small), buttonMinimum.contains(normal) { return normal < large }
         return small < normal && normal < large
     }
 
@@ -198,8 +199,9 @@ class PlayerUITestCase: XCTestCase {
         var fixed: [String] = []
         for key in n.keys.sorted() {
             guard let hs = s[key], let hl = l[key], let hn = n[key] else { continue }
-            for k in 0 ..< min(hs.count, hn.count, hl.count) where !Self.grows(hs[k], hn[k], hl[k]) {
-                fixed.append("\"\(key)\" \(Int(hs[k])) / \(Int(hn[k])) / \(Int(hl[k])) pt high (smallest / default / AX3)")
+            for k in 0 ..< min(hs.count, hn.count, hl.count)
+            where !Self.grows(hs[k].height, hn[k].height, hl[k].height, inButton: hn[k].inButton && hs[k].inButton) {
+                fixed.append("\"\(key)\" \(Int(hs[k].height)) / \(Int(hn[k].height)) / \(Int(hl[k].height)) pt high (smallest / default / AX3)")
             }
         }
         return fixed
@@ -266,18 +268,18 @@ class PlayerUITestCase: XCTestCase {
         var window = CGRect.null
         var tab: CGRect?
         var nav: CGRect?
-        var texts: [(id: String, label: String, frame: CGRect)] = []
+        var texts: [(id: String, label: String, frame: CGRect, inButton: Bool)] = []
 
         init() {}
 
         /// Each text's height, by its identifier or else its words, in the order shown; the
         /// texts of the tab and navigation bars left out (the system's own, see
         /// `assertTextScales`).
-        var heights: [String: [CGFloat]] {
+        var heights: [String: [(height: CGFloat, inButton: Bool)]] {
             let bars = [tab, nav].compactMap { $0 }
-            var all: [String: [CGFloat]] = [:]
+            var all: [String: [(height: CGFloat, inButton: Bool)]] = [:]
             for t in texts where !t.frame.isEmpty && !bars.contains(where: { $0.intersects(t.frame) }) {
-                all[t.id.isEmpty ? t.label : t.id, default: []].append(t.frame.height)
+                all[t.id.isEmpty ? t.label : t.id, default: []].append((t.frame.height, t.inButton))
             }
             return all
         }
@@ -288,16 +290,18 @@ class PlayerUITestCase: XCTestCase {
         }
 
         init(_ app: XCUIElementSnapshot) {
-            var stack = [app]
-            while let s = stack.popLast() {
+            // each element with whether a button holds it
+            var stack = [(app, false)]
+            while let (s, inButton) = stack.popLast() {
                 switch s.elementType {
                 case .window where window.isNull: window = s.frame
                 case .tabBar where tab == nil: tab = s.frame
                 case .navigationBar where nav == nil: nav = s.frame
-                case .staticText: texts.append((s.identifier, s.label, s.frame))
+                case .staticText: texts.append((s.identifier, s.label, s.frame, inButton))
                 default: break
                 }
-                stack.append(contentsOf: s.children.reversed())
+                let below = inButton || s.elementType == .button
+                stack.append(contentsOf: s.children.reversed().map { ($0, below) })
             }
         }
 
