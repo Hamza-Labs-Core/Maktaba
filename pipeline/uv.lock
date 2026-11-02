@@ -1767,6 +1767,7 @@ dependencies = [
 dev = [
     { name = "grpcio-tools" },
     { name = "mypy" },
+    { name = "numpy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pyyaml" },
@@ -1779,6 +1780,7 @@ mediaintel = [
 ]
 search = [
     { name = "chromadb" },
+    { name = "numpy" },
     { name = "sentence-transformers" },
 ]
 stt = [
@@ -1789,6 +1791,7 @@ stt = [
     { name = "librosa", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "numpy" },
     { name = "nvidia-cublas-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "sentencepiece", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
     { name = "silero-vad", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
@@ -1824,6 +1827,9 @@ requires-dist = [
     { name = "mlx-audio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'stt'", specifier = "==0.5.9" },
     { name = "mlx-whisper", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'stt'", specifier = "==0.4.3" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "numpy", marker = "extra == 'dev'", specifier = ">=2" },
+    { name = "numpy", marker = "extra == 'search'", specifier = ">=2" },
+    { name = "numpy", marker = "extra == 'stt'", specifier = ">=2" },
     { name = "nvidia-cublas-cu12", marker = "(platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'stt') or (platform_machine == 'AMD64' and sys_platform == 'win32' and extra == 'stt')", specifier = ">=12.8,<13" },
     { name = "psutil", specifier = ">=6" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
