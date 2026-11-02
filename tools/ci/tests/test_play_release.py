@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -35,6 +36,50 @@ def test_play_bundles_uploads_every_app_by_its_gradle_package() -> None:
         assert f"tools/ci/play_release.py package {app}" in workflow
         # the package is read, never written out a second time
         assert f"package: {pr.package(app)}" not in workflow
+
+
+def _mobile_release_android_steps() -> list[dict[str, object]]:
+    text = (pr.ROOT / ".github/workflows/mobile-release.yml").read_text(encoding="utf-8")
+    workflow = yaml.safe_load(text)
+    steps: list[dict[str, object]] = workflow["jobs"]["android"]["steps"]
+    return steps
+
+
+def test_capacitor_app_takes_its_version_from_play_version_sh() -> None:
+    # mobile-release.yml's APK and AAB get the versionCode rule play-bundles.yml's do (one
+    # copy, tools/release/play-version.sh), before anything is built, so a bad tag fails first
+    steps = _mobile_release_android_steps()
+    ids = [s.get("id") for s in steps]
+    assert ids.count("version") == 1
+    at = ids.index("version")
+    version = steps[at]
+    assert 'tools/release/play-version.sh "$TAG"' in str(version["run"])
+    assert '"$GITHUB_OUTPUT"' in str(version["run"])
+    runs = [str(s.get("run", "")) for s in steps]
+    built = [i for i, run in enumerate(runs) if "pnpm build" in run or "gradlew" in run]
+    assert built and at < min(built)
+
+
+def test_capacitor_stamp_uses_the_version_step_and_no_formula_of_its_own() -> None:
+    steps = _mobile_release_android_steps()
+    stamp = next(s for s in steps if s.get("name") == "Stamp Android version from tag")
+    env = stamp["env"]
+    assert isinstance(env, dict)
+    assert env["CODE"] == "${{ steps.version.outputs.code }}"
+    assert env["NAME"] == "${{ steps.version.outputs.name }}"
+    run = str(stamp["run"])
+    assert "versionCode ${CODE}" in run
+    assert "1000000" not in run and "$((" not in run
+    workflow = (pr.ROOT / ".github/workflows/mobile-release.yml").read_text(encoding="utf-8")
+    assert "* 1000000" not in workflow
+
+
+def test_capacitor_app_is_its_own_play_package() -> None:
+    # its codes so far came only from mobile-release.yml (3055 at most, v0.3.55), never from
+    # the native apps' bundles: tools/release/play-version-test.sh checks the new ones are above
+    config = (pr.ROOT / "apps/mobile/capacitor.config.ts").read_text(encoding="utf-8")
+    assert "appId: 'com.hamzalabs.maktaba'," in config
+    assert "com.hamzalabs.maktaba" not in {pr.package(app) for app in pr.GRADLE}
 
 
 def test_unknown_app_is_refused() -> None:

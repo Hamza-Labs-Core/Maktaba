@@ -83,6 +83,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      # The tag's versionName and versionCode, before any build, so a tag that cannot be one
+      # fails here (tools/release/play-version.sh): every tag gets its own rising code,
+      # (MAJOR*1000000+MINOR*1000+PATCH)*100+STEP, STEP 99 for a release and below it for its
+      # -alpha/-beta/-rc.N, so a pre-release no longer shares its release's code (Play refuses
+      # a code it has, Android a sideloaded APK that is not above the installed one). Until
+      # v0.3.55 this app's code was MAJOR*1000000+MINOR*1000+PATCH (v0.3.55 was 3055, the
+      # highest it published); every new code is above it, so no offset is needed.
+      - name: Version from tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: bash tools/release/play-version.sh "$TAG" | tee -a "$GITHUB_OUTPUT"
+
       - name: Set up pnpm
         uses: pnpm/action-setup@v6.0.8
         with:
@@ -133,26 +146,23 @@ jobs:
           npx --no-install cap sync android
           ./scripts/apply-icons.sh android
 
-      # Stamp versionName (= tag) and a monotonic versionCode from the tag
-      # (Story 28.1). The native project is scaffolded by `cap add`, so we
-      # patch the generated build.gradle here. versionCode derivation
-      # MAJOR*1_000_000 + MINOR*1_000 + PATCH stays well inside int32.
+      # Stamp versionName (= the tag without its v) and the versionCode from the tag. The
+      # native project is scaffolded by `cap add`, so the generated build.gradle is patched
+      # here. Both come from tools/release/play-version.sh (step "Version from tag"), the rule
+      # the native apps' bundles use too (play-bundles.yml).
       - name: Stamp Android version from tag
         working-directory: apps/mobile/android
         env:
-          TAG: ${{ github.ref_name }}
+          NAME: ${{ steps.version.outputs.name }}
+          CODE: ${{ steps.version.outputs.code }}
         run: |
           set -euo pipefail
-          ver="${TAG#v}"
-          core="${ver%%-*}"
-          IFS='.' read -r MA MI PA <<EOF
-          ${core}
-          EOF
-          code=$(( ${MA:-0} * 1000000 + ${MI:-0} * 1000 + ${PA:-0} ))
-          sed -i "s/versionName \"[^\"]*\"/versionName \"${ver}\"/" app/build.gradle
-          sed -i "s/versionCode [0-9][0-9]*/versionCode ${code}/" app/build.gradle
-          echo "versionName=${ver} versionCode=${code}"
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${NAME}\"/" app/build.gradle
+          sed -i "s/versionCode [0-9][0-9]*/versionCode ${CODE}/" app/build.gradle
+          echo "versionName=${NAME} versionCode=${CODE}"
           grep -E "versionName|versionCode" app/build.gradle
+          grep -q "versionCode ${CODE}$" app/build.gradle \
+            || { echo "::error::versionCode ${CODE} was not stamped into app/build.gradle"; exit 1; }
 
       - name: Assemble release APK
         working-directory: apps/mobile/android

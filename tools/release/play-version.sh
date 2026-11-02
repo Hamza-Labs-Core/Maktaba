@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# The Google Play version of a release tag (play-bundles.yml, docs/google-play.md):
+# The Android version of a release tag: the native apps' bundles (play-bundles.yml,
+# docs/google-play.md) and the Capacitor app's APK and AAB (mobile-release.yml):
 #
 #   play-version.sh vMAJOR.MINOR.PATCH[-PRE]
 #   name=MAJOR.MINOR.PATCH[-PRE]                     the versionName (the tag without its v)
-#   code=(MAJOR*1000000+MINOR*1000+PATCH)*100+STEP   the versionCode, the same for the three apps
+#   code=(MAJOR*1000000+MINOR*1000+PATCH)*100+STEP   the versionCode, the same for every app
 #
 # STEP orders a version's pre-releases below the version itself, as semver does:
 #   -alpha.N  N      (N 1..32: 1..32)
@@ -14,8 +15,8 @@
 # every tag's code is above the one cut before it. Play refuses a bundle whose versionCode it
 # already has, or one not above the last one uploaded. MINOR and PATCH stay under 1000, the code
 # at or under Play's limit of 2100000000 (MAJOR up to 20). Until v0.3.54 the code was
-# MAJOR*1000000+MINOR*1000+PATCH (v0.3.54 was 3054, its pre-releases sharing it); every code here
-# is above those. Any other tag is refused with a message, so a tag Play would refuse fails
+# MAJOR*1000000+MINOR*1000+PATCH (v0.3.54 was 3054, its pre-releases sharing it; the Capacitor
+# app kept it to v0.3.55, 3055); every code here is above those, so no app needs an offset. Any other tag is refused with a message, so a tag Play would refuse fails
 # before any build.
 set -euo pipefail
 

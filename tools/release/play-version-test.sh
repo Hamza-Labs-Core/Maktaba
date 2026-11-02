@@ -84,6 +84,19 @@ for t in v0.3.55 v0.3.999 v0.4.0-alpha.1 v0.4.0-alpha.2 v0.4.0-beta.1 v0.4.0-rc.
     prev="${code}"
 done
 
+# the Capacitor app (mobile-release.yml) kept the old rule one tag longer: v0.3.55 was its
+# highest code, 3055 (run 41498853328's "Stamp Android version from tag"). Every tag after it,
+# its first possible pre-release included, is above that, so installs of it still update with
+# no offset
+for t in v0.3.55 v0.3.56-alpha.1 v0.3.56 v0.4.0-alpha.1; do
+    code="$(code_of "${t}")"
+    if [ "${code}" -gt 3055 ]; then
+        ok "${t} (${code}) above the Capacitor app's last old code (3055)"
+    else
+        fail "${t} (${code}) not above the Capacitor app's last old code (3055)"
+    fi
+done
+
 # a pre-release and its version (once the same code) and the repository's own tags: all distinct
 codes=""
 for t in v0.1.0-rc.1 v0.1.0-rc.2 v0.1.0-rc.3 v0.1.0 v0.3.0-rc.1 v0.3.0-rc.7 v0.3.0 v0.3.45 v0.3.54; do
