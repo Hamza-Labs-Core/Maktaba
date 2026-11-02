@@ -13,10 +13,12 @@ final class PlayerSearchUITests: PlayerUITestCase {
 
     private var field: XCUIElement { app.searchFields.firstMatch }
 
+    /// Types `text` (read back from the field: see `typeExactly`); a closing "\n" submits it.
     private func type(_ text: String) {
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
-        field.tap()
-        field.typeText(text)
+        let submit = text.hasSuffix("\n")
+        field.typeExactly(submit ? String(text.dropLast()) : text, in: app)
+        if submit { field.typeText("\n") }
     }
 
     /// The bodies of every `POST /api/search` so far, as JSON.

@@ -80,8 +80,7 @@ class PlayerUITestCase: XCTestCase {
         XCTAssertTrue(element("start.brand").waitForExistence(timeout: timeout), "the start screen")
         if !field.waitForExistence(timeout: 2) { scrollUntil(field) }
         XCTAssertTrue(field.exists, "the home picker")
-        field.tap()
-        field.typeText(home.url)
+        field.typeExactly(home.url, in: app)
         let connect = app.buttons["picker.connect"]
         if !connect.isHittable { scrollUntil(connect) }
         connect.tap()

@@ -77,8 +77,7 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         home.stub("POST", "/api/auth/login", status: 401, body: #"{"title":"invalid credentials"}"#)
         let user = app.textFields["signin.username"]
         XCTAssertTrue(user.waitForExistence(timeout: 5))
-        user.tap()
-        user.typeText("tester")
+        user.typeExactly("tester", in: app)
         let password = app.secureTextFields["signin.password"]
         password.tap()
         password.typeText("not-the-password")
@@ -121,10 +120,8 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         XCTAssertTrue(app.buttons["signin.homes"].waitForNonExistence(timeout: 30), "asked again by itself: signed in")
     }
 
-    /// Replaces a text field's contents.
+    /// Replaces a text field's contents (read back: see `typeExactly`).
     private func type(_ field: XCUIElement, _ text: String) {
-        field.tap()
-        let old = (field.value as? String) ?? ""
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count + 2) + text)
+        field.typeExactly(text, in: app)
     }
 }
