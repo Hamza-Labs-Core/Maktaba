@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+
 from maktaba_pipeline.audio.probe import (
     AudioTrack,
     MediaInfo,
@@ -147,6 +149,31 @@ def test_commit_probe_advances_to_probed_and_enqueues_extract() -> None:
     assert any(j.stage == "extract" and j.state == "pending" for j in db.processing_jobs.values())
     assert len(db.audio_tracks) == 1
     assert next(iter(db.audio_tracks.values())).language == "ara"
+
+
+@pytest.mark.parametrize("dialect", ["postgres", "sqlite"])
+def test_on_the_engine_the_probe_queues_no_extract(dialect: str) -> None:
+    """The queue engine's probe (chain_extract=False): probed, and no extract job.
+    Its transcribe comes through content_hash and asks for extract only when the
+    STT backend reads a file."""
+    db = FakeAudioDB(dialect=dialect)
+    vid = db.add_video()
+    track = AudioTrack(
+        index=0,
+        codec="aac",
+        channels=2,
+        sample_rate=48000,
+        language="ara",
+        title=None,
+        is_default=True,
+        disposition={"default": 1},
+    )
+
+    asyncio.run(commit_probe(db, video_id=vid, result=_make_result([track]), chain_extract=False))
+
+    assert db.videos[vid].state == "probed"
+    assert db.processing_jobs == {}
+    assert len(db.audio_tracks) == 1
 
 
 def test_commit_probe_no_audio_advances_to_ready_no_audio_and_skips_extract() -> None:

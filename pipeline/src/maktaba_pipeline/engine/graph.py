@@ -408,7 +408,6 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("thumb_hash", "same"),
             Edge("link", "same"),
             Edge("detect", "library_of"),
-            Edge("extract", "same", legacy=True),
         ),
     ),
     StageDef(
@@ -742,6 +741,9 @@ GRAPH: tuple[StageDef, ...] = (
         0,
         edges=(Edge("probe", "videos_of", legacy=True),),
     ),
+    # the WAV a backend that reads a file needs (openai-api): only transcribe asks for it
+    # (may_request), and the extract handler queues transcribe again once it is written.
+    # Nothing else leads here: a streaming backend never gets an extract job
     _legacy(
         "extract",
         "Extract audio",
@@ -751,7 +753,8 @@ GRAPH: tuple[StageDef, ...] = (
         edges=(Edge("transcribe", "same", legacy=True),),
     ),
     # plan 03-10: transcription on the engine. The file is decoded straight off the share
-    # and batched across the worker's jobs; the legacy extract edge still reaches it.
+    # and batched across the worker's jobs (content_hash's edge reaches it). When the
+    # configured STT backend reads a file it asks for the extract stage's WAV first.
     StageDef(
         name="transcribe",
         label="Transcribe",
@@ -767,6 +770,7 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("tag", "season_of"),
             Edge("tag", "loose_library_of"),
         ),
+        may_request=("extract",),
         max_attempts=3,
     ),
     StageDef(

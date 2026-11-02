@@ -23,6 +23,9 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+#: a job still on the queue (the enqueue coalesces onto it)
+_LIVE_STATES = frozenset({"pending", "claimed", "running", "resuming", "paused"})
+
 
 @dataclass
 class _LibraryRow:
@@ -776,6 +779,70 @@ class FakeAudioDB:
             )
             return _Row({"job_id": new_id, "outcome": "inserted"})
 
+        # --- the SQLite twin of processing_jobs_enqueue() (engine/enqueue.py,
+        # _enqueue_sqlite): the same rules, statement by statement ---------
+        if s.startswith("SELECT subject_kinds, enabled, debounce_sec, debounce_max_sec"):
+            return _Row(
+                {
+                    "subject_kinds": '["video", "library"]',
+                    "enabled": True,
+                    "debounce_sec": 0,
+                    "debounce_max_sec": 0,
+                    "max_attempts": 3,
+                }
+            )
+        if s.startswith("SELECT library_id FROM videos WHERE id"):
+            vrow = self.videos.get(UUID(str(args[0])))
+            return None if vrow is None else _Row({"library_id": vrow.library_id})
+        if s.startswith("SELECT id, state, priority, force, force_cascade, reasons"):
+            kind, subject_id, stage = args
+            sid = UUID(str(subject_id))
+            for pj in self.processing_jobs.values():
+                owner = pj.library_id if kind == "library" else pj.video_id
+                if owner == sid and pj.stage == stage and pj.state in _LIVE_STATES:
+                    return _Row(
+                        {
+                            "id": pj.id,
+                            "state": pj.state,
+                            "priority": pj.priority,
+                            "force": False,
+                            "force_cascade": False,
+                            "reasons": "[]",
+                            "created_at": pj.created_at or self._now(),
+                            "payload": pj.payload,
+                            "rerun_force": False,
+                            "rerun_force_cascade": False,
+                            "rerun_reasons": "[]",
+                            "enqueue_count": 1,
+                            "not_before": pj.not_before,
+                            "parked_on": None,
+                        }
+                    )
+            return None
+        if s.startswith("INSERT INTO processing_jobs (subject_kind, subject_id, video_id"):
+            kind, subject_id, _vid, _lib, _ser, _sea, stage, priority, max_att, payload = args[:10]
+            sid = UUID(str(subject_id))
+            new_id = self._job_next_id
+            self._job_next_id += 1
+            self.processing_jobs[new_id] = _ProcessingJobRow(
+                id=new_id,
+                video_id=sid if kind == "video" else None,
+                library_id=sid if kind == "library" else None,
+                stage=str(stage),
+                priority=int(priority),
+                payload=payload,
+                max_attempts=int(max_att),
+                created_at=self._now(),
+            )
+            return _Row({"id": new_id})
+        if s.startswith("UPDATE processing_jobs SET priority = $2, force"):
+            pj_live = self.processing_jobs.get(int(args[0]))
+            if pj_live is not None:
+                pj_live.priority = int(args[1])
+            return None
+        if s.startswith("UPDATE processing_jobs SET rerun_requested = 1"):
+            return None
+
         if s.startswith("SELECT library_id FROM processing_jobs WHERE id"):
             job_row = self.processing_jobs.get(int(args[0]))
             return None if job_row is None else _Row({"library_id": job_row.library_id})
@@ -961,6 +1028,14 @@ class FakeAudioDB:
                 )
             ]
             return rows if many else (rows[0] if rows else None)
+
+        # release_audio_cache — the transcribe that read the WAV is done
+        if s.startswith("SELECT path FROM audio_cache WHERE content_hash"):
+            gone = self.audio_cache.get(str(args[0]))
+            return None if gone is None else _Row({"path": gone.path})
+        if s.startswith("DELETE FROM audio_cache WHERE content_hash"):
+            self.audio_cache.pop(str(args[0]), None)
+            return None
 
         # commit_extract — UPSERT the audio_cache artifact reference.
         if s.startswith("INSERT INTO audio_cache"):

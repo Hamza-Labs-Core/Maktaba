@@ -238,6 +238,9 @@ class DBConn(Protocol):
 # rewrites them to ``?`` in the connection facade, keeping this module
 # dialect-agnostic at the call site.
 
+# A run that ended waiting (for its inputs, or a review) did not do the work: a later
+# enqueue is not skipped because of it (an engine transcribe that asked extract for the
+# WAV waits; extract's enqueue of it once the WAV is there must go through).
 _DONE_ROW_SQL = """
 SELECT pj.id          AS id,
        pj.finished_at AS finished_at,
@@ -247,6 +250,7 @@ SELECT pj.id          AS id,
  WHERE pj.video_id = $1
    AND pj.stage    = $2
    AND pj.state    = 'done'
+   AND COALESCE(pj.outcome, 'changed') NOT IN ('waiting_inputs', 'awaiting_review')
  ORDER BY pj.finished_at DESC
  LIMIT 1
 """

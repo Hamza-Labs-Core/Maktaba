@@ -72,7 +72,7 @@ from ...stt.placement import TranscriptionConfig
 from ...stt.settings import SAMPLE_RATE, Checkpoint, FileProgress, Transcript, WhisperSettings
 from ..context import JobDeferred, StageContext, StageFailure
 from ..events import log_event
-from ..graph import TRANSCRIBE_VERSION, StageResult, Subject
+from ..graph import TRANSCRIBE_VERSION, Request, StageResult, Subject
 from ..hashing import canonical_hash
 from ..health import system_memory
 from ..sql import dumps, is_pg, loads, now, parse_ts, to_ts, uid
@@ -884,9 +884,36 @@ async def decode_audio(path: str, timeout: float = DECODE_TIMEOUT_S) -> np.ndarr
     return np.frombuffer(out, np.int16).astype(np.float32) / 32768.0
 
 
-async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
-    v = await require_video(db, job.subject.id)
-    local = ctx.local_path(v.path)
+def needs_file() -> bool:
+    """Whether the configured STT backend reads a file (openai-api) rather than the PCM
+    this stage decodes itself: then the extract stage's WAV is asked for first
+    (graph ``may_request``). False for whisper-mlx, the default."""
+    from ...stt.transcribe import configured_backend_requires_file
+
+    return configured_backend_requires_file()
+
+
+#: the payload key extract's commit puts on the transcribe it queues
+_FROM_EXTRACT = "content_hash"
+
+
+async def cached_wav(db: Any, video_id: Any) -> tuple[str | None, int | None] | None:
+    """The video's ``audio_cache`` WAV: ``(path on this machine or None, track id)``,
+    or None when extract wrote none."""
+    row = await db.fetchrow(
+        "SELECT a.path, a.audio_track_id FROM audio_cache a"
+        " JOIN videos v ON v.content_hash = a.content_hash WHERE v.id = $1",
+        uid(video_id),
+    )
+    if row is None:
+        return None
+    path = str(row["path"]) if row["path"] else ""
+    present: bool = bool(path) and await asyncio.to_thread(os.path.isfile, path)
+    return (path if present else None), int(row["audio_track_id"])
+
+
+async def _on_share(local: str) -> str:
+    """The video's file as this machine reads it, or why not."""
     try:
         found = await asyncio.wait_for(asyncio.to_thread(on_disk, local), READ_TIMEOUT_S)
     except TimeoutError as exc:
@@ -895,6 +922,37 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         raise StageFailure("nas_unavailable", f"{local}: {exc}") from exc
     if found is None:
         raise StageFailure("file_missing", f"{local}: not found", retryable=False)
+    return found
+
+
+async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
+    v = await require_video(db, job.subject.id)
+    wav: str | None = None
+    track_id: int | None = None
+    if needs_file():
+        cached = await cached_wav(db, v.id)
+        if cached is None and _FROM_EXTRACT not in (job.payload or {}):
+            # the backend reads a file and extract has not written it: ask for it. The
+            # extract handler queues transcribe again once the WAV is there
+            return StageResult(
+                output_hash=canonical_hash("awaiting the extracted audio"),
+                outcome="waiting_inputs",
+                requests=(
+                    Request(
+                        stage="extract",
+                        subject_kind="video",
+                        subject_id=v.id,
+                        reason="the STT backend reads an audio file",
+                    ),
+                ),
+                summary={"waiting_for": "extract"},
+            )
+        if cached is not None:
+            wav, track_id = cached
+            if wav is None:  # written on another machine: decoded off the share instead
+                track_id = None
+                _log.info("transcribe.wav_not_here", video_id=str(v.id))
+    found = wav if wav is not None else await _on_share(ctx.local_path(v.path))
 
     budget = audio_budget()
     held = await budget.acquire(float(v.duration_s or 3600))
@@ -904,9 +962,19 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         await budget.release(held)
         raise
     try:
-        return await _transcribe_file(db, v, found, ctx, await input_fingerprint(db, job.subject))
+        result = await _transcribe_file(
+            db, v, found, ctx, await input_fingerprint(db, job.subject), audio_track_id=track_id
+        )
     finally:
         await budget.release(held)
+    if wav is not None:
+        # this transcription was the WAV's only reader: the file and its row go
+        from ...audio.extract import release_audio_cache
+
+        row = await db.fetchrow("SELECT content_hash FROM videos WHERE id = $1", uid(v.id))
+        if row is not None and row["content_hash"]:
+            await release_audio_cache(db, content_hash=str(row["content_hash"]))
+    return result
 
 
 # ------------------------------------------------------------------ checkpoints
@@ -1010,8 +1078,16 @@ async def _run_saving(
 
 
 async def _transcribe_file(
-    db: Any, v: Any, found: str, ctx: StageContext, fingerprint: str | None
+    db: Any,
+    v: Any,
+    found: str,
+    ctx: StageContext,
+    fingerprint: str | None,
+    *,
+    audio_track_id: int | None = None,
 ) -> StageResult:
+    """Decode ``found`` (the video, or extract's WAV of ``audio_track_id``) and store
+    its transcript."""
     try:
         audio = await decode_audio(found)
     except TimeoutError as exc:
@@ -1067,7 +1143,13 @@ async def _transcribe_file(
         raise JobDeferred(f"the second listen: {refined.get('skipped')}", RELISTEN_DEFER_S)
     # a relisten job that again went without the second listen: its tries go on counting
     transcript_id = await _store(
-        db, v.id, result, settings, refined, keep_tries=skipped and relisten
+        db,
+        v.id,
+        result,
+        settings,
+        refined,
+        keep_tries=skipped and relisten,
+        audio_track_id=audio_track_id,
     )
     texts = [(s.start, s.end, s.text) for s in result.sentences]
     rtf = result.audio_sec / result.gpu_sec if result.gpu_sec > 0 else None
@@ -1095,36 +1177,16 @@ async def _store(
     settings: WhisperSettings,
     refined: dict[str, Any] | None = None,
     keep_tries: bool = False,
+    audio_track_id: int | None = None,
 ) -> str:
     """The transcript replaces the video's active one, atomically. The video's relisten
     tries (``relisten_attempts``) go with the old one, unless ``keep_tries``: a relisten
-    job that again went without the second listen."""
+    job that again went without the second listen. ``audio_track_id``: the track the
+    audio came from (extract's WAV), else the first audio stream, recorded as track 0."""
     store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
     async with db.transaction():
-        # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have: the
-        # default only when the video has none (the probe's choice of default stands).
-        # Its facts come from the probe's ffprobe output when there is one: a row with
-        # no codec read as "no audio" to streaming, and the video played silent. A row
-        # already there keeps its facts; only the ones it lacks are filled.
-        facts = await _probed_first_audio(db, video_id)
-        track = await db.fetchrow(
-            "INSERT INTO audio_tracks (video_id, track_index, codec, channels, sample_rate,"
-            "                          language, title, disposition, is_default)"
-            " VALUES ($1, 0, $2, $3, $4, $5, $6, $7, NOT EXISTS (SELECT 1 FROM audio_tracks"
-            "  WHERE video_id = $1 AND is_default))"
-            " ON CONFLICT (video_id, track_index) DO UPDATE SET"
-            "  codec = COALESCE(NULLIF(audio_tracks.codec, ''), EXCLUDED.codec),"
-            "  channels = COALESCE(audio_tracks.channels, EXCLUDED.channels),"
-            "  sample_rate = COALESCE(audio_tracks.sample_rate, EXCLUDED.sample_rate)"
-            " RETURNING id",
-            uid(video_id),
-            facts.codec if facts else None,
-            facts.channels if facts else None,
-            facts.sample_rate if facts else None,
-            facts.language if facts else "und",
-            facts.title if facts else None,
-            dumps(facts.disposition if facts else {}),
-        )
+        if audio_track_id is None:
+            audio_track_id = await _first_audio_track(db, video_id)
         row = await db.fetchrow(
             """
             INSERT INTO transcripts (id, video_id, audio_track_id, language, detected_language,
@@ -1145,7 +1207,7 @@ async def _store(
                     **({"refine": refined} if refined else {}),
                 }
             ),
-            track["id"],
+            audio_track_id,
             uid(uuid4()),  # SQLite gives the column no default
             result.detected_language,  # what Whisper heard, not the language it was told
             result.backend,  # the engine that made it: mlx-batched, ct2-batched
@@ -1192,6 +1254,35 @@ async def _store(
                 result.detected_language,
             )
     return str(tid)
+
+
+async def _first_audio_track(db: Any, video_id: Any) -> int:
+    """The audio_tracks row of the stream decoded off the share (track 0)."""
+    # the stream ffmpeg decoded (-map 0:a:0), recorded as the probe would have: the
+    # default only when the video has none (the probe's choice of default stands).
+    # Its facts come from the probe's ffprobe output when there is one: a row with
+    # no codec read as "no audio" to streaming, and the video played silent. A row
+    # already there keeps its facts; only the ones it lacks are filled.
+    facts = await _probed_first_audio(db, video_id)
+    track = await db.fetchrow(
+        "INSERT INTO audio_tracks (video_id, track_index, codec, channels, sample_rate,"
+        "                          language, title, disposition, is_default)"
+        " VALUES ($1, 0, $2, $3, $4, $5, $6, $7, NOT EXISTS (SELECT 1 FROM audio_tracks"
+        "  WHERE video_id = $1 AND is_default))"
+        " ON CONFLICT (video_id, track_index) DO UPDATE SET"
+        "  codec = COALESCE(NULLIF(audio_tracks.codec, ''), EXCLUDED.codec),"
+        "  channels = COALESCE(audio_tracks.channels, EXCLUDED.channels),"
+        "  sample_rate = COALESCE(audio_tracks.sample_rate, EXCLUDED.sample_rate)"
+        " RETURNING id",
+        uid(video_id),
+        facts.codec if facts else None,
+        facts.channels if facts else None,
+        facts.sample_rate if facts else None,
+        facts.language if facts else "und",
+        facts.title if facts else None,
+        dumps(facts.disposition if facts else {}),
+    )
+    return int(track["id"])
 
 
 async def _probed_first_audio(db: Any, video_id: Any) -> AudioTrack | None:

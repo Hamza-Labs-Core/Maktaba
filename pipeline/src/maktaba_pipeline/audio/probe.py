@@ -307,6 +307,7 @@ async def commit_probe(
     *,
     video_id: UUID,
     result: ProbeResult,
+    chain_extract: bool = True,
 ) -> str:
     """Persist a :class:`ProbeResult` and advance the video state.
 
@@ -319,6 +320,11 @@ async def commit_probe(
     was found and its transcription is not already handled. AC: a video with
     zero audio tracks transitions to
     ``READY_NO_AUDIO`` and skips the extract enqueue.
+
+    ``chain_extract=False`` (the queue engine) never enqueues extract: the engine's
+    transcribe stage is reached through content_hash and asks for the extract
+    stage itself when the STT backend reads a file. The legacy chain
+    (``--no-engine``) keeps probe -> extract -> transcribe.
     """
     raw_json = json.dumps(result.media.raw_ffprobe)
 
@@ -379,6 +385,15 @@ async def commit_probe(
         new_state = await advance_after_stage(db, video_id, Trigger.PROBE, Outcome.OK, log=_log)
     else:
         new_state = current_state
+    if not chain_extract:
+        _log.info(
+            "probe_committed",
+            video_id=str(video_id),
+            audio_tracks=len(result.audio),
+            new_state=str(new_state),
+            extract_enqueued=False,
+        )
+        return str(new_state)
     if await db.fetchrow(_TRANSCRIPTION_HANDLED_SQL, video_id) is not None:
         _log.info(
             "probe_committed_transcription_handled",
