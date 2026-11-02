@@ -11,6 +11,10 @@ final class PlayerWatchTests: XCTestCase {
     private var home: MockHome!
 
     override func setUp() async throws {
+        // the tracks tests play sound in this runner: no Player may be left running from a UI
+        // test before them, holding the sound (PlayerUITestCase.tearDown closes it)
+        XCTAssertEqual(XCUIApplication().state, .notRunning,
+                       "a UI test left the Player running: its sound session keeps this test's player from starting its sound")
         home = try MockHome()
         try home.start()
     }
