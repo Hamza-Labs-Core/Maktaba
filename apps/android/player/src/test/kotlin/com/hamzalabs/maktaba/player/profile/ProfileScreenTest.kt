@@ -43,6 +43,7 @@ import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.info
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.AppScreens
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
@@ -93,13 +94,13 @@ class ProfileScreenTest {
     }
 
     private fun waitFor(text: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText(text)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun gone(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty() }
 
     /** The first page's row [tag], scrolled into view. */
     private fun row(tag: String): SemanticsNodeInteraction {
@@ -180,7 +181,7 @@ class ProfileScreenTest {
         gone("history-v2")
         compose.onNodeWithTag("history-v1").assertExists()
         compose.onNodeWithTag("history-v4").assertExists()
-        compose.waitUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/history/v2" } }
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/history/v2" } }
     }
 
     @Test
@@ -190,7 +191,7 @@ class ProfileScreenTest {
         row("profile-history").performClick()
         waitForTag("history-v2")
         compose.onNodeWithTag("history-remove-v2").performClick()
-        compose.waitUntil(5_000) { home.requests.any { it.method == "DELETE" } }
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" } }
         waitForTag("history-v2")
     }
 

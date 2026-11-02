@@ -12,6 +12,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.setShell
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,7 +37,7 @@ class ShellScreenshotTest {
         compose.setShell(home, window = window)
         compose.onNodeWithTag("section-Libraries").performClick()
         val empty = compose.activity.getString(com.hamzalabs.maktaba.player.R.string.libraries_empty)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(empty)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText(empty)).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("src/test/screenshots/$name.png", roborazziOptions = options)
     }

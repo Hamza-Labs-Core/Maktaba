@@ -71,6 +71,7 @@ class WatchScreenshotTest {
         home.answer("/api/videos/v3") { FakeHome.json(FakeHome.video("v3", "Omar, Episode 2")) }
     }
 
+    // bare: it steps the players' clock and idles the looper itself; settling would advance Compose's clock past the controls
     private fun until(condition: () -> Boolean) = compose.waitUntil(10_000) {
         clock.advanceTime(20)
         shadowOf(Looper.getMainLooper()).idle()

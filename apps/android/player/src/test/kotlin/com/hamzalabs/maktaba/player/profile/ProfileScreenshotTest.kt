@@ -15,6 +15,7 @@ import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.PlayerSection
 import org.junit.Before
 import org.junit.Rule
@@ -58,7 +59,7 @@ class ProfileScreenshotTest {
             images = pathPictures(ApplicationProvider.getApplicationContext()),
         )
         compose.onNodeWithTag("section-Profile").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("profile-header")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("profile-header")).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun shoot(name: String) {
@@ -74,16 +75,16 @@ class ProfileScreenshotTest {
     private fun history(window: Window, name: String) {
         show(window)
         compose.onNodeWithTag("profile-history").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("history-v4")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("history-v4")).fetchSemanticsNodes().isNotEmpty() }
         shoot(name)
     }
 
     private fun playlist(window: Window, name: String) {
         show(window)
         compose.onNodeWithTag("profile-playlists").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-p1")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-p1")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("playlist-p1").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-item-v5")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-item-v5")).fetchSemanticsNodes().isNotEmpty() }
         shoot(name)
     }
 

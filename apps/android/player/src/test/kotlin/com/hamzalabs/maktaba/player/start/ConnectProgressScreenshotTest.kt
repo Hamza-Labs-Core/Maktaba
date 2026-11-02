@@ -24,6 +24,7 @@ import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SignIn
 import com.hamzalabs.maktaba.core.ui.ThemeMode
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -101,7 +102,7 @@ class ConnectProgressScreenshotTest {
         session.switchHome()
         show { HomePicker(session, MaktabaApp.Player) }
         compose.mainClock.advanceTimeBy(7_000)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
         progress.value = step
         capture(name)
     }
@@ -110,7 +111,7 @@ class ConnectProgressScreenshotTest {
     private fun onSignIn(step: ConnectProgress, name: String) {
         session.use(HOME)
         show { SignIn(session, MaktabaApp.Player) }
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("signin-password-tab")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("signin-password-tab")).fetchSemanticsNodes().isNotEmpty() }
         progress.value = step
         capture(name)
     }
@@ -120,8 +121,8 @@ class ConnectProgressScreenshotTest {
         session.use(HOME)
         show { SignIn(session, MaktabaApp.Player) }
         compose.onNodeWithTag("signin-code-tab").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("signin-code")).fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(5_000) { progress.value is ConnectProgress.AwaitingApproval }
+        compose.settledUntil(10_000) { compose.onAllNodes(hasTestTag("signin-code")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { progress.value is ConnectProgress.AwaitingApproval }
         capture(name)
     }
 

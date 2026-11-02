@@ -135,6 +135,7 @@ class PipBackgroundCastTest {
     }
 
     private fun until(timeoutMs: Long = 10_000, condition: () -> Boolean) = try {
+        // bare: it steps the players' clock and idles the looper itself; settling would also advance Compose's clock
         compose.waitUntil(timeoutMs) {
             clock.advanceTime(20)
             shadowOf(Looper.getMainLooper()).idle()
