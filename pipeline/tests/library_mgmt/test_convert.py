@@ -388,6 +388,108 @@ async def test_a_corrupt_input_fails_at_once(db: Database, tmp_path: Path) -> No
     assert p.exists() and w.trash_files() == []
 
 
+def h263_junk(tmp: Path) -> bytes:
+    """Junk that ffprobe opens as a raw H.263 stream: one real H.263 frame, then 200 kB of
+    seeded bytes. About 1 in 100 ``os.urandom(200_000)`` files read this way on ffprobe 8.1
+    (#526); building it keeps the case deterministic on every ffmpeg. Before the fix,
+    with re-encoding allowed, it became a 1-frame MP4 that passed verification and the
+    "original" went to the trash."""
+    one = tmp / "one.h263"
+    ff("-f", "lavfi", "-i", "testsrc2=size=352x288:rate=25", "-frames:v", "1",
+       "-c:v", "h263", "-f", "h263", str(one))  # fmt: skip
+    return one.read_bytes() + random.Random(47_4).randbytes(200_000)
+
+
+def lrc_junk() -> bytes:
+    """Junk that ffprobe opens as an LRC (lyrics) subtitle: two timed lines, then bytes."""
+    return b"[00:01.00]one\n[00:02.00]two\n" + random.Random(47_4).randbytes(2_000)
+
+
+@pytest.mark.parametrize(
+    ("kind", "allow_reencode"),
+    [("h263", True), ("h263", False), ("lrc", True)],
+    ids=["h263-reencode-allowed", "h263-reencode-off", "lrc"],
+)
+async def test_junk_ffprobe_guesses_at_fails_at_once(
+    db: Database,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    allow_reencode: bool,
+) -> None:
+    monkeypatch.setattr(cv, "_encoders", {"libx264"})
+    data = h263_junk(tmp_path) if kind == "h263" else lrc_junk()
+    w = await make_world(db, tmp_path, settings={"convert": {"allow_reencode": allow_reencode}})
+    vid, p = await w.video("junk.mkv", data)
+    # ffprobe does open it: the stage itself has to see that it is not a video file
+    probed, _ = await cv.probe_json(str(p))
+    assert probed is not None and probed.format_name == kind
+    job = await convert_one(db, vid, await home(db))
+    assert job["state"] == "failed", (job["outcome"], job["output_summary"])
+    assert job["attempts"] == 1 and str(job["error_cause"]).startswith("ffmpeg_decode")
+    assert "the original cannot be read" in str(job["error"])
+    assert "no container" in str(job["error"])
+    assert job["failure_class"] == "item_permanent"
+    assert p.read_bytes() == data and w.trash_files() == [] and w.staged_files() == []
+    assert not (w.root / "junk.mp4").exists()
+    assert await list_actions(db, library_id=w.library_id) == []
+    assert not Path(cv.WORK_ROOT, str(job["id"])).exists()
+
+
+async def test_the_library_plan_skips_junk_as_unreadable(db: Database, tmp_path: Path) -> None:
+    w = await make_world(db, tmp_path, settings={"convert": {"allow_reencode": True}})
+    _, p = await w.video("junk.mkv", h263_junk(tmp_path))
+    h = await home(db)
+    await enqueue_job(db, subject_kind="library", subject_id=w.library_id, stage="convert_mp4")
+    assert await h.drain() == 1  # the library's job only: nothing enqueued for the junk
+    s = loads((await jobs(db))[-1]["output_summary"])
+    assert s["enqueued"] == 0 and s["reasons"] == {"unreadable": 1}
+    assert p.exists() and w.trash_files() == []
+
+
+def _doc(fmt: str, duration: str | None, *streams: dict[str, Any]) -> cv.Probe:
+    f: dict[str, Any] = {"format_name": fmt}
+    if duration is not None:
+        f["duration"] = duration
+    return cv.Probe({"format": f, "streams": list(streams)})
+
+
+_H264 = {"codec_type": "video", "codec_name": "h264", "width": 320, "height": 240}
+
+
+async def test_unreadable_wants_a_container_a_duration_and_frames() -> None:
+    raw = {"codec_type": "video", "codec_name": "h263", "width": 352, "height": 288}
+    assert "no container" in str(cv.unreadable(_doc("h263", None, raw)))
+    assert "no container" in str(cv.unreadable(_doc("lrc", None, {"codec_type": "subtitle"})))
+    assert "no container" in str(cv.unreadable(_doc("rawvideo", "4.0", raw)))
+    assert cv.unreadable(_doc("", None, raw)) == "ffprobe found no container"
+    assert "no duration" in str(cv.unreadable(_doc("matroska,webm", None, _H264)))
+    assert "no duration" in str(cv.unreadable(_doc("matroska,webm", "0.000000", _H264)))
+    assert "no frames" in str(cv.unreadable(_doc("matroska,webm", "3.0", _H264), frames=0))
+    # real containers, MPEG-PS too (ffprobe's probe score for it is only 26)
+    for fmt in ("matroska,webm", "mov,mp4,m4a,3gp,3g2,mj2", "avi", "mpegts", "mpeg", "flv"):
+        assert cv.unreadable(_doc(fmt, "3.0", _H264), frames=75) is None, fmt
+        assert cv.unreadable(_doc(fmt, "3.0", _H264)) is None, fmt
+    # audio only has no frames to count: the plan skips it as no_video
+    mp3 = {"codec_type": "audio", "codec_name": "mp3"}
+    assert cv.unreadable(_doc("mp3", "3.0", mp3)) is None
+
+
+async def test_verification_fails_an_original_video_without_a_duration(tmp_path: Path) -> None:
+    from maktaba_pipeline.library_mgmt.verify import ProbeInfo, StreamInfo, verify_media
+
+    good = mkv_h264_aac(tmp_path / "in.mkv")
+    out = tmp_path / "out.mp4"
+    ff("-i", str(good), "-c", "copy", "-movflags", "+faststart", str(out))
+    info = await probe(str(good))
+    assert info is not None
+    stream = StreamInfo(0, "video", "h263", 320, 240)
+    no_duration = ProbeInfo(str(good), "h263", None, None, (stream,))
+    r = await verify_media(str(out), no_duration, mode="reencode", full_decode=False)
+    assert not r.ok and "the original has no duration to compare with" in r.reasons
+    assert (await verify_media(str(out), info, mode="remux", full_decode=False)).ok
+
+
 async def test_a_failed_verification_is_retried_once_then_fails(
     db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
