@@ -30,6 +30,12 @@ jobs:
       - name: String Catalogs have their Arabic
         run: python3 tools/apple/check-string-catalogs.py
 
+      # every UI test types through typeExactly, which reads the field back (seconds too)
+      - name: UI tests type through typeExactly
+        run: |
+          python3 tools/apple/check-ui-typing.py --self-test
+          python3 tools/apple/check-ui-typing.py
+
       - name: Select Xcode
         run: |
           set -euo pipefail
@@ -70,8 +76,10 @@ jobs:
   # simulator is made for the run and deleted after it (never a shared device); the
   # screenshots (dark, English and Arabic) are kept as an artifact.
   #
-  # Three jobs per device, side by side (each its own simulator), and one for the Mac: the
-  # iPhone's classes in one job outgrew the hour.
+  # Four jobs per device, side by side (each its own simulator), and one for the Mac: the
+  # iPhone's classes in one job outgrew the hour, and with each audited page also launched
+  # at the smallest text size and AX3 (`assertTextScales`) an iPad shard holding both
+  # Profile's and Libraries' audits came near it in three.
   player-ui-tests:
     name: Player UI tests (${{ matrix.device }}${{ matrix.shard != 0 && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }})
     runs-on: macos-26
@@ -83,12 +91,14 @@ jobs:
       # the fewest tests so far, so the shards stay even as classes are added.
       matrix:
         include:
-          - { device: iphone, shard: 1, shards: 3 }
-          - { device: iphone, shard: 2, shards: 3 }
-          - { device: iphone, shard: 3, shards: 3 }
-          - { device: ipad, shard: 1, shards: 3 }
-          - { device: ipad, shard: 2, shards: 3 }
-          - { device: ipad, shard: 3, shards: 3 }
+          - { device: iphone, shard: 1, shards: 4 }
+          - { device: iphone, shard: 2, shards: 4 }
+          - { device: iphone, shard: 3, shards: 4 }
+          - { device: iphone, shard: 4, shards: 4 }
+          - { device: ipad, shard: 1, shards: 4 }
+          - { device: ipad, shard: 2, shards: 4 }
+          - { device: ipad, shard: 3, shards: 4 }
+          - { device: ipad, shard: 4, shards: 4 }
           - { device: mac, shard: 0, shards: 0 }
     env:
       DERIVED: ${{ github.workspace }}/build/player-ui-derived

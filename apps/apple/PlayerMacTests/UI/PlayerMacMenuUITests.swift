@@ -165,8 +165,7 @@ final class PlayerMacMenuUITests: XCTestCase {
         }
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the home picker")
-        field.click()
-        field.typeText(home.url)
+        field.typeExactly(home.url, in: app)
         app.buttons["picker.connect"].click()
         // the sign-in way is a segmented choice: on the Mac its segments are radio buttons
         let byCode = app.radioButtons[language == "ar" ? "برمز" : "With a code"]

@@ -93,8 +93,8 @@ class PlayerUITestCase: XCTestCase {
 
     /// A first run, signed in to the mock home.
     func launchSignedIn(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
-                        controlsStay: Bool = true) {
-        launch(language, sections: sections, section: section, open: open, controlsStay: controlsStay)
+                        controlsStay: Bool = true, extra: [String] = []) {
+        launch(language, sections: sections, section: section, open: open, controlsStay: controlsStay, extra: extra)
         signIn()
     }
 
@@ -134,34 +134,75 @@ class PlayerUITestCase: XCTestCase {
         XCTAssertEqual(last()?["start_sec"] as? Int ?? 0, start, why)
     }
 
-    /// `performAccessibilityAudit` in two runs, Dynamic Type (it redraws the screen at each
-    /// text size, the slow part) apart from the other types, each run again when it could not
-    /// finish in time (error -56, "Audit failed to complete in time", or XCTest's own "Timed
-    /// out while running accessibility audit", both seen on a loaded CI runner; an iPad's
-    /// Profile audit timed out three times running every type at once). Every type asked for
-    /// is still audited; any other error, and every issue `handler` does not excuse, fails.
+    /// `performAccessibilityAudit` on the page once it has stopped drawing, with every type
+    /// asked for except Dynamic Type; every issue `handler` does not excuse fails.
+    ///
+    /// The audit's own Dynamic Type check is left out on purpose: it redraws the screen at
+    /// each text size and measures each text against the drawing, and on a loaded CI runner
+    /// its measurements go stale. It flagged every text of a page at once as "partially
+    /// unsupported" (Search's recent searches, Profile's Sessions, Libraries' pages) where the
+    /// screen recording shows each of them redrawn and scaled at every size. Dynamic Type is
+    /// checked instead by `assertTextScales`, on each audited page: the page launched at the
+    /// smallest size, the default and AX3, each text taller at each step. Clipped text
+    /// (`.textClipped`) is still the audit's.
     func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
-        for part in [types.subtracting(.dynamicType), types.intersection(.dynamicType)] where !part.isEmpty {
-            for attempt in 1 ... 3 {
-                // the page as it is before the audit, for the handler to read: a query of the
-                // app from inside the handler, while the audit holds it, stalled an iPad's
-                // audit for 150 s on CI and left the app answering no query after it
-                shown = settledPage()
-                defer { shown = nil }
-                do {
-                    try app.performAccessibilityAudit(for: part, handler)
-                    break
-                } catch let error as NSError where Self.auditTimedOut(error) && attempt < 3 {
-                    continue
-                }
-            }
-        }
+        // the page as it is before the audit, for the handler to read: a query of the app
+        // from inside the handler, while the audit holds it, stalled an iPad's audit for
+        // 150 s on CI and left the app answering no query after it
+        shown = settledPage()
+        defer { shown = nil }
+        try app.performAccessibilityAudit(for: types.subtracting(.dynamicType), handler)
     }
 
-    static func auditTimedOut(_ error: NSError) -> Bool {
-        (error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56)
-            || (error.domain == "com.apple.dt.XCTest.XCTFuture" && error.code == 1000)
+    // MARK: Dynamic Type
+
+    static let smallestText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS"]
+    static let ax3Text = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+
+    /// Dynamic Type on the page open now, at the default size: `open` launches the app again
+    /// with the launch arguments it is given (a text size) and opens the same page. Each text
+    /// of the page, by its identifier or else its words, shown at the smallest size, the
+    /// default and AX3, must be taller at each step (a control's 44-pt minimum may hold it at the two
+    /// smaller sizes: `grows`); one that is not fails, named with its three heights. The texts of the system's bars are UIKit's own (an iPad's tab bar keeps
+    /// one size and shows the large content viewer instead) and are left out. Afterwards the
+    /// page is open again at the default size, for the test to go on.
+    func assertTextScales(_ page: String, file: StaticString = #filePath, line: UInt = #line, open: ([String]) -> Void) {
+        let fixed = textsThatDoNotScale(open: open)
+        XCTAssertTrue(fixed.isEmpty, "\(page): Dynamic Type: " + fixed.joined(separator: "; "), file: file, line: line)
+    }
+
+    /// The 44-pt minimum a control keeps (`frame(minHeight: 44)`, a hit region): a text that is
+    /// a button's label is read at its button's height, so at the smallest size and at the
+    /// default (Search's recent rows, the video page's Favorite and Mark watched) it is that
+    /// minimum both times, its words smaller inside.
+    static let controlMinimum: ClosedRange<CGFloat> = 43 ... 44.5
+
+    /// Taller at each step; at the two smaller sizes a control's 44-pt minimum may hold the
+    /// text's height (`controlMinimum`), and then only AX3 must be taller.
+    static func grows(_ small: CGFloat, _ normal: CGFloat, _ large: CGFloat) -> Bool {
+        if small == normal, controlMinimum.contains(normal) { return normal < large }
+        return small < normal && normal < large
+    }
+
+    /// The texts of the page that do not grow at each step (see `assertTextScales`).
+    func textsThatDoNotScale(open: ([String]) -> Void) -> [String] {
+        guard let normal = settledPage() else { return ["the page could not be read"] }
+        open(Self.smallestText)
+        let small = settledPage()
+        open(Self.ax3Text)
+        let large = settledPage()
+        open([])
+        guard let small, let large else { return ["the page could not be read at the smallest size or AX3"] }
+        let (s, n, l) = (small.heights, normal.heights, large.heights)
+        var fixed: [String] = []
+        for key in n.keys.sorted() {
+            guard let hs = s[key], let hl = l[key], let hn = n[key] else { continue }
+            for k in 0 ..< min(hs.count, hn.count, hl.count) where !Self.grows(hs[k], hn[k], hl[k]) {
+                fixed.append("\"\(key)\" \(Int(hs[k])) / \(Int(hn[k])) / \(Int(hl[k])) pt high (smallest / default / AX3)")
+            }
+        }
+        return fixed
     }
 
     /// An audit issue with the element it is on (identifier, label, frame), for a failure that
@@ -169,16 +210,6 @@ class PlayerUITestCase: XCTestCase {
     func described(_ issue: XCUIAccessibilityAuditIssue) -> String {
         guard let e = issue.element else { return "\(issue.compactDescription) [no element: \(issue.detailedDescription)]" }
         return "\(issue.compactDescription) [\(e.identifier)|\(e.label)|\(e.frame)]"
-    }
-
-    /// A Dynamic Type issue on a UIKit UILabel the audit cannot map to an element: on an iPad,
-    /// the section names of the tab bar at the top of the window (four in Libraries, where four
-    /// sections are named; two in Profile, launched with two), which iPadOS keeps at one size
-    /// and shows in the large content viewer instead; and the system search field's empty
-    /// placeholder. This app's own texts are SwiftUI `Text`, which the audit always maps to an
-    /// element (`rail.title`, a card's title), so they are still checked.
-    func systemFixedLabel(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
-        isPad && issue.auditType == .dynamicType && issue.element == nil && issue.detailedDescription.contains("UILabel")
     }
 
     /// A contrast issue the audit can't judge: an element half off the screen, or partly under
@@ -235,9 +266,21 @@ class PlayerUITestCase: XCTestCase {
         var window = CGRect.null
         var tab: CGRect?
         var nav: CGRect?
-        var texts: [(label: String, frame: CGRect)] = []
+        var texts: [(id: String, label: String, frame: CGRect)] = []
 
         init() {}
+
+        /// Each text's height, by its identifier or else its words, in the order shown; the
+        /// texts of the tab and navigation bars left out (the system's own, see
+        /// `assertTextScales`).
+        var heights: [String: [CGFloat]] {
+            let bars = [tab, nav].compactMap { $0 }
+            var all: [String: [CGFloat]] = [:]
+            for t in texts where !t.frame.isEmpty && !bars.contains(where: { $0.intersects(t.frame) }) {
+                all[t.id.isEmpty ? t.label : t.id, default: []].append(t.frame.height)
+            }
+            return all
+        }
 
         func sameDrawing(as other: Shown) -> Bool {
             window == other.window && tab == other.tab && nav == other.nav && texts.count == other.texts.count
@@ -251,7 +294,7 @@ class PlayerUITestCase: XCTestCase {
                 case .window where window.isNull: window = s.frame
                 case .tabBar where tab == nil: tab = s.frame
                 case .navigationBar where nav == nil: nav = s.frame
-                case .staticText: texts.append((s.label, s.frame))
+                case .staticText: texts.append((s.identifier, s.label, s.frame))
                 default: break
                 }
                 stack.append(contentsOf: s.children.reversed())

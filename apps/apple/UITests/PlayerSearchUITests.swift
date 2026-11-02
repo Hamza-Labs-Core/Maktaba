@@ -6,8 +6,8 @@ import XCTest
 /// run again and are forgotten on the home; an Arabic query goes to the home unchanged.
 final class PlayerSearchUITests: PlayerUITestCase {
     /// Search as a TestFlight build shows it: its own tab beside Libraries.
-    private func openSearch(_ language: String = "en") {
-        launchSignedIn(language, section: "search")
+    private func openSearch(_ language: String = "en", extra: [String] = []) {
+        launchSignedIn(language, section: "search", extra: extra)
         XCTAssertTrue(element("screen.search").waitForExistence(timeout: 15), "the Search screen")
     }
 
@@ -34,8 +34,9 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(check(), what)
     }
 
-    /// NFR-6: labels, roles, contrast, Dynamic Type, clipped text, hit regions.
-    private func audit(_ name: String) {
+    /// NFR-6: labels, roles, contrast, clipped text, hit regions, then Dynamic Type
+    /// (`assertTextScales`): `open` opens the same screen again at a text size.
+    private func audit(_ name: String, open: ([String]) -> Void) {
         // every issue of the screen in one failure, with the element it is on
         var found: [String] = []
         do {
@@ -52,8 +53,6 @@ final class PlayerSearchUITests: PlayerUITestCase {
                 // and, on an iPad, its placeholder's grey on the field's own fill (UIKit's colours
                 // for both, "nearly passed"); the app's texts on this screen are still checked
                 if issue.auditType == .contrast, issue.element?.elementType == .searchField { return true }
-                // and on an iPad its empty field's placeholder, and the tab bar's section names
-                if self.systemFixedLabel(issue) { return true }
                 found.append(self.described(issue))
                 return true
             }
@@ -61,6 +60,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
             found.append("\(error)")
         }
         XCTAssertTrue(found.isEmpty, "\(name) \(language): " + found.joined(separator: "; "))
+        assertTextScales("\(name) \(language)", open: open)
     }
 
     func testTypingShowsSuggestions() {
@@ -92,7 +92,12 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertEqual(searches.first?["q"] as? String, "seerah")
         XCTAssertEqual(searches.first?["mode"] as? String, "hybrid", "FR-20: hybrid")
         shot("search-results")
-        audit("results")
+        audit("results") { size in
+            self.openSearch(extra: size)
+            self.type("seerah\n")
+            // the results' top (at AX3 "In the transcript" is below the screen, not made yet)
+            XCTAssertTrue(self.element("search.titles").waitForExistence(timeout: 10), "Titles")
+        }
 
         // the second passage of v1 starts at 1622 s (`Fixtures/search.json`)
         let passage = element("search.passage.v1.1")
@@ -125,7 +130,11 @@ final class PlayerSearchUITests: PlayerUITestCase {
         // scalar by scalar: Swift's == would also take a differently composed string
         XCTAssertEqual(sent.map { Array($0.unicodeScalars) }, Array(query.unicodeScalars), "sent unchanged: \(sent ?? "nil")")
         shot("search-results")
-        audit("results")
+        audit("results") { size in
+            self.openSearch("ar", extra: size)
+            self.type(query + "\n")
+            XCTAssertTrue(self.element("search.titles").waitForExistence(timeout: 10), "Titles in Arabic")
+        }
     }
 
     func testRecentSearchesRunAgainAndAreForgotten() {
@@ -135,7 +144,10 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["Recent searches"].waitForExistence(timeout: 10), "the recent searches")
         XCTAssertTrue(app.staticTexts["Cordoba"].exists)
         shot("search-recent")
-        audit("recent")
+        audit("recent") { size in
+            self.openSearch(extra: size)
+            XCTAssertTrue(self.app.staticTexts["Cordoba"].waitForExistence(timeout: 10), "the recent searches")
+        }
 
         let remove = app.buttons.matching(identifier: "search.recent.remove").element(boundBy: 1)
         XCTAssertEqual(remove.label, "Remove Cordoba")

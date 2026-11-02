@@ -8,9 +8,9 @@ final class PlayerComponentsUITests: PlayerUITestCase {
     private static let ax3 = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
 
     /// Opens one gallery page in `language`, at AX3 when `large`.
-    private func gallery(_ piece: String, _ language: String, large: Bool) {
+    private func gallery(_ piece: String, _ language: String, large: Bool, size: [String] = []) {
         launch(language, fresh: false,
-               extra: ["-maktaba-gallery", piece, "-maktaba-gallery-home", home.url] + (large ? Self.ax3 : []))
+               extra: ["-maktaba-gallery", piece, "-maktaba-gallery-home", home.url] + (large ? Self.ax3 : size))
         XCTAssertTrue(element("gallery.\(piece)").waitForExistence(timeout: 15), "the \(piece) page")
     }
 
@@ -21,7 +21,7 @@ final class PlayerComponentsUITests: PlayerUITestCase {
                 gallery(piece, language, large: large)
                 check(language, large)
                 shot("components-\(piece)\(large ? "-ax3" : "")")
-                // NFR-6: labels, roles, contrast, Dynamic Type, clipped text, hit regions
+                // NFR-6: labels, roles, contrast, clipped text, hit regions (Dynamic Type below)
                 do {
                     try accessibilityAudit { issue in
                         // a progress bar is a reading, not a control: no 44-pt target
@@ -34,8 +34,24 @@ final class PlayerComponentsUITests: PlayerUITestCase {
                 } catch {
                     XCTFail("\(piece) \(language)\(large ? " AX3" : ""): \(error)")
                 }
+                if !large {
+                    assertTextScales("\(piece) \(language)") { size in self.gallery(piece, language, large: false, size: size) }
+                }
                 app.terminate()
             }
+        }
+    }
+
+    /// The Dynamic Type check catches a text of one size: the gallery's `fixedtext` page shows
+    /// a text in `.body` beside one in a fixed 17 pt; the check names the second, not the first.
+    func testTheSizeCheckFailsATextOfOneSize() {
+        for language in ["en", "ar"] {
+            gallery("fixedtext", language, large: false)
+            XCTAssertTrue(element("gallery.text.fixed").waitForExistence(timeout: 5), "the fixed text")
+            let fixed = textsThatDoNotScale { size in self.gallery("fixedtext", language, large: false, size: size) }
+            XCTAssertTrue(fixed.contains { $0.hasPrefix("\"gallery.text.fixed\"") }, "\(language): the fixed text fails: \(fixed)")
+            XCTAssertFalse(fixed.contains { $0.hasPrefix("\"gallery.text.scaled\"") }, "\(language): the scaled text passes: \(fixed)")
+            app.terminate()
         }
     }
 

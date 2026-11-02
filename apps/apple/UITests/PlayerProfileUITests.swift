@@ -13,9 +13,9 @@ import XCTest
 /// fresh install) and `-maktaba-record-opens` (a link's address is shown, not opened). The
 /// theme is not forced dark here, so the stored choice is the one the app reads.
 final class PlayerProfileUITests: PlayerUITestCase {
-    private func launchProfile(_ language: String = "en") {
+    private func launchProfile(_ language: String = "en", extra: [String] = []) {
         launch(language, sections: ["libraries", "profile"], section: "profile", theme: nil,
-               extra: ["-maktaba-settings-reset", "-maktaba-record-opens"])
+               extra: ["-maktaba-settings-reset", "-maktaba-record-opens"] + extra)
         signIn()
         XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15), "the Profile")
     }
@@ -206,55 +206,37 @@ final class PlayerProfileUITests: PlayerUITestCase {
     }
 
     func testAccessibilityAudit() throws {
-        try auditPage {}
-        try auditPage {
+        try auditPage("profile") {}
+        try auditPage("history") {
+            self.scrollUntil(self.element("profile.history"))
             self.element("profile.history").tap()
             XCTAssertTrue(self.element("history.v2").waitForExistence(timeout: 10))
         }
-        try auditPage {
+        try auditPage("sessions") {
+            self.scrollUntil(self.element("profile.sessions"))
             self.element("profile.sessions").tap()
             XCTAssertTrue(self.element("session.sess-1").waitForExistence(timeout: 10))
         }
     }
 
-    /// One page's audit in a launch of its own. On an iPad CI runner the audit of one launch
-    /// could stop answering (XCTest's "Timed out while running accessibility audit", three
-    /// times running on the same screen, the screen still in the recording); then the app
-    /// is launched afresh and the page audited again, in full.
-    private func auditPage(_ open: () -> Void) throws {
-        for attempt in 1 ... 2 {
-            launchProfile()
-            open()
-            do {
-                try audit()
-                return
-            } catch let error as NSError where Self.auditTimedOut(error) && attempt < 2 {
-                app.terminate()
-            }
-        }
-    }
-
-    /// The audit, but for a row just above the tab bar: as the audit grows the text it slides
-    /// under the bar, which reads as "partially unsupported" (the same row scrolled up passes).
-    private func audit() throws {
-        let found = try auditOnce()
-        XCTAssertTrue(found.isEmpty, found.joined(separator: "; "))
-    }
-
-    private func auditOnce() throws -> [String] {
-        let barTop = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
+    /// One page's audit in a launch of its own, then its Dynamic Type (`assertTextScales`):
+    /// `open` opens the page from the Profile.
+    private func auditPage(_ name: String, _ open: @escaping () -> Void) throws {
+        launchProfile()
+        open()
+        var found: [String] = []
         // every issue of the screen in one failure, with the element it is on (the audit
         // itself stops at the first and names only its class)
-        var found: [String] = []
-        try accessibilityAudit(for: [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]) { issue in
-            if issue.auditType == .dynamicType, (issue.element?.frame.maxY ?? 0) > barTop - 100 { return true }
+        try accessibilityAudit(for: [.sufficientElementDescription, .hitRegion, .contrast]) { issue in
             if self.contrastOutOfView(issue) { return true }
-            // an iPad's tab bar names its sections in UIKit labels of one size
-            if self.systemFixedLabel(issue) { return true }
             found.append(self.described(issue))
             return true
         }
-        return found
+        XCTAssertTrue(found.isEmpty, "\(name): " + found.joined(separator: "; "))
+        assertTextScales(name) { size in
+            self.launchProfile(extra: size)
+            open()
+        }
     }
 
     // MARK: helpers

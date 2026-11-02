@@ -9,6 +9,9 @@ import SwiftUI
 struct ComponentGallery: View {
     enum Piece: String, CaseIterable, Identifiable {
         case poster, rail, hero, progress, logo, shimmer
+        /// Not a component: a text that scales beside one of one fixed size, the case the UI
+        /// tests' Dynamic Type check (`assertTextScales`) must fail.
+        case fixedtext
         var id: String { rawValue }
     }
 
@@ -60,7 +63,21 @@ struct ComponentGallery: View {
         case .progress: progress
         case .logo: logos
         case .shimmer: shimmer
+        case .fixedtext: fixedText
         }
+    }
+
+    private var fixedText: some View {
+        VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s4) {
+            Text(verbatim: say("This text grows with the text size", "يكبر هذا النص مع حجم النص"))
+                .font(.body)
+                .accessibilityIdentifier("gallery.text.scaled")
+            // one size whatever the person chose: what an app's text must never be
+            Text(verbatim: say("This text stays one size", "يبقى هذا النص بحجم واحد"))
+                .font(.system(size: 17))
+                .accessibilityIdentifier("gallery.text.fixed")
+        }
+        .padding(.horizontal, MaktabaTokens.Spacing.s4)
     }
 
     private var posters: some View {

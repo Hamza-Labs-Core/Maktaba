@@ -79,8 +79,7 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         XCTAssertTrue(user.waitForExistence(timeout: 5))
         user.typeExactly("tester", in: app)
         let password = app.secureTextFields["signin.password"]
-        password.tap()
-        password.typeText("not-the-password")
+        password.typeExactly("not-the-password", in: app, secure: true)
         app.buttons["signin.submit"].tap()
         XCTAssertTrue(element("signin.problem").waitForExistence(timeout: 10), "wrong password")
         shot("signin-wrong-password")

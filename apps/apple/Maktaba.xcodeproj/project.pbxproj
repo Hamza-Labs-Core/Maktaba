@@ -214,6 +214,7 @@
 		3F892F8423A64FEF1A959DEB /* channel-guide-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D5DCAFCE2DF6240A07CA0D34 /* channel-guide-ch-1.json */; };
 		400C764474B9F9F77EE195D4 /* Home.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2C17944DFD5B9A7EB8F161F4 /* Home.xcstrings */; };
 		40CB41B9C6A2944E62462513 /* me-playlists.json in Resources */ = {isa = PBXBuildFile; fileRef = 37E5377E1A68AD45AE2A777E /* me-playlists.json */; };
+		41047A6C056799380AB1C7F8 /* TypingInFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 244F476719945F3486166FCC /* TypingInFields.swift */; };
 		41192C08B49916CDA3FDB8D9 /* me-video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = D88C16A21B9816C4F3F79A9C /* me-video-v11.json */; };
 		411C644FED09B5FDF3940960 /* search-suggest.json in Resources */ = {isa = PBXBuildFile; fileRef = ADE6EBEB46958C8973F5C5AD /* search-suggest.json */; };
 		41666C2FB3D073F6176A2551 /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
@@ -658,6 +659,7 @@
 		CD99DA986A7FC1C8110EAF53 /* video-v4.json in Resources */ = {isa = PBXBuildFile; fileRef = E58ACCB8DFCBF5B43687757E /* video-v4.json */; };
 		CE31EAA5FF53D723A76BA4EF /* channel-guide-ch-3.json in Resources */ = {isa = PBXBuildFile; fileRef = 8CAB2480242420873FE19615 /* channel-guide-ch-3.json */; };
 		CE54ADE8C5FB646E06CB6FA4 /* Watch.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B739BF5360457459715101C4 /* Watch.xcstrings */; };
+		CE729F11875F3136FC873A70 /* TypingInFields.swift in Sources */ = {isa = PBXBuildFile; fileRef = 244F476719945F3486166FCC /* TypingInFields.swift */; };
 		CEEF891BDF23B23B7421FEE9 /* PlayerRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6087ECDFB23E3D4828BDED83 /* PlayerRoute.swift */; };
 		D00B1F8167F27DC41BA31B7B /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
 		D03BA6B7F41C1CCB724C7F9C /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
@@ -2742,6 +2744,7 @@
 			files = (
 				236DC605287F168E25304193 /* MockHome.swift in Sources */,
 				4ACEEB0B95CCEF9A0EAD9412 /* PlayerMacMenuUITests.swift in Sources */,
+				41047A6C056799380AB1C7F8 /* TypingInFields.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -2812,6 +2815,7 @@
 				090BCDAE9625A4DF362699A5 /* PermissionsUITests.swift in Sources */,
 				A60FE7308932BEE8359595FF /* TVConnectUITests.swift in Sources */,
 				332EC82BA1511AF9A108BA76 /* TVLiveUITests.swift in Sources */,
+				CE729F11875F3136FC873A70 /* TypingInFields.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

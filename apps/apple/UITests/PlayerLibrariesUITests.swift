@@ -187,12 +187,16 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             for page in pages {
                 let name = "\(language) \(page.open ?? "root")"
-                launchSignedIn(language, section: "libraries", open: page.open)
-                XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
-                // the posters loaded: no shimmer moving under the contrast check
-                waitFor(timeout: 2) { false }
-                loadEveryPage()
+                let open = { (size: [String]) in
+                    self.launchSignedIn(language, section: "libraries", open: page.open, extra: size)
+                    XCTAssertTrue(self.element(page.ready).waitForExistence(timeout: 20), name)
+                    // the posters loaded: no shimmer moving under the contrast check
+                    self.waitFor(timeout: 2) { false }
+                    self.loadEveryPage()
+                }
+                open([])
                 audit(name)
+                assertTextScales(name, open: open)
                 app.terminate()
             }
         }
@@ -264,15 +268,6 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// One audit of the page: every issue it found, and what the app asked the home meanwhile.
     private func auditOnce(_ page: String) -> (found: [String], during: [String]) {
-        // Dynamic Type exemption, for the episode rows and a library's filter row only: the
-        // audit grows the text, and what sits low on the page then moves below the screen,
-        // which it reports as "partially unsupported" (on iPhone the lowest episode row fails,
-        // a row higher up passes, and scrolled up the next one passes; on iPad the filters at
-        // the page's foot fail the same way). Both use scaled fonts with no fixed height, and
-        // testEpisodesAtAX3 checks them at AX3 directly.
-        let lowOnThePage = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH 'episode.v' OR identifier == 'library.filters'"))
-            .allElementsBoundByIndex.map(\.frame)
         // every issue of the page in one failure (the audit itself stops at the first)
         var found: [String] = []
         let asked = home.requests.count
@@ -283,9 +278,6 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
                 // a card half off the screen's edge (a row scrolls sideways): the audit samples
                 // pixels beyond it; the cards fully on screen are still checked (as 48.14's audit)
                 if self.contrastOutOfView(issue) { return true }
-                // an iPad's tab bar names its sections in UIKit labels of one size
-                if self.systemFixedLabel(issue) { return true }
-                if issue.auditType == .dynamicType, let f = issue.element?.frame, lowOnThePage.contains(where: { $0.contains(f) }) { return true }
                 found.append(self.described(issue))
                 return true
             }
