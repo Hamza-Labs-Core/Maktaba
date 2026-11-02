@@ -14,8 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.VerticalDivider
+import androidx.compose.material3.adaptive.WindowAdaptiveInfo
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
@@ -65,10 +67,19 @@ fun panesFor(widthDp: Int, fold: Fold?): Panes = when {
     else -> Panes.One
 }
 
+/**
+ * The window's adaptive info a screen lays itself out by, when its frame gives one (the
+ * Player's shell gives the one its navigation was picked from, so the two always agree, and a
+ * test can fake a hinge the JVM cannot fold); null reads the window.
+ */
+val LocalAdaptiveInfo = staticCompositionLocalOf<WindowAdaptiveInfo?> { null }
+
 /** The current window's [Panes], from Jetpack WindowManager's fold (through Material's adaptive info). */
 @Composable
-fun currentPanes(): Panes {
-    val info = currentWindowAdaptiveInfoV2()
+fun currentPanes(): Panes = panesFor(LocalAdaptiveInfo.current ?: currentWindowAdaptiveInfoV2())
+
+/** The [Panes] for Material's adaptive [info]: its window's width and its first hinge. */
+fun panesFor(info: WindowAdaptiveInfo): Panes {
     val hinge = info.windowPosture.hingeList.firstOrNull()
     val fold = hinge?.let {
         val b = it.bounds

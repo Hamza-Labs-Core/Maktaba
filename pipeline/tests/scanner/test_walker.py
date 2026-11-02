@@ -151,6 +151,25 @@ def test_walk_prunes_custom_ignored_dirnames(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_walk_skips_thumbs_and_synology_index_folders(tmp_path: Path) -> None:
+    """A channel folder's ``.thumbs/`` and the NAS's ``@eaDir`` index are never library
+    content, whatever they hold (2026-11: the owner's NAS has both)."""
+    chan = "Abdul Basit- Mojawwad"
+    _touch(tmp_path, f"{chan}/Abasa： 80.mp4")
+    _touch(tmp_path, f"{chan}/.thumbs/Abasa： 80.jpg")
+    _touch(tmp_path, f"{chan}/.thumbs/stray.mp4")
+    _touch(tmp_path, f"{chan}/@eaDir/Abasa： 80.mp4/SYNOVIDEO_VIDEO_SCREENSHOT.jpg")
+    _touch(tmp_path, f"{chan}/@eaDir/preview.mp4")
+    log = _RecordingLogger()
+
+    got = _rels(tmp_path, walk(tmp_path, WalkConfig(), log))
+
+    assert got == [f"{chan}/Abasa： 80.mp4"]
+    pruned = {kw["path"] for ev, kw in log.debugs if ev == "scanner.dir_pruned"}
+    assert pruned == {str(tmp_path / chan / "@eaDir")}
+
+
+@pytest.mark.unit
 def test_walk_skips_special_files(tmp_path: Path) -> None:
     """FIFOs / sockets are filesystem entries the walker must reject."""
     if sys.platform == "win32":

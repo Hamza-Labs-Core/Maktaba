@@ -114,10 +114,13 @@ internal fun LibraryPage(id: String, nav: PlayerNavigator, embedded: Boolean, in
                 },
                 modifier = Modifier.fillMaxSize(),
             ) {
+                val gridState = rememberLazyGridState()
+                // the hub rows can answer after the videos: they come in above the tabs
+                gridState.StaysAtTopWhen(state.rows)
                 LazyVerticalGrid(
                     gridCells,
                     Modifier.fillMaxSize().testTag("library-grid"),
-                    state = rememberLazyGridState(),
+                    state = gridState,
                     contentPadding = PaddingValues(bottom = MaktabaTokens.Spacing.s6),
                     verticalArrangement = Arrangement.spacedBy(MaktabaTokens.Spacing.s3),
                     horizontalArrangement = Arrangement.spacedBy(MaktabaTokens.Spacing.s3),

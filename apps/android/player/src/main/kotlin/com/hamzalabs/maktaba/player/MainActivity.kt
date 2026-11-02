@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
                             val home = remember(user, client) { PlayerHome(app.session, user, client, app.themes, onPlaying = { playing = it }) }
                             // this home's pictures, with its token, in the app's shared caches (NFR-4)
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
-                            // the sections (a bar, a rail or a drawer, by the window), Live TV only with a channel (FR-5); hidden while a video plays full screen
+                            // the sections (a bar, a rail or the collapsible rail, by the window and its fold), Live TV only with a channel (FR-5); hidden while a video plays full screen
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
                                 PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
                             }

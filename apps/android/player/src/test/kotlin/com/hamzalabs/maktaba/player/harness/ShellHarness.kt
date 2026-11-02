@@ -7,7 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.HingeInfo
 import androidx.compose.material3.adaptive.Posture
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.material3.adaptive.WindowAdaptiveInfo
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -31,9 +33,30 @@ enum class Window(val widthDp: Int, val heightDp: Int, val qualifiers: String) {
     Phone(411, 891, "w411dp-h891dp-xxhdpi"),
     /** A foldable open flat (Pixel 9 Pro Fold, inner screen). */
     Foldable(673, 841, "w673dp-h841dp-xhdpi"),
+    /** A foldable open flat held sideways (Pixel 9 Pro Fold, inner screen): an expanded window. */
+    FoldableWide(841, 673, "w841dp-h673dp-xhdpi"),
     /** A large tablet in landscape. */
     Tablet(1280, 800, "w1280dp-h800dp-xhdpi"),
 }
+
+/**
+ * Material's adaptive info for [this] window half folded at [hinge] (window px, as WindowManager
+ * reports it): upright when [vertical] (held like a book), else across (tabletop). The JVM
+ * cannot fold a window, so the shell is given this one.
+ */
+fun Window.folded(hinge: Rect, vertical: Boolean) = WindowAdaptiveInfo(
+    WindowSizeClass.BREAKPOINTS_V2.computeWindowSizeClass(widthDp.toFloat(), heightDp.toFloat()),
+    Posture(
+        isTabletop = !vertical,
+        hingeList = listOf(HingeInfo(hinge, isFlat = false, isVertical = vertical, isSeparating = true, isOccluding = false)),
+    ),
+)
+
+/** A 12 px hinge upright at the middle of a window [widthPx] × [heightPx]. */
+fun uprightHinge(widthPx: Int, heightPx: Int) = Rect(widthPx / 2f - 6f, 0f, widthPx / 2f + 6f, heightPx.toFloat())
+
+/** A 12 px hinge across the middle of a window [widthPx] × [heightPx]. */
+fun acrossHinge(widthPx: Int, heightPx: Int) = Rect(0f, heightPx / 2f - 6f, widthPx.toFloat(), heightPx / 2f + 6f)
 
 /** Material's adaptive info for a [widthDp] × [heightDp] window, half folded flat on a table or not. */
 fun adaptiveInfo(widthDp: Int, heightDp: Int, tabletop: Boolean = false) = WindowAdaptiveInfo(
@@ -53,6 +76,7 @@ fun ComposeContentTestRule.setShell(
     window: Window = Window.Phone,
     tabletop: Boolean = false,
     immersive: Boolean = false,
+    info: WindowAdaptiveInfo = window.info(tabletop),
     screens: PlayerScreens = AppScreens,
 ) {
     setContent {
@@ -60,10 +84,10 @@ fun ComposeContentTestRule.setShell(
             Surface {
                 if (home != null) {
                     CompositionLocalProvider(LocalPlayerHome provides home.home) {
-                        PlayerShell(sections = sections, adaptiveInfo = window.info(tabletop), immersive = immersive, screens = screens)
+                        PlayerShell(sections = sections, adaptiveInfo = info, immersive = immersive, screens = screens)
                     }
                 } else {
-                    PlayerShell(sections = sections, adaptiveInfo = window.info(tabletop), immersive = immersive, screens = screens)
+                    PlayerShell(sections = sections, adaptiveInfo = info, immersive = immersive, screens = screens)
                 }
             }
         }

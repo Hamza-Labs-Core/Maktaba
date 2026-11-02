@@ -6,7 +6,8 @@ A yt-dlp download folder can hold, per video ``<stem>.<ext>``:
   channel, and (when downloaded from a playlist) the playlist title, id and
   position.
 - ``<stem>.description`` — the video description.
-- ``<stem>.webp`` / ``.jpg`` / ``.png`` — the thumbnail.
+- ``<stem>.webp`` / ``.jpg`` / ``.png`` — the thumbnail, next to the video or in the
+  folder's hidden ``.thumbs/`` subfolder (:func:`find_sidecar_thumbnail`).
 
 and, per folder:
 
@@ -15,23 +16,27 @@ and, per folder:
   ``@handle``; titles like ``"<channel> - Videos"``).
 - ``ytdl-archive.txt`` — ``"youtube <id>"`` lines in download order.
 
-Everything here is pure parsing over already-read content; the scanner
-owns the filesystem walk. Channel tabs are *not* series: only real
-playlists carry grouping meaning (:func:`is_real_playlist`).
+Everything here is pure parsing over already-read content (the scanner
+owns the filesystem walk), except :func:`find_sidecar_thumbnail`: a few stats.
+Channel tabs are *not* series: only real playlists carry grouping meaning
+(:func:`is_real_playlist`).
 """
 
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 __all__ = [
     "SIDECARS_VERSION",
+    "THUMBS_DIR",
     "THUMB_EXTS",
     "PlaylistInfo",
     "VideoInfo",
+    "find_sidecar_thumbnail",
     "is_real_playlist",
     "parse_archive",
     "parse_info_json",
@@ -41,6 +46,31 @@ __all__ = [
 SIDECARS_VERSION: int = 1
 
 THUMB_EXTS: tuple[str, ...] = (".webp", ".jpg", ".jpeg", ".png")
+
+#: the hidden subfolder some download setups keep a channel's thumbnails in
+#: (``<channel>/.thumbs/<stem>.jpg`` beside ``<channel>/<stem>.mp4``)
+THUMBS_DIR = ".thumbs"
+
+
+def find_sidecar_thumbnail(video_local_path: str) -> str | None:
+    """The video's downloaded thumbnail, or None: ``<dir>/<stem><ext>`` first, then
+    ``<dir>/.thumbs/<stem><ext>``, for each ext of :data:`THUMB_EXTS` in order.
+
+    The one rule every reader of a video's own image goes through. Stats only, never a
+    directory listing: the share can be slow and a channel folder can hold thousands of
+    files. ``video_local_path`` is this machine's path (the spelling that exists, so the
+    stem matches its sidecars' Unicode form).
+    """
+    folder, name = os.path.split(video_local_path)
+    stem = os.path.splitext(name)[0]
+    if not stem:
+        return None
+    for where in (folder, os.path.join(folder, THUMBS_DIR)):
+        for ext in THUMB_EXTS:
+            candidate = os.path.join(where, stem + ext)
+            if os.path.isfile(candidate):  # False on any stat error
+                return candidate
+    return None
 
 
 @dataclass(frozen=True, slots=True)
