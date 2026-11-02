@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -207,6 +208,43 @@ async def test_seed_matches_graph(db: Database) -> None:
         assert bool(r["enabled"]) == stage_enabled_state(s, {})[0], s.name
     pools = {r["pool"] for r in await db.fetch("SELECT pool FROM worker_pools")}
     assert pools == {p.pool for p in POOLS}
+
+
+@pytest.mark.asyncio
+async def test_only_transcribe_leads_to_extract_once_synced(db: Database) -> None:
+    """2026-11: no edge feeds extract (the probe's legacy one is gone); transcribe asks
+    for it (``may_request``) when the STT backend reads a file. The graph sync writes
+    both columns over whatever a database had, so no migration carries the change."""
+    from maktaba_pipeline.engine.graph import get_stage, validate
+    from maktaba_pipeline.engine.sync import sync_graph
+
+    validate()
+    probe, transcribe = get_stage("probe"), get_stage("transcribe")
+    assert probe is not None and transcribe is not None
+    assert "extract" not in {e.to for e in probe.edges}
+    assert transcribe.may_request == ("extract",)
+    assert {s.name for s in GRAPH if any(e.to == "extract" for e in s.edges)} == set()
+    assert {s.name for s in GRAPH if "extract" in s.may_request} == {"transcribe"}
+
+    # a database synced by an older release: probe -> extract still in its row
+    await db.execute(
+        "UPDATE job_stages SET edges = $1 WHERE stage = 'probe'",
+        '[{"to": "extract", "map": "same", "when": "output_changed", "legacy": true}]',
+    )
+    await sync_graph(db, GRAPH)
+    rows = {
+        r["stage"]: r
+        for r in await db.fetch(
+            "SELECT stage, edges, may_request FROM job_stages"
+            " WHERE stage IN ('probe', 'transcribe')"
+        )
+    }
+
+    def _list(v: Any) -> list[Any]:
+        return list(loads(v) if isinstance(v, str) else v or [])
+
+    assert "extract" not in {e["to"] for e in _list(rows["probe"]["edges"])}
+    assert _list(rows["transcribe"]["may_request"]) == ["extract"]
 
 
 @pytest.mark.asyncio

@@ -24,7 +24,6 @@ from maktaba_pipeline.audio.extract import sweep_audio_cache
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
-from maktaba_pipeline.engine.graph import GRAPH, get_stage, validate
 from maktaba_pipeline.engine.sql import now, to_ts
 from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.handlers import extract_handler, probe_handler
@@ -120,21 +119,6 @@ def _never_ffmpeg() -> Any:
         raise AssertionError("no WAV is written for a streaming backend")
 
     return run_extract
-
-
-# ------------------------------------------------------------------ the graph
-
-
-def test_only_transcribe_leads_to_extract() -> None:
-    validate()
-    probe = get_stage("probe")
-    transcribe = get_stage("transcribe")
-    assert probe is not None and transcribe is not None
-    assert "extract" not in {e.to for e in probe.edges}
-    assert transcribe.may_request == ("extract",)
-    leads = {s.name for s in GRAPH if any(e.to == "extract" for e in s.edges)}
-    asking = {s.name for s in GRAPH if "extract" in s.may_request}
-    assert leads == set() and asking == {"transcribe"}
 
 
 # ------------------------------------------------------------------ streaming (live)
