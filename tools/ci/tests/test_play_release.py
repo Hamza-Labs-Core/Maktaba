@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -36,6 +37,73 @@ def test_play_bundles_uploads_every_app_by_its_gradle_package() -> None:
         assert f"tools/ci/play_release.py package {app}" in workflow
         # the package is read, never written out a second time
         assert f"package: {pr.package(app)}" not in workflow
+
+
+PLAY_BUNDLES = pr.ROOT / ".github/workflows/play-bundles.yml"
+# google-github-actions/auth v2.1.13
+GOOGLE_AUTH = "google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed"
+
+
+def _play_bundles() -> dict[str, Any]:
+    workflow: dict[str, Any] = yaml.safe_load(PLAY_BUNDLES.read_text(encoding="utf-8"))
+    return workflow
+
+
+def test_play_upload_is_keyless_no_json_secret_left() -> None:
+    # Workload Identity Federation only: no service-account key, in any form
+    text = PLAY_BUNDLES.read_text(encoding="utf-8")
+    assert "PLAY_SERVICE_ACCOUNT_JSON" not in text
+    assert "serviceAccountJsonPlainText" not in text
+    for doc in ("docs/google-play.md", "tools/ci/play_release.py", "README.md"):
+        assert "PLAY_SERVICE_ACCOUNT_JSON" not in (pr.ROOT / doc).read_text(encoding="utf-8")
+
+
+def test_play_upload_is_gated_on_the_two_variables() -> None:
+    bundles = _play_bundles()["jobs"]["bundles"]
+    gate = bundles["env"]["HAS_PLAY_ACCOUNT"]
+    assert gate == "${{ vars.PLAY_WIF_PROVIDER != '' && vars.PLAY_SERVICE_ACCOUNT != '' }}"
+    play_step = next(s for s in bundles["steps"] if s.get("id") == "play")
+    run = str(play_step["run"])
+    assert '"$HAS_PLAY_ACCOUNT" != true' in run
+    assert "Play upload skipped: PLAY_WIF_PROVIDER or PLAY_SERVICE_ACCOUNT not set" in run
+
+
+def test_only_the_play_job_may_mint_an_oidc_token() -> None:
+    workflow = _play_bundles()
+    assert workflow["permissions"] == {"contents": "read"}
+    for name, job in workflow["jobs"].items():
+        perms = job.get("permissions", {})
+        if name == "play":
+            assert perms == {"id-token": "write"}
+        else:
+            assert "id-token" not in perms, name
+
+
+def test_play_job_signs_in_with_pinned_auth_then_uploads_with_its_file() -> None:
+    play = _play_bundles()["jobs"]["play"]
+    assert play["if"] == "needs.bundles.outputs.play == 'true'"
+    steps: list[dict[str, Any]] = play["steps"]
+    # no checkout (it would wipe the credentials file) and no secret in this job
+    assert not any(str(s.get("uses", "")).startswith("actions/checkout") for s in steps)
+    assert "secrets." not in yaml.safe_dump(play)
+    uses = [str(s.get("uses", "")) for s in steps]
+    auth_at = uses.index(GOOGLE_AUTH)
+    upload_at = next(i for i, u in enumerate(uses) if u.startswith("r0adkll/upload-google-play@"))
+    assert auth_at < upload_at
+    auth = steps[auth_at]
+    assert auth["with"] == {
+        "workload_identity_provider": "${{ vars.PLAY_WIF_PROVIDER }}",
+        "service_account": "${{ vars.PLAY_SERVICE_ACCOUNT }}",
+        "create_credentials_file": True,
+    }
+    text = PLAY_BUNDLES.read_text(encoding="utf-8")
+    assert f"# google-github-actions/auth v2.1.13\n        uses: {GOOGLE_AUTH}\n" in text
+    upload = steps[upload_at]["with"]
+    credentials = f"${{{{ steps.{auth['id']}.outputs.credentials_file_path }}}}"
+    assert upload["serviceAccountJson"] == credentials
+    assert upload["track"] == "internal"
+    assert upload["status"] == "completed"
+    assert upload["whatsNewDirectory"] == "play/whatsnew"
 
 
 def _mobile_release_android_steps() -> list[dict[str, object]]:

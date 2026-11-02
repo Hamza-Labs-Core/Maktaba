@@ -23,12 +23,17 @@
 # the build only. Without the secrets the bundles are unsigned: they stay a workflow artifact
 # (`-unsigned.aab`), the run warns, and nothing is attached to the Release.
 #
-# PLAY: with the secret PLAY_SERVICE_ACCOUNT_JSON (a service account allowed to release to
-# testing tracks), each signed bundle also goes to its app's internal testing track, status
+# PLAY: keyless, through Workload Identity Federation (GitHub's OIDC token, no service-account
+# key anywhere). With the repository variables PLAY_WIF_PROVIDER (the provider's full resource,
+# projects/<NUMBER>/locations/global/workloadIdentityPools/github/providers/github) and
+# PLAY_SERVICE_ACCOUNT (the service account's email, allowed to release to testing tracks in
+# Play Console), each signed bundle also goes to its app's internal testing track, status
 # completed, with its mapping.txt and the tag's release notes (whatsnew en-US and ar,
 # tools/ci/play_release.py). The package uploaded to is the applicationId in the app's Gradle
-# build file. Without the secret the run notes "Play upload skipped: PLAY_SERVICE_ACCOUNT_JSON
-# not set" and succeeds. Only the internal track is ever written: never beta or production.
+# build file. Without both variables the run notes "Play upload skipped: PLAY_WIF_PROVIDER or
+# PLAY_SERVICE_ACCOUNT not set" and succeeds. Only the internal track is ever written: never
+# beta or production. The one-time Google Cloud and Play Console setup is in
+# docs/google-play.md ("One-time setup").
 #
 # This workflow runs only on tags pushed to this repository (never on a pull request), checks
 # out only the tagged commit, and gives each job only the permissions it needs.
@@ -71,10 +76,11 @@ jobs:
       tv_package: ${{ steps.play-notes.outputs.tv }}
     # Only whether there is a key (or a Play account) is job-wide (a step's `if:` cannot read
     # secrets); the key and its passwords reach only the steps that sign, never the setup
-    # actions, and the Play account only the upload action in the play job.
+    # actions. The Play account is no secret: two variables naming the Workload Identity
+    # provider and the service account, used only by the play job.
     env:
       HAS_UPLOAD_KEY: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 != '' }}
-      HAS_PLAY_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+      HAS_PLAY_ACCOUNT: ${{ vars.PLAY_WIF_PROVIDER != '' && vars.PLAY_SERVICE_ACCOUNT != '' }}
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v6.0.2
@@ -235,7 +241,7 @@ jobs:
           set -euo pipefail
           upload=false
           if [ "$HAS_PLAY_ACCOUNT" != true ]; then
-            echo "::notice title=Google Play::Play upload skipped: PLAY_SERVICE_ACCOUNT_JSON not set"
+            echo "::notice title=Google Play::Play upload skipped: PLAY_WIF_PROVIDER or PLAY_SERVICE_ACCOUNT not set"
           elif [ "$SIGNED" != true ]; then
             echo "::notice title=Google Play::Play upload skipped: the bundles are unsigned"
           elif [ "$PUBLISHED" = true ]; then
@@ -275,7 +281,11 @@ jobs:
     if: needs.bundles.outputs.play == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    permissions: {}
+    # id-token: write lets google-github-actions/auth ask GitHub for this job's OIDC token,
+    # which Google trades (Workload Identity Federation) for a short-lived token of the service
+    # account. Only this job has it; it checks out no code and holds no secret.
+    permissions:
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -300,14 +310,30 @@ jobs:
           [ -f "$AAB" ] || { echo "::error::$AAB is not in the bundles (unsigned?)"; exit 1; }
           echo "$AAB -> $PACKAGE (internal)"
 
+      # Keyless Google sign-in: GitHub's OIDC token for this job (repository
+      # Hamza-Labs-Core/Maktaba, the only one the provider accepts) -> the Workload Identity
+      # provider -> the service account. The credentials file it writes is an external_account
+      # configuration (no private key) that fetches short-lived tokens; the action deletes it
+      # when the job ends.
+      - name: Google sign-in (Workload Identity Federation)
+        id: google
+        # google-github-actions/auth v2.1.13
+        uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed
+        with:
+          workload_identity_provider: ${{ vars.PLAY_WIF_PROVIDER }}
+          service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
       # r0adkll/upload-google-play: the Play Developer API (androidpublisher v3) edit, upload,
       # track and commit, maintained, used widely, pinned to a commit as every third-party
-      # action here. The secret goes only to this step, as an input GitHub masks in the log.
+      # action here. Its serviceAccountJson input is a credentials file path it hands to
+      # google-auth-library (9.15.1 at this commit) as GOOGLE_APPLICATION_CREDENTIALS, which
+      # reads the external_account file the sign-in step wrote.
       - name: Upload to the internal track
         # r0adkll/upload-google-play v1.1.5
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
         with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          serviceAccountJson: ${{ steps.google.outputs.credentials_file_path }}
           packageName: ${{ needs.bundles.outputs[format('{0}_package', matrix.app)] }}
           releaseFiles: play/out/maktaba-${{ matrix.app }}-${{ needs.bundles.outputs.version }}.aab
           mappingFile: play/mapping/maktaba-${{ matrix.app }}-${{ needs.bundles.outputs.version }}-mapping.txt

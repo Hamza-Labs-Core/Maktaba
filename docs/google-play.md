@@ -107,10 +107,15 @@ testing works without that review.
 ## Automatic upload to internal testing
 
 Every release tag uploads each signed bundle to its app's **internal** testing track once the
-secret `PLAY_SERVICE_ACCOUNT_JSON` is set. Nothing else turns it on (the old `PLAY_UPLOAD` and
-`PLAY_RELEASE_STATUS` variables are no longer read). The `play` job of `play-bundles.yml` runs
-once per app and:
+repository variables `PLAY_WIF_PROVIDER` and `PLAY_SERVICE_ACCOUNT` are both set. Nothing else
+turns it on (the old `PLAY_UPLOAD` and `PLAY_RELEASE_STATUS` variables are no longer read). The
+`play` job of `play-bundles.yml` runs once per app and:
 
+- signs in to Google keylessly, with Workload Identity Federation: GitHub gives the job a
+  short-lived OIDC token (the job alone has `id-token: write`), Google's Workload Identity
+  provider accepts it only from this repository and trades it for a short-lived token of the
+  service account (`google-github-actions/auth`, pinned to a commit). There is no
+  service-account key, in the repository or anywhere else;
 - reads the app's package name from its Gradle build file (`applicationId`, through
   `tools/ci/play_release.py package <app>`), so it uploads to the package the bundle was built as;
 - uploads `maktaba-<app>-<version>.aab` with its R8 `mapping.txt` to the `internal` track,
@@ -125,12 +130,14 @@ the run still succeeds with one notice, when:
 
 | Notice | Why |
 |---|---|
-| `Play upload skipped: PLAY_SERVICE_ACCOUNT_JSON not set` | the secret is missing |
+| `Play upload skipped: PLAY_WIF_PROVIDER or PLAY_SERVICE_ACCOUNT not set` | a variable is missing |
 | `Play upload skipped: the bundles are unsigned` | the upload key secrets are missing (Play refuses unsigned bundles) |
 | `Play upload skipped: vX.Y.Z is published already, ...` | a re-run of a published tag (Play already has its code) |
 
 A real upload error (Play refusing a bundle, a missing permission) fails that app's `play` job,
-so it is seen. The service account's JSON reaches only the upload step and is never printed.
+so it is seen. The two variables are not secret (a resource name and an email); what grants
+access is the provider's condition that the token comes from `Hamza-Labs-Core/Maktaba`, and the
+service account's Play Console permissions.
 
 ### Release notes
 
@@ -151,35 +158,74 @@ page on GitHub.", and the same in Arabic).
 
 ### One-time setup (by the owner)
 
-Each app must already exist in Play Console, with one release uploaded by hand (above). Then:
+Each app must already exist in Play Console, with one release uploaded by hand (above). No
+service-account key is ever created or downloaded (Google recommends against keys): GitHub
+Actions signs in with Workload Identity Federation. Then, once:
 
 1. **Google Cloud project.** In the [Google Cloud console](https://console.cloud.google.com),
-   pick or create the project for Maktaba's Play publishing.
-2. **Turn on the API.** APIs & Services → Library → **Google Play Android Developer API** →
-   **Enable**, in that project.
-3. **Service account.** IAM & Admin → Service accounts → **Create service account** (for
-   example `maktaba-play-upload`). It needs no Google Cloud role. Open it → Keys → Add key →
-   Create new key → **JSON**. The file downloads once: keep it in your password manager, never
-   in the repository or in chat.
-4. **Play Console access.** [Play Console](https://play.google.com/console) → **Users and
+   pick or create the project for Maktaba's Play publishing. Note its project ID and project
+   **number** (Dashboard → Project info).
+2. **Turn on two APIs** in that project: APIs & Services → Library → **IAM Service Account
+   Credentials API** → Enable, and **Google Play Android Developer API** → Enable.
+3. **Service account, with no key.** IAM & Admin → Service accounts → **Create service
+   account** (for example `maktaba-play-upload`). It needs no Google Cloud role. Do not open
+   its Keys tab: it never gets a key.
+4. **Workload Identity pool and provider.** IAM & Admin → Workload Identity Federation →
+   **Create pool**: ID `github`. Add a provider to it: **OpenID Connect (OIDC)**, ID `github`,
+   issuer `https://token.actions.githubusercontent.com`, default audience. Attribute mapping
+   `google.subject` = `assertion.sub` and `attribute.repository` = `assertion.repository`.
+   Attribute condition `assertion.repository=='Hamza-Labs-Core/Maktaba'`, so no other
+   repository's token is accepted.
+5. **Let this repository act as the service account.** Service accounts →
+   `maktaba-play-upload` → Permissions (Principals with access) → **Grant access**: principal
+   `principalSet://iam.googleapis.com/projects/<NUMBER>/locations/global/workloadIdentityPools/github/attribute.repository/Hamza-Labs-Core/Maktaba`,
+   role **Workload Identity User** (`roles/iam.workloadIdentityUser`).
+
+   Steps 2 to 5 with `gcloud` instead of the console (`PROJECT` is the project ID, `NUMBER`
+   its number):
+
+   ```bash
+   gcloud services enable iamcredentials.googleapis.com androidpublisher.googleapis.com --project "$PROJECT"
+   gcloud iam service-accounts create maktaba-play-upload --project "$PROJECT"
+   gcloud iam workload-identity-pools create github --project "$PROJECT" --location global
+   gcloud iam workload-identity-pools providers create-oidc github --project "$PROJECT" \
+     --location global --workload-identity-pool github \
+     --issuer-uri https://token.actions.githubusercontent.com \
+     --attribute-mapping 'google.subject=assertion.sub,attribute.repository=assertion.repository' \
+     --attribute-condition "assertion.repository=='Hamza-Labs-Core/Maktaba'"
+   gcloud iam service-accounts add-iam-policy-binding \
+     "maktaba-play-upload@${PROJECT}.iam.gserviceaccount.com" --project "$PROJECT" \
+     --role roles/iam.workloadIdentityUser \
+     --member "principalSet://iam.googleapis.com/projects/${NUMBER}/locations/global/workloadIdentityPools/github/attribute.repository/Hamza-Labs-Core/Maktaba"
+   ```
+
+6. **Play Console access.** [Play Console](https://play.google.com/console) → **Users and
    permissions** → **Invite new users** → the service account's email
    (`maktaba-play-upload@<project>.iam.gserviceaccount.com`). Under **App permissions** add the
    three apps (Maktaba Player, Maktaba Remote, Maktaba TV) and give each **Release to testing
    tracks**, nothing for production. Send the invite.
-5. **The secret**, from the downloaded file, then delete the file from Downloads:
+7. **The two repository variables** (variables, not secrets: neither is secret):
 
    ```bash
-   gh secret set PLAY_SERVICE_ACCOUNT_JSON -R Hamza-Labs-Core/Maktaba < maktaba-play-upload.json
+   gh variable set PLAY_WIF_PROVIDER -R Hamza-Labs-Core/Maktaba \
+     --body "projects/${NUMBER}/locations/global/workloadIdentityPools/github/providers/github"
+   gh variable set PLAY_SERVICE_ACCOUNT -R Hamza-Labs-Core/Maktaba \
+     --body "maktaba-play-upload@${PROJECT}.iam.gserviceaccount.com"
    ```
+
+   `PLAY_WIF_PROVIDER` uses the project **number**, not its ID.
 
 The next tag uploads all three apps. Check the run's `google play internal (...)` jobs, then
 Play Console → each app → Testing → Internal testing. If Play answers "Only releases with
 status draft may be created on draft app", that app has had no release rolled out yet: roll out
-one internal release by hand (above), then re-run the failed job.
+one internal release by hand (above), then re-run the failed job. A sign-in error naming the
+attribute condition or `iam.serviceAccounts.getAccessToken` means step 4 or 5 does not match
+this repository; "The caller does not have permission" from Play means step 6.
 
-To stop the uploads, delete the secret (`gh secret delete PLAY_SERVICE_ACCOUNT_JSON -R
-Hamza-Labs-Core/Maktaba`). To take the service account's access away, remove it in Play Console
-→ Users and permissions.
+To stop the uploads, delete a variable (`gh variable delete PLAY_WIF_PROVIDER -R
+Hamza-Labs-Core/Maktaba`). To take the access away for good, remove the Workload Identity User
+grant (step 5) or disable the provider, and remove the service account in Play Console → Users
+and permissions.
 
 ## Build a bundle locally
 
