@@ -80,6 +80,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",
+    "tools/ci/play_release.py": "play-bundles.yml on a tag; its tests (tools/ci/tests) run on every pull request",
     "deploy/cloud-relay/**": "relay.yml",
     "deploy/github/**": "branch protection as Terraform, applied by hand",
     "deploy/observability/**": "Prometheus config, not built",

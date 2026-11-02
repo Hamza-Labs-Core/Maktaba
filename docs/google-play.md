@@ -23,11 +23,16 @@ different, older app. It is not one of these.
 
 1. The tag guard runs first, as in every tag workflow.
 2. Version: `tools/release/play-version.sh`. The versionName is the tag without its `v`. The
-   versionCode is `MAJOR*1000000 + MINOR*1000 + PATCH` (`v0.3.45` → `3045`, `v1.2.3` →
-   `1002003`). All three apps use the same code, and every tag's code is higher than the one
-   before it. MINOR and PATCH must stay under 1000. The highest code allowed is Play's
-   limit, 2 100 000 000 (`v2100.0.0`). A pre-release such as `v0.4.0-rc.1` gets the same code
-   as `v0.4.0`, so it is never uploaded to Play automatically.
+   versionCode is `(MAJOR*1000000 + MINOR*1000 + PATCH)*100 + STEP`. STEP is 99 for a stable
+   tag, and lower for its pre-releases, in semver order: `-alpha.N` is N (1 to 32), `-beta.N`
+   is 32+N (1 to 32), `-rc.N` is 64+N (1 to 34). So `v0.4.0-rc.1` → `400065`, `v0.4.0-rc.2` →
+   `400066`, `v0.4.0` → `400099`, `v1.2.3` → `100200399`. No two tags get the same code (Play
+   refuses a code it already has), and every tag's code is higher than the one cut before it.
+   All three apps use the same code. MINOR and PATCH must stay under 1000, MAJOR at or under 20
+   (Play's limit is 2 100 000 000). Any other pre-release name is refused before the build.
+   Until v0.3.54 the code was `MAJOR*1000000 + MINOR*1000 + PATCH` (`v0.3.54` → `3054`, a
+   pre-release sharing its version's code). Every new code is above those, so bundles uploaded
+   by hand before the change don't block the next one.
 3. Gradle builds `bundleRelease` for each app, with R8 on. CI's Android gates build the same
    bundles, unsigned, on every pull request that touches the apps, so an R8 break shows up there
    and not on the tag.
@@ -99,37 +104,88 @@ The TV app must use the **Android TV** form factor (Release → Setup → Advanc
 factors) and needs a TV banner and screenshots before Play will review it for TVs. Internal
 testing works without that review.
 
-## Turn on automatic upload to internal testing
+## Automatic upload to internal testing
 
-Once each app exists in Play Console, a stable tag (no `-rc`) can upload all three apps to
-internal testing by itself:
+Every release tag uploads each signed bundle to its app's **internal** testing track once the
+secret `PLAY_SERVICE_ACCOUNT_JSON` is set. Nothing else turns it on (the old `PLAY_UPLOAD` and
+`PLAY_RELEASE_STATUS` variables are no longer read). The `play` job of `play-bundles.yml` runs
+once per app and:
 
-1. Google Cloud: create a service account and a JSON key for it, and turn on the **Google Play
-   Android Developer API** in its project.
-2. Play Console → **Users and permissions** → invite the service account's email, with
-   access to the three apps and the **Release to testing tracks** permission.
-3. Add the secret and turn the switch on:
+- reads the app's package name from its Gradle build file (`applicationId`, through
+  `tools/ci/play_release.py package <app>`), so it uploads to the package the bundle was built as;
+- uploads `maktaba-<app>-<version>.aab` with its R8 `mapping.txt` to the `internal` track,
+  release status `completed`, release name the version. It never writes the alpha, beta or
+  production tracks. It uses `r0adkll/upload-google-play` (the Play Developer API,
+  androidpublisher v3), pinned to a commit like every third-party action here: a maintained,
+  widely used action, so the repository carries no API client of its own;
+- sets the testers' release notes (whatsnew) in `en-US` and `ar` from the tag's message (below).
+
+Pre-releases are uploaded too, since each tag has its own versionCode. Nothing is uploaded, and
+the run still succeeds with one notice, when:
+
+| Notice | Why |
+|---|---|
+| `Play upload skipped: PLAY_SERVICE_ACCOUNT_JSON not set` | the secret is missing |
+| `Play upload skipped: the bundles are unsigned` | the upload key secrets are missing (Play refuses unsigned bundles) |
+| `Play upload skipped: vX.Y.Z is published already, ...` | a re-run of a published tag (Play already has its code) |
+
+A real upload error (Play refusing a bundle, a missing permission) fails that app's `play` job,
+so it is seen. The service account's JSON reaches only the upload step and is never printed.
+
+### Release notes
+
+The notes come from the annotated tag's message: English first, then a line that is exactly
+`--- ar ---`, then the Arabic. Each is cut to Play's 500 characters.
+
+```bash
+git tag -a v0.3.55 -F - <<'NOTES'
+Faster search. The TV remote reconnects by itself.
+--- ar ---
+بحث أسرع. جهاز التحكم في التلفاز يعيد الاتصال وحده.
+NOTES
+```
+
+A lightweight tag, a message that is only the tag's name, or a missing half gets a standard
+line in that language ("Maktaba 0.3.55 for testing. What changed is on the v0.3.55 release
+page on GitHub.", and the same in Arabic).
+
+### One-time setup (by the owner)
+
+Each app must already exist in Play Console, with one release uploaded by hand (above). Then:
+
+1. **Google Cloud project.** In the [Google Cloud console](https://console.cloud.google.com),
+   pick or create the project for Maktaba's Play publishing.
+2. **Turn on the API.** APIs & Services → Library → **Google Play Android Developer API** →
+   **Enable**, in that project.
+3. **Service account.** IAM & Admin → Service accounts → **Create service account** (for
+   example `maktaba-play-upload`). It needs no Google Cloud role. Open it → Keys → Add key →
+   Create new key → **JSON**. The file downloads once: keep it in your password manager, never
+   in the repository or in chat.
+4. **Play Console access.** [Play Console](https://play.google.com/console) → **Users and
+   permissions** → **Invite new users** → the service account's email
+   (`maktaba-play-upload@<project>.iam.gserviceaccount.com`). Under **App permissions** add the
+   three apps (Maktaba Player, Maktaba Remote, Maktaba TV) and give each **Release to testing
+   tracks**, nothing for production. Send the invite.
+5. **The secret**, from the downloaded file, then delete the file from Downloads:
 
    ```bash
-   gh secret set PLAY_SERVICE_ACCOUNT_JSON -R Hamza-Labs-Core/Maktaba < service-account.json
-   gh variable set PLAY_UPLOAD -R Hamza-Labs-Core/Maktaba --body true
+   gh secret set PLAY_SERVICE_ACCOUNT_JSON -R Hamza-Labs-Core/Maktaba < maktaba-play-upload.json
    ```
 
-The `play` job then uploads each signed bundle with its `mapping.txt` to the `internal` track
-(`r0adkll/upload-google-play`, pinned to a commit). If Play says the app is still a **draft
-app** ("Only releases with status draft may be created on draft app"), set
-`gh variable set PLAY_RELEASE_STATUS --body draft` and roll each release out by hand until the
-app is out of draft. Then delete the variable. The job never runs for a pre-release, for a
-re-run of a published tag, or for unsigned bundles. If `PLAY_SERVICE_ACCOUNT_JSON` is missing,
-it warns and uploads nothing.
+The next tag uploads all three apps. Check the run's `google play internal (...)` jobs, then
+Play Console → each app → Testing → Internal testing. If Play answers "Only releases with
+status draft may be created on draft app", that app has had no release rolled out yet: roll out
+one internal release by hand (above), then re-run the failed job.
 
-To turn it off: `gh variable set PLAY_UPLOAD --body false`.
+To stop the uploads, delete the secret (`gh secret delete PLAY_SERVICE_ACCOUNT_JSON -R
+Hamza-Labs-Core/Maktaba`). To take the service account's access away, remove it in Play Console
+→ Users and permissions.
 
 ## Build a bundle locally
 
 ```bash
 cd apps/android            # or apps/tv/android
-./gradlew :player:bundleRelease -Pmaktaba.versionName=0.3.45 -Pmaktaba.versionCode=3045
+./gradlew :player:bundleRelease -Pmaktaba.versionName=0.3.55 -Pmaktaba.versionCode=305599
 ```
 
 Without `ANDROID_UPLOAD_KEYSTORE_FILE` (and the alias and password variables) the bundle is
