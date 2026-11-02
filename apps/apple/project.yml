@@ -169,6 +169,7 @@ targets:
     sources:
       - path: PlayerMacTests/UI
       - path: UITests/MockHome.swift
+      - path: UITests/TypingInFields.swift
       - path: UITests/Fixtures
     dependencies: [{ target: Maktaba Player Mac }]
     # the runner is sandboxed: MockHome listens on the loopback inside it. CI's ad-hoc signed
@@ -197,7 +198,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
         TARGETED_DEVICE_FAMILY: "1"
-        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
+        INFOPLIST_KEY_CFBundleDisplayName: Remote
     info:
       path: Remote/Info-iPhone.plist
   Maktaba Remote iPad:
@@ -211,7 +212,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
         TARGETED_DEVICE_FAMILY: "2"
-        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
+        INFOPLIST_KEY_CFBundleDisplayName: Remote
     info:
       path: Remote/Info-iPad.plist
 
@@ -309,6 +310,7 @@ targets:
       - path: ../tv/tvos/MaktabaTVUITests
       # the mock home the iPhone's connect tests use (no real home, no real account)
       - path: UITests/MockHome.swift
+      - path: UITests/TypingInFields.swift
       - path: UITests/Fixtures
     dependencies:
       - target: Maktaba TV

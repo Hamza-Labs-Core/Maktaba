@@ -2,6 +2,10 @@ module github.com/Hamza-Labs-Core/Maktaba/cloud
 
 go 1.26.0
 
+// No multipath TCP on our listeners (Go 1.24+ turns it on by default): it was the path
+// into CVE-2026-98432, the Linux IPv4 TCP use-after-free (docs/security/advisories/2026-11-01-linux-tcp-uaf.md).
+godebug multipathtcp=0
+
 require (
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/google/uuid v1.6.0

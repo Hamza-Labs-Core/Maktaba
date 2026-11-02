@@ -2,7 +2,7 @@ package com.hamzalabs.maktaba.player.live
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -11,6 +11,7 @@ import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,8 +20,8 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * Live TV's screenshots (NFR-20): Now, the Guide and the live player, dark, English and Arabic,
- * on a phone and a large tablet, against the fake home at [NOW] in UTC. `recordRoborazziPhoneDebug`
- * writes the references under `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` checks them.
+ * on a phone and a large tablet, against the fake home at [NOW] in UTC. `recordRoborazziDebug`
+ * writes the references under `src/test/screenshots`; CI's `verifyRoborazziDebug` checks them.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -29,7 +30,7 @@ class LiveScreenshotTest {
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun shoot(window: Window, screen: String) {
         LiveFixtures.install(home)

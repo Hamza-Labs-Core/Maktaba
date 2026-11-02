@@ -192,7 +192,7 @@ func TestEmbedCacheConcurrentSameKeyNoCorruption(t *testing.T) {
 	}
 
 	// (a) TWO CONCURRENT identical requests: bodies must be
-	// byte-identical and each well-formed. Under -race, aliasing the
+	// identical apart from took_ms, and each well-formed. Under -race, aliasing the
 	// shared cached []Hit is also a reported data race.
 	t.Run("concurrent_same_key", func(t *testing.T) {
 		h := mkHandler()
@@ -216,8 +216,8 @@ func TestEmbedCacheConcurrentSameKeyNoCorruption(t *testing.T) {
 			}
 			assertWellFormed(t, "concurrent req "+string(rune('0'+i)), bodies[i])
 		}
-		if bodies[0] != bodies[1] {
-			t.Fatalf("concurrent responses differ:\n#0=%s\n#1=%s", bodies[0], bodies[1])
+		if a, b := withoutTiming(t, bodies[0]), withoutTiming(t, bodies[1]); a != b {
+			t.Fatalf("concurrent responses differ:\n#0=%s\n#1=%s", a, b)
 		}
 	})
 
@@ -241,10 +241,27 @@ func TestEmbedCacheConcurrentSameKeyNoCorruption(t *testing.T) {
 		}
 		assertWellFormed(t, "hit #2", b2)
 		assertWellFormed(t, "hit #3", b3)
-		if b2 != b3 {
-			t.Fatalf("hit #2 and #3 differ (cached entry corrupted across hits):\n#2=%s\n#3=%s", b2, b3)
+		if a, b := withoutTiming(t, b2), withoutTiming(t, b3); a != b {
+			t.Fatalf("hit #2 and #3 differ (cached entry corrupted across hits):\n#2=%s\n#3=%s", a, b)
 		}
 	})
+}
+
+// withoutTiming is a response body without took_ms (wall-clock timings,
+// which differ run to run), re-encoded with sorted keys: two bodies that
+// match apart from timing compare equal; any other difference still shows.
+func withoutTiming(t *testing.T, body string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	delete(m, "took_ms")
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
 
 // TestHealthySemanticNotDegraded proves the happy path does NOT set the

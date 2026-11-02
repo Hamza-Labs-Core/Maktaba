@@ -2,7 +2,7 @@ package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.harness.Window
 import org.junit.Before
 import org.junit.Rule
@@ -21,8 +22,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The Libraries section's screenshots (NFR-20): dark, English and Arabic; the libraries, a
  * library and a series on a phone, and the list beside a library's page on a tablet, against
- * the fake home with drawn posters. `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * the fake home with drawn posters. `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -32,8 +33,11 @@ class LibrariesScreenshotTest {
 
     @Before fun routes() = home.answerLibraries()
 
+    // a picture waits for every answer from the fake home, not only the first card's
+    @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
+
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settled(home, "$tag shows") { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private val lang get() = if (compose.activity.resources.configuration.locales[0].language == "ar") "ar" else "en"
 
@@ -52,7 +56,8 @@ class LibrariesScreenshotTest {
         compose.setLibraries(home)
         waitForTag("library-l1")
         compose.onNodeWithTag("library-l1").performClick()
-        waitForTag("video-v2")
+        // the grid's last card in the picture: the first can show from the rows above it
+        waitForTag("video-v4")
         shoot("library_phone")
     }
 

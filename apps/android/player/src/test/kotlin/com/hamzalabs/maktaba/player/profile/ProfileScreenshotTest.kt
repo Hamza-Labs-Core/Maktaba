@@ -2,7 +2,7 @@ package com.hamzalabs.maktaba.player.profile
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -15,6 +15,7 @@ import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.PlayerSection
 import org.junit.Before
 import org.junit.Rule
@@ -27,8 +28,8 @@ import java.time.Instant
 /**
  * The Profile's screenshots (NFR-20): dark, English and Arabic, on a phone and a large tablet,
  * against the fake home: the first page, the watch history and a playlist. The shipped sections
- * (Libraries and Profile). `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * (Libraries and Profile). `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -58,7 +59,7 @@ class ProfileScreenshotTest {
             images = pathPictures(ApplicationProvider.getApplicationContext()),
         )
         compose.onNodeWithTag("section-Profile").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("profile-header")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("profile-header")).fetchSemanticsNodes().isNotEmpty() }
     }
 
     private fun shoot(name: String) {
@@ -74,16 +75,16 @@ class ProfileScreenshotTest {
     private fun history(window: Window, name: String) {
         show(window)
         compose.onNodeWithTag("profile-history").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("history-v4")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("history-v4")).fetchSemanticsNodes().isNotEmpty() }
         shoot(name)
     }
 
     private fun playlist(window: Window, name: String) {
         show(window)
         compose.onNodeWithTag("profile-playlists").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-p1")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-p1")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("playlist-p1").performClick()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-item-v5")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("playlist-item-v5")).fetchSemanticsNodes().isNotEmpty() }
         shoot(name)
     }
 

@@ -2,7 +2,7 @@ package com.hamzalabs.maktaba.player.shell
 
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -12,6 +12,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.setShell
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,8 +22,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The shell's screenshots (NFR-20): dark, English and Arabic, on a phone (the bar), a foldable
  * open flat (the rail) and a large tablet (the drawer), every section on and Libraries shown,
- * against the fake home. `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * against the fake home. `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -36,7 +37,7 @@ class ShellScreenshotTest {
         compose.setShell(home, window = window)
         compose.onNodeWithTag("section-Libraries").performClick()
         val empty = compose.activity.getString(com.hamzalabs.maktaba.player.R.string.libraries_empty)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(empty)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText(empty)).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("src/test/screenshots/$name.png", roborazziOptions = options)
     }

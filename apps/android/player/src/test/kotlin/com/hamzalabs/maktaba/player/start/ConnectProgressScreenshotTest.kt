@@ -4,7 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.Surface
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -24,6 +24,7 @@ import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SignIn
 import com.hamzalabs.maktaba.core.ui.ThemeMode
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,8 +48,8 @@ import org.robolectric.annotation.GraphicsMode
  * address tried, found, signing in, waiting for a code's approval (its countdown), reconnecting
  * on launch, the home busy (its countdown), and a failure on retry (why, the addresses tried,
  * Retry, attempt 2). Dark, English and Arabic, on a phone and a tablet. The clock is fixed, so a
- * countdown reads the same on every run. `recordRoborazziPhoneDebug` writes the references
- * under `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer
+ * countdown reads the same on every run. `recordRoborazziDebug` writes the references
+ * under `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer
  * matches.
  */
 @RunWith(AndroidJUnit4::class)
@@ -101,7 +102,7 @@ class ConnectProgressScreenshotTest {
         session.switchHome()
         show { HomePicker(session, MaktabaApp.Player) }
         compose.mainClock.advanceTimeBy(7_000)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
         progress.value = step
         capture(name)
     }
@@ -110,7 +111,7 @@ class ConnectProgressScreenshotTest {
     private fun onSignIn(step: ConnectProgress, name: String) {
         session.use(HOME)
         show { SignIn(session, MaktabaApp.Player) }
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("signin-password-tab")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("signin-password-tab")).fetchSemanticsNodes().isNotEmpty() }
         progress.value = step
         capture(name)
     }
@@ -120,8 +121,8 @@ class ConnectProgressScreenshotTest {
         session.use(HOME)
         show { SignIn(session, MaktabaApp.Player) }
         compose.onNodeWithTag("signin-code-tab").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("signin-code")).fetchSemanticsNodes().isNotEmpty() }
-        compose.waitUntil(5_000) { progress.value is ConnectProgress.AwaitingApproval }
+        compose.settledUntil(10_000) { compose.onAllNodes(hasTestTag("signin-code")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { progress.value is ConnectProgress.AwaitingApproval }
         capture(name)
     }
 

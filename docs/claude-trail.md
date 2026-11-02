@@ -942,6 +942,37 @@ Append here: date, session, one to five lines on what changed. Newest last.
     machine agent connects or leaves, not only every 30 s; [#475] the relay records a home online
     before routable and offline after removal, one at a time per slug; [#472] host apt installs
     get retries, timeouts and an 8-minute step limit after stalled mirrors hung jobs 30 min.
+- 2026-11-01 · play-bundles agent of `b743b7d4`: [#517] (not merged) attaches signed Google Play
+  bundles to every `v*` tag (`play-bundles.yml`): `maktaba-{player,remote,tv}-<version>.aab`,
+  upload key from `ANDROID_UPLOAD_KEYSTORE_BASE64` / `_KEY_ALIAS` / `_KEY_PASSWORD` (/ optional
+  `_STORE_PASSWORD`), unsigned only as a workflow artifact. Docs: `docs/google-play.md`.
+  - Decided: the Android Player and Remote lose their `phone`/`foldable`/`tablet` flavours (they
+    differed only in the `.foldable`/`.tablet` package; Play makes each package its own app). The
+    `X-Maktaba-Client` device now comes from the screen (`ClientHeader.deviceFor`: hinge sensor =
+    foldable, smallest width ≥ 600 dp = tablet). Tasks are `testDebugUnitTest`,
+    `verifyRoborazziDebug`, `lintDebug` now (the 2026-10-31 note on `testPhoneDebugUnitTest` no
+    longer holds). Rejected: keeping the flavours for dev with a base-package release build.
+  - Decided: versionCode = MAJOR*1000000 + MINOR*1000 + PATCH (`tools/release/play-version.sh`,
+    tested); a pre-release shares its version's code, so the optional Play upload
+    (`vars.PLAY_UPLOAD == 'true'` + `PLAY_SERVICE_ACCOUNT_JSON`, internal track) skips pre-releases.
+  - The Android gates now build an unsigned `bundleRelease` (R8 breaks show in the PR).
+  - Gotchas: emulators on this Mac hang at boot headless with the android-37.0 and android-36
+    google-tv images (exit 139); an android-35 google_apis AVD boots. bundletool works from the
+    Gradle cache's jar with a hand-built classpath (guava -jre, dagger 2.28.3, `--aapt2` from
+    build-tools), or use the universal APK from `build-apks`. `LibrariesSectionTest.everyControlHasWordsForTalkBack`
+    failed once under load (R8 + lint in parallel) and passed alone: a load-sensitive flake left
+    to fix at the root.
+  - Waiting on the owner: make the upload key (keytool in `docs/google-play.md`) and add the
+    secrets; create the three apps in Play Console and upload each first bundle by hand; later
+    turn on `PLAY_UPLOAD`.
+- 2026-11-01 · `b743b7d4`: CVE-2026-98432 (Linux IPv4 TCP use-after-free, critical). Its reported
+  exploit needs a multipath TCP listener, which Go 1.24+ opens by default. `godebug
+  multipathtcp=0` in the api, cloud, streaming, maktaba-server and maktaba-launcher `go.mod`s,
+  each with `TestListenersUseNoMultipathTCP` (it fails if the line goes; checked). No `go.work`,
+  so release builds get it. User advisory (en + ar):
+  `docs/security/advisories/2026-11-01-linux-tcp-uaf.md`. The VPS kernel is not patched: the
+  owner patches it, or says go.
+  - Gap: specs say a `SECURITY.md` exists (story 23.8); there is none in the repo.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1108,3 +1139,37 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#477]: https://github.com/Hamza-Labs-Core/Maktaba/pull/477
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
+[#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+
+## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
+
+- One CI run (41376606909): aLibraryShowsItsHubRowsAndLeavesTheEmptyOnesOut waited 10 s for the libraries list; the other 11 tests took ~0.5 s. Six local runs of the class all passed; the report held no app log (Robolectric drops android.util.Log), so the cause wasn't recorded.
+- Changes: a missed wait now says which paths the app asked the home and what the screen showed. Each FakeHome gets its own OkHttp connection pool (it shared defaultHttp's across tests).
+- Not root-caused yet: the next miss names it.
+- Owner: "always request the logs so it doesn't drop them". Both Android Gradle roots (apps/android, apps/tv/android) set `robolectric.logging=stdout` on every Test task; LogsKeptTest fails if it goes. Reports now carry the app's log.
+- Root cause found (with the new diagnostics): the miss is always the first wait, and the report showed "asked [/api/libraries/summary]; showing [libraries-list, tabs]": the answer came, no error was logged, the screen stayed on its spinner. Under Robolectric a bare `compose.waitUntil` only polls; an answer landing after the last idle isn't applied until the main looper is idled. Reproduced with a 500 ms late answer: poll-only took 4.6 s of a 5 s budget, poll-with-idle 0.6 s.
+- Fix: harness/Settle.kt `settledUntil` (waitForIdle in every poll) and `settled` (same, plus the asked/shown message); all three Libraries test classes use them. ~80 other bare waitUntil calls remain in the Player tests; not converted blindly (watch tests wait on things that hide by themselves, and settling advances the clock).
+- Converted: every Player-test wait on a fake-home answer or what it causes (tags/text, request counts, HomeCache files, session phase, fake engine calls) is now `settledUntil`, in the 16 Home/Video/Profile/Search/Shell/Start/Connect/Components/Live test files; HomeScreenTest's gated "not answered yet" wait dropped its inner waitForIdle (the gate is the test's own latch, so settling can't let the answer in early); ConnectProgress's AwaitingApproval wait converted too (its countdown is on a fixed clock).
+- Left bare, each with a one-line comment: ChannelScreenTest's `controls()` (they hide after 4 s), WatchScreenTest's controls/seek-flash/next waits and the `until` helpers in WatchScreenTest, WatchScreenshotTest and PipBackgroundCastTest (they step the players' clock themselves; settling would also advance Compose's).
+## 2026-11-02 — v0.3.51 had no Play bundles: the TV wrapper jar wasn't Gradle's
+
+- play-bundles.yml on v0.3.51 stopped at "Gradle wrappers are Gradle's": apps/tv/android named Gradle 9.8.2 but its jar wasn't 9.8.2's (sha cb0da675…). The phone apps' jar matched.
+- Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
+- v0.3.51 stays without .aab files; the next tag carries them.
+- 2026-11-02, later: settling alone didn't end it. #508's run on 8c6d44b1 missed again in facetsAndSortChangeTheRequestsQuery: answer in, no error logged (the kept log proved it), spinner for 10 s. Not reproducible locally even under full CPU load. The v1 compose rule (deprecated; the build warned) runs effects on an UnconfinedTestDispatcher, so the answer resumes the screen on OkHttp's thread and writes Compose state from there. All 23 Player JVM test classes now use the v2 rules (`junit4.v2.createAndroidComposeRule` / `createComposeRule`), which queue that work for the main thread. Three full suite runs green, screenshots unchanged (verifyRoborazziDebug), tests ~3-5x faster. androidTest (on-device) files still on v1.
+
+
+## 2026-11-02 — Maktaba renamed the Mac on the network (mDNS name conflict)
+
+- Owner saw macOS rename "Mahmouds-Mac-Studio.local" to "…-2.local". Cause: maktaba-api and maktaba-server each ran a zeroconf responder (`lsof -iUDP:5353`) announcing via RegisterProxy with the Mac's own Bonjour name, which publishes A/AAAA for it with the cache-flush (owner) bit. mDNSResponder saw other answerers for its name and renamed the Mac; our servers then claim the new name on restart.
+- Fix (fix/mdns-system-responder): register() returns an `announcement` (SetText, Shutdown). On macOS it runs `dns-sd -R` under /bin/sh that ends it when our stdin pipe closes (Shutdown, or our process dying any way), restarted if it ends by itself. Elsewhere zeroconf as before. Same file in api/internal/discovery and cmd/maktaba-server/internal/mdns.
+- Gotcha: a POSIX shell gives a background job /dev/null as stdin, so the watcher must read a copy (`exec 3<&0 … read _ <&3`), or it kills dns-sd at once.
+- Not done: Linux hosts with avahi-daemon and Windows (own mDNS) have the same conflict risk; still zeroconf there.
+- 2026-11-02: removed 140 merged, clean, unused worktrees (82 GB). Kept 20: in use, open PRs, or unmerged work.
+
+## 2026-11-02 — TestLibraryTabsSQLite past the unit test budget: fsync during setup
+
+- CI run 41449508335 (PR #510) failed test-budget: browse TestLibraryTabsSQLite took 1.42 s, and 1.32 s when re-run alone. The 3x400 ms cap is 1.2 s.
+- Cause: the shared `testDB` setup (~45 autocommits, plus ~14 from `groupsEnv`). On a file DB in rollback-journal mode, each commit syncs the journal, the db file and the directory. That costs almost nothing on macOS and a lot on the Linux runner. Simulating it locally with `PRAGMA fullfsync`: setup 965 ms out of a 990 ms test. The five handler requests take ~25 ms, so the handler wasn't the problem.
+- Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
+- The same PR (#521) also fixes a search test that failed integration/compat-prev: `TestEmbedCacheConcurrentSameKeyNoCorruption` compared response bodies byte for byte, including the wall-clock `took_ms` ("semantic":0 vs 1). Both subtests (concurrent, and sequential miss->hit->hit) now decode the bodies, drop `took_ms` and compare the rest (`withoutTiming`). Passed `-race -count=20`.

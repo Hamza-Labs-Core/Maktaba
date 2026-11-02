@@ -19,7 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -38,8 +38,8 @@ import org.robolectric.annotation.GraphicsMode
  * The components' screenshots (48.16, NFR-20): each component in the dark theme, English and
  * Arabic, at the normal font and at 200 % (Android's largest, as Dynamic Type AX3 on Apple,
  * NFR-7), on a phone. Pictures come from [FakePictures]; a URL with "missing" has no poster.
- * `recordRoborazziPhoneDebug` writes the references under `src/test/screenshots`; CI's
- * `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * `recordRoborazziDebug` writes the references under `src/test/screenshots`; CI's
+ * `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Maktaba Remote in Arabic: the w_* strings are the web's (web/src/i18n/ar.json). -->
 <resources>
+    <string name="app_name">ريموت</string>
     <string name="w_updates_state_up_to_date">محدَّث</string>
     <string name="w_updates_state_behind">متأخر</string>
     <string name="w_updates_state_ahead_of_home">أحدث من الجهاز الرئيسي</string>
