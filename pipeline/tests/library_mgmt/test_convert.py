@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import shutil
 import subprocess
 import uuid
@@ -77,10 +78,11 @@ def mkv_with_srt(path: Path, tmp: Path, seconds: float = 3.0) -> Path:
 
 
 def long_for_reencode(path: Path) -> Path:
-    """Long enough that a libx264 ``medium`` encode is still running when cancelled."""
+    """Long enough that a libx264 ``medium`` encode is still running when cancelled.
+    MPEG-4 Part 2 is not MP4-ready video either, so the plan is still a re-encode, and it
+    costs half the CPU of VP9 to make (VP9 pushed the test past its soft cap on CI)."""
     ff("-f", "lavfi", "-i", "testsrc2=size=1280x720:rate=30", *_A, "-t", "60",
-       "-c:v", "libvpx-vp9", "-deadline", "realtime", "-cpu-used", "8", "-b:v", "500k",
-       "-c:a", "libopus", str(path))  # fmt: skip
+       "-c:v", "mpeg4", "-q:v", "31", "-c:a", "libopus", str(path))  # fmt: skip
     return path
 
 
@@ -360,12 +362,28 @@ async def test_a_good_mp4_is_skipped_unchanged(db: Database, tmp_path: Path) -> 
     assert w.trash_files() == []
 
 
+#: a Matroska file's EBML header (DocType "matroska"), as ffmpeg writes it
+_EBML_HEADER = bytes.fromhex(
+    "1a45dfa3a34286810142f7810142f2810442f381084282886d6174726f736b614287810442858102"
+)
+
+
+def corrupt_mkv() -> bytes:
+    """A Matroska download that is damaged after its header. The DocType makes ffmpeg's
+    matroska demuxer claim the file, so the result does not depend on how ffmpeg reads
+    stray bytes. Fully random bytes did not work: about 1 in 100 read as a raw H.263 stream
+    or an LRC subtitle, so the job was skipped (``done``) instead of failing. The body is
+    seeded so every run gets the same file."""
+    return _EBML_HEADER + random.Random(47_4).randbytes(200_000)
+
+
 async def test_a_corrupt_input_fails_at_once(db: Database, tmp_path: Path) -> None:
     w = await make_world(db, tmp_path)
-    vid, p = await w.video("bad.mkv", os.urandom(200_000))
+    vid, p = await w.video("bad.mkv", corrupt_mkv())
     job = await convert_one(db, vid, await home(db))
-    assert job["state"] == "failed"
+    assert job["state"] == "failed", (job["outcome"], job["output_summary"])
     assert job["attempts"] == 1 and str(job["error_cause"]).startswith("ffmpeg_decode")
+    assert "the original cannot be read" in str(job["error"])  # ffprobe refused it
     assert job["failure_class"] == "item_permanent"
     assert p.exists() and w.trash_files() == []
 
@@ -418,7 +436,7 @@ async def test_cancel_kills_ffmpeg_and_leaves_nothing(
 ) -> None:
     monkeypatch.setattr(cv, "_encoders", {"libx264"})
     w = await make_world(db, tmp_path, settings={"convert": {"allow_reencode": True}})
-    vid, p = await track(w, long_for_reencode(tmp_path / "long.webm"), "long.webm")
+    vid, p = await track(w, long_for_reencode(tmp_path / "long.mkv"), "long.mkv")
     original = p.read_bytes()
     seen: list[str] = []
 
