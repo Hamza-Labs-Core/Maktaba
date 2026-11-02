@@ -10,7 +10,8 @@ package discovery
 // instead (announce.go). resolved withdraws a registration once the connection that made
 // it closes, so none outlives this process. The D-Bus binding is announce_resolved_linux.go;
 // here is what is the same on every OS (so its tests run everywhere, with a fake).
-// cmd/maktaba-server/internal/mdns has the same file (another module).
+// The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
+// modules); tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // resolvedState is what the probe found of systemd-resolved.
@@ -36,8 +38,7 @@ type resolvedState struct {
 type resolvedService struct {
 	// id is resolved's name for the registration, unique among its registrations
 	id string
-	// name is the instance name ("Maktaba (studio)"): resolved expands "%" specifiers in
-	// it, so a "%" is "%%"
+	// name is the instance name as resolved takes it (resolvedInstance): "Maktaba (studio)"
 	name    string
 	service string // "_maktaba._tcp"
 	port    int
@@ -77,7 +78,7 @@ func startResolved(api resolvedAPI, instance, service, domain string, port int, 
 	}
 	d := &systemResolved{api: api, done: make(chan struct{}), svc: resolvedService{
 		id:      fmt.Sprintf("maktaba-%d-%d", os.Getpid(), resolvedIDs.Add(1)),
-		name:    strings.ReplaceAll(dnsLabel(instance, 63), "%", "%%"),
+		name:    resolvedInstance(instance),
 		service: service,
 		port:    port,
 		txt:     resolvedTXT(txt),
@@ -180,6 +181,26 @@ func (d *systemResolved) Shutdown() {
 	d.end()
 	close(d.done)
 	d.api.close()
+}
+
+// resolvedInstance is an instance name as RegisterService takes it. resolved expands "%"
+// specifiers in it (a "%" is "%%"), then reads the result as a DNS name in presentation
+// form when it joins it to the type (resolved-dnssd.c, dns_name_concat): a "." there splits
+// the label ("Studio 1.2" was announced as "Studio 1" in a domain "2"), and a "\" starts an
+// escape ("Back\slash" is one resolved cannot read, and resolved 255 aborts on it, an
+// assertion in dns_zone_put, when it next refreshes its records). Both found by the real run
+// in CI (mdns-linux). So "\" is "\\" and "." is "\.", and the escaped name, which resolved
+// checks against the 63 bytes of a label, is cut on a character boundary to fit.
+func resolvedInstance(s string) string {
+	s = dnsLabel(s, 63)
+	escape := strings.NewReplacer(`\`, `\\`, `.`, `\.`)
+	esc := escape.Replace(s)
+	for len(esc) > 63 {
+		_, size := utf8.DecodeLastRuneInString(s)
+		s = s[:len(s)-size]
+		esc = escape.Replace(s)
+	}
+	return strings.ReplaceAll(esc, "%", "%%")
 }
 
 // resolvedTXT is the TXT entries as one record of RegisterService's: key → value (an entry

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,7 @@ from uuid import UUID
 
 import pytest
 
+from maktaba_pipeline.engine import backfill
 from maktaba_pipeline.engine.backfill import backfill_once
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.failure_classes import QueueHealthConfig
@@ -92,6 +94,64 @@ async def test_the_watcher_round_moves_them_and_releases_them_when_the_model_ans
     assert report.backfilled == 1 and report.released == {"dependency:model:model": 1}
     pending = [r for r in await rows(db, "t_a") if r["state"] == "pending"]
     assert len(pending) == 1 and pending[0]["parked_on"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_row_is_classified_only_with_the_job_it_is_owed(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The leader round runs no transaction around itself: one row's class and its new
+    job commit together, so a round stopped between them leaves the row to the next."""
+    await setup(db, Recorder())
+    v = await make_video(db, await make_library(db))
+    failed = await old_failure(db, v, "model_unavailable", "down", "model_unavailable")
+
+    async def broken(*_: Any, **__: Any) -> Any:
+        raise RuntimeError("the enqueue failed")
+
+    monkeypatch.setattr(backfill, "enqueue_job", broken)
+    with pytest.raises(RuntimeError):
+        await backfill_once(db, QueueHealthConfig())
+    assert (
+        await db.fetchval("SELECT failure_class FROM processing_jobs WHERE id = $1", failed)
+    ) is None
+    monkeypatch.undo()
+    got = await backfill_once(db, QueueHealthConfig())
+    assert (got.classified, got.parked) == (1, 1)
+
+
+@pytest.mark.asyncio
+async def test_a_round_commits_as_it_goes_and_has_one_leader(db: Database) -> None:
+    if not is_pg(db):
+        pytest.skip("Postgres only: SQLite has one process, always the leader")
+    await setup(db, Recorder())
+    v = await make_video(db, await make_library(db))
+    await old_failure(db, v, "model_unavailable", "down", "model_unavailable")
+    other = await Database.connect(db._dsn)  # noqa: SLF001 - another worker of the home
+    probing = asyncio.Event()
+    answer = asyncio.Event()
+
+    async def probes(*_: Any) -> dict[str, tuple[bool, str]]:
+        probing.set()
+        await asyncio.wait_for(answer.wait(), 10.0)
+        return {"dependency:model:model": (True, "answers")}
+
+    try:
+        round_ = asyncio.create_task(watch_once(db, {}, probes=probes))
+        await asyncio.wait_for(probing.wait(), 10.0)
+        # mid-round: the job the backfill parked is committed (it used to wait for the
+        # round's transaction, held across every probe), and no other round runs
+        parked = await other.fetch(
+            "SELECT parked_on FROM processing_jobs WHERE stage = 't_a' AND state = 'pending'"
+        )
+        assert [r["parked_on"] for r in parked] == ["dependency:model:model"]
+        assert (await watch_once(other, {}, probes=probes)).leader is False
+        answer.set()
+        report = await asyncio.wait_for(round_, 10.0)
+        assert report.leader and report.released == {"dependency:model:model": 1}
+        assert (await watch_once(other, {}, probes=probes)).leader is True
+    finally:
+        await other.close()
 
 
 async def _missing_world(db: Database, root: Path) -> tuple[UUID, UUID, Path]:

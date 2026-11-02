@@ -293,14 +293,25 @@ func runServe() error {
 
 	bg.Go(procWatchdog.Run)
 
+	// Both sockets are bound here, before anything serves: a client may connect
+	// the moment onListening runs (the kernel queues it until Serve accepts),
+	// and a port already taken fails runServe here.
+	publicLn, adminLn, err := listenPair(publicAddr, adminAddr)
+	if err != nil {
+		return err
+	}
+	if onListening != nil {
+		onListening(publicLn.Addr(), adminLn.Addr())
+	}
+
 	errCh := make(chan error, 3)
 	go func() {
-		logger.Info("listening", "addr", publicAddr, "kind", "public", "event", "http_listen")
-		errCh <- serveOn(publicSrv)
+		logger.Info("listening", "addr", publicLn.Addr().String(), "kind", "public", "event", "http_listen")
+		errCh <- publicSrv.Serve(publicLn)
 	}()
 	go func() {
-		logger.Info("listening", "addr", adminAddr, "kind", "admin", "event", "http_listen")
-		errCh <- serveOn(adminSrv)
+		logger.Info("listening", "addr", adminLn.Addr().String(), "kind", "admin", "event", "http_listen")
+		errCh <- adminSrv.Serve(adminLn)
 	}()
 
 	// gRPC surface for the API (Story 7.18 / 8.8): JSON-codec service
@@ -366,6 +377,27 @@ func serveOn(srv *http.Server) error {
 		return err
 	}
 	return srv.Serve(ln)
+}
+
+// onListening, when set (tests only), is called once runServe has bound its
+// public and admin sockets, with the addresses they got: a test listens on
+// 127.0.0.1:0 and learns the ports, so no port is picked, freed and then lost
+// to another process, and no request reaches a socket that is not bound yet.
+var onListening func(public, admin net.Addr)
+
+// listenPair binds the public and admin sockets through listenTCP; on an error
+// neither is left open.
+func listenPair(publicAddr, adminAddr string) (public, admin net.Listener, err error) {
+	public, err = listenTCP("tcp", publicAddr)
+	if err != nil {
+		return nil, nil, fmt.Errorf("public listener %s: %w", publicAddr, err)
+	}
+	admin, err = listenTCP("tcp", adminAddr)
+	if err != nil {
+		_ = public.Close()
+		return nil, nil, fmt.Errorf("admin listener %s: %w", adminAddr, err)
+	}
+	return public, admin, nil
 }
 
 // buildGRPCServer constructs the in-process streaming Server backing

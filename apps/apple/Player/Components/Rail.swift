@@ -5,6 +5,16 @@ import SwiftUI
 /// "See all" when there is more, then the cards, snapping to each. In Arabic the row starts
 /// on the right (NFR-11); at the accessibility sizes the title and "See all" stack and the
 /// cards grow (NFR-7).
+///
+/// The cards sit in a plain `HStack`, not a `LazyHStack`. A sideways scroll view is as tall as
+/// its content, and a lazy stack's content is only the cards it has built. A row that had just
+/// scrolled into view had built none yet, so the row was 0 pt tall. Usually it built them on the
+/// next pass and grew. Home's last row (For You) could stay at 0 pt, though: the page stopped at
+/// its end, the row's visible area was empty, and the lazy stack built nothing. On CI the row
+/// showed its title and no cards for a whole test (`testNotInterestedRemovesTheCard`, PR #541).
+/// Every rail holds a short list (one of Home's rows, a library's hub row, a few next
+/// episodes), so building all its cards costs little. In return the row has its height from
+/// the start.
 struct Rail<Items: RandomAccessCollection, Card: View>: View where Items.Element: Identifiable {
     let title: Text
     let items: Items
@@ -25,7 +35,7 @@ struct Rail<Items: RandomAccessCollection, Card: View>: View where Items.Element
             header
                 .padding(.horizontal, MaktabaTokens.Spacing.s4)
             ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: MaktabaTokens.Spacing.s3) {
+                HStack(alignment: .top, spacing: MaktabaTokens.Spacing.s3) {
                     ForEach(items) { card($0) }
                 }
                 .scrollTargetLayout()

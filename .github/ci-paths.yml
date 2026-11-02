@@ -140,9 +140,10 @@ unit_tokens:
   - *tokens
   - '.github/workflows/_unit.yml'
 
-# the mDNS announcement's tests on Windows (DnsServiceRegister through dnsapi.dll): both
-# copies of it and the modules they build in
-mdns_windows:
+# the mDNS announcement for real: on Windows (DnsServiceRegister through dnsapi.dll) and on
+# Linux through systemd-resolved (mdns-windows, mdns-linux): both copies of it, the modules
+# they build in, the check that the copies stay the same and the runner setup
+mdns:
   - *ci
   - 'api/internal/discovery/**'
   - 'api/go.mod'
@@ -150,6 +151,9 @@ mdns_windows:
   - 'cmd/maktaba-server/internal/mdns/**'
   - 'cmd/maktaba-server/go.mod'
   - 'cmd/maktaba-server/go.sum'
+  - 'tools/ci/mdns_copies.py'
+  - 'tools/ci/mdns-linux.sh'
+  - 'tools/ci/apt-install.sh'
   - '.github/workflows/_unit.yml'
 
 # the Tauri shell's tests on macOS, Windows and Linux

@@ -20,7 +20,7 @@ thousands of old failures is moved without a long transaction.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -96,33 +96,44 @@ async def backfill_once(db: Any, cfg: QueueHealthConfig) -> BackfillReport:
                     roots_up[root] = await root_answers(root, cfg.probe_timeout_seconds)
                 if not roots_up[root]:
                     cls = f"{SHARE}:{root}"
+        got = await _move(db, r, cls, cfg, t)
+        parked += 1 if got == "parked" else 0
+        requeued += 1 if got == "requeued" else 0
+    return BackfillReport(len(todo), parked, requeued)
+
+
+async def _move(db: Any, r: Any, cls: str, cfg: QueueHealthConfig, t: datetime) -> str | None:
+    """Classify one failed row and queue (or park) its subject again, in one transaction:
+    a round stopped in between (the leader round runs no transaction around itself) must
+    never leave a row classified, so skipped from now on, without the new job it was owed.
+    Returns ``"parked"``, ``"requeued"`` or None."""
+    async with db.transaction():
         await db.execute(
             "UPDATE processing_jobs SET failure_class = $2 WHERE id = $1", int(r["id"]), cls
         )
         if not r["latest"]:
-            continue
+            return None
         park = is_parking(cls)
         again = cls == TRANSIENT and int(r["attempts"]) < budget(cls, int(r["max_attempts"]), cfg)
         if not (park or again):
-            continue
+            return None
         res = await enqueue_job(
             db,
             subject_kind=str(r["subject_kind"]),
             subject_id=UUID(str(r["subject_id"])),
-            stage=stage,
+            stage=str(r["stage"]),
             reason={"why": "queue health: an older failure moved to the new model", "by": "system"},
         )
         if res.job_id is None or res.outcome != "inserted":
-            continue
-        if park:
-            await db.execute(
-                "UPDATE processing_jobs SET parked_on = $2, failure_class = $2, not_before = $3"
-                " WHERE id = $1 AND state = 'pending'",
-                res.job_id,
-                cls,
-                to_ts(db, t + timedelta(hours=cfg.park_max_hours)),
-            )
-            parked += 1
-        else:
-            requeued += 1
-    return BackfillReport(len(todo), parked, requeued)
+            return None
+        if not park:
+            return "requeued"
+        # parked in the same transaction as its enqueue: no worker can claim it between
+        await db.execute(
+            "UPDATE processing_jobs SET parked_on = $2, failure_class = $2, not_before = $3"
+            " WHERE id = $1 AND state = 'pending'",
+            res.job_id,
+            cls,
+            to_ts(db, t + timedelta(hours=cfg.park_max_hours)),
+        )
+        return "parked"

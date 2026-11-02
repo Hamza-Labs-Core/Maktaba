@@ -22,7 +22,7 @@ pytestmark = pytest.mark.unit
 HOME = Path("/home/u")
 
 
-def test_paths_per_os() -> None:
+def test_paths_per_os(tmp_path: Path) -> None:
     assert config.config_path(system="Darwin", env={}, home=HOME) == (
         HOME / "Library" / "Application Support" / "Maktaba" / "node.json"
     )
@@ -32,15 +32,21 @@ def test_paths_per_os() -> None:
     assert config.config_path(system="Linux", env={"XDG_CONFIG_HOME": "/x/cfg"}, home=HOME) == (
         Path("/x/cfg") / "maktaba" / "node.json"
     )
+    # Windows first looks under the home for a roaming profile's node config (a stat and a
+    # listing of its folder), so its home is an empty folder of this test's own: /home/u is
+    # an automount on macOS (every lookup a round trip to automountd, 0.13 s a call, enough
+    # to push this unit test past its hard cap in a loaded run), and \home\u on the current
+    # drive on Windows, a real place something else may have filled
+    home = tmp_path
     assert (
         config.config_path(
-            system="Windows", env={"LOCALAPPDATA": r"C:\Users\u\AppData\Local"}, home=HOME
+            system="Windows", env={"LOCALAPPDATA": r"C:\Users\u\AppData\Local"}, home=home
         )
         == Path(r"C:\Users\u\AppData\Local") / "Maktaba" / "node.json"
     )
     # no LOCALAPPDATA: the usual place under the profile
-    assert config.config_path(system="Windows", env={}, home=HOME) == (
-        HOME / "AppData" / "Local" / "Maktaba" / "node.json"
+    assert config.config_path(system="Windows", env={}, home=home) == (
+        home / "AppData" / "Local" / "Maktaba" / "node.json"
     )
 
 
