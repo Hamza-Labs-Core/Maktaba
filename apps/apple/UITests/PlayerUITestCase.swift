@@ -155,7 +155,7 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
-    private static func auditTimedOut(_ error: NSError) -> Bool {
+    static func auditTimedOut(_ error: NSError) -> Bool {
         (error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56)
             || (error.domain == "com.apple.dt.XCTest.XCTFuture" && error.code == 1000)
     }

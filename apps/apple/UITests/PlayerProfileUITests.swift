@@ -206,15 +206,32 @@ final class PlayerProfileUITests: PlayerUITestCase {
     }
 
     func testAccessibilityAudit() throws {
-        launchProfile()
-        try audit()
-        element("profile.history").tap()
-        XCTAssertTrue(element("history.v2").waitForExistence(timeout: 10))
-        try audit()
-        element("profile.back").tap()
-        element("profile.sessions").tap()
-        XCTAssertTrue(element("session.sess-1").waitForExistence(timeout: 10))
-        try audit()
+        try auditPage {}
+        try auditPage {
+            self.element("profile.history").tap()
+            XCTAssertTrue(self.element("history.v2").waitForExistence(timeout: 10))
+        }
+        try auditPage {
+            self.element("profile.sessions").tap()
+            XCTAssertTrue(self.element("session.sess-1").waitForExistence(timeout: 10))
+        }
+    }
+
+    /// One page's audit in a launch of its own. On an iPad CI runner the audit of one launch
+    /// could stop answering (XCTest's "Timed out while running accessibility audit", three
+    /// times running on the same screen, the screen still in the recording); then the app
+    /// is launched afresh and the page audited again, in full.
+    private func auditPage(_ open: () -> Void) throws {
+        for attempt in 1 ... 2 {
+            launchProfile()
+            open()
+            do {
+                try audit()
+                return
+            } catch let error as NSError where Self.auditTimedOut(error) && attempt < 2 {
+                app.terminate()
+            }
+        }
     }
 
     /// The audit, but for a row just above the tab bar: as the audit grows the text it slides
