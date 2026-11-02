@@ -39,8 +39,10 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// Opens the app. `fresh`: as a first run (no homes, the permissions walkthrough passed
-    /// with its checks faked); otherwise the home and the sign-in of the last launch are kept
-    /// (in a signed build only: an unsigned one, as on CI, keeps no token in the Keychain).
+    /// with its checks faked); otherwise the home and the sign-in of the last launch are kept.
+    /// The tokens are kept in a file, not the Keychain (`-maktaba-secrets-in-file`,
+    /// `UITestSecrets`): the app is built unsigned on CI, and an unsigned app may not use the
+    /// Keychain, so it would be signed out at each launch.
     /// `extra`: more launch arguments (the components' gallery, a Dynamic Type size).
     /// `theme`: the theme forced for the run (nil: the stored choice, as Settings changes it).
     /// `controlsStay`: the player's controls stay up once shown instead of hiding 4 s after the
@@ -50,7 +52,7 @@ class PlayerUITestCase: XCTestCase {
                 fresh: Bool = true, theme: String? = "dark", controlsStay: Bool = true, extra: [String] = []) {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
-        var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
+        var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale, "-maktaba-secrets-in-file"]
         // the dark theme (the owner's screenshots are dark; FR-2)
         if let theme { args += ["-theme", theme] }
         if fresh {

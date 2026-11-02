@@ -7,8 +7,8 @@ import XCTest
 final class PlayerConnectProgressUITests: PlayerUITestCase {
     func testPickerStatesEnglish() { pickerStates("en") }
     func testPickerStatesArabic() { pickerStates("ar") }
-    func testSignInAndRestoreStatesEnglish() throws { try signInAndRestoreStates("en") }
-    func testSignInAndRestoreStatesArabic() throws { try signInAndRestoreStates("ar") }
+    func testSignInAndRestoreStatesEnglish() { signInAndRestoreStates("en") }
+    func testSignInAndRestoreStatesArabic() { signInAndRestoreStates("ar") }
 
     /// Finding the home: each address tried, then why it failed (with what was tried and
     /// Retry), the next attempt, and an address where nothing answers.
@@ -47,7 +47,7 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
     /// Signing in (a code asked for, waiting for approval, a code that expired), a wrong
     /// password, then the saved sign-in at the next launch: reconnecting, failed with Retry,
     /// and the home busy with the countdown to its next try.
-    private func signInAndRestoreStates(_ language: String) throws {
+    private func signInAndRestoreStates(_ language: String) {
         launch(language)
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "the home picker")
@@ -100,10 +100,8 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         home.stub("GET", "/api/auth/me", status: 500, body: #"{"title":"boom"}"#)
         home.hold("GET", "/api/auth/me")
         launch(language, fresh: false)
-        guard element("connect.progress.reconnecting").waitForExistence(timeout: 15) else {
-            // the sign-in states above are kept; the restore's need a token from the last launch
-            throw XCTSkip("no saved sign-in to restore (an unsigned build, as on CI, keeps no token in the Keychain)")
-        }
+        XCTAssertTrue(element("connect.progress.reconnecting").waitForExistence(timeout: 15),
+                      "the saved sign-in of the last launch is checked")
         shot("restore-reconnecting")
         home.release()
         XCTAssertTrue(element("connect.progress.failed").waitForExistence(timeout: 15), "why")

@@ -488,23 +488,25 @@ struct RestoreSection: View {
 
     var body: some View {
         let locale = ConnectStrings.forPreferredLanguages().locale
+        // No identifier on the Section: set there it replaced each row's, so the progress row
+        // lost its `connect.progress.<step>` (a wrapper around the row is merged with it, the
+        // wrapper's identifier winning too). The problem's identifier is on its text alone.
         if session.restoring {
             Section {
                 ConnectProgressView(session.progress ?? ConnectProgress(.reconnecting(name: session.current?.name ?? "")),
                                     locale: locale)
             }
-            .accessibilityIdentifier("signin.restoring")
         } else if session.restoreProblem != nil {
             let words = ErrorStrings.forPreferredLanguages()
             Section {
                 Text(words.text(.restoreFailed))
+                    .accessibilityIdentifier("signin.restoreProblem")
                 if let p = session.progress, !p.isWorking {
                     ConnectProgressView(p, locale: locale, retryID: "signin.restore.retry") {
                         Task { await session.retryRestore() }
                     }
                 }
             }
-            .accessibilityIdentifier("signin.restoreProblem")
         }
     }
 }
