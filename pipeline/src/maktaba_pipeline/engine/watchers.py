@@ -1,7 +1,8 @@
 """Dependency watchers (Epic 40, story 40.2): small health probes that release parked jobs.
 
-One loop on the home's leader worker (``pg_try_advisory_xact_lock('maktaba.queue_health')``;
-on SQLite there is one process), every ``rules.queue_health.probe_interval_seconds``:
+One loop on the home's leader worker (a session advisory lock on ``maktaba.queue_health``,
+engine/leader.py; on SQLite there is one process), every
+``rules.queue_health.probe_interval_seconds``:
 
 * ``dependency:model:<section>`` - every rules section a stage names in ``model_rules``:
   ``GET <url>/api/tags`` (Ollama) answers, and lists the model when it lists any. A section
@@ -38,6 +39,7 @@ from .backfill import backfill_once
 from .failure_classes import MODEL, SHARE, YT_RATE_LIMIT, QueueHealthConfig
 from .failure_policy import _roots, read_config, root_answers
 from .graph import StageDef
+from .leader import leader
 from .sql import is_pg, now, parse_ts, to_ts
 
 __all__ = [
@@ -52,6 +54,8 @@ __all__ = [
 _log = get_logger()
 
 RELEASE_BATCH = 1000
+#: the round's leader lock (Postgres): ``hashtext`` of it, a session lock held for a round
+LEADER_KEY = "maktaba.queue_health"
 #: batches of older failures moved per round (story 40.6)
 BACKFILL_BATCHES = 10
 
@@ -252,15 +256,14 @@ async def watch_once(
     probes: Callable[..., Awaitable[dict[str, Probe]]] | None = None,
 ) -> WatchReport:
     """One round: probe, record, release. ``leader=False``: another worker holds the
-    round. On Postgres the whole round runs in one transaction holding the advisory lock
-    (the probes are bounded by their timeout); SQLite has one process, so no lock and no
-    long transaction there."""
+    round. There is no transaction around the round, on either dialect: each write
+    commits on its own (a health row, a batch of releases, one backfilled failure), so a
+    job it releases can be claimed at once and no row stays locked across the probes. On
+    Postgres the leader lock is a session advisory lock on a connection of its own, held
+    for the round (engine/leader.py); SQLite has one process, so no lock there."""
     if not is_pg(db):
         return await _round(db, graph, cfg, at, probes)
-    async with db.transaction():
-        got = await db.fetchval(
-            "SELECT pg_try_advisory_xact_lock(hashtext('maktaba.queue_health'))"
-        )
+    async with leader(db, LEADER_KEY) as got:
         if not got:
             return WatchReport(leader=False)
         return await _round(db, graph, cfg, at, probes)
