@@ -78,7 +78,7 @@ func TestRegisterAnnouncesBareHost(t *testing.T) {
 	}
 	select {
 	case e := <-entries:
-		if want := bareHost(hostName()) + ".local."; e.HostName != want {
+		if want := announcedHost(systemResponder()) + ".local."; e.HostName != want {
 			t.Fatalf("target = %q, want %q", e.HostName, want)
 		}
 		if e.Port != 18088 || !reflect.DeepEqual(e.Text, []string{"web=8088"}) {

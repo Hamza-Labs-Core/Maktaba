@@ -140,6 +140,18 @@ unit_tokens:
   - *tokens
   - '.github/workflows/_unit.yml'
 
+# the mDNS announcement's tests on Windows (DnsServiceRegister through dnsapi.dll): both
+# copies of it and the modules they build in
+mdns_windows:
+  - *ci
+  - 'api/internal/discovery/**'
+  - 'api/go.mod'
+  - 'api/go.sum'
+  - 'cmd/maktaba-server/internal/mdns/**'
+  - 'cmd/maktaba-server/go.mod'
+  - 'cmd/maktaba-server/go.sum'
+  - '.github/workflows/_unit.yml'
+
 # the Tauri shell's tests on macOS, Windows and Linux
 desktop_shell:
   - *ci
