@@ -232,16 +232,19 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         signIn(timeout: 30)
     }
 
-    /// The page's audit. A grid loads its next page when its last card shows, and the audit's
-    /// smaller text sizes can show it: a page arriving while the audit measures moves every
-    /// text on the screen, and the audit calls them all "partially unsupported" (seen on CI,
-    /// with `GET /api/videos` during the audit). The audit then runs once more, on the page as
-    /// it now is (the last page loaded, nothing left to ask for), and that one must be clean.
+    /// The page's audit. The screen redrawing while the audit measures (a grid's next page
+    /// arriving, its last card shown by the audit's smaller text sizes; or a slow CI runner
+    /// redrawing late at one of the sizes) moves every text on it, and the audit calls them all
+    /// "partially unsupported", in both columns of an iPad at once (seen on CI, with and
+    /// without `GET /api/videos` during the audit). Then the audit runs once more, on the page
+    /// as it now is, and that whole run must be clean: a text that really does not scale fails
+    /// both.
     private func audit(_ page: String) {
         for attempt in 1 ... 2 {
             let (found, during) = auditOnce(page)
             if found.isEmpty { return }
-            if attempt == 1, !during.isEmpty {
+            let redrawn = !during.isEmpty || found.allSatisfy { $0.hasPrefix("Dynamic Type font sizes are partially unsupported") }
+            if attempt == 1, redrawn {
                 waitFor(timeout: 2) { false } // the new page's posters
                 continue
             }

@@ -136,19 +136,24 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// `performAccessibilityAudit`, run again when it could not finish in time (error -56,
-    /// "Audit failed to complete in time", seen on a loaded CI runner while the screen was
-    /// still drawing). Any other error, and every issue `handler` does not excuse, still fails.
+    /// "Audit failed to complete in time", or XCTest's own "Timed out while running
+    /// accessibility audit", both seen on a loaded CI runner while the screen was still
+    /// drawing). Any other error, and every issue `handler` does not excuse, still fails.
     func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
         for attempt in 1 ... 3 {
             do {
                 try app.performAccessibilityAudit(for: types, handler)
                 return
-            } catch let error as NSError
-                        where error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56 && attempt < 3 {
+            } catch let error as NSError where Self.auditTimedOut(error) && attempt < 3 {
                 continue
             }
         }
+    }
+
+    private static func auditTimedOut(_ error: NSError) -> Bool {
+        (error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56)
+            || (error.domain == "com.apple.dt.XCTest.XCTFuture" && error.code == 1000)
     }
 
     /// An audit issue with the element it is on (identifier, label, frame), for a failure that
