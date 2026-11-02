@@ -1138,3 +1138,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - One CI run (41376606909): aLibraryShowsItsHubRowsAndLeavesTheEmptyOnesOut waited 10 s for the libraries list; the other 11 tests took ~0.5 s. Six local runs of the class all passed; the report held no app log (Robolectric drops android.util.Log), so the cause wasn't recorded.
 - Changes: a missed wait now says which paths the app asked the home and what the screen showed. Each FakeHome gets its own OkHttp connection pool (it shared defaultHttp's across tests).
 - Not root-caused yet: the next miss names it.
+- Owner: "always request the logs so it doesn't drop them". Both Android Gradle roots (apps/android, apps/tv/android) set `robolectric.logging=stdout` on every Test task; LogsKeptTest fails if it goes. Reports now carry the app's log.
