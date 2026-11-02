@@ -4,7 +4,7 @@
 -- SQLite parity sibling for slot 0172: orphaned stage pauses (paused with no paused_by)
 -- are resumed with an audit_log row each, a pause that names its owner but no time gets
 -- updated_at as its time; triggers refuse a pause without paused_at and paused_by;
--- claim_shares holds each stage's share of its pool's claims and the pool's clock; and
+-- claim_shares holds each priority class's share of its pool's claims and the pool's clock; and
 -- processing_jobs_claimable_idx makes each stage's head one index probe.
 --
 INSERT INTO audit_log (category, action, actor_source, target_kind, target_id, payload)

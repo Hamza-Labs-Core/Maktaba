@@ -3,9 +3,9 @@
 On the owner's home the thumbnail stage (70k jobs at priority 900) had not run since
 2026-10-22: nas_read has two slots, and thumb_small and chapter_thumbs (42k jobs at 100)
 always had the next job under a strict ``ORDER BY priority, id``. The claim now gives each
-stage claims in inverse proportion to its head's priority (stride scheduling over
-``stage_claim_pass``), and a job at ``URGENT_PRIORITY`` or better (Process now) still goes
-first. Both dialects run every test (``db`` fixture).
+priority class claims in inverse proportion to its priority (stride scheduling over
+``claim_shares``), heads of one priority stay in id order, and a job at ``URGENT_PRIORITY``
+or better (Process now) still goes first. Both dialects run every test (``db`` fixture).
 """
 
 from __future__ import annotations
@@ -68,15 +68,15 @@ async def test_a_priority_900_stage_runs_while_the_pool_stays_full_of_priority_1
         order.append(str(job.stage))
         if job.video_id == low:
             break
-    # stride bound: nine claims of each priority-100 stage (100 * 9 = 900), then the 900
+    # stride bound: nine claims at priority 100 (100 * 9 = 900), then the 900
     assert order[-1] == LOW, order
-    assert len(order) <= 2 * 9 + 1, order
-    # and priority still decides the split: the busy stages got the claims before it
-    assert Counter(order[:-1]) == {"thumb_small": 9, "chapter_thumbs": 9}
+    assert len(order) <= 9 + 1, order
+    # and priority still decides the split: the busy stages, in id order, got the nine
+    assert len(order) == 10 and set(order[:-1]) == set(BUSY), order
 
 
 @pytest.mark.asyncio
-async def test_the_share_keeps_going_one_low_claim_for_every_nine_of_each_busy_stage(
+async def test_the_share_keeps_going_one_low_claim_for_every_nine_at_priority_100(
     db: Database,
 ) -> None:
     lib = await make_library(db)
@@ -86,12 +86,13 @@ async def test_the_share_keeps_going_one_low_claim_for_every_nine_of_each_busy_s
     for _ in range(5):
         await _enqueue(db, lib, LOW, 900)
     seen: Counter[str] = Counter()
-    for _ in range(57):  # three rounds of 9 + 9 + 1
+    for _ in range(50):  # five rounds of nine at 100, one at 900
         job = await _claim(db)
         assert job is not None
         seen[str(job.stage)] += 1
         await _done(db, job)
-    assert seen == {"thumb_small": 27, "chapter_thumbs": 27, LOW: 3}
+    # the two busy stages take the nine at 100 between them, in id order
+    assert seen == {"thumb_small": 23, "chapter_thumbs": 22, LOW: 5}, seen
 
 
 @pytest.mark.asyncio
@@ -100,11 +101,10 @@ async def test_process_now_beats_a_starved_stage(db: Database) -> None:
     for stage in BUSY:
         await _enqueue(db, lib, stage, 100)
     await _enqueue(db, lib, LOW, 900)
-    # the busy stages are far ahead in their share: the low stage is next by fair share
-    for stage in BUSY:
-        await db.execute(
-            "INSERT INTO claim_shares (owner, pass) VALUES ($1, $2)", f"stage:{stage}", 1_000_000
-        )
+    # the busy class is far ahead in its share: the low stage is next by fair share
+    await db.execute(
+        "INSERT INTO claim_shares (owner, pass) VALUES ($1, $2)", f"prio:{POOL}:100", 1_000_000
+    )
     now = await _enqueue(db, lib, "thumb_small", URGENT_PRIORITY)
     job = await _claim(db)
     assert job is not None and job.video_id == now and job.priority == URGENT_PRIORITY
@@ -131,27 +131,45 @@ async def test_urgent_jobs_go_strictly_by_priority_then_age(db: Database) -> Non
 
 
 @pytest.mark.asyncio
-async def test_a_stage_back_from_idle_does_not_cash_in_saved_credit(db: Database) -> None:
+async def test_a_class_back_from_idle_does_not_cash_in_saved_credit(db: Database) -> None:
     lib = await make_library(db)
-    for _ in range(30):
+    for _ in range(40):
         await _enqueue(db, lib, "thumb_small", 100)
-    # thumb_small runs alone for a while: its pass climbs to 2000
+    # priority 100 runs alone for a while: the pool clock climbs to 2000
     for _ in range(20):
         job = await _claim(db)
         assert job is not None and job.stage == "thumb_small"
         await _done(db, job)
-    # chapter_thumbs had nothing to do; now it has work. It joins at the lowest pass among
-    # the stages with work (2000), not at 0: the two alternate instead of chapter_thumbs
-    # taking 20 claims in a row
-    for _ in range(10):
-        await _enqueue(db, lib, "chapter_thumbs", 100)
+    # the 900 class had nothing to do; now it has work. It joins at the pool clock (2000),
+    # not at 0: one claim, then nine at 100, not two (900, 1800) back to back
+    for _ in range(5):
+        await _enqueue(db, lib, LOW, 900)
     seen: list[str] = []
-    for _ in range(6):
+    for _ in range(11):
         job = await _claim(db)
         assert job is not None
         seen.append(str(job.stage))
         await _done(db, job)
-    assert Counter(seen) == {"thumb_small": 3, "chapter_thumbs": 3}, seen
+    assert seen == [LOW, *["thumb_small"] * 9, LOW], seen
+
+
+@pytest.mark.asyncio
+async def test_equal_priorities_stay_in_id_order_across_stages(db: Database) -> None:
+    # a cascade's batch (three fp_gate, then the detect they trigger) must run in the order
+    # it was made, as under ORDER BY priority, id: a share per stage round-robined equal
+    # stages and split the batch, so the stage downstream ran once per half
+    lib = await make_library(db)
+    made = [
+        await _enqueue(db, lib, stage, 100)
+        for stage in ("thumb_small", "thumb_small", "thumb_small", "chapter_thumbs", "thumb_small")
+    ]
+    got: list[UUID | None] = []
+    for _ in made:
+        job = await _claim(db)
+        assert job is not None
+        got.append(job.video_id)
+        await _done(db, job)
+    assert got == made
 
 
 @pytest.mark.asyncio

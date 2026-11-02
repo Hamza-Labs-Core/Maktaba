@@ -77,19 +77,25 @@ URGENT_PRIORITY = 50
 # thumb_small and chapter_thumbs, 42k jobs at 100, always filled the two nas_read slots
 # under a strict ORDER BY priority, id).
 #
-# Stride scheduling over claim_shares. Each stage of the pool offers its head, its best
-# job by (priority, id): one probe of processing_jobs_claimable_idx. A head is due at
-#     due = GREATEST(stage pass + head priority, pool clock)
-# where the stage pass ('stage:<name>') is the due of the stage's last claim and the
-# pool clock ('pool:<name>') the due of the pool's last fair-share claim. The claim takes:
+# Stride scheduling over claim_shares, between the priority classes of a pool. Each stage
+# of the pool offers its head, its best job by (priority, id): one probe of
+# processing_jobs_claimable_idx. A head is due at
+#     due = GREATEST(class pass + head priority, pool clock)
+# where the class pass ('prio:<pool>:<priority>') is the due of the last claim at that
+# priority and the pool clock ('pool:<pool>') the due of the pool's last fair-share
+# claim. The claim takes:
 #   1. a head at URGENT_PRIORITY or better, by priority then id (Process now wins);
 #   2. else the head due first (then priority, id).
-# The claimed stage's pass becomes its due; a fair-share claim also moves the pool clock
-# to it. While stages stay busy each gets claims in inverse proportion to its jobs'
-# priority numbers (one at 900 for every nine at 100): none starves, and priority still
-# decides the split. The clock is the lowest due any busy stage can have, so a stage
-# coming back from idle starts level with the others and has no saved-up credit.
-# Within one stage the order stays strictly (priority, id).
+# The claimed class's pass becomes its due; a fair-share claim also moves the pool clock
+# to it. While classes stay busy each gets claims in inverse proportion to its priority
+# number (one at 900 for every nine at 100): none starves, and priority still decides the
+# split. The clock is the lowest due any busy class can have, so a class coming back from
+# idle starts level with the others and has no saved-up credit.
+# Heads of one priority are all due together, so among them the order stays strictly by
+# id, across stages, as before: a cascade's jobs (three fp_gate, then the one detect they
+# trigger) still run in the order they were made and coalesce as they did. A share per
+# stage instead round-robins equal stages and splits such batches, so a coalescing
+# stage downstream ran twice (tests/stages/test_fingerprint_flow.py).
 _HEAD_FILTER = """
            AND j.state IN ('pending', 'paused')
            AND j.pause_requested = {false}
@@ -99,9 +105,8 @@ _HEAD_FILTER = """
 _CLAIM_PG = (
     """
 WITH heads AS (
-    SELECT s.stage, COALESCE(p.pass, 0) AS pass, h.id, h.priority
+    SELECT s.stage, h.id, h.priority
       FROM job_stages s
-      LEFT JOIN claim_shares p ON p.owner = 'stage:' || s.stage
       CROSS JOIN LATERAL (
             SELECT j.id, j.priority
               FROM processing_jobs j
@@ -128,13 +133,15 @@ WITH heads AS (
 ),
 due AS (
     SELECT h.stage, h.id, h.priority,
-           GREATEST(h.pass + h.priority,
+           GREATEST(COALESCE((SELECT pass FROM claim_shares
+                               WHERE owner = 'prio:' || $2 || ':' || h.priority), 0)
+                      + h.priority,
                     COALESCE((SELECT pass FROM claim_shares WHERE owner = 'pool:' || $2), 0))
              AS due
       FROM heads h
 ),
 pick AS (
-    SELECT d.stage, d.id, d.due, d.priority <= $4 AS urgent
+    SELECT d.stage, d.id, d.priority, d.due, d.priority <= $4 AS urgent
       FROM due d
      ORDER BY (d.priority > $4),
               CASE WHEN d.priority <= $4 THEN d.priority ELSE d.due END,
@@ -142,12 +149,13 @@ pick AS (
      LIMIT 1
 ),
 share AS (
-    -- the stage's row before the pool's, in every claim: concurrent claimers of a
+    -- the class's row before the pool's, in every claim: concurrent claimers of a
     -- per-worker pool take the two row locks in the same order
     INSERT INTO claim_shares (owner, pass)
     SELECT o.owner, pick.due
       FROM pick
-      CROSS JOIN LATERAL (VALUES (1, 'stage:' || pick.stage), (2, 'pool:' || $2)) o(n, owner)
+      CROSS JOIN LATERAL (VALUES (1, 'prio:' || $2 || ':' || pick.priority),
+                                 (2, 'pool:' || $2)) o(n, owner)
      WHERE o.n = 1 OR NOT pick.urgent
      ORDER BY o.n
     ON CONFLICT (owner) DO UPDATE SET pass = GREATEST(claim_shares.pass, EXCLUDED.pass)
@@ -171,7 +179,7 @@ RETURNING pj.*
 _CLAIM_SQLITE_SELECT = (
     """
 WITH cand AS (
-    SELECT s.stage AS stage, COALESCE(p.pass, 0) AS pass,
+    SELECT s.stage AS stage,
            (SELECT j.id
               FROM processing_jobs j
              WHERE j.stage = s.stage"""
@@ -180,7 +188,6 @@ WITH cand AS (
              ORDER BY j.priority, j.id
              LIMIT 1) AS id
       FROM job_stages s
-      LEFT JOIN claim_shares p ON p.owner = 'stage:' || s.stage
      WHERE s.pool = $1
        AND s.stage IN ({stages})
        AND s.enabled = 1
@@ -197,12 +204,15 @@ WITH cand AS (
 ),
 due AS (
     SELECT c.stage, j.id, j.priority,
-           MAX(c.pass + j.priority,
+           MAX(COALESCE((SELECT pass FROM claim_shares
+                          WHERE owner = 'prio:' || $1 || ':' || j.priority), 0)
+                 + j.priority,
                COALESCE((SELECT pass FROM claim_shares WHERE owner = 'pool:' || $1), 0)) AS due
       FROM cand c
       JOIN processing_jobs j ON j.id = c.id
 )
-SELECT d.stage AS stage, d.id AS id, d.due AS due, d.priority <= {urgent} AS urgent
+SELECT d.stage AS stage, d.id AS id, d.priority AS priority, d.due AS due,
+       d.priority <= {urgent} AS urgent
   FROM due d
  ORDER BY (d.priority > {urgent}),
           CASE WHEN d.priority <= {urgent} THEN d.priority ELSE d.due END,
@@ -246,8 +256,8 @@ async def claim_for_pool(
     pause/cancel requested, ``not_before`` passed, and (for a global pool)
     fewer than ``size`` jobs of the pool already claimed or running anywhere.
     Order: a job at :data:`URGENT_PRIORITY` or better first (priority, then id); else
-    the fair share among the pool's stages (see ``_CLAIM_PG``); within a stage,
-    ``priority`` then ``id``.
+    the fair share among the pool's priority classes (see ``_CLAIM_PG``); within a
+    class, ``id``.
     """
     if not stages:
         raise ValueError("claim_for_pool: stages must not be empty")
@@ -278,7 +288,7 @@ async def claim_for_pool(
         claimed = await db.fetchrow(_CLAIM_SQLITE_UPDATE, worker_id, cand["id"])
         if claimed is not None:
             due = int(cand["due"])
-            await db.execute(_CLAIM_SQLITE_SHARE, f"stage:{cand['stage']}", due)
+            await db.execute(_CLAIM_SQLITE_SHARE, f"prio:{pool}:{int(cand['priority'])}", due)
             if not cand["urgent"]:
                 await db.execute(_CLAIM_SQLITE_SHARE, f"pool:{pool}", due)
     return row_to_job(claimed) if claimed is not None else None

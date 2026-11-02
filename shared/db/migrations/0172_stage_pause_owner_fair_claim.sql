@@ -22,13 +22,13 @@
 --    pipeline/src/maktaba_pipeline/sharepath/auto.py). The SQLite twin has the same
 --    triggers.
 --
--- 3. claim_shares: the fair share of a pool's claims among its stages
---    (pipeline/src/maktaba_pipeline/engine/claim.py). Row 'stage:<name>' holds when the
---    stage's last claim was due, row 'pool:<name>' the pool's clock. A claim takes the
---    head (best priority, then oldest) of each stage of the pool, and the head due first:
---    due = GREATEST(stage pass + head priority, pool clock). A stage whose jobs are
---    priority 900 gets one claim for every nine of a stage at 100 instead of none while
---    the other has work. Jobs at priority 50 or better (Process now) are still claimed
+-- 3. claim_shares: the fair share of a pool's claims among its priority classes
+--    (pipeline/src/maktaba_pipeline/engine/claim.py). Row 'prio:<pool>:<priority>' holds
+--    when the last claim at that priority was due, row 'pool:<name>' the pool's clock. A
+--    claim takes the head (best priority, then oldest) of each stage of the pool, and the
+--    head due first: due = GREATEST(class pass + head priority, pool clock); heads of one
+--    priority stay in id order. Jobs at priority 900 get one claim for every nine at 100
+--    instead of none while those have work. Jobs at priority 50 or better (Process now) are still claimed
 --    first, strictly by priority.
 --
 -- 4. processing_jobs_claimable_idx (stage, priority, id) over the claimable states: each
