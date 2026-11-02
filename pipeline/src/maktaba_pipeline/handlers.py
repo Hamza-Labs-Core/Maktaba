@@ -524,20 +524,30 @@ async def scan_handler(
 
 async def _source_artifact(db: DBConn, job: Job, *, content_hash: str, path: str) -> Any:
     """The audio a streaming backend reads: the source file itself, on the track
-    extract chose (its payload's ``audio_track_id``, else the selection policy)."""
+    extract chose (its payload's ``audio_track_id``, else the selection policy).
+
+    A file with several audio streams names the chosen one (``stream_index``): the
+    backend decodes that stream, not the file's default, so the transcript is of
+    the track it is recorded against."""
+    from .audio.extract import audio_stream_of, load_selected_track  # noqa: PLC0415
     from .stt.transcribe import AudioArtifact  # noqa: PLC0415
 
     assert job.video_id is not None
     track_id = (job.payload or {}).get("audio_track_id")
     if track_id is None:
-        from .audio.extract import load_selected_track  # noqa: PLC0415
-
         selected = await load_selected_track(cast("_ExtractDB", db), video_id=job.video_id)
         if selected is None:
             return None
         track_id = selected.db_id
+    stream = await audio_stream_of(
+        cast("_ExtractDB", db), video_id=job.video_id, audio_track_id=int(track_id)
+    )
     return AudioArtifact(
-        content_hash=content_hash, video_id=job.video_id, audio_track_id=int(track_id), path=path
+        content_hash=content_hash,
+        video_id=job.video_id,
+        audio_track_id=int(track_id),
+        path=path,
+        stream_index=stream,
     )
 
 

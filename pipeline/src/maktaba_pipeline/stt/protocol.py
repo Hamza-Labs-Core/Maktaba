@@ -128,6 +128,11 @@ class TranscriptionHints:
     - ``reorder_window_sec`` — the orchestrator's buffer length for
       out-of-order segments. The backend doesn't honour it; it's here
       so the orchestrator can pass it through to the conformance suite.
+    - ``audio_stream`` — the audio stream (``-map 0:a:N``) to decode when
+      the path is a source file with several (the track the selection
+      policy chose). ``None``: the file's own audio (a WAV, a source with
+      one audio track). A backend that decodes a path itself must not
+      fall back to the file's default stream when this is set.
     """
 
     language: str | None = None
@@ -135,6 +140,7 @@ class TranscriptionHints:
     word_timestamps: bool = False
     start_offset_sec: float = 0.0
     reorder_window_sec: float = 30.0
+    audio_stream: int | None = None
 
 
 @dataclass(slots=True, frozen=True)

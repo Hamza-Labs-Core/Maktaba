@@ -23,8 +23,10 @@ from .protocol import AudioSource, BackendHealth, Segment, TranscriptionHints, p
 __all__ = ["WhisperMLXBackend"]
 
 
-# (start, end, text, [optional language, optional confidence])
-TranscribeFn = Callable[[str, dict[str, Any]], list[dict[str, Any]]]
+# (audio, kwargs) -> segment dicts (start, end, text, [optional language, optional
+# confidence]). ``audio`` is what ``mlx_whisper.transcribe`` takes: a path, or the
+# 16 kHz mono float32 samples of the one stream to decode.
+TranscribeFn = Callable[[Any, dict[str, Any]], list[dict[str, Any]]]
 
 
 class WhisperMLXBackend:
@@ -72,12 +74,17 @@ class WhisperMLXBackend:
         if not self._ready:
             raise RuntimeError("whisper-mlx is not ready on this host")
 
-        # mlx_whisper consumes a path; in production the orchestrator
-        # writes a temp WAV via :func:`audio.extract.extract_to_file`
-        # when this backend is selected, even though
-        # ``requires_file = False`` is set so it can also be wrapped in
-        # an in-memory adapter for tests.
+        # mlx_whisper takes a path (it decodes the file's default audio
+        # stream itself) or the samples. A source file with several audio
+        # streams names the chosen one (hints.audio_stream): ffmpeg pipes
+        # that stream into memory (as mlx_whisper's own loader would the
+        # default one) and the samples are what is decoded.
         path = await _audio_to_path(audio)
+        src: Any = path
+        if hints.audio_stream is not None:
+            from ..engine.stages.transcribe import decode_audio
+
+            src = await decode_audio(path, stream=hints.audio_stream)
 
         kwargs: dict[str, Any] = {
             "language": language,
@@ -89,7 +96,7 @@ class WhisperMLXBackend:
 
         # Run the (synchronous) decoder in the default executor so the
         # event loop stays responsive for pause checks.
-        raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(path, kwargs))
+        raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(src, kwargs))
 
         prev_text: list[str] = []
         for i, seg in enumerate(raw):
@@ -210,12 +217,12 @@ def _default_transcribe_fn(model: str) -> TranscribeFn:
     to load MLX wheels.
     """
 
-    def _call(path: str, kwargs: dict[str, Any]) -> list[dict[str, Any]]:
+    def _call(audio: Any, kwargs: dict[str, Any]) -> list[dict[str, Any]]:
         try:
             import mlx_whisper  # type: ignore[import-untyped,import-not-found,unused-ignore]
         except ImportError as exc:  # pragma: no cover — env-specific
             raise RuntimeError(f"mlx_whisper not installed: {exc}") from exc
-        result = mlx_whisper.transcribe(path, path_or_hf_repo=model, **kwargs)
+        result = mlx_whisper.transcribe(audio, path_or_hf_repo=model, **kwargs)
         return list(result.get("segments", []))
 
     return _call

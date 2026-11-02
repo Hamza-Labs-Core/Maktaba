@@ -55,7 +55,7 @@ def decoded(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """What the transcribe stage decoded (the paths), with a fake Whisper."""
     paths: list[str] = []
 
-    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+    async def decode(path: str, timeout: float = 0, *, stream: int = 0) -> np.ndarray:
         paths.append(path)
         return np.zeros(16000 * 4, np.float32)
 
