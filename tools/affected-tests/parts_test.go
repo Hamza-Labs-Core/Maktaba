@@ -390,7 +390,7 @@ func TestPlanNeverRunsUITests(t *testing.T) {
 	}
 	android := byTitle[platformTitle[PAndroid]]
 	joined := strings.Join(android.Args, " ")
-	if !strings.Contains(joined, ":player:testPhoneDebugUnitTest --tests com.x.player.home.HomeScreenTest") ||
+	if !strings.Contains(joined, ":player:testDebugUnitTest --tests com.x.player.home.HomeScreenTest") ||
 		!strings.Contains(joined, ":core:testDebugUnitTest --tests com.x.core.CoreTest") || !contains(android.Env, "JAVA_HOME=/jdk17") {
 		t.Errorf("android step = %v %v", android.Args, android.Env)
 	}

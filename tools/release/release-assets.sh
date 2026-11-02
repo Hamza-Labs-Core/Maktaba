@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A tag's GitHub release, as every tag workflow touches it (release.yml, desktop-release.yml,
-# mobile-release.yml, tv-release.yml):
+# mobile-release.yml, tv-release.yml, play-bundles.yml):
 #
 #   release-assets.sh ensure  TAG              the release exists, as a draft until it is complete
 #                                              (NOTES set: the draft's notes)

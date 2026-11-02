@@ -13,13 +13,33 @@ android {
         // Android 9: the practical floor for current Android TV / Google TV devices.
         minSdk = 28
         targetSdk = 37
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = providers.gradleProperty("maktaba.versionCode").orNull?.toInt() ?: 2
+        versionName = providers.gradleProperty("maktaba.versionName").orNull ?: "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Google Play (docs/google-play.md). The release takes its version from the tag
+    // (-Pmaktaba.versionName / -Pmaktaba.versionCode, tools/release/play-version.sh) and is signed
+    // with the Play upload key only when the environment names it (ANDROID_UPLOAD_KEYSTORE_FILE,
+    // ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD, ANDROID_UPLOAD_STORE_PASSWORD);
+    // without it the bundle is unsigned. No key is ever in the repository.
+    val uploadStore = providers.environmentVariable("ANDROID_UPLOAD_KEYSTORE_FILE").orNull
+    signingConfigs {
+        if (!uploadStore.isNullOrBlank()) {
+            create("upload") {
+                val keyPass = providers.environmentVariable("ANDROID_UPLOAD_KEY_PASSWORD").get()
+                storeFile = file(uploadStore)
+                storePassword = providers.environmentVariable("ANDROID_UPLOAD_STORE_PASSWORD").orNull
+                    ?.takeIf { it.isNotEmpty() } ?: keyPass
+                keyAlias = providers.environmentVariable("ANDROID_UPLOAD_KEY_ALIAS").get()
+                keyPassword = keyPass
+            }
+        }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("upload")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

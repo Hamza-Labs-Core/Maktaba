@@ -81,9 +81,9 @@ func androidTask(module string) string {
 	case "apps/android/core":
 		return ":core:testDebugUnitTest"
 	case "apps/android/player":
-		return ":player:testPhoneDebugUnitTest"
+		return ":player:testDebugUnitTest"
 	case "apps/android/remote":
-		return ":remote:testPhoneDebugUnitTest"
+		return ":remote:testDebugUnitTest"
 	case "apps/tv/android/app":
 		return ":app:testDebugUnitTest"
 	case "apps/desktop-player":

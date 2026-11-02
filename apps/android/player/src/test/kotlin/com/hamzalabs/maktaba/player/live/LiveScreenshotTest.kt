@@ -19,8 +19,8 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * Live TV's screenshots (NFR-20): Now, the Guide and the live player, dark, English and Arabic,
- * on a phone and a large tablet, against the fake home at [NOW] in UTC. `recordRoborazziPhoneDebug`
- * writes the references under `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` checks them.
+ * on a phone and a large tablet, against the fake home at [NOW] in UTC. `recordRoborazziDebug`
+ * writes the references under `src/test/screenshots`; CI's `verifyRoborazziDebug` checks them.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

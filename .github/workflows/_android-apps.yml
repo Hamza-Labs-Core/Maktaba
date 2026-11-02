@@ -2,8 +2,10 @@
 # tests (the module the desktop Player shares) and the core module's unit tests (the API client, token storage, the stream's authorization, the fold layout),
 # the Player's unit and Compose UI tests on the JVM (Robolectric, against a fake home) with its
 # screenshots checked against the references (Roborazzi, Epic 48.15),
-# Android lint on every module, and a debug build of each app for each form factor
-# (Maktaba Player and Maktaba Remote; phone, foldable and tablet).
+# Android lint on every module, a debug build of each app (Maktaba Player and Maktaba Remote:
+# one package each for phone, foldable and tablet), and each app's release bundle, unsigned,
+# so a change R8 breaks fails here and not on the release tag (play-bundles.yml signs them).
+# And the tag-to-versionCode rule the release bundles use (tools/release/play-version.sh).
 
 name: Android apps
 
@@ -17,7 +19,7 @@ jobs:
   android-apps:
     name: Android apps (Player, Remote)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: apps/android
@@ -54,15 +56,19 @@ jobs:
           key: android-gradle-${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties', 'apps/android/**/*.gradle.kts') }}
           restore-keys: android-gradle-
 
+      - name: Play versionCode from the tag
+        working-directory: .
+        run: bash tools/release/play-version-test.sh
+
       - name: Unit tests, lint, build
         run: |
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace \
-            :client:test :core:testDebugUnitTest :remote:testPhoneDebugUnitTest \
-            :player:testPhoneDebugUnitTest :player:verifyRoborazziPhoneDebug \
-            :core:lintDebug :player:lintPhoneDebug :remote:lintPhoneDebug \
-            assembleDebug
+            :client:test :core:testDebugUnitTest :remote:testDebugUnitTest \
+            :player:testDebugUnitTest :player:verifyRoborazziDebug \
+            :core:lintDebug :player:lintDebug :remote:lintDebug \
+            assembleDebug :player:bundleRelease :remote:bundleRelease
 
       # tools/affected-tests: which source files each module's unit tests execute (JaCoCo,
       # added by an init script: no build file changes). On a push to main only, after the
@@ -75,7 +81,7 @@ jobs:
           set -euo pipefail
           ./gradlew --no-daemon --quiet --init-script ../../tools/affected-tests/android-coverage.gradle \
             :client:jacocoTestReport :core:createDebugUnitTestCoverageReport \
-            :remote:createPhoneDebugUnitTestCoverageReport :player:createPhoneDebugUnitTestCoverageReport
+            :remote:createDebugUnitTestCoverageReport :player:createDebugUnitTestCoverageReport
           out=../../build/coverage-fragment
           mkdir -p "$out"
           for m in client core remote player; do
