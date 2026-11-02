@@ -1,7 +1,7 @@
 // Pure helpers shared by the queue components: ring maths, queue state
 // classification and localised duration / rate formatting.
 import { useCallback, useMemo } from "react";
-import { useI18n } from "../../lib/i18n";
+import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { QueueSummary, StageInfo } from "../../lib/queueApi";
 
 export type QueueVisualState = "running" | "failing" | "waiting" | "done" | "off";
@@ -46,6 +46,24 @@ export function queueVisualState(info: StageInfo | undefined, q: QueueSummary): 
   const live = q.counts.pending + q.counts.paused + q.counts.awaiting_review;
   if (live > 0 || info?.paused) return "waiting";
   return "done";
+}
+
+type T = (key: string, vars?: Record<string, string | number>) => string;
+
+/** Who paused a stage, in words. paused_by is "user:<id>" for an admin's pause (with
+ *  paused_by_name), "storage_canonicalize" while the share-path conversion writes, or
+ *  "system"; a pause with none (paused by hand in the database) says so. */
+export function pauseOwner(info: Pick<StageInfo, "paused_by" | "paused_by_name">, t: T): string {
+  const by = info.paused_by;
+  if (!by) return t("queue.pause.byNobody");
+  if (by.startsWith("user:")) {
+    return info.paused_by_name
+      ? t("queue.pause.byUser", { name: bidiIsolate(info.paused_by_name) })
+      : t("queue.pause.byAdmin");
+  }
+  if (by === "storage_canonicalize") return t("queue.pause.byStorage");
+  if (by === "system") return t("queue.pause.bySystem");
+  return bidiIsolate(by);
 }
 
 export function percent(done: number, total: number): number {

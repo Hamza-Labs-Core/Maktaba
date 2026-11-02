@@ -25,7 +25,7 @@ import { RingGauge } from "../../components/queue/RingGauge";
 import { RunningJobs } from "../../components/queue/RunningJobs";
 import { StatGrid, StatTile } from "../../components/queue/StatTile";
 import { hostWorkerIds, runsOnHost, useHostName } from "../../components/queue/hostFilter";
-import { STATE_GLYPH, queueVisualState, useFmt } from "../../components/queue/format";
+import { STATE_GLYPH, pauseOwner, queueVisualState, useFmt } from "../../components/queue/format";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
 import { arr, safeDetail, safeLibraries, safeSnapshot } from "./safeData";
@@ -273,6 +273,21 @@ export function QueueDetail() {
       {action.error && (
         <p role="alert" className="mkt-q-banner">
           {action.error}
+        </p>
+      )}
+
+      {paused && (
+        <p
+          role="status"
+          className="mkt-q-banner mkt-q-banner--warn"
+          data-testid="queue-paused-banner"
+        >
+          {info.paused_at
+            ? t("queue.detail.pausedBanner", {
+                who: pauseOwner(info, t),
+                time: fmt.ago(info.paused_at),
+              })
+            : t("queue.detail.pausedBannerNoTime", { who: pauseOwner(info, t) })}
         </p>
       )}
 

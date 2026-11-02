@@ -5909,5 +5909,13 @@
   "queue.dup.kbps": "{n} ك.ب/ث",
   "queue.dup.watched": "شاهده {viewers}، وأنهاه {done}",
   "queue.dup.unwatched": "لم يُشاهَد",
-  "queue.items.loadError": "تعذّر تحميل قائمة العناصر."
+  "queue.items.loadError": "تعذّر تحميل قائمة العناصر.",
+  "queue.card.pausedBy": "أوقفه مؤقتًا: {who}",
+  "queue.detail.pausedBanner": "أوقفه مؤقتًا: {who}، {time}. لن يبدأ شيء في هذا الطابور حتى تستأنفه.",
+  "queue.detail.pausedBannerNoTime": "أوقفه مؤقتًا: {who}. لن يبدأ شيء في هذا الطابور حتى تستأنفه.",
+  "queue.pause.byUser": "{name}",
+  "queue.pause.byAdmin": "أحد المشرفين",
+  "queue.pause.byStorage": "تحويل مسارات المشاركة",
+  "queue.pause.bySystem": "مكتبة",
+  "queue.pause.byNobody": "لا أحد مسجَّل"
 }

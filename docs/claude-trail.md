@@ -1140,6 +1140,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+[#524]: https://github.com/Hamza-Labs-Core/Maktaba/pull/524
 
 ## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
 
@@ -1182,3 +1183,14 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Tests: `SignInKeyboardTest` (player, Robolectric, v2 compose rule) for home, cloud and cloud+Advanced. `PlayerSignInKeyboardUITests` (iPhone/iPad CI): Return moves keyboard focus to the password, the password is above the keyboard, and Return sends the login. Text goes in through `typeExactly` (#510); only Return uses `typeText("\n")`.
 - The PR's first CI run (before main was merged in) failed for reasons outside this change. Mac PlayerMacMenuUITests:155 and Android LibrariesSectionTest were fixed by #510 and #508. The iPhone/iPad accessibility audits also failed (Libraries, Profile, Search). On the iPad run, `PlayerSignInKeyboardUITests` passed.
 - A local run of `LibrariesScreenshotTest.tabletEnglish` timed out once, under load from a parallel Xcode build. It passed on the re-run. Unrelated (FakeHome settling, #510).
+
+## 2026-11-02 — extract paused by nobody, thumbnail starved: stage pauses need an owner, pools share fairly
+
+- Read-only look at the live home: extract (`nas_read`) had `paused = true`, `paused_at`/`paused_by` NULL since 2026-10-22 22:31. Thumbnail (70k pending at 900) had not run because thumb_small and chapter_thumbs (~42k at 100) always filled `nas_read`'s 2 slots under `ORDER BY priority, id`.
+- Writer: no code. Every pause writer in git history sets both columns. It was a Claude session (`30850266`) on 2026-10-23 02:37 UTC, after the owner said "pause this shit": a raw `psql` `update job_stages set paused = true where stage = 'extract'` on the live Docker Postgres. Later that night the same session did the same for `index` and `chapter_infer` on the bundled Postgres. Lesson: never write operator columns by hand. Pause through `POST /api/queues/{stage}/pause` (the DB now refuses anything else).
+- Fix ([#524], slot 0172):
+  - orphaned pauses are resumed, with `audit_log` `admin` / `queue.stage_orphan_pause_resumed`
+  - a trigger (not a CHECK: `ADD CONSTRAINT` would make the release unsafe to roll back on its schema) refuses a pause without `paused_at` and `paused_by`
+  - the Queues API adds `paused_by_name`, and the web card and queue page say who paused a stage and when (English and Arabic)
+- Fairness: stride scheduling per pool (`claim_shares`, `engine/claim.py`) between priority classes, not stages. Each stage's head is due at `GREATEST(class pass + priority, pool clock)`, and the claim takes the head due first. Equal priorities stay in id order across stages. A first cut kept a share per stage, which round-robined equal stages, split fp_gate's batch and ran detect 4 times (`test_fingerprint_flow` seed 2, CI integration). Priority ≤ 50 (Process now) still goes first, strictly. 900 vs 100 gets 1 claim in 9. The new partial index `processing_jobs_claimable_idx` brought a claim with 203k claimable rows from 64 ms to 0.3–0.8 ms. Legacy `claim_one` (non-pool mode) is unchanged: it has a semaphore per stage, so no cross-stage starvation.
+- Live state: unchanged by this session. Extract resumes when a release with slot 0172 is installed (the owner tags and moves it live). Check `index` and `chapter_infer` then too: if they are still hand-paused, 0172 resumes them as well.
