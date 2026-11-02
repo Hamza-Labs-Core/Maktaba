@@ -127,13 +127,10 @@ final class PlayerMacMenuUITests: XCTestCase {
         assertPlayerCovers(window, "the screen")
         // In full screen the menu bar is hidden until the pointer reaches the screen's top: a
         // click on View before then opens nothing (CI: "open menu during menu traversal"). So
-        // the pointer goes up first, as a person's would, and XCUITest opens View on the click.
-        let exit = app.menuBars.menuItems["Exit Full Screen"]
-        XCTAssertTrue(exit.waitForExistence(timeout: 3), "View ▸ Exit Full Screen, in full screen")
+        // the pointer goes up first, as a person's would.
         window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0)).hover()
         _ = wait(1) { false } // the bar slides down
-        XCTAssertTrue(wait(5) { self.app.menuBars.menuBarItems["View"].isHittable }, "the menu bar shows at the top")
-        exit.click()
+        menu("View", "Exit Full Screen")
         XCTAssertTrue(wait { !self.isFullScreen }, "View ▸ Exit Full Screen")
         XCTAssertTrue(wait { self.app.menuBars.menuBarItems["View"].isHittable }, "the menu bar is back after full screen")
 
@@ -189,18 +186,24 @@ final class PlayerMacMenuUITests: XCTestCase {
         XCTAssertTrue(element.isHittable, "scrolled to \(element)")
     }
 
-    /// Clicks a menu bar item, then one of its items.
+    /// Clicks a menu bar item, then one of its items, as a pointer does.
+    ///
+    /// `XCUIElement.click()` on a menu item walks the menu itself: it clicks the menu bar item
+    /// and waits for AppKit's "menu opened" notification, which the CI runner did not send for
+    /// View on five runs running ("timed out while waiting for menu open notification"), and
+    /// its own click on the bar item shut the menu this helper had opened. So the item is
+    /// clicked at its point instead, once the open menu shows it (hittable); nothing waits on
+    /// that notification.
     private func menu(_ top: String, _ item: String) {
-        // the menu bar back in view first: just after full screen was left (the test before,
-        // or this one) it was still hidden, View had no point to click, and the click opened
-        // nothing (CI: "open menu during menu traversal" at the next test's first menu)
         let bar = app.menuBars.menuBarItems[top]
         XCTAssertTrue(wait(10) { bar.isHittable }, "the menu bar shows \(top)")
-        bar.click()
         let it = app.menuBars.menuItems[item].firstMatch
         XCTAssertTrue(it.waitForExistence(timeout: 3), "\(top) ▸ \(item)")
+        bar.click()
+        if !wait(3, { it.isHittable }) { bar.click() } // a click that landed as the bar redrew
+        XCTAssertTrue(wait(3) { it.isHittable }, "\(top) opens, showing \(item)")
         XCTAssertTrue(it.isEnabled, "\(top) ▸ \(item) is on")
-        it.click()
+        it.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
 
     /// The window covers its screen (the menu bar hides in full screen).
