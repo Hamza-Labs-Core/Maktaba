@@ -736,3 +736,20 @@ extension RouteStub.Answer {
 
     func announce(_ list: [HomeBrowser.Found]) { found?(list) }
 }
+
+/// The UI tests' launches browse nothing, so the system's local network question never
+/// covers the app; every other launch browses Bonjour.
+@MainActor @Suite struct DiscoveryForThisApp {
+    @Test func aUITestLaunchBrowsesNothing() {
+        let d = BonjourDiscovery.forThisApp(arguments: ["app", "-maktaba-permissions-fake", "granted"])
+        #expect(d is NoDiscovery)
+        var lists: [[HomeBrowser.Found]] = []
+        d.start { lists.append($0) }
+        #expect(lists == [[]])
+        d.stop()
+    }
+
+    @Test func anOrdinaryLaunchBrowsesBonjour() {
+        #expect(BonjourDiscovery.forThisApp(arguments: ["app"]) is BonjourDiscovery)
+    }
+}

@@ -58,3 +58,24 @@ import Network
         b.start()
     }
 }
+
+/// No browse at all: the homes on the network are none. The UI tests run with a scripted
+/// local network (`-maktaba-permissions-fake`), and type the mock home's address; a real
+/// browse would put the system's "find devices on local networks?" question over the app
+/// (on the Mac it stays on top for the whole run, where a test's clicks land on it).
+@MainActor public final class NoDiscovery: HomeDiscovering {
+    public init() {}
+    public func start(_ found: @escaping @MainActor ([HomeBrowser.Found]) -> Void) { found([]) }
+    public func stop() {}
+}
+
+extension BonjourDiscovery {
+    /// The discovery an app uses: Bonjour, except in a debug build launched with
+    /// `-maktaba-permissions-fake` (the UI tests), where the local network is scripted.
+    static func forThisApp(arguments: [String] = CommandLine.arguments) -> any HomeDiscovering {
+        #if DEBUG
+        if arguments.contains("-maktaba-permissions-fake") { return NoDiscovery() }
+        #endif
+        return BonjourDiscovery()
+    }
+}

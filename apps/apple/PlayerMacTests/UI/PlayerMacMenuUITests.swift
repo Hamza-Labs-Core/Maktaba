@@ -203,12 +203,7 @@ final class PlayerMacMenuUITests: XCTestCase {
         if !wait(3, { it.isHittable }) { bar.click() } // a click that landed as the bar redrew
         XCTAssertTrue(wait(3) { it.isHittable }, "\(top) opens, showing \(item)")
         XCTAssertTrue(it.isEnabled, "\(top) ▸ \(item) is on")
-        // onto the item first, so the menu highlights it, then the click: a click straight
-        // from the bar onto Stop left the player open (CI), where pointing first chose it
-        let point = it.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-        point.hover()
-        _ = wait(0.5) { false }
-        point.click()
+        it.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
     }
 
     /// The window covers its screen (the menu bar hides in full screen).
