@@ -19,8 +19,9 @@ package mdns
 //   - Windows 10+: the DNS Client's responder, through DnsServiceRegister (dnsapi.dll,
 //     announce_dnsapi.go and announce_windows.go).
 //
-// zeroconf answers alone only where nothing else does. api/internal/discovery has the
-// same files (another module).
+// zeroconf answers alone only where nothing else does. The same files are in
+// api/internal/discovery and cmd/maktaba-server/internal/mdns (two modules);
+// tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"fmt"
@@ -287,8 +288,9 @@ func dnsLabel(s string, limit int) string {
 // rest as another (read off the adapter in CI), so a home named "Studio 1.2" would be
 // announced as "Studio 1\" in a domain "2". No escape keeps a "." in the label there, so
 // a "." is U+2024 ONE DOT LEADER, which reads the same. A "\" Windows keeps as it is. Not
-// for dns-sd -R, avahi-publish-service and RegisterService: they take the instance name
-// alone, a "." in it included, and escape it themselves (dns-sd checked on macOS).
+// for dns-sd -R and avahi-publish-service: they take the instance name alone, a "." in it
+// included, and escape it themselves (dns-sd checked on macOS). RegisterService does not:
+// resolvedInstance.
 func windowsInstance(s string) string {
 	return strings.ReplaceAll(s, ".", "\u2024")
 }

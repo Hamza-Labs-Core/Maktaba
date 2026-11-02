@@ -33,6 +33,8 @@ mediaintel = [
 # and Linux x86_64 through CTranslate2 (story 38.8, stt/ct2.py), on an NVIDIA GPU when CUDA
 # is usable, else on the CPU.
 stt = [
+    # stt/ (batched, align, ct2, vad) and the transcribe stage use numpy directly
+    "numpy>=2",
     # pinned: stt/batched.py builds on its DecodingTask and timestamp filter internals
     "mlx-whisper==0.4.3; sys_platform == 'darwin' and platform_machine == 'arm64'",
     # pinned: stt/ct2.py builds on its tokenizer, mel filters and word alignment
@@ -68,6 +70,9 @@ stt = [
 dev = [
     "grpcio-tools>=1.68",
     "mypy>=1.11",
+    # the tests build audio, vectors and fake model output with numpy directly, whichever
+    # stage extras are installed (the stages themselves get it from stt / search)
+    "numpy>=2",
     "pytest>=8",
     "pytest-asyncio>=0.23",
     "pyyaml>=6.0",
@@ -79,6 +84,8 @@ dev = [
 # embedded persistent Chroma and a sentence-transformers embedder
 # (default intfloat/multilingual-e5-small; torch picks up Apple MPS).
 search = [
+    # copy-chroma, chapter_infer and topic_recluster use numpy directly
+    "numpy>=2",
     "chromadb>=1.0,<2",
     "sentence-transformers>=3.0,<7",
 ]

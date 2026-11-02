@@ -83,8 +83,8 @@ func (f *fakeResolved) registrations(t *testing.T, n int) []resolvedService {
 	}
 }
 
-// resolved gets the instance name alone ("%" doubled: resolved expands specifiers; a "."
-// as it is: resolved escapes the label itself), the type, port and TXT as one record; a
+// resolved gets the instance name as it reads it ("%" doubled, "." escaped:
+// resolvedInstance), the type, port and TXT as one record; a
 // new TXT withdraws that registration and makes one with it; a restarted resolved is
 // given it again; Shutdown withdraws it and closes the connection, and nothing registers
 // again.
@@ -95,7 +95,7 @@ func TestResolvedAnnouncesChangesRestartsAndWithdraws(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := f.registrations(t, 1)[0]
-	if first.name != "Maktaba (100%% v1.2)" || first.service != "_maktaba._tcp" || first.port != 8080 {
+	if first.name != `Maktaba (100%% v1\.2)` || first.service != "_maktaba._tcp" || first.port != 8080 {
 		t.Fatalf("registered %+v", first)
 	}
 	if !strings.HasPrefix(first.id, "maktaba-") {

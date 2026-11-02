@@ -32,10 +32,10 @@ permissions:
   contents: read
   actions: read
 
-# the newest commit's map is the one that matters. A CI run cancelled because a newer main
-# commit landed (ci.yml's concurrency) still triggers this workflow: it gets a group of its
-# own and its jobs are skipped, so it never cancels the map of a run that finished; the map
-# stays the latest successful one's until the newer run completes.
+# the newest commit's map is the one that matters. A CI run cancelled (a pending main run
+# replaced by a newer commit's in ci.yml's concurrency group, or a hand cancel) still
+# triggers this workflow: it gets a group of its own and its jobs are skipped, so it never
+# cancels the map of a run that finished; the map stays the latest successful one's until the newer run completes.
 concurrency:
   group: coverage-map${{ github.event.workflow_run.conclusion == 'cancelled' && format('-cancelled-{0}', github.run_id) || '' }}
   cancel-in-progress: true

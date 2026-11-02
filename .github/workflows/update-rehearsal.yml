@@ -71,8 +71,8 @@ on:
   push:
     branches: [main, 'release/**']
     # a push that changes only the Claude trail starts no run: it would join the
-    # update-rehearsal-main group and cancel the run of the code commit before it, the one
-    # waiting to be tagged (trail-only commits are never tagged; see ci.yml)
+    # update-rehearsal-main group and replace the pending run of the code commit before it,
+    # the one waiting to be tagged (trail-only commits are never tagged; see ci.yml)
     paths-ignore: ['docs/claude-trail.md']
   schedule:
     - cron: '17 6 * * *' # nightly, 06:17 UTC
@@ -91,12 +91,13 @@ permissions:
   contents: read
 
 concurrency:
-  # As ci.yml: per PR (cancelled by a newer push); one group for main's pushes, a newer
-  # commit cancelling the older commit's rehearsal (the tag guard needs it on the tagged
-  # commit only); a re-run, the nightly run, a hand run and a release/** push get their
-  # commit's own group and are never cancelled.
+  # As ci.yml: per PR (cancelled by a newer push); one group for main's pushes, NOT
+  # cancel-in-progress: the running rehearsal finishes and a newer commit's run replaces
+  # only the older pending one (the tag guard needs a finished green run on the tagged
+  # commit); a re-run, the nightly run, a hand run and a release/** push get their commit's
+  # own group and are never cancelled.
   group: update-rehearsal-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') && 'main' || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   # the same absolute paths in every job (a seeded machine links its payload's Postgres by

@@ -5,7 +5,9 @@ package mdns
 // the dot: a Mac's "Studio.local" never matches and the service's target becomes
 // "Studio.local.local.", which resolves to nothing. So every announcement goes
 // through RegisterProxy with the bare host name and the addresses Register would
-// have used. api/internal/discovery has the same helper (another module).
+// have used. The same file is in api/internal/discovery and
+// cmd/maktaba-server/internal/mdns (two modules); tools/ci/mdns_copies.py checks they stay
+// the same.
 
 import (
 	"context"
@@ -45,7 +47,15 @@ func register(instance, service, domain string, port int, txt []string) (announc
 	if len(ips) == 0 {
 		return nil, errors.New("no multicast interface has an address")
 	}
-	return zeroconf.RegisterProxy(zeroconfInstance(dnsLabel(instance, 63)), service, domain, port, announcedHost(r), ips, txt, nil)
+	host := announcedHost(r)
+	srv, err := zeroconf.RegisterProxy(zeroconfInstance(dnsLabel(instance, 63)), service, domain, port, host, ips, txt, nil)
+	if err != nil {
+		return nil, err
+	}
+	// zeroconf answers nothing asked of the target itself (announce_hostaddr.go); without
+	// that answerer it still announces the service, its target's addresses with it
+	addrs, _ := startHostAddrs(host+"."+strings.Trim(domain, "."), ips)
+	return &zeroconfHost{Server: srv, addrs: addrs}, nil
 }
 
 // ownHostSuffix makes the name zeroconf answers for when Avahi or systemd-resolved holds

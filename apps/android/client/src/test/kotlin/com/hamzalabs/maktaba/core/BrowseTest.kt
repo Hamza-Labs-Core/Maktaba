@@ -35,6 +35,7 @@ import com.hamzalabs.maktaba.core.api.segments
 import com.hamzalabs.maktaba.core.api.series
 import com.hamzalabs.maktaba.core.api.seriesEpisodes
 import com.hamzalabs.maktaba.core.api.seriesList
+import com.hamzalabs.maktaba.core.api.seriesPage
 import com.hamzalabs.maktaba.core.api.setFavorite
 import com.hamzalabs.maktaba.core.api.setPinnedLibraries
 import com.hamzalabs.maktaba.core.api.videoDetail
@@ -275,8 +276,13 @@ class BrowseTest {
         val all = client().seriesList()
         assertEquals("/api/series", last().url.encodedPath)
         assertEquals(0.25, all.single().progress, 1e-9)
+        assertEquals("0", last().url.queryParameter("page"))
         client().seriesList(lib)
         assertEquals(lib, last().url.queryParameter("library_id"))
+        // a short page is the last one: the grid stops asking
+        val page = client().seriesPage(2)
+        assertEquals("2", last().url.queryParameter("page"))
+        assertFalse(page.more)
 
         val one = client().series(series)
         assertEquals("/art/seerah.jpg", one.posterPath)

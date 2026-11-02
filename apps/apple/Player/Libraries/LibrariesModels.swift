@@ -64,6 +64,9 @@ final class LibrariesModel {
     private(set) var series: [SeriesSummary] = []
     private(set) var librariesLoaded = false
     private(set) var seriesLoaded = false
+    /// The Series tab's next page, nil once the home sent a short one.
+    private var seriesNext: Int?
+    private var seriesBusy = false
     var problem: LoadProblem?
     var seriesProblem: LoadProblem?
     /// The pins the person sees, by id (the home's answer replaces them).
@@ -87,9 +90,28 @@ final class LibrariesModel {
         }
     }
 
+    var moreSeries: Bool { seriesNext != nil }
+
+    /// The Series tab from its first page (the first look, a refresh, Try again).
     func loadSeries() async {
+        await seriesPage(0)
+    }
+
+    /// The Series tab's next page, asked for as the grid nears its end: a home with
+    /// thousands of series shows the first at once and the rest as the person scrolls.
+    func loadMoreSeries() async {
+        guard let page = seriesNext, !seriesBusy else { return }
+        await seriesPage(page)
+    }
+
+    private func seriesPage(_ page: Int) async {
+        seriesBusy = true
+        defer { seriesBusy = false }
         await loading("player series", signedOut: signedOut, problem: { seriesProblem = $0 }) {
-            series = try await client.seriesList()
+            let r = try await client.seriesListPage(page: page)
+            let have = page == 0 ? [] : Set(series.map(\.id))
+            series = (page == 0 ? [] : series) + r.items.filter { !have.contains($0.id) }
+            seriesNext = r.more ? page + 1 : nil
             seriesProblem = nil
             seriesLoaded = true
         }

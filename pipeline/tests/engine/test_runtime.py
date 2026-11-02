@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -23,6 +25,12 @@ from maktaba_pipeline.runtime import (
 )
 
 LEGACY_HANDLERS = {"scan", "probe", "extract", "transcribe", "subtitle_gen", "index", "thumbnail"}
+
+
+def _unavailable(stage: str) -> bool:
+    """True when the stage's implementation says this worker cannot run it."""
+    impl = get_impl(stage)
+    return bool(impl and impl.unavailable and impl.unavailable())
 
 
 async def _noop_handler(db: DBConn, job: Job) -> None:
@@ -51,16 +59,16 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Databa
         "fp_gate", "tag", "rate_style", "plan_channels", "write_channels",
     }  # fmt: skip
     served = set(stages)
-    # transcribing needs a speech model this machine may not have (a CI runner has none)
-    impl = get_impl("transcribe")
-    cannot = {"transcribe"} if impl and impl.unavailable and impl.unavailable() else set()
-    assert served >= LEGACY_HANDLERS - cannot
+    # the transcript analysis stages are engine stages now
+    analysis = {"chapter_infer", "topic_assign", "topic_recluster"}
+    # a stage whose optional extra this machine lacks is not served: transcribing needs a
+    # speech model (a CI runner has none), index and chapter_infer the search extra,
+    # topic_recluster numpy
+    cannot = {s for s in LEGACY_HANDLERS | analysis if _unavailable(s)}
+    assert served >= (LEGACY_HANDLERS | analysis) - cannot
     assert not (served & cannot)
     # legacy stages with no handler anywhere are not claimed (they would fail non-retryably)
     assert "categorize" not in served
-    # the transcript analysis stages are engine stages now (this worker has numpy and
-    # the search extra, which chapter_infer and topic_recluster need)
-    assert {"chapter_infer", "topic_assign", "topic_recluster"} <= served
     # engine stages are served once their implementation exists
     assert (served & core_engine) <= core_engine
     assert pools["probe"] == "nas_read"
@@ -166,3 +174,77 @@ async def test_a_worker_without_the_share_never_checks_it(
     assert "queue-health" not in names
     assert failure_policy._share_probes is False
     assert {"worker-hb", "stage-selection", "reconciler"} <= set(names)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("closed", [False, True], ids=["open", "closed"])
+async def test_a_transaction_cancelled_in_its_begin_leaves_none_open(
+    tmp_path: Path, closed: bool
+) -> None:
+    """SQLite: aiosqlite runs a queued BEGIN even when its caller is cancelled. The
+    transaction is rolled back before the cancel goes on, and the cancel stays a cancel
+    when the connection was closed meanwhile (a loop that catches errors would otherwise
+    never stop)."""
+    db = await Database.connect(f"sqlite:///{tmp_path / 'c.db'}")
+    try:
+
+        async def tx() -> None:
+            async with db.transaction():
+                raise AssertionError("never reached: cancelled in the BEGIN")
+
+        task = asyncio.create_task(tx())
+        await asyncio.sleep(0)  # the BEGIN is queued, the task waits for it
+        task.cancel()
+        if closed:  # the shutdown race: the connection closes behind the queued BEGIN
+            await db._conn.close()  # noqa: SLF001
+        await asyncio.wait({task}, timeout=10.0)
+        assert task.cancelled()
+        if not closed:
+            assert not db._conn.in_transaction  # noqa: SLF001
+            await db.execute("CREATE TABLE t (x INTEGER)")  # autocommit works again
+            assert await db.fetchval("SELECT count(*) FROM t") == 0
+    finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_a_transaction_cancelled_in_its_commit_ends_before_it_returns(
+    tmp_path: Path,
+) -> None:
+    """SQLite: a cancel that lands while the COMMIT waits in aiosqlite's thread must not
+    let ``transaction()`` return (and release the lock) before the COMMIT has run: the
+    connection would still be inside the transaction while other tasks go on."""
+    db = await Database.connect(f"sqlite:///{tmp_path / 'c.db'}")
+    gate = threading.Event()
+    try:
+        await db.execute("CREATE TABLE t (x INTEGER)")
+        await db._conn.create_function("hold", 0, lambda: int(gate.wait(10.0)))  # noqa: SLF001
+        queued = asyncio.Event()
+        hold: asyncio.Future[Any] | None = None
+
+        async def tx() -> None:
+            nonlocal hold
+            async with db.transaction():
+                await db.execute("INSERT INTO t VALUES (1)")
+                # busy aiosqlite's thread, so the COMMIT waits in its queue behind this
+                hold = asyncio.ensure_future(db._conn.execute("SELECT hold()"))  # noqa: SLF001
+                await asyncio.sleep(0)
+                queued.set()
+
+        task = asyncio.create_task(tx())
+        await queued.wait()
+        await asyncio.sleep(0)  # the task now waits for its COMMIT
+        task.cancel()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert not task.done()  # still waiting for the COMMIT, under the lock
+        gate.set()
+        await asyncio.wait({task}, timeout=10.0)
+        assert task.cancelled()
+        assert not db._conn.in_transaction  # noqa: SLF001
+        assert await db.fetchval("SELECT count(*) FROM t") == 1  # committed
+        assert hold is not None
+        await hold
+    finally:
+        gate.set()
+        await db.close()
