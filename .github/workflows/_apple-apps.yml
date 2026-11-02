@@ -203,9 +203,12 @@ jobs:
             xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
           done
           xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
-          # the app's own log (and the test runner's), kept with the results
-          xcrun simctl spawn "$udid" log stream --style compact --level info \
-            --predicate 'processImagePath CONTAINS "Maktaba"' > "$RESULTS/$device-$shard-app.log" 2>&1 &
+          # the app's own log (MaktabaKit's `Log`: its bundle id is the subsystem; notice, error
+          # and fault), kept with the results. Not --level info over the whole process: a stream
+          # at info makes every info line of the system's frameworks in the app cost, and
+          # accessibility logs one per element, so snapshots took 15 s and an audit timed out
+          xcrun simctl spawn "$udid" log stream --style compact \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$device-$shard-app.log" 2>&1 &
           logger=$!
           # this shard's tests: longest first, to the shard with the least time so far
           only=()
