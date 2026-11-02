@@ -63,13 +63,10 @@ jobs:
     outputs:
       signed: ${{ steps.collect.outputs.signed }}
       version: ${{ steps.version.outputs.name }}
-    # Hoisted to the job so a step's `if:` can read them (the secrets context is not
-    # available in `if:`).
+    # Only whether there is a key is job-wide (a step's `if:` cannot read secrets); the key
+    # and its passwords reach only the steps that sign, never the setup actions.
     env:
-      ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
-      ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
-      ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
-      ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+      HAS_UPLOAD_KEY: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 != '' }}
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v6.0.2
@@ -98,7 +95,7 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         # The default package list includes the long-removed `tools` package, which current
         # sdkmanager rejects. compileSdk 37 is installed here; AGP fetches its build-tools.
         with:
@@ -116,7 +113,11 @@ jobs:
       # The keystore goes to the runner's temp folder; Gradle signs with it when
       # ANDROID_UPLOAD_KEYSTORE_FILE names it (the apps' signingConfigs "upload").
       - name: Upload key
-        if: ${{ env.ANDROID_UPLOAD_KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_UPLOAD_KEY == 'true' }}
+        env:
+          ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           [ -n "$ANDROID_UPLOAD_KEY_ALIAS" ] || { echo "::error::ANDROID_UPLOAD_KEY_ALIAS is not set"; exit 1; }
@@ -131,6 +132,9 @@ jobs:
         env:
           NAME: ${{ steps.version.outputs.name }}
           CODE: ${{ steps.version.outputs.code }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
         run: |
           set -euo pipefail
           chmod +x ./gradlew
@@ -142,6 +146,9 @@ jobs:
         env:
           NAME: ${{ steps.version.outputs.name }}
           CODE: ${{ steps.version.outputs.code }}
+          ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+          ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
         run: |
           set -euo pipefail
           chmod +x ./gradlew
