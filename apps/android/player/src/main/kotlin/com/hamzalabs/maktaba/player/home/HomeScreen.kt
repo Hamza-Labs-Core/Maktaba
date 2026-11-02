@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -57,6 +58,9 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Featured
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.NowEntry
+import com.hamzalabs.maktaba.core.layout.HingeSplit
+import com.hamzalabs.maktaba.core.layout.Panes
+import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
 import com.hamzalabs.maktaba.core.ui.formatDuration
@@ -121,9 +125,15 @@ internal fun HomeContent(
 ) {
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
+    // the other page's rows, half folded like a book
+    val endList = rememberLazyListState()
     val snackbar = remember { SnackbarHostState() }
     val failedText = stringResource(R.string.home_not_interested_failed)
-    OnReselect(nav) { scope.launch { list.animateScrollToItem(0) } }
+    OnReselect(nav) {
+        scope.launch { list.animateScrollToItem(0) }
+        scope.launch { endList.animateScrollToItem(0) }
+    }
+    val panes = currentPanes()
 
     // pull to refresh shows its spinner; the quiet read each time Home opens does not (FR-12)
     var pulling by remember { mutableStateOf(false) }
@@ -159,42 +169,89 @@ internal fun HomeContent(
                     }
                 }
                 state.empty -> EmptyHome(admin, onSwitchHome, onSignOut)
-                else -> BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val cardWidth = cardWidthFor(maxWidth)
-                    LazyColumn(
-                        Modifier.fillMaxSize().testTag("home-rows"),
-                        state = list,
-                        contentPadding = PaddingValues(
-                            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-                            bottom = MaktabaTokens.Spacing.s6,
-                        ),
-                        verticalArrangement = Arrangement.spacedBy(MaktabaTokens.Spacing.s4),
-                    ) {
-                        if (state.stale) {
-                            item(key = "stale") {
-                                Text(
-                                    stringResource(R.string.home_stale),
-                                    Modifier.fillMaxWidth().padding(horizontal = MaktabaTokens.Spacing.s4).testTag("home-stale"),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        rails.featured?.let { f -> item(key = "hero") { HomeHero(f, client, nav) } }
-                        items(state.rows, key = { it.key }) { row ->
-                            when (row) {
-                                is HomeRow.Cards -> CardsRow(row, client, cardWidth, nav, state) { id ->
-                                    scope.launch { if (!state.dismiss(id)) snackbar.showSnackbar(failedText) }
-                                }
-                                is HomeRow.Live -> LiveRow(row.channels, client, cardWidth, nav)
-                            }
-                        }
+                else -> {
+                    val notInterested: (String) -> Unit = { id ->
+                        scope.launch { if (!state.dismiss(id)) snackbar.showSnackbar(failedText) }
+                    }
+                    if (panes is Panes.Book) {
+                        // held like a book: the hero and the first rows on the start page, the
+                        // rest on the other, read like a book's two pages; nothing under the hinge
+                        val (startRows, endRows) = bookPages(state.rows, hero = rails.featured != null)
+                        HingeSplit(
+                            panes,
+                            first = {
+                                HomeRows(state, startRows, rails.featured, client, nav, list, Modifier.testTag("home-rows"), notInterested)
+                            },
+                            second = {
+                                HomeRows(state, endRows, null, client, nav, endList, Modifier.testTag("home-rows-end"), notInterested, stale = false)
+                            },
+                        )
+                    } else {
+                        HomeRows(state, state.rows, rails.featured, client, nav, list, Modifier.testTag("home-rows"), notInterested)
                     }
                 }
             }
         }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter))
     }
+}
+
+/**
+ * Home's rows under [featured] (the hero, when there is one), and the stale note when [stale]
+ * allows it, in a list as wide as its pane: the cards are sized by the pane, not the window.
+ */
+@Composable
+private fun HomeRows(
+    state: HomeState,
+    rows: List<HomeRow>,
+    featured: Featured?,
+    client: ApiClient,
+    nav: PlayerNavigator,
+    list: LazyListState,
+    modifier: Modifier,
+    onNotInterested: (String) -> Unit,
+    stale: Boolean = true,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val cardWidth = cardWidthFor(maxWidth)
+        LazyColumn(
+            modifier.fillMaxSize(),
+            state = list,
+            contentPadding = PaddingValues(
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                bottom = MaktabaTokens.Spacing.s6,
+            ),
+            verticalArrangement = Arrangement.spacedBy(MaktabaTokens.Spacing.s4),
+        ) {
+            if (stale && state.stale) {
+                item(key = "stale") {
+                    Text(
+                        stringResource(R.string.home_stale),
+                        Modifier.fillMaxWidth().padding(horizontal = MaktabaTokens.Spacing.s4).testTag("home-stale"),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            featured?.let { f -> item(key = "hero") { HomeHero(f, client, nav) } }
+            items(rows, key = { it.key }) { row ->
+                when (row) {
+                    is HomeRow.Cards -> CardsRow(row, client, cardWidth, nav, state, onNotInterested)
+                    is HomeRow.Live -> LiveRow(row.channels, client, cardWidth, nav)
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Home's rows on a book's two pages: the start page's, then the other's, in Home's order (the
+ * start page reads first). The [hero], when there is one, sits atop the start page, which then
+ * takes the smaller half of the rows.
+ */
+internal fun bookPages(rows: List<HomeRow>, hero: Boolean): Pair<List<HomeRow>, List<HomeRow>> {
+    val start = if (hero) rows.size / 2 else (rows.size + 1) / 2
+    return rows.take(start) to rows.drop(start)
 }
 
 /** A card's width for the window: wider on a foldable open flat and a tablet, so a row shows more of each poster. */

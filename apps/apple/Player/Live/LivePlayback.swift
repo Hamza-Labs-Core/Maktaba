@@ -11,6 +11,12 @@ import SwiftUI
 ///   changes or the player closes. The stream plays through `LiveRelayLoader`, so a
 ///   heartbeat's new token reaches the item already playing (its next playlist reload) with
 ///   no reopen, no black gap and no lost live edge.
+///
+/// Story 48.24: on an AirPlay receiver (which fetches the stream itself) a channel at home
+/// plays from the proxy on this device's LAN address, serving that channel only; away, from
+/// the remote session's signed URL, handed again on each new token. The heartbeat keeps
+/// running here. Picture in Picture floats it; Now Playing shows the channel and programme,
+/// and play, pause and next channel work from the lock screen and the remotes.
 @MainActor @Observable
 final class LivePlayback {
     enum Phase: Equatable {
@@ -41,6 +47,18 @@ final class LivePlayback {
     /// The playing remote stream's loader (the asset holds it weakly).
     private var relay: LiveRelayLoader?
     private let heartbeat: Duration
+    /// The channel's URL as the source gave it.
+    private var url: URL?
+    /// Where the picture plays (story 48.24).
+    private(set) var routes = RouteSwitch()
+    @ObservationIgnored private var externalWatcher: ExternalPlaybackWatcher?
+    /// The channel for an AirPlay receiver at home (this device's LAN address).
+    private var lanProxy: StreamProxy?
+    private var switching: Task<Void, Never>?
+    /// Picture in Picture for the live picture.
+    let pip = PictureInPicture()
+    /// What is on now (the screen tells), for Now Playing.
+    private var programme: String?
 
     /// Surfing: the channel tunes this long after the last next / previous, so passing a
     /// channel does not open its stream (the web's 300 ms).
@@ -52,6 +70,8 @@ final class LivePlayback {
         self.client = client
         channelID = channel
         self.heartbeat = heartbeat
+        player.allowAirPlay()
+        externalWatcher = ExternalPlaybackWatcher(player) { [weak self] active in self?.externalPlaybackChanged(active) }
     }
 
     /// The remote session's heartbeat: every 60 s; a Debug build takes
@@ -123,6 +143,7 @@ final class LivePlayback {
             paused = true
             behind = true
         }
+        showNowPlaying()
     }
 
     /// Back to the live edge after a pause.
@@ -133,6 +154,7 @@ final class LivePlayback {
         player.play()
         paused = false
         behind = false
+        showNowPlaying()
     }
 
     /// Stops playing and ends a remote session; returns once the home was told.
@@ -140,11 +162,17 @@ final class LivePlayback {
         running?.cancel()
         await running?.value
         running = nil
+        switching?.cancel()
         player.pause()
         player.replaceCurrentItem(with: nil)
         proxy?.stop()
         proxy = nil
+        lanProxy?.stop()
+        lanProxy = nil
         relay = nil
+        url = nil
+        pip.stop()
+        NowPlaying.shared.end(self)
     }
 
     /// Opens and watches one channel until the task is cancelled; its remote session (if it
@@ -162,13 +190,15 @@ final class LivePlayback {
             let (url, path) = try await source.open()
             try Task.checkCancellation()
             self.path = path
-            let item = try await item(url, path: path)
+            try await prepare(url, path: path)
+            let item = try await freshItem()
             try Task.checkCancellation()
             player.replaceCurrentItem(with: item)
             PlaybackAudio.activate()
             player.play()
             phase = .playing
-            await watch(source, path: path, url: url)
+            startNowPlaying()
+            await watch(source)
         } catch is CancellationError {
             return
         } catch {
@@ -179,9 +209,10 @@ final class LivePlayback {
         }
     }
 
-    /// What AVPlayer plays: at home the proxy's address once the playlist exists; away the
-    /// signed URL through the relay loader.
-    private func item(_ url: URL, path: LivePath) async throws -> AVPlayerItem {
+    /// Readies a channel's stream: at home the proxy, once the playlist exists; away the relay
+    /// loader on the signed URL.
+    private func prepare(_ url: URL, path: LivePath) async throws {
+        self.url = url
         switch path {
         case .lan:
             relay = nil
@@ -189,14 +220,111 @@ final class LivePlayback {
             let proxy = try self.proxy ?? StreamProxy(client: client)
             self.proxy = proxy
             try await proxy.start()
-            guard let local = proxy.local(url) else { throw URLError(.cannotConnectToHost) }
             try await client.waitUntilPlayable(url, headers: auth.headers, timeout: Self.warmUp)
-            return AVPlayerItem(url: local)
         case .relay:
-            let loader = LiveRelayLoader(url: Self.absolute(url, home: client.home))
-            relay = loader
-            return AVPlayerItem(asset: loader.makeAsset())
+            relay = LiveRelayLoader(url: Self.absolute(url, home: client.home))
         }
+    }
+
+    /// What AVPlayer plays now, for where it plays: on this device the proxy's address or the
+    /// relay loader; on an AirPlay receiver the LAN proxy or the newest signed URL.
+    private func freshItem() async throws -> AVPlayerItem {
+        guard let url, let path else { throw URLError(.cannotConnectToHost) }
+        var lan: URL?
+        if path == .lan, routes.route == .receiver {
+            lan = try await lanProxied(url)
+        } else if lanProxy != nil {
+            lanProxy?.stop()
+            lanProxy = nil
+        }
+        let choice = RouteURL.live(path: path, route: routes.route, proxied: proxy?.local(url), lanProxied: lan,
+                                   relay: relay?.current)
+        switch choice {
+        case let .url(u)?: return AVPlayerItem(url: u)
+        case .relayLoader?:
+            guard let relay else { throw URLError(.cannotConnectToHost) }
+            return AVPlayerItem(asset: relay.makeAsset())
+        case nil: throw URLError(.cannotConnectToHost)
+        }
+    }
+
+    /// The channel through a proxy on this device's LAN address, serving that channel only
+    /// (nil: no LAN address, e.g. cellular only).
+    private func lanProxied(_ url: URL) async throws -> URL? {
+        let scope = RouteURL.channelScope(url)
+        if let p = lanProxy, p.onlyUnder == scope { return p.local(url) }
+        lanProxy?.stop()
+        lanProxy = nil
+        guard let host = LANAddress.current() else { return nil }
+        let p = try StreamProxy(client: client, reach: .lan(host: host), onlyUnder: scope)
+        try await p.start()
+        lanProxy = p
+        return p.local(url)
+    }
+
+    // MARK: AirPlay (story 48.24)
+
+    /// AirPlay took the channel to a receiver, or gave it back: a new item on the URL that
+    /// route can read (a live item opens at the live edge).
+    private func externalPlaybackChanged(_ active: Bool) {
+        guard let route = routes.update(externalPlaybackActive: active), phase == .playing else { return }
+        let to = route.rawValue
+        Log.ui.info("live route: \(to, privacy: .public)")
+        reopenForRoute()
+    }
+
+    private func reopenForRoute() {
+        switching?.cancel()
+        switching = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let item = try await self.freshItem()
+                guard !Task.isCancelled, self.phase == .playing else { return }
+                self.player.replaceCurrentItem(with: item)
+                self.behind = false
+                if !self.paused { self.player.play() }
+            } catch {
+                Log.failure("hand the live channel over", error)
+            }
+        }
+    }
+
+    /// A heartbeat's new token: a receiver reads the signed URL itself, so it is handed the new
+    /// one (on the device the relay loader already carries it).
+    private func tokenApplied() {
+        guard routes.route == .receiver, path == .relay, phase == .playing else { return }
+        reopenForRoute()
+    }
+
+    // MARK: Now Playing (story 48.24)
+
+    /// What is on now, from the guide (the screen tells).
+    func showProgramme(_ title: String?) {
+        guard title != programme else { return }
+        programme = title
+        showNowPlaying()
+    }
+
+    private func startNowPlaying() {
+        NowPlaying.shared.begin(self, handlers: RemoteHandlers(
+            play: { [weak self] in if self?.paused == true { self?.togglePause() } },
+            pause: { [weak self] in if self?.paused == false { self?.togglePause() } },
+            toggle: { [weak self] in self?.togglePause() },
+            next: { [weak self] in self?.next() }
+        ))
+        showNowPlaying()
+        guard let c = channel, c.hasLogo else { return }
+        let id = c.id
+        Task { [client, weak self] in
+            guard let data = try? await client.channelLogo(id), let image = PlatformImage(data: data),
+                  let self, self.channelID == id else { return }
+            NowPlaying.shared.show(self, artwork: image)
+        }
+    }
+
+    private func showNowPlaying() {
+        let name = channel.map { "\($0.number.formatted()) · \($0.name)" } ?? ""
+        NowPlaying.shared.show(self, NowPlayingItem(title: name, subtitle: programme, playing: !paused && phase == .playing))
     }
 
     /// A relay URL as the home gave it; a path alone (a home serving its own relay) on the home.
@@ -208,10 +336,10 @@ final class LivePlayback {
     /// While the channel plays: the remote session's news (each new token goes to the loader,
     /// the item keeps playing; a session the home ended ends here), and an item that failed
     /// (an encoder that restarted) opened again, twice, then said.
-    private func watch(_ source: LiveSource, path: LivePath, url: URL) async {
+    private func watch(_ source: LiveSource) async {
         let follower = Task { @MainActor [weak self, relay] in
             guard let relay else { return }
-            if await relay.follow(source) { self?.endedByHome() }
+            if await relay.follow(source, applied: { _ in self?.tokenApplied() }) { self?.endedByHome() }
         }
         defer { follower.cancel() }
         var reopened = 0
@@ -225,14 +353,7 @@ final class LivePlayback {
                 return
             }
             reopened += 1
-            let again: AVPlayerItem
-            if path == .relay, let relay {
-                again = AVPlayerItem(asset: relay.makeAsset())
-            } else if let proxy, let local = proxy.local(url) {
-                again = AVPlayerItem(url: local)
-            } else {
-                continue
-            }
+            guard let again = try? await freshItem() else { continue }
             player.replaceCurrentItem(with: again)
             if !paused { player.play() }
         }

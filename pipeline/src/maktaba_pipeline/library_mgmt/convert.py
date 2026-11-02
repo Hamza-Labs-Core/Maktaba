@@ -20,6 +20,13 @@ cache folder to the new content hash (:func:`rekey_thumbnails`).
 - ``skip`` / ``image_subtitles``: PGS or VobSub subtitles cannot go into an MP4;
 - ``skip`` / ``no_video``: no video stream (a cover picture is not one).
 
+**Unreadable inputs** (:func:`unreadable`): ffprobe opens some junk on a guess at its
+bytes. Random data with no header can read as a raw H.263 stream or an LRC subtitle, and
+re-encoding it made a 1-frame MP4 that passed verification, so the "original" went to
+the trash. A file that has no container (a raw elementary stream or a text format), a video
+stream and no duration, or a video stream with no frames, cannot be read: the job fails
+with ``ffmpeg_decode`` and the original stays where it is.
+
 Text subtitles become ``mov_text`` inside the MP4 and ``<name>.<lang>.srt`` beside it.
 Chapters and global metadata are kept (``-map_metadata 0 -map_chapters 0``); HEVC is
 tagged ``hvc1`` so Apple's players open it.
@@ -57,11 +64,13 @@ __all__ = [
     "final_path_for",
     "h264_encoders",
     "input_damaged",
+    "RAW_GUESSES",
     "plan_for",
     "probe_json",
     "rekey_thumbnails",
     "run_ffmpeg",
     "sidecar_name",
+    "unreadable",
     "work_dir_for",
 ]
 
@@ -90,6 +99,39 @@ _DAMAGED = re.compile(
     r"|could not find codec parameters|end of file|truncat",
     re.IGNORECASE,
 )
+
+
+#: ffmpeg demuxers with no container header: they take a file on a guess at its bytes (raw
+#: elementary streams, raw pixels, text subtitle and art formats). A library video read as
+#: one of these is not a video: random bytes read as ``h263`` or ``lrc``.
+RAW_GUESSES = frozenset(
+    {
+        # raw video elementary streams
+        "h261", "h263", "h264", "hevc", "vvc", "m4v", "mpegvideo", "cavsvideo", "avs2",
+        "avs3", "dirac", "vc1", "rawvideo", "mjpeg", "mjpeg_2000", "obu", "ivf_raw",
+        "image2pipe", "data",
+        # text subtitles and text art
+        "lrc", "srt", "ass", "webvtt", "subviewer", "subviewer1", "microdvd", "jacosub",
+        "sami", "realtext", "mpl2", "pjs", "vplayer", "stl", "aqtitle", "mpsub", "scc",
+        "bin", "bintext", "xbin", "adf", "idf", "tty",
+    }
+)  # fmt: skip
+
+
+def unreadable(probe: Probe, *, frames: int | None = None) -> str | None:
+    """Why ``probe`` is not a readable video file, or None when it is. ``frames``: the
+    first video stream's packet count, when it has been counted (None: not counted)."""
+    names = {n.strip() for n in probe.format_name.split(",") if n.strip()}
+    if not names:
+        return "ffprobe found no container"
+    if names <= RAW_GUESSES:
+        return f"no container: ffprobe only guessed a raw {probe.format_name} stream"
+    if probe.video:
+        if probe.duration is None or probe.duration <= 0:
+            return f"the {probe.format_name} file has a video stream and no duration"
+        if frames == 0:
+            return "the video stream has no frames"
+    return None
 
 
 def work_dir_for(job_id: int, root: str | None = None) -> Path:

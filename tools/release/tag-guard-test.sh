@@ -11,8 +11,14 @@ here="$(cd "$(dirname "$0")" && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "${work}"' EXIT
 
+# Offline, with an empty module cache: the guard's `go run ./cmd/release-order` must build
+# from the checkout alone. It once imported releaseverify (Sigstore, gRPC, protobuf: 40
+# modules from proxy.golang.org), and one broken download failed this test on CI
+# (run 41476114340) and would have failed a release's guard the same way.
+export GOPROXY=off GOFLAGS=-mod=readonly GOMODCACHE="${work}/gomodcache"
+
 fails=0
-ok()   { printf '  ok    %s\n' "$*"; }
+ok()  { printf '  ok    %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 
 # the stubbed gh: the published releases (PUBLISHED, one tag per line), a passed CI run and

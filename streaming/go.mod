@@ -9,7 +9,7 @@ godebug multipathtcp=0
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
-	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.9.2
 	golang.org/x/net v0.58.0

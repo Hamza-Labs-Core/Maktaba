@@ -57,6 +57,7 @@ jobs:
       unit_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_web == 'true' }}
       unit_tokens: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_shell == 'true' }}
+      mdns_windows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mdns_windows == 'true' }}
       integration: ${{ github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ github.event_name != 'pull_request' || steps.filter.outputs.compat_prev == 'true' }}
       replica: ${{ github.event_name != 'pull_request' || steps.filter.outputs.replica == 'true' }}
@@ -131,6 +132,7 @@ jobs:
       || needs.changes.outputs.unit_web == 'true'
       || needs.changes.outputs.unit_tokens == 'true'
       || needs.changes.outputs.desktop_shell == 'true'
+      || needs.changes.outputs.mdns_windows == 'true'
     uses: ./.github/workflows/_unit.yml
     with:
       go: ${{ needs.changes.outputs.unit_go == 'true' }}
@@ -138,6 +140,7 @@ jobs:
       web: ${{ needs.changes.outputs.unit_web == 'true' }}
       tokens: ${{ needs.changes.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ needs.changes.outputs.desktop_shell == 'true' }}
+      mdns_windows: ${{ needs.changes.outputs.mdns_windows == 'true' }}
 
   integration:
     needs: [changes]

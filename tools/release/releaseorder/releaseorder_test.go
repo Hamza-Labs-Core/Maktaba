@@ -1,9 +1,32 @@
 package releaseorder
 
 import (
+	"os/exec"
 	"strings"
 	"testing"
 )
+
+// The tag guard runs `go run ./cmd/release-order` with GOPROXY=off (tag-guard-test.sh,
+// _tag-guard.yml): releaseorder and the command build from the checkout alone. Importing
+// releaseverify itself brought ~40 modules (Sigstore, gRPC, protobuf) from
+// proxy.golang.org, and one broken download failed the guard's test (CI run 41476114340).
+func TestBuildsWithoutAModule(t *testing.T) {
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{if not .Standard}}{{.ImportPath}}{{end}}",
+		".", "../cmd/release-order").CombinedOutput()
+	if err != nil {
+		t.Fatalf("go list: %v\n%s", err, out)
+	}
+	allowed := map[string]bool{
+		"github.com/Hamza-Labs-Core/Maktaba/tools/release/releaseorder":      true,
+		"github.com/Hamza-Labs-Core/Maktaba/tools/release/cmd/release-order": true,
+		"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/version": true,
+	}
+	for _, p := range strings.Fields(string(out)) {
+		if !allowed[p] {
+			t.Errorf("release-order imports %s: the tag guard would download modules to build it", p)
+		}
+	}
+}
 
 // The tags this repository published around v0.3.0 (rc.7 came after v0.3.0).
 var published = []string{"v0.2.0", "v0.3.0-rc.5", "v0.3.0-rc.6", "v0.3.0", "v0.3.1"}

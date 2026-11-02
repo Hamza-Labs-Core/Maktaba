@@ -24,16 +24,35 @@ import (
 // service's target is "<host>.local.": through the system's responder where it has one
 // (announce.go), else through zeroconf.
 func register(instance, service, domain string, port int, txt []string) (announcement, error) {
-	// a Mac's responder already answers for its name: it announces the service for us
-	if path := systemResponder(); path != "" {
-		return startDNSSD(path, instance, service, domain, port, txt)
+	// the system's responder already answers for the host name: it announces the service
+	// for us
+	r := systemResponder()
+	switch r.kind {
+	case viaDNSSD:
+		return startDNSSD(r.path, instance, service, domain, port, txt)
+	case viaAvahi:
+		return startAvahi(r.path, instance, service, domain, port, txt)
+	case viaDNSAPI:
+		return startDNSAPI(systemDNSAPIImpl(), instance, service, domain, announcedHost(r)+".local", port, interfaceIPs(), txt)
 	}
-	h := hostName()
 	ips := interfaceIPs()
 	if len(ips) == 0 {
 		return nil, errors.New("no multicast interface has an address")
 	}
-	return zeroconf.RegisterProxy(instance, service, domain, port, bareHost(h), ips, txt, nil)
+	return zeroconf.RegisterProxy(instance, service, domain, port, announcedHost(r), ips, txt, nil)
+}
+
+// ownHostSuffix makes the name zeroconf answers for when Avahi holds the host's own.
+const ownHostSuffix = "-maktaba"
+
+// announcedHost is the bare name the announcement's target is: this machine's, or, when
+// zeroconf must answer beside an Avahi it cannot ask, a name of its own beside it.
+func announcedHost(r responder) string {
+	h := bareHost(hostName())
+	if r.kind == viaZeroconfOwnHost {
+		return dnsLabel(h, 63-len(ownHostSuffix)) + ownHostSuffix
+	}
+	return h
 }
 
 // hostName is the name this machine answers to in .local: on macOS the Bonjour

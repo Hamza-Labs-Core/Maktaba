@@ -26,12 +26,20 @@ from tests.engine.migrate import apply_postgres, apply_sqlite
 
 PG_URL = os.environ.get("MAKTABA_TEST_PG_URL", "")
 
+#: A test database is thrown away, so it skips SQLite's durability work: no sync at each
+#: commit and the rollback journal in memory, not a file made and removed per write. On the
+#: Windows runner that work cost 0.3-1.8 s per write, and every engine test shares one
+#: connection between its background loops, so a command waited behind several of them.
+FAST_PRAGMAS = ("PRAGMA synchronous = OFF", "PRAGMA journal_mode = MEMORY")
+
 
 @pytest.fixture(scope="session")
 def sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
     path = tmp_path_factory.mktemp("engine-sqlite") / "template.db"
     conn = sqlite3.connect(path)
     conn.execute("PRAGMA foreign_keys = ON")
+    for pragma in FAST_PRAGMAS:
+        conn.execute(pragma)
     apply_sqlite(conn)
     conn.close()
     return path
@@ -86,6 +94,8 @@ async def db(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[Da
         path = tmp_path / "t.db"
         shutil.copy(template, path)
         database = await Database.connect(f"sqlite:///{path}")
+        for pragma in FAST_PRAGMAS:
+            await database.execute(pragma)
         try:
             yield database
         finally:
