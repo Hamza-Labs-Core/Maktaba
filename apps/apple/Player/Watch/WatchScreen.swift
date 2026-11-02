@@ -55,6 +55,12 @@ struct WatchScreen: View {
             guard let window, let playback else { return }
             window.show(playback) { dismiss() }
         }
+        .onChange(of: playback?.video == nil) { wasStopped, stopped in
+            // Playback ▸ Stop (⌘.) stops the video: the player closes with it, as Close does,
+            // rather than staying open on a stopped picture (`play` swaps a video in one step,
+            // so the next video never shows as stopped here)
+            if !wasStopped, stopped { dismiss() }
+        }
         .onDisappear {
             if let playback { window?.hide(playback) }
             playback?.stop()
