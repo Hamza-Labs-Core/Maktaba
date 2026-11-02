@@ -25,13 +25,13 @@ CHECK = ROOT / "tools/apple/check-app-log.py"
 PERSIST = '--mode "level:debug,persist:debug"'
 
 
-def _steps() -> list[dict[str, Any]]:
-    steps: list[dict[str, Any]] = WORKFLOW["jobs"]["player-ui-tests"]["steps"]
+def _steps(job: str = "player-ui-tests") -> list[dict[str, Any]]:
+    steps: list[dict[str, Any]] = WORKFLOW["jobs"][job]["steps"]
     return steps
 
 
-def _run(name: str) -> str:
-    script: str = next(s for s in _steps() if s.get("name") == name)["run"]
+def _run(name: str, job: str = "player-ui-tests") -> str:
+    script: str = next(s for s in _steps(job) if s.get("name") == name)["run"]
     return script
 
 
@@ -76,18 +76,22 @@ def test_the_app_writes_the_launch_lines() -> None:
 
 
 def test_iphone_and_ipad_keep_info_and_debug() -> None:
-    script = _run("Run the Player UI tests")
-    assert f'log config --subsystem "$4" {PERSIST}' in script
-    # the bundle id each device's run configures is its app's own
-    assert f'"iphone" "{_bundle("Maktaba Player")}"' in script
-    assert f'"ipad" "{_bundle("Maktaba Player iPad")}"' in script
-    assert "log show --style compact --info --debug" in script
-    assert "log stream" not in script
-    assert 'check-app-log.py "$log" || status=1' in script
+    # configured on the shard's simulator right after it boots
+    boot = _run("Make, boot and settle the simulator")
+    assert f'log config --subsystem "$bundle" {PERSIST}' in boot
+    # the bundle id each device's simulator configures is its app's own
+    assert f"iphone) bundle={_bundle('Maktaba Player')} ;;" in boot
+    assert f"ipad) bundle={_bundle('Maktaba Player iPad')} ;;" in boot
+    # read once the tests are done (whether they passed or not), then checked
+    read = next(s for s in _steps() if s.get("name") == "Read and check the app's log, delete the simulator")
+    assert read["if"].startswith("always()")
+    assert "log show --style compact --info --debug" in read["run"]
+    assert 'check-app-log.py "$log"' in read["run"]
+    assert all("log stream" not in s.get("run", "") for s in _steps())
 
 
 def test_mac_keeps_info_and_debug() -> None:
-    script = _run("Run the Mac Player tests")
+    script = _run("Run the Mac Player tests", "player-ui-mac")
     assert f"log config --subsystem {_bundle('Maktaba Player Mac')} {PERSIST}" in script
     assert 'log show --start "$start" --style compact --info --debug' in script
     assert "log stream" not in script
@@ -97,5 +101,6 @@ def test_mac_keeps_info_and_debug() -> None:
 
 
 def test_the_logs_are_uploaded() -> None:
-    upload = next(s for s in _steps() if s.get("uses", "").startswith("actions/upload-artifact") and s.get("if") == "always()")
-    assert "build/player-results" in upload["with"]["path"]
+    for job in ("player-ui-tests", "player-ui-mac"):
+        upload = next(s for s in _steps(job) if s.get("uses", "").startswith("actions/upload-artifact") and s.get("if") == "always()")
+        assert "build/player-results" in upload["with"]["path"]
