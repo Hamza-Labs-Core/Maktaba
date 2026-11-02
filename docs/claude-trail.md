@@ -1154,3 +1154,10 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Gotcha: a POSIX shell gives a background job /dev/null as stdin, so the watcher must read a copy (`exec 3<&0 … read _ <&3`), or it kills dns-sd at once.
 - Not done: Linux hosts with avahi-daemon and Windows (own mDNS) have the same conflict risk; still zeroconf there.
 - 2026-11-02: removed 140 merged, clean, unused worktrees (82 GB). Kept 20: in use, open PRs, or unmerged work.
+
+## 2026-11-02 — TestLibraryTabsSQLite past the unit test budget: fsync during setup
+
+- CI run 41449508335 (PR #510) failed test-budget: browse TestLibraryTabsSQLite took 1.42 s, and 1.32 s when re-run alone. The 3x400 ms cap is 1.2 s.
+- Cause: the shared `testDB` setup (~45 autocommits, plus ~14 from `groupsEnv`). On a file DB in rollback-journal mode, each commit syncs the journal, the db file and the directory. That costs almost nothing on macOS and a lot on the Linux runner. Simulating it locally with `PRAGMA fullfsync`: setup 965 ms out of a 990 ms test. The five handler requests take ~25 ms, so the handler wasn't the problem.
+- Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
+- The same PR (#521) also fixes a search test that failed integration/compat-prev: `TestEmbedCacheConcurrentSameKeyNoCorruption` compared response bodies byte for byte, including the wall-clock `took_ms` ("semantic":0 vs 1). Both subtests (concurrent, and sequential miss->hit->hit) now decode the bodies, drop `took_ms` and compare the rest (`withoutTiming`). Passed `-race -count=20`.

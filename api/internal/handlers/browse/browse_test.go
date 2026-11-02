@@ -44,7 +44,13 @@ func iso(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000Z")
 // them (UUIDs and times as text).
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "b.db"))
+	// a scratch database: no journal file and no fsync per statement. The
+	// setup below is ~45 autocommits (groupsEnv adds ~14); on a Linux runner
+	// each one synced the journal, the file and the directory, which put
+	// TestLibraryTabsSQLite past the unit tier's per-test budget (1.3 s,
+	// nearly all setup). In the DSN, so every pooled connection gets them.
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "b.db")+
+		"?_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)")
 	if err != nil {
 		t.Fatal(err)
 	}
