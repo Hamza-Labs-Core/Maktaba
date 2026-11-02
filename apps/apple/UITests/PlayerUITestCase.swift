@@ -164,8 +164,10 @@ class PlayerUITestCase: XCTestCase {
     /// with the launch arguments it is given (a text size) and opens the same page. Each text
     /// of the page, by its identifier or else its words, shown at the smallest size, the
     /// default and AX3, must be taller at each step (one allowance, a button's 44-pt minimum at the two
-    /// smaller sizes: `grows`); one that is not fails, named with its three heights. The texts of the system's bars are UIKit's own (an iPad's tab bar keeps
-    /// one size and shows the large content viewer instead) and are left out. Afterwards the
+    /// smaller sizes: `grows`); one that is not fails, named with its three heights and where it
+    /// is. The texts of the system's navigation and tab bars, every one of them, are UIKit's own
+    /// (an iPad's tab bar keeps one size and shows the large content viewer instead; a bar's
+    /// title grows only at the accessibility sizes) and are left out. Afterwards the
     /// page is open again at the default size, for the test to go on.
     func assertTextScales(_ page: String, file: StaticString = #filePath, line: UInt = #line, open: ([String]) -> Void) {
         let fixed = textsThatDoNotScale(open: open)
@@ -201,7 +203,7 @@ class PlayerUITestCase: XCTestCase {
             guard let hs = s[key], let hl = l[key], let hn = n[key] else { continue }
             for k in 0 ..< min(hs.count, hn.count, hl.count)
             where !Self.grows(hs[k].height, hn[k].height, hl[k].height, inButton: hn[k].inButton && hs[k].inButton) {
-                fixed.append("\"\(key)\" \(Int(hs[k].height)) / \(Int(hn[k].height)) / \(Int(hl[k].height)) pt high (smallest / default / AX3)")
+                fixed.append("\"\(key)\" \(Int(hs[k].height)) / \(Int(hn[k].height)) / \(Int(hl[k].height)) pt high (smallest / default / AX3), at \(hn[k].frame) by default\(hn[k].inButton ? " in a button" : "")")
             }
         }
         return fixed
@@ -269,17 +271,21 @@ class PlayerUITestCase: XCTestCase {
         var tab: CGRect?
         var nav: CGRect?
         var texts: [(id: String, label: String, frame: CGRect, inButton: Bool)] = []
+        /// Each text a navigation or tab bar holds: the system's own (every bar, not just the
+        /// first: an iPad's split view has one navigation bar per column, and the detail's
+        /// title "Lectures", 21 / 21 / 26 pt, was measured as the page's on CI).
+        var barTexts: Set<Int> = []
 
         init() {}
 
         /// Each text's height, by its identifier or else its words, in the order shown; the
         /// texts of the tab and navigation bars left out (the system's own, see
         /// `assertTextScales`).
-        var heights: [String: [(height: CGFloat, inButton: Bool)]] {
+        var heights: [String: [(height: CGFloat, inButton: Bool, frame: CGRect)]] {
             let bars = [tab, nav].compactMap { $0 }
-            var all: [String: [(height: CGFloat, inButton: Bool)]] = [:]
-            for t in texts where !t.frame.isEmpty && !bars.contains(where: { $0.intersects(t.frame) }) {
-                all[t.id.isEmpty ? t.label : t.id, default: []].append((t.frame.height, t.inButton))
+            var all: [String: [(height: CGFloat, inButton: Bool, frame: CGRect)]] = [:]
+            for (i, t) in texts.enumerated() where !t.frame.isEmpty && !barTexts.contains(i) && !bars.contains(where: { $0.intersects(t.frame) }) {
+                all[t.id.isEmpty ? t.label : t.id, default: []].append((t.frame.height, t.inButton, t.frame))
             }
             return all
         }
@@ -291,17 +297,20 @@ class PlayerUITestCase: XCTestCase {
 
         init(_ app: XCUIElementSnapshot) {
             // each element with whether a button holds it
-            var stack = [(app, false)]
-            while let (s, inButton) = stack.popLast() {
+            var stack = [(app, false, false)]
+            while let (s, inButton, inBar) = stack.popLast() {
                 switch s.elementType {
                 case .window where window.isNull: window = s.frame
                 case .tabBar where tab == nil: tab = s.frame
                 case .navigationBar where nav == nil: nav = s.frame
-                case .staticText: texts.append((s.identifier, s.label, s.frame, inButton))
+                case .staticText:
+                    if inBar { barTexts.insert(texts.count) }
+                    texts.append((s.identifier, s.label, s.frame, inButton))
                 default: break
                 }
                 let below = inButton || s.elementType == .button
-                stack.append(contentsOf: s.children.reversed().map { ($0, below) })
+                let bar = inBar || s.elementType == .navigationBar || s.elementType == .tabBar
+                stack.append(contentsOf: s.children.reversed().map { ($0, below, bar) })
             }
         }
 
