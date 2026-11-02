@@ -3,12 +3,14 @@
 package mdns
 
 import (
-	"net"
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/miekg/dns"
 )
 
 // Windows 10+ (the CI runner among them) has the registration API, so a home there
@@ -56,10 +58,39 @@ func TestWindowsDNSAPIRegistersAndWithdraws(t *testing.T) {
 }
 
 // A home name with a "." (and a "\", and Arabic) goes on the wire as one label: the
-// escaped name DnsServiceConstructInstance gets is the one Windows answers with. The
-// query goes to this machine's own addresses on 5353 (a direct unicast query, RFC 6762
-// §5.5), and to the group, from a port of this process's own.
+// escaped name DnsServiceConstructInstance gets is the one Windows probes and announces.
+// Windows answers no query of this machine's own, so what it sends is read off the
+// network adapter with pktmon (elevated: the CI runner is).
 func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
+	dir := t.TempDir()
+	etl := filepath.Join(dir, "mdns.etl")
+	pktmon := func(args ...string) error {
+		out, err := exec.Command("pktmon", args...).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("pktmon %s: %v: %s", strings.Join(args, " "), err, out)
+		}
+		return nil
+	}
+	_ = pktmon("stop")
+	_ = pktmon("filter", "remove")
+	if err := pktmon("filter", "add", "maktaba-mdns", "-t", "UDP", "-p", "5353"); err != nil {
+		t.Skipf("no packet capture here (pktmon needs an elevated Windows): %v", err)
+	}
+	defer func() { _ = pktmon("filter", "remove") }()
+	if err := pktmon("start", "--capture", "--pkt-size", "0", "--file-name", etl); err != nil {
+		t.Fatal(err)
+	}
+	stopped := false
+	stop := func() {
+		if !stopped {
+			stopped = true
+			if err := pktmon("stop"); err != nil {
+				t.Error(err)
+			}
+		}
+	}
+	defer stop()
+
 	const service = "_maktaba-dot._tcp"
 	name := "Maktaba v1.2 a\\b مكتبة " + time.Now().Format("150405.000000")
 	answered := make(chan error, 1)
@@ -84,63 +115,43 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("no answer to the registration")
 	}
+	time.Sleep(3 * time.Second) // the announcements follow the probes
+	stop()
 
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	capture, err := os.ReadFile(etl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = conn.Close() }()
-	q := new(dns.Msg)
-	q.SetQuestion(service+".local.", dns.TypePTR)
-	wire, err := q.Pack()
-	if err != nil {
-		t.Fatal(err)
+	// and as pcapng, whose packets are their bytes as they went
+	pcap := filepath.Join(dir, "mdns.pcapng")
+	if err := pktmon("etl2pcap", etl, "--out", pcap); err != nil {
+		t.Log(err)
+	} else if b, err := os.ReadFile(pcap); err == nil {
+		capture = append(capture, b...)
 	}
-	targets := []*net.UDPAddr{{IP: net.IPv4(224, 0, 0, 251), Port: 5353}, {IP: net.IPv4(127, 0, 0, 1), Port: 5353}}
-	for _, s := range interfaceIPs() {
-		if ip := net.ParseIP(s); ip.To4() != nil {
-			targets = append(targets, &net.UDPAddr{IP: ip, Port: 5353})
+	// one label: its length, the name's bytes, then the service's label or a pointer to it
+	label := append([]byte{byte(len(name))}, name...)
+	for rest := capture; ; {
+		i := bytes.Index(rest, label)
+		if i < 0 {
+			break
 		}
+		if next := rest[i+len(label):]; len(next) > 0 && (next[0] == byte(len("_maktaba-dot")) || next[0] >= 0xC0) {
+			return
+		}
+		rest = rest[i+1:]
 	}
-	want := zeroconfInstance(name) + "." + service + ".local." // the name as the DNS library writes it
 	var seen []string
-	from := map[string]int{}
-	buf := make([]byte, 9000)
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
-		for _, to := range targets {
-			if _, err := conn.WriteToUDP(wire, to); err != nil {
-				t.Logf("query to %v: %v", to, err)
-			}
+	for rest := capture; len(seen) < 8; {
+		i := bytes.Index(rest, []byte("Maktaba v1"))
+		if i < 0 {
+			break
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		for {
-			n, addr, err := conn.ReadFromUDP(buf)
-			if err != nil {
-				break
-			}
-			from[addr.String()]++
-			m := new(dns.Msg)
-			if m.Unpack(buf[:n]) != nil {
-				continue
-			}
-			for _, rr := range append(m.Answer, m.Extra...) {
-				owner := rr.Header().Name
-				if ptr, ok := rr.(*dns.PTR); ok {
-					owner = ptr.Ptr
-				}
-				if !strings.Contains(strings.ToLower(owner), service) {
-					continue
-				}
-				if owner == want {
-					t.Logf("answered by %v", addr)
-					return
-				}
-				seen = append(seen, owner)
-			}
-		}
+		from := max(i-1, 0)
+		seen = append(seen, fmt.Sprintf("%q", rest[from:min(from+len(label)+16, len(rest))]))
+		rest = rest[i+1:]
 	}
-	t.Fatalf("nothing named %q; queried %v; answers from %v; names of %s: %q", want, targets, from, service, seen)
+	t.Fatalf("%d bytes captured; %q is not one label in them; it is in: %v", len(capture), name, seen)
 }
 
 // Through the announcement: a new TXT and Shutdown on the real API, withdrawn when done.
