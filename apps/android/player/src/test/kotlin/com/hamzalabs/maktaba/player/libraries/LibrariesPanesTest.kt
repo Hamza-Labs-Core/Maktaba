@@ -27,8 +27,8 @@ import org.robolectric.annotation.Config
 
 /**
  * The section's list-detail (FR-8, FR-15): from 600 dp the list stays beside the chosen
- * library's or series' page; half folded it splits at the hinge, the page on the first half and
- * the list on the second. The JVM cannot fold a window, so the hinge is given as [Panes] (the
+ * library's or series' page; half folded it splits at the hinge: like a book the list on the
+ * start page and the page on the other, on a table the page above and the list below. The JVM cannot fold a window, so the hinge is given as [Panes] (the
  * pattern of core's instrumented `HingeSplitTest`, which runs on a device).
  */
 @RunWith(AndroidJUnit4::class)
@@ -103,23 +103,24 @@ class LibrariesPanesTest {
     }
 
     @Test @Config(qualifiers = "w673dp-h841dp-xhdpi")
-    fun halfFoldedLikeABookThePageIsLeftOfTheHingeAndTheListRight() {
+    // the list on the start page, where the rail is (PostureLayoutTest covers it with the rail)
+    fun halfFoldedLikeABookTheListIsLeftOfTheHingeAndThePageRight() {
         val (start, end) = book(rtl = false)
         val detail = compose.onNodeWithTag("libraries-detail").getUnclippedBoundsInRoot()
         val list = compose.onNodeWithTag("libraries-list").getUnclippedBoundsInRoot()
-        assertEquals("the page ends at the hinge", start.value, detail.right.value, 2f)
-        assertEquals("the list starts after it", end.value, list.left.value, 2f)
-        assertEquals("the list ends at the right", widthDp.value, list.right.value, 2f)
+        assertEquals("the list ends at the hinge", start.value, list.right.value, 2f)
+        assertEquals("the page starts after it", end.value, detail.left.value, 2f)
+        assertEquals("the page ends at the right", widthDp.value, detail.right.value, 2f)
     }
 
     @Test @Config(qualifiers = "ar-w673dp-h841dp-xhdpi")
-    fun rightToLeftThePageIsRightOfTheHinge() {
+    fun rightToLeftTheListIsRightOfTheHinge() {
         val (start, end) = book(rtl = true)
         val detail = compose.onNodeWithTag("libraries-detail").getUnclippedBoundsInRoot()
         val list = compose.onNodeWithTag("libraries-list").getUnclippedBoundsInRoot()
-        assertEquals("the page starts after the hinge", end.value, detail.left.value, 2f)
-        assertEquals("the list ends at the hinge", start.value, list.right.value, 2f)
-        assertTrue("the page leads, on the right", detail.left > list.right)
+        assertEquals("the list starts after the hinge", end.value, list.left.value, 2f)
+        assertEquals("the page ends at the hinge", start.value, detail.right.value, 2f)
+        assertTrue("the list leads, on the right", list.left > detail.right)
     }
 
     @Test @Config(qualifiers = "w841dp-h673dp-xhdpi")

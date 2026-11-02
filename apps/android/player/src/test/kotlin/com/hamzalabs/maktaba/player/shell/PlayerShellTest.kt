@@ -80,13 +80,15 @@ class PlayerShellTest {
 
     @Test
     @Config(qualifiers = "w1280dp-h800dp")
-    fun aLargeTabletHasThePermanentDrawer() {
+    fun aLargeTabletHasTheCollapsibleRail() {
         compose.setShell(window = Window.Tablet, screens = ListScreens)
-        assertNavigation(ShellNavigation.Drawer)
+        assertNavigation(ShellNavigation.CollapsibleRail)
         val home = sectionBounds(PlayerSection.Home)
-        // a drawer's item spans its width, beside the content
-        assertTrue("the drawer's item is wide: $home", home.right - home.left > 200.dp)
-        assertTrue(home.right < 400.dp)
+        val profile = sectionBounds(PlayerSection.Profile)
+        // icons down the start edge, collapsed (CollapsibleRailTest covers expanding it)
+        assertTrue("the rail is narrow: $home", home.right <= CollapsedRailWidth)
+        assertEquals(home.left, profile.left)
+        assertTrue(profile.top > home.top)
     }
 
     @Test

@@ -3,13 +3,9 @@ package com.hamzalabs.maktaba.remote
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
@@ -26,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -46,6 +41,7 @@ import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.layout.HingeSplit
+import com.hamzalabs.maktaba.core.layout.ListDetailSplit
 import com.hamzalabs.maktaba.core.layout.ListPaneWidth
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
@@ -228,12 +224,17 @@ fun AdminScreen(
         }
     }
     when (panes) {
-        is Panes.Tabletop, is Panes.Book -> HingeSplit(panes, first = { page(detail != null) }, second = { list(Modifier.fillMaxSize()) })
-        Panes.ListDetail -> Row(Modifier.fillMaxSize()) {
-            list(Modifier.width(ListPaneWidth + 40.dp).fillMaxHeight())
-            VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Column(Modifier.weight(1f)) { page(false) }
-        }
+        // on a table: the page on the upright half, the list on the flat one (touched)
+        is Panes.Tabletop -> HingeSplit(panes, first = { page(detail != null) }, second = { list(Modifier.fillMaxSize()) })
+        // like a book: the list on the start page (beside the rail), the page on the other, as the Player
+        is Panes.Book -> HingeSplit(panes, first = { list(Modifier.fillMaxSize()) }, second = { page(false) })
+        // the divider between them can be dragged; one split for every Remote screen
+        Panes.ListDetail -> ListDetailSplit(
+            key = "remote",
+            preferredList = ListPaneWidth + 40.dp,
+            list = { list(Modifier.fillMaxSize()) },
+            detail = { page(false) },
+        )
         Panes.One -> if (detail != null) {
             BackHandler(onBack = onUnchoose)
             page(true)

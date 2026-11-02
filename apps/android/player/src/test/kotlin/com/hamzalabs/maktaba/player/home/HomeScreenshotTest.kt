@@ -17,7 +17,7 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * Home's screenshots (48.26, NFR-20): dark, English and Arabic, on a phone (the bar) and a large
- * tablet (the drawer), against the mock home, plus the empty home on a phone. `recordRoborazziDebug`
+ * tablet (the collapsible rail), against the mock home, plus the empty home on a phone. `recordRoborazziDebug`
  * writes the references under `src/test/screenshots`; CI's `verifyRoborazziDebug` fails
  * when one no longer matches.
  */

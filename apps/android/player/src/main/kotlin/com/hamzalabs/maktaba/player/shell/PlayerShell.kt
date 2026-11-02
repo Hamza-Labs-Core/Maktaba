@@ -3,11 +3,15 @@ package com.hamzalabs.maktaba.player.shell
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.adaptive.HingeInfo
 import androidx.compose.material3.adaptive.WindowAdaptiveInfo
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteType
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
@@ -31,27 +35,40 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import androidx.window.core.layout.WindowSizeClass
+import com.hamzalabs.maktaba.core.layout.HingeSplit
+import com.hamzalabs.maktaba.core.layout.LocalAdaptiveInfo
+import com.hamzalabs.maktaba.core.layout.Panes
+import com.hamzalabs.maktaba.core.layout.currentPanes
 
 /** How the sections are offered (FR-8). */
-enum class ShellNavigation { Bar, Rail, Drawer, None }
+enum class ShellNavigation { Bar, Rail, CollapsibleRail, None }
 
 /**
  * The navigation for a window, from Material's adaptive info (the window, never the device):
- * a bottom bar in a compact window or tabletop posture (the bottom half flat on a table is what
- * is touched), a rail in a medium one (a foldable open flat, a small tablet), a permanent drawer
- * in an expanded one (a large tablet). A wide window too short for a drawer's list (a phone
- * turned sideways: compact height) keeps the rail.
+ * - a bottom bar in a compact window, or half folded on a table (tabletop: the bar sits on the
+ *   flat bottom half, the part that is touched);
+ * - the collapsible rail ([CollapsibleRailFrame]: icons, expanded over the content on
+ *   demand) half folded like a book (it sits on the start page), and in an expanded window
+ *   (a large tablet, a foldable open flat in landscape), where a permanent drawer took 360 dp
+ *   and squeezed a list-detail page;
+ * - a rail in a medium one (a foldable open flat in portrait, a small tablet), and in a wide
+ *   window too short for the collapsible rail's list (a phone on its side: compact height).
  */
 fun navigationFor(info: WindowAdaptiveInfo): ShellNavigation {
     val size = info.windowSizeClass
     return when {
         info.windowPosture.isTabletop -> ShellNavigation.Bar
+        bookHinge(info) != null -> ShellNavigation.CollapsibleRail
         !size.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_MEDIUM_LOWER_BOUND) -> ShellNavigation.Bar
         size.isWidthAtLeastBreakpoint(WindowSizeClass.WIDTH_DP_EXPANDED_LOWER_BOUND) &&
-            size.isHeightAtLeastBreakpoint(WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND) -> ShellNavigation.Drawer
+            size.isHeightAtLeastBreakpoint(WindowSizeClass.HEIGHT_DP_MEDIUM_LOWER_BOUND) -> ShellNavigation.CollapsibleRail
         else -> ShellNavigation.Rail
     }
 }
+
+/** The hinge when the window is half folded like a book (upright, half open), else null. */
+fun bookHinge(info: WindowAdaptiveInfo): HingeInfo? =
+    info.windowPosture.hingeList.firstOrNull { it.isVertical && !it.isFlat }
 
 /** The navigation the shell shows, for tests: one of [ShellNavigation]'s names. */
 val ShellNavigationKey = SemanticsPropertyKey<ShellNavigation>("ShellNavigation")
@@ -107,8 +124,8 @@ fun OnReselect(nav: PlayerNavigator, action: () -> Unit) {
 typealias PlayerScreens = @Composable (route: Route, nav: PlayerNavigator) -> Unit
 
 /**
- * The signed-in Player: the [sections] in Material's navigation suite (bar, rail or drawer, by
- * the window), each with its own stack of screens (Navigation Compose), as each tab of the
+ * The signed-in Player: the [sections] in a bar, a rail or the collapsible rail (by the window
+ * and its fold, [navigationFor]), each with its own stack of screens (Navigation Compose), as each tab of the
  * Apple Player holds its own NavigationStack:
  * - switching sections keeps each one's stack and scroll positions;
  * - re-selecting the shown section returns it to its root;
@@ -139,22 +156,8 @@ fun PlayerShell(
     val stacks = rememberSaveableStateHolder()
 
     val navigation = if (immersive || sections.size < 2) ShellNavigation.None else navigationFor(adaptiveInfo)
-    NavigationSuiteScaffold(
-        modifier = modifier.semantics { shellNavigation = navigation },
-        layoutType = navigation.suiteType,
-        navigationSuiteItems = {
-            sections.forEach { section ->
-                val selected = section == current
-                item(
-                    selected = selected,
-                    onClick = { if (selected) toRoot++ else currentName = section.name },
-                    icon = { Icon(if (selected) section.selectedIcon else section.icon, contentDescription = null) },
-                    label = { Text(stringResource(section.label)) },
-                    modifier = Modifier.testTag("section-${section.name}"),
-                )
-            }
-        },
-    ) {
+    val choose: (PlayerSection) -> Unit = { section -> if (section == current) toRoot++ else currentName = section.name }
+    val body: @Composable () -> Unit = {
         stacks.SaveableStateProvider(current.name) {
             val controller = rememberNavController()
             val navigator = remember(controller) { PlayerNavigator(controller) { s -> if (s in sections) currentName = s.name } }
@@ -184,26 +187,75 @@ fun PlayerShell(
             }
         }
     }
+
+    // the screens lay themselves out by the same window (and hinge) as the navigation
+    // One tree whatever the navigation, so the screens are never composed anew when it changes
+    // (a video going full screen hides it): the suite draws the bar and the rail, the frame
+    // inside it the collapsible rail.
+    CompositionLocalProvider(LocalAdaptiveInfo provides adaptiveInfo) {
+        NavigationSuiteScaffold(
+            modifier = modifier.semantics { shellNavigation = navigation },
+            layoutType = navigation.suiteType,
+            navigationSuiteItems = {
+                sections.forEach { section ->
+                    val selected = section == current
+                    item(
+                        selected = selected,
+                        onClick = { choose(section) },
+                        icon = { Icon(if (selected) section.selectedIcon else section.icon, contentDescription = null) },
+                        label = { Text(stringResource(section.label)) },
+                        modifier = Modifier.testTag("section-${section.name}"),
+                    )
+                }
+            },
+        ) {
+            CollapsibleRailFrame(
+                show = navigation == ShellNavigation.CollapsibleRail,
+                sections = sections,
+                current = current,
+                onChoose = choose,
+                hinge = bookHinge(adaptiveInfo),
+                content = body,
+            )
+        }
+    }
 }
 
 private val ShellNavigation.suiteType: NavigationSuiteType
     get() = when (this) {
         ShellNavigation.Bar -> NavigationSuiteType.NavigationBar
         ShellNavigation.Rail -> NavigationSuiteType.NavigationRail
-        ShellNavigation.Drawer -> NavigationSuiteType.NavigationDrawer
-        ShellNavigation.None -> NavigationSuiteType.None
+        // drawn by CollapsibleRailFrame, not the suite
+        ShellNavigation.CollapsibleRail, ShellNavigation.None -> NavigationSuiteType.None
     }
 
 /** Every route in a section's graph: its root and every screen it can push. */
 private fun NavGraphBuilder.playerGraph(screens: PlayerScreens, nav: PlayerNavigator) {
-    composable<Route.Home> { screens(Route.Home, nav) }
-    composable<Route.Libraries> { screens(Route.Libraries, nav) }
-    composable<Route.LiveTv> { screens(Route.LiveTv, nav) }
-    composable<Route.Search> { screens(Route.Search, nav) }
-    composable<Route.Profile> { screens(Route.Profile, nav) }
-    composable<Route.Video> { screens(it.toRoute<Route.Video>(), nav) }
-    composable<Route.Series> { screens(it.toRoute<Route.Series>(), nav) }
-    composable<Route.Library> { screens(it.toRoute<Route.Library>(), nav) }
-    composable<Route.Channel> { screens(it.toRoute<Route.Channel>(), nav) }
-    composable<Route.Watch> { screens(it.toRoute<Route.Watch>(), nav) }
+    composable<Route.Home> { OffTheHinge(Route.Home) { screens(Route.Home, nav) } }
+    composable<Route.Libraries> { OffTheHinge(Route.Libraries) { screens(Route.Libraries, nav) } }
+    composable<Route.LiveTv> { OffTheHinge(Route.LiveTv) { screens(Route.LiveTv, nav) } }
+    composable<Route.Search> { OffTheHinge(Route.Search) { screens(Route.Search, nav) } }
+    composable<Route.Profile> { OffTheHinge(Route.Profile) { screens(Route.Profile, nav) } }
+    composable<Route.Video> { it.toRoute<Route.Video>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
+    composable<Route.Series> { it.toRoute<Route.Series>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
+    composable<Route.Library> { it.toRoute<Route.Library>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
+    composable<Route.Channel> { it.toRoute<Route.Channel>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
+    composable<Route.Watch> { it.toRoute<Route.Watch>().let { r -> OffTheHinge(r) { screens(r, nav) } } }
+}
+
+/** The screens that split themselves around a tabletop hinge (their page above, their list below). */
+private val Route.splitsAtTheHinge: Boolean get() = this == Route.Libraries
+
+/**
+ * Half folded on a table, a screen that does not split itself is drawn on the upright top
+ * half (looked at), never across the hinge; the flat bottom half keeps the navigation bar.
+ */
+@Composable
+private fun OffTheHinge(route: Route, screen: @Composable () -> Unit) {
+    val panes = currentPanes()
+    if (panes is Panes.Tabletop && !route.splitsAtTheHinge) {
+        HingeSplit(panes, first = { Box(Modifier.fillMaxSize().testTag("tabletop-top")) { screen() } }, second = {})
+    } else {
+        screen()
+    }
 }
