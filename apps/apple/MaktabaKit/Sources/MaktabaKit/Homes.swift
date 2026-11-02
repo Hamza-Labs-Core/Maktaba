@@ -215,6 +215,7 @@ public final class AppSession {
         if CommandLine.arguments.contains("-maktaba-session-reset") {
             defaults.removeObject(forKey: "homes")
             defaults.removeObject(forKey: "home")
+            UITestSecrets.reset()
         }
         #endif
         homes = Self.decodeHomes(defaults.data(forKey: "homes"), defaults: defaults)
