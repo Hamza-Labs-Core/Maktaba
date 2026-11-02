@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import ci_paths  # noqa: E402
 
 # the jobs every pull request runs, whatever it changes
-ALWAYS = {"changes", "lint", "pr-body-check", "ci-success"}
+ALWAYS = {"changes", "lint", "pr-body-check", "affected-tests", "ci-success"}
 LINT_PARTS = ("go", "pipeline", "web")
 
 GO_SERVER = {"unit", "integration", "replica", "e2e", "media-e2e", "perf-ci", "build-artifacts"}
@@ -103,6 +103,11 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         GO_SERVER,
         {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev"}},
     ),
+    "the affected-tests gate: its Go module, the hook and the map workflow": (
+        ["tools/affected-tests/analyze.go", ".githooks/pre-push", ".github/workflows/coverage-map.yml"],
+        {"unit", "integration"},
+        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration"}},
+    ),
     "server only": (
         ["cmd/maktaba-server/internal/supervisor/supervisor.go"],
         {"unit", "integration", "replica", "launcher", "node-packaging"},
@@ -176,7 +181,7 @@ def test_ci_yml_runs_every_gate() -> None:
 
 def test_a_push_runs_everything() -> None:
     runs = run(event="push")
-    assert ran(runs) == set(ci_paths.load_workflow().jobs) - {"pr-body-check", "fork-rerun-comment"}
+    assert ran(runs) == set(ci_paths.load_workflow().jobs) - {"pr-body-check", "affected-tests", "fork-rerun-comment"}
     for job in ("lint", "unit", "integration", "node-packaging", "apple-apps"):
         assert all(v is True for v in runs[job].inputs.values()), job  # type: ignore[union-attr]
 

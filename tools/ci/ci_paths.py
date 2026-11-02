@@ -75,6 +75,8 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/update-rehearsal.yml": "its own workflow and path filter",
     ".github/workflows/_tag-guard.yml": "the tag workflows' first job",
     ".github/workflows/_pr-body-check.yml": "pr-body-check runs on every pull request",
+    ".github/workflows/coverage-map.yml": "runs after CI on main (the affected-tests map)",
+    ".githooks/**": "the pre-push hook: the affected-tests job shellchecks it on every pull request",
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
     "tools/ci/tests/**": "the guard's tests: the lint job runs them on every pull request",
