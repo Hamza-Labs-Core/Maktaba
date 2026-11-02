@@ -82,9 +82,17 @@ async def test_only_a_worker_that_serves_the_stage_is_offered_the_job(db: Databa
 @pytest.mark.asyncio
 async def test_paused_stage_and_global_pause_are_skipped(db: Database) -> None:
     await _videos(db, 2, stage="categorize")
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'categorize'", True)
+    await db.execute(
+        "UPDATE job_stages SET paused = $1, paused_at = CURRENT_TIMESTAMP, paused_by = 'test'"
+        " WHERE stage = 'categorize'",
+        True,
+    )
     assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is None
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'categorize'", False)
+    await db.execute(
+        "UPDATE job_stages SET paused = $1, paused_at = NULL, paused_by = NULL"
+        " WHERE stage = 'categorize'",
+        False,
+    )
     await db.execute("UPDATE queue_control SET paused = $1 WHERE id = 1", True)
     assert await claim_for_pool(db, worker_id="w", pool="cpu", stages=["categorize"]) is None
     await db.execute("UPDATE queue_control SET paused = $1 WHERE id = 1", False)
