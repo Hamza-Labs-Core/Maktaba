@@ -32,11 +32,24 @@ import json
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
+from structlog.testing import capture_logs
+
 from maktaba_pipeline.db.jobs import Stage
 from maktaba_pipeline.handlers import extract_handler
 from tests.audio._fake_audio_db import _AudioTrackRow, _ProcessingJobRow
 
 from .conftest import StageDB, make_job
+
+
+def _file_backend() -> bool:
+    """The configured backend reads a file (openai-api): the WAV is written."""
+    return True
+
+
+def _streaming_backend() -> bool:
+    """The configured backend streams PCM (whisper-mlx): no WAV."""
+    return False
 
 
 def _seed_claimed_job(
@@ -91,7 +104,9 @@ def test_extract_handler_extracts_persists_and_enqueues_transcribe() -> None:
         calls.append((path, track_index, content_hash))
         return Path(f"/cache/audio/{content_hash}.wav")
 
-    asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     # extractor was driven with the resolved source path, the selected
     # audio-track index, and the content-hash cache key.
@@ -147,7 +162,9 @@ def test_extract_handler_selects_track_via_policy() -> None:
         seen.append(track_index)
         return Path(f"/cache/{content_hash}.wav")
 
-    asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     # Arabic track (audio-rank index 1) is selected, not the default eng.
     assert seen == [1]
@@ -164,7 +181,9 @@ def test_extract_handler_missing_source_path_fails_non_retryable() -> None:
     async def fake_extract(*_a: object, **_k: object) -> Path:  # pragma: no cover
         raise AssertionError("extractor must not run with no source path")
 
-    asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     assert stage_db.processing_jobs[9].state == "failed"
     err = json.loads(stage_db.processing_jobs[9].error or "{}")
@@ -185,7 +204,9 @@ def test_extract_handler_no_audio_tracks_fails_non_retryable() -> None:
     async def fake_extract(*_a: object, **_k: object) -> Path:  # pragma: no cover
         raise AssertionError("extractor must not run with no audio tracks")
 
-    asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     assert stage_db.processing_jobs[10].state == "failed"
     err = json.loads(stage_db.processing_jobs[10].error or "{}")
@@ -206,7 +227,9 @@ def test_extract_handler_ffmpeg_failure_is_retryable() -> None:
     async def fake_extract(*_a: object, **_k: object) -> Path:
         raise ExtractError("ffmpeg_decode", returncode=183, stderr_tail="boom")
 
-    asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     # attempts(1) < max_attempts(3) and the error is retryable → pending.
     assert stage_db.processing_jobs[11].state == "pending"
@@ -238,7 +261,9 @@ def test_extract_handler_video_vanished_midflight_is_terminal() -> None:
 
     with _pytest.MonkeyPatch.context() as mp:
         mp.setattr(_extract_mod, "commit_extract", vanished_commit)
-        asyncio.run(extract_handler(stage_db, job, run_extract=fake_extract))
+        asyncio.run(
+            extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+        )
 
     # terminal failure, non-retryable, with the dedicated kind — and
     # crucially still on attempt 1 (no wasted retry).
@@ -261,11 +286,15 @@ def test_extract_handler_idempotent_on_rerun() -> None:
 
     job1 = make_job(job_id=12, video_id=video_id, stage=Stage.EXTRACT)
     _seed_claimed_job(stage_db, job_id=12, video_id=video_id)
-    asyncio.run(extract_handler(stage_db, job1, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job1, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     job2 = make_job(job_id=13, video_id=video_id, stage=Stage.EXTRACT)
     _seed_claimed_job(stage_db, job_id=13, video_id=video_id)
-    asyncio.run(extract_handler(stage_db, job2, run_extract=fake_extract))
+    asyncio.run(
+        extract_handler(stage_db, job2, run_extract=fake_extract, requires_file=_file_backend)
+    )
 
     assert stage_db.processing_jobs[12].state == "done"
     assert stage_db.processing_jobs[13].state == "done"
@@ -275,3 +304,98 @@ def test_extract_handler_idempotent_on_rerun() -> None:
         pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.TRANSCRIBE.value
     ]
     assert len(transcribe_rows) == 1
+
+
+# ---- the WAV only for a backend that reads a file (2026-11-02) ----------
+
+
+def test_streaming_backend_extract_writes_nothing_and_finishes(tmp_path: Path) -> None:
+    """whisper-mlx streams: the job is done, no ffmpeg, no file, no audio_cache row,
+    and the FSM and TRANSCRIBE enqueue move on as after a real extract."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "1" * 64
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
+    track_id = _seed_audio_track(stage_db, video_id=video_id)
+    job = make_job(job_id=31, video_id=video_id, stage=Stage.EXTRACT)
+    _seed_claimed_job(stage_db, job_id=31, video_id=video_id)
+
+    async def fake_extract(*_a: object, **_k: object) -> Path:  # pragma: no cover
+        raise AssertionError("no WAV for a streaming backend")
+
+    with capture_logs() as logs:
+        asyncio.run(
+            extract_handler(
+                stage_db, job, run_extract=fake_extract, requires_file=_streaming_backend
+            )
+        )
+
+    assert stage_db.processing_jobs[31].state == "done"
+    assert chash not in stage_db.audio_cache
+    assert stage_db.audio_tracks[track_id].last_extracted_at is None
+    assert not list(tmp_path.iterdir())
+    assert stage_db.videos[video_id].state == "audio_extracted"
+    assert any(
+        pj.video_id == video_id and pj.stage == Stage.TRANSCRIBE.value
+        for pj in stage_db.processing_jobs.values()
+    )
+    assert [e for e in logs if e["event"] == "extract_skipped_streaming_backend"], logs
+
+
+@pytest.mark.parametrize("dialect", ["postgres", "sqlite"])
+def test_streaming_backend_skip_leaves_handled_transcription_alone(dialect: str) -> None:
+    """A video already transcribed gets no new transcribe job from the skip."""
+    stage_db = StageDB(dialect=dialect)
+    chash = "2" * 64
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
+    track_id = _seed_audio_track(stage_db, video_id=video_id)
+    stage_db.seed_transcript(video_id=video_id, audio_track_id=track_id, is_active=True)
+    job = make_job(job_id=32, video_id=video_id, stage=Stage.EXTRACT)
+    _seed_claimed_job(stage_db, job_id=32, video_id=video_id)
+
+    async def fake_extract(*_a: object, **_k: object) -> Path:  # pragma: no cover
+        raise AssertionError("no WAV for a streaming backend")
+
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_streaming_backend)
+    )
+
+    assert stage_db.processing_jobs[32].state == "done"
+    assert stage_db.videos[video_id].state == "audio_extracted"
+    assert not any(pj.stage == Stage.TRANSCRIBE.value for pj in stage_db.processing_jobs.values())
+
+
+def test_file_backend_extract_writes_the_wav(tmp_path: Path) -> None:
+    """openai-api reads a file: the WAV is written and recorded in audio_cache."""
+    stage_db = StageDB(dialect="postgres")
+    chash = "3" * 64
+    video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
+    _seed_audio_track(stage_db, video_id=video_id)
+    job = make_job(job_id=33, video_id=video_id, stage=Stage.EXTRACT)
+    _seed_claimed_job(stage_db, job_id=33, video_id=video_id)
+
+    async def fake_extract(path: str, track_index: int, *, content_hash: str) -> Path:
+        dest = tmp_path / f"{content_hash}.wav"
+        dest.write_bytes(b"RIFF")
+        return dest
+
+    asyncio.run(
+        extract_handler(stage_db, job, run_extract=fake_extract, requires_file=_file_backend)
+    )
+
+    assert (tmp_path / f"{chash}.wav").exists()
+    assert stage_db.audio_cache[chash].path == (tmp_path / f"{chash}.wav").as_posix()
+    assert stage_db.processing_jobs[33].state == "done"
+    assert stage_db.videos[video_id].state == "audio_extracted"
+
+
+def test_configured_backend_decides_whether_a_file_is_needed() -> None:
+    """The default seam reads the configured backend: whisper-mlx (the default)
+    streams; openai-api, the backend that declares requires_file, needs the WAV."""
+    from types import SimpleNamespace
+
+    from maktaba_pipeline.stt.transcribe import configured_backend_requires_file
+
+    assert configured_backend_requires_file() is False
+    for name in ("whisper-mlx", "faster-whisper"):
+        assert configured_backend_requires_file(SimpleNamespace(stt={"backend": name})) is False
+    assert configured_backend_requires_file(SimpleNamespace(stt={"backend": "openai-api"}))

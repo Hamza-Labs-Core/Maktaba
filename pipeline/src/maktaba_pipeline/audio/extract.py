@@ -43,6 +43,7 @@ __all__ = [
     "StreamHandle",
     "build_ffmpeg_args",
     "commit_extract",
+    "commit_extract_skipped",
     "extract_to_file",
     "load_selected_track",
     "stream_pcm",
@@ -513,6 +514,66 @@ async def commit_extract(
         video_id=str(video_id),
         audio_track_id=audio_track_id,
         new_state=str(new_state),
+    )
+    return str(new_state)
+
+
+_TRANSCRIPTION_HANDLED_SQL = (
+    "SELECT 1 WHERE EXISTS (SELECT 1 FROM transcripts WHERE video_id = $1 AND is_active)"
+    " OR EXISTS (SELECT 1 FROM processing_jobs WHERE subject_kind = 'video'"
+    " AND subject_id = $1 AND stage = 'transcribe'"
+    " AND state IN ('pending', 'claimed', 'running', 'resuming', 'paused'))"
+)
+
+
+async def commit_extract_skipped(
+    db: _ExtractDB,
+    *,
+    video_id: UUID,
+    audio_track_id: int,
+    content_hash: str,
+) -> str:
+    """Finish an EXTRACT job without writing a WAV: the backend streams.
+
+    Everything a finished extract does downstream, minus the artifact: no
+    ``audio_cache`` row and no ``last_extracted_at`` stamp (no file exists), but
+    the FSM still advances ``PROBED -> AUDIO_EXTRACTED`` and TRANSCRIBE is
+    still enqueued, so nothing waits on an extract that wrote nothing. The
+    enqueue is left out when the video's transcription is already handled
+    (an active transcript or a live transcribe job, the probe's #267 rule):
+    re-queueing those would only refill the GPU queue.
+    """
+    from ..db.jobs import Stage as _JobStage  # noqa: PLC0415
+    from ..db.jobs import enqueue  # noqa: PLC0415
+    from ..domain.states import Outcome, State, Trigger  # noqa: PLC0415
+    from ..log import get_logger  # noqa: PLC0415
+    from ..orchestrator.advance import advance_after_stage  # noqa: PLC0415
+
+    log = get_logger()
+    state_row = await db.fetchrow("SELECT state FROM videos WHERE id = $1", video_id)
+    if state_row is None:
+        raise LookupError(f"video {video_id} not found")
+    current_state = State(state_row["state"])
+    if current_state == State.PROBED:
+        new_state = await advance_after_stage(db, video_id, Trigger.EXTRACT, Outcome.OK, log=log)
+    else:
+        new_state = current_state
+
+    handled = await db.fetchrow(_TRANSCRIPTION_HANDLED_SQL, video_id) is not None
+    if not handled:
+        await enqueue(
+            _as_job_db(db),
+            video_id=video_id,
+            stage=_JobStage.TRANSCRIBE,
+            priority=100,
+            payload={"audio_track_id": audio_track_id, "content_hash": content_hash},
+        )
+    log.info(
+        "extract_skipped_streaming_backend",
+        video_id=str(video_id),
+        audio_track_id=audio_track_id,
+        new_state=str(new_state),
+        transcribe_enqueued=not handled,
     )
     return str(new_state)
 
