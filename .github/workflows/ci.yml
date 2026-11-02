@@ -254,6 +254,9 @@ jobs:
     # the build job for any Apple change; the Player's UI tests for the Player's
     needs: [changes]
     if: needs.changes.outputs.apple_apps == 'true' || needs.changes.outputs.apple_player_ui == 'true'
+    permissions:
+      contents: read
+      actions: read # a UI test shard fetches the build's artifact as soon as it is uploaded
     uses: ./.github/workflows/_apple-apps.yml
     with:
       build: ${{ needs.changes.outputs.apple_apps == 'true' }}

@@ -154,12 +154,19 @@ jobs:
           retention-days: 1
           compression-level: 1
 
+  # Each shard starts beside the builds, not after them: its simulator boots and settles while
+  # the app builds. A simulator made for the run is busy for minutes after it boots, and a test
+  # in that time ran slowly enough to fail on time (CI: an accessibility audit "failed to
+  # complete in time" five to eight minutes after the simulator was made; a page took 31 s to
+  # idle). On main each shard built for ten minutes after booting, which hid it.
   player-ui-tests:
     name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
-    needs: player-ui-build
     if: inputs.player_ui
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # the build's artifact, as soon as it is uploaded
     strategy:
       fail-fast: false
       matrix:
@@ -180,6 +187,69 @@ jobs:
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
 
+      - name: Make, boot and settle the simulator
+        run: |
+          set -euo pipefail
+          device="${{ matrix.device }}" shard="${{ matrix.shard }}"
+          mkdir -p "$SHOTS" "$RESULTS" "$PRODUCTS"
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+          # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
+          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
+          import json, re, sys
+          want = {'iphone': r'^iPhone (\d+)$', 'ipad': r'^iPad Pro 11-inch \(M(\d+)\)$'}[sys.argv[1]]
+          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
+          print(max(t)[1])" "$device")
+          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard" "$devtype" "$runtime")
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          # the on-screen keyboard shows, as on a phone (PlayerSignInKeyboardUITests measures
+          # fields against it): no hardware keyboard, and the software one not minimized when
+          # keys are typed (XCUITest types keys)
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcrun simctl ui "$udid" appearance dark
+          # the keyboard types only what a test types: no suggestions, autocorrection or
+          # capitals of its own, no slide-to-type introduction over the keys (CI: the home's
+          # address in the picker came out with its port three times)
+          for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
+                     KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
+            xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
+          done
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
+          # settled: the runner's processors mostly idle on three 5-second looks running (the
+          # simulator's first-boot work done). Each look, with the busiest processes, is kept
+          # with the results. Not settled in 12 minutes: the tests run anyway, and the log says so.
+          settle="$RESULTS/$device-$shard-settle.log"
+          start=$(date +%s) quiet=0
+          while :; do
+            look=$(top -l 2 -s 5 -n 4 -o cpu -stats command,cpu)
+            idle=$(printf '%s\n' "$look" | awk '/^CPU usage/ {v=$7} END {sub("%","",v); print int(v)}')
+            busiest=$(printf '%s\n' "$look" | awk '/^COMMAND/ {n++; next} n==2 && NF {printf "%s %s; ", $1, $2}')
+            took=$(( $(date +%s) - start ))
+            echo "t=${took}s idle=${idle}% ${busiest}" | tee -a "$settle"
+            if [ "$idle" -ge 60 ]; then quiet=$((quiet + 1)); else quiet=0; fi
+            if [ "$quiet" -ge 3 ]; then echo "settled at ${took}s" | tee -a "$settle"; break; fi
+            if [ "$took" -ge 720 ]; then echo "not settled at ${took}s: running the tests" | tee -a "$settle"; break; fi
+          done
+
+      # The build's artifact, once its job has uploaded it (a failed build fails this shard).
+      - name: Wait for the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name="player-ui-build-${{ matrix.device }}" job="Player UI tests build (${{ matrix.device }})"
+          start=$(date +%s)
+          while :; do
+            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$name" --jq '.total_count' || echo 0)
+            if [ "$found" -ge 1 ]; then echo "built after $(( $(date +%s) - start ))s here"; break; fi
+            ended=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              --jq ".jobs[] | select(.name | endswith(\"$job\")) | .conclusion // \"\"" || true)
+            case "$ended" in failure|cancelled|timed_out) echo "the build ended: $ended"; exit 1 ;; esac
+            if [ $(( $(date +%s) - start )) -ge 1800 ]; then echo "no build in 30 minutes"; exit 1; fi
+            sleep 15
+          done
+
       - uses: actions/download-artifact@v8.0.1
         with:
           name: player-ui-build-${{ matrix.device }}
@@ -194,46 +264,7 @@ jobs:
             iphone) scheme="Maktaba Player" target="Maktaba Player UITests" ;;
             ipad) scheme="Maktaba Player iPad" target="Maktaba Player iPad UITests" ;;
           esac
-          mkdir -p "$SHOTS" "$RESULTS" "$PRODUCTS"
-          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
-          # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
-          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
-          import json, re, sys
-          want = {'iphone': r'^iPhone (\d+)$', 'ipad': r'^iPad Pro 11-inch \(M(\d+)\)$'}[sys.argv[1]]
-          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
-          print(max(t)[1])" "$device")
-          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard" "$devtype" "$runtime")
-          cleanup() {
-            # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
-            # sign-ins), kept with the results, read once the tests are done: a failed wait
-            # shows what the app did meanwhile. Read after, not streamed: a stream makes each
-            # line the app's frameworks log cost while the tests run (CI: a stream at info
-            # took accessibility's per-element lines, snapshots took 15 s, an audit timed out)
-            xcrun simctl spawn "$udid" log show --style compact --info --debug \
-              --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$device-$shard-app.log" || true
-            xcrun simctl shutdown "$udid" || true
-            xcrun simctl delete "$udid" || true
-          }
-          trap cleanup EXIT
-          # the on-screen keyboard shows, as on a phone (PlayerSignInKeyboardUITests measures
-          # fields against it): no hardware keyboard, and the software one not minimized when
-          # keys are typed (XCUITest types keys)
-          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
-          # booting while the build is unpacked
-          xcrun simctl bootstatus "$udid" -b > /dev/null &
-          booting=$!
           tar -xf "$RUNNER_TEMP/player-ui-build.tar" -C "$PRODUCTS"
-          wait "$booting"
-          xcrun simctl ui "$udid" appearance dark
-          # the keyboard types only what a test types: no suggestions, autocorrection or
-          # capitals of its own, no slide-to-type introduction over the keys (CI: the home's
-          # address in the picker came out with its port three times)
-          for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
-                     KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
-            xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
-          done
-          xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
-          xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
           # this shard's tests: longest first, to the shard with the least time so far
           only=()
           while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
@@ -241,7 +272,20 @@ jobs:
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "id=$udid" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+
+      # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
+      # sign-ins), kept with the results, read once the tests are done: a failed wait
+      # shows what the app did meanwhile. Read after, not streamed: a stream makes each
+      # line the app's frameworks log cost while the tests run (CI: a stream at info
+      # took accessibility's per-element lines, snapshots took 15 s, an audit timed out)
+      - name: Read the app's log and delete the simulator
+        if: always() && env.UDID != ''
+        run: |
+          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log" || true
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID" || true
 
       - name: Keep the screenshots, results and the app's log
         if: always()
