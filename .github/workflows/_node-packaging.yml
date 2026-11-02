@@ -10,6 +10,10 @@ name: Node packaging
 
 on:
   workflow_call:
+    # each part when its files changed (ci.yml, from .github/ci-paths.yml)
+    inputs:
+      packaging: { type: boolean, default: true }
+      release_venv: { type: boolean, default: true }
 
 permissions:
   contents: read
@@ -17,6 +21,7 @@ permissions:
 jobs:
   wheel:
     name: wheel + archive
+    if: inputs.packaging || inputs.release_venv
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     env:
@@ -134,6 +139,7 @@ jobs:
 
   installer-tests:
     name: installer tests (${{ matrix.os }})
+    if: inputs.packaging
     strategy:
       fail-fast: false
       matrix:
@@ -186,6 +192,7 @@ jobs:
   # formula and cask (homebrew-tap.sh), filled, parsed and pushed to a scratch tap.
   package-repos:
     name: package repositories (apt, dnf, Homebrew tap)
+    if: inputs.packaging
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -215,6 +222,7 @@ jobs:
 
   install-linux:
     name: install from the archive (linux, --system)
+    if: inputs.packaging
     needs: [wheel]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
@@ -242,6 +250,7 @@ jobs:
 
   install-macos:
     name: install from the archive (macos)
+    if: inputs.packaging
     needs: [wheel]
     runs-on: macos-15
     timeout-minutes: 15
@@ -328,6 +337,7 @@ jobs:
   # package checked against its hash; the venv's pipeline must say the wheel's version.
   release-venv:
     name: release venv as a plain server's update builds it (linux)
+    if: inputs.release_venv
     needs: [wheel]
     runs-on: ubuntu-22.04
     timeout-minutes: 25
@@ -369,6 +379,7 @@ jobs:
   # space; the search extra imports; a second run has nothing to do.
   venv-windows:
     name: app venv from the wheel (windows)
+    if: inputs.packaging
     needs: [wheel]
     runs-on: windows-latest
     timeout-minutes: 45
@@ -456,6 +467,7 @@ jobs:
 
   install-windows:
     name: install from the archive (windows)
+    if: inputs.packaging
     needs: [wheel]
     runs-on: windows-2022
     timeout-minutes: 20
