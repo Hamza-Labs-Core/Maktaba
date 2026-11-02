@@ -96,8 +96,7 @@ final class StatusUITests: XCTestCase {
     private func signInByCode(byCode label: String = "With a code") {
         let field = app.textFields["picker.address"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(home.url)
+        field.typeExactly(home.url, in: app)
         app.buttons["picker.connect"].tap()
         let byCode = app.buttons[label]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10))

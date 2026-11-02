@@ -16,6 +16,12 @@ struct PlayerApp: App {
     init() {
         // a crash at an earlier launch is logged and kept on this device
         CrashReports.shared.start()
+        #if os(macOS)
+        // the View menu's full-screen item is the Player's own (`PlayerViewCommands`: in the
+        // app's language, on ⌃⌘F, Exit while full screen); without this AppKit adds its own
+        // beside it and the menu shows two
+        UserDefaults.standard.register(defaults: ["NSFullScreenMenuItemEverywhere": false])
+        #endif
     }
 
     var body: some Scene {

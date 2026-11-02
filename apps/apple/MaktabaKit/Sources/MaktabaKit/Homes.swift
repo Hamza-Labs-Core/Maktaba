@@ -202,7 +202,7 @@ public final class AppSession {
                 homeSession: URLSession = .shared, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
                 discovery: (any HomeDiscovering)? = nil) {
         self.app = app
-        self.discovery = discovery ?? BonjourDiscovery()
+        self.discovery = discovery ?? BonjourDiscovery.forThisApp()
         self.clock = clock
         self.defaults = defaults
         self.probe = probe

@@ -6,7 +6,7 @@ import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.harness.Window
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -39,10 +40,10 @@ class LibrariesPanesTest {
     @Before fun routes() = home.answerLibraries()
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun pageTitled(name: String) =
-        compose.waitUntil(5_000) {
+        compose.settledUntil(5_000) {
             compose.onAllNodes(hasText(name) and hasAnyAncestorTagged("library-page")).fetchSemanticsNodes().isNotEmpty()
         }
 
