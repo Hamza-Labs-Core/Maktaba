@@ -210,9 +210,15 @@ final class PlayerMacMenuUITests: XCTestCase {
         // Click the item's point from the bar, not from the item: a coordinate on the item finds
         // it again by its identifier, and every SwiftUI menu item's is "menuAction:", so the
         // click could land on another item.
+        // The pointer goes there in a straight line from the bar item, and a pointer over another
+        // bar item while a menu is open opens that one instead (to Home, View's first item, the
+        // line from View crossed Playback and the click landed in the Playback menu). So the
+        // point is straight below the bar item, in the item's row: the line stays on View and
+        // its own menu.
         let at = it.frame, from = bar.frame
+        let x = min(max(from.midX, at.minX + 4), at.maxX - 4)
         bar.coordinate(withNormalizedOffset: .zero)
-            .withOffset(CGVector(dx: at.midX - from.minX, dy: at.midY - from.minY)).click()
+            .withOffset(CGVector(dx: x - from.minX, dy: at.midY - from.minY)).click()
     }
 
     /// The window covers its screen (the menu bar hides in full screen).
