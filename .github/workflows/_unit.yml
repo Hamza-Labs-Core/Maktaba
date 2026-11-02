@@ -4,12 +4,20 @@ name: Unit
 
 on:
   workflow_call:
+    # each part when its files changed (ci.yml, from .github/ci-paths.yml)
+    inputs:
+      go: { type: boolean, default: true }
+      pipeline: { type: boolean, default: true }
+      web: { type: boolean, default: true }
+      tokens: { type: boolean, default: true }
+      desktop_shell: { type: boolean, default: true }
 
 permissions:
   contents: read
 
 jobs:
   unit:
+    if: inputs.go || inputs.pipeline || inputs.web || inputs.tokens
     runs-on: ubuntu-22.04
     # 5.5-11.6 min on main (2026-10-22), plus "Set up pnpm", whose
     # self-installer has stalled for up to 7 min (the lint gate's note):
@@ -19,6 +27,7 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - uses: actions/setup-go@v6.4.0
+        if: inputs.go
         with:
           go-version-file: api/go.mod
           cache-dependency-path: |
@@ -27,46 +36,63 @@ jobs:
             cloud/go.sum
 
       - uses: actions/setup-python@v6.2.0
+        if: inputs.pipeline
         with:
           python-version-file: pipeline/.python-version
 
       - uses: astral-sh/setup-uv@v8.1.0
+        if: inputs.pipeline
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
       - uses: pnpm/action-setup@v6.0.8
+        if: inputs.web || inputs.tokens
         with:
           version: 9.15.4
           run_install: false
 
       - uses: actions/setup-node@v6.4.0
+        if: inputs.web || inputs.tokens
         with:
           node-version-file: web/.nvmrc
           cache: pnpm
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install web deps
+        if: inputs.web
         working-directory: web
         run: pnpm install --frozen-lockfile
 
       - name: Install pipeline deps
+        if: inputs.pipeline
         working-directory: pipeline
         run: uv sync --frozen --all-extras
 
-      - name: Run unit tier
-        run: make test-unit
+      - name: Run unit tier (Go)
+        if: inputs.go
+        run: make test-unit-go
+
+      - name: Run unit tier (pipeline)
+        if: inputs.pipeline
+        run: make test-unit-py
+
+      - name: Run unit tier (web)
+        if: inputs.web
+        run: make test-unit-web
 
       # Story 48.2: one token source. Fails when the committed Tokens.swift /
       # Tokens.kt are stale against web/design-system/tokens/, when
       # web/src/styles/tokens.css drifts from the JSON, or when a text colour is
       # under 4.5:1 on its background (light and dark).
       - name: Design tokens are current
+        if: inputs.tokens
         run: make test-tokens
 
       # Epic 42.5: the player edition of the web app builds with no server page
       # code (vite.config.ts playerBundleCheck fails the build if any is left).
       - name: Web player edition has no server pages
+        if: inputs.web
         working-directory: web
         run: pnpm build:player
 
@@ -74,6 +100,7 @@ jobs:
       # GO_MODULES set, so `make test-unit` does not reach it. Run its
       # unit tier explicitly so the relay/api/worker code is gated too.
       - name: Run cloud unit tests
+        if: inputs.go
         working-directory: cloud
         run: go test -short -count=1 ./...
 
@@ -81,6 +108,7 @@ jobs:
   # inference with drive letters and UNC, crypto vectors, stage selection, the join
   # client) run there too; Linux runs the whole suite above.
   pipeline-cluster-windows:
+    if: inputs.pipeline
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
@@ -104,6 +132,7 @@ jobs:
   # Epic 36: the Mac app shell (apps/desktop, Tauri 2): menu-bar status,
   # login item, setup-step runner. macOS only (SMAppService, launchd).
   desktop-shell:
+    if: inputs.desktop_shell
     runs-on: macos-latest
     timeout-minutes: 20
     steps:
@@ -131,6 +160,7 @@ jobs:
   # Epic 38: the same shell on Windows: the sign-in task, the server agent's
   # loop and stop event, setup steps started without a console window.
   desktop-shell-windows:
+    if: inputs.desktop_shell
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -164,6 +194,7 @@ jobs:
   # `maktaba-server service`, the runtime copy, the tray without a
   # StatusNotifier host. No other PR job builds the Linux shell.
   desktop-shell-linux:
+    if: inputs.desktop_shell
     runs-on: ubuntu-22.04
     timeout-minutes: 30
     steps:
