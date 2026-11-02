@@ -11,6 +11,8 @@ struct RemoteApp: App {
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
 
     init() {
+        // the launch's first log lines: the app and its version
+        Log.launched()
         // a crash at an earlier launch is logged and kept on this device
         CrashReports.shared.start()
     }

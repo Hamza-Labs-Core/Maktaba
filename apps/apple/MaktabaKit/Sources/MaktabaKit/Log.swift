@@ -21,6 +21,17 @@ public enum Log {
     /// Crash and hang reports MetricKit delivers.
     public static let crash = Logger(subsystem: subsystem, category: "crash")
 
+    /// Every launch's first lines: an info line with the app and its version, a debug line
+    /// with how many launch arguments it was given. The UI tests' CI keeps the app's log and
+    /// fails when it lacks either (tools/apple/check-app-log.py), so the kept log stays whole:
+    /// info and debug too, not the errors alone.
+    public static func launched(bundle: Bundle = .main) {
+        let version = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
+        let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "-"
+        session.info("launched \(subsystem, privacy: .public) \(version, privacy: .public) (\(build, privacy: .public))")
+        session.debug("launch arguments: \(CommandLine.arguments.count - 1, privacy: .public)")
+    }
+
     /// A path as a route, every segment that may name something (an id, a code, a stage
     /// with a number) taken out: `/api/videos/01J…/poster` → `/api/videos/:id/poster`.
     public static func route(_ path: String) -> String {

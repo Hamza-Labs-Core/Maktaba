@@ -164,12 +164,17 @@ jobs:
           cleanup() { for u in ${made[@]+"${made[@]}"}; do xcrun simctl shutdown "$u" || true; xcrun simctl delete "$u" || true; done; }
           trap cleanup EXIT
           status=0
-          run() { # scheme, test target, device-type prefix
-            local udid args=()
+          run() { # scheme, test target, device-type prefix, the app's bundle id
+            local udid args=() log="$RESULTS/$3-${{ matrix.shard }}-app.log"
             udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$3-${{ matrix.shard }}" "$(devtype "$3")" "$runtime")
             made+=("$udid")
             xcrun simctl boot "$udid"
             xcrun simctl ui "$udid" appearance dark
+            # the simulator keeps the app's info and debug lines too (its subsystem is its
+            # bundle id; a parent's config is not inherited): by default `log show` finds its
+            # errors and notices alone. Kept, not streamed: a live stream slows the simulator
+            # (accessibility audits timed out), and the other subsystems stay as they are
+            xcrun simctl spawn "$udid" log config --subsystem "$4" --mode "level:debug,persist:debug"
             for c in "${only[@]}"; do args+=(-only-testing "$2/$c"); done
             echo "::group::$1 on $3"
             TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "$1" \
@@ -177,14 +182,17 @@ jobs:
               -resultBundlePath "$RESULTS/$3-${{ matrix.shard }}.xcresult" "${args[@]}" || status=1
             echo "::endgroup::"
             # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
-            # sign-ins), kept with the results: a failed wait shows what the app did meanwhile
+            # sign-ins), kept with the results: a failed wait shows what the app did meanwhile.
+            # Read once the tests are done (the simulator is the run's own: its whole life),
+            # then checked whole: every launch's info and debug lines are in it
             xcrun simctl spawn "$udid" log show --style compact --info --debug \
-              --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$3-${{ matrix.shard }}-app.log" || true
+              --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$log" || true
+            python3 ../../tools/apple/check-app-log.py "$log" || status=1
             xcrun simctl shutdown "$udid" || true
           }
           case "${{ matrix.device }}" in
-            iphone) run "Maktaba Player" "Maktaba Player UITests" "iphone" ;;
-            ipad) run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad" ;;
+            iphone) run "Maktaba Player" "Maktaba Player UITests" "iphone" "com.hamzalabs.maktaba.player" ;;
+            ipad) run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad" "com.hamzalabs.maktaba.player.tablet" ;;
           esac
           exit $status
 
@@ -201,6 +209,12 @@ jobs:
           # a push to main measures coverage for the affected-tests map
           cover=()
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then cover=(-enableCodeCoverage YES); fi
+          mkdir -p "$RESULTS"
+          # the app's own log, whole (info and debug too), as on the iPhone and iPad: the
+          # runner keeps its subsystem's lines while it runs, read once the tests are done
+          sudo log config --subsystem com.hamzalabs.maktaba.player.mac --mode "level:debug,persist:debug"
+          start=$(date '+%Y-%m-%d %H:%M:%S')
+          status=0
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
             -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
@@ -208,7 +222,11 @@ jobs:
             -resultBundlePath "$RESULTS/mac.xcresult" \
             -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
             -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
-            -only-testing "Maktaba Player Mac UITests"
+            -only-testing "Maktaba Player Mac UITests" || status=1
+          log show --start "$start" --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
+          python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
+          exit $status
 
       # tools/affected-tests: which source files the Mac Player's tests execute. The iPhone and
       # iPad runs are not measured (they take most of an hour as it is): their tests are
