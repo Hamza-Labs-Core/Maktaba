@@ -222,6 +222,7 @@ jobs:
             -resultBundlePath "$RESULTS/mac.xcresult" \
             -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
             -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
+            -only-testing "Maktaba Player Mac Tests/PlayerLaunchLog" \
             -only-testing "Maktaba Player Mac UITests" || status=1
           log show --start "$start" --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true

@@ -42,6 +42,9 @@ def problems(text: str) -> tuple[list[str], dict[str, int]]:
             launched |= m["type"] == INFO and bool(LAUNCHED.match(m["message"]))
             arguments |= m["type"] == DEBUG and bool(ARGUMENTS.match(m["message"]))
     found = []
+    if not types:
+        # not a cut-down log: the app never ran (the build or the simulator failed first)
+        return ["no line of the app at all: it never ran (did the build or the simulator fail before the tests?)"], {}
     if not launched:
         found.append('no info line "launched <bundle id> <version>" (Log.launched): info lines were not kept')
     if not arguments:
@@ -67,8 +70,9 @@ def self_test() -> None:
     assert problems(info.replace("[com.hamzalabs.maktaba.player:", "[com.apple.foo:") + debug)[0]
     # the iPad's and the Mac's bundle ids count
     assert problems(info.replace("player 1.4", "player.tablet 1.4") + debug)[0] == []
-    # an empty log (log show failed, the app never ran)
-    assert len(problems("")[0]) == 2
+    # an empty log: the app never ran (a failed build), said as such, not as lost lines
+    found, _ = problems(head)
+    assert len(found) == 1 and "never ran" in found[0], found
     print("check-app-log: self-test passed")
 
 
@@ -93,7 +97,8 @@ def main() -> int:
         if found:
             status = 1
             for p in found:
-                print(f"::error file={path}::the app's log is not whole: {p} ({counts})", file=sys.stderr)
+                what = p if not types else f"the app's log is not whole: {p}"
+                print(f"::error file={path}::{what} ({counts})", file=sys.stderr)
         else:
             print(f"{path}: whole ({counts})")
     return status

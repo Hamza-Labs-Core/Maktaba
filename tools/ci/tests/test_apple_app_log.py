@@ -58,6 +58,15 @@ def test_an_error_only_log_fails(tmp_path: Path) -> None:
     assert "info" in out.stderr and "debug" in out.stderr
 
 
+def test_a_log_with_no_line_of_the_app_says_it_never_ran(tmp_path: Path) -> None:
+    """A failed build leaves an empty log: that is not blamed on lost info/debug lines."""
+    log = tmp_path / "app.log"
+    log.write_text("Timestamp               Ty Process[PID:TID]\n", encoding="utf-8")
+    out = subprocess.run([sys.executable, str(CHECK), str(log)], capture_output=True, text=True, check=False)
+    assert out.returncode == 1
+    assert "never ran" in out.stderr and "not whole" not in out.stderr
+
+
 def test_the_app_writes_the_launch_lines() -> None:
     log = (ROOT / "apps/apple/MaktabaKit/Sources/MaktabaKit/Log.swift").read_text(encoding="utf-8")
     assert 'session.info("\\(lines.info' in log and '"launched \\(subsystem) ' in log
@@ -83,6 +92,8 @@ def test_mac_keeps_info_and_debug() -> None:
     assert 'log show --start "$start" --style compact --info --debug' in script
     assert "log stream" not in script
     assert 'check-app-log.py "$RESULTS/mac-app.log" || status=1' in script
+    # the hosted test that reads the launch line from the app's own log runs here
+    assert '-only-testing "Maktaba Player Mac Tests/PlayerLaunchLog"' in script
 
 
 def test_the_logs_are_uploaded() -> None:
