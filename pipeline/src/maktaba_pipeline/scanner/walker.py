@@ -55,8 +55,11 @@ DEFAULT_IGNORE_BASENAMES: tuple[str, ...] = (
 
 #: Sidecar directories the scanner owns and must not recurse into.
 #: ``.maktaba/`` houses cached intermediate artefacts that live next to
-#: the source media; revisiting them would loop.
-DEFAULT_IGNORE_DIRNAMES: frozenset[str] = frozenset({".maktaba"})
+#: the source media; revisiting them would loop. ``@eaDir`` is a Synology NAS's index
+#: folder (its own thumbnails and metadata, a folder per media file), never library
+#: content. Hidden folders (``.thumbs/``, where some download setups keep thumbnails)
+#: are skipped by the dot rule in :func:`_process_entry`.
+DEFAULT_IGNORE_DIRNAMES: frozenset[str] = frozenset({".maktaba", "@eaDir"})
 
 
 class _Logger(Protocol):
