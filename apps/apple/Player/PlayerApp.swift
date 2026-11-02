@@ -23,6 +23,8 @@ struct PlayerApp: App {
         // when launched with its flag)
         TextSizeHook.start()
         #endif
+        // once per process, before any view: the UI tests' first-run reset of the walkthrough
+        PermissionsModel.applyLaunchArguments()
         #if os(macOS)
         // the View menu's full-screen item is the Player's own (`PlayerViewCommands`: in the
         // app's language, on ⌃⌘F, Exit while full screen); without this AppKit adds its own

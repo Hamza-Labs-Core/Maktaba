@@ -39,6 +39,13 @@ final class PermissionsUITests: XCTestCase {
         shot("allowed")
         app.buttons["permissions.continue"].tap()
         XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5))
+        // back from the Home Screen the check runs again: closed this run stays closed (the
+        // launch reset once forgot "seen" each time the app's body ran)
+        XCUIDevice.shared.press(.home)
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        sleep(2)
+        XCTAssertFalse(walkthrough.exists, "closed this run: not shown again on coming back")
 
         app.terminate()
         launch("granted", reset: false)
