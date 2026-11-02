@@ -215,6 +215,10 @@ jobs:
             xcrun simctl delete "$udid" || true
           }
           trap cleanup EXIT
+          # the on-screen keyboard shows, as on a phone (PlayerSignInKeyboardUITests measures
+          # fields against it): no hardware keyboard, and the software one not minimized when
+          # keys are typed (XCUITest types keys)
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
           # booting while the build is unpacked
           xcrun simctl bootstatus "$udid" -b > /dev/null &
           booting=$!
@@ -229,25 +233,7 @@ jobs:
             xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
           done
           xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
-          # A simulator just booted keeps working for minutes (CI: each shard's first test, the
-          # longest, signed in at half speed and timed out waiting for its page; before, the
-          # build ran in between). So the app is installed and opened once, as a test opens it
-          # (the permissions faked: no Bonjour browse, no local network question), and the
-          # tests wait for the runner's load to come down (three minutes at most).
-          app="$PRODUCTS/Products/Debug-iphonesimulator/$scheme.app"
-          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
-          xcrun simctl install "$udid" "$app"
-          xcrun simctl launch "$udid" "$bundle" -maktaba-permissions-reset -maktaba-permissions-fake granted \
-            -maktaba-session-reset > /dev/null
-          sleep 15
-          xcrun simctl terminate "$udid" "$bundle" || true
-          cores=$(sysctl -n hw.ncpu)
-          for _ in $(seq 36); do
-            load=$(sysctl -n vm.loadavg | awk '{print $2}')
-            awk -v l="$load" -v c="$cores" 'BEGIN { exit !(l < c) }' && break
-            sleep 5
-          done
-          echo "the runner's load: $load on $cores cores"
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
           # this shard's tests: longest first, to the shard with the least time so far
           only=()
           while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \

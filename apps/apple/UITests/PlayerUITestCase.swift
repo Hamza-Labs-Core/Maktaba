@@ -115,9 +115,11 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// A screenshot attached to the test, named `player-<iphone|ipad>-<language>-<name>`.
-    func shot(_ name: String) {
+    /// `wholeScreen`: the device's screen, not the app's window alone (the on-screen keyboard
+    /// is a window of its own, left out of the app's screenshot).
+    func shot(_ name: String, wholeScreen: Bool = false) {
         let full = "player-\(isPad ? "ipad" : "iphone")-\(language)-\(name)"
-        let png = app.screenshot().pngRepresentation
+        let png = (wholeScreen ? XCUIScreen.main.screenshot() : app.screenshot()).pngRepresentation
         let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
         a.name = full
         a.lifetime = .keepAlways
@@ -182,6 +184,11 @@ class PlayerUITestCase: XCTestCase {
     }
 
     // MARK: Dynamic Type
+
+    /// A launch at the smallest text size or at AX3, for a test that starts there (the size
+    /// check changes sizes in the running app instead: `setTextSize`).
+    static let smallestText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS"]
+    static let ax3Text = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
 
     /// The Dynamic Type sizes the check measures (`TextSizeHook` in the app).
     enum TextSize: String { case smallest = "XS", standard = "default", ax3 = "AX3" }
