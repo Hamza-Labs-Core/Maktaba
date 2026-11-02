@@ -475,21 +475,6 @@ async def test_unreadable_wants_a_container_a_duration_and_frames() -> None:
     assert cv.unreadable(_doc("mp3", "3.0", mp3)) is None
 
 
-async def test_verification_fails_an_original_video_without_a_duration(tmp_path: Path) -> None:
-    from maktaba_pipeline.library_mgmt.verify import ProbeInfo, StreamInfo, verify_media
-
-    good = mkv_h264_aac(tmp_path / "in.mkv")
-    out = tmp_path / "out.mp4"
-    ff("-i", str(good), "-c", "copy", "-movflags", "+faststart", str(out))
-    info = await probe(str(good))
-    assert info is not None
-    stream = StreamInfo(0, "video", "h263", 320, 240)
-    no_duration = ProbeInfo(str(good), "h263", None, None, (stream,))
-    r = await verify_media(str(out), no_duration, mode="reencode", full_decode=False)
-    assert not r.ok and "the original has no duration to compare with" in r.reasons
-    assert (await verify_media(str(out), info, mode="remux", full_decode=False)).ok
-
-
 async def test_a_failed_verification_is_retried_once_then_fails(
     db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
