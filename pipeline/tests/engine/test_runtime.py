@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -197,4 +198,47 @@ async def test_a_transaction_cancelled_in_its_begin_leaves_none_open(
             await db.execute("CREATE TABLE t (x INTEGER)")  # autocommit works again
             assert await db.fetchval("SELECT count(*) FROM t") == 0
     finally:
+        await db.close()
+
+
+@pytest.mark.asyncio
+async def test_a_transaction_cancelled_in_its_commit_ends_before_it_returns(
+    tmp_path: Path,
+) -> None:
+    """SQLite: a cancel that lands while the COMMIT waits in aiosqlite's thread must not
+    let ``transaction()`` return (and release the lock) before the COMMIT has run: the
+    connection would still be inside the transaction while other tasks go on."""
+    db = await Database.connect(f"sqlite:///{tmp_path / 'c.db'}")
+    gate = threading.Event()
+    try:
+        await db.execute("CREATE TABLE t (x INTEGER)")
+        await db._conn.create_function("hold", 0, lambda: int(gate.wait(10.0)))  # noqa: SLF001
+        queued = asyncio.Event()
+        hold: asyncio.Future[Any] | None = None
+
+        async def tx() -> None:
+            nonlocal hold
+            async with db.transaction():
+                await db.execute("INSERT INTO t VALUES (1)")
+                # busy aiosqlite's thread, so the COMMIT waits in its queue behind this
+                hold = asyncio.ensure_future(db._conn.execute("SELECT hold()"))  # noqa: SLF001
+                await asyncio.sleep(0)
+                queued.set()
+
+        task = asyncio.create_task(tx())
+        await queued.wait()
+        await asyncio.sleep(0)  # the task now waits for its COMMIT
+        task.cancel()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        assert not task.done()  # still waiting for the COMMIT, under the lock
+        gate.set()
+        await asyncio.wait({task}, timeout=10.0)
+        assert task.cancelled()
+        assert not db._conn.in_transaction  # noqa: SLF001
+        assert await db.fetchval("SELECT count(*) FROM t") == 1  # committed
+        assert hold is not None
+        await hold
+    finally:
+        gate.set()
         await db.close()

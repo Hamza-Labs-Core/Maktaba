@@ -225,10 +225,10 @@ class Database:
             try:
                 yield self._conn
             except BaseException:
-                await self._conn.execute("ROLLBACK")
+                await self._sqlite_end("ROLLBACK")
                 raise
             else:
-                await self._conn.execute("COMMIT")
+                await self._sqlite_end("COMMIT")
             finally:
                 _TX_CONN.reset(token)
 
@@ -250,6 +250,21 @@ class Database:
                 await begin
                 if self._conn.in_transaction:
                     await self._conn.execute("ROLLBACK")
+            raise
+
+    async def _sqlite_end(self, sql: str) -> None:
+        """``COMMIT`` or ``ROLLBACK``, run to its end before the lock is let go even when
+        the caller is cancelled meanwhile: a cancelled await would release the lock while
+        the statement still waits in aiosqlite's thread, so the transaction would end
+        some time after ``transaction()`` returned. The cancel goes on once it has."""
+        end = asyncio.ensure_future(self._conn.execute(sql))
+        try:
+            await asyncio.shield(end)
+        except asyncio.CancelledError:
+            # the statement's own error, or a connection closed meanwhile, must never
+            # replace the cancel (a loop that catches errors would then never stop)
+            with contextlib.suppress(Exception):
+                await end
             raise
 
     @contextlib.asynccontextmanager
