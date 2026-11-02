@@ -194,6 +194,13 @@ def test_run_hands_its_mode_to_the_stage_handlers(
         return 0
 
     monkeypatch.setattr(cli, "run", fake_run)
+    # _serve's exit leaves with os._exit when threads are still running: other tests'
+    # threads are not this worker's (counted, the run ended here with no summary)
+    before = set(cli._lingering_threads())
+    real_lingering = cli._lingering_threads
+    monkeypatch.setattr(
+        cli, "_lingering_threads", lambda: [t for t in real_lingering() if t not in before]
+    )
     argv = ["--no-engine"] if no_engine else []
     try:
         code = asyncio.run(cli._serve(_args(*argv), structlog.get_logger()))  # type: ignore[arg-type]
