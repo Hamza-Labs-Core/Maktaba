@@ -232,7 +232,28 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         signIn(timeout: 30)
     }
 
+    /// The page's audit. A grid loads its next page when its last card shows, and the audit's
+    /// smaller text sizes can show it: a page arriving while the audit measures moves every
+    /// text on the screen, and the audit calls them all "partially unsupported" (seen on CI,
+    /// with `GET /api/videos` during the audit). The audit then runs once more, on the page as
+    /// it now is (the last page loaded, nothing left to ask for), and that one must be clean.
     private func audit(_ page: String) {
+        for attempt in 1 ... 2 {
+            let (found, during) = auditOnce(page)
+            if found.isEmpty { return }
+            if attempt == 1, !during.isEmpty {
+                waitFor(timeout: 2) { false } // the new page's posters
+                continue
+            }
+            let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
+            shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
+            XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
+            return
+        }
+    }
+
+    /// One audit of the page: every issue it found, and what the app asked the home meanwhile.
+    private func auditOnce(_ page: String) -> (found: [String], during: [String]) {
         // Dynamic Type exemption, for the episode rows and a library's filter row only: the
         // audit grows the text, and what sits low on the page then moves below the screen,
         // which it reports as "partially unsupported" (on iPhone the lowest episode row fails,
@@ -261,14 +282,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         } catch {
             found.append("\(error)")
         }
-        if !found.isEmpty {
-            // what the app asked the home while the audit ran (a page that reloads under it
-            // changes every text the audit is measuring), and the page as the audit left it
-            let during = home.requests.dropFirst(asked).map { "\($0.method) \($0.path)" }
-            found.append("asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))")
-            shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
-        }
-        XCTAssertTrue(found.isEmpty, "\(page): " + found.joined(separator: "; "))
+        return (found, home.requests.dropFirst(asked).map { "\($0.method) \($0.path)" })
     }
 
     // MARK: helpers
