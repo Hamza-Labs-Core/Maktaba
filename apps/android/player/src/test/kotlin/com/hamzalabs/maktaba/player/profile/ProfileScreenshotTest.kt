@@ -27,8 +27,8 @@ import java.time.Instant
 /**
  * The Profile's screenshots (NFR-20): dark, English and Arabic, on a phone and a large tablet,
  * against the fake home: the first page, the watch history and a playlist. The shipped sections
- * (Libraries and Profile). `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * (Libraries and Profile). `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

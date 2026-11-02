@@ -38,8 +38,8 @@ import org.robolectric.annotation.GraphicsMode
  * The components' screenshots (48.16, NFR-20): each component in the dark theme, English and
  * Arabic, at the normal font and at 200 % (Android's largest, as Dynamic Type AX3 on Apple,
  * NFR-7), on a phone. Pictures come from [FakePictures]; a URL with "missing" has no poster.
- * `recordRoborazziPhoneDebug` writes the references under `src/test/screenshots`; CI's
- * `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * `recordRoborazziDebug` writes the references under `src/test/screenshots`; CI's
+ * `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

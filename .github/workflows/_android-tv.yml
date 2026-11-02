@@ -1,5 +1,6 @@
 # Reusable gate for the Android TV app (Epic 14, `apps/tv/android`): its unit tests (sign-in
-# by code, the authorized API calls, resume), Android lint, and a debug build. It builds on
+# by code, the authorized API calls, resume), Android lint, a debug build, and the release bundle,
+# unsigned, so a change R8 breaks fails here and not on the release tag (play-bundles.yml). It builds on
 # the phone apps' shared core (apps/android/core), so a change there runs this gate too.
 
 name: Android TV app
@@ -46,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+          ./gradlew --no-daemon --stacktrace :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:bundleRelease
 
       - name: Reports
         if: failure()
