@@ -39,7 +39,7 @@ const DefaultRootMaxAge = 180 * 24 * time.Hour
 
 // RootInfo says which trusted root is in use.
 type RootInfo struct {
-	Source    string    // "embedded" or the cache file path
+	Source    string    // "embedded" or the cache file's path, symlinks resolved
 	FetchedAt time.Time // when TUF last vouched for it
 }
 
