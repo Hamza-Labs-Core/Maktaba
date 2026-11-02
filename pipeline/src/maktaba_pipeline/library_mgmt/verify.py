@@ -5,7 +5,8 @@ input) is the floor; a file whose middle is corrupt passes it. This adds:
 
 - ``ffprobe -show_streams -show_format`` reads the file: a video stream (unless the
   original had none), at least as many audio streams as the original, the same width and
-  height, the same video codec for a remux, and a duration within ``max(0.5 s, 0.5 %)``;
+  height, the same video codec for a remux, and a duration within ``max(0.5 s, 0.5 %)``
+  (an original with a video stream and no duration fails: there is nothing to compare);
 - a **full decode**, ``ffmpeg -v error -xerror -i new -map 0:v:0 -map 0:a? -f null -``,
   which must exit 0 with nothing on stderr (every frame read once);
 - the **frame count** of the first video stream (``-count_packets``) within 1 of the
@@ -296,7 +297,9 @@ async def verify_media(
         if missing:
             reasons.append(f"audio codecs missing after the remux: {sorted(missing)}")
 
-    # duration
+    # duration (an original video with none cannot be compared: junk ffprobe guessed at)
+    if orig is not None and orig.video and orig.duration is None:
+        reasons.append("the original has no duration to compare with")
     if orig is not None and orig.duration is not None:
         if info.duration is None:
             reasons.append("the new file has no duration")

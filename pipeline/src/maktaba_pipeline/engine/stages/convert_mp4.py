@@ -22,7 +22,9 @@ is asked to read the new container. Nothing that depends on the words or the pic
 
 Failures (Epic 40 classes, :mod:`..failure_policy`):
 
-* the input cannot be read (``ffmpeg_decode``): fails at once, the admin decides;
+* the input cannot be read (``ffmpeg_decode``): fails at once, the admin decides. That
+  includes a file ffprobe only opens on a guess (:func:`...library_mgmt.convert.unreadable`:
+  no container, a video stream without a duration or without frames);
 * the MP4 fails verification (``convert_verify``): the original is untouched, the check's
   measurements are on the ``file_actions`` row; tried once more (re-encoding, where the
   library allows it), then failed;
@@ -92,6 +94,9 @@ async def _plan_video(
         probe, why = await cv.probe_json(local)
         if probe is None:
             return {**entry, "action": "skip", "reason": "unreadable", "error": why[:200]}
+    bad = cv.unreadable(probe)
+    if bad is not None:
+        return {**entry, "action": "skip", "reason": "unreadable", "error": bad[:200]}
     fs = await asyncio.to_thread(cv.faststart_of, local)
     plan = cv.plan_for(probe, path, allow_reencode=allow_reencode, faststart=fs)
     entry.update(plan.as_json())
@@ -176,6 +181,13 @@ async def _verify_failed_before(db: Any, job: Job) -> bool:
     return bool(n)
 
 
+def _unreadable(why: str) -> StageFailure:
+    # ffmpeg_decode: failed at once, the admin decides; the original is not touched
+    return StageFailure(
+        "ffmpeg_decode", f"the original cannot be read: {why[:300]}", retryable=False
+    )
+
+
 def _disk_full(where: str, why: str) -> StageFailure:
     # "disk is full" is the disk_full cause: parked on resource:disk (failure_classes)
     return StageFailure("disk_full", f"the work disk is full at {where}: {why}")
@@ -210,9 +222,10 @@ async def _run_video(db: Any, job: Job, ctx: StageContext) -> StageResult:
         src = opened.path
         probe, why = await cv.probe_json(src)
         if probe is None:
-            raise StageFailure(
-                "ffmpeg_decode", f"the original cannot be read: {why[:300]}", retryable=False
-            )
+            raise _unreadable(why)
+        bad = cv.unreadable(probe)
+        if bad is not None:
+            raise _unreadable(bad)
         retry_reencode = await _verify_failed_before(db, job)
         fs = await asyncio.to_thread(cv.faststart_of, src)
         plan = cv.plan_for(
@@ -236,13 +249,17 @@ async def _run_video(db: Any, job: Job, ctx: StageContext) -> StageResult:
             raise _disk_full(str(work), str(exc)) from exc
         if free < need:
             raise _disk_full(str(work), f"{free} bytes free, {need} needed")
+        # the original's frames (a demux, no decode): none means it is not a video
+        orig_frames = await count_frames(src) if probe.video else None
+        bad = cv.unreadable(probe, frames=orig_frames)
+        if bad is not None:
+            raise _unreadable(bad)
         out = work / (Path(local).stem + ".mp4")
         encoder = await _convert(ctx, src, str(out), plan, probe.duration or 0.0)
 
         # verify locally: the full decode runs once, here
         await ctx.progress("verify", 0, 1, steps=STEPS, force=True)
         orig_info = probe.info(src)
-        orig_frames = await count_frames(src) if probe.video else None
         result = await verify_media(
             str(out), orig_info, mode=plan.mode, original_frames=orig_frames, nice=True
         )

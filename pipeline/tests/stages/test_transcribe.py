@@ -495,3 +495,41 @@ async def test_a_dropped_job_s_checkpoint_is_pruned_after_a_week(
     await db.execute("UPDATE transcribe_checkpoints SET updated_at = $1", old)
     await prune_once(db)
     assert await db.fetchval("SELECT count(*) FROM transcribe_checkpoints") == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reads_a_file", [False, True])
+async def test_extract_is_asked_for_only_when_the_backend_reads_a_file(
+    reads_a_file: bool,
+    db: Database,
+    tmp_path: Path,
+    fake: FakeTranscriber,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A streaming backend (whisper-mlx) transcribes off the share and never queues
+    extract. One that reads a file (openai-api) with no WAV yet waits, asks for extract
+    (graph ``may_request``) and decodes nothing."""
+    from maktaba_pipeline.stt import transcribe as stt_transcribe
+
+    # the configured backend, as the stage reads it
+    monkeypatch.setattr(
+        stt_transcribe, "configured_backend_requires_file", lambda settings=None: reads_a_file
+    )
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    assert await drain_core(db, rt, only={"transcribe"}) == ["transcribe"]
+
+    job = await db.fetchrow("SELECT outcome FROM processing_jobs WHERE stage = 'transcribe'")
+    extract = await db.fetch(
+        "SELECT state, triggered_by_stage FROM processing_jobs WHERE stage = 'extract'"
+    )
+    if reads_a_file:
+        assert job is not None and job["outcome"] == "waiting_inputs"
+        assert [(r["state"], r["triggered_by_stage"]) for r in extract] == [
+            ("pending", "transcribe")
+        ]
+        assert fake.calls == 0
+    else:
+        assert extract == []
+        assert fake.calls == 1

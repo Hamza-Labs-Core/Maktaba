@@ -29,6 +29,7 @@ import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import UUID
@@ -41,12 +42,16 @@ __all__ = [
     "ExtractError",
     "SelectedTrack",
     "StreamHandle",
+    "SweepReport",
     "build_ffmpeg_args",
     "commit_extract",
     "commit_extract_skipped",
     "extract_to_file",
     "load_selected_track",
+    "release_audio_cache",
+    "run_audio_cache_sweep",
     "stream_pcm",
+    "sweep_audio_cache",
 ]
 
 # 64 KiB matches Story 2.3's default. Keeps memory bounded and gives the
@@ -361,7 +366,7 @@ ON CONFLICT (content_hash) DO UPDATE SET
 """
 
 _STAMP_TRACK_EXTRACTED = """
-UPDATE audio_tracks SET last_extracted_at = now() WHERE id = $1
+UPDATE audio_tracks SET last_extracted_at = $2 WHERE id = $1
 """
 
 
@@ -473,6 +478,7 @@ async def commit_extract(
     from ..db.jobs import Stage as _JobStage  # noqa: PLC0415
     from ..db.jobs import enqueue  # noqa: PLC0415
     from ..domain.states import Outcome, State, Trigger  # noqa: PLC0415
+    from ..engine.sql import now, to_ts  # noqa: PLC0415
     from ..log import get_logger  # noqa: PLC0415
     from ..orchestrator.advance import advance_after_stage  # noqa: PLC0415
 
@@ -487,7 +493,8 @@ async def commit_extract(
             cache_path,
             bytes_written,
         )
-        await db.execute(_STAMP_TRACK_EXTRACTED, audio_track_id)
+        # the time as a parameter: SQLite has no now()
+        await db.execute(_STAMP_TRACK_EXTRACTED, audio_track_id, to_ts(db, now()))
 
     state_row = await db.fetchrow("SELECT state FROM videos WHERE id = $1", video_id)
     if state_row is None:
@@ -583,3 +590,146 @@ def _as_job_db(db: _ExtractDB) -> Any:
     # shape is a strict superset, so the cast is type-safe at runtime
     # (mirrors ``probe._as_job_db``).
     return db
+
+
+# --- the WAV's lifetime ---------------------------------------------------
+#
+# A WAV lives from the extract that wrote it to the end of the transcribe that
+# read it (``release_audio_cache``). What a crash, a cancelled job or an older
+# release left behind is swept (``sweep_audio_cache``): an ``audio_cache`` row no
+# extract or transcribe job still needs, and a file in the cache with no row.
+
+#: a WAV younger than this is left alone by the sweep: its extract may still be
+#: writing it, or its transcribe job may not be queued yet
+SWEEP_MIN_AGE_SEC = 6 * 3600
+SWEEP_BATCH = 500
+
+_ORPHAN_ROWS_SQL = """
+SELECT a.content_hash, a.path
+  FROM audio_cache a
+ WHERE a.created_at < $1
+   AND NOT EXISTS (
+       SELECT 1 FROM processing_jobs j
+        WHERE j.video_id = a.video_id
+          AND j.stage IN ('extract', 'transcribe')
+          AND j.state IN ('pending', 'claimed', 'running', 'resuming', 'paused'))
+ ORDER BY a.created_at
+ LIMIT $2
+"""
+
+
+_ORPHAN_FILE_SQL = (
+    "SELECT 1 AS one WHERE EXISTS (SELECT 1 FROM videos WHERE content_hash = $1)"
+    " AND NOT EXISTS (SELECT 1 FROM audio_cache WHERE content_hash = $1)"
+)
+
+
+def _unlink(path: str | os.PathLike[str]) -> bool:
+    """Remove a cached WAV; False when it is not on this machine."""
+    from ..log import get_logger  # noqa: PLC0415
+
+    try:
+        Path(path).unlink()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        get_logger().warning("audio_cache_unlink_failed", path=str(path), error=str(exc))
+        return False
+    return True
+
+
+async def release_audio_cache(db: _ExtractDB, *, content_hash: str) -> bool:
+    """The transcribe that read the WAV is done: its file and ``audio_cache`` row go.
+
+    Returns whether a row was there. A file written on another machine is not
+    here to delete; that machine's sweep removes it once the row is gone.
+    """
+    from ..log import get_logger  # noqa: PLC0415
+
+    row = await db.fetchrow("SELECT path FROM audio_cache WHERE content_hash = $1", content_hash)
+    if row is None:
+        return False
+    await db.execute("DELETE FROM audio_cache WHERE content_hash = $1", content_hash)
+    removed = _unlink(str(row["path"])) if row["path"] else False
+    get_logger().info(
+        "audio_cache_released", content_hash=content_hash, path=row["path"], file_removed=removed
+    )
+    return True
+
+
+@dataclass(slots=True, frozen=True)
+class SweepReport:
+    rows: int = 0
+    files: int = 0
+
+
+async def sweep_audio_cache(
+    db: _ExtractDB,
+    *,
+    root: str | os.PathLike[str] | None = None,
+    min_age_sec: float = SWEEP_MIN_AGE_SEC,
+    at: Any = None,
+) -> SweepReport:
+    """Delete the WAVs nothing will read.
+
+    1. ``audio_cache`` rows older than ``min_age_sec`` whose video has no live
+       extract or transcribe job (the transcribe finished before releases
+       existed, failed for good, or was cancelled): the row, and its file when it
+       is on this machine;
+    2. ``*.wav`` files in this machine's cache (``root``) older than
+       ``min_age_sec`` named after one of this database's videos and with no
+       ``audio_cache`` row (a row another machine's sweep or release deleted, an
+       extract that crashed before its commit).
+    """
+    from ..engine.sql import now, to_ts  # noqa: PLC0415
+    from ..log import get_logger  # noqa: PLC0415
+
+    t = at or now()
+    cutoff = to_ts(db, t - timedelta(seconds=min_age_sec))
+    rows = await db.fetch(_ORPHAN_ROWS_SQL, cutoff, SWEEP_BATCH)
+    for r in rows:
+        await db.execute("DELETE FROM audio_cache WHERE content_hash = $1", r["content_hash"])
+        if r["path"]:
+            _unlink(str(r["path"]))
+
+    files = 0
+    base = cache_path_for("x", root=root).parent
+    oldest = t.timestamp() - min_age_sec
+    try:
+        entries = sorted(base.glob("*.wav"))
+    except OSError:
+        entries = []
+    for f in entries:
+        try:
+            if f.stat().st_mtime >= oldest:
+                continue
+        except OSError:
+            continue
+        # only a file of one of this database's videos: a worker on another database
+        # (a branch stack, a test) on the same machine leaves the home's WAVs alone
+        orphan = await db.fetchrow(_ORPHAN_FILE_SQL, f.stem)
+        if orphan is not None and _unlink(f):
+            files += 1
+    report = SweepReport(rows=len(rows), files=files)
+    if report.rows or report.files:
+        get_logger().info("audio_cache_swept", rows=report.rows, files=report.files)
+    return report
+
+
+async def run_audio_cache_sweep(
+    db: _ExtractDB,
+    stop: asyncio.Event,
+    *,
+    interval_sec: float = 3600.0,
+    root: str | os.PathLike[str] | None = None,
+) -> None:
+    """Sweep the cache at start and then every ``interval_sec`` until ``stop``."""
+    from ..log import get_logger  # noqa: PLC0415
+
+    while not stop.is_set():
+        try:
+            await sweep_audio_cache(db, root=root)
+        except Exception:  # noqa: BLE001 - a cleanup, never a reason to stop the worker
+            get_logger().exception("audio_cache_sweep_failed")
+        with suppress(TimeoutError, asyncio.TimeoutError):  # noqa: UP041
+            await asyncio.wait_for(stop.wait(), timeout=interval_sec)

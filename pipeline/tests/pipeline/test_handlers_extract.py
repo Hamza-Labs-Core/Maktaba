@@ -42,6 +42,13 @@ from tests.audio._fake_audio_db import _AudioTrackRow, _ProcessingJobRow
 from .conftest import StageDB, make_job
 
 
+#: every test runs on both dialects: the enqueue takes a different path on each
+#: (processing_jobs_enqueue() on Postgres, its Python twin on SQLite)
+@pytest.fixture(params=["postgres", "sqlite"])
+def dialect(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
+
 def _file_backend() -> bool:
     """The configured backend reads a file (openai-api): the WAV is written."""
     return True
@@ -90,8 +97,8 @@ def _seed_audio_track(
     return tid
 
 
-def test_extract_handler_extracts_persists_and_enqueues_transcribe() -> None:
-    stage_db = StageDB(dialect="postgres")
+def test_extract_handler_extracts_persists_and_enqueues_transcribe(dialect: str) -> None:
+    stage_db = StageDB(dialect=dialect)
     chash = "b" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     track_id = _seed_audio_track(stage_db, video_id=video_id)
@@ -130,9 +137,9 @@ def test_extract_handler_extracts_persists_and_enqueues_transcribe() -> None:
     assert stage_db.processing_jobs[7].state == "done"
 
 
-def test_extract_handler_selects_track_via_policy() -> None:
+def test_extract_handler_selects_track_via_policy(dialect: str) -> None:
     """Two tracks: the language/default policy picks the Arabic one."""
-    stage_db = StageDB(dialect="postgres")
+    stage_db = StageDB(dialect=dialect)
     chash = "c" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/multi.mkv", content_hash=chash)
     # index 0 is English (default-flagged), index 1 is Arabic. The
@@ -171,8 +178,8 @@ def test_extract_handler_selects_track_via_policy() -> None:
     assert stage_db.audio_cache[chash].audio_track_id == ara_id
 
 
-def test_extract_handler_missing_source_path_fails_non_retryable() -> None:
-    stage_db = StageDB(dialect="postgres")
+def test_extract_handler_missing_source_path_fails_non_retryable(dialect: str) -> None:
+    stage_db = StageDB(dialect=dialect)
     video_id = uuid4()  # no videos row → unresolvable source / hash
     _seed_audio_track(stage_db, video_id=video_id)
     job = make_job(job_id=9, video_id=video_id, stage=Stage.EXTRACT)
@@ -191,11 +198,11 @@ def test_extract_handler_missing_source_path_fails_non_retryable() -> None:
     assert err["kind"] == "extract_missing_source"
 
 
-def test_extract_handler_no_audio_tracks_fails_non_retryable() -> None:
+def test_extract_handler_no_audio_tracks_fails_non_retryable(dialect: str) -> None:
     """PROBE should have skipped EXTRACT for silent media; if an EXTRACT
     job exists with zero audio_tracks rows that is an unrecoverable
     inconsistency, not a transient error."""
-    stage_db = StageDB(dialect="postgres")
+    stage_db = StageDB(dialect=dialect)
     chash = "d" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/silent.mkv", content_hash=chash)
     job = make_job(job_id=10, video_id=video_id, stage=Stage.EXTRACT)
@@ -214,8 +221,8 @@ def test_extract_handler_no_audio_tracks_fails_non_retryable() -> None:
     assert err["kind"] == "extract_no_audio_track"
 
 
-def test_extract_handler_ffmpeg_failure_is_retryable() -> None:
-    stage_db = StageDB(dialect="postgres")
+def test_extract_handler_ffmpeg_failure_is_retryable(dialect: str) -> None:
+    stage_db = StageDB(dialect=dialect)
     chash = "e" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)
@@ -236,7 +243,7 @@ def test_extract_handler_ffmpeg_failure_is_retryable() -> None:
     assert chash not in stage_db.audio_cache
 
 
-def test_extract_handler_video_vanished_midflight_is_terminal() -> None:
+def test_extract_handler_video_vanished_midflight_is_terminal(dialect: str) -> None:
     """TOCTOU: the video row is present at the source SELECT but gone by
     the time ``commit_extract`` reads ``videos.state`` (it raises
     ``LookupError``). That is unrecoverable — classify it non-retryable
@@ -246,7 +253,7 @@ def test_extract_handler_video_vanished_midflight_is_terminal() -> None:
 
     from maktaba_pipeline.audio import extract as _extract_mod
 
-    stage_db = StageDB(dialect="postgres")
+    stage_db = StageDB(dialect=dialect)
     chash = "9" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)
@@ -273,10 +280,10 @@ def test_extract_handler_video_vanished_midflight_is_terminal() -> None:
     assert err["kind"] == "extract_video_vanished"
 
 
-def test_extract_handler_idempotent_on_rerun() -> None:
+def test_extract_handler_idempotent_on_rerun(dialect: str) -> None:
     """Re-running EXTRACT (e.g. a retried job) is a clean no-op-ish:
     the artifact UPSERT and the FSM advance both tolerate a repeat."""
-    stage_db = StageDB(dialect="postgres")
+    stage_db = StageDB(dialect=dialect)
     chash = "f" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)
@@ -309,10 +316,12 @@ def test_extract_handler_idempotent_on_rerun() -> None:
 # ---- the WAV only for a backend that reads a file (2026-11-02) ----------
 
 
-def test_streaming_backend_extract_writes_nothing_and_finishes(tmp_path: Path) -> None:
+def test_streaming_backend_extract_writes_nothing_and_finishes(
+    tmp_path: Path, dialect: str
+) -> None:
     """whisper-mlx streams: the job is done, no ffmpeg, no file, no audio_cache row,
     and the FSM and TRANSCRIBE enqueue move on as after a real extract."""
-    stage_db = StageDB(dialect="postgres")
+    stage_db = StageDB(dialect=dialect)
     chash = "1" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     track_id = _seed_audio_track(stage_db, video_id=video_id)
@@ -341,7 +350,6 @@ def test_streaming_backend_extract_writes_nothing_and_finishes(tmp_path: Path) -
     assert [e for e in logs if e["event"] == "extract_skipped_streaming_backend"], logs
 
 
-@pytest.mark.parametrize("dialect", ["postgres", "sqlite"])
 def test_streaming_backend_skip_leaves_handled_transcription_alone(dialect: str) -> None:
     """A video already transcribed gets no new transcribe job from the skip."""
     stage_db = StageDB(dialect=dialect)
@@ -364,9 +372,9 @@ def test_streaming_backend_skip_leaves_handled_transcription_alone(dialect: str)
     assert not any(pj.stage == Stage.TRANSCRIBE.value for pj in stage_db.processing_jobs.values())
 
 
-def test_file_backend_extract_writes_the_wav(tmp_path: Path) -> None:
+def test_file_backend_extract_writes_the_wav(tmp_path: Path, dialect: str) -> None:
     """openai-api reads a file: the WAV is written and recorded in audio_cache."""
-    stage_db = StageDB(dialect="postgres")
+    stage_db = StageDB(dialect=dialect)
     chash = "3" * 64
     video_id = stage_db.add_video(state="probed", path="/lib/movie.mkv", content_hash=chash)
     _seed_audio_track(stage_db, video_id=video_id)

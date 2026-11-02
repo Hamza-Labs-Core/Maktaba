@@ -12,6 +12,18 @@
 # push-only, pr-only, not-a-gate): tools/ci/ci_paths.py checks that in the lint job, and
 # `tools/ci/ci_paths.py which <files>` says which jobs a change runs.
 #
+# A pull request that changes only the Claude trail (docs/claude-trail.md) runs nothing but
+# `changes` and `ci-success` (the owner, 2026-11-02: "Update trail on its own PRs, no ci no
+# test"). The always-run jobs are gated by the `repo` output: a file other than the trail
+# changed. No filter matches the trail.
+#
+# A push to main or release/* that changes only the trail starts no run at all (the push
+# trigger's paths-ignore; it skips only when every changed file is the trail), so a trail
+# commit never joins the `ci-main` group and never cancels the run of the code commit before
+# it, the one waiting to be tagged. Trail-only commits are never tagged: the tag goes on the
+# newest code commit (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does
+# the same.
+#
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
 # story lands, treat the tags below as the source of truth and keep
@@ -26,6 +38,8 @@ on:
     branches: [main, 'release/**']
   push:
     branches: [main, 'release/**']
+    # a trail-only commit starts no run, so it never cancels the code commit's (see above)
+    paths-ignore: ['docs/claude-trail.md']
 
 permissions:
   contents: read
@@ -33,15 +47,24 @@ permissions:
   checks: write
 
 concurrency:
-  # Cancel in-progress runs for the same PR; never cancel main pushes.
-  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  # A pull request: one group per PR, a new push cancels its older run.
+  # A push to main: one group for all of main, a newer commit cancels the older commit's run
+  # (queued or running). Only the newest main commit is tagged (the tag guard needs a green
+  # run on the tagged commit itself, not on its ancestors), so an older main run only holds
+  # the scarce macOS runners back from it. A re-run (run_attempt > 1) of a main commit gets
+  # its commit's own group, so re-running an older commit never cancels main's newest run.
+  # A release/** push: one group per commit, never cancelled (as before).
+  # tools/ci/tests/test_ci_paths.py checks these groups.
+  group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') && 'main' || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') }}
 
 jobs:
   changes:
     # The path filters: one output per filter of .github/ci-paths.yml, true on a push.
     runs-on: ubuntu-22.04
     outputs:
+      # a file other than the Claude trail changed: the always-run jobs run
+      repo: ${{ github.event_name != 'pull_request' || steps.repo.outputs.repo == 'true' }}
       lint_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_go == 'true' }}
       lint_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_pipeline == 'true' }}
       lint_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_web == 'true' }}
@@ -50,6 +73,7 @@ jobs:
       unit_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_web == 'true' }}
       unit_tokens: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_shell == 'true' }}
+      mdns_windows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mdns_windows == 'true' }}
       integration: ${{ github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ github.event_name != 'pull_request' || steps.filter.outputs.compat_prev == 'true' }}
       replica: ${{ github.event_name != 'pull_request' || steps.filter.outputs.replica == 'true' }}
@@ -83,6 +107,16 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           filters: .github/ci-paths.yml
+      # `repo`: a changed file other than docs/claude-trail.md. Here every glob must match
+      # (predicate-quantifier every), so the one negated glob matches any other file.
+      - uses: dorny/paths-filter@v4.0.1
+        id: repo
+        if: github.event_name == 'pull_request'
+        with:
+          predicate-quantifier: every
+          filters: |
+            repo:
+              - '!docs/claude-trail.md'
       # Every app shares apps/apple/Maktaba.xcodeproj/project.pbxproj: the Player's UI tests
       # run when one of the objects that changed in it is the Player's (renaming the Remote
       # changes only the Remote's).
@@ -97,8 +131,9 @@ jobs:
   lint:
     # ci-paths: always-run
     # Its repository checks (no binaries, this routing's guard and tests) run on every pull
-    # request; each language's linters when its files changed.
+    # request but a trail-only one; each language's linters when its files changed.
     needs: [changes]
+    if: needs.changes.outputs.repo == 'true'
     uses: ./.github/workflows/_lint.yml
     with:
       go: ${{ needs.changes.outputs.lint_go == 'true' }}
@@ -113,6 +148,7 @@ jobs:
       || needs.changes.outputs.unit_web == 'true'
       || needs.changes.outputs.unit_tokens == 'true'
       || needs.changes.outputs.desktop_shell == 'true'
+      || needs.changes.outputs.mdns_windows == 'true'
     uses: ./.github/workflows/_unit.yml
     with:
       go: ${{ needs.changes.outputs.unit_go == 'true' }}
@@ -120,6 +156,7 @@ jobs:
       web: ${{ needs.changes.outputs.unit_web == 'true' }}
       tokens: ${{ needs.changes.outputs.unit_tokens == 'true' }}
       desktop_shell: ${{ needs.changes.outputs.desktop_shell == 'true' }}
+      mdns_windows: ${{ needs.changes.outputs.mdns_windows == 'true' }}
 
   integration:
     needs: [changes]
@@ -263,8 +300,41 @@ jobs:
 
   pr-body-check:
     # ci-paths: always-run, pr-only
-    if: github.event_name == 'pull_request'
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.repo == 'true'
     uses: ./.github/workflows/_pr-body-check.yml
+
+  # Code that changes needs its tests changed too (tools/affected-tests, docs/ci.md): the
+  # same gate as the pre-push hook (.githooks/pre-push), so a push that skipped the hook
+  # cannot get past it. A commit in the pull request with a `No-Test-Change: <reason>`
+  # trailer lets it through. The coverage map comes from coverage-map.yml (main); without
+  # one the gate works from its searches. Seconds: it reads git, it runs no test.
+  affected-tests:
+    # ci-paths: always-run, pr-only
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.repo == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read # the coverage map artifact
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      - name: The hook and scripts
+        run: shellcheck -x .githooks/pre-push tools/affected-tests/*.sh
+      - name: Changed code has its tests changed
+        working-directory: tools/affected-tests
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: go run . gate -C ../.. --range "$BASE...$HEAD"
 
   fork-rerun-comment:
     # EC2: bot comment on fork PRs telling maintainers how to rerun
@@ -324,6 +394,7 @@ jobs:
       - desktop-player
       - apple-apps
       - pr-body-check
+      - affected-tests
     if: always()
     runs-on: ubuntu-22.04
     steps:

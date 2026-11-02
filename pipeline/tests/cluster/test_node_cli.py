@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -137,3 +139,89 @@ def test_the_index_worker_flags(cfg_path: Path, monkeypatch: pytest.MonkeyPatch)
     args = _args()
     assert cli._build_runtime_config(args).share is False  # type: ignore[arg-type]
     assert args.no_semantic is True  # type: ignore[attr-defined]
+
+
+class _StreamingBackend:
+    """whisper-mlx's shape: it streams (requires_file False)."""
+
+    name = "whisper-mlx"
+    model = "large-v3"
+    supports_streaming = True
+    requires_file = False
+    cost_per_minute = None
+    supports_word_timestamps = False
+
+    def __init__(self) -> None:
+        self.seen: list[object] = []
+
+    def transcribe(self, audio: object, language: object, hints: object) -> AsyncIterator[object]:
+        self.seen.append(audio)
+
+        async def _none() -> AsyncIterator[object]:
+            for _ in ():
+                yield _
+
+        return _none()
+
+
+@pytest.mark.integration  # _serve runs on an event loop (a socketpair)
+@pytest.mark.parametrize("no_engine", [True, False])
+def test_run_hands_its_mode_to_the_stage_handlers(
+    no_engine: bool, cfg_path: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``run --no-engine`` keeps the legacy probe -> extract -> transcribe chain (its
+    probe queues extract); on the engine the probe queues none (transcribe asks for
+    extract only when the STT backend reads a file). The --no-engine transcribe
+    handler streams on a streaming backend: no audio_cache row, the source is read."""
+    import asyncio
+    import json
+
+    import structlog
+
+    from maktaba_pipeline.db.jobs import Stage
+    from maktaba_pipeline.engine.paths import to_local
+    from maktaba_pipeline.handlers import probe_handler
+    from maktaba_pipeline.stt import transcribe as stt_transcribe
+    from tests.audio._fake_audio_db import _ProcessingJobRow
+    from tests.pipeline.conftest import StageDB, make_job
+    from tests.pipeline.test_handlers_extract import _seed_audio_track
+
+    monkeypatch.setenv("MAKTABA_DATABASE_URL", f"sqlite:///{tmp_path / 'w.db'}")
+    seen: list[tuple[bool, dict[Any, Any]]] = []
+
+    async def fake_run(cfg: Any, *, db: Any, dispatch_overrides: dict[Any, Any]) -> int:
+        seen.append((bool(cfg.engine), dict(dispatch_overrides)))
+        return 0
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    argv = ["--no-engine"] if no_engine else []
+    try:
+        code = asyncio.run(cli._serve(_args(*argv), structlog.get_logger()))  # type: ignore[arg-type]
+    finally:
+        structlog.reset_defaults()
+    assert code == 0
+    engine, overrides = seen[0]
+    assert engine is not no_engine
+    assert (overrides[Stage.PROBE] is probe_handler) is no_engine
+    if not no_engine:
+        return
+
+    # the --no-engine transcribe on a streaming backend, after an extract that wrote no WAV
+    backend = _StreamingBackend()
+
+    async def select(*, video_id: Any, settings: Any = None) -> tuple[Any, str, None]:
+        return backend, backend.name, None
+
+    monkeypatch.setattr(stt_transcribe, "default_select_backend", select)
+    db = StageDB(dialect="sqlite")
+    vid = db.add_video(state="audio_extracted", path="/lib/درس.mkv", content_hash="c" * 64)
+    track = _seed_audio_track(db, video_id=vid)
+    payload = {"audio_track_id": track, "content_hash": "c" * 64}
+    db.processing_jobs[9] = _ProcessingJobRow(
+        id=9, video_id=vid, stage="transcribe", state="running", payload=json.dumps(payload)
+    )
+    job = make_job(job_id=9, video_id=vid, stage=Stage.TRANSCRIBE, payload=payload)
+    asyncio.run(overrides[Stage.TRANSCRIBE](db, job))
+    assert db.processing_jobs[9].state == "done", db.processing_jobs[9].error
+    assert backend.seen == [to_local("/lib/درس.mkv")]
+    assert db.audio_cache == {}

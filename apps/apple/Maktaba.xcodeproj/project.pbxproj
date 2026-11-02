@@ -396,6 +396,7 @@
 		78138276329561D606881C12 /* HomeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74A27C11656FA6B5AB19D743 /* HomeModel.swift */; };
 		782FA870DAE4D6824C3779E2 /* me-video-v6.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FF4BA477197A8D0A5389913 /* me-video-v6.json */; };
 		783B7E264D1E8DF50A367901 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50CED999F23DF99657A01AF7 /* SettingsView.swift */; };
+		783FA85BC92CDEF0D3CB1B1F /* PlayerSignInKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E01F680B099BBD13074CA2 /* PlayerSignInKeyboardUITests.swift */; };
 		789267B6747084C931E198F8 /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
 		789BE979879A2F69B1BCB700 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
 		7914FB89F725FE69A9817CD5 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
@@ -554,6 +555,7 @@
 		AB169F8E18AC5144DCA28665 /* facets.json in Resources */ = {isa = PBXBuildFile; fileRef = 04EB31B36EACFCAD4E26EEC6 /* facets.json */; };
 		AB3CE8F2F81E9752AE81657B /* LiveGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761A341C59A1EF4C1E7A366B /* LiveGuide.swift */; };
 		ABB08FEA43B2DDE4AF549A76 /* tv-info.json in Resources */ = {isa = PBXBuildFile; fileRef = 5F6660AB2A255BBDB8375FC7 /* tv-info.json */; };
+		AC48FFC636C714CECD538E28 /* PlayerSignInKeyboardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E01F680B099BBD13074CA2 /* PlayerSignInKeyboardUITests.swift */; };
 		ACB7F3704CDA333C4A800281 /* Live.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CBD16C2619B376327A3B02C2 /* Live.xcstrings */; };
 		ACBA850C500A3D41EDB8018A /* series.json in Resources */ = {isa = PBXBuildFile; fileRef = 20F53879910FA01F73F46FB5 /* series.json */; };
 		AD3706444B2BD4B2FE998D40 /* SeriesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7797D4BCE39BE93034371710 /* SeriesScreen.swift */; };
@@ -966,6 +968,7 @@
 		5664E87D159DD72DA8148B1B /* marks-updated.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "marks-updated.json"; sourceTree = "<group>"; };
 		567979BC3286DC364F1D2E94 /* video-v2.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "video-v2.json"; sourceTree = "<group>"; };
 		57B95C7D1BA10C7BA2F7E751 /* Info-iPhone.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "Info-iPhone.plist"; sourceTree = "<group>"; };
+		59E01F680B099BBD13074CA2 /* PlayerSignInKeyboardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerSignInKeyboardUITests.swift; sourceTree = "<group>"; };
 		5A75445ACA0DAD476BD941AA /* ComponentGallery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ComponentGallery.swift; sourceTree = "<group>"; };
 		5BDF18B38D8C81A79BEA1702 /* auth-me.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "auth-me.json"; sourceTree = "<group>"; };
 		5CE41F6BE7F8E3310C01610B /* Maktaba TV.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "Maktaba TV.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -1447,6 +1450,7 @@
 				7A5952E066C6861ACD8E2347 /* PlayerSearchUITests.swift */,
 				73C4DBC658F8C407859F34C6 /* PlayerShellTests.swift */,
 				3FE2798DB8198289D13D968A /* PlayerShellUITests.swift */,
+				59E01F680B099BBD13074CA2 /* PlayerSignInKeyboardUITests.swift */,
 				930E0B762FA8B0B99772F3F1 /* PlayerUITestCase.swift */,
 				AB13F57BDEAC4243D3662270 /* PlayerVideoUITests.swift */,
 				6E64F621A6128EB4952616DB /* PlayerWatchTests.swift */,
@@ -2733,6 +2737,7 @@
 				07855B9D9CF45F3540211B21 /* PlayerSection.swift in Sources */,
 				DC52077B395BBA08077D43F0 /* PlayerShellTests.swift in Sources */,
 				E76426B810323B152A38D6F8 /* PlayerShellUITests.swift in Sources */,
+				AC48FFC636C714CECD538E28 /* PlayerSignInKeyboardUITests.swift in Sources */,
 				F284C9798AADEC8845C8E0F8 /* PlayerTracks.swift in Sources */,
 				D788E3DF05ABF5E991CED63C /* PlayerUITestCase.swift in Sources */,
 				F667AA834D789AEFEDFA2C4C /* PlayerVideoUITests.swift in Sources */,
@@ -3003,6 +3008,7 @@
 				B39DFE47608DB5615CEFA5FC /* PlayerSection.swift in Sources */,
 				674935557616161DD2F7054B /* PlayerShellTests.swift in Sources */,
 				3CC24F71C974A8148F3EE774 /* PlayerShellUITests.swift in Sources */,
+				783FA85BC92CDEF0D3CB1B1F /* PlayerSignInKeyboardUITests.swift in Sources */,
 				4A5CBB5D2F81873C18C9C55F /* PlayerTracks.swift in Sources */,
 				E9CBA1B928BD2DDD11BD0BE1 /* PlayerUITestCase.swift in Sources */,
 				BA580386616F497401EA2062 /* PlayerVideoUITests.swift in Sources */,

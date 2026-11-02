@@ -43,13 +43,24 @@ func TestEmbeddedRootAge(t *testing.T) {
 	}
 }
 
+// The clock is the embedded root's own fetched_at plus an offset, never the wall
+// clock: the result does not change as the embedded root ages.
 func TestVerifyExpiredRoot(t *testing.T) {
+	emb, err := rv.EmbeddedRootInfo()
+	if err != nil {
+		t.Fatal(err)
+	}
 	var reported error
+	now := emb.FetchedAt.Add(rv.DefaultRootMaxAge - time.Hour)
 	s := &rv.RootStore{
-		Now:       func() time.Time { return time.Now().Add(2 * rv.DefaultRootMaxAge) },
+		Now:       func() time.Time { return now },
 		OnExpired: func(err error) { reported = err },
 	}
-	_, _, err := s.TrustedMaterial()
+	if _, info, err := s.TrustedMaterial(); err != nil || info.Source != "embedded" || reported != nil {
+		t.Fatalf("an embedded root inside MaxAge: %+v, %v, reported %v", info, err, reported)
+	}
+	now = emb.FetchedAt.Add(rv.DefaultRootMaxAge + time.Hour)
+	_, _, err = s.TrustedMaterial()
 	wantKind(t, err, rv.ErrRootExpired)
 	if !errors.Is(reported, rv.ErrRootExpired) {
 		t.Fatalf("expiry not reported: %v", reported)
@@ -58,6 +69,13 @@ func TestVerifyExpiredRoot(t *testing.T) {
 
 func TestRootStoreRefreshKeepsLastGood(t *testing.T) {
 	dir := t.TempDir()
+	// The store serves the cache from its resolved path (trustedDir follows
+	// symlinks before it checks ownership): macOS's temp dir is under /var, a link
+	// to /private/var, so the unresolved path never matched there.
+	resolved, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	emb, _ := rv.EmbeddedRootInfo()
 	now := emb.FetchedAt.Add(24 * time.Hour)
 	raw, err := os.ReadFile("trusted_root.json")
@@ -70,7 +88,7 @@ func TestRootStoreRefreshKeepsLastGood(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, info, err := s.TrustedMaterial()
-	if err != nil || info.Source != filepath.Join(dir, "trusted_root.json") || !info.FetchedAt.Equal(now) {
+	if err != nil || info.Source != filepath.Join(resolved, "trusted_root.json") || !info.FetchedAt.Equal(now) {
 		t.Fatalf("after refresh: %+v, %v", info, err)
 	}
 

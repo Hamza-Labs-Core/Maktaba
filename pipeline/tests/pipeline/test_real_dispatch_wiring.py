@@ -61,7 +61,9 @@ pytestmark = pytest.mark.unit
 
 
 def test_build_real_dispatch_binds_all_real_stages() -> None:
-    overrides = build_real_dispatch()
+    overrides = build_real_dispatch(engine=False)
+    # the queue engine's probe is the same handler without the extract chain
+    assert build_real_dispatch(engine=True)[Stage.PROBE] is not probe_handler
     # Gap-closure: SCAN now has a real library-scoped thin-wrapper
     # adapter (slot 0058 + SqlScanStore + Story 1.1 orchestrator).
     assert overrides[Stage.SCAN] is scan_handler

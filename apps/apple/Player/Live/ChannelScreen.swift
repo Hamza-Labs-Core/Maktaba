@@ -5,8 +5,8 @@ import SwiftUI
 /// The live player (`PlayerRoute.channel`, FR-23), full screen: the picture, the channel with
 /// what is on and its progress, next and previous channel (the buttons, a vertical swipe, or
 /// ▲ / ▼ on a keyboard), the number pad (a keyboard's digits; a keypad on a tablet), a
-/// mini-guide (the channels around this one, now and next), pause and "Back to live". Leaving
-/// ends a remote session.
+/// mini-guide (the channels around this one, now and next), pause and "Back to live", AirPlay
+/// and Picture in Picture (story 48.24). Leaving ends a remote session.
 struct ChannelScreen: View {
     let context: PlayerContext
     let id: String
@@ -30,7 +30,7 @@ struct ChannelScreen: View {
     var body: some View {
         ZStack {
             Color.black
-            LiveVideoLayer(player: playback.player)
+            LiveVideoLayer(player: playback.player) { playback.pip.attach($0) }
                 .accessibilityHidden(true)
             // the picture: a tap shows or hides the controls; a vertical swipe changes channel
             Color.clear
@@ -85,6 +85,7 @@ struct ChannelScreen: View {
             await model.keepFresh(context.client, guide: false)
         }
         .onChange(of: model.channels.map(\.id), initial: true) { _, _ in playback.update(channels: model.channels) }
+        .onChange(of: model.onNow(playback.channelID)?.current?.title, initial: true) { _, title in playback.showProgramme(title) }
         .onDisappear {
             let p = playback
             Task { await p.close() }
@@ -226,6 +227,17 @@ struct ChannelScreen: View {
                 .accessibilityIdentifier("live.player.backToLive")
             }
             Spacer(minLength: 0)
+            AirPlayButton(player: playback.player,
+                          label: String(localized: "AirPlay", table: "Live",
+                                        comment: "The live player: plays the channel on an Apple TV or another AirPlay screen"),
+                          identifier: "live.player.airplay")
+                .frame(width: 48, height: 48)
+                .background(.ultraThinMaterial, in: .circle)
+            if PictureInPicture.isSupported, playback.phase == .playing {
+                roundButton(playback.pip.isActive ? "pip.exit" : "pip.enter", id: "live.player.pip") { playback.pip.toggle() } label: {
+                    Text("Picture in Picture", tableName: "Live", comment: "The live player: floats the channel in a small window over other apps")
+                }
+            }
             if sizeClass == .regular {
                 roundButton("circle.grid.3x3", id: "live.player.keypad") { keypad = true } label: {
                     Text("Number pad", tableName: "Live", comment: "The live player: type a channel's number")
@@ -395,6 +407,8 @@ struct LiveKeypad: View {
 /// its own pause and Back to live).
 struct LiveVideoLayer {
     let player: AVPlayer
+    /// The layer once made (Picture in Picture draws from it).
+    var onLayer: ((AVPlayerLayer) -> Void)?
 }
 
 #if os(macOS)
@@ -402,6 +416,7 @@ extension LiveVideoLayer: NSViewRepresentable {
     func makeNSView(context: Context) -> LayerView {
         let v = LayerView()
         v.playerLayer.player = player
+        onLayer?(v.playerLayer)
         return v
     }
 
@@ -428,6 +443,7 @@ extension LiveVideoLayer: UIViewRepresentable {
         v.playerLayer.player = player
         v.playerLayer.videoGravity = .resizeAspect
         v.isUserInteractionEnabled = false
+        onLayer?(v.playerLayer)
         return v
     }
 

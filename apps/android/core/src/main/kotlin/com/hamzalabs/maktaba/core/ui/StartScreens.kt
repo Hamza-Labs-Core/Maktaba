@@ -85,6 +85,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -424,7 +426,7 @@ fun HomePicker(session: AppSession, app: MaktabaApp, probe: HomeProbe = remember
                 enabled = !connecting,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
                 keyboardActions = KeyboardActions(onGo = { add() }),
-                modifier = Modifier.fillMaxWidth().testTag("address-field"),
+                modifier = Modifier.fillMaxWidth().then(rememberKeptAboveKeyboard()).testTag("address-field"),
             )
             Button(onClick = ::add, enabled = address.isNotBlank() && !connecting, modifier = Modifier.fillMaxWidth().testTag("address-connect")) {
                 Text(stringResource(R.string.connect))
@@ -614,13 +616,16 @@ private fun PasswordSignIn(session: AppSession) {
             }
         }
     }
+    // the keyboard's Next goes from the username to the password; Go on the password signs in
+    val passwordField = remember { FocusRequester() }
     OutlinedTextField(
         value = username,
         onValueChange = { username = it },
         label = { Text(stringResource(R.string.username)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next, autoCorrectEnabled = false),
-        modifier = Modifier.fillMaxWidth(),
+        keyboardActions = KeyboardActions(onNext = { passwordField.requestFocus() }),
+        modifier = Modifier.fillMaxWidth().then(rememberKeptAboveKeyboard()).testTag("signin-username"),
     )
     OutlinedTextField(
         value = password,
@@ -628,15 +633,15 @@ private fun PasswordSignIn(session: AppSession) {
         label = { Text(stringResource(R.string.password)) },
         singleLine = true,
         visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { signIn() }),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
+        keyboardActions = KeyboardActions(onGo = { signIn() }),
         isError = wrong,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().focusRequester(passwordField).then(rememberKeptAboveKeyboard()).testTag("signin-password"),
     )
     Button(
         onClick = ::signIn,
         enabled = username.isNotEmpty() && password.isNotEmpty() && !busy,
-        modifier = Modifier.fillMaxWidth().height(48.dp),
+        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("signin-submit"),
     ) {
         Text(stringResource(if (busy) R.string.progress_signing_in_button else R.string.signin_submit))
     }

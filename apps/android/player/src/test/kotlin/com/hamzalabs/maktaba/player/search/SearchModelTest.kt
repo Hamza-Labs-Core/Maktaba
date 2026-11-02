@@ -39,6 +39,30 @@ class SearchModelTest {
     }
 
     @Test
+    fun thePageBesideTheResultsShowsTheFirstUntilOneIsChosenAndANewSearchForgetsIt() = runBlocking {
+        val m = model()
+        assertNull("nothing before a search", m.chosen)
+        m.submit("patience")
+        assertNull(m.chosen)
+        assertEquals("the first title", "v1", m.answer!!.first)
+        m.chosen = "v2"
+        assertEquals("v2", m.chosen)
+        m.submit("patience again")
+        assertNull("a new search forgets the chosen one", m.chosen)
+    }
+
+    @Test
+    fun withoutTitlesTheFirstIsTheFirstTranscriptsVideo() = runBlocking {
+        SearchFixtures.install(home) { SearchFixtures.results(SearchFixtures.EN.copy(titles = emptyList())) }
+        val m = SearchModel(home.home.client)
+        m.submit("patience")
+        assertEquals("v4", m.answer!!.first)
+        home.answer("/api/search") { json(SearchFixtures.EMPTY) }
+        m.submit("nothing")
+        assertNull("nothing found, nothing to show", m.answer!!.first)
+    }
+
+    @Test
     fun blankAsksNothing() = runBlocking {
         val m = model()
         m.submit("   ")
