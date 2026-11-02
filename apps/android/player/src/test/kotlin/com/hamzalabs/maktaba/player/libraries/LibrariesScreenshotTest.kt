@@ -10,6 +10,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.harness.Window
 import org.junit.Before
 import org.junit.Rule
@@ -36,7 +37,7 @@ class LibrariesScreenshotTest {
     @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settled(home, "$tag shows") { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private val lang get() = if (compose.activity.resources.configuration.locales[0].language == "ar") "ar" else "en"
 
