@@ -13,8 +13,11 @@ import (
 	"os/exec"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // announcement is one registered service: its TXT changes in place, Shutdown withdraws
@@ -69,7 +72,7 @@ type dnssdRun struct {
 }
 
 func startDNSSD(path, instance, service, domain string, port int, txt []string) (*systemDNSSD, error) {
-	d := &systemDNSSD{path: path, args: []string{"-R", instance, service, domain, strconv.Itoa(port)}, txt: txt}
+	d := &systemDNSSD{path: path, args: []string{"-R", dnsLabel(instance, 63), service, domain, strconv.Itoa(port)}, txt: txtStrings(txt)}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := d.start(); err != nil {
@@ -140,7 +143,7 @@ func (d *systemDNSSD) end() {
 func (d *systemDNSSD) SetText(txt []string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.txt = txt
+	d.txt = txtStrings(txt)
 	if d.stopped {
 		return
 	}
@@ -156,4 +159,30 @@ func (d *systemDNSSD) Shutdown() {
 	defer d.mu.Unlock()
 	d.stopped = true
 	d.end()
+}
+
+// dnsLabel is s as DNS-SD takes it: no control characters, at most max bytes, cut on a
+// character boundary. A longer instance name (a long home name) makes dns-sd refuse it,
+// and the announcement would be retried for ever.
+func dnsLabel(s string, max int) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
+	for len(s) > max {
+		_, size := utf8.DecodeLastRuneInString(s)
+		s = s[:len(s)-size]
+	}
+	return s
+}
+
+// txtStrings are the TXT entries as DNS-SD takes them: each at most 255 bytes.
+func txtStrings(txt []string) []string {
+	out := make([]string, 0, len(txt))
+	for _, t := range txt {
+		out = append(out, dnsLabel(t, 255))
+	}
+	return out
 }

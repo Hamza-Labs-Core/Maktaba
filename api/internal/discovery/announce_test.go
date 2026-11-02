@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 // A Mac announces through its own responder; nothing else has one we use.
@@ -146,3 +147,23 @@ func TestDNSSDTakesTheNameAsAnArgument(t *testing.T) {
 }
 
 func exec0(name string, args ...string) error { return exec.Command(name, args...).Run() }
+
+// A home name too long for DNS-SD, or with control characters, is fitted to it rather than
+// refused (a refused name would be retried for ever).
+func TestDNSLabelFitsDNSSD(t *testing.T) {
+	t.Parallel()
+	if got := dnsLabel("Maktaba (studio)\n\t", 63); got != "Maktaba (studio)" {
+		t.Fatalf("control characters: %q", got)
+	}
+	long := "Maktaba (" + strings.Repeat("مكتبة", 10) + ")"
+	got := dnsLabel(long, 63)
+	if len(got) > 63 || !utf8.ValidString(got) {
+		t.Fatalf("long name: %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+	if !strings.HasPrefix(long, got) {
+		t.Fatalf("not a prefix: %q", got)
+	}
+	if got := txtStrings([]string{strings.Repeat("a", 300)}); len(got[0]) != 255 {
+		t.Fatalf("txt entry: %d bytes", len(got[0]))
+	}
+}
