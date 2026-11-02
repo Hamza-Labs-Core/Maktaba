@@ -136,6 +136,38 @@ struct SlowToStartProbe: LocalNetworkProbe {
         #expect(!next.isPresented)
     }
 
+    /// SwiftUI builds the gate's model again each time the app's body runs (keeping only the
+    /// first), even after the person closed the walkthrough. On a UI test's first run
+    /// (`-maktaba-permissions-reset`) building it again forgot "seen", so the next check put
+    /// the walkthrough back up (CI: it stayed up after Continue). The reset is the app's, once.
+    @Test func buildingTheAppsModelAgainKeepsSeen() async {
+        let d = freshDefaults()
+        let args = ["app", "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted"]
+        PermissionsModel.applyLaunchArguments(args, defaults: d)
+        let kept = PermissionsModel.forThisApp(arguments: args, environment: [:], defaults: d)
+        await kept.refresh()
+        #expect(kept.isPresented)
+        kept.dismiss()
+        #expect(kept.seen)
+
+        // the parent's body again: a second model, built and thrown away
+        _ = PermissionsModel.forThisApp(arguments: args, environment: [:], defaults: d)
+        #expect(kept.seen, "building the model again must not forget the walkthrough was closed")
+        await kept.refresh() // the scene comes to the foreground
+        #expect(!kept.isPresented)
+    }
+
+    @Test func theLaunchResetForgetsSeenAndAsked() {
+        let d = freshDefaults()
+        d.set(true, forKey: PermissionsModel.seenKey)
+        d.set(true, forKey: PermissionsModel.askedKey)
+        PermissionsModel.applyLaunchArguments(["app"], defaults: d)
+        #expect(d.bool(forKey: PermissionsModel.seenKey)) // no reset asked for
+        PermissionsModel.applyLaunchArguments(["app", "-maktaba-permissions-reset"], defaults: d)
+        #expect(!d.bool(forKey: PermissionsModel.seenKey))
+        #expect(!d.bool(forKey: PermissionsModel.askedKey))
+    }
+
     /// The clock starts when the browse is read: a reader held back past the timeout still
     /// hears the answer.
     @Test func aSlowStartStillHearsTheAnswer() async {

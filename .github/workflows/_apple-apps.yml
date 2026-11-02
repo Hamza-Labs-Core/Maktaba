@@ -41,6 +41,14 @@ jobs:
           python3 tools/apple/check-ui-typing.py --self-test
           python3 tools/apple/check-ui-typing.py
 
+      # the Player UI tests' split over shards (by measured time; every test in one shard)
+      - name: UI test shards split every test once
+        run: python3 tools/apple/ui-shard.py --self-test
+
+      # how a UI shard reads its simulator's own processes to know it has settled
+      - name: A simulator's settle check reads its own processes
+        run: python3 tools/apple/sim-settle.py --self-test
+
       - name: Select Xcode
         run: |
           set -euo pipefail
@@ -97,36 +105,216 @@ jobs:
         run: python3 tools/apple/check-string-catalogs.py --stringsdata "$DERIVED"
 
   # The Player's UI tests (Epic 48: its shell, then each screen) on iPhone and iPad, against
-  # MockHome (apps/apple/UITests, served by the test runner; no real home). Every class in
+  # MockHome (apps/apple/UITests, served by the test runner; no real home). Every test of
   # apps/apple/UITests/Player*Tests.swift runs, so a screen's tests need no change here. Each
   # simulator is made for the run and deleted after it (never a shared device); the
-  # screenshots (dark, English and Arabic) are kept as an artifact.
+  # screenshots (dark, English and Arabic), the result bundles and the app's own log are kept
+  # as an artifact.
   #
-  # Four jobs per device, side by side (each its own simulator), and one for the Mac: the
-  # iPhone's classes in one job outgrew the hour, and with each audited page also launched
-  # at the smallest text size and AX3 (`assertTextScales`) an iPad shard holding both
-  # Profile's and Libraries' audits came near it in three.
+  # Built once per device (build-for-testing, below), then run on six simulators side by side
+  # (test-without-building), each its own job: a shard no longer spends ten minutes building
+  # the same app. The tests are split by how long each took on CI (tools/apple/ui-shard.py,
+  # tools/apple/ui-durations.json), so the shards end together.
+  player-ui-build:
+    name: Player UI tests build (${{ matrix.device }})
+    if: inputs.player_ui
+    runs-on: macos-26
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { device: iphone, scheme: "Maktaba Player" }
+          - { device: ipad, scheme: "Maktaba Player iPad" }
+    env:
+      DERIVED: ${{ github.workspace }}/build/player-ui-derived
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      # for the runner's own simulators (arm64), with the .xctestrun the shards run from
+      - name: Build the app and its UI tests
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          xcodebuild build-for-testing -project Maktaba.xcodeproj -scheme "${{ matrix.scheme }}" \
+            -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO -quiet
+          # one archive: an artifact keeps no file modes, and the app's binaries need theirs
+          tar -C "$DERIVED/Build" -cf "$RUNNER_TEMP/player-ui-build.tar" Products
+          ls -la "$RUNNER_TEMP/player-ui-build.tar"
+
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: player-ui-build-${{ matrix.device }}
+          path: ${{ runner.temp }}/player-ui-build.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
+
+  # Each shard starts beside the builds, not after them: its simulator boots and settles while
+  # the app builds. A simulator made for the run is busy for minutes after it boots, and a test
+  # in that time ran slowly enough to fail on time (CI: an accessibility audit "failed to
+  # complete in time" five to eight minutes after the simulator was made; a page took 31 s to
+  # idle). On main each shard built for ten minutes after booting, which hid it.
   player-ui-tests:
-    name: Player UI tests (${{ matrix.device }}${{ matrix.shard != 0 && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }})
+    name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
     if: inputs.player_ui
     runs-on: macos-26
     timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read # the build's artifact, as soon as it is uploaded
     strategy:
       fail-fast: false
-      # The iPhone and iPad classes are split over `shards` jobs that run side by side: in
-      # one job they outgrew the hour. Each class goes, heaviest first, to the shard with
-      # the fewest tests so far, so the shards stay even as classes are added.
       matrix:
-        include:
-          - { device: iphone, shard: 1, shards: 4 }
-          - { device: iphone, shard: 2, shards: 4 }
-          - { device: iphone, shard: 3, shards: 4 }
-          - { device: iphone, shard: 4, shards: 4 }
-          - { device: ipad, shard: 1, shards: 4 }
-          - { device: ipad, shard: 2, shards: 4 }
-          - { device: ipad, shard: 3, shards: 4 }
-          - { device: ipad, shard: 4, shards: 4 }
-          - { device: mac, shard: 0, shards: 0 }
+        device: [iphone, ipad]
+        shard: [1, 2, 3, 4, 5, 6]
+        shards: [6]
+    env:
+      PRODUCTS: ${{ github.workspace }}/build/player-ui-products
+      SHOTS: ${{ github.workspace }}/build/player-shots
+      RESULTS: ${{ github.workspace }}/build/player-results
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Make, boot and settle the simulator
+        run: |
+          set -euo pipefail
+          device="${{ matrix.device }}" shard="${{ matrix.shard }}"
+          mkdir -p "$SHOTS" "$RESULTS" "$PRODUCTS"
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+          # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
+          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
+          import json, re, sys
+          want = {'iphone': r'^iPhone (\d+)$', 'ipad': r'^iPad Pro 11-inch \(M(\d+)\)$'}[sys.argv[1]]
+          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
+          print(max(t)[1])" "$device")
+          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard" "$devtype" "$runtime")
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          # the on-screen keyboard shows, as on a phone (PlayerSignInKeyboardUITests measures
+          # fields against it): no hardware keyboard, and the software one not minimized when
+          # keys are typed (XCUITest types keys)
+          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcrun simctl ui "$udid" appearance dark
+          # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
+          # id; a parent's config is not inherited): by default `log show` finds its errors and
+          # notices alone. Kept, not streamed: a live stream slows the simulator (accessibility
+          # audits timed out), and the other subsystems stay as they are
+          case "$device" in
+            iphone) bundle=com.hamzalabs.maktaba.player ;;
+            ipad) bundle=com.hamzalabs.maktaba.player.tablet ;;
+          esac
+          xcrun simctl spawn "$udid" log config --subsystem "$bundle" --mode "level:debug,persist:debug"
+          # the keyboard types only what a test types: no suggestions, autocorrection or
+          # capitals of its own, no slide-to-type introduction over the keys (CI: the home's
+          # address in the picker came out with its port three times)
+          for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
+                     KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
+            xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
+          done
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
+          # settled: the simulator's own processes quiet on three 5-second looks running (its
+          # first-boot work done; the runner's own daemons are no measure, they kept it under
+          # 30% idle for 12 minutes). Each look is kept with the results. Not quiet in 8
+          # minutes: the tests run anyway, and the log says so.
+          python3 tools/apple/sim-settle.py "$udid" "$RESULTS/$device-$shard-settle.log" --max 480
+
+      # The build's artifact, once its job has uploaded it (a failed build fails this shard).
+      - name: Wait for the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          name="player-ui-build-${{ matrix.device }}" job="Player UI tests build (${{ matrix.device }})"
+          start=$(date +%s)
+          while :; do
+            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$name" --jq '.total_count' || echo 0)
+            if [ "$found" -ge 1 ]; then echo "built after $(( $(date +%s) - start ))s here"; break; fi
+            ended=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              --jq ".jobs[] | select(.name | endswith(\"$job\")) | .conclusion // \"\"" || true)
+            case "$ended" in failure|cancelled|timed_out) echo "the build ended: $ended"; exit 1 ;; esac
+            if [ $(( $(date +%s) - start )) -ge 1800 ]; then echo "no build in 30 minutes"; exit 1; fi
+            sleep 15
+          done
+
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: player-ui-build-${{ matrix.device }}
+          path: ${{ runner.temp }}
+
+      - name: Run the Player UI tests
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          device="${{ matrix.device }}" shard="${{ matrix.shard }}" shards="${{ matrix.shards }}"
+          case "$device" in
+            iphone) scheme="Maktaba Player" target="Maktaba Player UITests" ;;
+            ipad) scheme="Maktaba Player iPad" target="Maktaba Player iPad UITests" ;;
+          esac
+          tar -xf "$RUNNER_TEMP/player-ui-build.tar" -C "$PRODUCTS"
+          # this shard's tests: longest first, to the shard with the least time so far
+          only=()
+          while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \
+            < <(python3 ../../tools/apple/ui-shard.py "$device" "$shard" "$shards" UITests/Player*Tests.swift)
+          echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
+          xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
+          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
+            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+
+      # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
+      # sign-ins), kept with the results, read once the tests are done: a failed wait
+      # shows what the app did meanwhile. Read after, not streamed: a stream makes each
+      # line the app's frameworks log cost while the tests run (CI: a stream at info
+      # took accessibility's per-element lines, snapshots took 15 s, an audit timed out).
+      # The simulator is the run's own, so the log covers its whole life: every launch.
+      - name: Read and check the app's log, delete the simulator
+        if: always() && env.UDID != ''
+        run: |
+          log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
+          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$log" || true
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID" || true
+          # checked whole: every launch's info and debug lines are in it
+          python3 tools/apple/check-app-log.py "$log"
+
+      - name: Keep the screenshots, results and the app's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: player-ui-tests-${{ matrix.device }}-${{ matrix.shard }}
+          path: |
+            build/player-shots
+            build/player-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
+  # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the
+  # build is ad-hoc signed, everything with the UI tests' entitlements (sandbox, network
+  # client and server): the app's own add a keychain group, which needs a provisioning
+  # profile. The Mac keychain test needs that group, so it is not among the classes here.
+  player-ui-mac:
+    name: Player UI tests (mac)
+    if: inputs.player_ui
+    runs-on: macos-26
+    timeout-minutes: 30
     env:
       DERIVED: ${{ github.workspace }}/build/player-ui-derived
       SHOTS: ${{ github.workspace }}/build/player-shots
@@ -141,71 +329,19 @@ jobs:
           sudo xcode-select -s "$xcode/Contents/Developer"
           xcodebuild -version
 
-      - name: Run the Player UI tests
-        if: matrix.device != 'mac'
-        working-directory: apps/apple
-        run: |
-          set -euo pipefail
-          mkdir -p "$SHOTS" "$RESULTS"
-          # this shard's classes: heaviest first (by test count) to the lightest shard
-          only=()
-          while IFS= read -r c; do only+=("$c"); done < <(python3 ../../tools/apple/ui-shard.py "${{ matrix.shard }}" "${{ matrix.shards }}" UITests/Player*Tests.swift)
-          echo "shard ${{ matrix.shard }}/${{ matrix.shards }} classes: ${only[*]}"
-          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
-          # the newest device type of a kind this Xcode knows ("iPhone 17", "iPad Pro 11-inch (M5)")
-          devtype() {
-            xcrun simctl list devicetypes -j | python3 -c "
-          import json, re, sys
-          want = {'iphone': r'^iPhone (\d+)$', 'ipad': r'^iPad Pro 11-inch \(M(\d+)\)$'}[sys.argv[1]]
-          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
-          print(max(t)[1])" "$1"
-          }
-          made=()
-          cleanup() { for u in ${made[@]+"${made[@]}"}; do xcrun simctl shutdown "$u" || true; xcrun simctl delete "$u" || true; done; }
-          trap cleanup EXIT
-          status=0
-          run() { # scheme, test target, device-type prefix
-            local udid args=()
-            udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$3-${{ matrix.shard }}" "$(devtype "$3")" "$runtime")
-            made+=("$udid")
-            # the on-screen keyboard shows, as on a phone (PlayerSignInKeyboardUITests measures
-            # fields against it): no hardware keyboard, and the software one not minimized when
-            # keys are typed (XCUITest types keys)
-            defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
-            xcrun simctl boot "$udid"
-            xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
-            xcrun simctl ui "$udid" appearance dark
-            for c in "${only[@]}"; do args+=(-only-testing "$2/$c"); done
-            echo "::group::$1 on $3"
-            TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "$1" \
-              -destination "id=$udid" -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO \
-              -resultBundlePath "$RESULTS/$3-${{ matrix.shard }}.xcresult" "${args[@]}" || status=1
-            echo "::endgroup::"
-            # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
-            # sign-ins), kept with the results: a failed wait shows what the app did meanwhile
-            xcrun simctl spawn "$udid" log show --style compact --info --debug \
-              --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$3-${{ matrix.shard }}-app.log" || true
-            xcrun simctl shutdown "$udid" || true
-          }
-          case "${{ matrix.device }}" in
-            iphone) run "Maktaba Player" "Maktaba Player UITests" "iphone" ;;
-            ipad) run "Maktaba Player iPad" "Maktaba Player iPad UITests" "ipad" ;;
-          esac
-          exit $status
-
-      # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
-      # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the
-      # build is ad-hoc signed, everything with the UI tests' entitlements (sandbox, network
-      # client and server): the app's own add a keychain group, which needs a provisioning
-      # profile. The Mac keychain test needs that group, so it is not among the classes here.
       - name: Run the Mac Player tests
-        if: matrix.device == 'mac'
         working-directory: apps/apple
         run: |
           set -euo pipefail
           # a push to main measures coverage for the affected-tests map
           cover=()
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then cover=(-enableCodeCoverage YES); fi
+          mkdir -p "$RESULTS"
+          # the app's own log, whole (info and debug too), as on the iPhone and iPad: the
+          # runner keeps its subsystem's lines while it runs, read once the tests are done
+          sudo log config --subsystem com.hamzalabs.maktaba.player.mac --mode "level:debug,persist:debug"
+          start=$(date '+%Y-%m-%d %H:%M:%S')
+          status=0
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
             -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
@@ -213,20 +349,25 @@ jobs:
             -resultBundlePath "$RESULTS/mac.xcresult" \
             -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
             -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
-            -only-testing "Maktaba Player Mac UITests"
+            -only-testing "Maktaba Player Mac Tests/PlayerLaunchLog" \
+            -only-testing "Maktaba Player Mac UITests" || status=1
+          log show --start "$start" --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
+          python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
+          exit $status
 
       # tools/affected-tests: which source files the Mac Player's tests execute. The iPhone and
       # iPad runs are not measured (they take most of an hour as it is): their tests are
       # found by the UI search and by name.
       - name: Coverage for the affected-tests map
-        if: matrix.device == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p build/coverage-fragment
           xcrun xccov view --report --json "$RESULTS/mac.xcresult" >build/coverage-fragment/player-mac.xccov.json
           echo "apple-mac:apps/apple/PlayerMacTests" >build/coverage-fragment/player-mac.xccov.json.id
-      - if: matrix.device == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -239,7 +380,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: player-ui-tests-${{ matrix.device }}${{ matrix.shard != 0 && format('-{0}', matrix.shard) || '' }}
+          name: player-ui-tests-mac
           path: |
             build/player-shots
             build/player-results

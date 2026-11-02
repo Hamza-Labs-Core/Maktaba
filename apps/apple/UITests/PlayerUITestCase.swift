@@ -29,13 +29,86 @@ class PlayerUITestCase: XCTestCase {
 
     override func setUp() async throws {
         continueAfterFailure = false
+        try warmUpOnce()
         home = try MockHome()
         try home.start()
         app = XCUIApplication()
     }
 
+    // MARK: the simulator's first launches
+
+    /// Whether this test process has signed in once already (`warmUpOnce`).
+    private static var warmedUp = false
+
+    /// The simulator's first launches of the app under XCTest, paid once per test process,
+    /// before its first test.
+    ///
+    /// Each CI shard runs on a simulator made for it. Its first launch under XCTest sets up
+    /// the automation session (13 to 36 s on CI, 2 s at every later launch), and for a minute
+    /// or two after it the app answers each query slowly: a snapshot of the app took 14 to
+    /// 31 s, and the shell drew 70 s after sign-in. The first test of a shard bore all of it:
+    /// `PlayerLibrariesUITests.testAccessibilityAudit`, first in its shard, failed on its
+    /// page's 20 s wait ("en root") and on the audit's own deadline ("Audit failed to complete
+    /// in time"), on iPhone and iPad, while the next test, on the same simulator, signed in
+    /// in a third of the time and passed.
+    ///
+    /// So before the first test the app goes the way a test takes it, on a mock home of its
+    /// own (the test's mock sees none of it): launched, signed in, the shell drawn on
+    /// Libraries, and read until three snapshots running each come back within 2 s (a page
+    /// read at its usual pace); then closed. What it took is in the test log and the result
+    /// bundle. A later test process (after a crash) finds the simulator ready and pays one
+    /// sign-in.
+    private func warmUpOnce() throws {
+        guard !Self.warmedUp else { return }
+        Self.warmedUp = true
+        home = try MockHome()
+        try home.start()
+        app = XCUIApplication()
+        defer {
+            app.terminate()
+            home.stop()
+        }
+        XCTContext.runActivity(named: "The simulator's first launches of the app") { activity in
+            let start = Date()
+            launchSignedIn(section: "libraries")
+            let shell = element("player.shell").waitForExistence(timeout: 120)
+            let drawn = Date().timeIntervalSince(start)
+            var quick = 0
+            var looks: [String] = []
+            let end = Date().addingTimeInterval(180)
+            while shell, quick < 3, Date() < end {
+                let asked = Date()
+                _ = try? app.snapshot()
+                let took = Date().timeIntervalSince(asked)
+                looks.append(String(format: "%.1f", took))
+                quick = took < 2 ? quick + 1 : 0
+            }
+            let pace = !shell ? "no shell in 120 s" : quick >= 3 ? "read at its usual pace" : "still slow after 180 s"
+            let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s", drawn, pace,
+                              Date().timeIntervalSince(start), looks.joined(separator: ", "))
+            // in the test log, and kept with the result bundle
+            print("PlayerUITestCase warm-up: \(note)")
+            let kept = XCTAttachment(string: note)
+            kept.lifetime = .keepAlways
+            activity.add(kept)
+        }
+    }
+
+    /// The app is closed when the test ends, before its home goes: XCUITest leaves it running
+    /// otherwise, and one left on the watch screen keeps playing with its sound session
+    /// (`.playback`, not mixable: `Playback.swift`). The next test's own player
+    /// (PlayerWatchTests plays MockHome's stream in this runner) then cannot start its sound
+    /// output, and AVPlayer's time, which follows the sound output, stays put: "the time
+    /// moves" timed out 14 s in, with the Player still posting progress (CI run 41521240810).
     override func tearDown() async throws {
+        Self.close(app)
         home?.stop()
+    }
+
+    /// Closes the app if it is running.
+    static func close(_ app: XCUIApplication?) {
+        guard let app, app.state != .notRunning else { return }
+        app.terminate()
     }
 
     /// Opens the app. `fresh`: as a first run (no homes, the permissions walkthrough passed
@@ -62,6 +135,8 @@ class PlayerUITestCase: XCTestCase {
         if let section { args += ["-maktaba-section", section] }
         if let open { args += ["-maktaba-open", open] }
         if controlsStay { args += ["-player.controls_hide_after", "600"] }
+        // the app takes the text sizes `setTextSize` asks for (`TextSizeHook`)
+        args.append(TextSizeHook.flag)
         app.launchArguments = args + extra
         app.launch()
         if fresh {
@@ -150,35 +225,71 @@ class PlayerUITestCase: XCTestCase {
     /// its measurements go stale. It flagged every text of a page at once as "partially
     /// unsupported" (Search's recent searches, Profile's Sessions, Libraries' pages) where the
     /// screen recording shows each of them redrawn and scaled at every size. Dynamic Type is
-    /// checked instead by `assertTextScales`, on each audited page: the page launched at the
+    /// checked instead by `assertTextScales`, on each audited page: the page shown at the
     /// smallest size, the default and AX3, each text taller at each step. Clipped text
     /// (`.textClipped`) is still the audit's.
+    ///
+    /// The handler runs once the audit is over, on every issue it found: nothing queries the
+    /// app while the audit holds it. A query from inside the audit's own handler (an issue's
+    /// element, its frame or label) stalled an iPad's audit for 150 s on CI and left the app
+    /// answering no query after it ("Failed to get matching snapshot" on Libraries' Arabic
+    /// grids). Every issue the handler does not excuse fails, all of them in one error
+    /// (`AuditIssues`), each with the element it is on.
     func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
-        // the page as it is before the audit, for the handler to read: a query of the app
-        // from inside the handler, while the audit holds it, stalled an iPad's audit for
-        // 150 s on CI and left the app answering no query after it
+        // the page as it is before the audit, for the handler to read
         shown = settledPage()
         defer { shown = nil }
-        try app.performAccessibilityAudit(for: types.subtracting(.dynamicType), handler)
+        var issues: [XCUIAccessibilityAuditIssue] = []
+        try app.performAccessibilityAudit(for: types.subtracting(.dynamicType)) { issue in
+            issues.append(issue)
+            return true
+        }
+        var failed: [String] = []
+        for issue in issues where try !handler(issue) { failed.append(described(issue)) }
+        if !failed.isEmpty { throw AuditIssues(issues: failed) }
+    }
+
+    /// The issues of an audit its handler did not excuse.
+    struct AuditIssues: Error, CustomStringConvertible {
+        let issues: [String]
+        var description: String { "accessibility audit: " + issues.joined(separator: "; ") }
     }
 
     // MARK: Dynamic Type
 
+    /// A launch at the smallest text size or at AX3, for a test that starts there (the size
+    /// check changes sizes in the running app instead: `setTextSize`).
     static let smallestText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS"]
     static let ax3Text = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
 
-    /// Dynamic Type on the page open now, at the default size: `open` launches the app again
-    /// with the launch arguments it is given (a text size) and opens the same page. Each text
-    /// of the page, by its identifier or else its words, shown at the smallest size, the
-    /// default and AX3, must be taller at each step (one allowance, a button's 44-pt minimum at the two
-    /// smaller sizes: `grows`); one that is not fails, named with its three heights and where it
-    /// is. The texts of the system's navigation and tab bars, every one of them, are UIKit's own
-    /// (an iPad's tab bar keeps one size and shows the large content viewer instead; a bar's
-    /// title grows only at the accessibility sizes) and are left out. Afterwards the
-    /// page is open again at the default size, for the test to go on.
-    func assertTextScales(_ page: String, file: StaticString = #filePath, line: UInt = #line, open: ([String]) -> Void) {
-        let fixed = textsThatDoNotScale(open: open)
+    /// The Dynamic Type sizes the check measures (`TextSizeHook` in the app).
+    enum TextSize: String { case smallest = "XS", standard = "default", ax3 = "AX3" }
+
+    /// Changes the running app's Dynamic Type size (a Debug build's `TextSizeHook`: the
+    /// system's setting, overridden on each of its scenes) and waits for the app to say it
+    /// has laid its windows out at it. Fails when the app does not answer.
+    func setTextSize(_ size: TextSize, file: StaticString = #filePath, line: UInt = #line) {
+        let answer = TextSizeAnswers.shared.expect(size.rawValue)
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName((TextSizeHook.ask + size.rawValue) as CFString),
+                                             nil, nil, true)
+        let end = Date().addingTimeInterval(15)
+        while !TextSizeAnswers.shared.received(answer), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }
+        XCTAssertTrue(TextSizeAnswers.shared.received(answer), "the app took the text size \(size.rawValue)", file: file, line: line)
+    }
+
+    /// Dynamic Type on the page open now, at the default size: the same page, in the same
+    /// launch, shown at the smallest size, the default and AX3 (`setTextSize`). Each text of
+    /// the page, by its identifier or else its words, must be taller at each step (one
+    /// allowance, a button's 44-pt minimum at the two smaller sizes: `grows`); one that is not
+    /// fails, named with its three heights and where it is. The texts of the system's
+    /// navigation and tab bars, every one of them, are UIKit's own (an iPad's tab bar keeps one
+    /// size and shows the large content viewer instead; a bar's title grows only at the
+    /// accessibility sizes) and are left out. Afterwards the page is at the default size
+    /// again, for the test to go on.
+    func assertTextScales(_ page: String, file: StaticString = #filePath, line: UInt = #line) {
+        let fixed = textsThatDoNotScale()
         XCTAssertTrue(fixed.isEmpty, "\(page): Dynamic Type: " + fixed.joined(separator: "; "), file: file, line: line)
     }
 
@@ -197,14 +308,20 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// The texts of the page that do not grow at each step (see `assertTextScales`).
-    func textsThatDoNotScale(open: ([String]) -> Void) -> [String] {
-        guard let normal = settledPage() else { return ["the page could not be read"] }
-        open(Self.smallestText)
+    ///
+    /// Each size is read after the app took it, the default too (last, which leaves the page
+    /// there): the page as launched is not read. A view's accessibility frame as first laid
+    /// out can differ from the same view's after an update: a poster card on the gallery's
+    /// shimmer page read 94 pt (its poster) as launched and 107 pt at XS once updated (its
+    /// poster and title), which is no measure of its text.
+    func textsThatDoNotScale() -> [String] {
+        setTextSize(.smallest)
         let small = settledPage()
-        open(Self.ax3Text)
+        setTextSize(.ax3)
         let large = settledPage()
-        open([])
-        guard let small, let large else { return ["the page could not be read at the smallest size or AX3"] }
+        setTextSize(.standard)
+        let normal = settledPage()
+        guard let small, let normal, let large else { return ["the page could not be read at the smallest size, the default or AX3"] }
         let (s, n, l) = (small.heights, normal.heights, large.heights)
         var fixed: [String] = []
         for key in n.keys.sorted() {
@@ -340,5 +457,39 @@ class PlayerUITestCase: XCTestCase {
     /// Swipes up until `e` is on screen and can be tapped (a few swipes at most).
     func scrollUntil(_ e: XCUIElement) {
         for _ in 0 ..< 8 where !(e.exists && e.isHittable) { app.swipeUp(velocity: .slow) }
+    }
+}
+
+/// The app's answers to `setTextSize` (Darwin notifications from its `TextSizeHook`): each
+/// size's answers counted as they arrive, on the test's main run loop, which the wait turns.
+final class TextSizeAnswers: @unchecked Sendable {
+    static let shared = TextSizeAnswers()
+    private static let prefix = TextSizeHook.applied
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    private init() {
+        for size in TextSizeHook.sizes {
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, name, _, _ in
+                guard let name = name?.rawValue as String?, name.hasPrefix(TextSizeAnswers.prefix) else { return }
+                TextSizeAnswers.shared.count(String(name.dropFirst(TextSizeAnswers.prefix.count)))
+            }, (Self.prefix + size) as CFString, nil, .deliverImmediately)
+        }
+    }
+
+    private func count(_ size: String) {
+        lock.lock(); defer { lock.unlock() }
+        counts[size, default: 0] += 1
+    }
+
+    /// The answer to wait for: the next one for `size`, after those already counted.
+    func expect(_ size: String) -> (size: String, count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (size, counts[size, default: 0] + 1)
+    }
+
+    func received(_ answer: (size: String, count: Int)) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return counts[answer.size, default: 0] >= answer.count
     }
 }

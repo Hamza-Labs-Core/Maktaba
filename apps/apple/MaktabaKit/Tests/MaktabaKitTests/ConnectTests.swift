@@ -243,10 +243,20 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
             var r = request
             r.url = next
             let moved = HTTPURLResponse(url: url, statusCode: answer.redirectStatus, httpVersion: "HTTP/1.1", headerFields: ["Location": to])!
-            client?.urlProtocol(self, wasRedirectedTo: r, redirectResponse: moved)
-            // a redirect not followed ends with the 3xx answer itself
-            client?.urlProtocol(self, didReceive: moved, cacheStoragePolicy: .notAllowed)
-            client?.urlProtocolDidFinishLoading(self)
+            // URLSession asks the task's delegate whether to follow. Told of the redirect AND
+            // given the 3xx answer, it races the two: now and then the 3xx wins and a followed
+            // redirect ends as a 302. So it is told one: the redirect when the delegate follows
+            // it, else the 3xx answer itself (how a redirect not followed ends).
+            switch Self.follows(task, from: request, to: r) {
+            case .follow:
+                client?.urlProtocol(self, wasRedirectedTo: r, redirectResponse: moved)
+            case .stop:
+                client?.urlProtocol(self, didReceive: moved, cacheStoragePolicy: .notAllowed)
+                client?.urlProtocolDidFinishLoading(self)
+            case .unknown(let what):
+                client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL, userInfo: [
+                    NSLocalizedDescriptionKey: "RouteStub: a redirect under \(what), not a RedirectRule: cannot tell if it is followed"]))
+            }
             return
         }
         let resp = HTTPURLResponse(url: url, statusCode: answer.status, httpVersion: "HTTP/1.1",
@@ -257,6 +267,16 @@ final class RouteStub: URLProtocol, @unchecked Sendable {
     }
 
     override func stopLoading() {}
+
+    enum Redirect: Equatable { case follow, stop, unknown(String) }
+
+    /// What the task's delegate will do with a redirect, asked as URLSession will ask it.
+    static func follows(_ task: URLSessionTask?, from request: URLRequest, to next: URLRequest) -> Redirect {
+        // no delegate: URLSession follows
+        guard let delegate = task?.delegate else { return .follow }
+        guard let rule = delegate as? RedirectRule else { return .unknown(String(describing: type(of: delegate))) }
+        return rule.follow(from: task?.originalRequest ?? request, to: next) == nil ? .stop : .follow
+    }
 }
 
 extension RouteStub.Answer {
@@ -621,6 +641,27 @@ extension RouteStub.Answer {
             _ = try await c.video("a")
             #expect(RouteStub.seen.first { $0.route == "GET tokens.test/api/videos/b" }?.auth == "Bearer secret.access.token")
         }
+
+        /// The stub tells URLSession one thing per redirect (`RouteStub.follows`): a redirect
+        /// followed ends at its target every time, one not followed with the 3xx answer.
+        @Test func aRedirectEndsOneWayEveryTime() async throws {
+            RouteStub.reset()
+            RouteStub.on("GET tokens.test/api/libraries", .init(status: 302, body: "", redirect: "http://evil.test/api/libraries"))
+            RouteStub.on("GET evil.test/api/libraries", .json(200, #"{"items":[],"next":null}"#))
+            let s = RouteStub.session()
+            let req = URLRequest(url: URL(string: "http://tokens.test:8088/api/libraries")!)
+            for _ in 0..<200 {
+                let (_, followed) = try await s.data(for: req, delegate: SameOriginRedirects.shared)
+                #expect((followed as? HTTPURLResponse)?.statusCode == 200 && followed.url?.host() == "evil.test")
+                let (_, stopped) = try await s.data(for: req, delegate: SameOriginOnly.shared)
+                #expect((stopped as? HTTPURLResponse)?.statusCode == 302 && stopped.url?.host() == "tokens.test")
+            }
+            // a delegate that is not a RedirectRule is a stub error, not a guess
+            await #expect(throws: URLError.self) { _ = try await s.data(for: req, delegate: PlainDelegate()) }
+            #expect(RouteStub.follows(nil, from: req, to: req) == .follow)
+        }
+
+        final class PlainDelegate: NSObject, URLSessionTaskDelegate {}
 
         @Test func theRuleItself() {
             var r = URLRequest(url: URL(string: "http://h.test:8088/api/x")!)

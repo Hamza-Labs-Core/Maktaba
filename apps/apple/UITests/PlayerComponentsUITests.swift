@@ -35,7 +35,7 @@ final class PlayerComponentsUITests: PlayerUITestCase {
                     XCTFail("\(piece) \(language)\(large ? " AX3" : ""): \(error)")
                 }
                 if !large {
-                    assertTextScales("\(piece) \(language)") { size in self.gallery(piece, language, large: false, size: size) }
+                    assertTextScales("\(piece) \(language)")
                 }
                 app.terminate()
             }
@@ -48,7 +48,7 @@ final class PlayerComponentsUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             gallery("fixedtext", language, large: false)
             XCTAssertTrue(element("gallery.text.fixed").waitForExistence(timeout: 5), "the fixed text")
-            let fixed = textsThatDoNotScale { size in self.gallery("fixedtext", language, large: false, size: size) }
+            let fixed = textsThatDoNotScale()
             XCTAssertTrue(fixed.contains { $0.hasPrefix("\"gallery.text.fixed\"") }, "\(language): the fixed text fails: \(fixed)")
             XCTAssertFalse(fixed.contains { $0.hasPrefix("\"gallery.text.scaled\"") }, "\(language): the scaled text passes: \(fixed)")
             app.terminate()

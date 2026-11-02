@@ -144,12 +144,15 @@ final class PlayerMockHomeTests: XCTestCase {
         let last = try JSONSerialization.jsonObject(with: try await call("GET", "/api/videos?cursor=c2").1) as? [String: Any]
         XCTAssertTrue(last?["next"] is NSNull, "the last page, not the first again")
         XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 1.4, "delayed too")
+        XCTAssertEqual(home.delay(of: "GET", "/api/videos"), 1.5)
         home.reset()
-        // Half the delay, not a fixed bound: a loaded simulator took 0.5s for an
-        // undelayed local answer, and a kept delay would take 1.5s.
+        // what reset kept, read, not timed: a loaded simulator took 0.77 s for an undelayed
+        // local answer (half the delay was the bound, and it failed)
+        XCTAssertNil(home.delay(of: "GET", "/api/videos"), "reset forgets the delay")
+        // and the answer comes sooner than any kept delay could (at least 1.5 s)
         let quick = Date()
         _ = try await call("GET", "/api/videos")
-        XCTAssertLessThan(Date().timeIntervalSince(quick), 0.75, "reset forgets the delay")
+        XCTAssertLessThan(Date().timeIntervalSince(quick), 1.4, "reset forgets the delay")
     }
 
     func testTimesAreFilledRelativeToNow() {

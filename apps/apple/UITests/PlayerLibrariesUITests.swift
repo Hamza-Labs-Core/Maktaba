@@ -196,16 +196,14 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             for page in pages {
                 let name = "\(language) \(page.open ?? "root")"
-                let open = { (size: [String]) in
-                    self.launchSignedIn(language, section: "libraries", open: page.open, extra: size)
-                    XCTAssertTrue(self.element(page.ready).waitForExistence(timeout: 20), name)
-                    // the posters loaded: no shimmer moving under the contrast check
-                    self.waitFor(timeout: 2) { false }
-                    self.loadEveryPage()
-                }
-                open([])
+                launchSignedIn(language, section: "libraries", open: page.open)
+                XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
+                // the posters loaded: no shimmer moving under the contrast check
+                waitFor(timeout: 2) { false }
+                loadEveryPage()
                 audit(name)
-                assertTextScales(name, open: open)
+                // the same page at the smallest size, the default and AX3, in this launch
+                assertTextScales(name)
                 app.terminate()
             }
         }
@@ -252,6 +250,8 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     /// audit). So the grid is scrolled to its end first, every page loaded, and back to its top:
     /// nothing is left for the audit to bring in.
     private func loadEveryPage() {
+        // the rows last, once the grid is back at its top: what the audit will see
+        defer { loadEveryRail() }
         let grid = element("screen.library")
         let lastPage = { self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos" && $0.value("cursor") == "c2" } }
         guard grid.exists, home.requests.contains(where: { $0.method == "GET" && $0.path == "/api/videos" }) else { return }
@@ -265,12 +265,41 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for _ in 0 ..< swipes + 2 { grid.swipeDown() }
     }
 
+    /// The audit starts once the page asks the home for no more pictures: a poster arriving
+    /// mid-audit is drawn as a moving placeholder until it comes, and on a loaded runner the
+    /// audit never saw the page still ("Audit failed to complete in time", CI: `GET
+    /// /api/videos/v8/poster, GET /api/videos/v7/poster` during it). A hub row (`Rail`) makes
+    /// every card as it shows (a plain `HStack` since #569, not a lazy one), so each poster is
+    /// asked for with its row; the page is read until no more are.
+    ///
+    /// The rows are not scrolled to make their cards (they were while the row was lazy): a
+    /// swipe back did not always bring a row to its start, and on an iPad a row left part
+    /// way along has its first card under the sidebar, its title drawn behind the sidebar's
+    /// panel. The audit measured that title there (CI run 41530666969: "Contrast failed
+    /// [Tafsir al-Kahf, part 2 (290, 958)]", inside the sidebar's column), on a page no one
+    /// sees as it opens.
+    private func loadEveryRail() {
+        let pictures = { self.home.requests.filter { $0.method == "GET" && $0.path.hasSuffix("/poster") }.count }
+        var asked = pictures()
+        for _ in 0 ..< 10 {
+            _ = settledPage()
+            let now = pictures()
+            if now == asked { return }
+            asked = now
+        }
+        XCTFail("the rows kept asking for posters")
+    }
+
     /// The page's audit, once the page has stopped drawing (`accessibilityAudit` waits for it):
     /// every issue on it, and what the app asked the home meanwhile.
     private func audit(_ page: String) {
+        let start = Date()
         let (found, during) = auditOnce(page)
-        if found.isEmpty { return }
         let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
+        // in the test log on a pass too: a page that still loads as the audit runs shows here
+        // before it times one out
+        print(String(format: "audit %@: %.0f s, %@", page, Date().timeIntervalSince(start), asked))
+        if found.isEmpty { return }
         shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
         XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
     }

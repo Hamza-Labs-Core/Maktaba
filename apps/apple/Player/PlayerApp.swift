@@ -14,8 +14,17 @@ struct PlayerApp: App {
     @State private var link: PlayerRoute?
 
     init() {
+        // the launch's first log lines: the app and its version
+        Log.launched()
         // a crash at an earlier launch is logged and kept on this device
         CrashReports.shared.start()
+        #if DEBUG && os(iOS)
+        // the UI tests' Dynamic Type sizes, changed while the app runs (`TextSizeHook`; only
+        // when launched with its flag)
+        TextSizeHook.start()
+        #endif
+        // once per process, before any view: the UI tests' first-run reset of the walkthrough
+        PermissionsModel.applyLaunchArguments()
         #if os(macOS)
         // the View menu's full-screen item is the Player's own (`PlayerViewCommands`: in the
         // app's language, on ⌃⌘F, Exit while full screen); without this AppKit adds its own

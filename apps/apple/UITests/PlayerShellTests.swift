@@ -22,6 +22,65 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(PlayerSection.shown([.libraries], hasChannels: true), [.libraries])
     }
 
+    /// The Dynamic Type sizes a UI test asks the running app for (`setTextSize`, answered by
+    /// the app's `TextSizeHook`): each one the hook knows, at the size it names; the default
+    /// is the system's own setting (no override).
+    func testTheTextSizesATestAsksForAreTheHooks() {
+        let asked: [PlayerUITestCase.TextSize] = [.smallest, .standard, .ax3]
+        XCTAssertEqual(asked.map(\.rawValue), TextSizeHook.sizes)
+        XCTAssertEqual(TextSizeHook.category("XS"), .extraSmall)
+        XCTAssertEqual(TextSizeHook.category("AX3"), .accessibilityExtraExtraExtraLarge)
+        XCTAssertNil(TextSizeHook.category("default"))
+        XCTAssertNotEqual(TextSizeHook.ask, TextSizeHook.applied, "the answer is not the question")
+    }
+
+    /// Without its launch flag the hook does nothing (a Debug build run by hand, or a UI test
+    /// that does not ask for it): it listens only when the app is launched with the flag.
+    func testTheTextSizeHookIsInertWithoutItsFlag() {
+        XCTAssertFalse(TextSizeHook.start(arguments: []))
+        XCTAssertFalse(TextSizeHook.start(arguments: ["-maktaba-section", "home"]))
+        XCTAssertTrue(TextSizeHook.start(arguments: ["-AppleLanguages", "(en)", TextSizeHook.flag]))
+    }
+
+    /// A size the hook sets on a scene reaches its views while they show: the trait a view
+    /// reads, and a label's Dynamic Type font, smaller at XS and larger at AX3; the default
+    /// takes the override off again. A size the tests do not use changes nothing.
+    @MainActor
+    func testTheTextSizeHookReachesTheViews() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first,
+                                  "the test runner's scene")
+        let before = scene.traitCollection.preferredContentSizeCategory
+        defer { TextSizeHook.set("default", on: [scene]) }
+        let window = UIWindow(windowScene: scene)
+        let host = UIViewController()
+        let label = UILabel()
+        label.font = .preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.text = "Maktaba"
+        host.view.addSubview(label)
+        window.rootViewController = host
+        window.isHidden = false
+        defer { window.isHidden = true }
+
+        func shown(_ size: String) -> (UIContentSizeCategory, CGFloat) {
+            XCTAssertTrue(TextSizeHook.set(size, on: [scene]), size)
+            window.layoutIfNeeded()
+            return (label.traitCollection.preferredContentSizeCategory, label.font.pointSize)
+        }
+        let (small, smallPoints) = shown("XS")
+        XCTAssertEqual(small, .extraSmall)
+        let (large, largePoints) = shown("AX3")
+        XCTAssertEqual(large, .accessibilityExtraExtraExtraLarge)
+        XCTAssertGreaterThan(largePoints, smallPoints, "the label's text grew")
+        let (normal, normalPoints) = shown("default")
+        XCTAssertEqual(normal, before, "the default: the system's own size again")
+        XCTAssertGreaterThan(normalPoints, smallPoints)
+        XCTAssertLessThan(normalPoints, largePoints)
+
+        XCTAssertFalse(TextSizeHook.set("huge", on: [scene]), "an unknown size")
+        XCTAssertEqual(label.traitCollection.preferredContentSizeCategory, before, "nothing changed")
+    }
+
     func testTheFiveSectionsInTheirOrder() {
         XCTAssertEqual(PlayerSection.allCases, [.home, .libraries, .liveTV, .search, .profile])
         XCTAssertEqual(Set(PlayerSection.allCases.map(\.systemImage)).count, 5)

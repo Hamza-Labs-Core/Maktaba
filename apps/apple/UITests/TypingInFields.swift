@@ -26,15 +26,28 @@ extension XCUIElement {
                     return
                 }
             }
-            let old = typedValue
+            // emptied first, and read back empty: a delete can be lost like any key (CI: the
+            // home's address typed three times over what the deletes left)
+            for _ in 1 ... 3 where !typedValue.isEmpty {
+                let deletes = String(repeating: XCUIKeyboardKey.delete.rawValue, count: typedValue.count)
+                #if os(tvOS)
+                app.typeText(deletes)
+                #else
+                typeText(deletes)
+                #endif
+            }
             #if os(tvOS)
-            if !old.isEmpty { app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count)) }
             app.typeText(text)
             #else
-            if !old.isEmpty { typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: old.count)) }
             typeText(text)
             #endif
+            // the field's value can trail the last key by a moment on a loaded runner
+            let end = Date().addingTimeInterval(2)
             holds = typedValue
+            while !(secure ? !holds.isEmpty : holds == text), Date() < end {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+                holds = typedValue
+            }
             if secure ? !holds.isEmpty : holds == text { return }
         }
         XCTFail("the field holds \"\(holds)\", not \(secure ? "the password" : "\"\(text)\"")", file: file, line: line)

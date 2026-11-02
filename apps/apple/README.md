@@ -67,7 +67,8 @@ calls the Remote makes (`Admin.swift`).
 
 Every app ships in English (the development language) and Arabic, right to left. Each has a
 String Catalog (`Remote/`, `Player/` and `../tv/tvos/MaktabaTV/` `Localizable.xcstrings`,
-and `InfoPlist.xcstrings` for the permission prompts); MaktabaKit has its own for the words
+and `InfoPlist.xcstrings` for the app's name and the permission prompts: «مكتبة» on the
+iPhone, iPad and Apple TV, «مشغل مكتبة» on the Mac, whose own is `Player/Mac/`); MaktabaKit has its own for the words
 it makes (`Sources/MaktabaKit/Localizable.xcstrings`, read from `Bundle.module`): the plan's
 sentence and the processes' and queue's words, and the home's values (states, steps, codes)
 under the web's keys (`updates.state.done`). The Arabic is the web's (`web/src/i18n/ar.json`)

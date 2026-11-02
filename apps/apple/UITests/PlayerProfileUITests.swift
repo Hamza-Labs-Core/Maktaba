@@ -219,8 +219,8 @@ final class PlayerProfileUITests: PlayerUITestCase {
         }
     }
 
-    /// One page's audit in a launch of its own, then its Dynamic Type (`assertTextScales`):
-    /// `open` opens the page from the Profile.
+    /// One page's audit in a launch of its own, then its Dynamic Type (`assertTextScales`, in
+    /// the same launch): `open` opens the page from the Profile.
     private func auditPage(_ name: String, _ open: @escaping () -> Void) throws {
         launchProfile()
         open()
@@ -233,10 +233,7 @@ final class PlayerProfileUITests: PlayerUITestCase {
             return true
         }
         XCTAssertTrue(found.isEmpty, "\(name): " + found.joined(separator: "; "))
-        assertTextScales(name) { size in
-            self.launchProfile(extra: size)
-            open()
-        }
+        assertTextScales(name)
     }
 
     // MARK: helpers
