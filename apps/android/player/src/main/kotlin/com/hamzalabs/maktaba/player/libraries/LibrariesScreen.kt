@@ -208,21 +208,26 @@ private fun LibraryCards(state: LibrariesState, client: ApiClient, grid: Boolean
         )
         !state.librariesLoaded -> Spinner()
         state.libraries.isEmpty() -> Message(stringResource(R.string.libraries_empty))
-        else -> LazyVerticalGrid(
-            gridCells,
-            Modifier.fillMaxSize().testTag("libraries-grid"),
-            state = rememberLazyGridState(),
-            contentPadding = gridPadding,
-            verticalArrangement = gridGap,
-            horizontalArrangement = gridGap,
-        ) {
-            items(state.libraries, key = { it.id }) { lib ->
-                LibraryCard(
-                    lib, client,
-                    chosen = chosen == Chosen.Library(lib.id),
-                    onClick = { onOpen(Chosen.Library(lib.id)) },
-                    onPin = { scope.launch { state.togglePin(lib.id) } },
-                )
+        else -> {
+            val gridState = rememberLazyGridState()
+            // a pin moves libraries: unpinning the first one moves it down the grid
+            gridState.StaysAtTopWhen(state.libraries.map { it.id })
+            LazyVerticalGrid(
+                gridCells,
+                Modifier.fillMaxSize().testTag("libraries-grid"),
+                state = gridState,
+                contentPadding = gridPadding,
+                verticalArrangement = gridGap,
+                horizontalArrangement = gridGap,
+            ) {
+                items(state.libraries, key = { it.id }) { lib ->
+                    LibraryCard(
+                        lib, client,
+                        chosen = chosen == Chosen.Library(lib.id),
+                        onClick = { onOpen(Chosen.Library(lib.id)) },
+                        onPin = { scope.launch { state.togglePin(lib.id) } },
+                    )
+                }
             }
         }
     }
