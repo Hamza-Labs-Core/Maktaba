@@ -56,11 +56,18 @@ func TestWindowsDNSAPIRegistersAndWithdraws(t *testing.T) {
 }
 
 // A home name with a "." (and a "\", and Arabic) goes on the wire as one label: the
-// escaped name DnsServiceConstructInstance gets is the one Windows answers with. Asked as
-// a legacy unicast query (from a port other than 5353), the responder answers this
-// process directly.
+// escaped name DnsServiceConstructInstance gets is the one Windows announces. Windows
+// announces a new registration to the mDNS group (and answers a query there), which this
+// process hears on 5353 (shared, as zeroconf shares it).
 func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 	const service = "_maktaba-dot._tcp"
+	group := &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
+	conn, err := net.ListenMulticastUDP("udp4", nil, group)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
 	name := "Maktaba v1.2 a\\b مكتبة " + time.Now().Format("150405.000000")
 	a, err := startDNSAPI(windowsDNSAPI{}, name, service, "local.", announcedHost(systemResponder())+".local", 18087,
 		interfaceIPs(), []string{"role=home"})
@@ -69,50 +76,50 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 	}
 	defer a.Shutdown()
 
-	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = conn.Close() }()
 	q := new(dns.Msg)
 	q.SetQuestion(service+".local.", dns.TypePTR)
-	q.Id = 0x4d4b
+	q.Id = 0
 	wire, err := q.Pack()
 	if err != nil {
 		t.Fatal(err)
 	}
-	group := &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
-	want := zeroconfInstance(name) + "." + service + ".local." // the label as the DNS library writes it
+	want := zeroconfInstance(name) + "." + service + ".local." // the name as the DNS library writes it
 	var seen []string
+	packets := 0
 	buf := make([]byte, 9000)
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		if _, err := conn.WriteToUDP(wire, group); err != nil {
-			t.Fatalf("query: %v", err)
-		}
-		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		for {
 			n, _, err := conn.ReadFromUDP(buf)
 			if err != nil {
 				break
 			}
+			packets++
 			m := new(dns.Msg)
-			if m.Unpack(buf[:n]) != nil {
+			if m.Unpack(buf[:n]) != nil || !m.Response {
 				continue
 			}
 			for _, rr := range append(m.Answer, m.Extra...) {
-				ptr, ok := rr.(*dns.PTR)
-				if !ok || !strings.EqualFold(ptr.Hdr.Name, service+".local.") {
+				h := rr.Header()
+				owner := h.Name
+				if ptr, ok := rr.(*dns.PTR); ok {
+					owner = ptr.Ptr
+				}
+				if !strings.Contains(strings.ToLower(owner), service) {
 					continue
 				}
-				if ptr.Ptr == want {
+				if owner == want {
 					return
 				}
-				seen = append(seen, ptr.Ptr)
+				seen = append(seen, owner)
 			}
 		}
+		if _, err := conn.WriteToUDP(wire, group); err != nil {
+			t.Logf("query: %v", err)
+		}
 	}
-	t.Fatalf("no answer naming %q; answers: %q", want, seen)
+	t.Fatalf("nothing named %q in %d packets; names of %s: %q", want, packets, service, seen)
 }
 
 // Through the announcement: a new TXT and Shutdown on the real API, withdrawn when done.
