@@ -1157,3 +1157,11 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
 - v0.3.51 stays without .aab files; the next tag carries them.
 - 2026-11-02, later: settling alone didn't end it. #508's run on 8c6d44b1 missed again in facetsAndSortChangeTheRequestsQuery: answer in, no error logged (the kept log proved it), spinner for 10 s. Not reproducible locally even under full CPU load. The v1 compose rule (deprecated; the build warned) runs effects on an UnconfinedTestDispatcher, so the answer resumes the screen on OkHttp's thread and writes Compose state from there. All 23 Player JVM test classes now use the v2 rules (`junit4.v2.createAndroidComposeRule` / `createComposeRule`), which queue that work for the main thread. Three full suite runs green, screenshots unchanged (verifyRoborazziDebug), tests ~3-5x faster. androidTest (on-device) files still on v1.
+
+
+## 2026-11-02 — TestLibraryTabsSQLite past the unit test budget: fsync during setup
+
+- CI run 41449508335 (PR #510) failed test-budget: browse TestLibraryTabsSQLite took 1.42 s, and 1.32 s when re-run alone. The 3x400 ms cap is 1.2 s.
+- Cause: the shared `testDB` setup (~45 autocommits, plus ~14 from `groupsEnv`). On a file DB in rollback-journal mode, each commit syncs the journal, the db file and the directory. That costs almost nothing on macOS and a lot on the Linux runner. Simulating it locally with `PRAGMA fullfsync`: setup 965 ms out of a 990 ms test. The five handler requests take ~25 ms, so the handler wasn't the problem.
+- Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
+- The same PR (#521) also fixes a search test that failed integration/compat-prev: `TestEmbedCacheConcurrentSameKeyNoCorruption` compared response bodies byte for byte, including the wall-clock `took_ms` ("semantic":0 vs 1). Both subtests (concurrent, and sequential miss->hit->hit) now decode the bodies, drop `took_ms` and compare the rest (`withoutTiming`). Passed `-race -count=20`.
