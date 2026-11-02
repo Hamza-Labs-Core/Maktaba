@@ -87,7 +87,16 @@ class PlayerUITestCase: XCTestCase {
         connect.tap()
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10), "the sign-in screen offers a code")
-        byCode.tap()
+        // a tap while the keyboard goes down (the address field had it) can land as the
+        // segments move, and the way stays on the password: no code is asked for, so the
+        // approval below never arrives (CI: "approved: signed in" after 20 s). The segment is
+        // tapped until it is the chosen one.
+        let chosen = NSPredicate(format: "isSelected == true")
+        for _ in 0 ..< 3 where !byCode.isSelected {
+            byCode.tap()
+            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: chosen, object: byCode)], timeout: 3)
+        }
+        XCTAssertTrue(byCode.isSelected, "signing in with a code")
         home.approve()
         XCTAssertTrue(byCode.waitForNonExistence(timeout: 20), "approved: signed in")
     }
@@ -135,18 +144,22 @@ class PlayerUITestCase: XCTestCase {
         XCTAssertEqual(last()?["start_sec"] as? Int ?? 0, start, why)
     }
 
-    /// `performAccessibilityAudit`, run again when it could not finish in time (error -56,
-    /// "Audit failed to complete in time", or XCTest's own "Timed out while running
-    /// accessibility audit", both seen on a loaded CI runner while the screen was still
-    /// drawing). Any other error, and every issue `handler` does not excuse, still fails.
+    /// `performAccessibilityAudit` in two runs, Dynamic Type (it redraws the screen at each
+    /// text size, the slow part) apart from the other types, each run again when it could not
+    /// finish in time (error -56, "Audit failed to complete in time", or XCTest's own "Timed
+    /// out while running accessibility audit", both seen on a loaded CI runner; an iPad's
+    /// Profile audit timed out three times running every type at once). Every type asked for
+    /// is still audited; any other error, and every issue `handler` does not excuse, fails.
     func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
-        for attempt in 1 ... 3 {
-            do {
-                try app.performAccessibilityAudit(for: types, handler)
-                return
-            } catch let error as NSError where Self.auditTimedOut(error) && attempt < 3 {
-                continue
+        for part in [types.subtracting(.dynamicType), types.intersection(.dynamicType)] where !part.isEmpty {
+            for attempt in 1 ... 3 {
+                do {
+                    try app.performAccessibilityAudit(for: part, handler)
+                    break
+                } catch let error as NSError where Self.auditTimedOut(error) && attempt < 3 {
+                    continue
+                }
             }
         }
     }
