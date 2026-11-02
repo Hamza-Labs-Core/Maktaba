@@ -142,35 +142,66 @@ class PlayerUITestCase: XCTestCase {
     /// its measurements go stale. It flagged every text of a page at once as "partially
     /// unsupported" (Search's recent searches, Profile's Sessions, Libraries' pages) where the
     /// screen recording shows each of them redrawn and scaled at every size. Dynamic Type is
-    /// checked instead by `assertTextScales`, on each audited page: the page launched at the
+    /// checked instead by `assertTextScales`, on each audited page: the page shown at the
     /// smallest size, the default and AX3, each text taller at each step. Clipped text
     /// (`.textClipped`) is still the audit's.
+    ///
+    /// The handler runs once the audit is over, on every issue it found: nothing queries the
+    /// app while the audit holds it. A query from inside the audit's own handler (an issue's
+    /// element, its frame or label) stalled an iPad's audit for 150 s on CI and left the app
+    /// answering no query after it ("Failed to get matching snapshot" on Libraries' Arabic
+    /// grids). Every issue the handler does not excuse fails, all of them in one error
+    /// (`AuditIssues`), each with the element it is on.
     func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
-        // the page as it is before the audit, for the handler to read: a query of the app
-        // from inside the handler, while the audit holds it, stalled an iPad's audit for
-        // 150 s on CI and left the app answering no query after it
+        // the page as it is before the audit, for the handler to read
         shown = settledPage()
         defer { shown = nil }
-        try app.performAccessibilityAudit(for: types.subtracting(.dynamicType), handler)
+        var issues: [XCUIAccessibilityAuditIssue] = []
+        try app.performAccessibilityAudit(for: types.subtracting(.dynamicType)) { issue in
+            issues.append(issue)
+            return true
+        }
+        var failed: [String] = []
+        for issue in issues where try !handler(issue) { failed.append(described(issue)) }
+        if !failed.isEmpty { throw AuditIssues(issues: failed) }
+    }
+
+    /// The issues of an audit its handler did not excuse.
+    struct AuditIssues: Error, CustomStringConvertible {
+        let issues: [String]
+        var description: String { "accessibility audit: " + issues.joined(separator: "; ") }
     }
 
     // MARK: Dynamic Type
 
-    static let smallestText = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS"]
-    static let ax3Text = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+    /// The Dynamic Type sizes the check measures (`TextSizeHook` in the app).
+    enum TextSize: String { case smallest = "XS", standard = "default", ax3 = "AX3" }
 
-    /// Dynamic Type on the page open now, at the default size: `open` launches the app again
-    /// with the launch arguments it is given (a text size) and opens the same page. Each text
-    /// of the page, by its identifier or else its words, shown at the smallest size, the
-    /// default and AX3, must be taller at each step (one allowance, a button's 44-pt minimum at the two
-    /// smaller sizes: `grows`); one that is not fails, named with its three heights and where it
-    /// is. The texts of the system's navigation and tab bars, every one of them, are UIKit's own
-    /// (an iPad's tab bar keeps one size and shows the large content viewer instead; a bar's
-    /// title grows only at the accessibility sizes) and are left out. Afterwards the
-    /// page is open again at the default size, for the test to go on.
-    func assertTextScales(_ page: String, file: StaticString = #filePath, line: UInt = #line, open: ([String]) -> Void) {
-        let fixed = textsThatDoNotScale(open: open)
+    /// Changes the running app's Dynamic Type size (a Debug build's `TextSizeHook`: the
+    /// system's setting, overridden on each of its scenes) and waits for the app to say it
+    /// has laid its windows out at it. Fails when the app does not answer.
+    func setTextSize(_ size: TextSize, file: StaticString = #filePath, line: UInt = #line) {
+        let answer = TextSizeAnswers.shared.expect(size.rawValue)
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName(("com.hamzalabs.maktaba.uitest.text-size." + size.rawValue) as CFString),
+                                             nil, nil, true)
+        let end = Date().addingTimeInterval(15)
+        while !TextSizeAnswers.shared.received(answer), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }
+        XCTAssertTrue(TextSizeAnswers.shared.received(answer), "the app took the text size \(size.rawValue)", file: file, line: line)
+    }
+
+    /// Dynamic Type on the page open now, at the default size: the same page, in the same
+    /// launch, shown at the smallest size, the default and AX3 (`setTextSize`). Each text of
+    /// the page, by its identifier or else its words, must be taller at each step (one
+    /// allowance, a button's 44-pt minimum at the two smaller sizes: `grows`); one that is not
+    /// fails, named with its three heights and where it is. The texts of the system's
+    /// navigation and tab bars, every one of them, are UIKit's own (an iPad's tab bar keeps one
+    /// size and shows the large content viewer instead; a bar's title grows only at the
+    /// accessibility sizes) and are left out. Afterwards the page is at the default size
+    /// again, for the test to go on.
+    func assertTextScales(_ page: String, file: StaticString = #filePath, line: UInt = #line) {
+        let fixed = textsThatDoNotScale()
         XCTAssertTrue(fixed.isEmpty, "\(page): Dynamic Type: " + fixed.joined(separator: "; "), file: file, line: line)
     }
 
@@ -189,13 +220,14 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// The texts of the page that do not grow at each step (see `assertTextScales`).
-    func textsThatDoNotScale(open: ([String]) -> Void) -> [String] {
+    func textsThatDoNotScale() -> [String] {
         guard let normal = settledPage() else { return ["the page could not be read"] }
-        open(Self.smallestText)
+        setTextSize(.smallest)
         let small = settledPage()
-        open(Self.ax3Text)
+        setTextSize(.ax3)
         let large = settledPage()
-        open([])
+        setTextSize(.standard)
+        _ = settledPage()
         guard let small, let large else { return ["the page could not be read at the smallest size or AX3"] }
         let (s, n, l) = (small.heights, normal.heights, large.heights)
         var fixed: [String] = []
@@ -332,5 +364,39 @@ class PlayerUITestCase: XCTestCase {
     /// Swipes up until `e` is on screen and can be tapped (a few swipes at most).
     func scrollUntil(_ e: XCUIElement) {
         for _ in 0 ..< 8 where !(e.exists && e.isHittable) { app.swipeUp(velocity: .slow) }
+    }
+}
+
+/// The app's answers to `setTextSize` (Darwin notifications from its `TextSizeHook`): each
+/// size's answers counted as they arrive, on the test's main run loop, which the wait turns.
+final class TextSizeAnswers: @unchecked Sendable {
+    static let shared = TextSizeAnswers()
+    private static let prefix = "com.hamzalabs.maktaba.uitest.text-size-applied."
+    private let lock = NSLock()
+    private var counts: [String: Int] = [:]
+
+    private init() {
+        for size in ["XS", "default", "AX3"] {
+            CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, name, _, _ in
+                guard let name = name?.rawValue as String?, name.hasPrefix(TextSizeAnswers.prefix) else { return }
+                TextSizeAnswers.shared.count(String(name.dropFirst(TextSizeAnswers.prefix.count)))
+            }, (Self.prefix + size) as CFString, nil, .deliverImmediately)
+        }
+    }
+
+    private func count(_ size: String) {
+        lock.lock(); defer { lock.unlock() }
+        counts[size, default: 0] += 1
+    }
+
+    /// The answer to wait for: the next one for `size`, after those already counted.
+    func expect(_ size: String) -> (size: String, count: Int) {
+        lock.lock(); defer { lock.unlock() }
+        return (size, counts[size, default: 0] + 1)
+    }
+
+    func received(_ answer: (size: String, count: Int)) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return counts[answer.size, default: 0] >= answer.count
     }
 }

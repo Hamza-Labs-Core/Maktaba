@@ -214,10 +214,7 @@ final class PlayerVideoUITests: PlayerUITestCase {
         }
         shot("video")
         audit()
-        assertTextScales("video v2") { size in
-            self.openPage(extra: size)
-            XCTAssertTrue(self.element("video.poster").waitForExistence(timeout: 10), "the poster shows")
-        }
+        assertTextScales("video v2")
     }
 
     func testThePosterInArabic() {

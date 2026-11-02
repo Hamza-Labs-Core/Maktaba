@@ -109,6 +109,7 @@
 		1EE18C31A37A6A3B0241C9D4 /* Video.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A525332F62424FB900584753 /* Video.xcstrings */; };
 		1F124BBE9EC9936F26FBA46B /* libraries-summary.json in Resources */ = {isa = PBXBuildFile; fileRef = DE03B499C6326913603D6C57 /* libraries-summary.json */; };
 		1F56731E19D5F60D3963A2BB /* series-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 73249F4FC35BBFF61B8EB8D0 /* series-tafsir.json */; };
+		1FC0AF872B94C219377DB403 /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E7C782FE57543EEFC505FBD /* RemoteApp.swift */; };
 		20A229512D396F728AAE6E7F /* LiveGuide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761A341C59A1EF4C1E7A366B /* LiveGuide.swift */; };
 		2126A636889192CEF1030522 /* PlayerTracks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01203F9703CCCFF47CFD15F1 /* PlayerTracks.swift */; };
@@ -180,6 +181,7 @@
 		363D8B8F606B5E44797056CE /* WatchControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A5844121CBBDD9EEF2B5AFB /* WatchControls.swift */; };
 		3669EE88B28CD4A8E802754B /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
 		36F0013C9D43BF0E500FB1EE /* segments.json in Resources */ = {isa = PBXBuildFile; fileRef = 04FE44A4268352AF7F418DE5 /* segments.json */; };
+		373FCF4CF3FC3F3966C6BBAF /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		376EBF384522F8AEF2AE04BC /* ChannelScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */; };
 		37A6CC85A98ACEDBC10A3179 /* channel-guide-ch-2.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B5467B8A778208B086021E3 /* channel-guide-ch-2.json */; };
 		380BB70A819EBAF3217D7868 /* TrackSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44FAE1C1F07E8DB187F9CCEE /* TrackSheets.swift */; };
@@ -647,6 +649,7 @@
 		C76B80D3868BDDC84DFCDC39 /* tv-info.json in Resources */ = {isa = PBXBuildFile; fileRef = 5F6660AB2A255BBDB8375FC7 /* tv-info.json */; };
 		C7B95C31E80C2D62AE6B5868 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEBFFB4F003C12191E00C21A /* ImageCache.swift */; };
 		C8F632861356F9AC6942EA4F /* PlayerSearchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A5952E066C6861ACD8E2347 /* PlayerSearchUITests.swift */; };
+		C94C6BB6F4A80F63A1105789 /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		C97B44941D2AAC3B9F3A92D9 /* UpdatesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3778308DD4F7209391FA5071 /* UpdatesView.swift */; };
 		CAA0297AC11F0263400F9087 /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
 		CAE7D2E9B89A9D0DA508A5F9 /* videos-page2.json in Resources */ = {isa = PBXBuildFile; fileRef = 099A5FD71E3C9479CBB5EE0C /* videos-page2.json */; };
@@ -924,6 +927,7 @@
 		315ECB314BA012B2C3405B40 /* me-video-v12.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-video-v12.json"; sourceTree = "<group>"; };
 		31F751DD280EC1E10E13F594 /* MachinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MachinesView.swift; sourceTree = "<group>"; };
 		34BA4F8FB3001D94F4AC253C /* WatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchView.swift; sourceTree = "<group>"; };
+		34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextSizeHook.swift; sourceTree = "<group>"; };
 		34F665DFFB5361707B79EDDA /* Profile.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Profile.xcstrings; sourceTree = "<group>"; };
 		3778308DD4F7209391FA5071 /* UpdatesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdatesView.swift; sourceTree = "<group>"; };
 		37E5377E1A68AD45AE2A777E /* me-playlists.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "me-playlists.json"; sourceTree = "<group>"; };
@@ -1459,6 +1463,7 @@
 				BBAF036BA96A97A53CDB7E7F /* PlayerShell.swift */,
 				6BA42F40AC03D7A9DCFE3FF7 /* Shell.xcstrings */,
 				BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */,
+				34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */,
 			);
 			path = Shell;
 			sourceTree = "<group>";
@@ -2793,6 +2798,7 @@
 				AD3706444B2BD4B2FE998D40 /* SeriesScreen.swift in Sources */,
 				629161B598CC49A24777052E /* ShellLaunch.swift in Sources */,
 				7D4C64758820258FAC35A196 /* Shimmer.swift in Sources */,
+				1FC0AF872B94C219377DB403 /* TextSizeHook.swift in Sources */,
 				380BB70A819EBAF3217D7868 /* TrackSheets.swift in Sources */,
 				4DFB4099AEA5CB08069AAD21 /* UpNext.swift in Sources */,
 				734F1DE5823302E7A7C6F546 /* VideoDetail.swift in Sources */,
@@ -2898,6 +2904,7 @@
 				221AACE55D72C3B8CFA9D74A /* SeriesScreen.swift in Sources */,
 				5198C9070E1DAFA3A4623F8A /* ShellLaunch.swift in Sources */,
 				244A73523281A83AA08131F7 /* Shimmer.swift in Sources */,
+				373FCF4CF3FC3F3966C6BBAF /* TextSizeHook.swift in Sources */,
 				B0ABF01F091A6E62BFD6D94E /* TrackSheets.swift in Sources */,
 				64B69A146C12FCB2C2AE64A8 /* UpNext.swift in Sources */,
 				6530CBABD0F3D2E98500640E /* VideoDetail.swift in Sources */,
@@ -2956,6 +2963,7 @@
 				4D9BD72B282765B08ADC328B /* SeriesScreen.swift in Sources */,
 				D53A93083C6900BD8E864629 /* ShellLaunch.swift in Sources */,
 				C046ABA5EE05CEFF507A2FEF /* Shimmer.swift in Sources */,
+				C94C6BB6F4A80F63A1105789 /* TextSizeHook.swift in Sources */,
 				EB743C2031E5A6E4CB12D023 /* TrackSheets.swift in Sources */,
 				0C7828C58E0310E2CD5E769B /* UpNext.swift in Sources */,
 				DA70F8CCD0140FFCE32849A5 /* VideoDetail.swift in Sources */,

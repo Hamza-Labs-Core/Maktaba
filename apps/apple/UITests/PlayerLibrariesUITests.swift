@@ -187,16 +187,14 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             for page in pages {
                 let name = "\(language) \(page.open ?? "root")"
-                let open = { (size: [String]) in
-                    self.launchSignedIn(language, section: "libraries", open: page.open, extra: size)
-                    XCTAssertTrue(self.element(page.ready).waitForExistence(timeout: 20), name)
-                    // the posters loaded: no shimmer moving under the contrast check
-                    self.waitFor(timeout: 2) { false }
-                    self.loadEveryPage()
-                }
-                open([])
+                launchSignedIn(language, section: "libraries", open: page.open)
+                XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
+                // the posters loaded: no shimmer moving under the contrast check
+                waitFor(timeout: 2) { false }
+                loadEveryPage()
                 audit(name)
-                assertTextScales(name, open: open)
+                // the same page at the smallest size, the default and AX3, in this launch
+                assertTextScales(name)
                 app.terminate()
             }
         }

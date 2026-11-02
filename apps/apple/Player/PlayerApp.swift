@@ -16,6 +16,10 @@ struct PlayerApp: App {
     init() {
         // a crash at an earlier launch is logged and kept on this device
         CrashReports.shared.start()
+        #if DEBUG && os(iOS)
+        // the UI tests' Dynamic Type sizes, changed while the app runs (`TextSizeHook`)
+        TextSizeHook.start()
+        #endif
         #if os(macOS)
         // the View menu's full-screen item is the Player's own (`PlayerViewCommands`: in the
         // app's language, on ⌃⌘F, Exit while full screen); without this AppKit adds its own

@@ -35,8 +35,9 @@ final class PlayerSearchUITests: PlayerUITestCase {
     }
 
     /// NFR-6: labels, roles, contrast, clipped text, hit regions, then Dynamic Type
-    /// (`assertTextScales`): `open` opens the same screen again at a text size.
-    private func audit(_ name: String, open: ([String]) -> Void) {
+    /// (`assertTextScales`: the same screen, in this launch, at the smallest size, the default
+    /// and AX3).
+    private func audit(_ name: String) {
         // every issue of the screen in one failure, with the element it is on
         var found: [String] = []
         do {
@@ -60,7 +61,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
             found.append("\(error)")
         }
         XCTAssertTrue(found.isEmpty, "\(name) \(language): " + found.joined(separator: "; "))
-        assertTextScales("\(name) \(language)", open: open)
+        assertTextScales("\(name) \(language)")
     }
 
     func testTypingShowsSuggestions() {
@@ -92,12 +93,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertEqual(searches.first?["q"] as? String, "seerah")
         XCTAssertEqual(searches.first?["mode"] as? String, "hybrid", "FR-20: hybrid")
         shot("search-results")
-        audit("results") { size in
-            self.openSearch(extra: size)
-            self.type("seerah\n")
-            // the results' top (at AX3 "In the transcript" is below the screen, not made yet)
-            XCTAssertTrue(self.element("search.titles").waitForExistence(timeout: 10), "Titles")
-        }
+        audit("results")
 
         // the second passage of v1 starts at 1622 s (`Fixtures/search.json`)
         let passage = element("search.passage.v1.1")
@@ -130,11 +126,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         // scalar by scalar: Swift's == would also take a differently composed string
         XCTAssertEqual(sent.map { Array($0.unicodeScalars) }, Array(query.unicodeScalars), "sent unchanged: \(sent ?? "nil")")
         shot("search-results")
-        audit("results") { size in
-            self.openSearch("ar", extra: size)
-            self.type(query + "\n")
-            XCTAssertTrue(self.element("search.titles").waitForExistence(timeout: 10), "Titles in Arabic")
-        }
+        audit("results")
     }
 
     func testRecentSearchesRunAgainAndAreForgotten() {
@@ -144,10 +136,7 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(app.staticTexts["Recent searches"].waitForExistence(timeout: 10), "the recent searches")
         XCTAssertTrue(app.staticTexts["Cordoba"].exists)
         shot("search-recent")
-        audit("recent") { size in
-            self.openSearch(extra: size)
-            XCTAssertTrue(self.app.staticTexts["Cordoba"].waitForExistence(timeout: 10), "the recent searches")
-        }
+        audit("recent")
 
         let remove = app.buttons.matching(identifier: "search.recent.remove").element(boundBy: 1)
         XCTAssertEqual(remove.label, "Remove Cordoba")
