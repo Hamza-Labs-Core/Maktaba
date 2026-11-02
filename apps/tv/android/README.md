@@ -45,8 +45,11 @@ cd apps/tv/android
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-CI runs the same on every change to this app or the shared core (`_android-tv.yml`); a `v*`
-tag builds the release APK (`tv-release.yml`). JDK 17 and the Android SDK (platform 37).
+CI runs the same, plus an unsigned `:app:bundleRelease` (R8 on), on every change to this app or
+the shared core (`_android-tv.yml`). A `v*` tag builds the sideload APK (`tv-release.yml`) and the
+Google Play bundle `maktaba-tv-<version>.aab`, signed with the Play upload key
+(`play-bundles.yml`, [docs/google-play.md](../../../docs/google-play.md)). JDK 17 and the Android
+SDK (platform 37).
 
 On an emulator: create an Android TV or Google TV AVD (`system-images;android-36;google-tv;arm64-v8a`,
 device `tv_1080p`), install `app/build/outputs/apk/debug/app-debug.apk`. The emulator reaches

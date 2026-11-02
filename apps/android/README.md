@@ -2,15 +2,19 @@
 
 Jetpack Compose apps that talk to a home's REST API, like the Apple apps in `apps/apple`.
 
-| Module | Application IDs (phone, foldable, tablet) | What it is |
+| Module | Application ID (phone, foldable and tablet) | What it is |
 |---|---|---|
-| `player` | `com.hamzalabs.maktaba.player`, `.player.foldable`, `.player.tablet` | **Maktaba Player**: browse and watch |
-| `remote` | `com.hamzalabs.maktaba.remote`, `.remote.foldable`, `.remote.tablet` | **Maktaba Remote**: run a home (its admins only) |
+| `player` | `com.hamzalabs.maktaba.player` | **Maktaba Player**: browse and watch |
+| `remote` | `com.hamzalabs.maktaba.remote` | **Maktaba Remote**: run a home (its admins only) |
 | `client` | (a JVM library) | the API client, sign-in, token sealing, the home picker's rules, the stream's authorization: plain Kotlin, shared with the desktop Player (`apps/desktop-player`) |
 | `core` | (an Android library, on `client`) | Android's side: the Keystore and preferences, NSD discovery, the Ink & Brass theme, the fold-aware layout, the home picker and sign-in screens |
 
-Each app has three product flavours, `phone`, `foldable` and `tablet`: the three store listings
-the epic decided. They are one code base. The layout comes from the window, not from the flavour.
+Each app is one package for phones, foldables and tablets: one Google Play listing, as Play
+treats each package as its own app. The layout comes from the window (`core/layout/Panes.kt`),
+and the device the home is told (`X-Maktaba-Client`) comes from the screen at start
+(`ClientHeader.deviceFor`: a hinge sensor is a foldable, a smallest width of 600 dp a tablet).
+Until 2026-11-01 each app had `phone`, `foldable` and `tablet` flavours that differed only in
+their package; they were removed. Release bundles for Google Play: `docs/google-play.md`.
 
 ## Build and test
 
@@ -21,12 +25,15 @@ JDK 17 and the Android SDK (platform 37) are needed; `local.properties` names th
 cd apps/android
 ./gradlew :client:test                 # the portable client's tests (JVM)
 ./gradlew :core:testDebugUnitTest      # the core's unit tests (JVM, no device)
-./gradlew assembleDebug                # both apps, every form factor
-./gradlew :player:installFoldableDebug # onto a running emulator or device
+./gradlew :player:testDebugUnitTest :remote:testDebugUnitTest   # the apps' tests (JVM, Robolectric)
+./gradlew :player:verifyRoborazziDebug # the Player's screenshots against the references
+./gradlew assembleDebug                # both apps (one APK each, every form factor)
+./gradlew :player:installDebug         # onto a running emulator or device
+./gradlew :player:bundleRelease        # the Play bundle (R8; unsigned without the upload key)
 ```
 
-CI runs the tests, lint and the debug builds (`.github/workflows/_android-apps.yml`) when
-`apps/android/` changes.
+CI runs the tests, lint, the debug builds and an unsigned release bundle of each app (R8 on,
+`.github/workflows/_android-apps.yml`) when `apps/android/` changes.
 
 ## An emulator
 

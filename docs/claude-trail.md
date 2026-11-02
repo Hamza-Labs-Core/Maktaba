@@ -960,6 +960,29 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - The iPhone simulator reports no Picture in Picture (the iPad one floats it); the PiP UI
     test asserts there is no PiP button on iPhone (no skip: the owner's rule). `AVRoutePickerView` adds its inner button late on iPad:
     `AirPlayButton.Picker` names every control in it once it is on screen.
+- 2026-11-01 · play-bundles agent of `b743b7d4`: [#517] (not merged) attaches signed Google Play
+  bundles to every `v*` tag (`play-bundles.yml`): `maktaba-{player,remote,tv}-<version>.aab`,
+  upload key from `ANDROID_UPLOAD_KEYSTORE_BASE64` / `_KEY_ALIAS` / `_KEY_PASSWORD` (/ optional
+  `_STORE_PASSWORD`), unsigned only as a workflow artifact. Docs: `docs/google-play.md`.
+  - Decided: the Android Player and Remote lose their `phone`/`foldable`/`tablet` flavours (they
+    differed only in the `.foldable`/`.tablet` package; Play makes each package its own app). The
+    `X-Maktaba-Client` device now comes from the screen (`ClientHeader.deviceFor`: hinge sensor =
+    foldable, smallest width ≥ 600 dp = tablet). Tasks are `testDebugUnitTest`,
+    `verifyRoborazziDebug`, `lintDebug` now (the 2026-10-31 note on `testPhoneDebugUnitTest` no
+    longer holds). Rejected: keeping the flavours for dev with a base-package release build.
+  - Decided: versionCode = MAJOR*1000000 + MINOR*1000 + PATCH (`tools/release/play-version.sh`,
+    tested); a pre-release shares its version's code, so the optional Play upload
+    (`vars.PLAY_UPLOAD == 'true'` + `PLAY_SERVICE_ACCOUNT_JSON`, internal track) skips pre-releases.
+  - The Android gates now build an unsigned `bundleRelease` (R8 breaks show in the PR).
+  - Gotchas: emulators on this Mac hang at boot headless with the android-37.0 and android-36
+    google-tv images (exit 139); an android-35 google_apis AVD boots. bundletool works from the
+    Gradle cache's jar with a hand-built classpath (guava -jre, dagger 2.28.3, `--aapt2` from
+    build-tools), or use the universal APK from `build-apks`. `LibrariesSectionTest.everyControlHasWordsForTalkBack`
+    failed once under load (R8 + lint in parallel) and passed alone: a load-sensitive flake left
+    to fix at the root.
+  - Waiting on the owner: make the upload key (keytool in `docs/google-play.md`) and add the
+    secrets; create the three apps in Play Console and upload each first bundle by hand; later
+    turn on `PLAY_UPLOAD`.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1127,3 +1150,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#512]: https://github.com/Hamza-Labs-Core/Maktaba/pull/512
+[#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517

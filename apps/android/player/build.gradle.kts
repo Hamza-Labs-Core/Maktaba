@@ -3,8 +3,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     // the shell's routes are typed (@Serializable), as Navigation Compose reads them
     alias(libs.plugins.kotlin.serialization)
-    // screenshot tests on the JVM (Robolectric): recordRoborazziPhoneDebug writes the references,
-    // verifyRoborazziPhoneDebug (CI) fails when a screen no longer matches them
+    // screenshot tests on the JVM (Robolectric): recordRoborazziDebug writes the references,
+    // verifyRoborazziDebug (CI) fails when a screen no longer matches them
     alias(libs.plugins.roborazzi)
 }
 
@@ -16,32 +16,35 @@ android {
         applicationId = "com.hamzalabs.maktaba.player"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("maktaba.versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("maktaba.versionName").orNull ?: "0.1.0"
+        // One app for phones, foldables and tablets (one Google Play listing): the layout follows
+        // the window, and the device the API is told comes from the screen (ClientHeader.deviceFor).
+        resValue("string", "app_name", "Maktaba Player")
     }
 
-    // One code base, three store listings (Epic 42): the layout follows the window on every
-    // one of them; the flavour is the listing's identity and name.
-    flavorDimensions += "form"
-    productFlavors {
-        create("phone") {
-            dimension = "form"
-            resValue("string", "app_name", "Maktaba Player")
-        }
-        create("foldable") {
-            dimension = "form"
-            applicationIdSuffix = ".foldable"
-            resValue("string", "app_name", "Maktaba Player")
-        }
-        create("tablet") {
-            dimension = "form"
-            applicationIdSuffix = ".tablet"
-            resValue("string", "app_name", "Maktaba Player")
+    // Google Play (docs/google-play.md). The release takes its version from the tag
+    // (-Pmaktaba.versionName / -Pmaktaba.versionCode, tools/release/play-version.sh) and is signed
+    // with the Play upload key only when the environment names it (ANDROID_UPLOAD_KEYSTORE_FILE,
+    // ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD, ANDROID_UPLOAD_STORE_PASSWORD);
+    // without it the bundle is unsigned. No key is ever in the repository.
+    val uploadStore = providers.environmentVariable("ANDROID_UPLOAD_KEYSTORE_FILE").orNull
+    signingConfigs {
+        if (!uploadStore.isNullOrBlank()) {
+            create("upload") {
+                val keyPass = providers.environmentVariable("ANDROID_UPLOAD_KEY_PASSWORD").get()
+                storeFile = file(uploadStore)
+                storePassword = providers.environmentVariable("ANDROID_UPLOAD_STORE_PASSWORD").orNull
+                    ?.takeIf { it.isNotEmpty() } ?: keyPass
+                keyAlias = providers.environmentVariable("ANDROID_UPLOAD_KEY_ALIAS").get()
+                keyPassword = keyPass
+            }
         }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("upload")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

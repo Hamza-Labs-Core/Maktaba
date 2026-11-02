@@ -153,7 +153,7 @@ jobs:
             deploy/packaging/scripts/preremove.sh tools/release/tag-guard.sh tools/release/release-assets.sh \
             tools/release/trusted-root-age.sh tools/release/tag-guard-test.sh tools/release/release-assets-test.sh \
             tools/release/pkg-repo.sh tools/release/pkg-repo-test.sh tools/release/homebrew-tap.sh \
-            tools/release/homebrew-tap-test.sh
+            tools/release/homebrew-tap-test.sh tools/release/play-version.sh tools/release/play-version-test.sh
       - name: install-node.sh dry runs
         run: deploy/packaging/node/tests/install-node-dry-run.sh
       # The home-server install.sh refuses a release missing checksums.txt,

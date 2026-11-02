@@ -1,5 +1,5 @@
 # Reusable tag-order guard: the first job of every tag workflow (release.yml,
-# desktop-release.yml, mobile-release.yml, tv-release.yml). A tag is released only above
+# desktop-release.yml, mobile-release.yml, tv-release.yml, play-bundles.yml). A tag is released only above
 # every published release, from a commit on main that CI passed (tools/release/tag-guard.sh):
 # v0.3.0-rc.7, tagged after v0.3.0, was an orphan no updater offered. A deliberate
 # maintenance release of an older line is named in the repository variable
