@@ -1147,6 +1147,14 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
 - v0.3.51 stays without .aab files; the next tag carries them.
 
+## 2026-11-02 — Maktaba renamed the Mac on the network (mDNS name conflict)
+
+- Owner saw macOS rename "Mahmouds-Mac-Studio.local" to "…-2.local". Cause: maktaba-api and maktaba-server each ran a zeroconf responder (`lsof -iUDP:5353`) announcing via RegisterProxy with the Mac's own Bonjour name, which publishes A/AAAA for it with the cache-flush (owner) bit. mDNSResponder saw other answerers for its name and renamed the Mac; our servers then claim the new name on restart.
+- Fix (fix/mdns-system-responder): register() returns an `announcement` (SetText, Shutdown). On macOS it runs `dns-sd -R` under /bin/sh that ends it when our stdin pipe closes (Shutdown, or our process dying any way), restarted if it ends by itself. Elsewhere zeroconf as before. Same file in api/internal/discovery and cmd/maktaba-server/internal/mdns.
+- Gotcha: a POSIX shell gives a background job /dev/null as stdin, so the watcher must read a copy (`exec 3<&0 … read _ <&3`), or it kills dns-sd at once.
+- Not done: Linux hosts with avahi-daemon and Windows (own mDNS) have the same conflict risk; still zeroconf there.
+- 2026-11-02: removed 140 merged, clean, unused worktrees (82 GB). Kept 20: in use, open PRs, or unmerged work.
+
 ## 2026-11-02 — TestLibraryTabsSQLite past the unit test budget: fsync during setup
 
 - CI run 41449508335 (PR #510) failed test-budget: browse TestLibraryTabsSQLite took 1.42 s, and 1.32 s when re-run alone. The 3x400 ms cap is 1.2 s.
