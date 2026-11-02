@@ -1,6 +1,24 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "The iPhone and iPad home-screen name. It must be unique on the App Store (ITMS-90129): keep the Maktaba name in it, matching App Store Connect",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مكتبة"
+          }
+        }
+      }
+    },
     "NSCameraUsageDescription" : {
       "extractionState" : "extracted_with_value",
       "localizations" : {

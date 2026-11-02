@@ -1,0 +1,59 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "The Mac app's name (Dock, Launchpad, Spotlight). It must be unique on the App Store (ITMS-90129): keep the Maktaba name in it, matching App Store Connect",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba Player"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشغل مكتبة"
+          }
+        }
+      }
+    },
+    "CFBundleName" : {
+      "comment" : "The Mac menu bar's app menu (About, Hide, Quit): the same name as CFBundleDisplayName, not the target's \"Maktaba Player Mac\"",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba Player"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مشغل مكتبة"
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription" : {
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba connects to your home server on this network."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتصل Maktaba بجهازك الرئيسي على هذه الشبكة."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

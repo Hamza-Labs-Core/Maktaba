@@ -469,7 +469,6 @@
 		8F19992B8C5771816209355E /* me-video-v11.json in Resources */ = {isa = PBXBuildFile; fileRef = D88C16A21B9816C4F3F79A9C /* me-video-v11.json */; };
 		8F66ADE84E89FA7F0B7C334C /* series-episodes-tafsir.json in Resources */ = {isa = PBXBuildFile; fileRef = 69082E3C568B25164BC69021 /* series-episodes-tafsir.json */; };
 		8F6A34DB32C630F75E5B2A4D /* Rail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD804F7D84EC3CE2E4A7B236 /* Rail.swift */; };
-		8F9761A20B1CC1ADABB644B6 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8B177ADE5954C20DB4B13EAE /* InfoPlist.xcstrings */; };
 		8FCB3245A690D8F9CEBCC9AF /* chapters.json in Resources */ = {isa = PBXBuildFile; fileRef = 5E3A970B4B2F9D35CFD60293 /* chapters.json */; };
 		9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */; };
 		909340401D361D0F0AEED4F2 /* me-history.json in Resources */ = {isa = PBXBuildFile; fileRef = BCCBC8D96DFA281D25BD1CA8 /* me-history.json */; };
@@ -509,6 +508,7 @@
 		9AF4D01A44868E95268E1EEA /* CachedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29B33B1848E746CEBB7D5E19 /* CachedImage.swift */; };
 		9B70D3DFCB660397A3C6FBED /* audio-ar-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = CC934BAB64968FD138262148 /* audio-ar-0.ts */; };
 		9BC81FE5C730931D582C09B8 /* channels-guide.json in Resources */ = {isa = PBXBuildFile; fileRef = CD5FB1070CB4B8044FE2E02E /* channels-guide.json */; };
+		9BDC9E16EBAA6A53D4D8A3B0 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = CD42A40FE5CCA1A4E73C464A /* InfoPlist.xcstrings */; };
 		9BE157207ABCFB32FFE74B1A /* video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = FC6C8ADDCCF8BA90EB3F6579 /* video-v5.json */; };
 		9C6D79C900808EB8B3342A11 /* LibraryBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3033581386E66EA372B7CC00 /* LibraryBrowser.swift */; };
 		9D69FC4E72A41D2D33139B3D /* AttentionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A0D10E805B91C6DF487118 /* AttentionView.swift */; };
@@ -1074,6 +1074,7 @@
 		C9A12305B4E1DB6E1BC75052 /* PlayerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerApp.swift; sourceTree = "<group>"; };
 		CBD16C2619B376327A3B02C2 /* Live.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Live.xcstrings; sourceTree = "<group>"; };
 		CC934BAB64968FD138262148 /* audio-ar-0.ts */ = {isa = PBXFileReference; path = "audio-ar-0.ts"; sourceTree = "<group>"; };
+		CD42A40FE5CCA1A4E73C464A /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		CD5FB1070CB4B8044FE2E02E /* channels-guide.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channels-guide.json"; sourceTree = "<group>"; };
 		D2428AD6061216C528F02C3B /* channel-ch-1.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "channel-ch-1.json"; sourceTree = "<group>"; };
 		D41DCD8360915712BC0B6FED /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
@@ -1200,6 +1201,7 @@
 		1D1F0B09A356096C0F037656 /* Mac */ = {
 			isa = PBXGroup;
 			children = (
+				CD42A40FE5CCA1A4E73C464A /* InfoPlist.xcstrings */,
 				EE158B4C745F3A93A2D726B6 /* Mac.xcstrings */,
 				3A7044588B28669A5A259C36 /* MacFullScreen.swift */,
 				9778F45864E9B7DB7CD1588C /* PlayerCommands.swift */,
@@ -2506,7 +2508,7 @@
 				A2238941ECE21FBB30DE48CA /* Assets.xcassets in Resources */,
 				73FB1723B381AEACEBDF5176 /* Components.xcstrings in Resources */,
 				97A6A7999C5586C11B0D8BF9 /* Home.xcstrings in Resources */,
-				8F9761A20B1CC1ADABB644B6 /* InfoPlist.xcstrings in Resources */,
+				9BDC9E16EBAA6A53D4D8A3B0 /* InfoPlist.xcstrings in Resources */,
 				237428AEC2A1E8F0BDD5B167 /* Libraries.xcstrings in Resources */,
 				A3DEE7A29E1441AF48394771 /* Live.xcstrings in Resources */,
 				F75F68CB30D6E09CCA6F0252 /* Localizable.xcstrings in Resources */,
