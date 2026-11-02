@@ -943,6 +943,19 @@ Append here: date, session, one to five lines on what changed. Newest last.
     before routable and offline after removal, one at a time per slug; [#472] host apt installs
     get retries, timeouts and an 8-minute step limit after stalled mirrors hung jobs 30 min.
 
+- 2026-11-02 · UI-test agent of `b743b7d4`: [#510] every Apple Player UI test job green
+  (head `93a0a1d7`, run 41465492958). Root causes: the Mac local-network alert came from Bonjour
+  browsing, first in the home picker and then in the in-process test host. Fix: `NoDiscovery`
+  under `TestLaunch.scriptsTheNetwork`. `typeText` dropped keys, so every UI test now types
+  through `typeExactly` (it reads the field back and waits for focus); `check-ui-typing.py`
+  guards it. Audits measured Dynamic Type stale on loaded runners, so audits now run without
+  `.dynamicType` and `assertTextScales` relaunches each page at XS, default and AX3 (the only
+  allowance is a button's 44 pt; a fixture proves the check fails). The check found an app bug:
+  a search poster with only a width set stayed 214 pt at every size. It also had a gap of its
+  own: the bar texts of an iPad's second split column were not left out. Open: XCTest's "App animations complete
+  notification not received" stall seen twice locally on iPad, never under screen recording
+  and never in CI; `PlayerConnectProgressUITests` skips 2 tests on unsigned CI (no Keychain).
+
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
 [#41]: https://github.com/Hamza-Labs-Core/Maktaba/pull/41
@@ -1108,3 +1121,4 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#477]: https://github.com/Hamza-Labs-Core/Maktaba/pull/477
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
+[#510]: https://github.com/Hamza-Labs-Core/Maktaba/pull/510
