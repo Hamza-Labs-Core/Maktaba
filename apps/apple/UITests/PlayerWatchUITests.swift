@@ -122,7 +122,7 @@ final class PlayerWatchUITests: PlayerUITestCase {
     // MARK: controls
 
     func testControlsHideAfterFourSecondsAndATapShowsThem() {
-        watch("v2")
+        watch("v2", controlsStay: false)
         let play = app.buttons["player.playPause"]
         waitFor("it plays") { state["playing"] == "true" }
         XCTAssertTrue(play.waitForNonExistence(timeout: 15), "they hide while it plays")
@@ -160,8 +160,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
 
     // MARK: helpers
 
-    private func watch(_ video: String, at: Int? = nil, language: String = "en") {
-        launchSignedIn(language, sections: ["home"], open: at.map { "watch/\(video)@\($0)" } ?? "watch/\(video)")
+    /// `controlsStay`: see `PlayerUITestCase.launch` (only the test of the 4 s turns it off).
+    private func watch(_ video: String, at: Int? = nil, language: String = "en", controlsStay: Bool = true) {
+        launchSignedIn(language, sections: ["home"], open: at.map { "watch/\(video)@\($0)" } ?? "watch/\(video)",
+                       controlsStay: controlsStay)
         XCTAssertTrue(element("player.surface").waitForExistence(timeout: 30), "the player opens")
     }
 

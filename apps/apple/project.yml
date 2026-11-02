@@ -169,6 +169,7 @@ targets:
     sources:
       - path: PlayerMacTests/UI
       - path: UITests/MockHome.swift
+      - path: UITests/TypingInFields.swift
       - path: UITests/Fixtures
     dependencies: [{ target: Maktaba Player Mac }]
     # the runner is sandboxed: MockHome listens on the loopback inside it. CI's ad-hoc signed
@@ -309,6 +310,7 @@ targets:
       - path: ../tv/tvos/MaktabaTVUITests
       # the mock home the iPhone's connect tests use (no real home, no real account)
       - path: UITests/MockHome.swift
+      - path: UITests/TypingInFields.swift
       - path: UITests/Fixtures
     dependencies:
       - target: Maktaba TV
