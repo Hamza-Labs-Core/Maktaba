@@ -94,8 +94,21 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// The app is closed when the test ends, before its home goes: XCUITest leaves it running
+    /// otherwise, and one left on the watch screen keeps playing with its sound session
+    /// (`.playback`, not mixable: `Playback.swift`). The next test's own player
+    /// (PlayerWatchTests plays MockHome's stream in this runner) then cannot start its sound
+    /// output, and AVPlayer's time, which follows the sound output, stays put: "the time
+    /// moves" timed out 14 s in, with the Player still posting progress (CI run 41521240810).
     override func tearDown() async throws {
+        Self.close(app)
         home?.stop()
+    }
+
+    /// Closes the app if it is running.
+    static func close(_ app: XCUIApplication?) {
+        guard let app, app.state != .notRunning else { return }
+        app.terminate()
     }
 
     /// Opens the app. `fresh`: as a first run (no homes, the permissions walkthrough passed
