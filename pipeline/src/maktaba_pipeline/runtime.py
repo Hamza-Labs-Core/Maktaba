@@ -221,17 +221,52 @@ class Database:
             yield self._conn  # join the outer transaction
             return
         async with self._sqlite_lock():
-            await self._conn.execute("BEGIN IMMEDIATE")
+            await self._sqlite_begin()
             token = _TX_CONN.set(self._conn)
             try:
                 yield self._conn
             except BaseException:
-                await self._conn.execute("ROLLBACK")
+                await self._sqlite_end("ROLLBACK")
                 raise
             else:
-                await self._conn.execute("COMMIT")
+                await self._sqlite_end("COMMIT")
             finally:
                 _TX_CONN.reset(token)
+
+    async def _sqlite_begin(self) -> None:
+        """``BEGIN IMMEDIATE``, never leaving the shared connection inside a transaction
+        when the caller is cancelled: aiosqlite has already handed the statement to its
+        thread, which runs it anyway, and nothing would ever end that transaction (every
+        other task's statements would then run inside it, uncommitted). So on a cancel
+        wait for the BEGIN and roll it back before the cancel goes on (still under the
+        lock: no other statement can get in between)."""
+        begin = asyncio.ensure_future(self._conn.execute("BEGIN IMMEDIATE"))
+        try:
+            await asyncio.shield(begin)
+        except asyncio.CancelledError:
+            # the BEGIN failed (nothing began) or the connection is closed (nothing is
+            # left): nothing to undo, and an error here must never replace the cancel
+            # (a loop that catches errors would then never stop)
+            with contextlib.suppress(Exception):
+                await begin
+                if self._conn.in_transaction:
+                    await self._conn.execute("ROLLBACK")
+            raise
+
+    async def _sqlite_end(self, sql: str) -> None:
+        """``COMMIT`` or ``ROLLBACK``, run to its end before the lock is let go even when
+        the caller is cancelled meanwhile: a cancelled await would release the lock while
+        the statement still waits in aiosqlite's thread, so the transaction would end
+        some time after ``transaction()`` returned. The cancel goes on once it has."""
+        end = asyncio.ensure_future(self._conn.execute(sql))
+        try:
+            await asyncio.shield(end)
+        except asyncio.CancelledError:
+            # the statement's own error, or a connection closed meanwhile, must never
+            # replace the cancel (a loop that catches errors would then never stop)
+            with contextlib.suppress(Exception):
+                await end
+            raise
 
     @contextlib.asynccontextmanager
     async def _pg_conn(self) -> AsyncIterator[Any]:

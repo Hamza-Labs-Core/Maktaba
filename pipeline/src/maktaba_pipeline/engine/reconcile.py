@@ -78,23 +78,43 @@ async def reconcile_once(
     yt_refresh_hours: float | None = None,
     at: datetime | None = None,
 ) -> ReconcileReport:
-    """One reconciliation pass; returns what it did (``leader=False`` => nothing)."""
+    """One reconciliation pass; returns what it did (``leader=False`` => nothing).
+
+    On Postgres the pass runs in one transaction that holds the advisory lock (the pool
+    gives every other loop its own connection). On SQLite every loop of the process
+    shares one connection behind a lock, and one transaction over the whole pass held it
+    for the pass (a 1000-row sweep: thousands of statements), long enough to miss the
+    worker's heartbeat. So SQLite has no transaction around the pass, as the queue-health
+    round (engine/watchers.py): each unit of work commits on its own and the connection
+    is free between them. The units are what must be atomic, and each already is: one
+    enqueue (``_enqueue_sqlite``'s transaction, the coalescing and a sweep's reason
+    together), one legacy repair (``finalize_success``'s transaction, guarded by
+    ``propagated_at IS NULL``), one ``propagated_at`` mark (a statement). A pass stopped
+    between them leaves only whole units; the next pass does the rest, as each step only
+    selects what is still to do. Another loop may now write between a step's read and
+    its enqueue, as on Postgres, where each statement already reads what others
+    committed: the enqueue's coalescing makes that at most a rerun request."""
     t = at or now()
+    if not is_pg(db):
+        return await _pass(db, graph, t, yt_refresh_hours)
     async with db.transaction():
-        if is_pg(db):
-            got = await db.fetchval(
-                "SELECT pg_try_advisory_xact_lock(hashtext('maktaba.reconciler'))"
-            )
-            if not got:
-                return ReconcileReport(leader=False)
-        propagated = await _repair_unpropagated(db, graph, t)
-        refresh = await _youtube_refresh(db, graph, t, yt_refresh_hours)
-        sweep = await _version_sweep(db, graph)
-        scans = await _library_sweeps(db, graph, t)
-        periodic = await _periodic_stages(db, graph, t)
-        missing = await _semantic_sweep(db, graph)
-        purges = await _trash_purges(db, graph, t)
-        thumbs = await _thumbs_dir_sweep(db, graph)
+        got = await db.fetchval("SELECT pg_try_advisory_xact_lock(hashtext('maktaba.reconciler'))")
+        if not got:
+            return ReconcileReport(leader=False)
+        return await _pass(db, graph, t, yt_refresh_hours)
+
+
+async def _pass(
+    db: Any, graph: Mapping[str, StageDef], t: datetime, yt_refresh_hours: float | None
+) -> ReconcileReport:
+    propagated = await _repair_unpropagated(db, graph, t)
+    refresh = await _youtube_refresh(db, graph, t, yt_refresh_hours)
+    sweep = await _version_sweep(db, graph)
+    scans = await _library_sweeps(db, graph, t)
+    periodic = await _periodic_stages(db, graph, t)
+    missing = await _semantic_sweep(db, graph)
+    purges = await _trash_purges(db, graph, t)
+    thumbs = await _thumbs_dir_sweep(db, graph)
     return ReconcileReport(
         True, propagated, refresh, sweep, scans, periodic, missing, purges, thumbs
     )
