@@ -84,7 +84,15 @@ final class PlayerComponentsUITests: PlayerUITestCase {
             let rail = element("rail")
             XCTAssertTrue(rail.waitForExistence(timeout: 5))
             let cards = rail.descendants(matching: .any).matching(identifier: "poster.card").allElementsBoundByIndex
-            XCTAssertGreaterThanOrEqual(cards.count, 2)
+            // a rail builds all its cards, the ones past the screen's edge too: a lazy row built
+            // only what it showed, and a row scrolled in had built none, so it was a bare title
+            // (Home's For You stayed one on CI, PR #569)
+            XCTAssertEqual(cards.count, 6, "all six cards, not only those on screen")
+            for strip in all("rail.cards") {
+                let card = strip.descendants(matching: .any).matching(identifier: "poster.card").firstMatch
+                XCTAssertTrue(card.exists, "each row has its cards")
+                XCTAssertGreaterThanOrEqual(strip.frame.height, card.frame.height - 1, "each row is as tall as its cards")
+            }
             if language == "ar" {
                 XCTAssertGreaterThan(cards[0].frame.minX, cards[1].frame.minX, "Arabic: the row starts on the right")
             } else {
