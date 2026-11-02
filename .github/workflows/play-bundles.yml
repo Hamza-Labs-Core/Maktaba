@@ -12,8 +12,9 @@
 # only proves the upload is ours.
 #
 # VERSIONS: tools/release/play-version.sh. The versionName is the tag without its v, the
-# versionCode MAJOR*1000000 + MINOR*1000 + PATCH (v0.3.45 -> 3045), the same for the three
-# apps, so every tag's code is above the last one's.
+# versionCode (MAJOR*1000000 + MINOR*1000 + PATCH)*100 + STEP, STEP 99 for a stable tag and
+# below it for -alpha.N / -beta.N / -rc.N (v0.3.55 -> 305599, v0.4.0-rc.1 -> 400065), the same
+# for the three apps, so every tag has its own code, above the last one's.
 #
 # SIGNING: the upload key from the repository secrets ANDROID_UPLOAD_KEYSTORE_BASE64,
 # ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD and, optionally,
@@ -22,11 +23,12 @@
 # the build only. Without the secrets the bundles are unsigned: they stay a workflow artifact
 # (`-unsigned.aab`), the run warns, and nothing is attached to the Release.
 #
-# PLAY: off by default (the first upload of each app is by hand, in Play Console). With the
-# repository variable PLAY_UPLOAD set to 'true' and the secret PLAY_SERVICE_ACCOUNT_JSON, a
-# stable tag's signed bundles also go to Play's internal testing track. The status of that
-# release is the variable PLAY_RELEASE_STATUS ('completed' when unset; 'draft' while Play still
-# calls the app a draft app).
+# PLAY: with the secret PLAY_SERVICE_ACCOUNT_JSON (a service account allowed to release to
+# testing tracks), each signed bundle also goes to its app's internal testing track, status
+# completed, with its mapping.txt and the tag's release notes (whatsnew en-US and ar,
+# tools/ci/play_release.py). The package uploaded to is the applicationId in the app's Gradle
+# build file. Without the secret the run notes "Play upload skipped: PLAY_SERVICE_ACCOUNT_JSON
+# not set" and succeeds. Only the internal track is ever written: never beta or production.
 #
 # This workflow runs only on tags pushed to this repository (never on a pull request), checks
 # out only the tagged commit, and gives each job only the permissions it needs.
@@ -63,13 +65,39 @@ jobs:
     outputs:
       signed: ${{ steps.collect.outputs.signed }}
       version: ${{ steps.version.outputs.name }}
-    # Only whether there is a key is job-wide (a step's `if:` cannot read secrets); the key
-    # and its passwords reach only the steps that sign, never the setup actions.
+      play: ${{ steps.play.outputs.upload }}
+      player_package: ${{ steps.play-notes.outputs.player }}
+      remote_package: ${{ steps.play-notes.outputs.remote }}
+      tv_package: ${{ steps.play-notes.outputs.tv }}
+    # Only whether there is a key (or a Play account) is job-wide (a step's `if:` cannot read
+    # secrets); the key and its passwords reach only the steps that sign, never the setup
+    # actions, and the Play account only the upload action in the play job.
     env:
       HAS_UPLOAD_KEY: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 != '' }}
+      HAS_PLAY_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
       TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v6.0.2
+
+      # For Google Play: each app's package (its Gradle applicationId) and the tag's release
+      # notes in English and Arabic (tools/ci/play_release.py). The message of an annotated
+      # tag only: a lightweight tag's "contents" would be its commit's message.
+      - name: Play packages and release notes
+        id: play-notes
+        run: |
+          set -euo pipefail
+          git fetch --quiet --no-tags --force origin "+refs/tags/${TAG}:refs/tags/${TAG}"
+          : >"$RUNNER_TEMP/tag-message"
+          if [ "$(git cat-file -t "refs/tags/${TAG}")" = tag ]; then
+            git for-each-ref --format='%(contents)' "refs/tags/${TAG}" >"$RUNNER_TEMP/tag-message"
+          fi
+          python3 tools/ci/play_release.py whatsnew "$TAG" "$RUNNER_TEMP/tag-message" whatsnew
+          {
+            echo "player=$(python3 tools/ci/play_release.py package player)"
+            echo "remote=$(python3 tools/ci/play_release.py package remote)"
+            echo "tv=$(python3 tools/ci/play_release.py package tv)"
+          } | tee -a "$GITHUB_OUTPUT"
+          head -n 20 whatsnew/*
 
       # The wrappers' jars run the builds, with the upload key in the environment: each must
       # be Gradle's own for the version it names.
@@ -196,6 +224,28 @@ jobs:
         if: always()
         run: rm -f "$RUNNER_TEMP/upload.keystore"
 
+      # Whether the play job uploads: a Play account, signed bundles, and not a re-run of a
+      # published tag (Play already has its versionCode). Each skip is one notice; none fails.
+      - name: Google Play upload
+        id: play
+        env:
+          SIGNED: ${{ steps.collect.outputs.signed }}
+          PUBLISHED: ${{ needs.guard.outputs.published }}
+        run: |
+          set -euo pipefail
+          upload=false
+          if [ "$HAS_PLAY_ACCOUNT" != true ]; then
+            echo "::notice title=Google Play::Play upload skipped: PLAY_SERVICE_ACCOUNT_JSON not set"
+          elif [ "$SIGNED" != true ]; then
+            echo "::notice title=Google Play::Play upload skipped: the bundles are unsigned"
+          elif [ "$PUBLISHED" = true ]; then
+            echo "::notice title=Google Play::Play upload skipped: ${TAG} is published already, so Play has its versionCode"
+          else
+            upload=true
+            echo "Play upload: the internal track of each app"
+          fi
+          echo "upload=$upload" >>"$GITHUB_OUTPUT"
+
       - name: Upload CI artifact
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -203,6 +253,7 @@ jobs:
           path: |
             out/*
             mapping/*
+            whatsnew/*
           retention-days: 14
 
       # Signed bundles only. To the tag's release, a draft until release.yml's signed files and
@@ -214,59 +265,53 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: tools/release/release-assets.sh upload "$TAG" out/*
 
-  # Off unless PLAY_UPLOAD is 'true': the first upload of each app is by hand (Play Console
-  # makes the app from it). A stable tag only (a pre-release has its version's versionCode,
-  # which the stable tag then needs), signed bundles only, never a re-run of a published tag.
+  # Each signed bundle to its app's internal testing track, when the bundles job said so (a Play
+  # account, signed bundles, not a re-run of a published tag). The apps exist in Play Console
+  # already (their first upload is by hand: the API cannot create an app). Pre-releases too:
+  # every tag has its own versionCode (tools/release/play-version.sh).
   play:
     name: google play internal (${{ matrix.app }})
-    needs: [guard, bundles]
-    if: >-
-      vars.PLAY_UPLOAD == 'true'
-      && needs.bundles.outputs.signed == 'true'
-      && needs.guard.outputs.published != 'true'
-      && !contains(github.ref_name, '-')
+    needs: [bundles]
+    if: needs.bundles.outputs.play == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions: {}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - app: player
-            package: com.hamzalabs.maktaba.player
-          - app: remote
-            package: com.hamzalabs.maktaba.remote
-          - app: tv
-            package: com.hamzalabs.maktaba.tv
-    env:
-      PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        app: [player, remote, tv]
     steps:
-      - name: Service account
-        id: account
-        run: |
-          if [ -n "$PLAY_SERVICE_ACCOUNT_JSON" ]; then
-            echo "ready=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "::warning title=Google Play upload skipped::PLAY_UPLOAD is 'true' but PLAY_SERVICE_ACCOUNT_JSON is not set: nothing was uploaded to Play."
-            echo "ready=false" >>"$GITHUB_OUTPUT"
-          fi
-
       - name: The bundles
-        if: steps.account.outputs.ready == 'true'
         uses: actions/download-artifact@v8.0.1
         with:
           name: maktaba-play-bundles
           path: play
 
+      # Signed only: the bundles job names an unsigned bundle -unsigned and says signed=false,
+      # so this file exists only when it was signed and jarsigner verified it.
+      - name: The signed bundle
+        env:
+          APP: ${{ matrix.app }}
+          AAB: play/out/maktaba-${{ matrix.app }}-${{ needs.bundles.outputs.version }}.aab
+          PACKAGE: ${{ needs.bundles.outputs[format('{0}_package', matrix.app)] }}
+        run: |
+          set -euo pipefail
+          [ -n "$PACKAGE" ] || { echo "::error::no package name for $APP"; exit 1; }
+          [ -f "$AAB" ] || { echo "::error::$AAB is not in the bundles (unsigned?)"; exit 1; }
+          echo "$AAB -> $PACKAGE (internal)"
+
+      # r0adkll/upload-google-play: the Play Developer API (androidpublisher v3) edit, upload,
+      # track and commit, maintained, used widely, pinned to a commit as every third-party
+      # action here. The secret goes only to this step, as an input GitHub masks in the log.
       - name: Upload to the internal track
-        if: steps.account.outputs.ready == 'true'
         # r0adkll/upload-google-play v1.1.5
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: ${{ matrix.package }}
+          packageName: ${{ needs.bundles.outputs[format('{0}_package', matrix.app)] }}
           releaseFiles: play/out/maktaba-${{ matrix.app }}-${{ needs.bundles.outputs.version }}.aab
           mappingFile: play/mapping/maktaba-${{ matrix.app }}-${{ needs.bundles.outputs.version }}-mapping.txt
+          whatsNewDirectory: play/whatsnew
           releaseName: ${{ needs.bundles.outputs.version }}
           track: internal
-          status: ${{ vars.PLAY_RELEASE_STATUS || 'completed' }}
+          status: completed
