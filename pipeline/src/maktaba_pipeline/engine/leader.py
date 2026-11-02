@@ -48,11 +48,17 @@ async def leader(db: Any, key: str) -> AsyncIterator[bool]:
         finally:
             if got:
                 await _unlock(conn, key)
-            if conn.is_closed():
-                # the server ended it (a dropped network, a terminated backend): asyncpg
-                # gives a dead connection's slot back to the pool only when it is
-                # terminated, else the slot stays taken and the pool's close waits forever
-                conn.terminate()
+            _give_back_if_dead(conn)
+
+
+def _give_back_if_dead(conn: Any) -> None:
+    """A connection the server ended (a dropped network, a terminated backend) gets its
+    pool slot back only once it is terminated: asyncpg sometimes does that itself (the
+    proxy is then detached and every call on it raises), sometimes not, and then the slot
+    stays taken and the pool's close waits forever."""
+    with contextlib.suppress(Exception):  # detached: the pool has the slot back already
+        if conn.is_closed():
+            conn.terminate()
 
 
 async def _unlock(conn: Any, key: str) -> None:
@@ -62,7 +68,10 @@ async def _unlock(conn: Any, key: str) -> None:
     find it still held. A connection that died took the lock with it, and the pool's reset
     (``pg_advisory_unlock_all``) ends it on any other failure: an error here never
     replaces the pass's own outcome, and a cancel stays a cancel."""
-    unlock = asyncio.ensure_future(conn.execute("SELECT pg_advisory_unlock(hashtext($1))", key))
+    try:
+        unlock = asyncio.ensure_future(conn.execute("SELECT pg_advisory_unlock(hashtext($1))", key))
+    except Exception:  # noqa: BLE001 - the pool took a dead connection back already
+        return
     try:
         with contextlib.suppress(Exception):
             await asyncio.shield(unlock)
