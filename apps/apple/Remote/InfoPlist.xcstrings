@@ -2,19 +2,19 @@
   "sourceLanguage" : "en",
   "strings" : {
     "CFBundleDisplayName" : {
-      "comment" : "The home-screen name: short, so iOS shows it whole",
+      "comment" : "The home-screen name. It must be unique on the App Store (a bare \"Remote\" was rejected, ITMS-90129): keep the Maktaba name in it, matching App Store Connect",
       "extractionState" : "extracted_with_value",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Remote"
+            "value" : "Maktaba Remote"
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ريموت"
+            "value" : "ريموت مكتبة"
           }
         }
       }
