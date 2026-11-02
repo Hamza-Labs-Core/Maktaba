@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The tag-order guard: the first job of every tag workflow (release.yml, desktop-release.yml,
-# mobile-release.yml, tv-release.yml, through .github/workflows/_tag-guard.yml). A tag is
+# mobile-release.yml, tv-release.yml, play-bundles.yml, through .github/workflows/_tag-guard.yml). A tag is
 # released only when:
 #   - it is above every published release (tools/release/releaseorder): v0.3.0-rc.7, tagged
 #     after v0.3.0, was offered by no updater, and machines on it were offered the older
