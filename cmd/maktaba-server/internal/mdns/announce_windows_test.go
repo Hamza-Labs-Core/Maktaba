@@ -5,12 +5,15 @@ package mdns
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 // Windows 10+ (the CI runner among them) has the registration API, so a home there
@@ -115,7 +118,18 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 	case <-time.After(15 * time.Second):
 		t.Fatal("no answer to the registration")
 	}
-	time.Sleep(3 * time.Second) // the announcements follow the probes
+	// the announcements follow the probes; a query for the type is answered too
+	if conn, err := net.ListenUDP("udp4", &net.UDPAddr{}); err == nil {
+		q := new(dns.Msg)
+		q.SetQuestion(service+".local.", dns.TypePTR)
+		if wire, err := q.Pack(); err == nil {
+			for range 3 {
+				_, _ = conn.WriteToUDP(wire, &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353})
+				time.Sleep(time.Second)
+			}
+		}
+		_ = conn.Close()
+	}
 	stop()
 
 	capture, err := os.ReadFile(etl)
@@ -141,17 +155,20 @@ func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
 		}
 		rest = rest[i+1:]
 	}
-	var seen []string
-	for rest := capture; len(seen) < 8; {
-		i := bytes.Index(rest, []byte("Maktaba v1"))
-		if i < 0 {
-			break
+	around := func(what string) (seen []string) {
+		for rest := capture; len(seen) < 6; {
+			i := bytes.Index(rest, []byte(what))
+			if i < 0 {
+				break
+			}
+			from := max(i-len(label)-4, 0)
+			seen = append(seen, fmt.Sprintf("%q", rest[from:min(i+len(what)+24, len(rest))]))
+			rest = rest[i+1:]
 		}
-		from := max(i-1, 0)
-		seen = append(seen, fmt.Sprintf("%q", rest[from:min(from+len(label)+16, len(rest))]))
-		rest = rest[i+1:]
+		return seen
 	}
-	t.Fatalf("%d bytes captured; %q is not one label in them; it is in: %v", len(capture), name, seen)
+	t.Fatalf("%d bytes captured; %q is not one label in them; around the name: %v; around the type: %v",
+		len(capture), name, around("Maktaba v1"), around("_maktaba-dot"))
 }
 
 // Through the announcement: a new TXT and Shutdown on the real API, withdrawn when done.
