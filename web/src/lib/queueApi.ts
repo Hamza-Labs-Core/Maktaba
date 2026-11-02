@@ -78,6 +78,8 @@ export interface StageInfo {
   paused: boolean;
   paused_at: string | null;
   paused_by: string | null;
+  /** Username behind a paused_by of "user:<id>" (an admin's pause); null otherwise. */
+  paused_by_name?: string | null;
   debounce_sec: number;
   edges: StageEdge[];
   may_request: string[];

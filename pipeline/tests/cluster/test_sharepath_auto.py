@@ -174,7 +174,8 @@ async def test_the_full_automatic_flow(db: Any, tmp_path: Path) -> None:
     stage = await _share_stage(db)
     # an admin's pause stays as it is
     await db.execute(
-        "UPDATE job_stages SET paused = $2, paused_by = 'admin' WHERE stage = ("
+        "UPDATE job_stages SET paused = $2, paused_at = CURRENT_TIMESTAMP, paused_by = 'admin'"
+        " WHERE stage = ("
         " SELECT stage FROM job_stages WHERE pool = 'nas_write' ORDER BY stage LIMIT 1)"
         " AND stage <> $1",
         stage,

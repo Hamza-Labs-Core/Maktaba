@@ -1140,6 +1140,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+[#524]: https://github.com/Hamza-Labs-Core/Maktaba/pull/524
 
 ## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
 
@@ -1173,3 +1174,33 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Cause: the shared `testDB` setup (~45 autocommits, plus ~14 from `groupsEnv`). On a file DB in rollback-journal mode, each commit syncs the journal, the db file and the directory. That costs almost nothing on macOS and a lot on the Linux runner. Simulating it locally with `PRAGMA fullfsync`: setup 965 ms out of a 990 ms test. The five handler requests take ~25 ms, so the handler wasn't the problem.
 - Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
 - The same PR (#521) also fixes a search test that failed integration/compat-prev: `TestEmbedCacheConcurrentSameKeyNoCorruption` compared response bodies byte for byte, including the wall-clock `took_ms` ("semantic":0 vs 1). Both subtests (concurrent, and sequential miss->hit->hit) now decode the bodies, drop `took_ms` and compare the rest (`withoutTiming`). Passed `-race -count=20`.
+
+## 2026-11-02 — CI runs what a change touches (ci/run-what-changed)
+
+- Owner: "ci should only run if the change touches it". An Android-only PR ran pipeline integration, Go replica, e2e and all nine Player UI shards; a Remote rename ran the Player UI tests.
+- Now: `.github/ci-paths.yml` holds one path filter per job or part, derived from what each workflow builds and tests (Go modules + what their tests read, pipeline + the docs/help its tests read, web + the two api files help.coverage reads, tokens, each app). ci.yml's `changes` job evaluates it on a pull request only; on a push to main/release/* every output is true, so main and the tags get the full run (mac/win/linux app builds now run on every push too). The update rehearsal's own triggers are unchanged.
+- Parts: `_lint.yml` (repo checks always; go/pipeline/web), `_unit.yml` (go/pipeline/web/tokens/desktop_shell), `_integration.yml` (integration/compat_prev), `_node-packaging.yml` (packaging/release_venv), `_apple-apps.yml` (build/player_ui) take boolean inputs. Makefile: `lockfile-check` split into -py/-web/-go.
+- Apple: the Player UI shards run for Player/, Shared/, MaktabaKit sources, UITests/, PlayerMacTests/, the Player schemes. The shared project.pbxproj counts only when `tools/ci/apple_player_scope.py` finds a Player object among its changes (parses the file at HEAD^1 and HEAD; the Remote rename caaf91a0 and Remote icon 3912dca8 come out false, UI-test changes true).
+- e2e and perf-ci need integration but now say `!cancelled()` and run when integration was skipped (else a web-only change would skip them silently).
+- ci-success loops over every need: success/skipped pass, failure/cancelled fail, `changes` must succeed.
+- Guard: `tools/ci/ci_paths.py guard` in the lint job's always-run `repo` part. It simulates ci.yml's real `if:`/`with:` expressions: every job is gated by filters (and runs when any one alone is true) or marked `# ci-paths: always-run|push-only|pr-only|not-a-gate`; every filter is used; every gate is in ci-success's needs; a push runs everything; every tracked file is matched by a filter or listed in NOT_IN_CI. `ci_paths.py which <files>` shows what a change runs.
+- Tests: tools/ci/tests (Android-only, Remote-only, Player, tvOS, pipeline-only, API-only, docs-only, workflow change, ci.yml, shared migrations, push, fork, guard negatives) and the pbxproj scope tests on the real project file. pipeline's test_docs_links now reads the `unit_pipeline` filter instead of the old `meta` one.
+
+## 2026-11-02 — extract paused by nobody, thumbnail starved: stage pauses need an owner, pools share fairly
+
+- Read-only look at the live home: extract (`nas_read`) had `paused = true`, `paused_at`/`paused_by` NULL since 2026-10-22 22:31. Thumbnail (70k pending at 900) had not run because thumb_small and chapter_thumbs (~42k at 100) always filled `nas_read`'s 2 slots under `ORDER BY priority, id`.
+- Writer: no code. Every pause writer in git history sets both columns. It was a Claude session (`30850266`) on 2026-10-23 02:37 UTC, after the owner said "pause this shit": a raw `psql` `update job_stages set paused = true where stage = 'extract'` on the live Docker Postgres. Later that night the same session did the same for `index` and `chapter_infer` on the bundled Postgres. Lesson: never write operator columns by hand. Pause through `POST /api/queues/{stage}/pause` (the DB now refuses anything else).
+- Fix ([#524], slot 0172):
+  - orphaned pauses are resumed, with `audit_log` `admin` / `queue.stage_orphan_pause_resumed`
+  - a trigger (not a CHECK: `ADD CONSTRAINT` would make the release unsafe to roll back on its schema) refuses a pause without `paused_at` and `paused_by`
+  - the Queues API adds `paused_by_name`, and the web card and queue page say who paused a stage and when (English and Arabic)
+- Fairness: stride scheduling per pool (`claim_shares`, `engine/claim.py`) between priority classes, not stages. Each stage's head is due at `GREATEST(class pass + priority, pool clock)`, and the claim takes the head due first. Equal priorities stay in id order across stages. A first cut kept a share per stage, which round-robined equal stages, split fp_gate's batch and ran detect 4 times (`test_fingerprint_flow` seed 2, CI integration). Priority ≤ 50 (Process now) still goes first, strictly. 900 vs 100 gets 1 claim in 9. The new partial index `processing_jobs_claimable_idx` brought a claim with 203k claimable rows from 64 ms to 0.3–0.8 ms. Legacy `claim_one` (non-pool mode) is unchanged: it has a semaphore per stage, so no cross-stage starvation.
+- Live state: unchanged by this session. Extract resumes when a release with slot 0172 is installed (the owner tags and moves it live). Check `index` and `chapter_infer` then too: if they are still hand-paused, 0172 resumes them as well.
+
+## 2026-11-02 — test_a_corrupt_input_fails_at_once got 'done': random bytes aren't always corrupt
+
+- CI failed `test_convert.py::test_a_corrupt_input_fails_at_once` on unrelated PRs: on [postgres] in run 41476408173 (PR #523), and on [sqlite] on PR #525. `assert job["state"] == "failed"` got 'done'.
+- Cause: the test's fixture, not the stage. The "corrupt" input was `os.urandom(200_000)`. ffprobe 8.1 accepted 3 of 300 such files: 2 as a raw H.263 video stream, 1 as an LRC subtitle. When probing works, `plan_for` skips the file (`needs_reencode` with re-encoding off, `no_video` for LRC), and the job ends `done`/unchanged with the file untouched. Captured one such file and reproduced 'done' on both dialects.
+- Fix: the fixture is now a real Matroska EBML header (DocType "matroska") plus a 200 kB body from a seeded RNG. The matroska demuxer claims the file and always rejects it ("End of file"). The test also checks the error says "the original cannot be read", meaning ffprobe refused the file. Passed 20/20 runs on both dialects.
+- Not fixed, noted: with `allow_reencode` on, junk that ffprobe reads as raw H.263 would re-encode into a 1-frame MP4 whose frame count matches. The original goes to the trash, so nothing is lost.
+- Same PR: `test_cancel_kills_ffmpeg_and_leaves_nothing` was over its 5 s soft cap on CI (6.9 s). Different cause: about 2.8 s of the 3.95 s local run was making the 60 s 720p VP9 source (8.9 s of CPU). The source is now MPEG-4 Part 2 (0.6 s, 4.5 s of CPU). It still plans a re-encode, and the x264 encode being cancelled is the same. Now 1.8 s locally.
