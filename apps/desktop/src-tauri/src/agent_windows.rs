@@ -2027,25 +2027,94 @@ mod tests {
         }
     }
 
-    fn powershell() -> PathBuf {
-        let system =
-            std::env::var_os("SystemRoot").unwrap_or_else(|| OsString::from(r"C:\Windows"));
-        Path::new(&system).join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+    /// What the stand-in agent of a task does, in the task's working
+    /// directory (Task Scheduler passes the action no environment).
+    const STAND_IN: &str = "maktaba-task-stand-in.txt";
+
+    /// The stand-in agent the real tasks run: this test binary, started as
+    /// `--exact` this test, doing what STAND_IN in its working directory says.
+    /// Without that file (any other test run) it passes at once.
+    ///
+    /// It was PowerShell, whose first starts on a fresh windows-latest runner
+    /// take 20 to 50 s (Defender and .NET warming up: in CI the PowerShell
+    /// launcher tests above spent 21 s, on a slow runner 51 s, on one start),
+    /// longer than these tests give a task's first run (30 s): two of them
+    /// failed together with "the task did not run". This binary is already
+    /// running and loaded, so its start takes well under a second.
+    #[test]
+    fn stand_in_agent() {
+        let Ok(order) = std::fs::read_to_string(STAND_IN) else {
+            return;
+        };
+        let mut lines = order.lines();
+        let mut next = || lines.next().expect("a whole stand-in order").to_string();
+        let (what, runs) = (next(), PathBuf::from(next()));
+        let note_run = || {
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&runs)
+                .expect("the runs file");
+            writeln!(f, "run").expect("a run noted");
+        };
+        match what.as_str() {
+            // a crash: an access violation's exit code
+            "crash" => {
+                note_run();
+                std::process::exit(0xC000_0005_u32 as i32);
+            }
+            // the agent: holds its mutex, runs until its stop event, takes 3 s
+            // to stop (a server draining), and its process outlives the
+            // released mutex a moment (as an exiting agent's does: Task
+            // Scheduler still ignores a /Run then)
+            "wait" => {
+                let (mutex, stop) = (wide(OsStr::new(&next())), wide(OsStr::new(&next())));
+                // SAFETY: NUL-terminated names that outlive the calls; each
+                // handle is checked and closed on drop.
+                let m = unsafe { CreateMutexW(std::ptr::null(), 1, mutex.as_ptr()) };
+                assert!(!m.is_null(), "the agent's mutex");
+                let m = Owned(m);
+                // SAFETY: as above (manual reset, not set).
+                let e = unsafe { CreateEventW(std::ptr::null(), 1, 0, stop.as_ptr()) };
+                assert!(!e.is_null(), "the stop event");
+                let e = Owned(e);
+                note_run();
+                // SAFETY: e is a live event handle.
+                unsafe { WaitForSingleObject(e.0, 300_000) };
+                std::thread::sleep(Duration::from_secs(3));
+                // SAFETY: this thread created m owned.
+                unsafe { ReleaseMutex(m.0) };
+                std::thread::sleep(Duration::from_millis(500));
+                std::process::exit(0);
+            }
+            other => panic!("no stand-in agent {other:?}"),
+        }
     }
 
-    /// The task XML the app writes, running a stand-in agent (a script).
-    fn stand_in_task(name: &str, script: &Path, dir: &Path, watchdog: Duration) -> String {
+    /// The task XML the app writes, running the stand-in agent in `dir` as
+    /// STAND_IN there says.
+    fn stand_in_task(name: &str, dir: &Path, watchdog: Duration) -> String {
         task_xml(
             name,
-            &powershell(),
-            &format!(
-                r#"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{}""#,
-                script.display()
-            ),
+            &std::env::current_exe().unwrap(),
+            "--exact agent::win::tests::stand_in_agent --nocapture",
             dir,
             task_user().as_deref(),
             watchdog,
         )
+    }
+
+    /// Tell the stand-in agent in `dir` what to do (`what`, then its runs
+    /// file, then `names`); its runs file.
+    fn stand_in_order(dir: &Path, what: &str, names: &[&str]) -> PathBuf {
+        let runs = dir.join("runs");
+        let mut order = format!("{what}\n{}\n", runs.display());
+        for n in names {
+            order.push_str(n);
+            order.push('\n');
+        }
+        std::fs::write(dir.join(STAND_IN), order).unwrap();
+        runs
     }
 
     /// How many times a stand-in ran (one line each).
@@ -2055,10 +2124,24 @@ mod tests {
             .unwrap_or(0)
     }
 
-    fn wait_for(limit: Duration, what: &str, mut done: impl FnMut() -> bool) {
+    /// Wait for `done`; else fail with `what` and what Task Scheduler says
+    /// of the task `name` (its status, last run and result), in the CI report.
+    fn wait_for(name: &str, limit: Duration, what: &str, mut done: impl FnMut() -> bool) {
         let deadline = Instant::now() + limit;
         while !done() {
-            assert!(Instant::now() < deadline, "{what}");
+            if Instant::now() >= deadline {
+                let state = schtasks(&[
+                    os("/Query"),
+                    os("/TN"),
+                    os(name),
+                    os("/V"),
+                    os("/FO"),
+                    os("LIST"),
+                ])
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_else(|e| e);
+                panic!("{what} (after {} s)\n{state}", limit.as_secs());
+            }
             std::thread::sleep(Duration::from_millis(250));
         }
     }
@@ -2076,18 +2159,8 @@ mod tests {
 
     /// A stand-in agent that crashes: it notes the run and exits with an
     /// access violation's code.
-    fn crashing_agent(dir: &Path) -> (PathBuf, PathBuf) {
-        let runs = dir.join("runs");
-        let script = dir.join("crash.ps1");
-        std::fs::write(
-            &script,
-            format!(
-                "Add-Content -LiteralPath '{}' -Value run\r\nexit -1073741819\r\n",
-                runs.display()
-            ),
-        )
-        .unwrap();
-        (script, runs)
+    fn crashing_agent(dir: &Path) -> PathBuf {
+        stand_in_order(dir, "crash", &[])
     }
 
     /// Registers the XML the app writes (under the app's naming rule, with a
@@ -2131,15 +2204,19 @@ mod tests {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
-        let (script, runs_file) = crashing_agent(tmp.path());
+        let runs_file = crashing_agent(tmp.path());
         let name = test_name("watchdog");
-        let xml = stand_in_task(&name, &script, tmp.path(), Duration::from_secs(60));
+        let xml = stand_in_task(&name, tmp.path(), Duration::from_secs(60));
         let _task = TestTask::register(name.clone(), &xml, tmp.path());
         run_task(&name).unwrap();
-        wait_for(Duration::from_secs(30), "the task did not run", || {
-            runs(&runs_file) >= 1
-        });
         wait_for(
+            &name,
+            Duration::from_secs(30),
+            "the task did not run",
+            || runs(&runs_file) >= 1,
+        );
+        wait_for(
+            &name,
             Duration::from_secs(90),
             "the watchdog trigger did not start the crashed agent again",
             || runs(&runs_file) >= 2,
@@ -2155,9 +2232,9 @@ mod tests {
             return;
         }
         let tmp = tempfile::tempdir().unwrap();
-        let (script, runs_file) = crashing_agent(tmp.path());
+        let runs_file = crashing_agent(tmp.path());
         let name = test_name("restart-on-failure");
-        let mut xml = stand_in_task(&name, &script, tmp.path(), Duration::from_secs(60));
+        let mut xml = stand_in_task(&name, tmp.path(), Duration::from_secs(60));
         let start = xml.find("    <TimeTrigger>").unwrap();
         let end = xml.find("</TimeTrigger>\n").unwrap() + "</TimeTrigger>\n".len();
         xml.replace_range(start..end, "");
@@ -2167,9 +2244,12 @@ mod tests {
         );
         let _task = TestTask::register(name.clone(), &xml, tmp.path());
         run_task(&name).unwrap();
-        wait_for(Duration::from_secs(30), "the task did not run", || {
-            runs(&runs_file) >= 1
-        });
+        wait_for(
+            &name,
+            Duration::from_secs(30),
+            "the task did not run",
+            || runs(&runs_file) >= 1,
+        );
         std::thread::sleep(Duration::from_secs(100));
         assert_eq!(
             runs(&runs_file),
@@ -2180,25 +2260,10 @@ mod tests {
     }
 
     /// A stand-in agent that runs until its stop event, holding a mutex like
-    /// the real one, and takes 3 s to stop (a server draining).
-    fn waiting_agent(dir: &Path, mutex: &str, stop: &str) -> (PathBuf, PathBuf) {
-        let runs = dir.join("runs");
-        let script = dir.join("agent.ps1");
-        std::fs::write(
-            &script,
-            format!(
-                "$m = [System.Threading.Mutex]::new($true, '{mutex}')\r\n\
-                 $e = [System.Threading.EventWaitHandle]::new($false, [System.Threading.EventResetMode]::ManualReset, '{stop}')\r\n\
-                 Add-Content -LiteralPath '{runs}' -Value run\r\n\
-                 [void]$e.WaitOne(300000)\r\n\
-                 Start-Sleep -Seconds 3\r\n\
-                 $m.ReleaseMutex()\r\n\
-                 exit 0\r\n",
-                runs = runs.display()
-            ),
-        )
-        .unwrap();
-        (script, runs)
+    /// the real one, and takes 3 s to stop (a server draining); its process
+    /// ends half a second after it released the mutex.
+    fn waiting_agent(dir: &Path, mutex: &str, stop: &str) -> PathBuf {
+        stand_in_order(dir, "wait", &[mutex, stop])
     }
 
     /// While the agent runs, neither the watchdog nor /Run starts a second
@@ -2211,12 +2276,13 @@ mod tests {
         }
         let tmp = tempfile::tempdir().unwrap();
         let (mutex, stop) = (unique("TaskAgent"), unique("TaskStop"));
-        let (script, runs_file) = waiting_agent(tmp.path(), &mutex, &stop);
+        let runs_file = waiting_agent(tmp.path(), &mutex, &stop);
         let name = test_name("resume");
-        let xml = stand_in_task(&name, &script, tmp.path(), Duration::from_secs(60));
+        let xml = stand_in_task(&name, tmp.path(), Duration::from_secs(60));
         let _task = TestTask::register(name.clone(), &xml, tmp.path());
         run_task(&name).unwrap();
         wait_for(
+            &name,
             Duration::from_secs(30),
             "the task did not run in this session",
             || runs(&runs_file) == 1 && mutex_held(&mutex),
@@ -2231,12 +2297,13 @@ mod tests {
         assert!(stop_event_set(&stop));
         start_task(&name, &mutex, &stop).unwrap();
         wait_for(
+            &name,
             Duration::from_secs(20),
             "Resume did not start the agent again after the stop",
             || runs(&runs_file) == 2,
         );
         // end the second run
-        wait_for(Duration::from_secs(30), "the second run", || {
+        wait_for(&name, Duration::from_secs(30), "the second run", || {
             mutex_held(&mutex)
         });
         let _ = signal_stop_event(&stop);
@@ -2247,11 +2314,12 @@ mod tests {
         assert!(!stop_event_set(&stop));
         start_task(&name, &mutex, &stop).unwrap();
         wait_for(
+            &name,
             Duration::from_secs(20),
             "Resume right after an agent exited did not start it again",
             || runs(&runs_file) == 3,
         );
-        wait_for(Duration::from_secs(30), "the third run", || {
+        wait_for(&name, Duration::from_secs(30), "the third run", || {
             mutex_held(&mutex)
         });
         let _ = signal_stop_event(&stop);
