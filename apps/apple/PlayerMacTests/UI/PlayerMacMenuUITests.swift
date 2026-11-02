@@ -135,6 +135,7 @@ final class PlayerMacMenuUITests: XCTestCase {
         XCTAssertTrue(wait(5) { self.app.menuBars.menuBarItems["View"].isHittable }, "the menu bar shows at the top")
         exit.click()
         XCTAssertTrue(wait { !self.isFullScreen }, "View ▸ Exit Full Screen")
+        XCTAssertTrue(wait { self.app.menuBars.menuBarItems["View"].isHittable }, "the menu bar is back after full screen")
 
         menu("Playback", "Stop")
         XCTAssertTrue(player.waitForNonExistence(timeout: 5), "Playback ▸ Stop closes the player")
@@ -149,7 +150,9 @@ final class PlayerMacMenuUITests: XCTestCase {
         // AppKit reads arguments as `-key value` pairs: a flag with no value takes the next
         // one, and a word left over (`granted`) is opened as a document, so SwiftUI opens no
         // window. Xcode's own runs pass this too.
-        var args = ["-NSTreatUnknownArgumentsAsOpen", "NO",
+        // No window is restored from the last run either: one saved while full screen can come
+        // back full screen, its menu bar hidden.
+        var args = ["-NSTreatUnknownArgumentsAsOpen", "NO", "-ApplePersistenceIgnoreState", "YES",
                     "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_JO" : "en_US",
                     "-theme", "dark",
                     "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
@@ -188,7 +191,12 @@ final class PlayerMacMenuUITests: XCTestCase {
 
     /// Clicks a menu bar item, then one of its items.
     private func menu(_ top: String, _ item: String) {
-        app.menuBars.menuBarItems[top].click()
+        // the menu bar back in view first: just after full screen was left (the test before,
+        // or this one) it was still hidden, View had no point to click, and the click opened
+        // nothing (CI: "open menu during menu traversal" at the next test's first menu)
+        let bar = app.menuBars.menuBarItems[top]
+        XCTAssertTrue(wait(10) { bar.isHittable }, "the menu bar shows \(top)")
+        bar.click()
         let it = app.menuBars.menuItems[item].firstMatch
         XCTAssertTrue(it.waitForExistence(timeout: 3), "\(top) ▸ \(item)")
         XCTAssertTrue(it.isEnabled, "\(top) ▸ \(item) is on")
