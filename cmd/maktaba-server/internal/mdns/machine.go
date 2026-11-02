@@ -22,8 +22,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/grandcat/zeroconf"
 )
 
 // Machine is what a machine announces.
@@ -99,12 +97,12 @@ func (m Machine) Instance() string {
 // Publisher keeps one publication and re-publishes when the machine changes.
 type Publisher struct {
 	mu        sync.Mutex
-	server    *zeroconf.Server
+	server    announcement
 	published bool
 	last      Machine
 	port      int
 	// register is the package's register (tests replace it)
-	register func(instance, service, domain string, port int, txt []string) (*zeroconf.Server, error)
+	register func(instance, service, domain string, port int, txt []string) (announcement, error)
 }
 
 // NewPublisher returns a publisher that has announced nothing yet.

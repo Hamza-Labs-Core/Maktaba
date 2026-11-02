@@ -7,12 +7,13 @@ import coil3.asImage
 import coil3.decode.DataSource
 import coil3.intercept.Interceptor
 import coil3.request.SuccessResult
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import kotlinx.coroutines.Dispatchers
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.test.hasSetTextAction
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
@@ -61,9 +62,9 @@ class SearchScreenshotTest {
             field.performClick()
             field.performTextInput(l.query)
             field.performImeAction()
-            compose.waitUntil(5_000) { compose.onAllNodesWithTag("passage-v4-0").fetchSemanticsNodes().isNotEmpty() }
+            compose.settledUntil(5_000) { compose.onAllNodesWithTag("passage-v4-0").fetchSemanticsNodes().isNotEmpty() }
         } else {
-            compose.waitUntil(5_000) { compose.onAllNodesWithTag("recent").fetchSemanticsNodes().isNotEmpty() }
+            compose.settledUntil(5_000) { compose.onAllNodesWithTag("recent").fetchSemanticsNodes().isNotEmpty() }
         }
         compose.waitForIdle()
         val lang = if (ar) "ar" else "en"

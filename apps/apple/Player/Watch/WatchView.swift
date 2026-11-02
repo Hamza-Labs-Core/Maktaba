@@ -120,10 +120,23 @@ struct WatchView: View {
         hideTask?.cancel()
         guard controls, playback.isPlaying, sheet == nil else { return }
         hideTask = Task {
-            try? await Task.sleep(for: WatchLogic.controlsHideAfter)
+            try? await Task.sleep(for: Self.hideAfter)
             guard !Task.isCancelled, playback.isPlaying, sheet == nil else { return }
             controls = false
         }
+    }
+
+    /// How long the controls stay after a touch: `WatchLogic.controlsHideAfter`. A Debug
+    /// build's UI tests hold them longer (`-player.controls_hide_after 600`), so a test that
+    /// shows the controls and then taps one is not racing the 4 s on a slow runner (a query
+    /// there can take longer than that). The test of the 4 s itself launches without it.
+    /// Release builds ignore it.
+    private static var hideAfter: Duration {
+        #if DEBUG
+        let seconds = UserDefaults.standard.double(forKey: "player.controls_hide_after")
+        if seconds > 0 { return .seconds(seconds) }
+        #endif
+        return WatchLogic.controlsHideAfter
     }
 
     private func close() {
