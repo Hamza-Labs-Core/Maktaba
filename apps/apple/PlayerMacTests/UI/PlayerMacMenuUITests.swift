@@ -107,8 +107,10 @@ final class PlayerMacMenuUITests: XCTestCase {
         let play = element("video.play")
         XCTAssertTrue(play.waitForExistence(timeout: 10), "the video's Play")
         play.click()
-        let close = app.buttons["Close"].firstMatch
-        XCTAssertTrue(close.waitForExistence(timeout: 10), "the player")
+        // the player over the window, by its own name ("Close" also names the title bar's
+        // close button, which stays once the player has gone)
+        let player = element("player.window")
+        XCTAssertTrue(player.waitForExistence(timeout: 10), "the player")
 
         app.menuBars.menuBarItems["Playback"].click()
         XCTAssertTrue(app.menuBars.menuItems["Stop"].isEnabled, "Stop while a video is open")
@@ -135,7 +137,7 @@ final class PlayerMacMenuUITests: XCTestCase {
         XCTAssertTrue(wait { !self.isFullScreen }, "View ▸ Exit Full Screen")
 
         menu("Playback", "Stop")
-        XCTAssertTrue(close.waitForNonExistence(timeout: 5), "Playback ▸ Stop closes the player")
+        XCTAssertTrue(player.waitForNonExistence(timeout: 5), "Playback ▸ Stop closes the player")
     }
 
     // MARK: helpers
