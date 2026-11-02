@@ -73,3 +73,9 @@ func (z *ZeroconfPublisher) Close() error {
 	}
 	return nil
 }
+
+// LocalHostName is the name the announcement's target resolves as: this machine's bare
+// host name in .local ("Studio.local").
+func LocalHostName() string {
+	return announcedHost(systemResponder()) + ".local"
+}

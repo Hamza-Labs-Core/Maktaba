@@ -19,8 +19,9 @@ package discovery
 //   - Windows 10+: the DNS Client's responder, through DnsServiceRegister (dnsapi.dll,
 //     announce_dnsapi.go and announce_windows.go).
 //
-// zeroconf answers alone only where nothing else does. cmd/maktaba-server/internal/mdns has
-// the same files (another module).
+// zeroconf answers alone only where nothing else does. The same files are in
+// api/internal/discovery and cmd/maktaba-server/internal/mdns (two modules);
+// tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"fmt"

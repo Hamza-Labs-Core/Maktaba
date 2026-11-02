@@ -5,7 +5,9 @@ package mdns
 // the dot: a Mac's "Studio.local" never matches and the service's target becomes
 // "Studio.local.local.", which resolves to nothing. So every announcement goes
 // through RegisterProxy with the bare host name and the addresses Register would
-// have used. api/internal/discovery has the same helper (another module).
+// have used. The same file is in api/internal/discovery and
+// cmd/maktaba-server/internal/mdns (two modules); tools/ci/mdns_copies.py checks they stay
+// the same.
 
 import (
 	"context"

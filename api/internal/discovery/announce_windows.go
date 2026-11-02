@@ -5,7 +5,8 @@ package discovery
 // DnsServiceRegister (dnsapi.dll, Windows 10 1809+): the DNS Client service's mDNS
 // responder, which already answers for this machine's name, publishes the service. Where
 // dnsapi.dll has no DnsServiceRegister (an older Windows), zeroconf announces instead.
-// cmd/maktaba-server/internal/mdns has the same file (another module).
+// The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
+// modules); tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"errors"

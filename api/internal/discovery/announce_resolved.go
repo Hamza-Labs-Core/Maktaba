@@ -10,7 +10,8 @@ package discovery
 // instead (announce.go). resolved withdraws a registration once the connection that made
 // it closes, so none outlives this process. The D-Bus binding is announce_resolved_linux.go;
 // here is what is the same on every OS (so its tests run everywhere, with a fake).
-// cmd/maktaba-server/internal/mdns has the same file (another module).
+// The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
+// modules); tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"fmt"

@@ -5,7 +5,9 @@ package discovery
 // the dot: a Mac's "Studio.local" never matches and the service's target becomes
 // "Studio.local.local.", which resolves to nothing. So every announcement goes
 // through RegisterProxy with the bare host name and the addresses Register would
-// have used. cmd/maktaba-server/internal/mdns has the same helper (another module).
+// have used. The same file is in api/internal/discovery and
+// cmd/maktaba-server/internal/mdns (two modules); tools/ci/mdns_copies.py checks they stay
+// the same.
 
 import (
 	"context"
@@ -46,12 +48,6 @@ func register(instance, service, domain string, port int, txt []string) (announc
 		return nil, errors.New("no multicast interface has an address")
 	}
 	return zeroconf.RegisterProxy(zeroconfInstance(dnsLabel(instance, 63)), service, domain, port, announcedHost(r), ips, txt, nil)
-}
-
-// LocalHostName is the name the announcement's target resolves as: this machine's bare
-// host name in .local ("Studio.local").
-func LocalHostName() string {
-	return announcedHost(systemResponder()) + ".local"
 }
 
 // ownHostSuffix makes the name zeroconf answers for when Avahi or systemd-resolved holds
