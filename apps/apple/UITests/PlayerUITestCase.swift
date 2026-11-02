@@ -87,16 +87,7 @@ class PlayerUITestCase: XCTestCase {
         connect.tap()
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10), "the sign-in screen offers a code")
-        // a tap while the keyboard goes down (the address field had it) can land as the
-        // segments move, and the way stays on the password: no code is asked for, so the
-        // approval below never arrives (CI: "approved: signed in" after 20 s). The segment is
-        // tapped until it is the chosen one.
-        let chosen = NSPredicate(format: "isSelected == true")
-        for _ in 0 ..< 3 where !byCode.isSelected {
-            byCode.tap()
-            _ = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: chosen, object: byCode)], timeout: 3)
-        }
-        XCTAssertTrue(byCode.isSelected, "signing in with a code")
+        byCode.tap()
         home.approve()
         XCTAssertTrue(byCode.waitForNonExistence(timeout: 20), "approved: signed in")
     }
