@@ -1216,6 +1216,12 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Tests: LibrariesSectionTest `aSlowHubLeavesThePageAtItsTop` (hub held on a latch until v4 shows; failed before the fix: row at -121dp, grid at 64dp) and `unpinningTheFirstLibraryLeavesTheGridAtItsTop` (14 libraries; failed before the fix). Screenshots unchanged (verify).
 - Merged main (#523): LayoutScreenshotTest's workaround (`performScrollToIndex(0)` before each picture) is gone. Its wait for `video-v1` also leaned on the bug: on the tabletop's half page the videos are only composed when the grid jumps down, so it now waits for the page's top (`row-continue`), the idling resource holding it until every answer is in. References unchanged; 3/3 runs green.
 
+## 2026-11-02 — extract writes no WAV on a streaming backend
+
+- Live: 1,323 extract jobs waiting (847 pending, 476 paused), stage paused by hand; each would write `~/.maktaba/cache/audio/<hash>.wav` (~115 MB/h) that nothing reads: the engine's transcribe decodes off the share, and the configured backend (`whisper-mlx`) streams.
+- Owner's call: code only, no migration. `extract_handler` asks `stt.transcribe.configured_backend_requires_file()` (backend name resolved as `default_select_backend` does; true only for a class with `requires_file = True`, today `openai-api`). Streaming: `commit_extract_skipped` (no ffmpeg, no file, no `audio_cache` row, no `last_extracted_at`), FSM `PROBED -> AUDIO_EXTRACTED` and the TRANSCRIBE enqueue as after a real extract, except the enqueue is left out when transcription is already handled (active transcript or live transcribe job, the #267 rule), logs `extract_skipped_streaming_backend`. So 0172 resuming the stage is harmless: the backlog finishes in ms.
+- Follow-up PR (not done): drop the probe→extract edge and probe's eager enqueue, transcribe requests extract via `may_request` when a backend needs a file, delete orphaned WAVs. Note for it: `--no-engine` mode chains probe→extract→legacy transcribe_handler, which reads `audio_cache`; on a streaming backend that handler now finds no artifact.
+
 ## 2026-11-02 — test_a_corrupt_input_fails_at_once got 'done': random bytes aren't always corrupt
 
 - CI failed `test_convert.py::test_a_corrupt_input_fails_at_once` on unrelated PRs: on [postgres] in run 41476408173 (PR #523), and on [sqlite] on PR #525. `assert job["state"] == "failed"` got 'done'.

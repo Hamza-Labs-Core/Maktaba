@@ -182,8 +182,16 @@ async def extract_handler(
     job: Job,
     *,
     run_extract: ExtractRunner | None = None,
+    requires_file: Callable[[], bool] | None = None,
 ) -> None:
     """Real EXTRACT stage: pick the audio track then decode + commit.
+
+    The WAV is only written when the configured STT backend reads a file
+    (``requires_file``: DI seam, default
+    :func:`stt.transcribe.configured_backend_requires_file`). With a streaming
+    backend the job finishes as a no-op through
+    :func:`audio.extract.commit_extract_skipped`: no ffmpeg, no file, the FSM
+    and the TRANSCRIBE enqueue as after a real extract.
 
     Consumes exactly what PROBE persisted:
 
@@ -238,7 +246,11 @@ async def extract_handler(
         path = to_local(str(row["path"]))
         content_hash = str(row["content_hash"])
 
-        from .audio.extract import commit_extract, load_selected_track  # noqa: PLC0415
+        from .audio.extract import (  # noqa: PLC0415
+            commit_extract,
+            commit_extract_skipped,
+            load_selected_track,
+        )
 
         selected = await load_selected_track(cast("_ExtractDB", db), video_id=job.video_id)
         if selected is None:
@@ -254,6 +266,20 @@ async def extract_handler(
                     retryable=False,
                 ),
             )
+            return
+
+        if requires_file is None:
+            from .stt.transcribe import configured_backend_requires_file  # noqa: PLC0415
+
+            requires_file = configured_backend_requires_file
+        if not requires_file():
+            await commit_extract_skipped(
+                cast("_ExtractDB", db),
+                video_id=job.video_id,
+                audio_track_id=selected.db_id,
+                content_hash=content_hash,
+            )
+            await mark_done(db, job_id=job.id)
             return
 
         dest = await extract(

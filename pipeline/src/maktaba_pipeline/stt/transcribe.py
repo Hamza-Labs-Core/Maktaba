@@ -49,6 +49,7 @@ __all__ = [
     "BackendSelector",
     "SelectedBackend",
     "commit_transcribe",
+    "configured_backend_requires_file",
     "default_select_backend",
     "load_audio_artifact",
 ]
@@ -164,6 +165,29 @@ async def default_select_backend(
     registry = _build_registry(model=model)
     backend, trace = await pick_backend(registry, primary=primary, fallback=fallback)
     return backend, trace.chosen, _backend_version(backend)
+
+
+def configured_backend_requires_file(settings: Any | None = None) -> bool:
+    """Whether the configured STT backend reads a file rather than a PCM stream.
+
+    Resolves the backend name exactly as :func:`default_select_backend` does
+    (``EFFECTIVE_DEFAULTS`` plus ``settings``) without building a backend or
+    loading a model. Only a backend class that declares ``requires_file = True``
+    (today :class:`~maktaba_pipeline.stt.openai_api.OpenAIWhisperBackend`) needs the
+    EXTRACT stage's WAV; the streaming ones (``whisper-mlx``, ``faster-whisper``) and
+    the engine's transcribe stage decode the audio off the share themselves.
+    """
+    from ..library_mgmt.config import EFFECTIVE_DEFAULTS  # noqa: PLC0415
+    from .openai_api import OpenAIWhisperBackend  # noqa: PLC0415 - stdlib-only imports
+
+    stt_cfg = dict(EFFECTIVE_DEFAULTS.get("stt", {}))
+    if settings is not None:
+        stt_cfg.update(getattr(settings, "stt", None) or {})
+    primary = str(stt_cfg.get("backend", "whisper-mlx"))
+    file_backends = {
+        cls.name for cls in (OpenAIWhisperBackend,) if getattr(cls, "requires_file", False)
+    }
+    return primary in file_backends
 
 
 def _not_registered(backend: str, exc: BaseException) -> None:
