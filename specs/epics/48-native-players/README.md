@@ -651,7 +651,7 @@ connecting, pending whatever, same on retry"):
 
 - **48.36 Help, store screenshots, verification.** After everything. Files:
   `web/src/help/content/{en,ar}/{apple-apps,android-apps,apple-tv,android-tv,watch-tv}.md`,
-  CHANGELOG, `docs/claude-trail.md`.
+  CHANGELOG (its trail entry in a trail-only PR of its own).
   - [ ] Help topics describe each section, in both languages; the help coverage test passes.
   - [ ] Every screen walked on a branch stack (scratch Postgres, never the live DB): iPhone,
         iPad, Mac, Pixel phone, a foldable emulator, a tablet emulator, Apple TV and Android TV

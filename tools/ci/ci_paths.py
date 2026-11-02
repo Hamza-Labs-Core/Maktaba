@@ -95,6 +95,14 @@ NOT_IN_CI: dict[str, str] = {
 }
 
 MARKERS = {"always-run", "push-only", "pr-only", "not-a-gate"}
+# The Claude trail: a pull request that changes only this file runs no job (the owner,
+# 2026-11-02: "Update trail on its own PRs, no ci no test"). The changes job's `repo` output
+# (its own paths-filter step, where every glob must match) is true when any other file
+# changed, and an always-run job is gated by it. No filter may match the trail, so `repo` is
+# true whenever a filter is.
+TRAIL = "docs/claude-trail.md"
+REPO = "repo"
+REPO_FILTERS = {REPO: [f"!{TRAIL}"]}
 GATE = "ci-success"
 CHANGES = "changes"
 # a pattern paths-filter (picomatch) and _glob read alike
@@ -396,11 +404,18 @@ def simulate(
     event: str = "pull_request",
     fork: bool = False,
     apple_scope: bool = False,
+    repo: bool | None = None,
 ) -> dict[str, Run | None]:
-    """Which jobs run (each assumed to pass) when the given filters are true."""
+    """Which jobs run (each assumed to pass) when the given filters are true. `repo`: a file
+    other than the trail changed (by default, when a filter is true)."""
     true_filters = set(true_filters)
+    repo = bool(true_filters) if repo is None else repo
     changes = wf.jobs[CHANGES]
-    step_outputs = {"filter": {"outputs": {}}, "apple": {"outputs": {"player_ui": "true" if apple_scope else "false"}}}
+    step_outputs: dict[str, Any] = {
+        "filter": {"outputs": {}},
+        REPO: {"outputs": {}},
+        "apple": {"outputs": {"player_ui": "true" if apple_scope else "false"}},
+    }
     base_ctx: dict[str, Any] = {
         "github": {
             "event_name": event,
@@ -409,6 +424,7 @@ def simulate(
     }
     if event == "pull_request":
         step_outputs["filter"]["outputs"] = {name: "true" for name in true_filters}
+        step_outputs[REPO]["outputs"] = {REPO: "true" if repo else "false"}
     outs = {
         k: _as_output(evaluate(v, {**base_ctx, "steps": step_outputs}))
         for k, v in (changes.get("outputs") or {}).items()
@@ -456,7 +472,7 @@ def _as_output(v: Any) -> str:
 
 def which(files: Sequence[str], **kw: Any) -> dict[str, Run | None]:
     wf = load_workflow()
-    return simulate(wf, matched(job_filters(load_filters()), files), **kw)
+    return simulate(wf, matched(job_filters(load_filters()), files), repo=any(f != TRAIL for f in files), **kw)
 
 
 # ---- the guard --------------------------------------------------------------------------
@@ -501,16 +517,32 @@ def guard(
     step = next((s for s in changes.get("steps", []) if s.get("id") == "filter"), None)
     if not step or (step.get("with") or {}).get("filters") != FILTERS_REF:
         errs.append(f"the changes job's `filter` step must read filters: {FILTERS_REF}")
+    repo_step = next((s for s in changes.get("steps", []) if s.get("id") == REPO), None)
+    repo_with = (repo_step or {}).get("with") or {}
+    try:
+        repo_filters = yaml.safe_load(str(repo_with.get("filters", "")))
+    except yaml.YAMLError:
+        repo_filters = None
+    if repo_with.get("predicate-quantifier") != "every" or repo_filters != REPO_FILTERS:
+        errs.append(
+            f"the changes job needs a `{REPO}` paths-filter step with predicate-quantifier: every and "
+            f"filters {REPO}: ['!{TRAIL}'] (true when a file other than the trail changed)"
+        )
+    for name, pats in named.items():
+        if any(matches(p, TRAIL) for p in pats):
+            errs.append(f"filter {name} matches {TRAIL}: a pull request changing only the trail runs nothing")
     outputs = changes.get("outputs") or {}
-    if set(outputs) != set(named):
-        missing, extra = sorted(set(named) - set(outputs)), sorted(set(outputs) - set(named))
+    if set(outputs) != set(named) | {REPO}:
+        missing = sorted((set(named) | {REPO}) - set(outputs))
+        extra = sorted(set(outputs) - set(named) - {REPO})
         errs.append(f"the changes job's outputs are not the filters (missing {missing}, not filters {extra})")
     for k, v in outputs.items():
         e = _strip(str(v)).strip()
-        if not e.startswith("github.event_name != 'pull_request' ||") or f"steps.filter.outputs.{k} == 'true'" not in e:
+        step_id = REPO if k == REPO else "filter"
+        if not e.startswith("github.event_name != 'pull_request' ||") or f"steps.{step_id}.outputs.{k} == 'true'" not in e:
             errs.append(
                 f"changes output {k} must be `github.event_name != 'pull_request' || "
-                f"steps.filter.outputs.{k} == 'true'` (true on a push)"
+                f"steps.{step_id}.outputs.{k} == 'true'` (true on a push)"
             )
 
     used: set[str] = set()
@@ -520,7 +552,9 @@ def guard(
     elif str(wf.jobs[GATE].get("if", "")).strip() != "always()":
         errs.append("ci-success must run always()")
 
-    nothing = simulate(wf, set())
+    # a pull request no filter matches (docs, say), and one that changes only the trail
+    nothing = simulate(wf, set(), repo=True)
+    trail_only = simulate(wf, set(), repo=False)
     on_push = simulate(wf, set(), event="push")
     for j, job in wf.jobs.items():
         if j in (CHANGES, GATE):
@@ -528,12 +562,20 @@ def guard(
         marks = wf.markers.get(j, set())
         if marks - MARKERS:
             errs.append(f"job {j}: unknown ci-paths marker(s) {sorted(marks - MARKERS)}")
-        if_refs = _refs(job.get("if", ""))
+        # `repo` is no filter: a job gated by it alone is an always-run job
+        gated_on_repo = REPO in _refs(job.get("if", ""))
+        if_refs = _refs(job.get("if", "")) - {REPO}
         with_refs = _refs(job.get("with") or {})
         for r in sorted((if_refs | with_refs) - set(named)):
             errs.append(f"job {j} reads needs.changes.outputs.{r}, which is no filter")
         used |= if_refs | with_refs
-        if if_refs and with_refs - if_refs:
+        if trail_only.get(j):
+            errs.append(
+                f"job {j} runs on a pull request that changes only {TRAIL}: "
+                f"gate it on needs.changes.outputs.{REPO} or a filter"
+            )
+        # `repo` is true whenever a filter is, so a job gated by it may hand on any filter
+        if if_refs and with_refs - if_refs and not gated_on_repo:
             errs.append(f"job {j} hands its workflow {sorted(with_refs - if_refs)} but its if: does not run on them")
         if if_refs:
             if marks & {"always-run", "push-only"}:
