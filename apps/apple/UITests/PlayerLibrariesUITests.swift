@@ -244,6 +244,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
             .allElementsBoundByIndex.map(\.frame)
         // every issue of the page in one failure (the audit itself stops at the first)
         var found: [String] = []
+        let asked = home.requests.count
         do {
             try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target (as 48.14's audit)
@@ -259,6 +260,13 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
             }
         } catch {
             found.append("\(error)")
+        }
+        if !found.isEmpty {
+            // what the app asked the home while the audit ran (a page that reloads under it
+            // changes every text the audit is measuring), and the page as the audit left it
+            let during = home.requests.dropFirst(asked).map { "\($0.method) \($0.path)" }
+            found.append("asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))")
+            shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
         }
         XCTAssertTrue(found.isEmpty, "\(page): " + found.joined(separator: "; "))
     }
