@@ -52,6 +52,8 @@ var copyReviewed = []string{
 	// browser for cookies, never the cookies)
 	"duplicate_groups", "duplicate_members", "file_actions", "video_copies",
 	"youtube_downloads", "youtube_sources",
+	// slot 0172: each stage's and pool's place in the fair share of claims (numbers only)
+	"claim_shares",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

@@ -304,9 +304,16 @@ async def test_disabled_stage_is_never_claimed(db: Database) -> None:
     rt = await setup(db, rec)
     v = await make_video(db, await make_library(db))
     await enqueue_job(db, subject_kind="video", subject_id=v, stage="t_a")
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 't_a'", True)
+    await db.execute(
+        "UPDATE job_stages SET paused = $1, paused_at = CURRENT_TIMESTAMP, paused_by = 'test'"
+        " WHERE stage = 't_a'",
+        True,
+    )
     assert await drain(db, rt) == 0
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 't_a'", False)
+    await db.execute(
+        "UPDATE job_stages SET paused = $1, paused_at = NULL, paused_by = NULL WHERE stage = 't_a'",
+        False,
+    )
     assert await drain(db, rt) == 3
 
 
@@ -316,7 +323,8 @@ async def test_sync_preserves_operator_columns_and_reasons(db: Database) -> None
     rt = await setup(db, rec)
     await db.execute(
         "UPDATE job_stages SET enabled = $1, disabled_reason = 'operator', paused = $2,"
-        " write_mode = 'review' WHERE stage = 't_a'",
+        " paused_at = CURRENT_TIMESTAMP, paused_by = 'test', write_mode = 'review'"
+        " WHERE stage = 't_a'",
         False,
         True,
     )

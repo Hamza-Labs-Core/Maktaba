@@ -7,7 +7,7 @@ import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { JobRef, Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
-import { STATE_GLYPH, queueVisualState, useFmt } from "./format";
+import { STATE_GLYPH, pauseOwner, queueVisualState, useFmt } from "./format";
 import { HelpIcon } from "../../help/HelpLink";
 import { hrefOf, stageHelp, tileHealthHelp, waitingHelp } from "../../help/registry";
 
@@ -172,6 +172,16 @@ export function QueueCard({
         <div className="mkt-q-card__nums">
           <strong className="mkt-q-card__progress">{progress}</strong>
           <span className="mkt-q-card__detail">{detail}</span>
+          {info.paused && (
+            <span
+              className="mkt-q-card__flag mkt-q-card__flag--paused"
+              data-testid="queue-card-paused"
+              title={info.paused_at ? fmt.ago(info.paused_at) : undefined}
+            >
+              <span aria-hidden="true">⏸ </span>
+              {t("queue.card.pausedBy", { who: pauseOwner(info, t) })}
+            </span>
+          )}
           {service && counts.running > 0 && (
             <span className="mkt-q-card__flag mkt-q-card__flag--retrying">
               <span aria-hidden="true">↻ </span>
