@@ -10,6 +10,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ## [Unreleased]
 
+### Security
+
+- **The servers no longer listen with multipath TCP.** Go 1.24+ turns it on by default, and it is
+  the path into CVE-2026-98432, a critical Linux kernel TCP flaw. Linux hosts still need the kernel
+  update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
+
 ### Added
 
 - **AirPlay and Cast can play through the web port.** A video's signed URL (`?sig=`) passes

@@ -1108,3 +1108,11 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#477]: https://github.com/Hamza-Labs-Core/Maktaba/pull/477
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
+- 2026-11-01 · `b743b7d4`: CVE-2026-98432 (Linux IPv4 TCP use-after-free, critical). Its reported
+  exploit needs a multipath TCP listener, which Go 1.24+ opens by default. `godebug
+  multipathtcp=0` in the api, cloud, streaming, maktaba-server and maktaba-launcher `go.mod`s,
+  each with `TestListenersUseNoMultipathTCP` (it fails if the line goes; checked). No `go.work`,
+  so release builds get it. User advisory (en + ar):
+  `docs/security/advisories/2026-11-01-linux-tcp-uaf.md`. The VPS kernel is not patched: the
+  owner patches it, or says go.
+  - Gap: specs say a `SECURITY.md` exists (story 23.8); there is none in the repo.
