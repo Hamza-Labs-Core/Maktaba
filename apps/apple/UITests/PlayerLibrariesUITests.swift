@@ -250,6 +250,8 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     /// audit). So the grid is scrolled to its end first, every page loaded, and back to its top:
     /// nothing is left for the audit to bring in.
     private func loadEveryPage() {
+        // the rows last, once the grid is back at its top: what the audit will see
+        defer { loadEveryRail() }
         let grid = element("screen.library")
         let lastPage = { self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos" && $0.value("cursor") == "c2" } }
         guard grid.exists, home.requests.contains(where: { $0.method == "GET" && $0.path == "/api/videos" }) else { return }
@@ -263,12 +265,45 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for _ in 0 ..< swipes + 2 { grid.swipeDown() }
     }
 
+    /// A hub row (`rail.cards`) is a lazy row: a card past the screen's edge is made only when
+    /// something reaches for it, and its poster is fetched then. The audit reaches for every
+    /// element, so on an iPad's Libraries root (the first library's rows beside the list) it
+    /// made the rows' last cards mid-audit: their posters were asked for during it (CI: `GET
+    /// /api/videos/v8/poster, GET /api/videos/v7/poster`), each drawn as a moving placeholder
+    /// until it came, and on a loaded runner the audit never saw the page still ("Audit failed
+    /// to complete in time"). So each row is scrolled to its end and back first, and the page
+    /// read until it asks the home for no more pictures: every card made, every poster in the
+    /// image cache, nothing left for the audit to bring in.
+    private func loadEveryRail() {
+        let rails = app.descendants(matching: .any).matching(identifier: "rail.cards")
+        for i in 0 ..< rails.count {
+            let rail = rails.element(boundBy: i)
+            guard rail.exists, rail.isHittable else { continue }
+            // the end is on the left in Arabic
+            if language == "ar" { rail.swipeRight() } else { rail.swipeLeft() }
+            if language == "ar" { rail.swipeLeft() } else { rail.swipeRight() }
+        }
+        let pictures = { self.home.requests.filter { $0.method == "GET" && $0.path.hasSuffix("/poster") }.count }
+        var asked = pictures()
+        for _ in 0 ..< 10 {
+            _ = settledPage()
+            let now = pictures()
+            if now == asked { return }
+            asked = now
+        }
+        XCTFail("the rows kept asking for posters")
+    }
+
     /// The page's audit, once the page has stopped drawing (`accessibilityAudit` waits for it):
     /// every issue on it, and what the app asked the home meanwhile.
     private func audit(_ page: String) {
+        let start = Date()
         let (found, during) = auditOnce(page)
-        if found.isEmpty { return }
         let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
+        // in the test log on a pass too: a page that still loads as the audit runs shows here
+        // before it times one out
+        print(String(format: "audit %@: %.0f s, %@", page, Date().timeIntervalSince(start), asked))
+        if found.isEmpty { return }
         shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
         XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
     }
