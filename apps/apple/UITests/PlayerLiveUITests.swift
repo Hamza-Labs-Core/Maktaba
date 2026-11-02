@@ -84,12 +84,15 @@ final class PlayerLiveUITests: PlayerUITestCase {
                       "the now-line crosses what is on now")
         shot("live-guide")
 
-        // sideways through the time
+        // sideways through the time, and back to its start (a drag, not a swipe: `drag`)
         let before = timeline.frame.minX
-        element("live.guide.times").swipeLeft()
+        let times = element("live.guide.times")
+        drag(times, by: CGVector(dx: -200, dy: 0), from: CGVector(dx: 0.85, dy: 0.5))
         XCTAssertTrue(wait { timeline.frame.minX < before - 50 }, "the time scrolled (\(before) → \(timeline.frame.minX))")
-        element("live.guide.times").swipeRight()
-        element("live.guide.times").swipeRight()
+        // the drag can carry it further than the finger went: two drags back cover it
+        drag(times, by: CGVector(dx: 240, dy: 0), from: CGVector(dx: 0.1, dy: 0.5))
+        drag(times, by: CGVector(dx: 240, dy: 0), from: CGVector(dx: 0.1, dy: 0.5))
+        XCTAssertTrue(wait { abs(timeline.frame.minX - before) < 1 }, "back at the start of the time (\(timeline.frame.minX))")
 
         // a later programme: its sheet, no Watch (it has not started)
         let later = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'live.guide.ch-1.' AND NOT identifier ENDSWITH '.now'"))
@@ -117,7 +120,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         let top = element("live.guide.g-1.now")
         XCTAssertTrue(top.waitForExistence(timeout: 15), "the guide of 16 channels")
         let before = top.frame.minY
-        top.swipeUp()
+        drag(top, by: CGVector(dx: 0, dy: -300))
         XCTAssertTrue(wait { top.frame.minY < before - 100 }, "the channels scrolled up (\(before) → \(top.frame.minY))")
         XCTAssertTrue(element("live.guide.g-16.now").waitForExistence(timeout: 5))
     }
