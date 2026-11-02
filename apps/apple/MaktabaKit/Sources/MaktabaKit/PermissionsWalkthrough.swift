@@ -40,6 +40,8 @@ extension Bundle {
 
 struct PermissionsGate: ViewModifier {
     let appName: String
+    // evaluated again each time the parent's body runs (only the first is kept), so it must
+    // have no side effect: the launch reset is `PermissionsModel.applyLaunchArguments`, at start
     @State private var model = PermissionsModel.forThisApp()
     @Environment(\.scenePhase) private var phase
 

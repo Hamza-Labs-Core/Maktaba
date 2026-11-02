@@ -300,29 +300,41 @@ public final class PermissionsModel {
         self.timing = timing
     }
 
-    /// The model an app uses. Debug builds take `-maktaba-permissions-reset` (forget the
-    /// "seen" and "asked" flags) and `-maktaba-permissions-fake granted|denied|unknown`
-    /// (a scripted browse) from the launch arguments, for the UI tests.
+    /// The launch arguments' reset, applied once per process at app start (the apps' own
+    /// `init`): debug builds take `-maktaba-permissions-reset` (forget the "seen" and "asked"
+    /// flags, a first run for the UI tests). Never from a view: a view's `@State` initializer
+    /// runs again each time its parent's body does, and a reset there forgot a "seen" the
+    /// person had just given, so the next check showed the walkthrough again (or kept it up).
+    public static func applyLaunchArguments(_ arguments: [String] = CommandLine.arguments,
+                                            defaults: UserDefaults = .standard) {
+        #if DEBUG
+        if arguments.contains("-maktaba-permissions-reset") {
+            defaults.removeObject(forKey: seenKey)
+            defaults.removeObject(forKey: askedKey)
+        }
+        #endif
+    }
+
+    /// The model an app uses. Free of side effects: SwiftUI builds it again each time the
+    /// view holding it is made again, keeping only the first (the reset is
+    /// `applyLaunchArguments`). Debug builds take `-maktaba-permissions-fake
+    /// granted|denied|unknown` (a scripted browse) from the launch arguments, for the UI tests.
     /// The host of in-process tests (`TestLaunch`) gets the "granted" script too: it may not
     /// browse the real network.
     public static func forThisApp(arguments: [String] = CommandLine.arguments,
-                                  environment: [String: String] = ProcessInfo.processInfo.environment) -> PermissionsModel {
+                                  environment: [String: String] = ProcessInfo.processInfo.environment,
+                                  defaults: UserDefaults = .standard) -> PermissionsModel {
         #if DEBUG
-        if arguments.contains("-maktaba-permissions-reset") {
-            UserDefaults.standard.removeObject(forKey: seenKey)
-            UserDefaults.standard.removeObject(forKey: askedKey)
-        }
+        let quick = Timing(check: LocalNetworkVerdict(grace: .milliseconds(300), timeout: .seconds(2)), request: .seconds(2))
         if let i = arguments.firstIndex(of: "-maktaba-permissions-fake"), i + 1 < arguments.count,
            let fake = ScriptedProbe(named: arguments[i + 1]) {
-            let quick = Timing(check: LocalNetworkVerdict(grace: .milliseconds(300), timeout: .seconds(2)), request: .seconds(2))
-            return PermissionsModel(probe: fake, timing: quick)
+            return PermissionsModel(defaults: defaults, probe: fake, timing: quick)
         }
         if TestLaunch.scriptsTheNetwork(arguments: arguments, environment: environment), let fake = ScriptedProbe(named: "granted") {
-            let quick = Timing(check: LocalNetworkVerdict(grace: .milliseconds(300), timeout: .seconds(2)), request: .seconds(2))
-            return PermissionsModel(probe: fake, timing: quick)
+            return PermissionsModel(defaults: defaults, probe: fake, timing: quick)
         }
         #endif
-        return PermissionsModel()
+        return PermissionsModel(defaults: defaults)
     }
 
     /// The walkthrough has been closed once.
