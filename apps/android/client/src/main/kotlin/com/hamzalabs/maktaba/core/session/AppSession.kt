@@ -135,6 +135,9 @@ class AppSession(
     /** Why the kept sign-in could not be checked (the home did not answer): try again, or sign in. */
     val restoreProblem: StateFlow<ErrorKind?> = _restoreProblem.asStateFlow()
 
+    /** Guards [looking] and a failed restore's [progress] and [restoreProblem] against [heard]. */
+    private val restoreLock = Any()
+
     private val _progress = progressState
 
     /**
@@ -341,12 +344,16 @@ class AppSession(
             } catch (e: ApiException.Transport) {
                 // this address does not answer (the local one, away from home): another might
                 if (c === client && !reachElsewhere(attempt)) {
+                    val fail = {
+                        failWith(
+                            e.errorKind(),
+                            ConnectProgress.Failed(
+                                FailReason.NoAnswer, (listOf(home.url) + home.addresses).map(::shown), ConnectStage.Restore, attempt,
+                            ),
+                        )
+                    }
                     // or the home announces itself at a new address: looked for on the network
-                    if (browsing != null && home.id != null && lookNearby(c, home, attempt)) return
-                    _restoreProblem.value = e.errorKind()
-                    _progress.value = ConnectProgress.Failed(
-                        FailReason.NoAnswer, (listOf(home.url) + home.addresses).map(::shown), ConnectStage.Restore, attempt,
-                    )
+                    if (browsing != null && home.id != null) lookNearby(c, home, attempt, fail) else fail()
                 }
                 return
             } catch (e: Exception) {
@@ -357,22 +364,34 @@ class AppSession(
     }
 
     /**
-     * "Looking for your home on this network…" until it is announced ([heard] asks it there:
-     * true) or [LOOK_MS] passes (false: why it failed shows).
+     * "Looking for your home on this network…" until it is announced ([heard] asks it there)
+     * or [LOOK_MS] passes ([missed]: why it failed shows). The look starts, and ends in
+     * [missed], under [restoreLock], so an announcement [heard] on the browsing thread at any
+     * moment is either seen here or asks the home there: none falls between.
      */
-    private suspend fun lookNearby(c: ApiClient, home: Home, attempt: Int): Boolean {
-        announced(home, _nearby.value)?.let { moveTo(home, it); return true }
-        looking = home.url
+    private suspend fun lookNearby(c: ApiClient, home: Home, attempt: Int, missed: () -> Unit) {
+        val at = synchronized(restoreLock) { announced(home, _nearby.value).also { if (it == null) looking = home.url } }
+        if (at != null) return moveTo(home, at)
         _progress.value = ConnectProgress.LookingNearby(attempt)
         sleep(LOOK_MS)
-        val found = looking != home.url || c !== client
-        if (!found) looking = null
-        return found
+        synchronized(restoreLock) {
+            if (looking != home.url || c !== client) return
+            looking = null
+            missed()
+        }
     }
 
-    private fun failRestore(home: Home, e: Exception, attempt: Int) {
-        _restoreProblem.value = e.errorKind()
-        _progress.value = ConnectProgress.Failed(reasonFor(e), listOf(shown(home.url)), ConnectStage.Restore, attempt)
+    private fun failRestore(home: Home, e: Exception, attempt: Int) =
+        failWith(e.errorKind(), ConnectProgress.Failed(reasonFor(e), listOf(shown(home.url)), ConnectStage.Restore, attempt))
+
+    /**
+     * A kept sign-in that could not be checked: why ([failed]) is said first, then the
+     * [problem] (Retry), both under [restoreLock]. The restore ends on OkHttp's thread while
+     * the screens (and [heard]) read these on theirs: whoever sees the problem sees why.
+     */
+    private fun failWith(problem: ErrorKind, failed: ConnectProgress.Failed) = synchronized(restoreLock) {
+        _progress.value = failed
+        _restoreProblem.value = problem
     }
 
     /** Checks an address before the app moves to it (replaceable in tests). */
@@ -459,8 +478,10 @@ class AppSession(
         val at = home?.let { announced(it, found) }
         learn(found)
         if (home == null || at == null) return
-        if (_phase.value != Phase.SigningIn || (looking != home.url && _restoreProblem.value == null)) return
-        looking = null
+        synchronized(restoreLock) {
+            if (_phase.value != Phase.SigningIn || (looking != home.url && _restoreProblem.value == null)) return
+            looking = null
+        }
         scope.launch { moveTo(home, at) }
     }
 
