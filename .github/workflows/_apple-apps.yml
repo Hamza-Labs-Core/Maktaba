@@ -295,14 +295,14 @@ jobs:
       # iPad runs are not measured (they take most of an hour as it is): their tests are
       # found by the UI search and by name.
       - name: Coverage for the affected-tests map
-        if: matrix.device == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           set -euo pipefail
           mkdir -p build/coverage-fragment
           xcrun xccov view --report --json "$RESULTS/mac.xcresult" >build/coverage-fragment/player-mac.xccov.json
           echo "apple-mac:apps/apple/PlayerMacTests" >build/coverage-fragment/player-mac.xccov.json.id
-      - if: matrix.device == 'mac' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
         uses: actions/upload-artifact@v7.0.1
         with:
