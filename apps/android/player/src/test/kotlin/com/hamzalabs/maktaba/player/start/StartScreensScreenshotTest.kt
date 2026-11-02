@@ -43,8 +43,8 @@ import org.robolectric.annotation.GraphicsMode
  * by password and by code, in the theme a first launch gets (no stored choice: dark), English and
  * Arabic, on a phone, a foldable open flat and a large tablet. The home is a scratch one at a
  * fixed address; sign-in by code talks to a MockWebServer standing in for it.
- * `recordRoborazziPhoneDebug` writes the references under `src/test/screenshots`; CI's
- * `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * `recordRoborazziDebug` writes the references under `src/test/screenshots`; CI's
+ * `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

@@ -21,8 +21,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The Libraries section's screenshots (NFR-20): dark, English and Arabic; the libraries, a
  * library and a series on a phone, and the list beside a library's page on a tablet, against
- * the fake home with drawn posters. `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * the fake home with drawn posters. `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

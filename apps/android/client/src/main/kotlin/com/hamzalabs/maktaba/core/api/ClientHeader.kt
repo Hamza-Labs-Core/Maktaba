@@ -21,19 +21,30 @@ object ClientHeader {
 
     /**
      * The value for a package: the app from its id (`…tv` the Android TV app, `…remote…` the
-     * Remote, else the Player), the device from its flavour's suffix (`.tablet`, `.foldable`,
-     * else a phone).
+     * Remote, else the Player), and the [device] it runs on ([deviceFor]; the Android TV app is
+     * always a TV). Each app is one package for phones, foldables and tablets (one Google Play
+     * listing), so the device is read from the screen, not the package.
      */
-    fun make(packageName: String, version: String?): String {
+    fun make(packageName: String, version: String?, device: String = PHONE): String {
         val parts = packageName.lowercase().split('.')
         val v = version?.takeIf { it.isNotBlank() } ?: "dev"
         if (parts.lastOrNull() == "tv") return "tv/$v (androidtv; tv)"
         val app = if ("remote" in parts) "remote" else "player"
-        val device = when (parts.lastOrNull()) {
-            "tablet" -> "tablet"
-            "foldable" -> "foldable"
-            else -> "phone"
-        }
         return "$app/$v (android; $device)"
     }
+
+    /**
+     * The device from the screen at start: a hinge makes it a foldable (folded or not), else a
+     * smallest width of 600 dp or more a tablet, else a phone. A label only: the layout follows
+     * the window as it changes, never this.
+     */
+    fun deviceFor(smallestWidthDp: Int, hasHinge: Boolean): String = when {
+        hasHinge -> FOLDABLE
+        smallestWidthDp >= 600 -> TABLET
+        else -> PHONE
+    }
+
+    const val PHONE = "phone"
+    const val TABLET = "tablet"
+    const val FOLDABLE = "foldable"
 }

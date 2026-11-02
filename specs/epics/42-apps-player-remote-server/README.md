@@ -269,7 +269,7 @@ and the home's transcoding lowers it to fit the connection.
 | Player, iPad | `apps/apple` | `com.hamzalabs.maktaba.player.tablet` | its own listing |
 | Player, Mac (Apple silicon) | `apps/apple` | `com.hamzalabs.maktaba.player.mac` | the desktop player on macOS |
 | Remote, iPhone / iPad | `apps/apple` | `com.hamzalabs.maktaba.remote`, `.remote.tablet` | admin push notifications (failures, health) |
-| Player and Remote, Android phone / foldable / tablet | Compose | `com.hamzalabs.maktaba.player`, `.player.foldable`, `.player.tablet`; `.remote…` | six listings with the remote ones |
+| Player and Remote, Android phone / foldable / tablet | Compose | `com.hamzalabs.maktaba.player`; `com.hamzalabs.maktaba.remote` | one Google Play listing each, for every screen (2026-11-01: the `.foldable` / `.tablet` flavours were removed, see `docs/google-play.md`) |
 | Player, Windows / Linux | Compose for Desktop | `com.hamzalabs.maktaba.player` | its own updater feed |
 | Desktop Server | today's Tauri app (Epics 36, 38, 39), web edition `full` | `com.hamzalabs.maktaba` | unchanged |
 | TV | `apps/tv` now, then the Apple and Android code bases | `com.hamzalabs.maktaba.tv` | gains the home picker and sign-in by code |
@@ -284,6 +284,9 @@ and uploads from Xcode or `xcodebuild -allowProvisioningUpdates`.
 layout: two panes (library list and video, or queue and detail) on wide screens, and a foldable's
 fold posture (the player on one half, controls on the other). Each is its own store listing, as
 decided. A platform without foldables (iOS today) has no foldable listing until one exists.
+(2026-11-01, Android: Google Play treats each package as its own app, and the flavours differed
+only in their package. The Android Player and Remote are one package each, for phone, foldable
+and tablet; the layout already followed the window. See `docs/google-play.md`.)
 
 ### 5. Releases and updates
 
@@ -386,7 +389,8 @@ decided. A platform without foldables (iOS today) has no foldable listing until 
    (Built, 2026-10-27. Android: `core/layout/Panes.kt` (one pane under 600 dp, the list
    beside the page from 600 dp, tabletop and book split at the hinge, the book's halves
    mirrored right to left), used by the Player's browser and every Remote screen;
-   `PanesTest`, instrumented `HingeSplitTest`; flavours `phone`, `foldable`, `tablet`.
+   `PanesTest`, instrumented `HingeSplitTest`; flavours `phone`, `foldable`, `tablet`, removed
+   2026-11-01 for one Google Play package per app).
    Apple: the Player's `NavigationSplitView` (iPad, Mac; `ArrangementView` half folded); the
    Remote's queue shows the stages beside a stage's page on a wide window (`QueueScreen`),
    pushed on a narrow one; iPad UI test targets run `ConnectUITests` on the iPad apps.
