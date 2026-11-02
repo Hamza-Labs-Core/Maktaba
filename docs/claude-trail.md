@@ -8,8 +8,9 @@ the live state, what is in flight and what waits on the owner.
 
 - Read it all before you start. `CLAUDE.md` at the repo root says the same.
 - Before your session ends, add what you decided, what failed, and what changed in the live
-  state. Add only: never rewrite another session's entry. If something is no longer true, add
-  a dated line under it saying so.
+  state, **in a trail-only PR** (this file and nothing else: CI runs no job on it, merge it at
+  once). A code PR never touches this file (2026-11-02, [#532]). Add only: never rewrite another
+  session's entry. If something is no longer true, add a dated line under it saying so.
 - Each entry has a date (YYYY-MM-DD) and a PR, commit or file. Use only real PR numbers and
   shas: look them up with `gh pr view` / `git log`. Never guess one.
 - Keep it short and plain. The owner reads it too.
@@ -386,7 +387,8 @@ reached from the Mac (no SSH), so **this section is to be filled from the PC.**
 4. Don't edit §1–§8 or anyone else's entry. If a PC entry changes a rule, decision or the live
    state, say so in its bullets; a later Mac session folds it into the topic sections.
 5. Real PR numbers and shas only (`gh`, `git`). No secrets.
-6. Ship it as its own docs PR against main, with a CHANGELOG line under [Unreleased].
+6. Ship it as its own trail-only PR against main (this file only, so CI runs nothing; no
+   CHANGELOG line, which would make it run CI).
 
 Traced on 2026-10-31 from the PC. Its Maktaba transcripts sit under `~/.claude/projects/E--tv`
 and `E--tv-dizquetv` (the checkouts live in `E:\tv`), not `*aktaba*`. Left out: `c58dc8c2` (an
@@ -1288,3 +1290,22 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Fix: the fixture is now a real Matroska EBML header (DocType "matroska") plus a 200 kB body from a seeded RNG. The matroska demuxer claims the file and always rejects it ("End of file"). The test also checks the error says "the original cannot be read", meaning ffprobe refused the file. Passed 20/20 runs on both dialects.
 - Not fixed, noted: with `allow_reencode` on, junk that ffprobe reads as raw H.263 would re-encode into a 1-frame MP4 whose frame count matches. The original goes to the trash, so nothing is lost.
 - Same PR: `test_cancel_kills_ffmpeg_and_leaves_nothing` was over its 5 s soft cap on CI (6.9 s). Different cause: about 2.8 s of the 3.95 s local run was making the 60 s 720p VP9 source (8.9 s of CPU). The source is now MPEG-4 Part 2 (0.6 s, 4.5 s of CPU). It still plans a re-encode, and the x264 encode being cancelled is the same. Now 1.8 s locally.
+
+## 2026-11-02 — CI runs only what a change touches ([#528]); trail-only PRs run nothing ([#532])
+
+- Owner (shouting): "I TOLD YOU THEY SHOULD ONLY RUN WHEN THEIR RELATED CODE CHANGES". ci.yml's `code: '**'` filter ran every job on every PR (Apple UI shards 27–53 min on a Remote rename). [#528] (merge fad707d8): `.github/ci-paths.yml` holds one filter per job/part, applied on PRs only (a push runs everything); `tools/ci/ci_paths.py guard` (in lint) fails on an unfiltered/unmarked job, a job missing from `ci-success`, an unused filter, or a tracked file no filter covers. Until a filter exists, merge on the related checks.
+- Owner: "Update trail on its own PRs, no ci no test" — every code PR appending here made every open PR conflict on each merge (a main merge + CI restart each). [#532] (merge 091ebe1e): `changes` has a `repo` output, false when only this file changed; lint, pr-body-check and affected-tests are gated by it, so a trail-only PR runs only `changes` + `ci-success`. Still runs: CodeQL default setup (can't be filtered, not required) and the labeler. A push to main still runs full CI (the tag guard needs it). Dropped: one file per change under docs/trail/.
+- Owner: "Why you keep asking, no leave later shit, do it now always" — follow-ups start at once (parallel worktree agents); never ask "now or later?" or which of two reasonable designs.
+
+## 2026-11-02 — Merges and fixes (coordinator `b743b7d4`)
+
+- 2026-11-02 · affected-tests agent of `b743b7d4`: [#516] merged at 65d09858 (merge commit) once lint, affected-tests, CodeQL, unit, integration, android-apps and apple-apps (Apple apps, Mac UI) passed on 7b93f4d0. The first coverage-map run on main is not checked yet.
+- 2026-11-02 · coordinator `b743b7d4`: [#529] merged at 5c8dda56: LibraryPage/Libraries grid stay at top when the hub answers late (lazy grid key anchoring; `StaysAtTopWhen` + `requestScrollToItem(0)`); #523's scroll-to-top test workaround removed. [#525] merged at 2ea78099 (.thumbs/ sidecars, one-time sweep, @eaDir ignored) — its agent reran the ubuntu installer job (rule broken), root-fix launched. [#527] merged at bb4a742b (extract no-op on streaming backends); tag hold lifted. [#526] merged at b9e2efcc (convert corrupt fixture). [#523] merged at 245915cc (Android rail + resizable panes + postures). Owner rules: follow-ups start at once, never "now or later?"; trail only in trail-only PRs with no CI/tests.
+
+## 2026-11-02 — Sign-in forms: Return goes to the next field, the field stays above the keyboard
+- Owner: "both iOS and Android, sign in need the next field arrow ... because the keyboard blocks the field."
+- Apple (MaktabaKit `StartViews.swift`, `CloudViews.swift`): `@FocusState` field chain. Username Next -> password Go; cloud email Next -> password (Next -> address when Advanced shows it, else Go) -> address Go; picker address Go. `keepsFocusInView` (`KeyboardFocus.swift`) scrolls the focused row to the middle on each focus change and again 350 ms later, once the keyboard is up. No new visible text, so no new strings.
+- Android (core `StartScreens.kt`, `CloudScreens.kt`): FocusRequester chain, same order. The last field takes Go. `rememberKeptAboveKeyboard()` (`KeyboardFields.kt`) brings the focused field into view on focus and on every IME height change. The activities were already edge-to-edge + adjustResize, and `StartFrame` already pads for the IME.
+- Tests: `SignInKeyboardTest` (player, Robolectric, v2 compose rule) for home, cloud and cloud+Advanced. `PlayerSignInKeyboardUITests` (iPhone/iPad CI): Return moves keyboard focus to the password, the password is above the keyboard, and Return sends the login. Text goes in through `typeExactly` (#510); only Return uses `typeText("\n")`.
+- The PR's first CI run (before main was merged in) failed for reasons outside this change. Mac PlayerMacMenuUITests:155 and Android LibrariesSectionTest were fixed by #510 and #508. The iPhone/iPad accessibility audits also failed (Libraries, Profile, Search). On the iPad run, `PlayerSignInKeyboardUITests` passed.
+- A local run of `LibrariesScreenshotTest.tabletEnglish` timed out once, under load from a parallel Xcode build. It passed on the re-run. Unrelated (FakeHome settling, #510).
