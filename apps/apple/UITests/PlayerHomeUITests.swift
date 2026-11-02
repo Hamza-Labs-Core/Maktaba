@@ -16,6 +16,9 @@ final class PlayerHomeUITests: PlayerUITestCase {
 
     private func row(_ key: String) -> XCUIElement { element("home.row.\(key)") }
 
+    /// A card of a row (`home.card.<id>`) or of Live TV on now (`home.channel.<id>`).
+    private static let card = NSPredicate(format: "identifier BEGINSWITH 'home.card.' OR identifier BEGINSWITH 'home.channel.'")
+
     /// Scrolls Home down until `target` is on screen (rows below the fold are not built yet).
     private func scrollTo(_ target: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
         // the page itself (its scroll view carries the screen's identifier, `screen.home`)
@@ -47,7 +50,13 @@ final class PlayerHomeUITests: PlayerUITestCase {
         for _ in 0..<14 {
             let visible = (order + ["rec-from_library"]).filter { row($0).exists }
                 .sorted { row($0).frame.minY < row($1).frame.minY }
-            for key in visible where !met.contains(key) { met.append(key) }
+            for key in visible where !met.contains(key) {
+                met.append(key)
+                // a row is never only its title: its cards are there as soon as it is (a lazy
+                // rail just scrolled in had built none, and For You, the last row, kept none)
+                XCTAssertTrue(row(key).descendants(matching: .any).matching(Self.card).firstMatch.exists,
+                              "\(key)'s cards, as soon as the row is on Home")
+            }
             if met.count == 1, let first = met.first { XCTAssertGreaterThan(row(first).frame.minY, heroY, "rows below the hero") }
             if met.last == order.last { break }
             app.swipeUp(velocity: .slow)
@@ -156,6 +165,7 @@ final class PlayerHomeUITests: PlayerUITestCase {
         shot("home")
         scrollTo(row("rec-for_you"))
         XCTAssertTrue(app.staticTexts["مقترح لك"].exists, "For You in Arabic")
+        XCTAssertTrue(row("rec-for_you").descendants(matching: .any)["home.card.v6"].exists, "For You's cards with its title")
         shot("home-for-you")
     }
 
