@@ -224,6 +224,25 @@ jobs:
             xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
           done
           xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          # A simulator just booted keeps working for minutes (CI: each shard's first test, the
+          # longest, signed in at half speed and timed out waiting for its page; before, the
+          # build ran in between). So the app is installed and opened once, as a test opens it
+          # (the permissions faked: no Bonjour browse, no local network question), and the
+          # tests wait for the runner's load to come down (three minutes at most).
+          app="$PRODUCTS/Products/Debug-iphonesimulator/$scheme.app"
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          xcrun simctl install "$udid" "$app"
+          xcrun simctl launch "$udid" "$bundle" -maktaba-permissions-reset -maktaba-permissions-fake granted \
+            -maktaba-session-reset > /dev/null
+          sleep 15
+          xcrun simctl terminate "$udid" "$bundle" || true
+          cores=$(sysctl -n hw.ncpu)
+          for _ in $(seq 36); do
+            load=$(sysctl -n vm.loadavg | awk '{print $2}')
+            awk -v l="$load" -v c="$cores" 'BEGIN { exit !(l < c) }' && break
+            sleep 5
+          done
+          echo "the runner's load: $load on $cores cores"
           # the app's own log (MaktabaKit's `Log`: its bundle id is the subsystem; notice, error
           # and fault), kept with the results. Not --level info over the whole process: a stream
           # at info makes every info line of the system's frameworks in the app cost, and
