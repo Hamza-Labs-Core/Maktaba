@@ -137,9 +137,10 @@ final class MaktabaTVUITests: XCTestCase {
     func chooseHome() throws {
         let address = app.textFields["picker.address"]
         XCTAssertTrue(address.waitForExistence(timeout: 20))
-        moveFocus(to: address, with: .down)
-        remote.press(.select)
-        app.typeText(try XCTUnwrap(env["MAKTABA_HOME"]))
+        address.typeExactly(try XCTUnwrap(env["MAKTABA_HOME"]), in: app) {
+            self.moveFocus(to: address, with: .down)
+            self.remote.press(.select)
+        }
         finishTyping() // submits the field: Connect
         pressIfStillThere(app.buttons["picker.connect"], with: .right)
     }
@@ -155,11 +156,17 @@ final class MaktabaTVUITests: XCTestCase {
             remote.press(.select)
         }
         XCTAssertTrue(username.waitForExistence(timeout: 10))
-        moveFocus(to: username, with: .up)
-        remote.press(.select)
-        app.typeText(try XCTUnwrap(env["MAKTABA_USER"]))
+        username.typeExactly(try XCTUnwrap(env["MAKTABA_USER"]), in: app) {
+            self.moveFocus(to: username, with: .up)
+            self.remote.press(.select)
+        }
         finishTyping() // "next": the keyboard goes on to the password
-        app.typeText(try XCTUnwrap(env["MAKTABA_PASSWORD"]))
+        let password = app.secureTextFields["signin.password.field"]
+        // the keyboard is already the password's; typed again, it is opened from the field
+        password.typeExactly(try XCTUnwrap(env["MAKTABA_PASSWORD"]), in: app, secure: true) {
+            self.moveFocus(to: password, with: .down)
+            self.remote.press(.select)
+        }
         finishTyping() // submits the field: Sign in
         pressIfStillThere(app.buttons["signin.submit"], with: .down)
     }

@@ -13,9 +13,9 @@ import XCTest
 /// fresh install) and `-maktaba-record-opens` (a link's address is shown, not opened). The
 /// theme is not forced dark here, so the stored choice is the one the app reads.
 final class PlayerProfileUITests: PlayerUITestCase {
-    private func launchProfile(_ language: String = "en") {
+    private func launchProfile(_ language: String = "en", extra: [String] = []) {
         launch(language, sections: ["libraries", "profile"], section: "profile", theme: nil,
-               extra: ["-maktaba-settings-reset", "-maktaba-record-opens"])
+               extra: ["-maktaba-settings-reset", "-maktaba-record-opens"] + extra)
         signIn()
         XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15), "the Profile")
     }
@@ -206,25 +206,36 @@ final class PlayerProfileUITests: PlayerUITestCase {
     }
 
     func testAccessibilityAudit() throws {
-        launchProfile()
-        try audit()
-        element("profile.history").tap()
-        XCTAssertTrue(element("history.v2").waitForExistence(timeout: 10))
-        try audit()
-        element("profile.back").tap()
-        element("profile.sessions").tap()
-        XCTAssertTrue(element("session.sess-1").waitForExistence(timeout: 10))
-        try audit()
+        try auditPage("profile") {}
+        try auditPage("history") {
+            self.scrollUntil(self.element("profile.history"))
+            self.element("profile.history").tap()
+            XCTAssertTrue(self.element("history.v2").waitForExistence(timeout: 10))
+        }
+        try auditPage("sessions") {
+            self.scrollUntil(self.element("profile.sessions"))
+            self.element("profile.sessions").tap()
+            XCTAssertTrue(self.element("session.sess-1").waitForExistence(timeout: 10))
+        }
     }
 
-    /// The audit, but for a row just above the tab bar: as the audit grows the text it slides
-    /// under the bar, which reads as "partially unsupported" (the same row scrolled up passes).
-    private func audit() throws {
-        let barTop = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
-        try app.performAccessibilityAudit(for: [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]) { issue in
-            if issue.auditType == .dynamicType, (issue.element?.frame.maxY ?? 0) > barTop - 100 { return true }
+    /// One page's audit in a launch of its own, then its Dynamic Type (`assertTextScales`):
+    /// `open` opens the page from the Profile.
+    private func auditPage(_ name: String, _ open: @escaping () -> Void) throws {
+        launchProfile()
+        open()
+        var found: [String] = []
+        // every issue of the screen in one failure, with the element it is on (the audit
+        // itself stops at the first and names only its class)
+        try accessibilityAudit(for: [.sufficientElementDescription, .hitRegion, .contrast]) { issue in
             if self.contrastOutOfView(issue) { return true }
-            return false
+            found.append(self.described(issue))
+            return true
+        }
+        XCTAssertTrue(found.isEmpty, "\(name): " + found.joined(separator: "; "))
+        assertTextScales(name) { size in
+            self.launchProfile(extra: size)
+            open()
         }
     }
 

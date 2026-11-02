@@ -10,13 +10,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/grandcat/zeroconf"
 )
 
 // Advertiser owns a registered mDNS service; Close withdraws it.
 type Advertiser struct {
-	server *zeroconf.Server
+	server announcement
 }
 
 // Advertise registers `_maktaba._tcp` on the given public API port.

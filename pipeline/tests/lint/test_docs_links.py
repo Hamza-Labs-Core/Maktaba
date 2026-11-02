@@ -5,7 +5,7 @@ specs, and in the update docs (``docs/updates.md``, ``docs/auto-update.md``, the
 the packaging docs) and the Epic 35 specs, points at a file that exists, and every ``#anchor``
 into one of those pages names one of its headings. The in-app help's own links are checked by
 web/src/help/help.coverage.test.ts (the Live TV page links there now). CI counts these files
-as code (ci.yml's ``meta`` filter), so a change to them runs this test.
+in the pipeline's filter (.github/ci-paths.yml), so a change to them runs this test.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[3]
 RUNBOOK = ROOT / "docs" / "tv-cluster-and-remote.md"
 SPECS = ROOT / "specs" / "epics" / "32-tv-streaming-cluster-remote"
 UPDATE_SPECS = ROOT / "specs" / "epics" / "35-cluster-full-nodes-and-updates"
-CI = ROOT / ".github" / "workflows" / "ci.yml"
+CI_PATHS = ROOT / ".github" / "ci-paths.yml"
 
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 
@@ -158,14 +158,17 @@ def test_runbook_covers_the_story_sections() -> None:
         assert needle in text, needle
 
 
+def _flatten(v: object) -> list[str]:
+    if isinstance(v, list):
+        return [p for x in v for p in _flatten(x)]
+    return [str(v)]
+
+
 def _meta_patterns() -> list[str]:
-    """The ``meta`` filter of ci.yml's changes job: paths that are code whatever their extension."""
-    jobs = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]
-    for step in jobs["changes"]["steps"]:
-        if step.get("id") == "filter":
-            patterns: list[str] = yaml.safe_load(step["with"]["filters"])["meta"]
-            return patterns
-    raise AssertionError("ci.yml's changes job has no `filter` step")
+    """The ``unit_pipeline`` filter of .github/ci-paths.yml (the path filters of ci.yml's
+    changes job): a change to one of its files runs the pipeline's unit tier, this test."""
+    filters = yaml.safe_load(CI_PATHS.read_text(encoding="utf-8"))
+    return _flatten(filters["unit_pipeline"])
 
 
 def _matches(pattern: str, path: str) -> bool:
@@ -189,8 +192,8 @@ def test_ci_counts_these_docs_as_code() -> None:
     read = [f.relative_to(ROOT).as_posix() for f in files]
     unlisted = [f for f in read if not any(_matches(p, f) for p in patterns)]
     assert not unlisted, (
-        f"markdown this test reads that ci.yml's meta filter does not list (a change to it would "
-        f"skip the gates as docs only): {unlisted}"
+        f"markdown this test reads that ci-paths.yml's unit_pipeline filter does not list "
+        f"(a change to it would not run this test): {unlisted}"
     )
     # and the rest of the docs are still docs
     assert not any(_matches(p, "docs/another-page.md") for p in patterns)

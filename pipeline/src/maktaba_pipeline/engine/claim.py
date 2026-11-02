@@ -23,6 +23,7 @@ from ..db.jobs import DBConn, Job, JobState, Stage
 from .sql import is_pg, loads, parse_ts
 
 __all__ = [
+    "URGENT_PRIORITY",
     "PoolConfig",
     "claim_for_pool",
     "effective_size",
@@ -67,7 +68,98 @@ async def load_pools(db: Any) -> dict[str, PoolConfig]:
     }
 
 
-_CLAIM_PG = """
+#: jobs at this priority or better (Process now is 50, a library scan 50) are claimed
+#: first, strictly by priority then age, ahead of the fair share below
+URGENT_PRIORITY = 50
+
+# Fair share of a pool among its stages (fixes starvation: on 2026-11-02 the home's
+# thumbnail stage, 70k jobs at priority 900, had not run since 2026-10-22 because
+# thumb_small and chapter_thumbs, 42k jobs at 100, always filled the two nas_read slots
+# under a strict ORDER BY priority, id).
+#
+# Stride scheduling over claim_shares, between the priority classes of a pool. Each stage
+# of the pool offers its head, its best job by (priority, id): one probe of
+# processing_jobs_claimable_idx. A head is due at
+#     due = GREATEST(class pass + head priority, pool clock)
+# where the class pass ('prio:<pool>:<priority>') is the due of the last claim at that
+# priority and the pool clock ('pool:<pool>') the due of the pool's last fair-share
+# claim. The claim takes:
+#   1. a head at URGENT_PRIORITY or better, by priority then id (Process now wins);
+#   2. else the head due first (then priority, id).
+# The claimed class's pass becomes its due; a fair-share claim also moves the pool clock
+# to it. While classes stay busy each gets claims in inverse proportion to its priority
+# number (one at 900 for every nine at 100): none starves, and priority still decides the
+# split. The clock is the lowest due any busy class can have, so a class coming back from
+# idle starts level with the others and has no saved-up credit.
+# Heads of one priority are all due together, so among them the order stays strictly by
+# id, across stages, as before: a cascade's jobs (three fp_gate, then the one detect they
+# trigger) still run in the order they were made and coalesce as they did. A share per
+# stage instead round-robins equal stages and splits such batches, so a coalescing
+# stage downstream ran twice (tests/stages/test_fingerprint_flow.py).
+_HEAD_FILTER = """
+           AND j.state IN ('pending', 'paused')
+           AND j.pause_requested = {false}
+           AND j.cancel_requested = {false}
+           AND (j.not_before IS NULL OR {not_before_due})"""
+
+_CLAIM_PG = (
+    """
+WITH heads AS (
+    SELECT s.stage, h.id, h.priority
+      FROM job_stages s
+      CROSS JOIN LATERAL (
+            SELECT j.id, j.priority
+              FROM processing_jobs j
+             WHERE j.stage = s.stage"""
+    + _HEAD_FILTER.format(false="false", not_before_due="j.not_before <= now()")
+    + """
+             ORDER BY j.priority, j.id
+             LIMIT 1
+               FOR UPDATE OF j SKIP LOCKED
+      ) h
+     WHERE s.pool = $2
+       AND s.stage = ANY($3::text[])
+       AND s.enabled
+       AND NOT s.paused
+       AND NOT COALESCE((SELECT paused FROM queue_control WHERE id = 1), false)
+       AND (
+             (SELECT scope FROM worker_pools WHERE pool = $2) = 'per_worker'
+          OR (SELECT count(*)
+                FROM processing_jobs b
+                JOIN job_stages bs ON bs.stage = b.stage
+               WHERE bs.pool = $2 AND b.state IN ('claimed', 'running', 'resuming'))
+             < (SELECT COALESCE(size, default_size, 1) FROM worker_pools WHERE pool = $2)
+       )
+),
+due AS (
+    SELECT h.stage, h.id, h.priority,
+           GREATEST(COALESCE((SELECT pass FROM claim_shares
+                               WHERE owner = 'prio:' || $2 || ':' || h.priority), 0)
+                      + h.priority,
+                    COALESCE((SELECT pass FROM claim_shares WHERE owner = 'pool:' || $2), 0))
+             AS due
+      FROM heads h
+),
+pick AS (
+    SELECT d.stage, d.id, d.priority, d.due, d.priority <= $4 AS urgent
+      FROM due d
+     ORDER BY (d.priority > $4),
+              CASE WHEN d.priority <= $4 THEN d.priority ELSE d.due END,
+              d.priority, d.id
+     LIMIT 1
+),
+share AS (
+    -- the class's row before the pool's, in every claim: concurrent claimers of a
+    -- per-worker pool take the two row locks in the same order
+    INSERT INTO claim_shares (owner, pass)
+    SELECT o.owner, pick.due
+      FROM pick
+      CROSS JOIN LATERAL (VALUES (1, 'prio:' || $2 || ':' || pick.priority),
+                                 (2, 'pool:' || $2)) o(n, owner)
+     WHERE o.n = 1 OR NOT pick.urgent
+     ORDER BY o.n
+    ON CONFLICT (owner) DO UPDATE SET pass = GREATEST(claim_shares.pass, EXCLUDED.pass)
+)
 UPDATE processing_jobs pj
    SET state             = 'claimed',
        claimed_by        = $1,
@@ -77,58 +169,61 @@ UPDATE processing_jobs pj
        parked_on         = NULL,
        -- resuming a paused job (a worker stopped mid-run) is not a new attempt: counted,
        -- every restart pushed it past max_attempts and the claim broke the check
-       attempts          = attempts + CASE WHEN state = 'paused' THEN 0 ELSE 1 END
- WHERE pj.id = (
-   SELECT j.id
-     FROM processing_jobs j
-     JOIN job_stages s ON s.stage = j.stage
-    WHERE s.pool = $2
-      AND j.stage = ANY($3::text[])
-      AND s.enabled
-      AND NOT s.paused
-      AND NOT COALESCE((SELECT paused FROM queue_control WHERE id = 1), false)
-      AND j.state IN ('pending', 'paused')
-      AND j.pause_requested = false
-      AND j.cancel_requested = false
-      AND (j.not_before IS NULL OR j.not_before <= now())
-      AND (
-            (SELECT scope FROM worker_pools WHERE pool = $2) = 'per_worker'
-         OR (SELECT count(*)
-               FROM processing_jobs b
-               JOIN job_stages bs ON bs.stage = b.stage
-              WHERE bs.pool = $2 AND b.state IN ('claimed', 'running', 'resuming'))
-            < (SELECT COALESCE(size, default_size, 1) FROM worker_pools WHERE pool = $2)
-      )
-    ORDER BY j.priority, j.id
-    FOR UPDATE OF j SKIP LOCKED
-    LIMIT 1
- )
+       attempts          = pj.attempts + CASE WHEN pj.state = 'paused' THEN 0 ELSE 1 END
+  FROM pick
+ WHERE pj.id = pick.id
 RETURNING pj.*
 """
+)
 
-_CLAIM_SQLITE_SELECT = """
-SELECT j.id AS id
-  FROM processing_jobs j
-  JOIN job_stages s ON s.stage = j.stage
- WHERE s.pool = $1
-   AND j.stage IN ({stages})
-   AND s.enabled = 1
-   AND s.paused = 0
-   AND COALESCE((SELECT paused FROM queue_control WHERE id = 1), 0) = 0
-   AND j.state IN ('pending', 'paused')
-   AND j.pause_requested = 0
-   AND j.cancel_requested = 0
-   AND (j.not_before IS NULL OR datetime(j.not_before) <= datetime('now'))
-   AND (
-         (SELECT scope FROM worker_pools WHERE pool = $1) = 'per_worker'
-      OR (SELECT count(*)
-            FROM processing_jobs b
-            JOIN job_stages bs ON bs.stage = b.stage
-           WHERE bs.pool = $1 AND b.state IN ('claimed', 'running', 'resuming'))
-         < (SELECT COALESCE(size, default_size, 1) FROM worker_pools WHERE pool = $1)
-   )
- ORDER BY j.priority, j.id
+_CLAIM_SQLITE_SELECT = (
+    """
+WITH cand AS (
+    SELECT s.stage AS stage,
+           (SELECT j.id
+              FROM processing_jobs j
+             WHERE j.stage = s.stage"""
+    + _HEAD_FILTER.format(false="0", not_before_due="datetime(j.not_before) <= datetime('now')")
+    + """
+             ORDER BY j.priority, j.id
+             LIMIT 1) AS id
+      FROM job_stages s
+     WHERE s.pool = $1
+       AND s.stage IN ({stages})
+       AND s.enabled = 1
+       AND s.paused = 0
+       AND COALESCE((SELECT paused FROM queue_control WHERE id = 1), 0) = 0
+       AND (
+             (SELECT scope FROM worker_pools WHERE pool = $1) = 'per_worker'
+          OR (SELECT count(*)
+                FROM processing_jobs b
+                JOIN job_stages bs ON bs.stage = b.stage
+               WHERE bs.pool = $1 AND b.state IN ('claimed', 'running', 'resuming'))
+             < (SELECT COALESCE(size, default_size, 1) FROM worker_pools WHERE pool = $1)
+       )
+),
+due AS (
+    SELECT c.stage, j.id, j.priority,
+           MAX(COALESCE((SELECT pass FROM claim_shares
+                          WHERE owner = 'prio:' || $1 || ':' || j.priority), 0)
+                 + j.priority,
+               COALESCE((SELECT pass FROM claim_shares WHERE owner = 'pool:' || $1), 0)) AS due
+      FROM cand c
+      JOIN processing_jobs j ON j.id = c.id
+)
+SELECT d.stage AS stage, d.id AS id, d.priority AS priority, d.due AS due,
+       d.priority <= {urgent} AS urgent
+  FROM due d
+ ORDER BY (d.priority > {urgent}),
+          CASE WHEN d.priority <= {urgent} THEN d.priority ELSE d.due END,
+          d.priority, d.id
  LIMIT 1
+"""
+)
+
+_CLAIM_SQLITE_SHARE = """
+INSERT INTO claim_shares (owner, pass) VALUES ($1, $2)
+ON CONFLICT (owner) DO UPDATE SET pass = MAX(claim_shares.pass, excluded.pass)
 """
 
 _CLAIM_SQLITE_UPDATE = """
@@ -160,7 +255,9 @@ async def claim_for_pool(
     Eligibility: stage enabled and not paused, global pause off, not
     pause/cancel requested, ``not_before`` passed, and (for a global pool)
     fewer than ``size`` jobs of the pool already claimed or running anywhere.
-    Order is ``priority`` then ``id``.
+    Order: a job at :data:`URGENT_PRIORITY` or better first (priority, then id); else
+    the fair share among the pool's priority classes (see ``_CLAIM_PG``); within a
+    class, ``id``.
     """
     if not stages:
         raise ValueError("claim_for_pool: stages must not be empty")
@@ -175,18 +272,25 @@ async def claim_for_pool(
                 await db.execute(
                     "SELECT pg_advisory_xact_lock(hashtext($1))", f"maktaba.pool:{pool}"
                 )
-                claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names)
+                claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names, URGENT_PRIORITY)
         else:
-            claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names)
+            claimed = await db.fetchrow(_CLAIM_PG, worker_id, pool, names, URGENT_PRIORITY)
         return row_to_job(claimed) if claimed is not None else None
 
     placeholders = ",".join(f"${i + 2}" for i in range(len(names)))
-    select_sql = _CLAIM_SQLITE_SELECT.replace("{stages}", placeholders)
+    select_sql = _CLAIM_SQLITE_SELECT.replace("{stages}", placeholders).replace(
+        "{urgent}", str(int(URGENT_PRIORITY))
+    )
     async with db.transaction():
         cand = await db.fetchrow(select_sql, pool, *names)
         if cand is None:
             return None
         claimed = await db.fetchrow(_CLAIM_SQLITE_UPDATE, worker_id, cand["id"])
+        if claimed is not None:
+            due = int(cand["due"])
+            await db.execute(_CLAIM_SQLITE_SHARE, f"prio:{pool}:{int(cand['priority'])}", due)
+            if not cand["urgent"]:
+                await db.execute(_CLAIM_SQLITE_SHARE, f"pool:{pool}", due)
     return row_to_job(claimed) if claimed is not None else None
 
 

@@ -3,30 +3,41 @@
 # and prettier --check. Everything routes through `make lint` so local
 # and CI behaviour stays identical (Story 22.8 parity requirement).
 
+#
+# ci.yml runs it on every pull request: the repository checks (job `repo`) always, each
+# language's linters when its files changed (the inputs, from .github/ci-paths.yml).
+
 name: Lint
 
 on:
   workflow_call:
+    inputs:
+      go:
+        description: the Go modules' linters, migration-lint, log-lint, go.mod drift
+        type: boolean
+        default: true
+      pipeline:
+        description: ruff + mypy, uv.lock drift
+        type: boolean
+        default: true
+      web:
+        description: eslint, tsc, prettier, pnpm-lock drift
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
-  lint:
+  # Every pull request, whatever it changes: no binaries, and CI's own routing (every
+  # job gated by a path filter or marked always-run; its tests say which jobs a change
+  # runs).
+  repo:
     runs-on: ubuntu-22.04
-    # 8-9 min on main (2026-10-22: the coverage floor ~2 min, ruff + mypy and
-    # golangci-lint (api) ~1.5 min each), plus "Set up pnpm", whose
-    # self-installer's npm install of pnpm has stalled for 2-7 min (lint,
-    # unit, mac-app and linux-app alike): the 10-minute limit cancelled two of
-    # main's last six runs. 20 leaves that headroom; a lint that hangs still
-    # ends.
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          # The migration-lint append-only check needs origin/main as a
-          # comparison ref. fetch-depth=0 keeps the checkout cheap-ish
-          # while still letting `git diff origin/main...HEAD` work.
           fetch-depth: 0
 
       # A PR must not add a build output (api/api.exe, 49.7 MB, landed in #119)
@@ -36,10 +47,11 @@ jobs:
         env:
           # extended regexes of paths allowed anyway, one per line. A Gradle wrapper's jar is
           # Gradle's own, checked against its published checksum by the gate that uses it
-          # (_android-apps.yml, _desktop-player.yml).
+          # (_android-apps.yml, _android-tv.yml, _desktop-player.yml).
           ALLOW: |
             apps/android/gradle/wrapper/gradle-wrapper\.jar
             apps/desktop-player/gradle/wrapper/gradle-wrapper\.jar
+            apps/tv/android/gradle/wrapper/gradle-wrapper\.jar
         run: |
           base=$(git merge-base origin/main HEAD)
           bad=0
@@ -64,14 +76,49 @@ jobs:
           done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
           exit $bad
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+
+      # tools/ci/ci_paths.py: a job in ci.yml gated by no filter of .github/ci-paths.yml and
+      # not marked always-run, a filter no job uses, a tracked file no filter reads...
+      - name: CI runs what a change touches (the guard)
+        run: uv run --no-project --python 3.12 --with pyyaml==6.0.3 python tools/ci/ci_paths.py guard
+
+      - name: CI runs what a change touches (which jobs a change runs)
+        run: >-
+          uv run --no-project --python 3.12 --with pyyaml==6.0.3 --with pytest==8.4.2
+          pytest tools/ci/tests -q -p no:cacheprovider
+
+  lint:
+    if: inputs.go || inputs.pipeline || inputs.web
+    runs-on: ubuntu-22.04
+    # 8-9 min on main (2026-10-22: the coverage floor ~2 min, ruff + mypy and
+    # golangci-lint (api) ~1.5 min each), plus "Set up pnpm", whose
+    # self-installer's npm install of pnpm has stalled for 2-7 min (lint,
+    # unit, mac-app and linux-app alike): the 10-minute limit cancelled two of
+    # main's last six runs. 20 leaves that headroom; a lint that hangs still
+    # ends.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          # The migration-lint append-only check needs origin/main as a
+          # comparison ref. fetch-depth=0 keeps the checkout cheap-ish
+          # while still letting `git diff origin/main...HEAD` work.
+          fetch-depth: 0
+
       # The Sigstore trusted root releases are verified with: a release build refuses one
       # older than 90 days. A warning 30 days before (merge trusted-root.yml's pull request),
-      # a failure at the limit, so a stale root is never found by a release.
+      # a failure at the limit, so a stale root is never found by a release. With the Go
+      # part (the root is shared/go/releaseverify's), and on every push to main.
       - name: Sigstore trusted root freshness
+        if: inputs.go
         shell: bash
         run: tools/release/trusted-root-age.sh
 
+      # Go also builds the coverage-floor checker, which the pipeline's coverage goes through
       - name: Set up Go
+        if: inputs.go || inputs.pipeline
         uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
@@ -79,24 +126,30 @@ jobs:
             api/go.sum
             streaming/go.sum
 
+      # Python for the pipeline's linters, and for its coverage (the Go part's coverage
+      # floor measures both: a dropped lane must never pass)
       - name: Set up Python
+        if: inputs.go || inputs.pipeline
         uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
 
       - name: Set up uv
+        if: inputs.go || inputs.pipeline
         uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
 
       - name: Set up pnpm
+        if: inputs.web
         uses: pnpm/action-setup@v6.0.8
         with:
           version: 9.15.4
           run_install: false
 
       - name: Set up Node
+        if: inputs.web
         uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
@@ -104,14 +157,17 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
 
       - name: Install web deps
+        if: inputs.web
         working-directory: web
         run: pnpm install --frozen-lockfile
 
       - name: Install pipeline deps
+        if: inputs.go || inputs.pipeline
         working-directory: pipeline
         run: uv sync --frozen --all-extras
 
       - name: golangci-lint (api)
+        if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
         with:
           version: v2.12.2
@@ -119,6 +175,7 @@ jobs:
           args: --timeout=5m
 
       - name: golangci-lint (streaming)
+        if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
         with:
           version: v2.12.2
@@ -126,6 +183,7 @@ jobs:
           args: --timeout=5m
 
       - name: golangci-lint (cloud)
+        if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
         with:
           version: v2.12.2
@@ -133,6 +191,7 @@ jobs:
           args: --timeout=5m
 
       - name: golangci-lint (shared/health/go)
+        if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
         with:
           version: v2.12.2
@@ -140,29 +199,47 @@ jobs:
           args: --timeout=5m
 
       - name: gofmt + go vet
+        if: inputs.go
         run: make lint-go
 
       - name: ruff + mypy
+        if: inputs.pipeline
         run: make lint-py
 
       - name: tsc + eslint + prettier
+        if: inputs.web
         run: make lint-web
 
       - name: migration-lint (append-only + idempotency + parity)
+        if: inputs.go
         run: make lint-migrations
 
       - name: log-lint (no runtime data in log msg, Story 21.1 AC-4)
+        if: inputs.go
         run: make lint-log
 
       # Story 22.2 TC3: uv.lock / pnpm-lock.yaml / go.mod drift fails CI.
       # The gate existed in the Makefile but was unwired; running it in
-      # the lint gate makes a drifted lockfile a merge blocker.
-      - name: lockfile drift (uv / pnpm / go.mod)
-        run: make lockfile-check
+      # the lint gate makes a drifted lockfile a merge blocker. Each lock with its part
+      # (make lockfile-check runs all three).
+      - name: lockfile drift (go.mod)
+        if: inputs.go
+        run: make lockfile-check-go
+
+      - name: lockfile drift (uv)
+        if: inputs.pipeline
+        run: make lockfile-check-py
+
+      - name: lockfile drift (pnpm)
+        if: inputs.web
+        run: make lockfile-check-web
 
       # Story 20.3 AC1/TC1: per-module coverage-floor gate. A coverage
       # regression below the documented floor in
       # tools/coverage-floor/floors.yaml blocks merge. Floors are a
-      # non-breaking ratchet pinned at the integrated-branch baseline.
+      # non-breaking ratchet pinned at the integrated-branch baseline. It measures the Go
+      # modules and the pipeline together (a lane with no number fails), so it runs when
+      # either changed.
       - name: coverage floor (Story 20.3)
+        if: inputs.go || inputs.pipeline
         run: make test-coverage

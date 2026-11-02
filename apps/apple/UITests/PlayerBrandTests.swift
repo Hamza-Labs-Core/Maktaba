@@ -19,8 +19,7 @@ final class PlayerBrandTests: PlayerUITestCase {
                 brandShot("brand-picker-\(theme)")
 
                 // by address: the step that asks the typed address, then the sign-in screen
-                field.tap()
-                field.typeText(home.url)
+                field.typeExactly(home.url, in: app)
                 app.buttons["picker.connect"].tap()
                 XCTAssertTrue(element("signin.method").waitForExistence(timeout: 10), "the sign-in screen")
                 expectBrand(language, on: "sign-in", theme: theme)

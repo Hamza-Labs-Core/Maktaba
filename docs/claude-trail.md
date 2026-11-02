@@ -983,6 +983,14 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - Waiting on the owner: make the upload key (keytool in `docs/google-play.md`) and add the
     secrets; create the three apps in Play Console and upload each first bundle by hand; later
     turn on `PLAY_UPLOAD`.
+- 2026-11-01 · `b743b7d4`: CVE-2026-98432 (Linux IPv4 TCP use-after-free, critical). Its reported
+  exploit needs a multipath TCP listener, which Go 1.24+ opens by default. `godebug
+  multipathtcp=0` in the api, cloud, streaming, maktaba-server and maktaba-launcher `go.mod`s,
+  each with `TestListenersUseNoMultipathTCP` (it fails if the line goes; checked). No `go.work`,
+  so release builds get it. User advisory (en + ar):
+  `docs/security/advisories/2026-11-01-linux-tcp-uaf.md`. The VPS kernel is not patched: the
+  owner patches it, or says go.
+  - Gap: specs say a `SECURITY.md` exists (story 23.8); there is none in the repo.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1151,3 +1159,67 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#512]: https://github.com/Hamza-Labs-Core/Maktaba/pull/512
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+[#524]: https://github.com/Hamza-Labs-Core/Maktaba/pull/524
+
+## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
+
+- One CI run (41376606909): aLibraryShowsItsHubRowsAndLeavesTheEmptyOnesOut waited 10 s for the libraries list; the other 11 tests took ~0.5 s. Six local runs of the class all passed; the report held no app log (Robolectric drops android.util.Log), so the cause wasn't recorded.
+- Changes: a missed wait now says which paths the app asked the home and what the screen showed. Each FakeHome gets its own OkHttp connection pool (it shared defaultHttp's across tests).
+- Not root-caused yet: the next miss names it.
+- Owner: "always request the logs so it doesn't drop them". Both Android Gradle roots (apps/android, apps/tv/android) set `robolectric.logging=stdout` on every Test task; LogsKeptTest fails if it goes. Reports now carry the app's log.
+- Root cause found (with the new diagnostics): the miss is always the first wait, and the report showed "asked [/api/libraries/summary]; showing [libraries-list, tabs]": the answer came, no error was logged, the screen stayed on its spinner. Under Robolectric a bare `compose.waitUntil` only polls; an answer landing after the last idle isn't applied until the main looper is idled. Reproduced with a 500 ms late answer: poll-only took 4.6 s of a 5 s budget, poll-with-idle 0.6 s.
+- Fix: harness/Settle.kt `settledUntil` (waitForIdle in every poll) and `settled` (same, plus the asked/shown message); all three Libraries test classes use them. ~80 other bare waitUntil calls remain in the Player tests; not converted blindly (watch tests wait on things that hide by themselves, and settling advances the clock).
+- Converted: every Player-test wait on a fake-home answer or what it causes (tags/text, request counts, HomeCache files, session phase, fake engine calls) is now `settledUntil`, in the 16 Home/Video/Profile/Search/Shell/Start/Connect/Components/Live test files; HomeScreenTest's gated "not answered yet" wait dropped its inner waitForIdle (the gate is the test's own latch, so settling can't let the answer in early); ConnectProgress's AwaitingApproval wait converted too (its countdown is on a fixed clock).
+- Left bare, each with a one-line comment: ChannelScreenTest's `controls()` (they hide after 4 s), WatchScreenTest's controls/seek-flash/next waits and the `until` helpers in WatchScreenTest, WatchScreenshotTest and PipBackgroundCastTest (they step the players' clock themselves; settling would also advance Compose's).
+## 2026-11-02 — v0.3.51 had no Play bundles: the TV wrapper jar wasn't Gradle's
+
+- play-bundles.yml on v0.3.51 stopped at "Gradle wrappers are Gradle's": apps/tv/android named Gradle 9.8.2 but its jar wasn't 9.8.2's (sha cb0da675…). The phone apps' jar matched.
+- Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
+- v0.3.51 stays without .aab files; the next tag carries them.
+- 2026-11-02, later: settling alone didn't end it. #508's run on 8c6d44b1 missed again in facetsAndSortChangeTheRequestsQuery: answer in, no error logged (the kept log proved it), spinner for 10 s. Not reproducible locally even under full CPU load. The v1 compose rule (deprecated; the build warned) runs effects on an UnconfinedTestDispatcher, so the answer resumes the screen on OkHttp's thread and writes Compose state from there. All 23 Player JVM test classes now use the v2 rules (`junit4.v2.createAndroidComposeRule` / `createComposeRule`), which queue that work for the main thread. Three full suite runs green, screenshots unchanged (verifyRoborazziDebug), tests ~3-5x faster. androidTest (on-device) files still on v1.
+
+
+## 2026-11-02 — Maktaba renamed the Mac on the network (mDNS name conflict)
+
+- Owner saw macOS rename "Mahmouds-Mac-Studio.local" to "…-2.local". Cause: maktaba-api and maktaba-server each ran a zeroconf responder (`lsof -iUDP:5353`) announcing via RegisterProxy with the Mac's own Bonjour name, which publishes A/AAAA for it with the cache-flush (owner) bit. mDNSResponder saw other answerers for its name and renamed the Mac; our servers then claim the new name on restart.
+- Fix (fix/mdns-system-responder): register() returns an `announcement` (SetText, Shutdown). On macOS it runs `dns-sd -R` under /bin/sh that ends it when our stdin pipe closes (Shutdown, or our process dying any way), restarted if it ends by itself. Elsewhere zeroconf as before. Same file in api/internal/discovery and cmd/maktaba-server/internal/mdns.
+- Gotcha: a POSIX shell gives a background job /dev/null as stdin, so the watcher must read a copy (`exec 3<&0 … read _ <&3`), or it kills dns-sd at once.
+- Not done: Linux hosts with avahi-daemon and Windows (own mDNS) have the same conflict risk; still zeroconf there.
+- 2026-11-02: removed 140 merged, clean, unused worktrees (82 GB). Kept 20: in use, open PRs, or unmerged work.
+
+## 2026-11-02 — TestLibraryTabsSQLite past the unit test budget: fsync during setup
+
+- CI run 41449508335 (PR #510) failed test-budget: browse TestLibraryTabsSQLite took 1.42 s, and 1.32 s when re-run alone. The 3x400 ms cap is 1.2 s.
+- Cause: the shared `testDB` setup (~45 autocommits, plus ~14 from `groupsEnv`). On a file DB in rollback-journal mode, each commit syncs the journal, the db file and the directory. That costs almost nothing on macOS and a lot on the Linux runner. Simulating it locally with `PRAGMA fullfsync`: setup 965 ms out of a 990 ms test. The five handler requests take ~25 ms, so the handler wasn't the problem.
+- Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
+- The same PR (#521) also fixes a search test that failed integration/compat-prev: `TestEmbedCacheConcurrentSameKeyNoCorruption` compared response bodies byte for byte, including the wall-clock `took_ms` ("semantic":0 vs 1). Both subtests (concurrent, and sequential miss->hit->hit) now decode the bodies, drop `took_ms` and compare the rest (`withoutTiming`). Passed `-race -count=20`.
+
+## 2026-11-02 — CI runs what a change touches (ci/run-what-changed)
+
+- Owner: "ci should only run if the change touches it". An Android-only PR ran pipeline integration, Go replica, e2e and all nine Player UI shards; a Remote rename ran the Player UI tests.
+- Now: `.github/ci-paths.yml` holds one path filter per job or part, derived from what each workflow builds and tests (Go modules + what their tests read, pipeline + the docs/help its tests read, web + the two api files help.coverage reads, tokens, each app). ci.yml's `changes` job evaluates it on a pull request only; on a push to main/release/* every output is true, so main and the tags get the full run (mac/win/linux app builds now run on every push too). The update rehearsal's own triggers are unchanged.
+- Parts: `_lint.yml` (repo checks always; go/pipeline/web), `_unit.yml` (go/pipeline/web/tokens/desktop_shell), `_integration.yml` (integration/compat_prev), `_node-packaging.yml` (packaging/release_venv), `_apple-apps.yml` (build/player_ui) take boolean inputs. Makefile: `lockfile-check` split into -py/-web/-go.
+- Apple: the Player UI shards run for Player/, Shared/, MaktabaKit sources, UITests/, PlayerMacTests/, the Player schemes. The shared project.pbxproj counts only when `tools/ci/apple_player_scope.py` finds a Player object among its changes (parses the file at HEAD^1 and HEAD; the Remote rename caaf91a0 and Remote icon 3912dca8 come out false, UI-test changes true).
+- e2e and perf-ci need integration but now say `!cancelled()` and run when integration was skipped (else a web-only change would skip them silently).
+- ci-success loops over every need: success/skipped pass, failure/cancelled fail, `changes` must succeed.
+- Guard: `tools/ci/ci_paths.py guard` in the lint job's always-run `repo` part. It simulates ci.yml's real `if:`/`with:` expressions: every job is gated by filters (and runs when any one alone is true) or marked `# ci-paths: always-run|push-only|pr-only|not-a-gate`; every filter is used; every gate is in ci-success's needs; a push runs everything; every tracked file is matched by a filter or listed in NOT_IN_CI. `ci_paths.py which <files>` shows what a change runs.
+- Tests: tools/ci/tests (Android-only, Remote-only, Player, tvOS, pipeline-only, API-only, docs-only, workflow change, ci.yml, shared migrations, push, fork, guard negatives) and the pbxproj scope tests on the real project file. pipeline's test_docs_links now reads the `unit_pipeline` filter instead of the old `meta` one.
+
+## 2026-11-02 — extract paused by nobody, thumbnail starved: stage pauses need an owner, pools share fairly
+
+- Read-only look at the live home: extract (`nas_read`) had `paused = true`, `paused_at`/`paused_by` NULL since 2026-10-22 22:31. Thumbnail (70k pending at 900) had not run because thumb_small and chapter_thumbs (~42k at 100) always filled `nas_read`'s 2 slots under `ORDER BY priority, id`.
+- Writer: no code. Every pause writer in git history sets both columns. It was a Claude session (`30850266`) on 2026-10-23 02:37 UTC, after the owner said "pause this shit": a raw `psql` `update job_stages set paused = true where stage = 'extract'` on the live Docker Postgres. Later that night the same session did the same for `index` and `chapter_infer` on the bundled Postgres. Lesson: never write operator columns by hand. Pause through `POST /api/queues/{stage}/pause` (the DB now refuses anything else).
+- Fix ([#524], slot 0172):
+  - orphaned pauses are resumed, with `audit_log` `admin` / `queue.stage_orphan_pause_resumed`
+  - a trigger (not a CHECK: `ADD CONSTRAINT` would make the release unsafe to roll back on its schema) refuses a pause without `paused_at` and `paused_by`
+  - the Queues API adds `paused_by_name`, and the web card and queue page say who paused a stage and when (English and Arabic)
+- Fairness: stride scheduling per pool (`claim_shares`, `engine/claim.py`) between priority classes, not stages. Each stage's head is due at `GREATEST(class pass + priority, pool clock)`, and the claim takes the head due first. Equal priorities stay in id order across stages. A first cut kept a share per stage, which round-robined equal stages, split fp_gate's batch and ran detect 4 times (`test_fingerprint_flow` seed 2, CI integration). Priority ≤ 50 (Process now) still goes first, strictly. 900 vs 100 gets 1 claim in 9. The new partial index `processing_jobs_claimable_idx` brought a claim with 203k claimable rows from 64 ms to 0.3–0.8 ms. Legacy `claim_one` (non-pool mode) is unchanged: it has a semaphore per stage, so no cross-stage starvation.
+- Live state: unchanged by this session. Extract resumes when a release with slot 0172 is installed (the owner tags and moves it live). Check `index` and `chapter_infer` then too: if they are still hand-paused, 0172 resumes them as well.
+
+## 2026-11-02 — test_a_corrupt_input_fails_at_once got 'done': random bytes aren't always corrupt
+
+- CI failed `test_convert.py::test_a_corrupt_input_fails_at_once` on unrelated PRs: on [postgres] in run 41476408173 (PR #523), and on [sqlite] on PR #525. `assert job["state"] == "failed"` got 'done'.
+- Cause: the test's fixture, not the stage. The "corrupt" input was `os.urandom(200_000)`. ffprobe 8.1 accepted 3 of 300 such files: 2 as a raw H.263 video stream, 1 as an LRC subtitle. When probing works, `plan_for` skips the file (`needs_reencode` with re-encoding off, `no_video` for LRC), and the job ends `done`/unchanged with the file untouched. Captured one such file and reproduced 'done' on both dialects.
+- Fix: the fixture is now a real Matroska EBML header (DocType "matroska") plus a 200 kB body from a seeded RNG. The matroska demuxer claims the file and always rejects it ("End of file"). The test also checks the error says "the original cannot be read", meaning ffprobe refused the file. Passed 20/20 runs on both dialects.
+- Not fixed, noted: with `allow_reencode` on, junk that ffprobe reads as raw H.263 would re-encode into a 1-frame MP4 whose frame count matches. The original goes to the trash, so nothing is lost.
+- Same PR: `test_cancel_kills_ffmpeg_and_leaves_nothing` was over its 5 s soft cap on CI (6.9 s). Different cause: about 2.8 s of the 3.95 s local run was making the 60 s 720p VP9 source (8.9 s of CPU). The source is now MPEG-4 Part 2 (0.6 s, 4.5 s of CPU). It still plans a re-encode, and the x264 encode being cancelled is the same. Now 1.8 s locally.
