@@ -313,6 +313,7 @@
 		608E4DBE31883090A73B21C2 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 8A82DC74FE23D47611AC0059 /* Localizable.xcstrings */; };
 		6096C2455AC86545080FBE5D /* SearchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA44BDAADC9E0F3FE313969A /* SearchModel.swift */; };
 		60E02409F90AE62E0A38270B /* picture-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = 79346C140CC8552FC36E366E /* picture-1.ts */; };
+		61E0B572500C1B0648DA8FA3 /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		629161B598CC49A24777052E /* ShellLaunch.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAFE65C7DEC2A1DEB40185CC /* ShellLaunch.swift */; };
 		62D52725DC60B7B815EC56D9 /* Rail.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD804F7D84EC3CE2E4A7B236 /* Rail.swift */; };
 		63518C39A79E81ADB49BA7EA /* me-video-v5.json in Resources */ = {isa = PBXBuildFile; fileRef = 747990C071BEB9C6D01E2A25 /* me-video-v5.json */; };
@@ -399,6 +400,7 @@
 		789BE979879A2F69B1BCB700 /* audio-ar-1.ts in Resources */ = {isa = PBXBuildFile; fileRef = E4400B51B1FAB5DA7AC9892B /* audio-ar-1.ts */; };
 		7914FB89F725FE69A9817CD5 /* search-empty.json in Resources */ = {isa = PBXBuildFile; fileRef = 2A6DE6622B543757A04F782E /* search-empty.json */; };
 		79B0325255669EDB50885F28 /* live-segment.ts in Resources */ = {isa = PBXBuildFile; fileRef = B95F80C00932C42124C51265 /* live-segment.ts */; };
+		7A1AD6E20EE5476361A804CC /* TextSizeHook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1DB90E6E0FAD93C601064 /* TextSizeHook.swift */; };
 		7A24DEE522BBBF10BCFDA8CA /* video-v1.json in Resources */ = {isa = PBXBuildFile; fileRef = 2F88FD71288707C5F1A65C14 /* video-v1.json */; };
 		7A5D9D2455EEBED341087571 /* channel-guide-ch-1.json in Resources */ = {isa = PBXBuildFile; fileRef = D5DCAFCE2DF6240A07CA0D34 /* channel-guide-ch-1.json */; };
 		7AB37C6CBEF0ADE12C5CF65C /* WatchScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = BED2153F678D93EFC83A9A24 /* WatchScreen.swift */; };
@@ -2738,6 +2740,7 @@
 				EACCF1F78F38E2E9BFFC28E2 /* PlayerWatchUITests.swift in Sources */,
 				2DEB4EBACCB56D2381A2A5A1 /* ShellLaunch.swift in Sources */,
 				D52644845129E69A4FA0D975 /* StatusUITests.swift in Sources */,
+				7A1AD6E20EE5476361A804CC /* TextSizeHook.swift in Sources */,
 				31042222174FDCF1130039E7 /* TypingInFields.swift in Sources */,
 				B69C5EA8F02886AB7FB9E83B /* WatchLogic.swift in Sources */,
 			);
@@ -3007,6 +3010,7 @@
 				70E5F92617D67DAD04A3DD8E /* PlayerWatchUITests.swift in Sources */,
 				6B8E948629E2C20F0BBF2844 /* ShellLaunch.swift in Sources */,
 				3669EE88B28CD4A8E802754B /* StatusUITests.swift in Sources */,
+				61E0B572500C1B0648DA8FA3 /* TextSizeHook.swift in Sources */,
 				E3B09B98EAA2B2A3ECAC5928 /* TypingInFields.swift in Sources */,
 				D8A6501CAD8C57C19D510C01 /* WatchLogic.swift in Sources */,
 			);

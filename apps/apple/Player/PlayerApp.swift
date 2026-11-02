@@ -17,7 +17,8 @@ struct PlayerApp: App {
         // a crash at an earlier launch is logged and kept on this device
         CrashReports.shared.start()
         #if DEBUG && os(iOS)
-        // the UI tests' Dynamic Type sizes, changed while the app runs (`TextSizeHook`)
+        // the UI tests' Dynamic Type sizes, changed while the app runs (`TextSizeHook`; only
+        // when launched with its flag)
         TextSizeHook.start()
         #endif
         #if os(macOS)

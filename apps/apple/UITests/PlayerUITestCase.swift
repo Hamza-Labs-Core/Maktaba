@@ -60,6 +60,8 @@ class PlayerUITestCase: XCTestCase {
         if let section { args += ["-maktaba-section", section] }
         if let open { args += ["-maktaba-open", open] }
         if controlsStay { args += ["-player.controls_hide_after", "600"] }
+        // the app takes the text sizes `setTextSize` asks for (`TextSizeHook`)
+        args.append(TextSizeHook.flag)
         app.launchArguments = args + extra
         app.launch()
         if fresh {
@@ -184,7 +186,7 @@ class PlayerUITestCase: XCTestCase {
     func setTextSize(_ size: TextSize, file: StaticString = #filePath, line: UInt = #line) {
         let answer = TextSizeAnswers.shared.expect(size.rawValue)
         CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
-                                             CFNotificationName(("com.hamzalabs.maktaba.uitest.text-size." + size.rawValue) as CFString),
+                                             CFNotificationName((TextSizeHook.ask + size.rawValue) as CFString),
                                              nil, nil, true)
         let end = Date().addingTimeInterval(15)
         while !TextSizeAnswers.shared.received(answer), Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }
@@ -371,12 +373,12 @@ class PlayerUITestCase: XCTestCase {
 /// size's answers counted as they arrive, on the test's main run loop, which the wait turns.
 final class TextSizeAnswers: @unchecked Sendable {
     static let shared = TextSizeAnswers()
-    private static let prefix = "com.hamzalabs.maktaba.uitest.text-size-applied."
+    private static let prefix = TextSizeHook.applied
     private let lock = NSLock()
     private var counts: [String: Int] = [:]
 
     private init() {
-        for size in ["XS", "default", "AX3"] {
+        for size in TextSizeHook.sizes {
             CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, name, _, _ in
                 guard let name = name?.rawValue as String?, name.hasPrefix(TextSizeAnswers.prefix) else { return }
                 TextSizeAnswers.shared.count(String(name.dropFirst(TextSizeAnswers.prefix.count)))
