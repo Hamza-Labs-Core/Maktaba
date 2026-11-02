@@ -55,6 +55,8 @@ final class MockHome: @unchecked Sendable {
     private var approved = false
     private var log: [Request] = []
     private var stubs: [String: Answer] = [:]
+    /// `METHOD /path`'s answers by its `page` query (`stubPages`).
+    private var pages: [String: [String]] = [:]
     /// Latency added to `METHOD /path` after its answer is chosen (`delay`).
     private var delays: [String: TimeInterval] = [:]
     /// `METHOD /path`s whose answers wait for `release` (`hold`).
@@ -133,6 +135,12 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), contentType: type, delay: delay, headers: headers) }
     }
 
+    /// From now on, `method path` answers `bodies[n]` (JSON) to `page=n` (no `page`: 0), and
+    /// `{"items":[]}` past the last: a list the app reads page by page. Wins over the fixtures.
+    func stubPages(_ method: String, _ path: String, _ bodies: [String]) {
+        lock.withLock { pages["\(method) \(path)"] = bodies }
+    }
+
     /// From now on, `method path` (any query) answers as it would anyway, but after `delay`
     /// seconds. Only the timing is kept here: the answer is still chosen per request, so a
     /// query (`cursor=c2`) or a stub still decides what comes back.
@@ -158,7 +166,7 @@ final class MockHome: @unchecked Sendable {
 
     /// Forgets every stub and delay, and lets held answers go.
     func reset() {
-        lock.withLock { stubs = [:]; delays = [:] }
+        lock.withLock { stubs = [:]; pages = [:]; delays = [:] }
         release()
     }
 
@@ -235,6 +243,10 @@ final class MockHome: @unchecked Sendable {
     /// image, the fixture for this path and query, or 404.
     private func resolve(_ r: Request, approved ok: Bool) -> Answer {
         if let stubbed = lock.withLock({ stubs["\(r.method) \(r.path)"] }) { return stubbed }
+        if let bodies = lock.withLock({ pages["\(r.method) \(r.path)"] }) {
+            let n = r.value("page").flatMap(Int.init) ?? 0
+            return Answer(status: 200, body: Data((bodies.indices.contains(n) ? bodies[n] : #"{"items":[]}"#).utf8))
+        }
         if let fixed = remote(r.method, r.path, approved: ok) {
             return Answer(status: fixed.0, body: Data(fixed.1.utf8))
         }

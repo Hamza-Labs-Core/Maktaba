@@ -21,12 +21,20 @@ public final class TokenStore: @unchecked Sendable {
 
     public convenience init(app: String, home: URL) {
         let service = "\(app).tokens"
+        let (primary, legacy) = Self.stores(service)
+        self.init(service: service, home: home, primary: primary, legacy: legacy)
+    }
+
+    /// Where this build keeps the tokens: the Keychain; in a Debug build the UI tests launch
+    /// with `-maktaba-secrets-in-file`, a file instead (`UITestSecrets`).
+    private static func stores(_ service: String) -> (SecretStore, SecretStore?) {
+        #if DEBUG
+        if UITestSecrets.isOn { return (UITestSecrets(service: service), nil) }
+        #endif
         #if os(macOS)
-        self.init(service: service, home: home,
-                  primary: KeychainSecrets(service: service, dataProtection: true),
-                  legacy: KeychainSecrets(service: service, dataProtection: false))
+        return (KeychainSecrets(service: service, dataProtection: true), KeychainSecrets(service: service, dataProtection: false))
         #else
-        self.init(service: service, home: home, primary: KeychainSecrets(service: service, dataProtection: false), legacy: nil)
+        return (KeychainSecrets(service: service, dataProtection: false), nil)
         #endif
     }
 
@@ -155,4 +163,76 @@ struct KeychainSecrets: SecretStore {
         SecItemDelete(key(account) as CFDictionary)
     }
 }
+
+#if DEBUG
+/// The UI tests' stand-in for the Keychain (a Debug build launched with
+/// `-maktaba-secrets-in-file`): one JSON file in the app's Application Support folder, kept
+/// across launches as the Keychain keeps a signed build's tokens. CI builds the app unsigned
+/// (`CODE_SIGNING_ALLOWED=NO`), and an unsigned app may not use the Keychain
+/// (`errSecMissingEntitlement`): it was signed out at every launch, so the restore of a
+/// saved sign-in could not be tested. `-maktaba-session-reset` deletes the file (`reset`).
+/// The Keychain itself is tested on its own (`KeychainSecrets`: `MacKeychain`).
+struct UITestSecrets: SecretStore {
+    static let argument = "-maktaba-secrets-in-file"
+    static var isOn: Bool { CommandLine.arguments.contains(argument) }
+
+    let service: String
+    /// The file (nil: Application Support's `ui-test-secrets.json`); a unit test names its own.
+    var file: URL?
+
+    private static let lock = NSLock()
+
+    static var defaultFile: URL? {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("ui-test-secrets.json")
+    }
+
+    /// Forgets every saved entry (a first run).
+    static func reset(_ file: URL? = defaultFile) {
+        guard let file else { return }
+        lock.withLock { try? FileManager.default.removeItem(at: file) }
+    }
+
+    private var url: URL? { file ?? Self.defaultFile }
+    private func entry(_ account: String) -> String { "\(service)|\(account)" }
+
+    private func load() -> [String: String] {
+        guard let url, let d = try? Data(contentsOf: url) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: d)) ?? [:]
+    }
+
+    private func save(_ all: [String: String]) -> OSStatus {
+        guard let url, let d = try? JSONEncoder().encode(all) else { return errSecIO }
+        do {
+            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try d.write(to: url, options: .atomic)
+            return errSecSuccess
+        } catch {
+            return errSecIO
+        }
+    }
+
+    func read(_ account: String) -> (value: String?, status: OSStatus) {
+        Self.lock.withLock {
+            load()[entry(account)].map { ($0, errSecSuccess) } ?? (nil, errSecItemNotFound)
+        }
+    }
+
+    func write(_ account: String, _ value: String) -> OSStatus {
+        Self.lock.withLock {
+            var all = load()
+            all[entry(account)] = value
+            return save(all)
+        }
+    }
+
+    func delete(_ account: String) {
+        Self.lock.withLock {
+            var all = load()
+            guard all.removeValue(forKey: entry(account)) != nil else { return }
+            _ = save(all)
+        }
+    }
+}
+#endif
 

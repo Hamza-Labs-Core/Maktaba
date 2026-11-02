@@ -19,10 +19,9 @@
 #
 # A push to main or release/* that changes only the trail starts no run at all (the push
 # trigger's paths-ignore; it skips only when every changed file is the trail), so a trail
-# commit never joins the `ci-main` group and never cancels the run of the code commit before
-# it, the one waiting to be tagged. Trail-only commits are never tagged: the tag goes on the
-# newest code commit (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does
-# the same.
+# commit never joins the `ci-main` group and never replaces the pending run of the code
+# commit before it. Trail-only commits are never tagged: the tag goes on a code commit
+# (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does the same.
 #
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
@@ -38,7 +37,7 @@ on:
     branches: [main, 'release/**']
   push:
     branches: [main, 'release/**']
-    # a trail-only commit starts no run, so it never cancels the code commit's (see above)
+    # a trail-only commit starts no run, so it never replaces the code commit's (see above)
     paths-ignore: ['docs/claude-trail.md']
 
 permissions:
@@ -48,15 +47,17 @@ permissions:
 
 concurrency:
   # A pull request: one group per PR, a new push cancels its older run.
-  # A push to main: one group for all of main, a newer commit cancels the older commit's run
-  # (queued or running). Only the newest main commit is tagged (the tag guard needs a green
-  # run on the tagged commit itself, not on its ancestors), so an older main run only holds
-  # the scarce macOS runners back from it. A re-run (run_attempt > 1) of a main commit gets
-  # its commit's own group, so re-running an older commit never cancels main's newest run.
+  # A push to main: one group for all of main, NOT cancel-in-progress. The running main run
+  # always finishes; GitHub keeps at most one pending run in the group, a newer commit's run
+  # replacing (cancelling) the older pending one. So main always completes a run, and the
+  # next one is the newest commit's. (With cancel-in-progress a merge every few minutes
+  # cancelled every hour-long run before it finished, and nothing could be tagged.) The tag
+  # goes on the newest main commit whose own run finished green. A re-run (run_attempt > 1)
+  # of a main commit gets its commit's own group, so it never displaces main's pending run.
   # A release/** push: one group per commit, never cancelled (as before).
   # tools/ci/tests/test_ci_paths.py checks these groups.
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') && 'main' || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:

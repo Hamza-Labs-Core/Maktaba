@@ -203,3 +203,33 @@ func TestSearch_PostgresPerf(t *testing.T) {
 		t.Logf("EXPLAIN %s:\n%s", term, strings.Join(plan, "\n"))
 	}
 }
+
+// A word in more segments than ftsCandidates ranks only that many: the search
+// still answers, the counts stop at the cap, and the library filter applies
+// before the cap (another library's matches don't use it up).
+func TestSearch_PostgresCapsCommonWords(t *testing.T) {
+	db := pgSearchDB(t)
+	defer func(n int) { ftsCandidates = n }(ftsCandidates)
+	ftsCandidates = 40
+	va, vb, vc := pgUUID(1), pgUUID(2), pgUUID(3)
+	tr := pgVideo(t, db, vc, libB, "مكتبة أخرى")
+	pgTranscript(t, db, pgUUID(13), vc, tr, true, repeat("الله", 100)...)
+	tr = pgVideo(t, db, va, libA, "درس")
+	pgTranscript(t, db, pgUUID(11), va, tr, true, repeat("الله أكبر", 60)...)
+	tr = pgVideo(t, db, vb, libA, "درس آخر")
+	pgTranscript(t, db, pgUUID(12), vb, tr, true, repeat("الله", 60)...)
+
+	h := router(&Handler{DB: db, NowFunc: time.Now})
+	limited := &principal.Principal{UserID: userA, Libraries: []string{libA}}
+	resp := decode[Response](t, call(t, h, limited, http.MethodPost, "/api/search", `{"q":"الله","mode":"fts","view":"list"}`), 200)
+	sum := 0
+	for _, v := range resp.TranscriptVideos {
+		if v.VideoID == vc {
+			t.Fatalf("another library's video: %+v", v)
+		}
+		sum += v.Matches
+	}
+	if len(resp.TranscriptVideos) == 0 || sum != 40 {
+		t.Fatalf("want matches capped at 40 in library A, got %d over %+v", sum, resp.TranscriptVideos)
+	}
+}

@@ -215,6 +215,7 @@ public final class AppSession {
         if CommandLine.arguments.contains("-maktaba-session-reset") {
             defaults.removeObject(forKey: "homes")
             defaults.removeObject(forKey: "home")
+            UITestSecrets.reset()
         }
         #endif
         homes = Self.decodeHomes(defaults.data(forKey: "homes"), defaults: defaults)
@@ -353,6 +354,7 @@ public final class AppSession {
     public func connect(to candidates: [URL], name: String? = nil, homeID: String? = nil) async -> ReachFailure? {
         attempt = 1
         lastConnect = (candidates, name, homeID, nil)
+        Log.session.info("connect: \(candidates.count, privacy: .public) address(es) to try")
         return await reachAndUse(candidates, name: name, homeID: homeID, saved: nil)
     }
 

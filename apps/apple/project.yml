@@ -198,7 +198,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
         TARGETED_DEVICE_FAMILY: "1"
-        INFOPLIST_KEY_CFBundleDisplayName: Remote
+        # App Store Connect's name: a bare "Remote" is another app's (ITMS-90129). Every app's
+        # name starts with Maktaba (tools/ci/tests/test_apple_app_names.py); Arabic in
+        # Remote/InfoPlist.xcstrings
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
     info:
       path: Remote/Info-iPhone.plist
   Maktaba Remote iPad:
@@ -212,7 +215,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
         TARGETED_DEVICE_FAMILY: "2"
-        INFOPLIST_KEY_CFBundleDisplayName: Remote
+        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
     info:
       path: Remote/Info-iPad.plist
 
