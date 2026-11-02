@@ -222,15 +222,20 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// The texts of the page that do not grow at each step (see `assertTextScales`).
+    ///
+    /// Each size is read after the app took it, the default too (last, which leaves the page
+    /// there): the page as launched is not read. A view's accessibility frame as first laid
+    /// out can differ from the same view's after an update: a poster card on the gallery's
+    /// shimmer page read 94 pt (its poster) as launched and 107 pt at XS once updated (its
+    /// poster and title), which is no measure of its text.
     func textsThatDoNotScale() -> [String] {
-        guard let normal = settledPage() else { return ["the page could not be read"] }
         setTextSize(.smallest)
         let small = settledPage()
         setTextSize(.ax3)
         let large = settledPage()
         setTextSize(.standard)
-        _ = settledPage()
-        guard let small, let large else { return ["the page could not be read at the smallest size or AX3"] }
+        let normal = settledPage()
+        guard let small, let normal, let large else { return ["the page could not be read at the smallest size, the default or AX3"] }
         let (s, n, l) = (small.heights, normal.heights, large.heights)
         var fixed: [String] = []
         for key in n.keys.sorted() {
