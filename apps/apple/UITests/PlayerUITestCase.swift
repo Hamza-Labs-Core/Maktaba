@@ -183,13 +183,22 @@ class PlayerUITestCase: XCTestCase {
     /// showed it: one such issue with "Settings on this device" under the tab bar, three with
     /// "Account" and its rows under the top once scrolled to the end. So an issue without an
     /// element is excused only while some text of the page is partly under a bar
-    /// (`textUnderABar`); with nothing there it fails. An element in full view always maps.
+    /// (`textUnderABar`); with nothing there it fails. An element in full view maps, unless its
+    /// words repeat (below).
     private static let barEdge: CGFloat = 44
 
     func contrastOutOfView(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
         guard issue.auditType == .contrast else { return false }
-        guard let f = issue.element?.frame else { return textUnderABar() }
-        if !app.windows.firstMatch.frame.contains(f) { return true }
+        guard let e = issue.element else { return textUnderABar() }
+        let window = app.windows.firstMatch.frame
+        if !window.contains(e.frame) { return true }
+        // The issue names its element by label, and a text with the same words elsewhere maps
+        // to the first one: on an iPad's Arabic library page the audit failed "٥٥:٠٠" in full
+        // view, as drawn 8.9:1, while the copy it measured was a card scrolled off a row's
+        // edge (x -117). So a same-worded text out of view is the one the audit could not see.
+        let twins = app.staticTexts.matching(NSPredicate(format: "label == %@", e.label)).allElementsBoundByIndex
+        if twins.contains(where: { !$0.frame.isEmpty && !window.contains($0.frame) }) { return true }
+        let f = e.frame
         // the bar, and the soft edge iOS draws above it over the scrolling content
         let bar = app.tabBars.firstMatch
         return bar.exists && bar.frame.insetBy(dx: 0, dy: -Self.barEdge).intersects(f)
