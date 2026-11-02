@@ -147,12 +147,24 @@ jobs:
             cmd/maktaba-server/go.sum
             cmd/maktaba-launcher/go.sum
 
+      # The cached nfpm: the key release.yml's package-nfpm restores on a tag (from main's
+      # caches, which this job's run on main saves). Keep the version in step with it.
+      - name: nfpm from the cache
+        id: nfpm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/nfpm
+          key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
+
       # GOTOOLCHAIN=auto: nfpm needs a newer Go than the runner's, and setup-go sets
       # GOTOOLCHAIN=local; a setup-go that left the runner's Go first on PATH (its
       # download not installed) then failed this step. Go fetches what nfpm asks for.
+      # CGO_ENABLED=0: static, so the cached binary runs on any runner image.
       - name: Install nfpm
+        if: steps.nfpm-cache.outputs.cache-hit != 'true'
         env:
           GOTOOLCHAIN: auto
+          CGO_ENABLED: "0"
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
 
       - name: Build, package and install three versions
