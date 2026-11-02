@@ -4,6 +4,8 @@
      web says; a value the home sends with no words here is shown as sent. A string added here
      needs its Arabic too: TranslationsTest (core) and lint's MissingTranslation fail without it. -->
 <resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- the home-screen name: short, so the launcher shows it whole -->
+    <string name="app_name">Remote</string>
     <string name="w_updates_state_up_to_date">up to date</string>
     <string name="w_updates_state_behind">behind</string>
     <string name="w_updates_state_ahead_of_home">ahead of the home</string>

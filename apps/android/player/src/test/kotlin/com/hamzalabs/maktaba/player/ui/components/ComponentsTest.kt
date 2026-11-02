@@ -21,7 +21,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.isHeading
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -40,6 +40,7 @@ import com.hamzalabs.maktaba.core.api.VideoCard
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.ThemeMode
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
@@ -143,7 +144,7 @@ class ComponentsTest {
         )
         val card = VideoCard(id = "v1", title = "The Message", durationSec = 100.0, positionSec = 25.0, series = SeriesName("s1", "Films"))
         show(loader) { PosterCard(card, client, onClick = {}, width = 160.dp, modifier = Modifier.testTag("card")) }
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("picture-shown", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(10_000) { compose.onAllNodesWithTag("picture-shown", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
 
         val r = synchronized(asked) { asked.single() }
         assertEquals("/api/videos/v1/poster", r.url.encodedPath)

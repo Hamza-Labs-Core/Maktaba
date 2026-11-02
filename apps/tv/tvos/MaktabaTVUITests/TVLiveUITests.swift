@@ -203,9 +203,10 @@ final class TVLiveUITests: XCTestCase {
 
     private func type(_ text: String, into field: XCUIElement) {
         XCTAssertTrue(field.waitForExistence(timeout: 20))
-        moveFocus(to: field, with: .down)
-        remote.press(.select)
-        app.typeText(text)
+        field.typeExactly(text, in: app) {
+            self.moveFocus(to: field, with: .down)
+            self.remote.press(.select)
+        }
         let done = app.buttons.matching(NSPredicate(format: "label IN[c] {'next', 'done', 'go', 'search', 'التالي', 'تم', 'انتقال', 'بحث'}")).firstMatch
         if done.waitForExistence(timeout: 5) {
             moveFocus(to: done, with: .down)

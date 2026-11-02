@@ -187,11 +187,16 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             for page in pages {
                 let name = "\(language) \(page.open ?? "root")"
-                launchSignedIn(language, section: "libraries", open: page.open)
-                XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
-                // the posters loaded: no shimmer moving under the contrast check
-                waitFor(timeout: 2) { false }
+                let open = { (size: [String]) in
+                    self.launchSignedIn(language, section: "libraries", open: page.open, extra: size)
+                    XCTAssertTrue(self.element(page.ready).waitForExistence(timeout: 20), name)
+                    // the posters loaded: no shimmer moving under the contrast check
+                    self.waitFor(timeout: 2) { false }
+                    self.loadEveryPage()
+                }
+                open([])
                 audit(name)
+                assertTextScales(name, open: open)
                 app.terminate()
             }
         }
@@ -232,33 +237,54 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         signIn(timeout: 30)
     }
 
+    /// A grid loads its next page when its last card shows, and the audit's smaller text sizes
+    /// can show it: a page arriving mid-audit moves every text it is measuring, which it calls
+    /// "partially unsupported" all at once (CI: iPad ar root, `GET /api/videos` during the
+    /// audit). So the grid is scrolled to its end first, every page loaded, and back to its top:
+    /// nothing is left for the audit to bring in.
+    private func loadEveryPage() {
+        let grid = element("screen.library")
+        let lastPage = { self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos" && $0.value("cursor") == "c2" } }
+        guard grid.exists, home.requests.contains(where: { $0.method == "GET" && $0.path == "/api/videos" }) else { return }
+        var swipes = 0
+        while !lastPage(), swipes < 10 {
+            grid.swipeUp()
+            swipes += 1
+            waitFor(timeout: 1) { lastPage() }
+        }
+        XCTAssertTrue(waitFor(timeout: 5) { lastPage() }, "the grid's last page loaded")
+        for _ in 0 ..< swipes + 2 { grid.swipeDown() }
+    }
+
+    /// The page's audit, once the page has stopped drawing (`accessibilityAudit` waits for it):
+    /// every issue on it, and what the app asked the home meanwhile.
     private func audit(_ page: String) {
-        // Dynamic Type exemption, for the episode rows and a library's filter row only: the
-        // audit grows the text, and what sits low on the page then moves below the screen,
-        // which it reports as "partially unsupported" (on iPhone the lowest episode row fails,
-        // a row higher up passes, and scrolled up the next one passes; on iPad the filters at
-        // the page's foot fail the same way). Both use scaled fonts with no fixed height, and
-        // testEpisodesAtAX3 checks them at AX3 directly.
-        let lowOnThePage = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "identifier BEGINSWITH 'episode.v' OR identifier == 'library.filters'"))
-            .allElementsBoundByIndex.map(\.frame)
+        let (found, during) = auditOnce(page)
+        if found.isEmpty { return }
+        let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
+        shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
+        XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
+    }
+
+    /// One audit of the page: every issue it found, and what the app asked the home meanwhile.
+    private func auditOnce(_ page: String) -> (found: [String], during: [String]) {
         // every issue of the page in one failure (the audit itself stops at the first)
         var found: [String] = []
+        let asked = home.requests.count
         do {
-            try app.performAccessibilityAudit { issue in
+            try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target (as 48.14's audit)
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // a card half off the screen's edge (a row scrolls sideways): the audit samples
                 // pixels beyond it; the cards fully on screen are still checked (as 48.14's audit)
                 if self.contrastOutOfView(issue) { return true }
-                if issue.auditType == .dynamicType, let f = issue.element?.frame, lowOnThePage.contains(where: { $0.contains(f) }) { return true }
-                found.append("\(issue.compactDescription) [\(issue.element?.identifier ?? "")|\(issue.element?.label ?? "")]")
+                found.append(self.described(issue))
                 return true
             }
         } catch {
             found.append("\(error)")
         }
-        XCTAssertTrue(found.isEmpty, "\(page): " + found.joined(separator: "; "))
+        return (found, home.requests.dropFirst(asked).map { "\($0.method) \($0.path)" })
     }
 
     // MARK: helpers

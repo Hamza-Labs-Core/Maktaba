@@ -266,16 +266,19 @@ private struct MoreRow: View {
     }
 }
 
-/// A result's poster, the brand's colour with the title when it has none.
+/// A result's poster, the brand's colour with the title when it has none: 16:9 at a width that
+/// follows the text size. Both sides are set: a frame of the width alone let a loaded poster
+/// (`scaledToFill`) take its own picture's height, 214 pt on an iPad at every text size, so the
+/// row was the picture's height and not its texts'.
 private struct Thumb: View {
     let url: URL
     let title: String
     @ScaledMetric(relativeTo: .body) private var width: CGFloat = 112
 
     var body: some View {
+        let w = min(width, 168)
         PosterArt(url: url, title: title)
-            .frame(width: min(width, 168))
-            .aspectRatio(16 / 9, contentMode: .fit)
+            .frame(width: w, height: w * 9 / 16)
             .accessibilityHidden(true)
     }
 }

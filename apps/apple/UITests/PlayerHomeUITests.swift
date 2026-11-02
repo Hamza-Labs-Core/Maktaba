@@ -83,9 +83,12 @@ final class PlayerHomeUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
         XCTAssertTrue(app.staticTexts["السيرة النبوية، الدرس ١١"].waitForExistence(timeout: 10), "v2's page")
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        let back = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isHittable == true"), object: card)
+        XCTAssertEqual(XCTWaiter.wait(for: [back], timeout: 5), .completed, "v2's card, back on Home")
 
-        card.press(forDuration: 1.2)
+        // held long enough for a loaded runner: at 1.2 s the menu had not opened when the touch
+        // lifted, and the lift was a tap that opened v2's page again (CI, iPad)
+        card.press(forDuration: 2.5)
         let resume = app.buttons["home.menu.resume"].firstMatch
         XCTAssertTrue(resume.waitForExistence(timeout: 5), "Resume in the context menu")
         resume.tap()
@@ -162,7 +165,7 @@ final class PlayerHomeUITests: PlayerUITestCase {
         for language in ["en", "ar"] {
             openHome(language)
             let window = app.windows.firstMatch.frame
-            try app.performAccessibilityAudit { issue in
+            try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // a rail's last card half off the screen's edge: the audit samples pixels

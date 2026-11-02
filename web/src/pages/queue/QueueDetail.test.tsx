@@ -110,6 +110,42 @@ describe("QueueDetail", () => {
     expect(post).toHaveBeenCalledWith("/api/queues/link/resume");
   });
 
+  it("says who paused the queue and when", async () => {
+    const snap = {
+      ...snapshotFixture,
+      stages: snapshotFixture.stages.map((s) =>
+        s.stage === "link"
+          ? {
+              ...s,
+              paused: true,
+              paused_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
+              paused_by: "user:11111111-1111-1111-1111-111111111111",
+              paused_by_name: "mahmoud",
+            }
+          : s
+      ),
+    };
+    setup("link", snap);
+    const banner = await screen.findByTestId("queue-paused-banner");
+    const text = (banner.textContent ?? "").replace(/[⁨⁩]/g, "");
+    expect(text).toContain("Paused by mahmoud");
+    expect(text).toContain("ago");
+    expect(text).toContain("Nothing in this queue starts until you resume it.");
+  });
+
+  it("says a queue paused with no owner on record was paused by no one", async () => {
+    const snap = {
+      ...snapshotFixture,
+      stages: snapshotFixture.stages.map((s) =>
+        s.stage === "link" ? { ...s, paused: true, paused_at: null, paused_by: null } : s
+      ),
+    };
+    setup("link", snap);
+    expect((await screen.findByTestId("queue-paused-banner")).textContent).toBe(
+      "Paused by no one on record. Nothing in this queue starts until you resume it."
+    );
+  });
+
   it("steps the shared pool size and respects the bounds", async () => {
     setup("fingerprint");
     await userEvent.click(await screen.findByRole("button", { name: "More workers" }));
