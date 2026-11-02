@@ -237,6 +237,11 @@ final class PlayerProfileUITests: PlayerUITestCase {
     /// The audit, but for a row just above the tab bar: as the audit grows the text it slides
     /// under the bar, which reads as "partially unsupported" (the same row scrolled up passes).
     private func audit() throws {
+        let found = try auditOnce()
+        XCTAssertTrue(found.isEmpty, found.joined(separator: "; "))
+    }
+
+    private func auditOnce() throws -> [String] {
         let barTop = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
         // every issue of the screen in one failure, with the element it is on (the audit
         // itself stops at the first and names only its class)
@@ -249,7 +254,7 @@ final class PlayerProfileUITests: PlayerUITestCase {
             found.append(self.described(issue))
             return true
         }
-        XCTAssertTrue(found.isEmpty, found.joined(separator: "; "))
+        return found
     }
 
     // MARK: helpers

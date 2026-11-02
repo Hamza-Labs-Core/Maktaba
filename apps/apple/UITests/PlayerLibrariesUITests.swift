@@ -191,6 +191,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
                 XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
                 // the posters loaded: no shimmer moving under the contrast check
                 waitFor(timeout: 2) { false }
+                loadEveryPage()
                 audit(name)
                 app.terminate()
             }
@@ -232,29 +233,33 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         signIn(timeout: 30)
     }
 
-    /// The page's audit. The screen redrawing while the audit measures (a grid's next page
-    /// arriving, its last card shown by the audit's smaller text sizes; or a loaded CI runner
-    /// drawing an iPad's two columns late at one of the sizes) leaves every text on it measured
-    /// at a stale size, and the audit calls them all "partially unsupported", in both columns
-    /// of an iPad at once (seen on CI, with and without `GET /api/videos` during the audit; an
-    /// attempt then took 56 s, against 20 s for a clean one). Then the audit runs again on the
-    /// page as it now is, up to three runs, and one whole run must be clean: a text that
-    /// really does not scale fails every run.
-    private func audit(_ page: String) {
-        let runs = 3
-        for attempt in 1 ... runs {
-            let (found, during) = auditOnce(page)
-            if found.isEmpty { return }
-            let redrawn = !during.isEmpty || found.allSatisfy { $0.hasPrefix("Dynamic Type font sizes are partially unsupported") }
-            if attempt < runs, redrawn {
-                waitFor(timeout: 3) { false } // the page settles (a new page's posters)
-                continue
-            }
-            let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
-            shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
-            XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
-            return
+    /// A grid loads its next page when its last card shows, and the audit's smaller text sizes
+    /// can show it: a page arriving mid-audit moves every text it is measuring, which it calls
+    /// "partially unsupported" all at once (CI: iPad ar root, `GET /api/videos` during the
+    /// audit). So the grid is scrolled to its end first, every page loaded, and back to its top:
+    /// nothing is left for the audit to bring in.
+    private func loadEveryPage() {
+        let grid = element("screen.library")
+        let lastPage = { self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos" && $0.value("cursor") == "c2" } }
+        guard grid.exists, home.requests.contains(where: { $0.method == "GET" && $0.path == "/api/videos" }) else { return }
+        var swipes = 0
+        while !lastPage(), swipes < 10 {
+            grid.swipeUp()
+            swipes += 1
+            waitFor(timeout: 1) { lastPage() }
         }
+        XCTAssertTrue(waitFor(timeout: 5) { lastPage() }, "the grid's last page loaded")
+        for _ in 0 ..< swipes + 2 { grid.swipeDown() }
+    }
+
+    /// The page's audit, once the page has stopped drawing (`accessibilityAudit` waits for it):
+    /// every issue on it, and what the app asked the home meanwhile.
+    private func audit(_ page: String) {
+        let (found, during) = auditOnce(page)
+        if found.isEmpty { return }
+        let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
+        shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
+        XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
     }
 
     /// One audit of the page: every issue it found, and what the app asked the home meanwhile.

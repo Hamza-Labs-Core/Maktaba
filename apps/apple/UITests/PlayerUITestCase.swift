@@ -145,6 +145,11 @@ class PlayerUITestCase: XCTestCase {
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
         for part in [types.subtracting(.dynamicType), types.intersection(.dynamicType)] where !part.isEmpty {
             for attempt in 1 ... 3 {
+                // the page as it is before the audit, for the handler to read: a query of the
+                // app from inside the handler, while the audit holds it, stalled an iPad's
+                // audit for 150 s on CI and left the app answering no query after it
+                shown = settledPage()
+                defer { shown = nil }
                 do {
                     try app.performAccessibilityAudit(for: part, handler)
                     break
@@ -189,38 +194,83 @@ class PlayerUITestCase: XCTestCase {
     /// element is excused only while some text of the page is partly under a bar
     /// (`textUnderABar`); with nothing there it fails. An element in full view maps, unless its
     /// words repeat (below).
-    private static let barEdge: CGFloat = 44
+    nonisolated fileprivate static let barEdge: CGFloat = 44
 
     func contrastOutOfView(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
         guard issue.auditType == .contrast else { return false }
-        guard let e = issue.element else { return textUnderABar() }
-        let window = app.windows.firstMatch.frame
-        if !window.contains(e.frame) { return true }
+        let page = shown ?? (try? Shown(app.snapshot())) ?? Shown()
+        guard let e = issue.element else { return page.textUnderABar }
+        let f = e.frame
+        if !page.window.contains(f) { return true }
         // The issue names its element by label, and a text with the same words elsewhere maps
         // to the first one: on an iPad's Arabic library page the audit failed "٥٥:٠٠" in full
         // view, as drawn 8.9:1, while the copy it measured was a card scrolled off a row's
         // edge (x -117). So a same-worded text out of view is the one the audit could not see.
-        let twins = app.staticTexts.matching(NSPredicate(format: "label == %@", e.label)).allElementsBoundByIndex
-        if twins.contains(where: { !$0.frame.isEmpty && !window.contains($0.frame) }) { return true }
-        let f = e.frame
+        let label = e.label
+        if page.texts.contains(where: { $0.label == label && !$0.frame.isEmpty && !page.window.contains($0.frame) }) { return true }
         // the bar, and the soft edge iOS draws above it over the scrolling content
-        let bar = app.tabBars.firstMatch
-        return bar.exists && bar.frame.insetBy(dx: 0, dy: -Self.barEdge).intersects(f)
+        return page.tab.map { $0.insetBy(dx: 0, dy: -Self.barEdge).intersects(f) } ?? false
     }
 
-    /// Some text of the page (not a bar's own) lies partly under the tab bar or its soft edge,
-    /// or above the navigation bar's foot (under it and the status bar).
-    private func textUnderABar() -> Bool {
-        let window = app.windows.firstMatch.frame
-        let tab = app.tabBars.firstMatch, nav = app.navigationBars.firstMatch
-        var zones: [CGRect] = []
-        if tab.exists { zones.append(tab.frame.insetBy(dx: 0, dy: -Self.barEdge)) }
-        let top = nav.exists ? nav.frame.maxY : window.minY
-        zones.append(CGRect(x: window.minX, y: window.minY - window.height, width: window.width, height: top - window.minY + window.height))
-        let bars = [tab, nav].filter(\.exists).map(\.frame)
-        return app.staticTexts.allElementsBoundByIndex.contains { text in
-            let f = text.frame
-            return !f.isEmpty && !bars.contains { $0.contains(f) } && zones.contains { $0.intersects(f) }
+    /// The page once it has stopped changing: the same texts in the same places on two looks
+    /// running, half a second apart (at most 10 s). The audit measures each text at each size
+    /// against the page as it was drawn; a page still drawing as it starts (a grid's next page,
+    /// a List laying its rows out, an iPad's second column) leaves every text measured stale,
+    /// "partially unsupported" all at once (seen on CI on Libraries' and Profile's pages).
+    func settledPage(timeout: TimeInterval = 10) -> Shown? {
+        let end = Date().addingTimeInterval(timeout)
+        var last = try? Shown(app.snapshot())
+        while Date() < end {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+            let now = try? Shown(app.snapshot())
+            if let now, let last, now.sameDrawing(as: last) { return now }
+            last = now
+        }
+        return last
+    }
+
+    /// The page an audit runs on, read in one snapshot before it starts.
+    private var shown: Shown?
+
+    struct Shown {
+        var window = CGRect.null
+        var tab: CGRect?
+        var nav: CGRect?
+        var texts: [(label: String, frame: CGRect)] = []
+
+        init() {}
+
+        func sameDrawing(as other: Shown) -> Bool {
+            window == other.window && tab == other.tab && nav == other.nav && texts.count == other.texts.count
+                && zip(texts, other.texts).allSatisfy { $0.label == $1.label && $0.frame == $1.frame }
+        }
+
+        init(_ app: XCUIElementSnapshot) {
+            var stack = [app]
+            while let s = stack.popLast() {
+                switch s.elementType {
+                case .window where window.isNull: window = s.frame
+                case .tabBar where tab == nil: tab = s.frame
+                case .navigationBar where nav == nil: nav = s.frame
+                case .staticText: texts.append((s.label, s.frame))
+                default: break
+                }
+                stack.append(contentsOf: s.children.reversed())
+            }
+        }
+
+        /// Some text of the page (not a bar's own) lies partly under the tab bar or its soft
+        /// edge, or above the navigation bar's foot (under it and the status bar).
+        var textUnderABar: Bool {
+            var zones: [CGRect] = []
+            if let tab { zones.append(tab.insetBy(dx: 0, dy: -PlayerUITestCase.barEdge)) }
+            let top = nav?.maxY ?? window.minY
+            zones.append(CGRect(x: window.minX, y: window.minY - window.height, width: window.width,
+                                height: top - window.minY + window.height))
+            let bars = [tab, nav].compactMap { $0 }
+            return texts.contains { text in
+                !text.frame.isEmpty && !bars.contains { $0.contains(text.frame) } && zones.contains { $0.intersects(text.frame) }
+            }
         }
     }
 
