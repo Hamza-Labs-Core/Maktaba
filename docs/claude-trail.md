@@ -1146,3 +1146,9 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - play-bundles.yml on v0.3.51 stopped at "Gradle wrappers are Gradle's": apps/tv/android named Gradle 9.8.2 but its jar wasn't 9.8.2's (sha cb0da675…). The phone apps' jar matched.
 - Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
 - v0.3.51 stays without .aab files; the next tag carries them.
+
+## 2026-11-02 — TestLibraryTabsSQLite past the unit test budget: fsync during setup
+
+- CI run 41449508335 (PR #510) failed test-budget: browse TestLibraryTabsSQLite took 1.42 s, and 1.32 s when re-run alone. The 3x400 ms cap is 1.2 s.
+- Cause: the shared `testDB` setup (~45 autocommits, plus ~14 from `groupsEnv`). On a file DB in rollback-journal mode, each commit syncs the journal, the db file and the directory. That costs almost nothing on macOS and a lot on the Linux runner. Simulating it locally with `PRAGMA fullfsync`: setup 965 ms out of a 990 ms test. The five handler requests take ~25 ms, so the handler wasn't the problem.
+- Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
