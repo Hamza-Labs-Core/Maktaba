@@ -26,10 +26,17 @@ public enum Log {
     /// fails when it lacks either (tools/apple/check-app-log.py), so the kept log stays whole:
     /// info and debug too, not the errors alone.
     public static func launched(bundle: Bundle = .main) {
-        let version = bundle.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
-        let build = bundle.infoDictionary?["CFBundleVersion"] as? String ?? "-"
-        session.info("launched \(subsystem, privacy: .public) \(version, privacy: .public) (\(build, privacy: .public))")
-        session.debug("launch arguments: \(CommandLine.arguments.count - 1, privacy: .public)")
+        let lines = launchLines(subsystem: subsystem, info: bundle.infoDictionary ?? [:], arguments: CommandLine.arguments)
+        session.info("\(lines.info, privacy: .public)")
+        session.debug("\(lines.debug, privacy: .public)")
+    }
+
+    /// `launched`'s two lines: "launched <bundle id> <version> (<build>)" (info) and "launch
+    /// arguments: N" (debug, the arguments after the program's path). Nothing private.
+    static func launchLines(subsystem: String, info: [String: Any], arguments: [String]) -> (info: String, debug: String) {
+        let version = info["CFBundleShortVersionString"] as? String ?? "-"
+        let build = info["CFBundleVersion"] as? String ?? "-"
+        return ("launched \(subsystem) \(version) (\(build))", "launch arguments: \(max(arguments.count - 1, 0))")
     }
 
     /// A path as a route, every segment that may name something (an id, a code, a stage

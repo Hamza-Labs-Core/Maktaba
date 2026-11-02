@@ -60,8 +60,8 @@ def test_an_error_only_log_fails(tmp_path: Path) -> None:
 
 def test_the_app_writes_the_launch_lines() -> None:
     log = (ROOT / "apps/apple/MaktabaKit/Sources/MaktabaKit/Log.swift").read_text(encoding="utf-8")
-    assert 'session.info("launched \\(subsystem' in log
-    assert 'session.debug("launch arguments: ' in log
+    assert 'session.info("\\(lines.info' in log and '"launched \\(subsystem) ' in log
+    assert 'session.debug("\\(lines.debug' in log and '"launch arguments: ' in log
     for app in ("apps/apple/Player/PlayerApp.swift", "apps/apple/Remote/RemoteApp.swift"):
         assert "Log.launched()" in (ROOT / app).read_text(encoding="utf-8"), app
 
