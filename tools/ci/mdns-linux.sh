@@ -46,8 +46,16 @@ setup() {
   sudo resolvectl log-level debug
   local i
   i=$(iface)
-  sudo resolvectl mdns "$i" yes
-  echo "the default route's link: $i"
+  # a link systemd-networkd manages (the runner's) refuses it ("Link eth0 is managed"):
+  # networkd says it there
+  if ! sudo resolvectl mdns "$i" yes; then
+    sudo mkdir -p "/run/systemd/network/10-netplan-$i.network.d"
+    printf '[Network]\nMulticastDNS=yes\n' | sudo tee "/run/systemd/network/10-netplan-$i.network.d/50-maktaba-ci-mdns.conf" >/dev/null
+    sudo networkctl reload
+    sleep 2
+  fi
+  echo "the default route's link: $i ($(resolvectl mdns "$i"))"
+  resolvectl mdns "$i" | grep -q ': yes$' || { echo "::error::resolved does not answer mDNS on $i"; exit 1; }
   [ -n "${GITHUB_ENV:-}" ] && echo "MAKTABA_TEST_MDNS_IFACE=$i" >>"$GITHUB_ENV"
   systemctl --version | head -1
   resolvectl status
