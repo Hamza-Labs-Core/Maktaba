@@ -98,44 +98,19 @@ func TestBuildChecks_ParsesGRPCPeers(t *testing.T) {
 }
 
 // TestServeIntegration boots runServe in a goroutine and probes both
-// ports end-to-end. Tied to a fixed admin port to keep the test
-// readable; if the port is in use the test is skipped rather than
-// flaky-failing.
+// ports end-to-end, on ports the OS picked when runServe bound them.
 func TestServeIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration: skipping under -short")
 	}
 
-	publicAddr, adminAddr := freeAddr(t), freeAddr(t)
-
-	t.Setenv("MAKTABA_HTTP_ADDR", publicAddr)
-	t.Setenv("MAKTABA_ADMIN_ADDR", adminAddr)
 	t.Setenv("MAKTABA_HEALTH_WARM", "0s")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("MAKTABA_GRPC_PEERS", "")
 	t.Setenv("MAKTABA_HEALTH_PEERS", "")
 	t.Setenv("MAKTABA_ENV", "test")
 
-	done := make(chan error, 1)
-	go func() { done <- runServe() }()
-
-	// runServe is long-lived; we trigger shutdown by sending the
-	// process SIGTERM at the end of the test.
-	t.Cleanup(func() {
-		p, _ := os.FindProcess(os.Getpid())
-		_ = p.Signal(os.Interrupt)
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Log("runServe did not exit within 5 s after SIGINT")
-		}
-	})
-
-	// Poll until the listener is up — the goroutine may not have
-	// bound yet by the time we send the first request.
-	if err := waitForPort(adminAddr, 2*time.Second); err != nil {
-		t.Fatalf("admin port did not come up: %v", err)
-	}
+	publicAddr, adminAddr := startServe(t)
 
 	// /healthz on admin → 200.
 	if got := getStatus(t, "http://"+adminAddr+"/healthz"); got != 200 {
@@ -170,35 +145,48 @@ func noopLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// portFree returns true if `addr` is free to bind right now. Best-effort.
-// freeAddr is a loopback address nothing listens on now, its port picked by the OS:
-// fixed ports collide when two packages' integration tests run at once (go test runs
-// packages in parallel; api's and streaming's both took 18081/19101).
-func freeAddr(t *testing.T) string {
+// startServe boots runServe in a goroutine with its public and admin servers
+// on 127.0.0.1:0 and returns the addresses they bound. It returns once both
+// sockets are bound (onListening), so the first request to either connects:
+// no port is picked, freed and handed over (another process could take it in
+// between), and no port is polled for (the public one could still be unbound
+// when the admin one answers). Cleanup stops runServe with SIGINT.
+func startServe(t *testing.T) (publicAddr, adminAddr string) {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	addr := l.Addr().String()
-	_ = l.Close()
-	return addr
-}
+	t.Setenv("MAKTABA_HTTP_ADDR", "127.0.0.1:0")
+	t.Setenv("MAKTABA_ADMIN_ADDR", "127.0.0.1:0")
 
-func waitForPort(addr string, budget time.Duration) error {
-	deadline := time.Now().Add(budget)
-	for time.Now().Before(deadline) {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+"/healthz", nil)
-		resp, err := http.DefaultClient.Do(req)
-		cancel()
-		if err == nil {
-			_ = resp.Body.Close()
-			return nil
-		}
-		time.Sleep(25 * time.Millisecond)
+	type bound struct{ public, admin string }
+	ready := make(chan bound, 1)
+	onListening = func(public, admin net.Addr) { ready <- bound{public.String(), admin.String()} }
+	t.Cleanup(func() { onListening = nil })
+
+	done := make(chan error, 1)
+	go func() { done <- runServe() }()
+
+	select {
+	case b := <-ready:
+		// runServe installs its signal handler before it binds: this SIGINT
+		// stops runServe, never the test binary
+		t.Cleanup(func() {
+			p, _ := os.FindProcess(os.Getpid())
+			_ = p.Signal(os.Interrupt)
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("runServe after SIGINT: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("runServe did not exit within 5 s after SIGINT")
+			}
+		})
+		return b.public, b.admin
+	case err := <-done:
+		t.Fatalf("runServe returned before listening: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("runServe did not bind its listeners within 30 s")
 	}
-	return context.DeadlineExceeded
+	return "", ""
 }
 
 func getStatus(t *testing.T, url string) int {

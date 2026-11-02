@@ -43,11 +43,7 @@ func TestServeWithAuth_JWKSAndHeaders(t *testing.T) {
 		t.Skip("integration: skipping under -short")
 	}
 
-	publicAddr, adminAddr := freeAddr(t), freeAddr(t)
-
 	priv, pub := mustPEMPair(t)
-	t.Setenv("MAKTABA_HTTP_ADDR", publicAddr)
-	t.Setenv("MAKTABA_ADMIN_ADDR", adminAddr)
 	t.Setenv("MAKTABA_HEALTH_WARM", "0s")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("MAKTABA_GRPC_PEERS", "")
@@ -58,21 +54,7 @@ func TestServeWithAuth_JWKSAndHeaders(t *testing.T) {
 	t.Setenv("MAKTABA_HSTS", "1")
 	t.Setenv("MAKTABA_CORS_ALLOWED_ORIGINS", "https://app.maktaba.local")
 
-	done := make(chan error, 1)
-	go func() { done <- runServe() }()
-	t.Cleanup(func() {
-		p, _ := os.FindProcess(os.Getpid())
-		_ = p.Signal(os.Interrupt)
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Log("runServe did not exit within 5 s after SIGINT")
-		}
-	})
-
-	if err := waitForPort(adminAddr, 2*time.Second); err != nil {
-		t.Fatalf("admin port did not come up: %v", err)
-	}
+	publicAddr, _ := startServe(t)
 
 	// JWKS publication (Story 10.6 AC-3).
 	resp := mustGet(t, "http://"+publicAddr+"/api/.well-known/jwks.json")
