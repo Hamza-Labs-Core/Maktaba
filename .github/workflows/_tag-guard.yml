@@ -58,6 +58,10 @@ jobs:
       - name: The tag's place, main, CI
         id: guard
         env:
+          # release-order builds from the checkout alone (shared/go/releaseverify/version,
+          # standard library only): a module download can never fail a release's guard
+          GOPROXY: "off"
+          GOFLAGS: -mod=readonly
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           SHA: ${{ github.sha }}

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"strings"
 
-	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/version"
 )
 
 // versions are the valid tags of published, their v dropped, the tag itself left out.
@@ -21,7 +21,7 @@ func others(tag string, published []string) []string {
 	var out []string
 	for _, p := range published {
 		p = strings.TrimSpace(p)
-		if p == "" || p == tag || !rv.ValidTag(p) {
+		if p == "" || p == tag || !version.ValidTag(p) {
 			continue
 		}
 		out = append(out, p)
@@ -37,7 +37,7 @@ func ver(tag string) string { return strings.TrimPrefix(tag, "v") }
 // a version at or below the newest, is refused), unless allow names it: a deliberate
 // maintenance release, which reports maintenance (it never becomes the latest).
 func Guard(tag string, published []string, allow string) (maintenance bool, err error) {
-	if !rv.ValidTag(tag) {
+	if !version.ValidTag(tag) {
 		return false, fmt.Errorf("%q is not a release tag (vX.Y.Z or vX.Y.Z-pre)", tag)
 	}
 	for _, p := range published {
@@ -47,18 +47,18 @@ func Guard(tag string, published []string, allow string) (maintenance bool, err 
 	}
 	var newest string
 	for _, p := range others(tag, published) {
-		if newest == "" || rv.CompareVersions(ver(p), ver(newest)) > 0 {
+		if newest == "" || version.Compare(ver(p), ver(newest)) > 0 {
 			newest = p
 		}
 	}
-	if newest == "" || rv.CompareVersions(ver(tag), ver(newest)) > 0 {
+	if newest == "" || version.Compare(ver(tag), ver(newest)) > 0 {
 		return false, nil
 	}
 	if strings.TrimSpace(allow) == tag {
 		return true, nil
 	}
 	why := "is not above"
-	if rv.IsPrerelease(ver(tag)) && rv.CompareVersions(ver(tag), ver(newest)) < 0 {
+	if version.IsPrerelease(ver(tag)) && version.Compare(ver(tag), ver(newest)) < 0 {
 		why = "is a pre-release below"
 	}
 	return false, fmt.Errorf("%s %s the newest published release %s: no updater would offer it, and a machine on it "+
@@ -95,7 +95,7 @@ func Locate(tag string, published []string, allow string) (Place, error) {
 		}
 	}
 	for _, t := range others(tag, published) {
-		if p.Newest == "" || rv.CompareVersions(ver(t), ver(p.Newest)) > 0 {
+		if p.Newest == "" || version.Compare(ver(t), ver(p.Newest)) > 0 {
 			p.Newest = t
 		}
 	}
@@ -106,13 +106,13 @@ func Locate(tag string, published []string, allow string) (Place, error) {
 // below it; for a stable tag, the highest stable one (a release candidate of the same
 // version is not what a stable home comes from). "" when there is none.
 func Previous(tag string, published []string) string {
-	stable := !rv.IsPrerelease(ver(tag))
+	stable := !version.IsPrerelease(ver(tag))
 	var best string
 	for _, p := range others(tag, published) {
-		if rv.CompareVersions(ver(p), ver(tag)) >= 0 || (stable && rv.IsPrerelease(ver(p))) {
+		if version.Compare(ver(p), ver(tag)) >= 0 || (stable && version.IsPrerelease(ver(p))) {
 			continue
 		}
-		if best == "" || rv.CompareVersions(ver(p), ver(best)) > 0 {
+		if best == "" || version.Compare(ver(p), ver(best)) > 0 {
 			best = p
 		}
 	}
@@ -123,11 +123,11 @@ func Previous(tag string, published []string) string {
 // every other published stable release (a pre-release, or a hotfix of an older line,
 // never is).
 func Latest(tag string, published []string) bool {
-	if !rv.ValidTag(tag) || rv.IsPrerelease(ver(tag)) {
+	if !version.ValidTag(tag) || version.IsPrerelease(ver(tag)) {
 		return false
 	}
 	for _, p := range others(tag, published) {
-		if !rv.IsPrerelease(ver(p)) && rv.CompareVersions(ver(p), ver(tag)) >= 0 {
+		if !version.IsPrerelease(ver(p)) && version.Compare(ver(p), ver(tag)) >= 0 {
 			return false
 		}
 	}

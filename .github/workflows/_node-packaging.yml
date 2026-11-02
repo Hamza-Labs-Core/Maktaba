@@ -171,12 +171,14 @@ jobs:
       - name: install.sh systemd service
         run: bash deploy/packaging/tests/install-sh-systemd.sh
       # The tag guard (tools/release/tag-guard.sh) against a scratch repository: the order,
-      # main or a release/* branch, the newest release's commit in the tag's history.
+      # main or a release/* branch, the newest release's commit in the tag's history. Its
+      # release-order builds from the checkout alone (no module: the test runs it with
+      # GOPROXY=off), so there is no module cache to restore.
       - uses: actions/setup-go@v6.4.0
         if: runner.os == 'Linux'
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: tools/release/go.sum
+          cache: false
       - name: tag guard
         if: runner.os == 'Linux'
         run: bash tools/release/tag-guard-test.sh
