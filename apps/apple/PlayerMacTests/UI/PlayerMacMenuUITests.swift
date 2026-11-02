@@ -35,6 +35,11 @@ final class PlayerMacMenuUITests: XCTestCase {
     func testTheViewMenuChoosesEachSection() {
         launchSignedIn(sections: "all", section: "home")
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 15), "Home is chosen")
+        // no window tabs: AppKit's Show Tab Bar / Show All Tabs would head the View menu as it
+        // opens and leave it while open, moving every item under the pointer
+        for tabs in ["Show Tab Bar", "Show All Tabs"] {
+            XCTAssertFalse(app.menuBars.menuItems[tabs].exists, "View has no \(tabs)")
+        }
 
         menu("View", "Live TV")
         XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 5), "View ▸ Live TV")
@@ -204,7 +209,7 @@ final class PlayerMacMenuUITests: XCTestCase {
         XCTAssertTrue(it.isEnabled, "\(top) ▸ \(item) is on")
         // Click the item's point from the bar, not from the item: a coordinate on the item finds
         // it again by its identifier, and every SwiftUI menu item's is "menuAction:", so the
-        // click could land on another item (View ▸ Live TV once opened Profile).
+        // click could land on another item.
         let at = it.frame, from = bar.frame
         bar.coordinate(withNormalizedOffset: .zero)
             .withOffset(CGVector(dx: at.midX - from.minX, dy: at.midY - from.minY)).click()
