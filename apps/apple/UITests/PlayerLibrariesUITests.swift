@@ -299,9 +299,13 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     /// The page's audit, once the page has stopped drawing (`accessibilityAudit` waits for it):
     /// every issue on it, and what the app asked the home meanwhile.
     private func audit(_ page: String) {
+        let start = Date()
         let (found, during) = auditOnce(page)
-        if found.isEmpty { return }
         let asked = "asked the home during the audit: \(during.isEmpty ? "nothing" : during.joined(separator: ", "))"
+        // in the test log on a pass too: a page that still loads as the audit runs shows here
+        // before it times one out
+        print(String(format: "audit %@: %.0f s, %@", page, Date().timeIntervalSince(start), asked))
+        if found.isEmpty { return }
         shot("audit-\(page.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: " ", with: "-"))")
         XCTFail("\(page): " + (found + [asked]).joined(separator: "; "))
     }
