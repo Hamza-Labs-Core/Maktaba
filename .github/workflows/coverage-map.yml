@@ -1,0 +1,179 @@
+# The affected-tests coverage map (tools/affected-tests, CONTRIBUTING.md): for each source
+# file, the tests that execute it. Published as the artifact `affected-tests-map`, which
+# `affected-tests` (the pre-push hook, CI's affected-tests job) fetches with gh.
+#
+# It runs after CI finishes on a push to main, in its own workflow: CI's run on main is
+# what the tag guard waits for, so the map adds no time to it and can never redden it.
+#
+#   go      each Go package's unit tests with -coverpkg over its module (collect-go.sh)
+#   python  the pipeline's tests with pytest-cov --cov-context=test (one context per test)
+#   map     builds the map from those two and from the fragments CI's own jobs left on main
+#           (MaktabaKit and the Mac Player via xccov, the Android modules via JaCoCo; those
+#           jobs run only when their apps change), on top of the previous map, so a platform
+#           not measured this time keeps its last measurement.
+#
+# Trust: it runs with main's code only. It checks out this workflow's own commit (main's
+# head; never the triggering run's head_sha), runs only for a CI run of a push to main in
+# this repository, restores and saves no cache (no setup-* cache, no actions/cache), and
+# reads the downloaded artifacts as data: JSON and XML the map builder parses, nothing run.
+#
+# Nothing here gates anything: a failing test leaves its tests unmapped, nothing more.
+
+name: Coverage map
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+# the newest commit's map is the one that matters
+concurrency:
+  group: coverage-map
+  cancel-in-progress: true
+
+jobs:
+  go:
+    # a CI run of a push to main in this repository, or a manual run on main
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      - name: Per-package coverage
+        run: |
+          set -euo pipefail
+          mods="$(sed -n 's/^GO_MODULES := //p' Makefile) cloud"
+          # shellcheck disable=SC2086
+          JOBS=4 tools/affected-tests/collect-go.sh build/coverage-go $mods
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-go
+          path: build/coverage-go
+          retention-days: 3
+
+  python:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_run'
+          && github.event.workflow_run.event == 'push'
+          && github.event.workflow_run.head_branch == 'main'
+          && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: false
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --all-extras
+      # Every test that needs no service (the unit tier and the unmarked ones), one coverage
+      # context each. pytest_preimport imports the package first, so import-time code is not
+      # pinned on whichever test imported a module first. A red test still records what it
+      # ran: the exit code is not the point here.
+      - name: Per-test coverage
+        working-directory: pipeline
+        env:
+          PYTHONPATH: ${{ github.workspace }}/tools/affected-tests
+        run: |
+          set -uo pipefail
+          uv run --frozen --all-extras --with pytest-cov pytest -q -p no:cacheprovider -p pytest_preimport \
+            -m "not integration and not e2e" --cov=src/maktaba_pipeline --cov-context=test --cov-report= \
+            || echo "::warning::some pipeline tests failed under coverage; their tests stay unmapped"
+          mkdir -p ../build/coverage-python
+          uv run --frozen --all-extras --with pytest-cov coverage json --show-contexts \
+            -o ../build/coverage-python/python.coverage.json
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: coverage-python
+          path: build/coverage-python
+          retention-days: 3
+
+  map:
+    needs: [go, python]
+    if: >-
+      always()
+      && ((github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+          || (github.event_name == 'workflow_run'
+              && github.event.workflow_run.event == 'push'
+              && github.event.workflow_run.head_branch == 'main'
+              && github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      # build the tool from main's checkout before any artifact arrives
+      - name: Build the map builder
+        working-directory: tools/affected-tests
+        run: go build -o "$RUNNER_TEMP/affected-tests" .
+      # data only from here on: coverage reports the builder parses, never run
+      - uses: actions/download-artifact@v8.0.1
+        continue-on-error: true
+        with:
+          name: coverage-go
+          path: ${{ runner.temp }}/data/coverage-go
+      - uses: actions/download-artifact@v8.0.1
+        continue-on-error: true
+        with:
+          name: coverage-python
+          path: ${{ runner.temp }}/data/coverage-python
+      # the xccov and JaCoCo fragments CI's Apple and Android jobs left on main
+      - uses: actions/download-artifact@v8.0.1
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        with:
+          pattern: coverage-fragment-*
+          path: ${{ runner.temp }}/data/coverage-fragments
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Build the map
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bin="$RUNNER_TEMP/affected-tests"
+          data="$RUNNER_TEMP/data"
+          args=(map -C "$GITHUB_WORKSPACE" --out "$RUNNER_TEMP/affected-tests-map.json" --commit "$SHA")
+          # the previous map: its sections this run did not measure are kept
+          if "$bin" fetch-map -C "$GITHUB_WORKSPACE"; then
+            args+=(--previous "$GITHUB_WORKSPACE/.git/affected-tests/affected-tests-map.json")
+          fi
+          [ -f "$data/coverage-go/index.tsv" ] && args+=(--go "$data/coverage-go")
+          [ -f "$data/coverage-python/python.coverage.json" ] && args+=(--python "$data/coverage-python/python.coverage.json")
+          [ -d "$data/coverage-fragments" ] && args+=(--fragments "$data/coverage-fragments")
+          "$bin" "${args[@]}"
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: affected-tests-map
+          path: ${{ runner.temp }}/affected-tests-map.json
+          retention-days: 90
