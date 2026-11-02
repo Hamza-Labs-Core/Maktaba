@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Maktaba Player in Arabic, in the web's words (web/src/i18n/ar.json) where it has them. -->
 <resources>
+    <string name="app_name">مشغل مكتبة</string>
     <string name="libraries">المكتبات</string>
     <string name="choose_library">اختر مكتبة</string>
     <string name="play">تشغيل</string>
