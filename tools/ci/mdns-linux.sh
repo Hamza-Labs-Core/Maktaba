@@ -3,9 +3,10 @@
 # (the mdns-linux job, _unit.yml). Never on a developer's machine: it reconfigures resolved
 # and masks Avahi.
 #
-#   mdns-linux.sh setup        resolved answers mDNS (MulticastDNS=yes, globally and on the
-#                              default route's link), Avahi stopped and masked (Avahi would
-#                              win), polkit running; builds both copies' test binaries
+#   mdns-linux.sh setup        resolved answers mDNS (MulticastDNS=yes, globally and on a
+#                              veth to a peer namespace, where the test's client asks),
+#                              Avahi stopped and masked (Avahi would win), polkit running;
+#                              builds both copies' test binaries
 #   mdns-linux.sh run <case>   runs TestAnnounceLive of both copies:
 #                                denied   as this user, no polkit rule: zeroconf under
 #                                         "<host>-maktaba"
@@ -23,7 +24,10 @@ logs=${LOGS:-$tmp/mdns-linux-logs}
 rule=/etc/polkit-1/rules.d/50-maktaba-ci-register-service.rules
 mkdir -p "$logs"
 
-iface() { ip -o route show default | awk '{print $5; exit}'; }
+# the peer's namespace and the veth to it (this end, its end)
+peer_ns=mdnspeer
+host_if=mkhost0
+peer_if=mkpeer0
 
 setup() {
   [ "${CI:-}" = "true" ] || { echo "mdns-linux.sh reconfigures resolved: CI only" >&2; exit 2; }
@@ -44,19 +48,26 @@ setup() {
   printf '[Resolve]\nMulticastDNS=yes\n' | sudo tee /etc/systemd/resolved.conf.d/50-maktaba-ci-mdns.conf >/dev/null
   sudo systemctl restart systemd-resolved
   sudo resolvectl log-level debug
-  local i
-  i=$(iface)
-  # a link systemd-networkd manages (the runner's) refuses it ("Link eth0 is managed"):
-  # networkd says it there
-  if ! sudo resolvectl mdns "$i" yes; then
-    sudo mkdir -p "/run/systemd/network/10-netplan-$i.network.d"
-    printf '[Network]\nMulticastDNS=yes\n' | sudo tee "/run/systemd/network/10-netplan-$i.network.d/50-maktaba-ci-mdns.conf" >/dev/null
-    sudo networkctl reload
-    sleep 2
-  fi
-  echo "the default route's link: $i ($(resolvectl mdns "$i"))"
-  resolvectl mdns "$i" | grep -q ': yes$' || { echo "::error::resolved does not answer mDNS on $i"; exit 1; }
-  [ -n "${GITHUB_ENV:-}" ] && echo "MAKTABA_TEST_MDNS_IFACE=$i" >>"$GITHUB_ENV"
+  # the peer: what resolved takes for another machine, since it ignores every mDNS packet
+  # from an address of its own (resolved-mdns.c, on_mdns_packet): a namespace at the other
+  # end of a veth. Not named ve-*: networkd would manage it (80-container-ve.network).
+  sudo ip netns add "$peer_ns"
+  sudo ip link add "$host_if" type veth peer name "$peer_if"
+  sudo ip link set "$peer_if" netns "$peer_ns"
+  sudo ip addr add 192.168.77.1/24 dev "$host_if"
+  sudo ip link set "$host_if" multicast on up
+  sudo ip netns exec "$peer_ns" ip link set lo up
+  sudo ip netns exec "$peer_ns" ip addr add 192.168.77.2/24 dev "$peer_if"
+  sudo ip netns exec "$peer_ns" ip link set "$peer_if" multicast on up
+  sudo ip netns exec "$peer_ns" ip route add 224.0.0.0/4 dev "$peer_if"
+  sudo resolvectl mdns "$host_if" yes
+  local n
+  for n in $(seq 1 20); do
+    resolvectl status "$host_if" | grep -q 'mDNS/IPv4' && break
+    sleep 0.5
+  done
+  echo "the peer's link: $host_if ($(resolvectl mdns "$host_if"), after $n tries)"
+  resolvectl status "$host_if" | grep -q 'mDNS/IPv4' || { echo "::error::resolved does not answer mDNS on $host_if"; exit 1; }
   systemctl --version | head -1
   resolvectl status
 
@@ -83,12 +94,13 @@ EOF
     root) mode=resolved; sudo rm -f "$rule"; as=(sudo) ;;
     *) echo "usage: mdns-linux.sh run denied|allowed|root" >&2; exit 2 ;;
   esac
-  local i=${MAKTABA_TEST_MDNS_IFACE:-$(iface)} status=0 t who
+  local status=0 t who
   who=$(id -un)
   [ ${#as[@]} -eq 0 ] || who=root
   for t in discovery mdns; do
     echo "== $t.test, $case (as $who)"
-    "${as[@]}" env MAKTABA_TEST_LIVE_MDNS="$mode" MAKTABA_TEST_MDNS_IFACE="$i" \
+    "${as[@]}" env MAKTABA_TEST_LIVE_MDNS="$mode" MAKTABA_TEST_MDNS_IFACE="$host_if" \
+      MAKTABA_TEST_MDNS_PEER_NETNS="$peer_ns" MAKTABA_TEST_MDNS_PEER_IFACE="$peer_if" \
       "$bin/$t.test" -test.run '^TestAnnounceLive$' -test.v -test.count=1 -test.timeout=5m \
       2>&1 | tee "$logs/$t-$case.log" || status=1
   done
@@ -102,6 +114,7 @@ logs() {
     echo "== resolved's journal"; sudo journalctl -u systemd-resolved --no-pager -b -n 3000 || true
     echo "== polkit's journal"; sudo journalctl -u polkit --no-pager -b -n 300 || true
     echo "== who holds 5353"; sudo ss -ulpn 'sport = :5353' || true
+    echo "== the peer"; ip addr show "$host_if" || true; sudo ip netns exec "$peer_ns" ip addr || true
   } 2>&1 | tee "$logs/system.log"
 }
 

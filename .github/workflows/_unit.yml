@@ -158,7 +158,7 @@ jobs:
 
   # The mDNS announcement on Linux through systemd-resolved, for real: resolved answers mDNS
   # here (MulticastDNS=yes, Avahi masked), and both copies announce, are found by an mDNS
-  # client of their own and by resolvectl, change their TXT and withdraw: as a user polkit
+  # client in a peer namespace (resolved ignores its own addresses) and by resolvectl, change their TXT and withdraw: as a user polkit
   # does not let register (zeroconf under "<host>-maktaba"), as one a rule lets, and as
   # root (RegisterService). tools/ci/mdns-linux.sh; the unit job runs the fakes.
   mdns-linux:

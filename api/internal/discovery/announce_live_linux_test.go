@@ -3,18 +3,25 @@
 package discovery
 
 // The announcement for real, on a Linux whose systemd-resolved answers mDNS: CI's
-// mdns-linux job (_unit.yml) turns resolved's mDNS on, stops Avahi, and runs this as root
-// (RegisterService), as a user a polkit rule lets register (RegisterService too), and as a
-// user it does not ("<host>-maktaba" through zeroconf). An mDNS client of its own, on its
-// own socket, asks the network what a phone would: the PTR of _maktaba._tcp, the
-// instance's SRV and TXT, the target's address; and resolvectl asks resolved the same.
-// MAKTABA_TEST_LIVE_MDNS names the path expected ("resolved" or "own-host"); without it
-// the test does not run, so a developer's machine never announces by accident.
+// mdns-linux job (_unit.yml, tools/ci/mdns-linux.sh) turns resolved's mDNS on, masks
+// Avahi, and runs this as root (RegisterService), as a user a polkit rule lets register
+// (RegisterService too), and as a user it does not ("<host>-maktaba" through zeroconf).
+// An mDNS client asks what a phone would (the PTR of _maktaba._tcp, the instance's SRV and
+// TXT, the target's address) from what resolved takes for another machine: a network
+// namespace at the other end of a veth (MAKTABA_TEST_MDNS_PEER_NETNS, its link
+// MAKTABA_TEST_MDNS_PEER_IFACE; this end is MAKTABA_TEST_MDNS_IFACE), since resolved
+// ignores every mDNS packet from an address of its own machine (resolved-mdns.c,
+// on_mdns_packet), questions and answers alike. resolvectl asks resolved as well, where
+// resolved announces. MAKTABA_TEST_LIVE_MDNS names the path expected ("resolved" or
+// "own-host"); without it the test does not run, so a developer's machine never announces
+// by accident.
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"net"
 	"os"
@@ -22,7 +29,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -61,7 +67,7 @@ func TestAnnounceLive(t *testing.T) {
 	}
 
 	ifi := liveInterface(t)
-	c := newLiveClient(t, ifi)
+	c := newPeerClient(t)
 	run := strconv.Itoa(rand.IntN(1e6))
 	for _, name := range []string{
 		"Maktaba CI " + run,
@@ -69,12 +75,15 @@ func TestAnnounceLive(t *testing.T) {
 		`Back\slash "home" ` + run,  // a backslash, a quote
 		"مكتبة البيت " + run,        // Arabic
 	} {
-		t.Run(name, func(t *testing.T) { liveAnnounce(t, c, ifi, name, host) })
+		t.Run(name, func(t *testing.T) { liveAnnounce(t, c, ifi, name, host, mode == "resolved") })
 	}
 }
 
 // liveAnnounce announces name, finds it as a phone would, changes its TXT, withdraws it.
-func liveAnnounce(t *testing.T, c *liveClient, ifi *net.Interface, name, host string) {
+// askResolved: resolvectl asks resolved too, which answers what was registered with it;
+// what zeroconf answers on this machine resolved never hears (it ignores its own
+// addresses), so there only the peer asks.
+func liveAnnounce(t *testing.T, c asker, ifi *net.Interface, name, host string, askResolved bool) {
 	port := 20000 + rand.IntN(20000)
 	txt := []string{"id=0a1b2c3d", "role=home", "version=1.0.0-ci", "path=/m"}
 	a, err := register(name, liveService, "local.", port, txt)
@@ -91,44 +100,46 @@ func liveAnnounce(t *testing.T, c *liveClient, ifi *net.Interface, name, host st
 	instance := zeroconfInstance(name) + "." + liveService + ".local."
 	target := host + ".local."
 
-	c.await(t, "the PTR names it", liveService+".local.", dns.TypePTR, func(rrs []dns.RR) bool {
+	await(t, c, "the PTR names it", liveService+".local.", dns.TypePTR, func(rrs []dns.RR) bool {
 		return slices.ContainsFunc(rrs, func(rr dns.RR) bool {
 			p, ok := rr.(*dns.PTR)
 			return ok && sameName(p.Ptr, instance)
 		})
 	})
-	c.await(t, fmt.Sprintf("its SRV is %s:%d", target, port), instance, dns.TypeSRV, func(rrs []dns.RR) bool {
+	await(t, c, fmt.Sprintf("its SRV is %s:%d", target, port), instance, dns.TypeSRV, func(rrs []dns.RR) bool {
 		return slices.ContainsFunc(rrs, func(rr dns.RR) bool {
 			s, ok := rr.(*dns.SRV)
 			return ok && sameName(s.Hdr.Name, instance) && int(s.Port) == port && sameName(s.Target, target)
 		})
 	})
-	c.await(t, fmt.Sprintf("its TXT is %q", txt), instance, dns.TypeTXT, hasTXT(instance, txt))
+	await(t, c, fmt.Sprintf("its TXT is %q", txt), instance, dns.TypeTXT, hasTXT(instance, txt))
 	addrs := liveAddrs(t, ifi)
-	c.await(t, fmt.Sprintf("%s is one of %v", target, addrs), target, dns.TypeA, func(rrs []dns.RR) bool {
+	await(t, c, fmt.Sprintf("%s is one of %v", target, addrs), target, dns.TypeA, func(rrs []dns.RR) bool {
 		return slices.ContainsFunc(rrs, func(rr dns.RR) bool {
 			x, ok := rr.(*dns.A)
 			return ok && sameName(x.Hdr.Name, target) && slices.Contains(addrs, x.A.String())
 		})
 	})
-	resolvectlService(t, name, target, port, txt)
+	if askResolved {
+		resolvectlService(t, name, target, port, txt)
+	}
 
 	// a new TXT replaces the old one
 	txt2 := []string{"id=0a1b2c3d", "role=home", "version=1.0.1-ci", "path=/m"}
 	a.SetText(txt2)
-	c.await(t, fmt.Sprintf("its TXT is now %q", txt2), instance, dns.TypeTXT, func(rrs []dns.RR) bool {
+	await(t, c, fmt.Sprintf("its TXT is now %q", txt2), instance, dns.TypeTXT, func(rrs []dns.RR) bool {
 		return hasTXT(instance, txt2)(rrs) && !hasTXT(instance, txt)(rrs)
 	})
 
 	a.Shutdown()
 	withdrawn = true
-	c.await(t, "withdrawn: no PTR names it", liveService+".local.", dns.TypePTR, func(rrs []dns.RR) bool {
+	await(t, c, "withdrawn: no PTR names it", liveService+".local.", dns.TypePTR, func(rrs []dns.RR) bool {
 		return !slices.ContainsFunc(rrs, func(rr dns.RR) bool {
 			p, ok := rr.(*dns.PTR)
 			return ok && sameName(p.Ptr, instance) && p.Hdr.Ttl > 0
 		})
 	})
-	c.await(t, "withdrawn: no SRV for it", instance, dns.TypeSRV, func(rrs []dns.RR) bool {
+	await(t, c, "withdrawn: no SRV for it", instance, dns.TypeSRV, func(rrs []dns.RR) bool {
 		return !slices.ContainsFunc(rrs, func(rr dns.RR) bool {
 			s, ok := rr.(*dns.SRV)
 			return ok && sameName(s.Hdr.Name, instance) && s.Hdr.Ttl > 0
@@ -166,26 +177,18 @@ func asciiLower(b []byte) []byte {
 	return out
 }
 
-// liveInterface is the interface the test asks on: MAKTABA_TEST_MDNS_IFACE, else the first
-// up, multicast, non-loopback one with an IPv4.
+// liveInterface is this end of the link the peer asks on (MAKTABA_TEST_MDNS_IFACE).
 func liveInterface(t *testing.T) *net.Interface {
 	t.Helper()
-	if name := os.Getenv("MAKTABA_TEST_MDNS_IFACE"); name != "" {
-		ifi, err := net.InterfaceByName(name)
-		if err != nil {
-			t.Fatalf("interface %s: %v", name, err)
-		}
-		return ifi
+	name := os.Getenv("MAKTABA_TEST_MDNS_IFACE")
+	if name == "" {
+		t.Fatal("MAKTABA_TEST_MDNS_IFACE names the link the peer asks on (tools/ci/mdns-linux.sh)")
 	}
-	ifaces, _ := net.Interfaces()
-	for i := range ifaces {
-		ifi := &ifaces[i]
-		if ifi.Flags&net.FlagUp != 0 && ifi.Flags&net.FlagMulticast != 0 && ifi.Flags&net.FlagLoopback == 0 && len(liveAddrs(t, ifi)) > 0 {
-			return ifi
-		}
+	ifi, err := net.InterfaceByName(name)
+	if err != nil {
+		t.Fatalf("interface %s: %v", name, err)
 	}
-	t.Fatal("no multicast interface with an IPv4")
-	return nil
+	return ifi
 }
 
 func liveAddrs(t *testing.T, ifi *net.Interface) []string {
@@ -203,51 +206,37 @@ func liveAddrs(t *testing.T, ifi *net.Interface) []string {
 	return out
 }
 
-// liveClient asks over multicast DNS from a socket of its own: bound to 5353 in the group,
-// as a phone's responder-less client does, so answers sent to the group reach it, with the
-// loop on so a responder on this machine hears it.
+// asker asks one question over multicast DNS and gives back every record heard within a
+// second.
+type asker interface {
+	ask(t *testing.T, name string, qtype uint16) []dns.RR
+}
+
+// liveClient asks from a socket of its own: bound to 5353 in the group, as a phone's
+// responder-less client does, so answers sent to the group reach it.
 type liveClient struct {
 	conn *net.UDPConn
-	ifi  *net.Interface
 }
 
 var mdnsGroup = &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
 
-func newLiveClient(t *testing.T, ifi *net.Interface) *liveClient {
-	t.Helper()
+func newLiveClient(ifi *net.Interface) (*liveClient, error) {
 	conn, err := net.ListenMulticastUDP("udp4", ifi, mdnsGroup)
 	if err != nil {
-		t.Fatalf("listen on the mDNS group on %s: %v", ifi.Name, err)
+		return nil, fmt.Errorf("listen on the mDNS group on %s: %w", ifi.Name, err)
 	}
-	t.Cleanup(func() { _ = conn.Close() })
-	raw, err := conn.SyscallConn()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var serr error
-	if err := raw.Control(func(fd uintptr) {
-		// ListenMulticastUDP turns the loop off: a responder on this machine would never
-		// hear the question
-		serr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_MULTICAST_LOOP, 1)
-	}); err != nil || serr != nil {
-		t.Fatalf("multicast loop: %v %v", err, serr)
-	}
-	return &liveClient{conn: conn, ifi: ifi}
+	return &liveClient{conn: conn}, nil
 }
 
-// ask sends one question and gathers every record answered within a second.
-func (c *liveClient) ask(t *testing.T, name string, qtype uint16) []dns.RR {
-	t.Helper()
+func (c *liveClient) query(name string, qtype uint16) ([]dns.RR, error) {
 	m := new(dns.Msg)
-	m.Id = 0
-	m.RecursionDesired = false
 	m.Question = []dns.Question{{Name: dns.Fqdn(name), Qtype: qtype, Qclass: dns.ClassINET}}
 	b, err := m.Pack()
 	if err != nil {
-		t.Fatalf("pack %s: %v", name, err)
+		return nil, fmt.Errorf("pack %s: %w", name, err)
 	}
 	if _, err := c.conn.WriteToUDP(b, mdnsGroup); err != nil {
-		t.Fatalf("send: %v", err)
+		return nil, fmt.Errorf("send: %w", err)
 	}
 	var out []dns.RR
 	buf := make([]byte, 9000)
@@ -256,7 +245,7 @@ func (c *liveClient) ask(t *testing.T, name string, qtype uint16) []dns.RR {
 		_ = c.conn.SetReadDeadline(end)
 		n, _, err := c.conn.ReadFromUDP(buf)
 		if err != nil {
-			return out
+			return out, nil
 		}
 		var r dns.Msg
 		if r.Unpack(buf[:n]) != nil || !r.Response {
@@ -266,8 +255,109 @@ func (c *liveClient) ask(t *testing.T, name string, qtype uint16) []dns.RR {
 	}
 }
 
+// peerClient is a liveClient in the peer's namespace: this test binary again
+// (TestMDNSPeerHelper), through sudo and ip netns exec; a question a line on its stdin
+// ("<type> <name>"), the records heard a line each on its stdout ("rr <record>", then
+// "end").
+type peerClient struct {
+	in  io.WriteCloser
+	out *bufio.Scanner
+}
+
+func newPeerClient(t *testing.T) *peerClient {
+	t.Helper()
+	ns, ifname := os.Getenv("MAKTABA_TEST_MDNS_PEER_NETNS"), os.Getenv("MAKTABA_TEST_MDNS_PEER_IFACE")
+	if ns == "" || ifname == "" {
+		t.Fatal("MAKTABA_TEST_MDNS_PEER_NETNS and MAKTABA_TEST_MDNS_PEER_IFACE name the peer (tools/ci/mdns-linux.sh)")
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sudo", "-n", "ip", "netns", "exec", ns, "env", "MAKTABA_TEST_MDNS_PEER="+ifname,
+		self, "-test.run", "^TestMDNSPeerHelper$", "-test.count=1")
+	cmd.Stderr = os.Stderr
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start the peer: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = in.Close()
+		_ = cmd.Wait()
+	})
+	sc := bufio.NewScanner(out)
+	sc.Buffer(make([]byte, 64<<10), 1<<20)
+	return &peerClient{in: in, out: sc}
+}
+
+func (p *peerClient) ask(t *testing.T, name string, qtype uint16) []dns.RR {
+	t.Helper()
+	if _, err := fmt.Fprintf(p.in, "%d %s\n", qtype, name); err != nil {
+		t.Fatalf("ask the peer: %v", err)
+	}
+	var out []dns.RR
+	for p.out.Scan() {
+		line := p.out.Text()
+		switch {
+		case line == "end":
+			return out
+		case strings.HasPrefix(line, "rr "):
+			rr, err := dns.NewRR(strings.TrimPrefix(line, "rr "))
+			if err != nil {
+				t.Fatalf("the peer heard %q: %v", line, err)
+			}
+			out = append(out, rr)
+		case strings.HasPrefix(line, "error "):
+			t.Fatalf("the peer: %s", line)
+		}
+	}
+	t.Fatalf("the peer ended: %v", p.out.Err())
+	return nil
+}
+
+// TestMDNSPeerHelper is the peer's side of peerClient (MAKTABA_TEST_MDNS_PEER: its link).
+func TestMDNSPeerHelper(t *testing.T) {
+	ifname := os.Getenv("MAKTABA_TEST_MDNS_PEER")
+	if ifname == "" {
+		t.Skip("the peer's side of TestAnnounceLive")
+	}
+	ifi, err := net.InterfaceByName(ifname)
+	if err != nil {
+		fmt.Fprintf(os.Stdout, "error %v\n", err)
+		return
+	}
+	c, err := newLiveClient(ifi)
+	if err != nil {
+		fmt.Fprintf(os.Stdout, "error %v\n", err)
+		return
+	}
+	defer func() { _ = c.conn.Close() }()
+	in := bufio.NewScanner(os.Stdin)
+	for in.Scan() {
+		qt, name, _ := strings.Cut(in.Text(), " ")
+		qtype, _ := strconv.Atoi(qt)
+		rrs, err := c.query(name, uint16(qtype))
+		if err != nil {
+			fmt.Fprintf(os.Stdout, "error %v\n", err)
+			continue
+		}
+		for _, rr := range rrs {
+			rr.Header().Class &^= mdnsCacheFlush // as NewRR reads it back
+			fmt.Fprintf(os.Stdout, "rr %s\n", strings.ReplaceAll(rr.String(), "\n", " "))
+		}
+		fmt.Fprintln(os.Stdout, "end")
+	}
+}
+
 // await asks until want holds of the answers, for up to 15 seconds.
-func (c *liveClient) await(t *testing.T, what, name string, qtype uint16, want func([]dns.RR) bool) {
+func await(t *testing.T, c asker, what, name string, qtype uint16, want func([]dns.RR) bool) {
 	t.Helper()
 	deadline := time.Now().Add(15 * time.Second)
 	for {
@@ -281,13 +371,13 @@ func (c *liveClient) await(t *testing.T, what, name string, qtype uint16, want f
 			for _, rr := range rrs {
 				got = append(got, rr.String())
 			}
-			t.Fatalf("%s: no; asked %s %s on %s, heard:\n%s", what, dns.TypeToString[qtype], name, c.ifi.Name, strings.Join(got, "\n"))
+			t.Fatalf("%s: no; asked %s %s, heard:\n%s", what, dns.TypeToString[qtype], name, strings.Join(got, "\n"))
 		}
 	}
 }
 
 // resolvectlService asks resolved for the service (`resolvectl service`), a second client:
-// resolved answers its own registrations, and asks the network for zeroconf's.
+// resolved answers its own registrations from its zone.
 func resolvectlService(t *testing.T, name, target string, port int, txt []string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)

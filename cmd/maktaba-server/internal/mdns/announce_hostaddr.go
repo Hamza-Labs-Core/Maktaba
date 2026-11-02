@@ -116,6 +116,9 @@ func startHostAddrs(host string, ips []string) (*hostAddrs, error) {
 	}
 	_ = pc.SetControlMessage(ipv4.FlagInterface, true) // not on Windows: answers go out on every interface
 	_ = pc.SetMulticastLoopback(true)
+	// RFC 6762 §11: every response leaves with IP TTL 255 (Go's default for multicast is 1)
+	_ = pc.SetMulticastTTL(255)
+	_ = pc.SetTTL(255)
 	h.announce(hostAddrTTL)
 	go h.serve()
 	return h, nil
