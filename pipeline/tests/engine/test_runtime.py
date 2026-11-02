@@ -27,6 +27,12 @@ from maktaba_pipeline.runtime import (
 LEGACY_HANDLERS = {"scan", "probe", "extract", "transcribe", "subtitle_gen", "index", "thumbnail"}
 
 
+def _unavailable(stage: str) -> bool:
+    """True when the stage's implementation says this worker cannot run it."""
+    impl = get_impl(stage)
+    return bool(impl and impl.unavailable and impl.unavailable())
+
+
 async def _noop_handler(db: DBConn, job: Job) -> None:
     """Stand-in legacy handler; the booted engine never runs a job here."""
 
@@ -53,16 +59,16 @@ async def test_default_worker_serves_every_stage_it_has_a_handler_for(db: Databa
         "fp_gate", "tag", "rate_style", "plan_channels", "write_channels",
     }  # fmt: skip
     served = set(stages)
-    # transcribing needs a speech model this machine may not have (a CI runner has none)
-    impl = get_impl("transcribe")
-    cannot = {"transcribe"} if impl and impl.unavailable and impl.unavailable() else set()
-    assert served >= LEGACY_HANDLERS - cannot
+    # the transcript analysis stages are engine stages now
+    analysis = {"chapter_infer", "topic_assign", "topic_recluster"}
+    # a stage whose optional extra this machine lacks is not served: transcribing needs a
+    # speech model (a CI runner has none), index and chapter_infer the search extra,
+    # topic_recluster numpy
+    cannot = {s for s in LEGACY_HANDLERS | analysis if _unavailable(s)}
+    assert served >= (LEGACY_HANDLERS | analysis) - cannot
     assert not (served & cannot)
     # legacy stages with no handler anywhere are not claimed (they would fail non-retryably)
     assert "categorize" not in served
-    # the transcript analysis stages are engine stages now (this worker has numpy and
-    # the search extra, which chapter_infer and topic_recluster need)
-    assert {"chapter_infer", "topic_assign", "topic_recluster"} <= served
     # engine stages are served once their implementation exists
     assert (served & core_engine) <= core_engine
     assert pools["probe"] == "nas_read"
