@@ -16,8 +16,8 @@ final class PlayerVideoUITests: PlayerUITestCase {
     private let title = "السيرة النبوية، الدرس ١١"
 
     /// The page of `id` on Home's stack (Home stands in for any section with routes).
-    private func openPage(_ id: String = "v2", _ language: String = "en") {
-        launchSignedIn(language, sections: ["home"], open: "video/\(id)")
+    private func openPage(_ id: String = "v2", _ language: String = "en", extra: [String] = []) {
+        launchSignedIn(language, sections: ["home"], open: "video/\(id)", extra: extra)
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 15), "the video's page")
     }
 
@@ -214,6 +214,10 @@ final class PlayerVideoUITests: PlayerUITestCase {
         }
         shot("video")
         audit()
+        assertTextScales("video v2") { size in
+            self.openPage(extra: size)
+            XCTAssertTrue(self.element("video.poster").waitForExistence(timeout: 10), "the poster shows")
+        }
     }
 
     func testThePosterInArabic() {
@@ -290,10 +294,11 @@ final class PlayerVideoUITests: PlayerUITestCase {
         if confirm.waitForExistence(timeout: 3) { confirm.tap() }
     }
 
-    /// NFR-6 on the page as it shows: labels, contrast, hit regions, clipped text.
+    /// NFR-6 on the page as it shows: labels, contrast, hit regions, clipped text (its Dynamic
+    /// Type: `assertTextScales`).
     private func audit() {
         do {
-            try app.performAccessibilityAudit { issue in
+            try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // an element partly off screen: the audit samples pixels beyond it

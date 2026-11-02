@@ -28,6 +28,8 @@ import Testing
         let search = try #require(view.items.first { $0.title == "Search…" })
         #expect(search.keyEquivalent == "f")
         #expect(Self.modifiers(search) == .command)
+        // one: the Player's, not AppKit's beside it (toggleFullScreen:)
+        #expect(view.items.filter { $0.title == "Enter Full Screen" }.count == 1)
         let full = try #require(view.items.first { $0.title == "Enter Full Screen" })
         #expect(full.keyEquivalent == "f")
         #expect(Self.modifiers(full) == [.control, .command])
