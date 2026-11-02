@@ -46,8 +46,11 @@ setup() {
 
   sudo mkdir -p /etc/systemd/resolved.conf.d
   printf '[Resolve]\nMulticastDNS=yes\n' | sudo tee /etc/systemd/resolved.conf.d/50-maktaba-ci-mdns.conf >/dev/null
+  # debug logging that outlives a restart (resolvectl log-level does not)
+  sudo mkdir -p /run/systemd/system/systemd-resolved.service.d
+  printf '[Service]\nEnvironment=SYSTEMD_LOG_LEVEL=debug\n' | sudo tee /run/systemd/system/systemd-resolved.service.d/50-maktaba-ci-debug.conf >/dev/null
+  sudo systemctl daemon-reload
   sudo systemctl restart systemd-resolved
-  sudo resolvectl log-level debug
   # the peer: what resolved takes for another machine, since it ignores every mDNS packet
   # from an address of its own (resolved-mdns.c, on_mdns_packet): a namespace at the other
   # end of a veth. Not named ve-*: networkd would manage it (80-container-ve.network).
@@ -94,9 +97,10 @@ EOF
     root) mode=resolved; sudo rm -f "$rule"; as=(sudo) ;;
     *) echo "usage: mdns-linux.sh run denied|allowed|root" >&2; exit 2 ;;
   esac
-  local status=0 t who
+  local status=0 t who pid
   who=$(id -un)
   [ ${#as[@]} -eq 0 ] || who=root
+  pid=$(systemctl show -p MainPID --value systemd-resolved)
   for t in discovery mdns; do
     echo "== $t.test, $case (as $who)"
     "${as[@]}" env MAKTABA_TEST_LIVE_MDNS="$mode" MAKTABA_TEST_MDNS_IFACE="$host_if" \
@@ -105,6 +109,11 @@ EOF
       2>&1 | tee "$logs/$t-$case.log" || status=1
   done
   sudo rm -f "$rule"
+  # an announcement must never bring resolved down (a name it could not read aborted it)
+  if [ "$(systemctl show -p MainPID --value systemd-resolved)" != "$pid" ]; then
+    echo "::error::systemd-resolved restarted during the $case run (it crashed: see its journal)"
+    status=1
+  fi
   return $status
 }
 
