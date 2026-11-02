@@ -11,6 +11,10 @@ name: Apple apps
 
 on:
   workflow_call:
+    # each part when its files changed (ci.yml, from .github/ci-paths.yml)
+    inputs:
+      build: { type: boolean, default: true }
+      player_ui: { type: boolean, default: true }
 
 permissions:
   contents: read
@@ -18,6 +22,7 @@ permissions:
 jobs:
   apple-apps:
     name: Apple apps (Remote, Player, TV)
+    if: inputs.build
     # the newest Xcode is on macos-26 (as testflight.yml)
     runs-on: macos-26
     timeout-minutes: 45
@@ -82,6 +87,7 @@ jobs:
   # Profile's and Libraries' audits came near it in three.
   player-ui-tests:
     name: Player UI tests (${{ matrix.device }}${{ matrix.shard != 0 && format(' {0}/{1}', matrix.shard, matrix.shards) || '' }})
+    if: inputs.player_ui
     runs-on: macos-26
     timeout-minutes: 60
     strategy:
