@@ -3,6 +3,7 @@ package updates
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -32,8 +33,51 @@ func backends(t *testing.T) []backend {
 	return out
 }
 
+// sqliteDB is a fresh SQLite database with the update tables: a copy of one schema
+// image built once per test binary (sqliteImage), so each test pays a file write, not
+// the ~40 DDL statements and their schema re-parses.
 func sqliteDB(t *testing.T) *sql.DB {
 	t.Helper()
+	img := sqliteImage(t)
+	path := filepath.Join(t.TempDir(), "updates.db")
+	if err := os.WriteFile(path, img, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// a scratch database on one connection: no fsync, the journal in memory, and the
+	// file lock taken once and held (otherwise every statement locks and unlocks the
+	// file, which was most of what these tests spent). Set in the DSN so a reopened
+	// connection gets them too.
+	db, err := sql.Open("sqlite", "file:"+path+
+		"?_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)&_pragma=locking_mode(EXCLUSIVE)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.Ping(); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+
+var (
+	sqliteImageOnce  sync.Once
+	sqliteImageBytes []byte
+	sqliteImageErr   error
+)
+
+// sqliteImage is the bytes of a SQLite file holding the TV change test tables, slot
+// 0132's and 0149's SQLite twins, and what the driver reads of the cluster and jobs.
+func sqliteImage(t *testing.T) []byte {
+	t.Helper()
+	sqliteImageOnce.Do(func() { sqliteImageBytes, sqliteImageErr = buildSQLiteImage(t) })
+	if sqliteImageErr != nil {
+		t.Fatalf("sqlite schema image: %v", sqliteImageErr)
+	}
+	return sqliteImageBytes
+}
+
+func buildSQLiteImage(t *testing.T) ([]byte, error) {
 	db := tvchangetest.SQLite(t)
 	for _, slot := range []string{"0132_update_runs.sqlite.sql", "0149_update_run_detail.sqlite.sql"} {
 		for _, s := range slotStatements(t, slot) {
@@ -41,7 +85,7 @@ func sqliteDB(t *testing.T) *sql.DB {
 			// a fresh test database has none of them yet
 			s = strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1)
 			if _, err := db.Exec(s); err != nil {
-				t.Fatalf("%s: %v", s, err)
+				return nil, fmt.Errorf("%s: %w", s, err)
 			}
 		}
 	}
@@ -56,10 +100,20 @@ func sqliteDB(t *testing.T) *sql.DB {
 		`CREATE TABLE IF NOT EXISTS cluster_switchovers (id TEXT PRIMARY KEY, state TEXT NOT NULL)`,
 	} {
 		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("%s: %v", s, err)
+			return nil, fmt.Errorf("%s: %w", s, err)
 		}
 	}
-	return db
+	// VACUUM INTO writes a self-contained copy (no journal to carry along)
+	dir, err := os.MkdirTemp("", "updates-sqlite-image-")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	out := filepath.Join(dir, "image.db")
+	if _, err := db.Exec(`VACUUM INTO ?`, out); err != nil {
+		return nil, fmt.Errorf("vacuum into: %w", err)
+	}
+	return os.ReadFile(out)
 }
 
 func migrationsDir(t *testing.T) string {
