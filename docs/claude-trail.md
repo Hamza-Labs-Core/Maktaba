@@ -1140,6 +1140,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+[#523]: https://github.com/Hamza-Labs-Core/Maktaba/pull/523
 [#524]: https://github.com/Hamza-Labs-Core/Maktaba/pull/524
 
 ## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
@@ -1185,6 +1186,16 @@ Append here: date, session, one to five lines on what changed. Newest last.
   3. The dhash change triggers `thumb_small`. That stage used to keep any copy already on disk. Now, if its last summary says the copy was made from the poster and the video's own thumbnail is found, it makes a new copy from the sidecar. Copies it keeps also record their `source` in the summary.
 - Scan: hidden folders like `.thumbs` were already pruned. `@eaDir` (Synology's index) joins `DEFAULT_IGNORE_DIRNAMES` (walker, watcher, youtube_sync). youtube_sync's os.walk and the watcher now skip hidden folders too.
 - Tests: `tests/stages/test_thumbs_subfolder.py` (names with Arabic and fullwidth colons; sqlite and a scratch PG on :55471 started from the app's bundled binaries, data in the scratchpad) and a walker test.
+## 2026-11-02 — Android Player: a collapsible rail, a draggable list-detail divider, half-fold layouts ([#523])
+
+- Owner's report: on a foldable open flat (sideways, 841 dp) and a big tablet, Libraries showed a permanent 360 dp drawer, the list (380 dp) and the videos squeezed to ~100 dp. Cause: `navigationFor` gave expanded windows `NavigationDrawer`, and the list had a fixed 380 dp.
+- Decided: expanded windows and a book-held foldable get a collapsible rail (`shell/CollapsibleRail.kt`, material3 1.4.0's `WideNavigationRail`, no upgrade needed). It is 96 dp of icons and expands over the content (modal, with a scrim: chosen over push so the content never reflows). The menu button or a mouse hover opens it; choosing, a tap outside, Back or the mouse leaving close it. Compact and tabletop keep the bar, medium keeps the rail.
+- Decided: `core/layout/ListDetailSplit` is a draggable divider. List min 240, page min 320, default list 380 but at most 40 %. It has a 48 dp handle, TalkBack widen/narrow actions and arrow keys, and is mirrored in RTL. Kept in saved state and in SharedPreferences `maktaba.splits`. Used by Libraries and the Remote.
+- Decided (owner's follow-up "you do nothing on half fold in regard to nav"): in book posture the rail and the list sit on the start page and the list ends at the hinge. The split is the hinge (no drag handle: any other split puts a pane under it), and the expanded rail is capped to the start page. In tabletop, the page is on top and the list and bar on the bottom; non-splitting screens keep to the top half (`OffTheHinge` in PlayerShell). The shell passes its adaptive info down (`LocalAdaptiveInfo`), so tests fake hinges through `WindowAdaptiveInfo` (`harness.folded`).
+- Failed first: (1) the rail's Back didn't win over a section's Back. A BackHandler that is always composed keeps its old registration order; it is now composed only while open. (2) Swapping between NavigationSuiteScaffold and the rail frame recomposed the screens, and a live channel going full screen restarted. Both now share one tree. (3) The rail's IconButton was 40 dp, and HomeScreenTest's accessibility audit caught it.
+- Gotcha: `recordRoborazziDebug` rewrites every PNG, even unchanged ones (byte noise). Re-record only the tests that `verifyRoborazziDebug` fails. The before shots for the PR body live on the branch `screenshots/android-rail-before`.
+- Not verified on a real foldable or tablet, and no emulator run. Open: in book posture, Home/Search (screens that don't split) still span both pages.
+- CI failed the first push (run 41472993431): four LayoutScreenshotTest pictures had the library page scrolled down a row. That was unsettled content, not fonts or a layout bug. The hub rows can land after the first videos, and the grid then keeps the first video in view (scroll anchoring), so the picture depended on the order the answers arrived in. The test now waits for idle and scrolls the page to its top before each capture; the goldens are re-recorded and the tolerance is unchanged. The jump itself is still in `LibraryPage` (the rows can end up above the view on a slow home): a follow-up for that screen.
 ## 2026-11-02 — CI runs what a change touches (ci/run-what-changed)
 
 - Owner: "ci should only run if the change touches it". An Android-only PR ran pipeline integration, Go replica, e2e and all nine Player UI shards; a Remote rename ran the Player UI tests.
