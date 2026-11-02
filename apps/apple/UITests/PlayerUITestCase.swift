@@ -83,9 +83,13 @@ class PlayerUITestCase: XCTestCase {
         if !field.waitForExistence(timeout: 2) { scrollUntil(field) }
         XCTAssertTrue(field.exists, "the home picker")
         field.typeExactly(home.url, in: app)
-        let connect = app.buttons["picker.connect"]
-        if !connect.isHittable { scrollUntil(connect) }
-        connect.tap()
+        // submitted from the field's own Return (`onSubmit`, the same `add` as Connect), not a
+        // tap on Connect: a tap a second after the last key, as the keyboard still settled
+        // after typing a Latin address on the Arabic keyboard, was lost on an iPad on CI (the
+        // picker stayed, the address in its field and Connect enabled, no connect begun). A
+        // key goes to the field that has the keyboard, whatever the Form is laying out; the
+        // Connect button's own tap is still driven by ConnectUITests and the progress tests.
+        field.typeText("\n")
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
         XCTAssertTrue(byCode.waitForExistence(timeout: 10), "the sign-in screen offers a code")
         byCode.tap()

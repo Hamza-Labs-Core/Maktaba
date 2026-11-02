@@ -354,6 +354,7 @@ public final class AppSession {
     public func connect(to candidates: [URL], name: String? = nil, homeID: String? = nil) async -> ReachFailure? {
         attempt = 1
         lastConnect = (candidates, name, homeID, nil)
+        Log.session.info("connect: \(candidates.count, privacy: .public) address(es) to try")
         return await reachAndUse(candidates, name: name, homeID: homeID, saved: nil)
     }
 

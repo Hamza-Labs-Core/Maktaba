@@ -637,9 +637,24 @@ private fun mark(ids: List<String>, key: String, value: Boolean) = buildJsonObje
     put(key, value)
 }
 
-/** `GET /api/series`: every series the caller may see, [library] narrows it. */
-suspend fun ApiClient.seriesList(library: String? = null): List<SeriesItem> =
-    read<SeriesDoc>("/api/series", if (library != null) mapOf("library_id" to library) else emptyMap()).items
+/** The home's page size for `GET /api/series`. */
+const val SERIES_PAGE_SIZE = 60
+
+/** `GET /api/series`: the first page of the series the caller may see, [library] narrows it. */
+suspend fun ApiClient.seriesList(library: String? = null): List<SeriesItem> = seriesPage(0, library).items
+
+/** One page (from 0) of `GET /api/series`, and whether the home has another (a full page). */
+suspend fun ApiClient.seriesPage(page: Int, library: String? = null): SeriesPage {
+    val q = buildMap {
+        put("page", maxOf(0, page).toString())
+        if (library != null) put("library_id", library)
+    }
+    val items = read<SeriesDoc>("/api/series", q).items
+    return SeriesPage(items, more = items.size >= SERIES_PAGE_SIZE)
+}
+
+/** A page of series: [more] when the home may have another. */
+data class SeriesPage(val items: List<SeriesItem>, val more: Boolean)
 
 /** `GET /api/series/{id}`. */
 suspend fun ApiClient.series(id: String): SeriesItem = read("/api/series/${seg(id)}")
