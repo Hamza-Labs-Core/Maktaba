@@ -185,4 +185,9 @@
     <string name="progress_retry">Retry</string>
     <string name="progress_signing_in_button">Signing in…</string>
     <string name="progress_cloud_loading">Loading your homes from Maktaba Cloud…</string>
+    <!-- the divider between a list and its page (core/layout/ListDetailSplit.kt) -->
+    <string name="split_divider">Divider between the list and the page</string>
+    <string name="split_widen_list">Widen the list</string>
+    <string name="split_narrow_list">Narrow the list</string>
+    <string name="split_list_share">The list is %1$d%% of the width</string>
 </resources>

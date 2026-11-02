@@ -8,4 +8,7 @@
     <string name="section_profile">Profile</string>
     <string name="shell_video">Video</string>
     <string name="shell_not_ready">Not available yet</string>
+    <!-- the collapsible rail's menu button and its scrim (shell/CollapsibleRail.kt) -->
+    <string name="shell_nav_expand">Expand the side menu</string>
+    <string name="shell_nav_collapse">Collapse the side menu</string>
 </resources>
