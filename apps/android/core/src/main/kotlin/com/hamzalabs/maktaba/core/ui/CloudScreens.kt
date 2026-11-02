@@ -32,6 +32,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -123,6 +125,10 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
     }
 
     Text(stringResource(R.string.cloud_intro), style = MaterialTheme.typography.bodyMedium)
+    // the keyboard's Next goes email -> password (-> the cloud's address, when it shows);
+    // Go on the last one signs in
+    val passwordField = remember { FocusRequester() }
+    val addressField = remember { FocusRequester() }
     OutlinedTextField(
         value = email,
         onValueChange = { email = it; problem = null },
@@ -130,7 +136,8 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
         singleLine = true,
         enabled = !busy,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, autoCorrectEnabled = false),
-        modifier = Modifier.fillMaxWidth().testTag("cloud-email"),
+        keyboardActions = KeyboardActions(onNext = { passwordField.requestFocus() }),
+        modifier = Modifier.fillMaxWidth().then(rememberKeptAboveKeyboard()).testTag("cloud-email"),
     )
     OutlinedTextField(
         value = password,
@@ -139,9 +146,9 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
         singleLine = true,
         enabled = !busy,
         visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Go),
-        keyboardActions = KeyboardActions(onGo = { signIn() }),
-        modifier = Modifier.fillMaxWidth().testTag("cloud-password"),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (advanced) ImeAction.Next else ImeAction.Go),
+        keyboardActions = KeyboardActions(onNext = { addressField.requestFocus() }, onGo = { signIn() }),
+        modifier = Modifier.fillMaxWidth().focusRequester(passwordField).then(rememberKeptAboveKeyboard()).testTag("cloud-password"),
     )
     if (advanced) {
         OutlinedTextField(
@@ -152,11 +159,12 @@ private fun CloudSignIn(session: AppSession, onSignedIn: () -> Unit) {
             supportingText = { Text(stringResource(R.string.cloud_address_hint)) },
             singleLine = true,
             enabled = !busy,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, autoCorrectEnabled = false),
-            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
+            keyboardActions = KeyboardActions(onGo = { signIn() }),
+            modifier = Modifier.fillMaxWidth().focusRequester(addressField).then(rememberKeptAboveKeyboard()).testTag("cloud-address"),
         )
     } else {
-        TextButton(onClick = { advanced = true }) { Text(stringResource(R.string.cloud_advanced)) }
+        TextButton(onClick = { advanced = true }, modifier = Modifier.testTag("cloud-advanced")) { Text(stringResource(R.string.cloud_advanced)) }
     }
     Button(onClick = ::signIn, enabled = !busy && email.isNotBlank() && password.isNotEmpty(), modifier = Modifier.fillMaxWidth().testTag("cloud-sign-in")) {
         Text(stringResource(if (busy) R.string.progress_signing_in_button else R.string.cloud_sign_in))

@@ -269,6 +269,7 @@ public struct HomePickerView: View {
                 .textInputAutocapitalization(.never)
                 #endif
                 .environment(\.layoutDirection, .leftToRight)
+                .submitLabel(.go)
                 .onSubmit(add)
                 .accessibilityIdentifier("picker.address")
             Button(words.text(.connect), action: add)
@@ -343,9 +344,12 @@ public struct SignInView: View {
     @State private var codeFlow: CodeSignIn?
     /// A Retry on the code's progress: a new flow, at the next attempt.
     @State private var codeRound = 0
+    /// The field the keyboard types in: Return on the username moves to the password.
+    @FocusState private var focus: Field?
     private let words = ConnectStrings.forPreferredLanguages()
 
     enum Method: Hashable { case password, code }
+    enum Field: Hashable { case username, password }
 
     struct CodeFlowKey: Equatable {
         let home: URL?
@@ -373,12 +377,15 @@ public struct SignInView: View {
 
     public var body: some View {
         NavigationStack {
-            Form {
-                StartBrandSection(appName: MaktabaApp.current?.name())
-                Group {
-                    signInSections
+            ScrollViewReader { rows in
+                Form {
+                    StartBrandSection(appName: MaktabaApp.current?.name())
+                    Group {
+                        signInSections
+                    }
+                    .startPanelRows()
                 }
-                .startPanelRows()
+                .keepsFocusInView(focus, rows)
             }
             .formStyle(.grouped)
             .startScreen()
@@ -440,10 +447,17 @@ public struct SignInView: View {
                 #if os(iOS)
                 .textInputAutocapitalization(.never)
                 #endif
+                .focused($focus, equals: .username)
+                .submitLabel(.next)
+                .onSubmit { focus = .password }
+                .id(Field.username)
                 .accessibilityIdentifier("signin.username")
             SecureField(words.text(.password), text: $password)
                 .textContentType(.password)
+                .focused($focus, equals: .password)
+                .submitLabel(.go)
                 .onSubmit(signIn)
+                .id(Field.password)
                 .accessibilityIdentifier("signin.password")
         } footer: {
             // why the last try did not work (the form is its retry)
