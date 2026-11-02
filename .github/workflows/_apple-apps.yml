@@ -45,6 +45,10 @@ jobs:
       - name: UI test shards split every test once
         run: python3 tools/apple/ui-shard.py --self-test
 
+      # how a UI shard reads its simulator's own processes to know it has settled
+      - name: A simulator's settle check reads its own processes
+        run: python3 tools/apple/sim-settle.py --self-test
+
       - name: Select Xcode
         run: |
           set -euo pipefail
@@ -225,21 +229,11 @@ jobs:
           done
           xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
           xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
-          # settled: the runner's processors mostly idle on three 5-second looks running (the
-          # simulator's first-boot work done). Each look, with the busiest processes, is kept
-          # with the results. Not settled in 12 minutes: the tests run anyway, and the log says so.
-          settle="$RESULTS/$device-$shard-settle.log"
-          start=$(date +%s) quiet=0
-          while :; do
-            look=$(top -l 2 -s 5 -n 4 -o cpu -stats command,cpu)
-            idle=$(printf '%s\n' "$look" | awk '/^CPU usage/ {v=$7} END {sub("%","",v); print int(v)}')
-            busiest=$(printf '%s\n' "$look" | awk '/^COMMAND/ {n++; next} n==2 && NF {printf "%s %s; ", $1, $2}')
-            took=$(( $(date +%s) - start ))
-            echo "t=${took}s idle=${idle}% ${busiest}" | tee -a "$settle"
-            if [ "$idle" -ge 60 ]; then quiet=$((quiet + 1)); else quiet=0; fi
-            if [ "$quiet" -ge 3 ]; then echo "settled at ${took}s" | tee -a "$settle"; break; fi
-            if [ "$took" -ge 720 ]; then echo "not settled at ${took}s: running the tests" | tee -a "$settle"; break; fi
-          done
+          # settled: the simulator's own processes quiet on three 5-second looks running (its
+          # first-boot work done; the runner's own daemons are no measure, they kept it under
+          # 30% idle for 12 minutes). Each look is kept with the results. Not quiet in 8
+          # minutes: the tests run anyway, and the log says so.
+          python3 tools/apple/sim-settle.py "$udid" "$RESULTS/$device-$shard-settle.log" --max 480
 
       # The build's artifact, once its job has uploaded it (a failed build fails this shard).
       - name: Wait for the build

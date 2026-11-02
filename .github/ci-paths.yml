@@ -381,4 +381,5 @@ apple_player_ui:
   - 'tools/apple/ui-shard.py'
   - 'tools/apple/ui-durations.json'
   - 'tools/apple/check-app-log.py'
+  - 'tools/apple/sim-settle.py'
   - '.github/workflows/_apple-apps.yml'
