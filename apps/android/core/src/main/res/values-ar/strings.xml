@@ -161,6 +161,7 @@
     <string name="error_details">التفاصيل</string>
     <!-- connect progress (story 48.37) -->
     <string name="progress_finding">جارٍ البحث عن الجهاز الرئيسي…</string>
+    <string name="progress_looking_nearby">جارٍ البحث عن الجهاز الرئيسي على هذه الشبكة…</string>
     <string name="progress_trying">تجربة %1$s — %2$d من %3$d</string>
     <string name="progress_found">تم العثور على %1$s</string>
     <string name="progress_signing_in">جارٍ تسجيل الدخول إلى %1$s…</string>

@@ -285,6 +285,7 @@ the workflows below.
 | **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 | **TV — Android TV** | `maktaba-tv-<version>.apk` | [`tv-release.yml`](.github/workflows/tv-release.yml) |
+| **Google Play — native Android** | `maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, `maktaba-tv-<version>.aab` (signed with the Play upload key; [docs/google-play.md](docs/google-play.md)) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
 | **TV — tvOS** | *manual* via Xcode ▸ Archive ▸ TestFlight | [`tv-release.yml`](.github/workflows/tv-release.yml) (compile check) |
 
 **Signing status.** Desktop installers and the iOS/tvOS builds are

@@ -1,0 +1,663 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld episodes" : {
+      "comment" : "How many episodes a series has",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا حلقات"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حلقة واحدة"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "حلقتان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld حلقات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld حلقة"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld حلقة"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld episode"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld episodes"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld of %lld watched" : {
+      "comment" : "A series' progress: episodes watched of all",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تمت مشاهدة %1$lld من %2$lld"
+          }
+        }
+      }
+    },
+    "%lld series" : {
+      "comment" : "How many series there are",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا مسلسلات"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مسلسل واحد"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مسلسلان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld مسلسلات"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld مسلسلًا"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld مسلسل"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld series"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld series"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld videos" : {
+      "comment" : "A library card's count of videos",
+      "localizations" : {
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا مقاطع"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مقطع واحد"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "مقطعان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld مقاطع"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld مقطعًا"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld مقطع"
+                }
+              }
+            }
+          }
+        },
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld video"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld videos"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Any language" : {
+      "comment" : "A library's language filter: off",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل اللغات"
+          }
+        }
+      }
+    },
+    "Any speaker" : {
+      "comment" : "A library's speaker filter: off",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "كل المتحدثين"
+          }
+        }
+      }
+    },
+    "A–Z" : {
+      "comment" : "A library's sort: by title, A to Z",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أ–ي"
+          }
+        }
+      }
+    },
+    "Choose a library" : {
+      "comment" : "A wide window's page before a library is chosen",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اختر مكتبة"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "comment" : "A series' button: open its next episode",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متابعة"
+          }
+        }
+      }
+    },
+    "Continue Watching" : {
+      "comment" : "A library's row: videos started",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تابع المشاهدة"
+          }
+        }
+      }
+    },
+    "Could not save the watched mark. Try again." : {
+      "comment" : "Marking an episode or a season watched did not work",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر حفظ علامة المشاهدة. حاول مرة أخرى."
+          }
+        }
+      }
+    },
+    "Episode %lld" : {
+      "comment" : "An episode's number",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحلقة %lld"
+          }
+        }
+      }
+    },
+    "Episodes" : {
+      "comment" : "The episodes of a series with no season",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحلقات"
+          }
+        }
+      }
+    },
+    "It may have been removed, or it is not shared with you." : {
+      "comment" : "Why a library or series is not available",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ربما حُذف، أو لم يُشارَك معك."
+          }
+        }
+      }
+    },
+    "Language" : {
+      "comment" : "A library's language filter, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اللغة"
+          }
+        }
+      }
+    },
+    "Libraries" : {
+      "comment" : "The Libraries root's tab of library cards",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبات"
+          }
+        }
+      }
+    },
+    "Library" : {
+      "comment" : "A library's page, before its name loads",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المكتبة"
+          }
+        }
+      }
+    },
+    "Mark not watched" : {
+      "comment" : "Clears an episode's watched mark",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم كغير مُشاهَد"
+          }
+        }
+      }
+    },
+    "Mark the season not watched" : {
+      "comment" : "Clears the watched mark of every episode of the season",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم الموسم كغير مُشاهَد"
+          }
+        }
+      }
+    },
+    "Mark the season watched" : {
+      "comment" : "Marks every episode of the season watched",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم الموسم كمُشاهَد"
+          }
+        }
+      }
+    },
+    "Mark watched" : {
+      "comment" : "Marks an episode watched",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعليم كمُشاهَد"
+          }
+        }
+      }
+    },
+    "Newest" : {
+      "comment" : "A library's sort: the newest added first",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الأحدث"
+          }
+        }
+      }
+    },
+    "No libraries yet" : {
+      "comment" : "The Libraries grid with no library",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مكتبات بعد"
+          }
+        }
+      }
+    },
+    "No series yet" : {
+      "comment" : "The Series grid with no series",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مسلسلات بعد"
+          }
+        }
+      }
+    },
+    "No videos match your filters." : {
+      "comment" : "A library's filters match no video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مقاطع تطابق عوامل التصفية."
+          }
+        }
+      }
+    },
+    "No videos yet" : {
+      "comment" : "A library with no video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا توجد مقاطع بعد"
+          }
+        }
+      }
+    },
+    "Not available" : {
+      "comment" : "A library or series that is gone or not shared",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غير متاح"
+          }
+        }
+      }
+    },
+    "OK" : {
+      "comment" : "Closes a message",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حسنًا"
+          }
+        }
+      }
+    },
+    "On Deck" : {
+      "comment" : "A library's row: the next episode of each series",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدرس التالي"
+          }
+        }
+      }
+    },
+    "Pin" : {
+      "comment" : "Pins a library first (its menu)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تثبيت"
+          }
+        }
+      }
+    },
+    "Pin %@" : {
+      "comment" : "Pins a library first, spoken with its name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تثبيت %@"
+          }
+        }
+      }
+    },
+    "Pinned" : {
+      "comment" : "A library card's mark: pinned first",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مثبّتة"
+          }
+        }
+      }
+    },
+    "Recently Added" : {
+      "comment" : "A library's row: the newest videos",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضيف حديثًا"
+          }
+        }
+      }
+    },
+    "Recently Watched" : {
+      "comment" : "A library's row: videos watched lately",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد مؤخرًا"
+          }
+        }
+      }
+    },
+    "Season" : {
+      "comment" : "A series' season picker, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموسم"
+          }
+        }
+      }
+    },
+    "Season %lld" : {
+      "comment" : "A season of a series, by number",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الموسم %lld"
+          }
+        }
+      }
+    },
+    "Series" : {
+      "comment" : "The Libraries root's tab of every series",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المسلسلات"
+          }
+        }
+      }
+    },
+    "Show" : {
+      "comment" : "The Libraries root's tabs, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض"
+          }
+        }
+      }
+    },
+    "Sort" : {
+      "comment" : "A library's sort menu, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ترتيب"
+          }
+        }
+      }
+    },
+    "Speaker" : {
+      "comment" : "A library's speaker filter, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المتحدث"
+          }
+        }
+      }
+    },
+    "Unpin" : {
+      "comment" : "Unpins a library (its menu)",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء التثبيت"
+          }
+        }
+      }
+    },
+    "Unpin %@" : {
+      "comment" : "Unpins a library, spoken with its name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء تثبيت %@"
+          }
+        }
+      }
+    },
+    "Untitled series" : {
+      "comment" : "A series with no name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مسلسل بلا عنوان"
+          }
+        }
+      }
+    },
+    "Videos" : {
+      "comment" : "A library's tab of every video",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المقاطع"
+          }
+        }
+      }
+    },
+    "Watched" : {
+      "comment" : "An episode's mark: watched",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مُشاهَد"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

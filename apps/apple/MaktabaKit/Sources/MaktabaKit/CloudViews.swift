@@ -26,6 +26,13 @@ struct CloudSheet: View {
                             .accessibilityIdentifier("cloud.problem")
                     }
                 }
+                // the chosen home being reached and signed in to, step by step
+                if signingInto != nil, let p = session.progress, p.isWorking {
+                    Section {
+                        ConnectProgressView(p, locale: words.locale)
+                    }
+                    .accessibilityIdentifier("cloud.progress")
+                }
                 if let user = session.cloudUser {
                     homes(user)
                 } else {
@@ -74,7 +81,7 @@ struct CloudSheet: View {
             Text(words.text(.cloudIntro))
         }
         Button(action: signIn) {
-            if busy { ProgressView() } else { Text(words.text(.signIn)) }
+            if busy { ConnectBusyLabel(ConnectProgress.Busy.cloudSignIn.text(words.locale)) } else { Text(words.text(.signIn)) }
         }
         .disabled(email.trimmingCharacters(in: .whitespaces).isEmpty || password.isEmpty || busy)
         .accessibilityIdentifier("cloud.signin")
@@ -187,7 +194,8 @@ struct CloudSheet: View {
             }
             Spacer()
             if signingInto == home.serverID {
-                ProgressView()
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .foregroundStyle(Color.mktBrassText)
                     .accessibilityLabel(words.text(.signingInTo, home.name))
             }
         }

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.player.harness
 
+import androidx.compose.ui.test.IdlingResource
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.MemoryTokens
 import com.hamzalabs.maktaba.core.api.ApiClient
@@ -16,6 +17,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import okhttp3.Dispatcher as CallDispatcher
 import org.junit.rules.ExternalResource
 
 /**
@@ -53,6 +55,20 @@ class FakeHome : ExternalResource() {
     lateinit var home: PlayerHome
         private set
 
+    /** The client's calls, on a dispatcher of their own so they can be counted. */
+    private val calls = CallDispatcher()
+
+    /**
+     * Idle when no call to this home is queued or running. OkHttp counts a call as running
+     * until its callback returns, and `exchange` resumes the caller inside that callback, so
+     * the screen's continuation is already on the main thread when this turns idle: register
+     * it (`compose.registerIdlingResource(home.idling)`) and `waitForIdle()` waits for the
+     * answers themselves, not for a length of time.
+     */
+    val idling = object : IdlingResource {
+        override val isIdleNow: Boolean get() = calls.runningCallsCount() == 0 && calls.queuedCallsCount() == 0
+    }
+
     init {
         answer("/api/libraries") { json(LIBRARIES) }
         answer("/api/libraries/summary") { json(LIBRARY_SUMMARY) }
@@ -76,7 +92,7 @@ class FakeHome : ExternalResource() {
         server.start()
         // a token good for a day: the client never asks to refresh it
         val tokens = MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh")
-        val client = ApiClient(server.url("/"), tokens)
+        val client = ApiClient(server.url("/"), tokens, ApiClient.defaultHttp.newBuilder().dispatcher(calls).build())
         val session = AppSession(MapStore(), scope, { MemoryTokens() })
         home = PlayerHome(session, user, client, ThemeStore(MapStore()))
     }

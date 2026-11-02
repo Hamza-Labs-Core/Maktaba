@@ -131,6 +131,7 @@ fun StatusLine(text: String, modifier: Modifier = Modifier, busy: Boolean = true
 @Composable
 private fun headline(p: ConnectProgress, left: String?): String = when (p) {
     is ConnectProgress.Finding -> stringResource(R.string.progress_finding)
+    is ConnectProgress.LookingNearby -> stringResource(R.string.progress_looking_nearby)
     is ConnectProgress.Trying -> stringResource(R.string.progress_trying, ltr(p.address), p.index, p.count)
     is ConnectProgress.Found -> stringResource(R.string.progress_found, p.name)
     is ConnectProgress.SigningIn -> stringResource(R.string.progress_signing_in, p.name)

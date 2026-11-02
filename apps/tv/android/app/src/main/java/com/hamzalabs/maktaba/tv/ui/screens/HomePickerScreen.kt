@@ -59,15 +59,15 @@ import com.hamzalabs.maktaba.core.diagnostics.AppLog
 /**
  * Choosing the home (Epic 42 story 42.10): the homes this TV used (Your homes; hold Select on
  * one to rename or remove it), the ones announcing themselves on this network (mDNS
- * `_maktaba._tcp`, `role=home` only, one row per home id: the core's discovery, kept by the
- * app: [MaktabaTVApp.homesFound]) that are not among them, or one by its address or a pasted
+ * `_maktaba._tcp`, `role=home` only, one row per home id: the session's, browsed while the
+ * app is in front: [AppSession.nearby]) that are not among them, or one by its address or a pasted
  * `maktaba://connect` link, asked whether it is a Maktaba home first ([AppSession.connect]).
  */
 @Composable
 fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe() }) {
     val session = app.session
     val saved by session.homes.collectAsState()
-    val found by app.homesFound.collectAsState()
+    val found by session.nearby.collectAsState()
     var address by remember { mutableStateOf("") }
     var problem by remember { mutableStateOf<String?>(null) }
     var connecting by remember { mutableStateOf(false) }

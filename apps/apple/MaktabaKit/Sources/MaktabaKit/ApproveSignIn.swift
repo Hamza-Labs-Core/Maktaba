@@ -45,7 +45,11 @@ public struct ApproveSignInView: View {
                         }
                         .accessibilityIdentifier("approve.code")
                     Button(action: lookUp) {
-                        if busy && looked == nil { ProgressView() } else { Text(words.text(.lookUp)) }
+                        if busy && looked == nil {
+                            ConnectBusyLabel(ConnectProgress.Busy.lookingUpCode.text(words.locale))
+                        } else {
+                            Text(words.text(.lookUp))
+                        }
                     }
                     .disabled(busy || code.trimmingCharacters(in: .whitespaces).isEmpty)
                     .accessibilityIdentifier("approve.lookUp")
@@ -136,7 +140,7 @@ public struct ApproveSignInView: View {
         Button {
             approve(shown, name: name)
         } label: {
-            if busy { ProgressView() } else { Text(words.text(.approve)).bold() }
+            if busy { ConnectBusyLabel(ConnectProgress.Busy.approving.text(words.locale)) } else { Text(words.text(.approve)).bold() }
         }
         .buttonStyle(.borderedProminent)
         .disabled(busy)

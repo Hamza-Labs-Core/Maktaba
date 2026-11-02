@@ -38,8 +38,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * Search's screenshots (NFR-20): dark, English and Arabic, phone and tablet, against the fake
  * home: the recent searches before a search, and the results (Titles, In the transcript) after
- * one. Posters come from [FakePictures]. `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * one. Posters come from [FakePictures]. `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

@@ -21,8 +21,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The Libraries section's screenshots (NFR-20): dark, English and Arabic; the libraries, a
  * library and a series on a phone, and the list beside a library's page on a tablet, against
- * the fake home with drawn posters. `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * the fake home with drawn posters. `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -32,8 +32,11 @@ class LibrariesScreenshotTest {
 
     @Before fun routes() = home.answerLibraries()
 
+    // a picture waits for every answer from the fake home, not only the first card's
+    @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
+
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private val lang get() = if (compose.activity.resources.configuration.locales[0].language == "ar") "ar" else "en"
 
@@ -52,8 +55,7 @@ class LibrariesScreenshotTest {
         compose.setLibraries(home)
         waitForTag("library-l1")
         compose.onNodeWithTag("library-l1").performClick()
-        // the grid's second page (v3, v4) is asked for once the first is drawn: shoot once its
-        // last video is in, or a slow run captures the first page alone
+        // the grid's last card in the picture: the first can show from the rows above it
         waitForTag("video-v4")
         shoot("library_phone")
     }

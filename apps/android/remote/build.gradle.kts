@@ -11,29 +11,35 @@ android {
         applicationId = "com.hamzalabs.maktaba.remote"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = providers.gradleProperty("maktaba.versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("maktaba.versionName").orNull ?: "0.1.0"
+        // One app for phones, foldables and tablets (one Google Play listing): the layout follows
+        // the window, and the device the API is told comes from the screen (ClientHeader.deviceFor).
+        // Its name is res/values*/strings.xml's app_name ("Remote", «ريموت»).
     }
 
-    // One code base, three store listings (Epic 42): the layout follows the window on every
-    // one of them; the flavour is the listing's identity and name.
-    flavorDimensions += "form"
-    productFlavors {
-        create("phone") {
-            dimension = "form"
-        }
-        create("foldable") {
-            dimension = "form"
-            applicationIdSuffix = ".foldable"
-        }
-        create("tablet") {
-            dimension = "form"
-            applicationIdSuffix = ".tablet"
+    // Google Play (docs/google-play.md). The release takes its version from the tag
+    // (-Pmaktaba.versionName / -Pmaktaba.versionCode, tools/release/play-version.sh) and is signed
+    // with the Play upload key only when the environment names it (ANDROID_UPLOAD_KEYSTORE_FILE,
+    // ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEY_PASSWORD, ANDROID_UPLOAD_STORE_PASSWORD);
+    // without it the bundle is unsigned. No key is ever in the repository.
+    val uploadStore = providers.environmentVariable("ANDROID_UPLOAD_KEYSTORE_FILE").orNull
+    signingConfigs {
+        if (!uploadStore.isNullOrBlank()) {
+            create("upload") {
+                val keyPass = providers.environmentVariable("ANDROID_UPLOAD_KEY_PASSWORD").get()
+                storeFile = file(uploadStore)
+                storePassword = providers.environmentVariable("ANDROID_UPLOAD_STORE_PASSWORD").orNull
+                    ?.takeIf { it.isNotEmpty() } ?: keyPass
+                keyAlias = providers.environmentVariable("ANDROID_UPLOAD_KEY_ALIAS").get()
+                keyPassword = keyPass
+            }
         }
     }
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("upload")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui
 
+import com.hamzalabs.maktaba.core.ui.KeepDiscovering
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -16,6 +17,7 @@ import com.hamzalabs.maktaba.tv.ui.screens.SignInScreen
 @Composable
 fun Root(app: MaktabaTVApp) {
     val session = app.session
+    KeepDiscovering(session)
     val phase by session.phase.collectAsState()
     val home by session.current.collectAsState()
     val link by session.link.collectAsState()

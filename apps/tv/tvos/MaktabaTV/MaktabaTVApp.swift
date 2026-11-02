@@ -37,6 +37,7 @@ struct MaktabaTVApp: App {
 struct RootView: View {
     @Bindable var session: AppSession
     private let words = ConnectStrings.forPreferredLanguages()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         ZStack {
@@ -54,6 +55,9 @@ struct RootView: View {
             }
         }
         .onOpenURL { session.open($0) }
+        // the homes on this network, the whole time the app is in front (browsed afresh
+        // each time it comes back): a saved home is found again where it announces itself
+        .onChange(of: scenePhase != .background, initial: true) { _, front in session.discover(front) }
         .alert(words.text(session.pendingLink != nil ? .linkTitle : .connect), isPresented: Binding(
             get: { session.phase != .choosingHome && (session.pendingLink != nil || session.connectProblem != nil) },
             set: { if !$0 { session.dismissLink(); session.connectProblem = nil } })

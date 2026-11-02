@@ -14,6 +14,12 @@ sealed interface ConnectProgress {
     /** Looking for the home: before the first address is tried. */
     data class Finding(override val attempt: Int = 1) : ConnectProgress
 
+    /**
+     * None of the home's addresses answered: it is looked for among the homes announced on
+     * this network (mDNS), to be asked where it is announced.
+     */
+    data class LookingNearby(override val attempt: Int = 1) : ConnectProgress
+
     /** Trying [address] (without its scheme), the [index]th (from 1) of [count]. */
     data class Trying(val address: String, val index: Int, val count: Int, override val attempt: Int = 1) : ConnectProgress
 

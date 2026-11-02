@@ -23,13 +23,12 @@ final class PlayerComponentsUITests: PlayerUITestCase {
                 shot("components-\(piece)\(large ? "-ax3" : "")")
                 // NFR-6: labels, roles, contrast, Dynamic Type, clipped text, hit regions
                 do {
-                    let window = screen
                     try app.performAccessibilityAudit { issue in
                         // a progress bar is a reading, not a control: no 44-pt target
                         if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                         // a rail's last card half off the screen's edge: the audit samples
                         // pixels beyond it (the cards fully on screen are still checked)
-                        if issue.auditType == .contrast, let f = issue.element?.frame, !window.contains(f) { return true }
+                        if self.contrastOutOfView(issue) { return true }
                         return false
                     }
                 } catch {

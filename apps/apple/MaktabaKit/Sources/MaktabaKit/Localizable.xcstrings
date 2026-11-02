@@ -245,6 +245,26 @@
         }
       }
     },
+    "Approving…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ الموافقة…"
+          }
+        }
+      }
+    },
+    "Attempt %lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المحاولة %lld"
+          }
+        }
+      }
+    },
     "Awaiting review" : {
       "localizations" : {
         "ar" : {
@@ -275,12 +295,32 @@
         }
       }
     },
+    "Code %@ · %@ left" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الرمز %1$@ · يتبقّى %2$@"
+          }
+        }
+      }
+    },
     "Dark" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "داكن"
+          }
+        }
+      }
+    },
+    "Found %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم العثور على %@"
           }
         }
       }
@@ -395,12 +435,52 @@
         }
       }
     },
+    "Looking for your home on this network…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ البحث عن الجهاز الرئيسي على هذه الشبكة…"
+          }
+        }
+      }
+    },
+    "Looking for your home…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ البحث عن الجهاز الرئيسي…"
+          }
+        }
+      }
+    },
+    "Looking up the code…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ البحث عن الرمز…"
+          }
+        }
+      }
+    },
     "Maktaba" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "مكتبة"
+          }
+        }
+      }
+    },
+    "Next try in %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المحاولة التالية بعد %@"
           }
         }
       }
@@ -495,12 +575,32 @@
         }
       }
     },
+    "Reconnecting to %@…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ إعادة الاتصال بـ %@…"
+          }
+        }
+      }
+    },
     "Remote" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الإدارة عن بُعد"
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة المحاولة"
           }
         }
       }
@@ -525,6 +625,36 @@
         }
       }
     },
+    "Signing in to %@…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ تسجيل الدخول إلى %@…"
+          }
+        }
+      }
+    },
+    "Signing in to Maktaba Cloud…" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ تسجيل الدخول إلى Maktaba Cloud…"
+          }
+        }
+      }
+    },
+    "Something went wrong on your home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حدث خطأ في الجهاز الرئيسي."
+          }
+        }
+      }
+    },
     "Stopped at: %@" : {
       "localizations" : {
         "ar" : {
@@ -541,6 +671,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "النظام"
+          }
+        }
+      }
+    },
+    "That address answers for a different home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا العنوان يجيب عن جهاز رئيسي مختلف."
+          }
+        }
+      }
+    },
+    "That address is not a Maktaba home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا العنوان ليس جهاز مكتبة رئيسيًا."
           }
         }
       }
@@ -585,6 +735,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "That username or password is not right." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اسم المستخدم أو كلمة المرور غير صحيحة."
           }
         }
       }
@@ -649,6 +809,16 @@
         }
       }
     },
+    "The sign-in code expired before it was approved." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "انتهت صلاحية رمز تسجيل الدخول قبل الموافقة عليه."
+          }
+        }
+      }
+    },
     "Theme" : {
       "localizations" : {
         "ar" : {
@@ -675,6 +845,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "رموز خاطئة كثيرة: رُفض الطلب. أعد الطلب من الجهاز."
+          }
+        }
+      }
+    },
+    "Tried: %@" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العناوين التي جُرّبت: %@"
+          }
+        }
+      }
+    },
+    "Trying %@ — %lld of %lld" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تجربة %1$@ — %2$lld من %3$lld"
           }
         }
       }
@@ -715,6 +905,46 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "في الانتظار"
+          }
+        }
+      }
+    },
+    "Waiting for approval on another device" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في انتظار الموافقة على جهاز آخر"
+          }
+        }
+      }
+    },
+    "Your home didn't answer." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُجب الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "Your home is busy or still starting" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز الرئيسي مشغول أو ما زال قيد التشغيل"
+          }
+        }
+      }
+    },
+    "Your home is busy right now." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الجهاز الرئيسي مشغول الآن."
           }
         }
       }

@@ -1,0 +1,281 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld%% through" : {
+      "comment" : "Live TV: how far into the programme on now, spoken",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مضى %lld%%"
+          }
+        }
+      }
+    },
+    "Back" : {
+      "comment" : "Leaves the live player",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رجوع"
+          }
+        }
+      }
+    },
+    "Back to live" : {
+      "comment" : "The live player: jump to the live edge after a pause",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العودة إلى البث المباشر"
+          }
+        }
+      }
+    },
+    "Channels show here once the home shares one with you." : {
+      "comment" : "Live TV with no channel: why, and when that changes",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تظهر القنوات هنا حين يشارك «الجهاز الرئيسي» قناة معك."
+          }
+        }
+      }
+    },
+    "Close" : {
+      "comment" : "Closes a programme's sheet",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إغلاق"
+          }
+        }
+      }
+    },
+    "Day" : {
+      "comment" : "Live TV guide: choose the day",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اليوم"
+          }
+        }
+      }
+    },
+    "Done" : {
+      "comment" : "Closes the number pad",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تم"
+          }
+        }
+      }
+    },
+    "Guide" : {
+      "comment" : "Live TV: the programme guide",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدليل"
+          }
+        }
+      }
+    },
+    "Mini guide" : {
+      "comment" : "The live player: the channels around this one, now and next",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدليل المصغّر"
+          }
+        }
+      }
+    },
+    "Next channel" : {
+      "comment" : "The live player: the next channel by number",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القناة التالية"
+          }
+        }
+      }
+    },
+    "Next: %@ %@" : {
+      "comment" : "Live TV: what is on next, its start time then its title",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التالي: %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "No channels yet" : {
+      "comment" : "Live TV with no channel to watch",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا قنوات بعد"
+          }
+        }
+      }
+    },
+    "Nothing scheduled" : {
+      "comment" : "Live TV: a channel with nothing on now",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء مجدول"
+          }
+        }
+      }
+    },
+    "Now" : {
+      "comment" : "Live TV: what is on now on every channel",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الآن"
+          }
+        }
+      }
+    },
+    "Number pad" : {
+      "comment" : "The live player: type a channel's number",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لوحة الأرقام"
+          }
+        }
+      }
+    },
+    "Pause" : {
+      "comment" : "The live player: pause",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Play" : {
+      "comment" : "The live player: play on after a pause",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تشغيل"
+          }
+        }
+      }
+    },
+    "Previous channel" : {
+      "comment" : "The live player: the previous channel by number",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "القناة السابقة"
+          }
+        }
+      }
+    },
+    "The home ended this stream." : {
+      "comment" : "The live player: the home ended the remote session",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أنهى «الجهاز الرئيسي» هذا البث."
+          }
+        }
+      }
+    },
+    "Today" : {
+      "comment" : "Live TV guide: the day picker's today",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اليوم"
+          }
+        }
+      }
+    },
+    "Tomorrow" : {
+      "comment" : "Live TV guide: the day picker's tomorrow",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "غدًا"
+          }
+        }
+      }
+    },
+    "Tuning…" : {
+      "comment" : "The live player while a channel starts",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ ضبط القناة…"
+          }
+        }
+      }
+    },
+    "View" : {
+      "comment" : "Live TV: choose Now or Guide",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العرض"
+          }
+        }
+      }
+    },
+    "Watch" : {
+      "comment" : "Live TV: watch what is on now",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شاهد"
+          }
+        }
+      }
+    },
+    "Watch again" : {
+      "comment" : "The live player: tune the same channel again",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شاهد مجددًا"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

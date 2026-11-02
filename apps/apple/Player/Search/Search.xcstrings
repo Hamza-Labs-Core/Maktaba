@@ -1,0 +1,138 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "Clear all" : {
+      "comment" : "Forgets every recent search",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مسح الكل"
+          }
+        }
+      }
+    },
+    "In the transcript" : {
+      "comment" : "Search results whose transcript matches",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في التفريغ"
+          }
+        }
+      }
+    },
+    "Matches: %lld" : {
+      "comment" : "How many transcript lines matched; a number",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عدد المطابقات: %lld"
+          }
+        }
+      }
+    },
+    "Nothing matches “%@”." : {
+      "comment" : "A search found nothing; the query",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا شيء يطابق «%@»."
+          }
+        }
+      }
+    },
+    "Play from %@" : {
+      "comment" : "A transcript passage plays from this time",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التشغيل من %@"
+          }
+        }
+      }
+    },
+    "Recent searches" : {
+      "comment" : "The recent searches' heading",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عمليات البحث الأخيرة"
+          }
+        }
+      }
+    },
+    "Remove %@" : {
+      "comment" : "Forgets one recent search; the query",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إزالة %@"
+          }
+        }
+      }
+    },
+    "Search for a title, or for words said in a video." : {
+      "comment" : "Search before anything is typed, with no recent searches",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ابحث عن عنوان، أو عن كلمات قيلت في فيديو."
+          }
+        }
+      }
+    },
+    "Search titles and transcripts" : {
+      "comment" : "The search field's placeholder",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ابحث في العناوين والتفريغات"
+          }
+        }
+      }
+    },
+    "Show more" : {
+      "comment" : "Loads the next page of a group of search results",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عرض المزيد"
+          }
+        }
+      }
+    },
+    "Text matches only: the meaning search did not answer." : {
+      "comment" : "The home answered a search with its text half only",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مطابقات نصية فقط: لم يستجب البحث بالمعنى."
+          }
+        }
+      }
+    },
+    "Titles" : {
+      "comment" : "Search results whose title matches",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "العناوين"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

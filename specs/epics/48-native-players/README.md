@@ -620,6 +620,33 @@ TV (own track):
   `ui/SignedInApp.kt`, `ui/components/TopBar.kt`, `data/TvApi.kt`, strings.
   - [ ] The same, D-pad only; a JVM test for the guide's focus moves.
 
+Both platforms (owner request, 2026-11-01: "Connecting to home needs more info on the apps, like
+connecting, pending whatever, same on retry"):
+
+- **48.37 Connect progress: never a bare spinner.** Apple files: MaktabaKit `ConnectProgress.swift`,
+  `ConnectProgressView.swift`, `Connect.swift` (`HomeProbe`), `Homes.swift` (`AppSession`: connect,
+  restore, password), `CodeSignIn.swift`, `StartViews.swift`, `CloudViews.swift`, `ApproveSignIn.swift`,
+  its catalog. Android files: `core/session`, the start screens in `core/ui`, their strings.
+  Every wait on a connect, sign-in or reconnect screen says what is happening now, in English and
+  Arabic: "Looking for your home…", each address tried ("Trying 192.168.1.20 — 1 of 3"), "Found
+  <home>"; for a code sign-in "Waiting for approval on another device" with the code and a live
+  countdown; at launch "Reconnecting to <home>…", and on a 503 / Retry-After that the home is busy
+  or starting with the countdown to the next try; on failure the plain reason (didn't answer / not
+  a Maktaba home / a different home / wrong password / approval expired), the addresses tried and a
+  Retry button; on retry the same steps plus "Attempt 2".
+  - [ ] One connect-progress value type in the shared model (Apple: MaktabaKit `ConnectProgress`;
+        Android: `core/session`): finding / trying(address, i, n) / found(name) / signingIn /
+        awaitingApproval(code, expiresAt) / reconnecting(name) / homeBusy(retryAt) /
+        failed(reason, tried), plus the attempt number. The connect code publishes it as it goes.
+  - [ ] A unit test for each transition with a fake clock and a fake transport (latches, not
+        sleeps), including the 503 Retry-After countdown, approval expiry, a different home, and
+        Retry incrementing the attempt.
+  - [ ] Every connect, sign-in, restore and retry screen renders it; no bare spinner remains (a
+        source guard test on the start screens).
+  - [ ] Dark-theme English and Arabic screenshots of each state: iPhone (Apple); Android phone and
+        tablet (Roborazzi).
+  - [ ] Strings in both languages; the missing-Arabic guards pass.
+
 ### Phase 4
 
 - **48.36 Help, store screenshots, verification.** After everything. Files:
