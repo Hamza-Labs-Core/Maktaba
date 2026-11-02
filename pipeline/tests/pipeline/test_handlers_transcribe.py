@@ -40,6 +40,7 @@ from maktaba_pipeline.db.jobs import Stage
 from maktaba_pipeline.handlers import transcribe_handler
 from maktaba_pipeline.stt.protocol import Segment, Word
 from tests.audio._fake_audio_db import _AudioCacheRow, _AudioTrackRow, _ProcessingJobRow
+from tests.audio._two_tracks import ARABIC_HZ, dominant_hz, needs_ffmpeg, two_track_file
 
 from .conftest import StageDB, make_job
 
@@ -128,11 +129,13 @@ def _fake_backend(name: str = "fake-stt", *, segments: tuple[Segment, ...] = _SE
             self.cost_per_minute: float | None = 0.0
             self.supports_word_timestamps = False
             self.seen: list[tuple[object, str | None]] = []
+            self.hints: list[Any] = []
 
         def transcribe(
             self, audio: Any, language: str | None, hints: Any
         ) -> AsyncIterator[Segment]:
             self.seen.append((audio, language))
+            self.hints.append(hints)
 
             async def _gen() -> AsyncIterator[Segment]:
                 for seg in segments:
@@ -772,6 +775,9 @@ def test_no_engine_chain_streams_when_extract_wrote_no_wav(dialect: str) -> None
 
     assert stage_db.processing_jobs[queued.id].state == "done", queued.error
     assert backend.seen[0][0] == "/lib/درس 01.mkv"
+    # the file has two audio streams: the backend is told to decode extract's, not
+    # the file's default (English)
+    assert backend.hints[0].audio_stream == 1
     tr = next(t for t in stage_db.transcripts.values() if t.is_active)
     assert tr.audio_track_id == arabic  # the track extract chose
     assert stage_db.videos[video_id].state == "transcribed"
@@ -796,6 +802,7 @@ def test_a_streaming_job_with_no_payload_uses_the_video_s_hash_and_track(dialect
 
     assert stage_db.processing_jobs[41].state == "done"
     assert backend.seen[0][0] == "/lib/m.mkv"
+    assert backend.hints[0].audio_stream is None  # one audio track: read directly
     tr = next(t for t in stage_db.transcripts.values() if t.is_active)
     assert tr.audio_track_id == track
 
@@ -827,3 +834,61 @@ def test_the_wav_a_file_backend_read_is_released(dialect: str, tmp_path: Path) -
     assert backend.seen[0][0] == wav.as_posix()
     assert chash not in stage_db.audio_cache
     assert not wav.exists()
+
+
+@needs_ffmpeg
+def test_no_engine_mlx_decodes_the_chosen_track_of_a_two_track_file(
+    dialect: str, tmp_path: Path
+) -> None:
+    """``--no-engine``, whisper-mlx, no ``audio_cache`` row, a file with an English
+    (default, 0:a:0) and an Arabic (0:a:1) track: extract's policy picks Arabic, and
+    the samples mlx_whisper decodes are the Arabic stream's (ffmpeg ``-map 0:a:1``),
+    not the default stream it would read off the path, so the transcript recorded
+    against the Arabic track is of the Arabic audio."""
+    from maktaba_pipeline.handlers import extract_handler
+    from maktaba_pipeline.stt.mlx import WhisperMLXBackend
+    from tests.pipeline.test_handlers_extract import _seed_audio_track
+    from tests.pipeline.test_handlers_extract import _seed_claimed_job as _claim_extract
+
+    src = two_track_file(tmp_path / "درس 02.mkv")
+    stage_db = StageDB(dialect=dialect)
+    chash = "w" * 64
+    video_id = stage_db.add_video(state="probed", path=src.as_posix(), content_hash=chash)
+    _seed_audio_track(stage_db, video_id=video_id, track_index=0, language="eng")
+    arabic = _seed_audio_track(
+        stage_db, video_id=video_id, track_index=1, language="ara", is_default=False
+    )
+    _claim_extract(stage_db, job_id=50, video_id=video_id)
+    asyncio.run(
+        extract_handler(
+            stage_db,
+            make_job(job_id=50, video_id=video_id, stage=Stage.EXTRACT),
+            requires_file=lambda: False,
+        )
+    )
+    queued = next(
+        pj for pj in stage_db.processing_jobs.values() if pj.stage == Stage.TRANSCRIBE.value
+    )
+    queued.state = "running"
+    job = make_job(
+        job_id=queued.id,
+        video_id=video_id,
+        stage=Stage.TRANSCRIBE,
+        payload=json.loads(queued.payload or "{}"),
+    )
+
+    decoded: list[Any] = []
+
+    def mlx_whisper(audio: Any, _kwargs: dict[str, Any]) -> list[dict[str, Any]]:
+        decoded.append(audio)
+        return [{"start": 0.0, "end": 2.0, "text": "بسم الله"}]
+
+    backend = WhisperMLXBackend(force_ready=True, transcribe_fn=mlx_whisper)
+    asyncio.run(transcribe_handler(stage_db, job, select_backend=_pick(backend)))
+
+    assert stage_db.processing_jobs[queued.id].state == "done", queued.error
+    assert not isinstance(decoded[0], str)  # the samples, not the path
+    assert dominant_hz(decoded[0]) == pytest.approx(ARABIC_HZ, abs=5)
+    tr = next(t for t in stage_db.transcripts.values() if t.is_active)
+    assert tr.audio_track_id == arabic
+    assert stage_db.audio_cache == {}  # no WAV was written

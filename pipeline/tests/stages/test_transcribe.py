@@ -15,6 +15,13 @@ from maktaba_pipeline.engine.sql import is_pg
 from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt.batched import Sentence, Transcript
+from tests.audio._two_tracks import (
+    ARABIC_HZ,
+    ENGLISH_HZ,
+    dominant_hz,
+    needs_ffmpeg,
+    two_track_file,
+)
 from tests.stages.world import core_runtime, drain_core, make_show
 
 SEG = {"start": 0.5, "end": 1.5, "text": "بسم الله", "avg_logprob": -0.1, "no_speech_prob": 0.0}
@@ -28,6 +35,7 @@ class FakeTranscriber:
         self.resumed: Any = None
         self.slow = 0.0
         self.prompts: list[str | None] = []
+        self.audio: list[np.ndarray] = []
 
     async def transcribe(
         self,
@@ -39,6 +47,7 @@ class FakeTranscriber:
         prompt: str | None = None,
     ) -> Transcript:
         self.calls += 1
+        self.audio.append(audio)
         self.resumed = resume
         self.prompts.append(prompt)
         if progress is not None and self.slow:
@@ -58,7 +67,7 @@ class FakeTranscriber:
 def fake(monkeypatch: pytest.MonkeyPatch) -> FakeTranscriber:
     f = FakeTranscriber()
 
-    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+    async def decode(path: str, timeout: float = 0, *, stream: int = 0) -> np.ndarray:
         return np.zeros(16000 * 6, np.float32)
 
     monkeypatch.setattr(tr, "decode_audio", decode)
@@ -533,3 +542,79 @@ async def test_extract_is_asked_for_only_when_the_backend_reads_a_file(
     else:
         assert extract == []
         assert fake.calls == 1
+
+
+def _two_audio_ffprobe() -> dict[str, Any]:
+    """The probe's output for :func:`two_track_file`: English (default), Arabic."""
+    return {
+        "format": {"format_name": "matroska,webm"},
+        "streams": [
+            {
+                "codec_type": "audio",
+                "codec_name": "aac",
+                "channels": 1,
+                "sample_rate": "48000",
+                "tags": {"language": lang},
+                "disposition": {"default": default},
+            }
+            for lang, default in (("eng", 1), ("ara", 0))
+        ],
+    }
+
+
+@needs_ffmpeg
+@pytest.mark.asyncio
+@pytest.mark.parametrize("probed", [True, False])
+async def test_the_chosen_track_of_a_two_track_file_is_the_one_decoded(
+    probed: bool, db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Off the share, a file with an English (default, 0:a:0) and an Arabic (0:a:1)
+    track: the selection policy picks Arabic, ffmpeg decodes ``-map 0:a:1`` and the
+    transcript is recorded against the Arabic track. Not probed: the first stream, as
+    track 0, as before."""
+    from maktaba_pipeline.engine.sql import dumps
+
+    f = FakeTranscriber()
+    monkeypatch.setattr(tr, "get_transcriber", lambda settings: f)
+    monkeypatch.setattr(tr, "use_vad", lambda: False)
+    rt = await core_runtime(db)
+    vid, media = await _one_video(db, tmp_path)
+    two_track_file(media)
+    arabic: Any = None
+    if probed:
+        cast = "::jsonb" if is_pg(db) else ""
+        await db.execute(
+            f"INSERT INTO media_info (video_id, container, raw_ffprobe)"
+            f" VALUES ($1, 'matroska,webm', $2{cast})",
+            str(vid),
+            dumps(_two_audio_ffprobe()),
+        )
+        for idx, lang, default in ((0, "eng", True), (1, "ara", False)):
+            await db.execute(
+                "INSERT INTO audio_tracks (video_id, track_index, codec, channels,"
+                " sample_rate, language, is_default) VALUES ($1, $2, 'aac', 1, 48000, $3, $4)",
+                str(vid),
+                idx,
+                lang,
+                default if is_pg(db) else int(default),
+            )
+        arabic = await db.fetchval(
+            "SELECT id FROM audio_tracks WHERE video_id = $1 AND track_index = 1", str(vid)
+        )
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    assert await drain_core(db, rt, only={"transcribe"}) == ["transcribe"]
+
+    assert f.calls == 1
+    heard = dominant_hz(f.audio[0])
+    t = await db.fetchrow(
+        "SELECT a.track_index, a.id FROM transcripts t JOIN audio_tracks a"
+        " ON a.id = t.audio_track_id WHERE t.video_id = $1 AND t.is_active",
+        str(vid),
+    )
+    assert t is not None
+    if probed:
+        assert heard == pytest.approx(ARABIC_HZ, abs=5)
+        assert t["id"] == arabic
+    else:
+        assert heard == pytest.approx(ENGLISH_HZ, abs=5)
+        assert t["track_index"] == 0

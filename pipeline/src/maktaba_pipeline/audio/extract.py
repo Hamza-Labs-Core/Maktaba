@@ -43,6 +43,7 @@ __all__ = [
     "SelectedTrack",
     "StreamHandle",
     "SweepReport",
+    "audio_stream_of",
     "build_ffmpeg_args",
     "commit_extract",
     "commit_extract_skipped",
@@ -446,6 +447,24 @@ async def load_selected_track(
     # plumbed — see Story 2.2/2.3.
     chosen = selected[0]
     return SelectedTrack(db_id=by_index[chosen.index], track=chosen)
+
+
+async def audio_stream_of(db: _ExtractDB, *, video_id: UUID, audio_track_id: int) -> int | None:
+    """The ``-map 0:a:N`` stream a decoder must read for ``audio_track_id`` when it is
+    handed the source file itself; ``None`` when the video has only the one audio track
+    (a decoder's default stream is then the right one).
+
+    A decoder given a file with several audio streams picks its own (ffmpeg's "best"
+    one: the most channels, the default disposition), not the track the selection
+    policy chose, and the transcript would carry the other track's id.
+    """
+    rows = await db.fetch(_SELECT_AUDIO_TRACKS, video_id)
+    if len(rows) < 2:
+        return None
+    for r in rows:
+        if int(r["id"]) == int(audio_track_id):
+            return int(r["track_index"])
+    raise ValueError(f"audio track {audio_track_id} is not one of video {video_id}'s tracks")
 
 
 async def commit_extract(

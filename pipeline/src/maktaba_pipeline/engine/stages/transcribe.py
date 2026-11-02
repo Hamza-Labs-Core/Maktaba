@@ -6,8 +6,9 @@ process's :class:`~maktaba_pipeline.stt.batched.BatchedTranscriber`, which decod
 window of every running job per GPU pass: on MLX on Apple Silicon, on CTranslate2
 elsewhere (:mod:`maktaba_pipeline.stt.engine`, :mod:`maktaba_pipeline.stt.ct2`: an
 NVIDIA GPU through CUDA, else the CPU). The transcript replaces the video's active one
-in one transaction: a new ``transcripts`` row (on the stream it decoded, recorded in
-``audio_tracks`` as track 0; ``backend`` names the engine) with one
+in one transaction: a new ``transcripts`` row (on the track it decoded: of a file with
+several audio streams the one the selection policy chooses, decoded on its own stream,
+else the first stream, recorded as track 0; ``backend`` names the engine) with one
 ``transcript_segments`` row per sentence.
 
 Settings (environment, read per run): ``MAKTABA_STT_MODEL`` (default
@@ -858,13 +859,16 @@ async def library_prompt(db: Any, library_id: Any) -> str | None:
     return (got.strip() or None) if isinstance(got, str) else None
 
 
-async def decode_audio(path: str, timeout: float = DECODE_TIMEOUT_S) -> np.ndarray:
-    """The file's first audio track as mono float32 at 16 kHz."""
+async def decode_audio(
+    path: str, timeout: float = DECODE_TIMEOUT_S, *, stream: int = 0
+) -> np.ndarray:
+    """The file's audio stream ``stream`` (``-map 0:a:N``; the first by default) as
+    mono float32 at 16 kHz, piped out of ffmpeg into memory (no file written)."""
     import numpy as np
 
     proc = await asyncio.create_subprocess_exec(
         ffmpeg_binary(), "-nostdin", "-hide_banner", "-loglevel", "error",
-        "-i", path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
+        "-i", path, "-map", f"0:a:{stream}", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
         "-f", "s16le", "-",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -912,6 +916,31 @@ async def cached_wav(db: Any, video_id: Any) -> tuple[str | None, int | None] | 
     return (path if present else None), int(row["audio_track_id"])
 
 
+async def chosen_track(db: Any, video_id: Any) -> tuple[int, int] | None:
+    """For a file with several audio streams, the one the selection policy chooses (the
+    track extract would write): ``(its audio_tracks.id, its -map 0:a:N stream)``.
+
+    The choice is made over the streams the probe saw in the file as it is now
+    (``media_info.raw_ffprobe``), not over ``audio_tracks`` rows, which can outlive a
+    replaced file's streams. None for a file with one audio stream, one not probed, or a
+    chosen stream with no ``audio_tracks`` row: its first stream is decoded and recorded
+    as track 0, as before."""
+    from ...audio.track_selection import select_tracks
+
+    audio = await _probed_audio(db, video_id)
+    if len(audio) < 2:
+        return None
+    picked = select_tracks(audio)
+    if not picked:
+        return None
+    row = await db.fetchval(
+        "SELECT id FROM audio_tracks WHERE video_id = $1 AND track_index = $2",
+        uid(video_id),
+        picked[0].index,
+    )
+    return None if row is None else (int(row), picked[0].index)
+
+
 async def _on_share(local: str) -> str:
     """The video's file as this machine reads it, or why not."""
     try:
@@ -952,6 +981,13 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             if wav is None:  # written on another machine: decoded off the share instead
                 track_id = None
                 _log.info("transcribe.wav_not_here", video_id=str(v.id))
+    stream = 0
+    if wav is None:
+        # off the share: of a file with several audio streams, the one the selection
+        # policy chooses (extract's choice), decoded on its own stream, not the first
+        chosen = await chosen_track(db, v.id)
+        if chosen is not None:
+            track_id, stream = chosen
     found = wav if wav is not None else await _on_share(ctx.local_path(v.path))
 
     budget = audio_budget()
@@ -963,7 +999,13 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         raise
     try:
         result = await _transcribe_file(
-            db, v, found, ctx, await input_fingerprint(db, job.subject), audio_track_id=track_id
+            db,
+            v,
+            found,
+            ctx,
+            await input_fingerprint(db, job.subject),
+            audio_track_id=track_id,
+            stream=stream,
         )
     finally:
         await budget.release(held)
@@ -1085,11 +1127,12 @@ async def _transcribe_file(
     fingerprint: str | None,
     *,
     audio_track_id: int | None = None,
+    stream: int = 0,
 ) -> StageResult:
-    """Decode ``found`` (the video, or extract's WAV of ``audio_track_id``) and store
-    its transcript."""
+    """Decode ``found`` (the video's audio stream ``stream``, or extract's WAV) and
+    store its transcript against ``audio_track_id``."""
     try:
-        audio = await decode_audio(found)
+        audio = await decode_audio(found, stream=stream)
     except TimeoutError as exc:
         raise StageFailure("nas_timeout", f"{found}: decoding took too long") from exc
     if audio.size < SAMPLE_RATE // 2:
@@ -1182,7 +1225,8 @@ async def _store(
     """The transcript replaces the video's active one, atomically. The video's relisten
     tries (``relisten_attempts``) go with the old one, unless ``keep_tries``: a relisten
     job that again went without the second listen. ``audio_track_id``: the track the
-    audio came from (extract's WAV), else the first audio stream, recorded as track 0."""
+    audio came from (extract's WAV, or the chosen stream off the share), else the first
+    audio stream, recorded as track 0."""
     store_words = os.environ.get("MAKTABA_STT_STORE_WORDS", "0") == "1"
     async with db.transaction():
         if audio_track_id is None:
@@ -1285,18 +1329,24 @@ async def _first_audio_track(db: Any, video_id: Any) -> int:
     return int(track["id"])
 
 
-async def _probed_first_audio(db: Any, video_id: Any) -> AudioTrack | None:
-    """The video's first audio stream (``-map 0:a:0``) as the probe saw it, from
-    ``media_info.raw_ffprobe``; ``None`` when the video was not probed or the output
-    lists no audio."""
+async def _probed_audio(db: Any, video_id: Any) -> list[AudioTrack]:
+    """The video's audio streams (``-map 0:a:N``) as the probe saw them, from
+    ``media_info.raw_ffprobe``; empty when the video was not probed or the output lists
+    no audio."""
     raw = await db.fetchval("SELECT raw_ffprobe FROM media_info WHERE video_id = $1", uid(video_id))
     try:
         payload = loads(raw)
     except ValueError:
-        return None
+        return []
     if not isinstance(payload, dict):
-        return None
-    audio = parse_ffprobe_json(payload).audio
+        return []
+    return parse_ffprobe_json(payload).audio
+
+
+async def _probed_first_audio(db: Any, video_id: Any) -> AudioTrack | None:
+    """The video's first audio stream (``-map 0:a:0``) as the probe saw it; ``None``
+    when the video was not probed or the output lists no audio."""
+    audio = await _probed_audio(db, video_id)
     return audio[0] if audio else None
 
 

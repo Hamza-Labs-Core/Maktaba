@@ -19,7 +19,7 @@ import pytest
 import structlog
 from structlog.testing import LogCapture
 
-from maktaba_pipeline.audio.extract import commit_extract, load_selected_track
+from maktaba_pipeline.audio.extract import audio_stream_of, commit_extract, load_selected_track
 
 from ._fake_audio_db import FakeAudioDB, _AudioTrackRow
 
@@ -195,3 +195,20 @@ def test_commit_extract_missing_video_raises() -> None:
         pass
     else:  # pragma: no cover
         raise AssertionError("expected LookupError for missing video row")
+
+
+def test_audio_stream_of_names_the_stream_only_when_there_are_several() -> None:
+    """A source handed to a decoder: with several audio tracks the chosen one's
+    ``-map 0:a:N`` stream; with one, None (the decoder's default stream is it)."""
+    db = FakeAudioDB()
+    one = db.add_video(state="probed")
+    only = _seed_track(db, one)
+    assert asyncio.run(audio_stream_of(db, video_id=one, audio_track_id=only)) is None
+
+    two = db.add_video(state="probed")
+    first = _seed_track(db, two, track_index=0)
+    second = _seed_track(db, two, track_index=1)
+    assert asyncio.run(audio_stream_of(db, video_id=two, audio_track_id=second)) == 1
+    assert asyncio.run(audio_stream_of(db, video_id=two, audio_track_id=first)) == 0
+    with pytest.raises(ValueError, match="not one of"):
+        asyncio.run(audio_stream_of(db, video_id=two, audio_track_id=only))

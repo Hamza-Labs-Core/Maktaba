@@ -48,7 +48,8 @@ class FasterWhisperBackend:
         model: str = "large-v3",
         version: str = "0.0.0",
         compute_type: str | None = None,
-        transcribe_fn: Callable[[str, dict[str, Any]], list[dict[str, Any]]] | None = None,
+        # (the path, or the samples of hints.audio_stream, kwargs) -> segment dicts
+        transcribe_fn: Callable[[Any, dict[str, Any]], list[dict[str, Any]]] | None = None,
         force_ready: bool | None = None,
     ) -> None:
         self.device: Device = device
@@ -56,7 +57,7 @@ class FasterWhisperBackend:
         self.model = model
         self._version = version
         self._compute_type = compute_type or ("float16" if device == "cuda" else "int8")
-        #: a stand-in for the engine (tests): (path, kwargs) -> segment dicts
+        #: a stand-in for the engine (tests)
         self._transcribe_fn = transcribe_fn
         if force_ready is not None:
             self._ready = force_ready
@@ -83,7 +84,12 @@ class FasterWhisperBackend:
                 "initial_prompt": hints.initial_prompt,
                 "word_timestamps": hints.word_timestamps,
             }
-            raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(path, kwargs))
+            src: Any = path
+            if hints.audio_stream is not None:
+                from ..engine.stages.transcribe import decode_audio
+
+                src = await decode_audio(path, stream=hints.audio_stream)
+            raw = await asyncio.get_running_loop().run_in_executor(None, lambda: fn(src, kwargs))
             for i, seg in enumerate(raw):
                 yield Segment(
                     seq=i,
@@ -129,7 +135,7 @@ class FasterWhisperBackend:
             device=self.device,
             compute_type=self._compute_type,
         )
-        samples = await decode_audio(path)
+        samples = await decode_audio(path, stream=hints.audio_stream or 0)
         return await get_transcriber(settings).transcribe(samples, prompt=hints.initial_prompt)
 
     async def detect_language(self, audio: AudioSource) -> str:

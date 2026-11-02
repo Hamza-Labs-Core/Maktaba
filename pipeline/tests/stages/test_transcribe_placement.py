@@ -146,7 +146,7 @@ async def test_an_unreadable_rule_keeps_the_last_one_read(
 def fake(monkeypatch: pytest.MonkeyPatch) -> FakeTranscriber:
     f = FakeTranscriber()
 
-    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+    async def decode(path: str, timeout: float = 0, *, stream: int = 0) -> np.ndarray:
         return np.zeros(16000 * 6, np.float32)
 
     async def no_share(db: Any) -> Any:
@@ -387,7 +387,7 @@ def _cannot_read(monkeypatch: pytest.MonkeyPatch, share: str = "") -> None:
     """The worker that runs the second listen cannot read the video's file (on ``share``,
     a folder its path starts with)."""
 
-    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+    async def decode(path: str, timeout: float = 0, *, stream: int = 0) -> np.ndarray:
         raise StageFailure(
             "permission_denied", f"{share}{path}: permission denied", retryable=False
         )

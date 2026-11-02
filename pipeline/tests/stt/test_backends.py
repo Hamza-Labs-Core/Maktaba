@@ -30,6 +30,13 @@ from maktaba_pipeline.stt.openai_api import (
 )
 from maktaba_pipeline.stt.protocol import TranscriptionHints
 from tests.audio._fake_audio_db import FakeAudioDB
+from tests.audio._two_tracks import (
+    ARABIC_HZ,
+    ENGLISH_HZ,
+    dominant_hz,
+    needs_ffmpeg,
+    two_track_file,
+)
 
 # --- WhisperMLXBackend ----------------------------------------------------
 
@@ -94,6 +101,62 @@ def test_faster_whisper_yields_segments_with_injected_fn() -> None:
 
     segs = asyncio.run(_drive())
     assert [s.text for s in segs] == ["ok", "more"]
+
+
+# --- a source file with several audio tracks: the chosen stream is decoded ----------
+
+
+def _backend_of(kind: str, fn: Any) -> Any:
+    if kind == "mlx":
+        return WhisperMLXBackend(force_ready=True, transcribe_fn=fn)
+    return FasterWhisperBackend(device="cpu", force_ready=True, transcribe_fn=fn)
+
+
+@needs_ffmpeg
+@pytest.mark.parametrize("kind", ["mlx", "faster-whisper"])
+def test_a_named_stream_is_decoded_not_the_file_s_default(kind: str, tmp_path: Path) -> None:
+    """``hints.audio_stream``: the backend is handed that stream's samples (ffmpeg
+    ``-map 0:a:1``, mono 16 kHz) instead of the path, whose default stream (English,
+    440 Hz) is what mlx_whisper would decode itself."""
+    src = two_track_file(tmp_path / "دروس.mkv")
+    seen: list[Any] = []
+
+    def fn(audio: Any, _kwargs: dict[str, Any]) -> list[dict[str, Any]]:
+        seen.append(audio)
+        return [{"start": 0.0, "end": 1.0, "text": "ok"}]
+
+    backend = _backend_of(kind, fn)
+
+    async def _drive(hints: TranscriptionHints) -> None:
+        async for _ in backend.transcribe(str(src), language="ar", hints=hints):
+            pass
+
+    asyncio.run(_drive(TranscriptionHints(audio_stream=1)))
+    assert not isinstance(seen[0], str)
+    assert dominant_hz(seen[0]) == pytest.approx(ARABIC_HZ, abs=5)
+    assert len(seen[0]) == pytest.approx(16_000 * 6, rel=0.02)  # mono, 16 kHz
+
+    asyncio.run(_drive(TranscriptionHints(audio_stream=0)))
+    assert dominant_hz(seen[1]) == pytest.approx(ENGLISH_HZ, abs=5)
+
+
+@pytest.mark.parametrize("kind", ["mlx", "faster-whisper"])
+def test_no_named_stream_hands_the_path_straight_through(kind: str) -> None:
+    """A WAV, or a source with one audio track: the backend reads the path itself."""
+    seen: list[Any] = []
+
+    def fn(audio: Any, _kwargs: dict[str, Any]) -> list[dict[str, Any]]:
+        seen.append(audio)
+        return []
+
+    backend = _backend_of(kind, fn)
+
+    async def _drive() -> None:
+        async for _ in backend.transcribe("/lib/one-track.mkv", "ar", TranscriptionHints()):
+            pass
+
+    asyncio.run(_drive())
+    assert seen == ["/lib/one-track.mkv"]
 
 
 # --- OpenAIWhisperBackend -------------------------------------------------
