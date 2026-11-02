@@ -20,7 +20,9 @@ and schedules:
    machines' copies hold none) is indexed again; its fingerprint says so
    (stages/index.py);
 7. the file trash (Epic 47): a ``trash_purge`` once a day for each library whose trash
-   holds an entry past its ``purge_after``.
+   holds an entry past its ``purge_after``;
+8. thumbnails in a folder's ``.thumbs/`` (2026-11): a ``thumb_hash`` once for each video
+   whose latest one found no thumbnail of its own, so one found there now is used.
 """
 
 from __future__ import annotations
@@ -66,6 +68,7 @@ class ReconcileReport:
     periodic: int = 0
     semantic_missing: int = 0
     trash_purge: int = 0
+    thumbs_dir: int = 0
 
 
 async def reconcile_once(
@@ -91,7 +94,10 @@ async def reconcile_once(
         periodic = await _periodic_stages(db, graph, t)
         missing = await _semantic_sweep(db, graph)
         purges = await _trash_purges(db, graph, t)
-    return ReconcileReport(True, propagated, refresh, sweep, scans, periodic, missing, purges)
+        thumbs = await _thumbs_dir_sweep(db, graph)
+    return ReconcileReport(
+        True, propagated, refresh, sweep, scans, periodic, missing, purges, thumbs
+    )
 
 
 async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
@@ -327,6 +333,64 @@ async def _version_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     return total
 
 
+#: the reason of the ``thumb_hash`` jobs :func:`_thumbs_dir_sweep` queues; a video that
+#: ever had one is not queued by it again
+THUMBS_SWEEP_WHY = "thumbnail may be in .thumbs/"
+
+
+async def _thumbs_dir_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
+    """A ``thumb_hash`` once for each video whose latest run found no thumbnail of its own
+    (it hashed the poster, or nothing). Until 2026-11 the stage looked next to the video
+    only; a thumbnail in the folder's ``.thumbs/`` now changes the job's fingerprint, so
+    such a video runs again (and ``thumb_small`` after it, the hash having changed) while
+    every other one is skipped after a few stats. No file is touched here.
+
+    Only results of the old rule are looked at (a run of this release records
+    ``thumbs_dir`` in its summary), and each video is queued by this once (the reason
+    marks it), so the sweep ends by itself. Imported results (mediaintel's, made from its
+    own thumbnails) are left alone."""
+    if "thumb_hash" not in graph:
+        return 0
+
+    def field(name: str) -> str:
+        if is_pg(db):
+            return f"(j.output_summary->>'{name}')"
+        return f"json_extract(j.output_summary, '$.{name}')"
+
+    source = field("source")
+    rows = await db.fetch(
+        "SELECT j.subject_id AS sid FROM processing_jobs j"
+        " WHERE j.stage = 'thumb_hash' AND j.subject_kind = 'video' AND j.state = 'done'"
+        " AND j.outcome IN ('changed','unchanged')"
+        " AND j.id = (SELECT max(k.id) FROM processing_jobs k WHERE k.subject_kind = 'video'"
+        "  AND k.subject_id = j.subject_id AND k.stage = 'thumb_hash' AND k.state = 'done'"
+        "  AND k.outcome IN ('changed','unchanged','imported'))"
+        f" AND ({source} IS NULL OR {source} LIKE 'poster.%')"
+        # a run of this release looked in .thumbs/ already
+        f" AND {field('thumbs_dir')} IS NULL"
+        " AND NOT EXISTS (SELECT 1 FROM processing_jobs l WHERE l.subject_kind = 'video'"
+        "  AND l.subject_id = j.subject_id AND l.stage = 'thumb_hash'"
+        "  AND (l.state IN ('pending','claimed','running','resuming','paused')"
+        "   OR CAST(l.reasons AS TEXT) LIKE $1))"
+        " AND EXISTS (SELECT 1 FROM videos v WHERE v.id = j.subject_id AND v.deleted_at IS NULL)"
+        " ORDER BY j.id LIMIT $2",
+        f"%{THUMBS_SWEEP_WHY}%",
+        SWEEP_BATCH,
+    )
+    n = 0
+    for r in rows:
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=UUID(str(r["sid"])),
+            stage="thumb_hash",
+            priority=SWEEP_PRIORITY,
+            reason={"why": THUMBS_SWEEP_WHY, "by": "system"},
+        )
+        n += 1 if res.job_id is not None else 0
+    return n
+
+
 async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     """An ``index`` for each video whose latest index job succeeded, whose active
     transcript has words, and that has no vector in ``segment_embeddings``, once search
@@ -378,6 +442,7 @@ async def run_reconciler(
             if report.leader and (
                 report.propagated or report.yt_refresh or report.version_sweep
                 or report.library_sweep or report.periodic or report.semantic_missing
+                or report.thumbs_dir
             ):  # fmt: skip
                 _log.info(
                     "reconciled",
@@ -387,6 +452,7 @@ async def run_reconciler(
                     library_sweep=report.library_sweep,
                     periodic=report.periodic,
                     semantic_missing=report.semantic_missing,
+                    thumbs_dir=report.thumbs_dir,
                 )
         except Exception:  # noqa: BLE001 - the reconciler must never take the worker down
             _log.exception("reconcile_failed")

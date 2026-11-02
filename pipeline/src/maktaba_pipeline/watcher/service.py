@@ -264,6 +264,9 @@ class LibraryObserver(FileSystemEventHandler):
             marker = f"{sep}{sidecar}{sep}"
             if marker in path or path.endswith(f"{sep}{sidecar}"):
                 return False
+        # a hidden folder under the root (``.thumbs/``) is skipped by the walker too
+        if self._in_hidden_dir(path):
+            return False
         for pattern in self._cfg.ignore_basenames:
             if fnmatch.fnmatch(base, pattern):
                 return False
@@ -271,6 +274,18 @@ class LibraryObserver(FileSystemEventHandler):
         if ext == "":
             return allow_no_ext
         return ext.lower() in self._cfg.extensions
+
+    def _in_hidden_dir(self, path: str) -> bool:
+        """True when a folder between a root and ``path`` starts with a dot."""
+        for root in self._roots:
+            try:
+                rel = os.path.relpath(path, root)
+            except ValueError:
+                continue
+            if rel == "." or rel.startswith(".."):
+                continue
+            return any(part.startswith(".") for part in rel.split(os.sep)[:-1])
+        return False
 
     def _is_path_in_tree(self, path: str) -> bool:
         """True iff ``path`` lives under one of the configured roots."""
