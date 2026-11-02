@@ -39,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,6 +55,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -68,6 +70,9 @@ import com.hamzalabs.maktaba.core.api.Passage
 import com.hamzalabs.maktaba.core.api.RecentSearch
 import com.hamzalabs.maktaba.core.api.TitleHit
 import com.hamzalabs.maktaba.core.api.TranscriptHit
+import com.hamzalabs.maktaba.core.layout.HingeSplit
+import com.hamzalabs.maktaba.core.layout.Panes
+import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
 import com.hamzalabs.maktaba.core.ui.Message
@@ -82,6 +87,8 @@ import com.hamzalabs.maktaba.player.ui.components.MissingPosterMark
 import com.hamzalabs.maktaba.player.ui.components.POSTER_ASPECT
 import com.hamzalabs.maktaba.player.ui.components.PosterSize
 import com.hamzalabs.maktaba.player.ui.components.posterUrl
+import com.hamzalabs.maktaba.player.video.VideoScreen
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -124,9 +131,49 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
             scope.launch { model.submit(q) }
         }
     }
-    val openVideo: (String) -> Unit = { nav.open(Route.Video(it)) }
     val play: (String, Passage) -> Unit = { id, p -> nav.open(Route.Watch(id, p.startSec.toInt())) }
 
+    // held like a book: the field and the results on the start page, the chosen video's page on
+    // the other (a passage still plays at once); otherwise a result opens its page on the stack
+    val panes = currentPanes()
+    if (panes is Panes.Book) {
+        val shown = model.chosen ?: model.answer?.first
+        HingeSplit(
+            panes,
+            first = {
+                SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { model.chosen = it }, play = play, selected = shown)
+            },
+            second = { Box(Modifier.fillMaxSize().testTag("search-preview")) { Preview(shown, nav) } },
+        )
+    } else {
+        SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { nav.open(Route.Video(it)) }, play = play, selected = null)
+    }
+}
+
+/** The page beside the results: the shown video's page, or what to do while there is none. */
+@Composable
+private fun Preview(videoId: String?, nav: PlayerNavigator) {
+    if (videoId == null) {
+        Message(stringResource(R.string.search_preview_hint), Modifier.testTag("search-preview-hint"))
+    } else {
+        key(videoId) { VideoScreen(videoId, nav) }
+    }
+}
+
+/** The search bar and, under it, the recent searches or the results; [selected] is marked (the page beside them shows it). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchPane(
+    model: SearchModel,
+    client: ApiClient,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    submit: (String) -> Unit,
+    scope: CoroutineScope,
+    openVideo: (String) -> Unit,
+    play: (String, Passage) -> Unit,
+    selected: String?,
+) {
     Column(Modifier.fillMaxSize().testTag("search"), horizontalAlignment = Alignment.CenterHorizontally) {
         SearchBar(
             inputField = {
@@ -135,7 +182,7 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
                     onQueryChange = { model.query = it },
                     onSearch = submit,
                     expanded = expanded,
-                    onExpandedChange = { expanded = it },
+                    onExpandedChange = onExpandedChange,
                     modifier = Modifier.testTag("search-field"),
                     placeholder = { Text(stringResource(R.string.search_field_hint), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Outlined.Search, contentDescription = null) },
@@ -151,7 +198,7 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
                 )
             },
             expanded = expanded,
-            onExpandedChange = { expanded = it },
+            onExpandedChange = onExpandedChange,
         ) {
             LazyColumn(Modifier.fillMaxWidth().testTag("search-suggestions")) {
                 if (model.query.isNotBlank()) {
@@ -188,6 +235,7 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
                         answer,
                         client,
                         paging = model.paging,
+                        selected = selected,
                         openVideo = openVideo,
                         play = play,
                         moreTitles = { scope.launch { model.moreTitles() } },
@@ -237,6 +285,7 @@ private fun Results(
     answer: SearchAnswer,
     client: ApiClient,
     paging: Boolean,
+    selected: String?,
     openVideo: (String) -> Unit,
     play: (String, Passage) -> Unit,
     moreTitles: () -> Unit,
@@ -255,7 +304,7 @@ private fun Results(
         }
         if (answer.titles.isNotEmpty()) {
             item(key = "titles-header") { SectionHeading(stringResource(R.string.search_group_titles), Modifier.padding(16.dp).testTag("titles-header")) }
-            items(answer.titles, key = { "t-${it.videoId}" }) { hit -> TitleRow(hit, client) { openVideo(hit.videoId) } }
+            items(answer.titles, key = { "t-${it.videoId}" }) { hit -> TitleRow(hit, client, hit.videoId == selected) { openVideo(hit.videoId) } }
             if (answer.moreTitles) item(key = "titles-more") { MoreButton(paging, "titles-more", moreTitles) }
         }
         if (answer.transcripts.isNotEmpty()) {
@@ -264,7 +313,7 @@ private fun Results(
                 SectionHeading(stringResource(R.string.search_group_transcripts), Modifier.padding(16.dp).testTag("transcripts-header"))
             }
             items(answer.transcripts, key = { "x-${it.videoId}" }) { hit ->
-                TranscriptBlock(hit, client, open = { openVideo(hit.videoId) }, play = { play(hit.videoId, it) })
+                TranscriptBlock(hit, client, hit.videoId == selected, open = { openVideo(hit.videoId) }, play = { play(hit.videoId, it) })
             }
             if (answer.moreTranscripts) item(key = "transcripts-more") { MoreButton(paging, "transcripts-more", moreTranscripts) }
         }
@@ -309,17 +358,19 @@ private fun details(library: String, durationSec: Double?): String =
 
 /** A video of Titles: poster, the title with the query's words marked, its library and length. One TalkBack node. */
 @Composable
-private fun TitleRow(hit: TitleHit, client: ApiClient, onClick: () -> Unit) {
+private fun TitleRow(hit: TitleHit, client: ApiClient, selected: Boolean, onClick: () -> Unit) {
     val sub = details(hit.libraryName, hit.durationSec)
     val title = hit.titleSnippet.ifBlank { hit.title }
     Row(
         Modifier
             .fillMaxWidth()
             .testTag("title-${hit.videoId}")
+            .chosenBackground(selected)
             .clickable(role = Role.Button, onClick = onClick)
             .clearAndSetSemantics {
                 contentDescription = listOf(hit.title.ifBlank { plain(title) }, sub).filter { it.isNotBlank() }.joinToString(", ")
                 role = Role.Button
+                this.selected = selected
             }
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -337,7 +388,7 @@ private fun TitleRow(hit: TitleHit, client: ApiClient, onClick: () -> Unit) {
 
 /** A video of In the transcript: its header (opens the page), then each passage (plays from its time). */
 @Composable
-private fun TranscriptBlock(hit: TranscriptHit, client: ApiClient, open: () -> Unit, play: (Passage) -> Unit) {
+private fun TranscriptBlock(hit: TranscriptHit, client: ApiClient, selected: Boolean, open: () -> Unit, play: (Passage) -> Unit) {
     val sub = listOf(details(hit.libraryName, hit.durationSec), stringResource(R.string.search_matches, hit.matches))
         .filter { it.isNotBlank() }.joinToString(" · ")
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
@@ -345,10 +396,12 @@ private fun TranscriptBlock(hit: TranscriptHit, client: ApiClient, open: () -> U
             Modifier
                 .fillMaxWidth()
                 .testTag("transcript-${hit.videoId}")
+                .chosenBackground(selected)
                 .clickable(role = Role.Button, onClick = open)
                 .clearAndSetSemantics {
                     contentDescription = "${hit.title}, $sub"
                     role = Role.Button
+                    this.selected = selected
                 }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -363,6 +416,11 @@ private fun TranscriptBlock(hit: TranscriptHit, client: ApiClient, open: () -> U
         hit.passages.forEachIndexed { i, p -> PassageRow(p, Modifier.testTag("passage-${hit.videoId}-$i")) { play(p) } }
     }
 }
+
+/** The result the page beside the list shows is marked, as Libraries marks its chosen one. */
+@Composable
+private fun Modifier.chosenBackground(chosen: Boolean): Modifier =
+    if (chosen) background(MaterialTheme.colorScheme.secondaryContainer) else this
 
 /** A matching line: its time and the passage, the query's words marked. Tap plays from the time. */
 @Composable

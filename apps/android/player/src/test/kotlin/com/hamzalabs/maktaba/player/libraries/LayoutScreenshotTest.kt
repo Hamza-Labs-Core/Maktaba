@@ -2,11 +2,16 @@ package com.hamzalabs.maktaba.player.libraries
 
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.adaptive.WindowAdaptiveInfo
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -18,7 +23,14 @@ import com.hamzalabs.maktaba.player.harness.info
 import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.harness.acrossHinge
+import com.hamzalabs.maktaba.player.harness.setShell
+import com.hamzalabs.maktaba.player.home.HomeFixtures
+import com.hamzalabs.maktaba.player.home.KEY_WATCHED
+import com.hamzalabs.maktaba.player.home.setHome
+import com.hamzalabs.maktaba.player.search.SearchFixtures
+import com.hamzalabs.maktaba.player.shell.AppScreens
 import com.hamzalabs.maktaba.player.shell.PlayerSection
+import com.hamzalabs.maktaba.player.ui.components.LocalHomeImages
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -31,7 +43,9 @@ import org.robolectric.annotation.GraphicsMode
  * English and Arabic: a foldable open flat held sideways (841 dp) and a large tablet with the
  * collapsed rail and the list beside the page; the tablet's rail expanded over the content; a
  * foldable half folded like a book (the rail and the list on the start page, the page on the
- * other) and on a table (the page on the top half, the list and the bar on the bottom one).
+ * other) and on a table (the page on the top half, the list and the bar on the bottom one);
+ * Home and Search like a book (Home's rows on both pages; Search's results on the start page and
+ * the first result's page on the other), nothing under the hinge.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -83,6 +97,35 @@ class LayoutScreenshotTest {
         shoot("tabletop_foldable")
     }
 
+    private fun homeBook() {
+        HomeFixtures.install(home)
+        compose.setHome(home, Window.FoldableWide, info = Window.FoldableWide.folded(uprightHinge(widthPx, heightPx), vertical = true))
+        compose.settled(home, "both pages of rows") { exists("hero") && exists("row-$KEY_WATCHED") }
+        shoot("book_home_foldable")
+    }
+    private fun searchBook() {
+        val l = if (lang == "ar") SearchFixtures.AR else SearchFixtures.EN
+        SearchFixtures.install(home, l)
+        compose.setShell(
+            home,
+            sections = PlayerSection.enabled,
+            window = Window.FoldableWide,
+            info = Window.FoldableWide.folded(uprightHinge(widthPx, heightPx), vertical = true),
+            screens = { route, nav ->
+                val images = remember { portlessPictures(compose.activity) }
+                CompositionLocalProvider(LocalHomeImages provides images) { AppScreens(route, nav) }
+            },
+        )
+        compose.settledUntil(10_000) { exists("section-Search") }
+        compose.onNodeWithTag("section-Search").performClick()
+        val field = compose.onNode(hasSetTextAction())
+        field.performClick()
+        field.performTextInput(l.query)
+        field.performImeAction()
+        compose.settled(home, "the results and the first one's page") { exists("passage-v4-0") && exists("video-details") }
+        shoot("book_search_foldable")
+    }
+
     @Test @Config(qualifiers = "w841dp-h673dp-xhdpi") fun flatFoldableEnglish() = flatFoldable()
     @Test @Config(qualifiers = "ar-w841dp-h673dp-xhdpi") fun flatFoldableArabic() = flatFoldable()
     @Test @Config(qualifiers = "w1280dp-h800dp-xhdpi") fun flatTabletEnglish() = flatTablet()
@@ -91,6 +134,10 @@ class LayoutScreenshotTest {
     @Test @Config(qualifiers = "ar-w1280dp-h800dp-xhdpi") fun railExpandedArabic() = railExpanded()
     @Test @Config(qualifiers = "w841dp-h673dp-xhdpi") fun bookEnglish() = book()
     @Test @Config(qualifiers = "ar-w841dp-h673dp-xhdpi") fun bookArabic() = book()
+    @Test @Config(qualifiers = "w841dp-h673dp-xhdpi") fun bookHomeEnglish() = homeBook()
+    @Test @Config(qualifiers = "ar-w841dp-h673dp-xhdpi") fun bookHomeArabic() = homeBook()
+    @Test @Config(qualifiers = "w841dp-h673dp-xhdpi") fun bookSearchEnglish() = searchBook()
+    @Test @Config(qualifiers = "ar-w841dp-h673dp-xhdpi") fun bookSearchArabic() = searchBook()
     @Test @Config(qualifiers = "w673dp-h841dp-xhdpi") fun tabletopEnglish() = tabletop()
     @Test @Config(qualifiers = "ar-w673dp-h841dp-xhdpi") fun tabletopArabic() = tabletop()
 

@@ -15,6 +15,7 @@ import java.io.IOException
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.adaptive.WindowAdaptiveInfo
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.key
@@ -89,13 +90,15 @@ fun homePictures(context: Context): ImageLoader = ImageLoader.Builder(context)
 /**
  * The shipped shell ([PlayerSection.enabled]: Home first) in the dark theme with [home] signed in
  * and [homePictures] for every picture. Each new value of [launch] is a new launch of the app: a
- * new signed-in home (nothing kept in memory), the same device (Home's disk cache kept).
+ * new signed-in home (nothing kept in memory), the same device (Home's disk cache kept). [info]
+ * replaces the window's adaptive info (a faked hinge).
  */
 fun AndroidComposeTestRule<ActivityScenarioRule<ComponentActivity>, ComponentActivity>.setHome(
     home: FakeHome,
     window: Window = Window.Phone,
     launch: MutableIntState? = null,
     screens: PlayerScreens = HomeTestScreens,
+    info: WindowAdaptiveInfo = window.info(),
 ) {
     val activity = activity
     setContent {
@@ -106,7 +109,7 @@ fun AndroidComposeTestRule<ActivityScenarioRule<ComponentActivity>, ComponentAct
             MaktabaTheme(ThemeMode.Dark) {
                 Surface(Modifier.fillMaxSize()) {
                     CompositionLocalProvider(LocalPlayerHome provides signedIn, LocalHomeImages provides images) {
-                        PlayerShell(sections = PlayerSection.enabled, adaptiveInfo = window.info(), screens = screens)
+                        PlayerShell(sections = PlayerSection.enabled, adaptiveInfo = info, screens = screens)
                     }
                 }
             }
