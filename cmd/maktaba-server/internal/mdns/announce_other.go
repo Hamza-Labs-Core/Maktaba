@@ -3,7 +3,8 @@
 package mdns
 
 // Only Windows has dnsapi.dll (announce_windows.go).
-// api/internal/discovery has the same file (another module).
+// The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
+// modules); tools/ci/mdns_copies.py checks they stay the same.
 
 func dnsapiAvailable() bool { return false }
 

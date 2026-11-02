@@ -4,7 +4,8 @@ package discovery
 // registration is asynchronous: Windows answers later, through a callback, whether it
 // took it. The binding to dnsapi.dll is announce_windows.go; here is what is the same on
 // every OS (so its tests run everywhere, with a fake dnsAPI).
-// cmd/maktaba-server/internal/mdns has the same file (another module).
+// The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
+// modules); tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"net"

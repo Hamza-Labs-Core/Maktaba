@@ -3,7 +3,8 @@
 package discovery
 
 // systemd-resolved over the system bus (org.freedesktop.resolve1, announce_resolved.go).
-// cmd/maktaba-server/internal/mdns has the same file (another module).
+// The same file is in api/internal/discovery and cmd/maktaba-server/internal/mdns (two
+// modules); tools/ci/mdns_copies.py checks they stay the same.
 
 import (
 	"context"
