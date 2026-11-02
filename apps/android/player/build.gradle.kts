@@ -20,7 +20,7 @@ android {
         versionName = providers.gradleProperty("maktaba.versionName").orNull ?: "0.1.0"
         // One app for phones, foldables and tablets (one Google Play listing): the layout follows
         // the window, and the device the API is told comes from the screen (ClientHeader.deviceFor).
-        resValue("string", "app_name", "Maktaba Player")
+        // Its name is res/values*/strings.xml's app_name ("Maktaba Player", «مشغل مكتبة»).
     }
 
     // Google Play (docs/google-play.md). The release takes its version from the tag
@@ -65,7 +65,6 @@ android {
 
     buildFeatures {
         compose = true
-        resValues = true
     }
 
     // English and Arabic ship together: a string with no Arabic fails lint (and TranslationsTest).

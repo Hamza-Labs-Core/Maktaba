@@ -27,8 +27,8 @@ def _edit(old: str, new: str) -> str:
         # the Remote's home-screen name (#508): the Remote's build settings only
         (
             "remote name",
-            "INFOPLIST_KEY_CFBundleDisplayName = Remote;",
-            "INFOPLIST_KEY_CFBundleDisplayName = Remotes;",
+            "INFOPLIST_KEY_CFBundleDisplayName = \"Maktaba Remote\";",
+            "INFOPLIST_KEY_CFBundleDisplayName = \"Maktaba Remotes\";",
             False,
         ),
         ("remote icon", "ASSETCATALOG_COMPILER_APPICON_NAME = RemoteIcon;", "ASSETCATALOG_COMPILER_APPICON_NAME = R;", False),

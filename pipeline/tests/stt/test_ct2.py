@@ -675,7 +675,7 @@ async def test_the_legacy_faster_whisper_backend_runs_on_the_engine(
                 1.0, backend="ct2-batched", backend_version="faster-whisper 1.2.1",
             )  # fmt: skip
 
-    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+    async def decode(path: str, timeout: float = 0, *, stream: int = 0) -> np.ndarray:
         return np.zeros(SAMPLE_RATE * 2, np.float32)
 
     monkeypatch.setattr(stage, "decode_audio", decode)

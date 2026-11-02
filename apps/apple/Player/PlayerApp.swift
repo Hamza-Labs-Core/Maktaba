@@ -26,6 +26,11 @@ struct PlayerApp: App {
         // app's language, on ⌃⌘F, Exit while full screen); without this AppKit adds its own
         // beside it and the menu shows two
         UserDefaults.standard.register(defaults: ["NSFullScreenMenuItemEverywhere": false])
+        // one window, no window tabs: with tabbing on, AppKit puts Show Tab Bar and Show All
+        // Tabs at the top of the View menu as it opens, then takes them out while it is open, so
+        // every section's item moves up two rows under the pointer (a click aimed at Live TV
+        // chose Profile)
+        NSWindow.allowsAutomaticWindowTabbing = false
         #endif
     }
 

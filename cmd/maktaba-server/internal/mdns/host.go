@@ -34,20 +34,31 @@ func register(instance, service, domain string, port int, txt []string) (announc
 		return startAvahi(r.path, instance, service, domain, port, txt)
 	case viaDNSAPI:
 		return startDNSAPI(systemDNSAPIImpl(), instance, service, domain, announcedHost(r)+".local", port, interfaceIPs(), txt)
+	case viaResolved:
+		api, err := newResolvedAPI()
+		if err != nil {
+			return nil, err
+		}
+		return startResolved(api, instance, service, domain, port, txt)
 	}
 	ips := interfaceIPs()
 	if len(ips) == 0 {
 		return nil, errors.New("no multicast interface has an address")
 	}
-	return zeroconf.RegisterProxy(instance, service, domain, port, announcedHost(r), ips, txt, nil)
+	return zeroconf.RegisterProxy(zeroconfInstance(dnsLabel(instance, 63)), service, domain, port, announcedHost(r), ips, txt, nil)
 }
 
-// ownHostSuffix makes the name zeroconf answers for when Avahi holds the host's own.
+// ownHostSuffix makes the name zeroconf answers for when Avahi or systemd-resolved holds
+// the host's own.
 const ownHostSuffix = "-maktaba"
 
-// announcedHost is the bare name the announcement's target is: this machine's, or, when
-// zeroconf must answer beside an Avahi it cannot ask, a name of its own beside it.
+// announcedHost is the bare name the announcement's target is: this machine's (as
+// systemd-resolved answers for it, where it announces), or, when zeroconf must answer
+// beside an Avahi or a resolved it cannot ask, a name of its own beside it.
 func announcedHost(r responder) string {
+	if r.kind == viaResolved && r.host != "" {
+		return r.host
+	}
 	h := bareHost(hostName())
 	if r.kind == viaZeroconfOwnHost {
 		return dnsLabel(h, 63-len(ownHostSuffix)) + ownHostSuffix

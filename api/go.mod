@@ -16,10 +16,12 @@ require (
 	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.4.0
 	github.com/go-playground/validator/v10 v10.30.3
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/google/uuid v1.6.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/graph-gophers/graphql-go v1.9.0
 	github.com/lib/pq v1.11.2
+	github.com/miekg/dns v1.1.72
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/vektah/gqlparser/v2 v2.5.30
@@ -70,7 +72,6 @@ require (
 	github.com/in-toto/in-toto-golang v0.11.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20211028175153-1c139d1cc84b // indirect
-	github.com/miekg/dns v1.1.72 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

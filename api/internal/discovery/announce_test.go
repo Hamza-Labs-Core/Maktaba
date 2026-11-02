@@ -1,6 +1,7 @@
 package discovery
 
 import (
+	"bytes"
 	"errors"
 	"reflect"
 	"strings"
@@ -8,6 +9,8 @@ import (
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/miekg/dns"
 )
 
 // fakeEnv is a machine with the given commands on its PATH, the given files, and dnsapi
@@ -29,9 +32,20 @@ func fakeEnv(goos string, commands map[string]string, files []string, dnsapi boo
 			}
 			return false
 		},
-		dnsapi: func() bool { return dnsapi },
+		dnsapi:   func() bool { return dnsapi },
+		resolved: func() resolvedState { return resolvedState{} },
 	}
 }
+
+// withResolved is env with systemd-resolved as st.
+func withResolved(env responderEnv, st resolvedState) responderEnv {
+	env.resolved = func() resolvedState { return st }
+	return env
+}
+
+// resolvedOK is a systemd-resolved that answers mDNS and takes this process's
+// registrations.
+var resolvedOK = resolvedState{responds: true, canRegister: true, host: "studio"}
 
 // Each system announces through its own responder where it has one; zeroconf answers
 // alone only where nothing else does.
@@ -53,6 +67,13 @@ func TestSystemResponderPerOS(t *testing.T) {
 		{"freebsd with avahi", fakeEnv("freebsd", all, avahi, false), responder{kind: viaAvahi, path: "/usr/bin/avahi-publish-service"}},
 		{"windows", fakeEnv("windows", all, nil, true), responder{kind: viaDNSAPI}},
 		{"windows without dnsapi", fakeEnv("windows", all, avahi, false), responder{kind: viaZeroconf}},
+		{"linux, resolved answers mDNS", withResolved(fakeEnv("linux", all, nil, false), resolvedOK), responder{kind: viaResolved, host: "studio"}},
+		{"linux, resolved answers but this process may not register", withResolved(fakeEnv("linux", all, nil, false), resolvedState{responds: true, host: "studio"}), responder{kind: viaZeroconfOwnHost}},
+		{"linux, resolved answers for no name it says", withResolved(fakeEnv("linux", all, nil, false), resolvedState{responds: true, canRegister: true}), responder{kind: viaZeroconfOwnHost}},
+		{"linux, resolved runs without mDNS", withResolved(fakeEnv("linux", all, nil, false), resolvedState{canRegister: true, host: "studio"}), responder{kind: viaZeroconf}},
+		{"linux, avahi and resolved", withResolved(fakeEnv("linux", all, avahi, false), resolvedOK), responder{kind: viaAvahi, path: "/usr/bin/avahi-publish-service"}},
+		{"freebsd never asks resolved", withResolved(fakeEnv("freebsd", all, nil, false), resolvedOK), responder{kind: viaZeroconf}},
+		{"mac never asks resolved", withResolved(fakeEnv("darwin", nil, nil, false), resolvedOK), responder{kind: viaZeroconf}},
 	}
 	for _, c := range cases {
 		if got := systemResponderFor(c.env); got != c.want {
@@ -74,6 +95,62 @@ func TestAnnouncedHost(t *testing.T) {
 	got := announcedHost(responder{kind: viaZeroconfOwnHost})
 	if got != dnsLabel(own, 63-len(ownHostSuffix))+"-maktaba" || len(got) > 63 {
 		t.Errorf("beside avahi: %q", got)
+	}
+	// systemd-resolved's own name, which it answers for (it may differ from the host name)
+	if got := announcedHost(responder{kind: viaResolved, host: "studio-2"}); got != "studio-2" {
+		t.Errorf("through resolved: %q", got)
+	}
+	if got := announcedHost(responder{kind: viaResolved}); got != own {
+		t.Errorf("through resolved, no name: %q", got)
+	}
+}
+
+// Windows splits a whole name at every "." (no escape keeps one), so a home's "." is
+// U+2024 there; a "\" and Arabic stay as they are.
+func TestWindowsInstance(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"Maktaba (studio)":      "Maktaba (studio)",
+		"Maktaba (v1.2)":        "Maktaba (v1\u20242)",
+		`Maktaba (a\b)`:         `Maktaba (a\b)`,
+		`.lead\.trail.`:         "\u2024lead\\\u2024trail\u2024",
+		"Maktaba (مكتبة البيت)": "Maktaba (مكتبة البيت)",
+		"مكتبة 2.0":             "مكتبة 2\u20240",
+	}
+	for in, want := range cases {
+		if got := windowsInstance(in); got != want {
+			t.Errorf("windowsInstance(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// zeroconf gets the instance as the DNS library writes a label: packed, it is one label
+// holding the name's own bytes, and unpacked it reads back as what zeroconf was given (so
+// a query naming the instance matches it).
+func TestZeroconfInstanceIsOneLabel(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{
+		"Maktaba (studio)", "Maktaba (v1.2)", `Maktaba (a\b)`, "Maktaba (مكتبة البيت)",
+		`Maktaba ("x"; @y 'z')`, ".lead", "trail.", "1.2.3",
+	} {
+		full := zeroconfInstance(name) + "._maktaba._tcp.local."
+		m := new(dns.Msg)
+		m.Answer = []dns.RR{&dns.PTR{Hdr: dns.RR_Header{Name: "_maktaba._tcp.local.", Rrtype: dns.TypePTR, Class: dns.ClassINET}, Ptr: full}}
+		wire, err := m.Pack()
+		if err != nil {
+			t.Fatalf("%q: pack: %v", name, err)
+		}
+		label := append([]byte{byte(len(name))}, name...)
+		if !bytes.Contains(wire, append(label, "\x08_maktaba"...)) {
+			t.Errorf("%q: not one label on the wire (%q)", name, full)
+		}
+		back := new(dns.Msg)
+		if err := back.Unpack(wire); err != nil {
+			t.Fatalf("%q: unpack: %v", name, err)
+		}
+		if got := back.Answer[0].(*dns.PTR).Ptr; got != full && !strings.HasSuffix(name, ".") {
+			t.Errorf("%q: reads back as %q, zeroconf has %q", name, got, full)
+		}
 	}
 }
 
@@ -214,6 +291,25 @@ func TestDNSAPIAnnouncesChangesAndWithdraws(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if n := len(api.registrations(t, 2)); n != 2 {
 		t.Fatalf("registered again after Shutdown: %d", n)
+	}
+
+	// Windows takes the whole name: a "." of the instance's is not one there, a "\" is kept,
+	// and the label, so lengthened, still fits
+	b, err := startDNSAPI(api, `Maktaba (v1.2 a\b)`, "_maktaba._tcp", "local.", "Studio.local", 8080, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Shutdown()
+	if got := api.registrations(t, 3)[2].svc.instance; got != "Maktaba (v1\u20242 a\\b)._maktaba._tcp.local" {
+		t.Fatalf("dotted name: %q", got)
+	}
+	c, err := startDNSAPI(api, strings.Repeat(".", 40), "_maktaba._tcp", "local.", "Studio.local", 8080, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Shutdown()
+	if label, _, _ := strings.Cut(api.registrations(t, 4)[3].svc.instance, "._maktaba"); len(label) > 63 || label != strings.Repeat("\u2024", 21) {
+		t.Fatalf("long dotted name: %q (%d bytes)", label, len(label))
 	}
 }
 

@@ -76,12 +76,20 @@ class _TranscribeDB(Protocol):
 
 @dataclass(slots=True, frozen=True)
 class AudioArtifact:
-    """The EXTRACT-produced cached-WAV reference TRANSCRIBE consumes."""
+    """The audio TRANSCRIBE consumes: EXTRACT's cached WAV, or (a streaming
+    backend, no WAV) the source file itself.
+
+    ``stream_index``: for a source file with several audio streams, the
+    ``-map 0:a:N`` stream of ``audio_track_id`` the backend must decode
+    (:attr:`TranscriptionHints.audio_stream`); ``None`` for a WAV or a source
+    with one audio track.
+    """
 
     content_hash: str
     video_id: UUID
     audio_track_id: int
     path: str
+    stream_index: int | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -352,7 +360,9 @@ async def commit_transcribe(
     # already-committed seq prefix here (and the reorder buffer would
     # plug in front of commit_segment); the straight-through path emits
     # the full stream from seq 0. Deliberately deferred, not silent.
-    hints = TranscriptionHints(language=language, word_timestamps=word_level)
+    hints = TranscriptionHints(
+        language=language, word_timestamps=word_level, audio_stream=artifact.stream_index
+    )
     segment_stream = selected.backend.transcribe(artifact.path, language, hints)
     async for segment in segment_stream:
         await commit_segment(

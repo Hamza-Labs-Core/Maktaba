@@ -36,7 +36,7 @@ class CT2Fake(FakeTranscriber):
 def fake(monkeypatch: pytest.MonkeyPatch) -> CT2Fake:
     f = CT2Fake()
 
-    async def decode(path: str, timeout: float = 0) -> np.ndarray:
+    async def decode(path: str, timeout: float = 0, *, stream: int = 0) -> np.ndarray:
         return np.zeros(16000 * 6, np.float32)
 
     async def no_share(db: Any) -> Any:

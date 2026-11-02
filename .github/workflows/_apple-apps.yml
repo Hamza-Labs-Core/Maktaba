@@ -203,9 +203,14 @@ jobs:
           t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(want, d['name']))]
           print(max(t)[1])" "$device")
           udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-$device-$shard" "$devtype" "$runtime")
-          logger=
           cleanup() {
-            [ -n "$logger" ] && kill "$logger" 2>/dev/null || true
+            # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
+            # sign-ins), kept with the results, read once the tests are done: a failed wait
+            # shows what the app did meanwhile. Read after, not streamed: a stream makes each
+            # line the app's frameworks log cost while the tests run (CI: a stream at info
+            # took accessibility's per-element lines, snapshots took 15 s, an audit timed out)
+            xcrun simctl spawn "$udid" log show --style compact --info --debug \
+              --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$device-$shard-app.log" || true
             xcrun simctl shutdown "$udid" || true
             xcrun simctl delete "$udid" || true
           }
@@ -243,13 +248,6 @@ jobs:
             sleep 5
           done
           echo "the runner's load: $load on $cores cores"
-          # the app's own log (MaktabaKit's `Log`: its bundle id is the subsystem; notice, error
-          # and fault), kept with the results. Not --level info over the whole process: a stream
-          # at info makes every info line of the system's frameworks in the app cost, and
-          # accessibility logs one per element, so snapshots took 15 s and an audit timed out
-          xcrun simctl spawn "$udid" log stream --style compact \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$device-$shard-app.log" 2>&1 &
-          logger=$!
           # this shard's tests: longest first, to the shard with the least time so far
           only=()
           while IFS= read -r t; do only+=(-only-testing "$target/$t"); done \

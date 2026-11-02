@@ -68,6 +68,52 @@ import Testing
     }
 }
 
+#if DEBUG
+/// The UI tests' stand-in for the Keychain (`-maktaba-secrets-in-file`): what one launch
+/// saves, the next launch (a new store on the same file) reads; a first run forgets it.
+@Suite struct UITestSecretsFile {
+    let home = URL(string: "http://127.0.0.1:8088")!
+
+    func file() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("ui-test-secrets-\(UUID().uuidString)/s.json")
+    }
+
+    @Test func aSignInSavedAtOneLaunchIsReadAtTheNext() {
+        let f = file()
+        defer { UITestSecrets.reset(f) }
+        let service = "test.\(UUID().uuidString)"
+        UITestSecrets(service: service, file: f).write("\(home.absoluteString)#access", "a1")
+        UITestSecrets(service: service, file: f).write("\(home.absoluteString)#refresh", "r1")
+        // the next launch: a new store; a TokenStore over it, its own service (no shared cache)
+        let next = TokenStore(service: "test.\(UUID().uuidString)", home: home,
+                              primary: UITestSecrets(service: service, file: f), legacy: nil)
+        #expect(next.access == "a1" && next.refresh == "r1")
+        #expect(UITestSecrets(service: "other", file: f).read("\(home.absoluteString)#access").status == errSecItemNotFound,
+                "kept per app")
+    }
+
+    @Test func aClearAndAFirstRunForgetIt() {
+        let f = file()
+        defer { UITestSecrets.reset(f) }
+        let s = UITestSecrets(service: "test", file: f)
+        let tokens = TokenStore(service: "test.\(UUID().uuidString)", home: home, primary: s, legacy: nil)
+        tokens.save(AuthTokens(accessToken: "a2", refreshToken: "r2", user: nil))
+        #expect(s.read("\(home.absoluteString)#access").value == "a2")
+        tokens.clear()
+        #expect(s.read("\(home.absoluteString)#access").value == nil)
+        s.write("k", "v")
+        UITestSecrets.reset(f)
+        #expect(s.read("k") == (nil, errSecItemNotFound))
+        #expect(!FileManager.default.fileExists(atPath: f.path))
+    }
+
+    /// Off unless the UI tests ask for it: the Keychain otherwise.
+    @Test func offWithoutTheArgument() {
+        #expect(!UITestSecrets.isOn)
+    }
+}
+#endif
+
 final class FakeSecrets: SecretStore, @unchecked Sendable {
     private let lock = NSLock()
     private var stored: [String: String]

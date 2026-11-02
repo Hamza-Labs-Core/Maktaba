@@ -44,7 +44,16 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     func testSeriesTabListsEverySeries() {
         launchSignedIn(section: "libraries")
         XCTAssertTrue(element("libraries.tabs").waitForExistence(timeout: 20))
+        // The tabs show while the cards still load. On an iPad the cards' answer then chooses
+        // the first library, and its page draws beside the list: a tap on Series while that
+        // page was drawing was lost on CI (the thumb lifted and fell back on Libraries, no
+        // GET /api/series was ever sent). So the tap waits for the Libraries root as a person
+        // sees it: the cards in, the page beside drawn, the whole screen still.
+        XCTAssertTrue(element("library.lib-lectures").waitForExistence(timeout: 20), "the library cards")
+        if isPad { XCTAssertTrue(element("screen.library").waitForExistence(timeout: 10), "the first library beside the list") }
+        XCTAssertNotNil(settledPage(), "the Libraries root, drawn")
         element("libraries.tabs").buttons["Series"].tap()
+        XCTAssertNotNil(waitForRequest { $0.method == "GET" && $0.path == "/api/series" }, "the Series tab asks the home")
         let seerah = element("series.s-seerah")
         XCTAssertTrue(seerah.waitForExistence(timeout: 10), "the series grid")
         XCTAssertTrue(element("series.s-tafsir").exists)
@@ -283,6 +292,42 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
             found.append("\(error)")
         }
         return (found, home.requests.dropFirst(asked).map { "\($0.method) \($0.path)" })
+    }
+
+    // MARK: the Series tab's pages
+
+    /// The Series tab pages (`GET /api/series?page=`): a full first page shows at once, the
+    /// next is asked for as the grid nears its end and its series come after the first
+    /// page's, and a short page is the last one asked for.
+    func testTheSeriesTabPagesToTheEnd() {
+        func series(_ id: String, _ name: String) -> String {
+            #"{"id":"\#(id)","name":"\#(name)","library_id":"lib-lectures","episode_count":1,"watched_count":0,"in_progress":0}"#
+        }
+        // a full page is 60 (`APIClient.seriesPageSize`)
+        let first = (0 ..< 60).map { series("s-p\($0)", "Series \($0)") }.joined(separator: ",")
+        home.stubPages("GET", "/api/series", [#"{"items":[\#(first)]}"#, #"{"items":[\#(series("s-last", "The last series"))]}"#])
+        launchSignedIn(section: "libraries")
+        XCTAssertTrue(element("libraries.tabs").waitForExistence(timeout: 20))
+        // the tap waits for the Libraries root as drawn (an iPad's page beside the list draws
+        // once the cards answer; a tap during it was lost: testSeriesTabListsEverySeries)
+        XCTAssertTrue(element("library.lib-lectures").waitForExistence(timeout: 20), "the library cards")
+        if isPad { XCTAssertTrue(element("screen.library").waitForExistence(timeout: 10), "the first library beside the list") }
+        XCTAssertNotNil(settledPage(), "the Libraries root, drawn")
+        element("libraries.tabs").buttons["Series"].tap()
+        XCTAssertTrue(element("series.s-p0").waitForExistence(timeout: 10), "the first page")
+
+        let last = element("series.s-last")
+        let window = app.windows.firstMatch.frame
+        for _ in 0 ..< 30 where !(last.exists && window.contains(last.frame)) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(last.exists && window.contains(last.frame), "the second page's series, on screen")
+        let asked = home.requests
+            .filter { $0.method == "GET" && $0.path == "/api/series" && $0.value("library_id") == nil }
+            .compactMap { $0.value("page") }
+        XCTAssertEqual(asked.first, "0", "the first page first")
+        XCTAssertTrue(asked.contains("1"), "the next page as the grid neared its end: \(asked)")
+        XCTAssertFalse(asked.contains("2"), "a short page is the last: \(asked)")
     }
 
     // MARK: helpers

@@ -32,6 +32,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -291,10 +292,20 @@ private fun SeriesCards(state: LibrariesState, client: ApiClient, grid: Boolean,
         )
         !state.seriesLoaded -> Spinner()
         state.series.isEmpty() -> Message(stringResource(R.string.libraries_series_empty))
-        else -> LazyVerticalGrid(
+        else -> {
+            val gridState = rememberLazyGridState()
+            // the next page about a screen before the end, so scrolling doesn't stop at a page's edge
+            val nearEnd by remember(gridState) {
+                derivedStateOf {
+                    val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    last >= gridState.layoutInfo.totalItemsCount - SERIES_AHEAD
+                }
+            }
+            LaunchedEffect(nearEnd, state.series.size) { if (nearEnd && state.moreSeries) state.loadMoreSeries() }
+            LazyVerticalGrid(
             gridCells,
             Modifier.fillMaxSize().testTag("series-grid"),
-            state = rememberLazyGridState(),
+            state = gridState,
             contentPadding = gridPadding,
             verticalArrangement = gridGap,
             horizontalArrangement = gridGap,
@@ -304,9 +315,13 @@ private fun SeriesCards(state: LibrariesState, client: ApiClient, grid: Boolean,
                     SeriesCard(s, client, chosen = chosen == Chosen.Series(s.id)) { onOpen(Chosen.Series(s.id)) }
                 }
             }
+            }
         }
     }
 }
+
+/** How many cards before the end the Series grid asks for its next page. */
+private const val SERIES_AHEAD = 18
 
 /** A series' card (FR-16): its poster, name and the caller's progress through it. */
 @Composable

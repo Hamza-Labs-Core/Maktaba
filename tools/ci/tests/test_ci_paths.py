@@ -346,7 +346,7 @@ def test_expressions(expr: str, want: bool) -> None:
     assert ci_paths.evaluate(expr, ctx) is want
 
 
-# ---- concurrency: main keeps only its newest commit's run -------------------------------
+# ---- concurrency: main finishes its running run, the newest commit's run waits next ----
 
 WORKFLOWS = ci_paths.CI_YML.parent
 
@@ -376,24 +376,26 @@ def _pr(number: int, sha: str) -> dict[str, object]:
 
 
 @pytest.mark.parametrize(("workflow", "name"), [("ci.yml", "ci"), ("update-rehearsal.yml", "update-rehearsal")])
-def test_main_pushes_share_one_cancelling_group_and_prs_stay_per_pr(workflow: str, name: str) -> None:
-    # two main commits: one group, the newer one cancels the older one's run
-    assert _concurrency(workflow, **_push("aaa")) == (f"{name}-main", True)
-    assert _concurrency(workflow, **_push("bbb")) == (f"{name}-main", True)
+def test_main_pushes_share_one_group_that_never_cancels_the_running_run(workflow: str, name: str) -> None:
+    # two main commits: one group, NOT cancel-in-progress: the running run finishes and the
+    # newer commit's run only replaces an older pending one (with cancel-in-progress a merge
+    # every few minutes cancelled every hour-long main run, so nothing could be tagged)
+    assert _concurrency(workflow, **_push("aaa")) == (f"{name}-main", False)
+    assert _concurrency(workflow, **_push("bbb")) == (f"{name}-main", False)
     # pull requests: each its own group, cancelled by its own newer push only
     assert _concurrency(workflow, **_pr(12, "ccc")) == (f"{name}-12", True)
     assert _concurrency(workflow, **_pr(13, "ddd")) == (f"{name}-13", True)
     # a release/** push keeps its commit's own group, never cancelled
     assert _concurrency(workflow, **_push("eee", ref="refs/heads/release/0.3")) == (f"{name}-eee", False)
-    # a re-run of an older main commit never cancels main's newest run
+    # a re-run of an older main commit never displaces main's pending run
     assert _concurrency(workflow, **_push("aaa", attempt="2")) == (f"{name}-aaa", False)
 
 
 @pytest.mark.parametrize("workflow", ["ci.yml", "update-rehearsal.yml"])
 def test_a_trail_only_push_starts_no_run_so_it_never_cancels_the_code_commits(workflow: str) -> None:
-    # A trail commit merged straight to main would join the main group and cancel the run of
-    # the code commit before it, the one the tag guard waits on. paths-ignore skips a push
-    # only when every changed file matches, so a push with code still runs; only the trail.
+    # A trail commit merged straight to main would join the main group and replace the
+    # pending run of the code commit before it, the one the tag guard waits on. paths-ignore
+    # skips a push only when every changed file matches, so a push with code still runs.
     wf = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))
     on = wf.get("on", wf.get(True))
     push = on["push"]
