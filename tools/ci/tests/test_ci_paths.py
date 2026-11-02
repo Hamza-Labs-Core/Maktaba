@@ -263,8 +263,13 @@ def test_the_trail_with_another_doc_runs_the_repository_checks() -> None:
     assert ran(run("docs/claude-trail.md", "README.md")) == ALWAYS
 
 
-def test_a_push_of_the_trail_runs_everything() -> None:
-    assert ran(run("docs/claude-trail.md", event="push")) == ran(run(event="push"))
+def test_a_push_of_the_trail_with_code_runs_everything() -> None:
+    assert ran(run("docs/claude-trail.md", "web/src/pages/Home.tsx", event="push")) == ran(run(event="push"))
+
+
+def test_a_push_of_only_the_trail_starts_no_run() -> None:
+    # the push trigger's paths-ignore: no run, so no job, and no place in the ci-main group
+    assert run("docs/claude-trail.md", event="push") == {}
 
 
 def test_guard_catches_a_filter_that_does_not_exist() -> None:
@@ -382,6 +387,23 @@ def test_main_pushes_share_one_cancelling_group_and_prs_stay_per_pr(workflow: st
     assert _concurrency(workflow, **_push("eee", ref="refs/heads/release/0.3")) == (f"{name}-eee", False)
     # a re-run of an older main commit never cancels main's newest run
     assert _concurrency(workflow, **_push("aaa", attempt="2")) == (f"{name}-aaa", False)
+
+
+@pytest.mark.parametrize("workflow", ["ci.yml", "update-rehearsal.yml"])
+def test_a_trail_only_push_starts_no_run_so_it_never_cancels_the_code_commits(workflow: str) -> None:
+    # A trail commit merged straight to main would join the main group and cancel the run of
+    # the code commit before it, the one the tag guard waits on. paths-ignore skips a push
+    # only when every changed file matches, so a push with code still runs; only the trail.
+    wf = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))
+    on = wf.get("on", wf.get(True))
+    push = on["push"]
+    assert push["branches"] == ["main", "release/**"]
+    assert push["paths-ignore"] == [ci_paths.TRAIL]
+    assert "paths" not in push  # paths and paths-ignore cannot be combined on one event
+    assert ci_paths.push_paths_ignore(WORKFLOWS / workflow) == [ci_paths.TRAIL]
+    # a pull request into main keeps its own trigger: ci.yml's runs on every PR (the jobs
+    # gated by the `repo` output), the rehearsal's by its paths
+    assert "paths-ignore" not in (on["pull_request"] or {})
 
 
 def test_rehearsal_nightly_and_hand_runs_are_never_cancelled() -> None:

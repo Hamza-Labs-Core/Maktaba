@@ -300,7 +300,8 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
    commit lands, the older commit's run (queued or running) is cancelled. With a dozen merges
    an hour, keeping every run queued them all behind the scarce macOS runners and the newest
    commit (the one tagged) waited hours. So:
-   - **Tag main's tip**, or the newest commit with a green CI *and* rehearsal run. The guard
+   - **Tag main's newest code commit** (the tip, unless trail-only commits sit above it), or
+     the newest commit with a green CI *and* rehearsal run. The guard
      checks the tagged commit's own runs only: its ancestors' runs being cancelled does not
      matter. A commit whose run was cancelled has no green run and is refused; tag the
      newer one instead.
@@ -312,7 +313,13 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
      cancelled.
    - The coverage map (`coverage-map.yml`, after CI on main) skips a cancelled CI run in a
      group of its own, so the latest successful run's map stays until the newer run's.
-   - `tools/ci/tests/test_ci_paths.py` checks these groups.
+   - **A trail-only commit is never tagged.** A push to `main` or `release/**` that changes
+     only `docs/claude-trail.md` (a trail PR, merged straight to main) starts no CI and no
+     rehearsal run (the push triggers' `paths-ignore`), so it never joins the `main` group
+     and never cancels the code commit's run before it. It has no run, so the guard would
+     refuse it: tag the newest code commit, which may sit below one or more trail commits.
+     With no CI run, the coverage map (after CI on main) is not redrawn for it either.
+   - `tools/ci/tests/test_ci_paths.py` checks these groups and the trail's `paths-ignore`.
 3. **Draft first.** The guard opens the tag's release as a draft; every workflow uploads to
    it, and whichever finishes last publishes it, once `release.json`, `checksums.txt` and its
    signature are in and the apps' update feed has every server-carrying app. It becomes

@@ -70,6 +70,10 @@ on:
       - '.github/workflows/update-rehearsal.yml'
   push:
     branches: [main, 'release/**']
+    # a push that changes only the Claude trail starts no run: it would join the
+    # update-rehearsal-main group and cancel the run of the code commit before it, the one
+    # waiting to be tagged (trail-only commits are never tagged; see ci.yml)
+    paths-ignore: ['docs/claude-trail.md']
   schedule:
     - cron: '17 6 * * *' # nightly, 06:17 UTC
   workflow_dispatch:

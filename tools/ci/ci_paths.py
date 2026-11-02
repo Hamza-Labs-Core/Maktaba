@@ -3,7 +3,9 @@
 
 .github/ci-paths.yml holds the path filters ci.yml's `changes` job evaluates on a pull
 request; each job's `if:` (and the inputs it hands its reusable workflow) reads them as
-`needs.changes.outputs.<filter>`. On a push every filter is true: main gets the full run.
+`needs.changes.outputs.<filter>`. On a push every filter is true: main gets the full run,
+except a push that changes only the Claude trail, which the push trigger's paths-ignore
+starts no run for.
 
     ci_paths.py guard               # fails on a job that could silently never run
     ci_paths.py which FILE...       # the jobs a pull request changing FILEs runs
@@ -471,7 +473,19 @@ def _as_output(v: Any) -> str:
     return "" if v is None else str(v)
 
 
+def push_paths_ignore(path: Path | None = None) -> list[str]:
+    """The globs ci.yml's push trigger ignores: a push changing only these starts no run."""
+    data = yaml.safe_load((path or CI_YML).read_text(encoding="utf-8"))
+    on = data.get("on", data.get(True))  # YAML 1.1 reads a bare `on` key as true
+    return list((on.get("push") or {}).get("paths-ignore") or [])
+
+
 def which(files: Sequence[str], **kw: Any) -> dict[str, Run | None]:
+    """The jobs a change runs; none (no run at all) for a push its paths-ignore skips."""
+    if kw.get("event") == "push" and files:
+        ignored = push_paths_ignore()
+        if all(any(matches(p, f) for p in ignored) for f in files):
+            return {}
     wf = load_workflow()
     return simulate(wf, matched(job_filters(load_filters()), files), repo=any(f != TRAIL for f in files), **kw)
 

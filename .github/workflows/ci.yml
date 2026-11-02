@@ -17,6 +17,13 @@
 # test"). The always-run jobs are gated by the `repo` output: a file other than the trail
 # changed. No filter matches the trail.
 #
+# A push to main or release/* that changes only the trail starts no run at all (the push
+# trigger's paths-ignore; it skips only when every changed file is the trail), so a trail
+# commit never joins the `ci-main` group and never cancels the run of the code commit before
+# it, the one waiting to be tagged. Trail-only commits are never tagged: the tag goes on the
+# newest code commit (deploy/packaging/README.md, "Release flow"). update-rehearsal.yml does
+# the same.
+#
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
 # story lands, treat the tags below as the source of truth and keep
@@ -31,6 +38,8 @@ on:
     branches: [main, 'release/**']
   push:
     branches: [main, 'release/**']
+    # a trail-only commit starts no run, so it never cancels the code commit's (see above)
+    paths-ignore: ['docs/claude-trail.md']
 
 permissions:
   contents: read
