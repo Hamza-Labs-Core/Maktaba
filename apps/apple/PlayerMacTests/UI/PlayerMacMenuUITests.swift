@@ -103,7 +103,7 @@ final class PlayerMacMenuUITests: XCTestCase {
         card.click()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
         // the sidebar beside the page (the player must cover it)
-        XCTAssertTrue(sidebarRow.waitForExistence(timeout: 5) && sidebarRow.isHittable, "the sidebar beside the page")
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 5) && sidebar.isHittable, "the sidebar beside the page")
         let play = element("video.play")
         XCTAssertTrue(play.waitForExistence(timeout: 10), "the video's Play")
         play.click()
@@ -204,7 +204,7 @@ final class PlayerMacMenuUITests: XCTestCase {
     }
 
     /// The player covers the whole window: its frame is the window's, and the sidebar, seen
-    /// beside the page before (`sidebarRow`), is under it and out of reach.
+    /// beside the page before (`sidebar`), is under it and out of reach.
     ///
     /// Not by pixels: by the time this runs the mock home's stream is showing its picture (bars
     /// of colour, white at the right edge), so "black at every edge" fails on the video itself.
@@ -215,15 +215,12 @@ final class PlayerMacMenuUITests: XCTestCase {
         for (edge, a, b) in [("left", p.minX, w.minX), ("right", p.maxX, w.maxX), ("top", p.minY, w.minY), ("bottom", p.maxY, w.maxY)] {
             XCTAssertEqual(a, b, accuracy: 2, "the player reaches \(what)'s \(edge) edge: player \(p), window \(w)")
         }
-        let row = sidebarRow
-        XCTAssertFalse(row.exists && row.isHittable, "the sidebar is under the player in \(what)")
+        XCTAssertFalse(sidebar.exists && sidebar.isHittable, "the sidebar is under the player in \(what)")
     }
 
-    /// The sidebar's Libraries row (not the View menu's item).
-    private var sidebarRow: XCUIElement {
-        app.windows.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label == 'Libraries'"))
-            .matching(NSPredicate(format: "elementType != %d", XCUIElement.ElementType.menuItem.rawValue)).firstMatch
-    }
+    /// The window's sidebar: on the Mac an outline (labelled "Sidebar") whose rows hold each
+    /// section's name as a static text's value.
+    private var sidebar: XCUIElement { app.windows.firstMatch.outlines.firstMatch }
 
     private func shot(_ name: String) {
         let png = app.windows.firstMatch.screenshot().pngRepresentation
