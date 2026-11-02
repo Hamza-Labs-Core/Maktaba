@@ -965,6 +965,14 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - Waiting on the owner: make the upload key (keytool in `docs/google-play.md`) and add the
     secrets; create the three apps in Play Console and upload each first bundle by hand; later
     turn on `PLAY_UPLOAD`.
+- 2026-11-01 · `b743b7d4`: CVE-2026-98432 (Linux IPv4 TCP use-after-free, critical). Its reported
+  exploit needs a multipath TCP listener, which Go 1.24+ opens by default. `godebug
+  multipathtcp=0` in the api, cloud, streaming, maktaba-server and maktaba-launcher `go.mod`s,
+  each with `TestListenersUseNoMultipathTCP` (it fails if the line goes; checked). No `go.work`,
+  so release builds get it. User advisory (en + ar):
+  `docs/security/advisories/2026-11-01-linux-tcp-uaf.md`. The VPS kernel is not patched: the
+  owner patches it, or says go.
+  - Gap: specs say a `SECURITY.md` exists (story 23.8); there is none in the repo.
 
 [#1]: https://github.com/Hamza-Labs-Core/Maktaba/pull/1
 [#2]: https://github.com/Hamza-Labs-Core/Maktaba/pull/2
@@ -1141,3 +1149,8 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Owner: "always request the logs so it doesn't drop them". Both Android Gradle roots (apps/android, apps/tv/android) set `robolectric.logging=stdout` on every Test task; LogsKeptTest fails if it goes. Reports now carry the app's log.
 - Root cause found (with the new diagnostics): the miss is always the first wait, and the report showed "asked [/api/libraries/summary]; showing [libraries-list, tabs]": the answer came, no error was logged, the screen stayed on its spinner. Under Robolectric a bare `compose.waitUntil` only polls; an answer landing after the last idle isn't applied until the main looper is idled. Reproduced with a 500 ms late answer: poll-only took 4.6 s of a 5 s budget, poll-with-idle 0.6 s.
 - Fix: harness/Settle.kt `settledUntil` (waitForIdle in every poll) and `settled` (same, plus the asked/shown message); all three Libraries test classes use them. ~80 other bare waitUntil calls remain in the Player tests; not converted blindly (watch tests wait on things that hide by themselves, and settling advances the clock).
+## 2026-11-02 — v0.3.51 had no Play bundles: the TV wrapper jar wasn't Gradle's
+
+- play-bundles.yml on v0.3.51 stopped at "Gradle wrappers are Gradle's": apps/tv/android named Gradle 9.8.2 but its jar wasn't 9.8.2's (sha cb0da675…). The phone apps' jar matched.
+- Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
+- v0.3.51 stays without .aab files; the next tag carries them.
