@@ -176,6 +176,10 @@ jobs:
               -destination "id=$udid" -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO \
               -resultBundlePath "$RESULTS/$3-${{ matrix.shard }}.xcresult" "${args[@]}" || status=1
             echo "::endgroup::"
+            # the app's own log (MaktabaKit's `Log`: the requests to the mock home, connects,
+            # sign-ins), kept with the results: a failed wait shows what the app did meanwhile
+            xcrun simctl spawn "$udid" log show --style compact --info --debug \
+              --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/$3-${{ matrix.shard }}-app.log" || true
             xcrun simctl shutdown "$udid" || true
           }
           case "${{ matrix.device }}" in
