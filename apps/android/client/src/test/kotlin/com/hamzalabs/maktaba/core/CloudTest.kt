@@ -238,13 +238,21 @@ class CloudTest {
         assertEquals("old-name-token", tokens.getValue(dead).access)
     }
 
-    /** Not announced while it is looked for: why, and Retry; announced later, asked there. */
+    /**
+     * Not announced while it is looked for: why, and Retry; announced later, asked there. The
+     * restore ends on OkHttp's thread while this one watches: whoever sees the problem sees
+     * why, even when saying why is slow (it was once said after the problem, and missed).
+     */
     @Test
     fun aHomeNotAnnouncedSaysWhyThenIsAskedWhenItIs() = runBlocking {
         val dead = "http://127.0.0.1:1"
         val network = MutableStateFlow<List<FoundHome>>(emptyList())
         // the look's time passes at once
-        val s = AppSession(MapStore(), CoroutineScope(Dispatchers.Unconfined), { if (it == dead) MemoryTokens().apply { save(AuthTokens("t", "r")) } else MemoryTokens() }, sleep = { })
+        val s = AppSession(
+            MapStore(), CoroutineScope(Dispatchers.Unconfined),
+            { if (it == dead) MemoryTokens().apply { save(AuthTokens("t", "r")) } else MemoryTokens() },
+            sleep = { }, progressState = SlowToFail(),
+        )
         s.probe = HomeProbe()
         s.discovery = { network }
         s.discover(true)
@@ -312,4 +320,19 @@ class CloudTest {
         store.put("homes", """[{"url":"http://a:8088","name":"Studio"}]""")
         assertEquals(emptyList<String>(), AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() }).homes.value.single().addresses)
     }
+}
+
+/**
+ * Holds a Failed step back before it is stored, on the thread that says it: a reader that
+ * could see the restore's problem before its Failed step then sees it every time.
+ */
+private class SlowToFail(
+    private val held: MutableStateFlow<ConnectProgress?> = MutableStateFlow(null),
+) : MutableStateFlow<ConnectProgress?> by held {
+    override var value: ConnectProgress?
+        get() = held.value
+        set(v) {
+            if (v is ConnectProgress.Failed) Thread.sleep(300)
+            held.value = v
+        }
 }
