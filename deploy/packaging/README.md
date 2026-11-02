@@ -294,6 +294,25 @@ shellcheck deploy/packaging/install.sh deploy/packaging/scripts/*.sh
    deliberate maintenance line (a hotfix on an older minor, its commit on `main` or a
    `release/*` branch) passes with the repository variable `MAKTABA_RELEASE_ALLOW_TAG` naming
    the tag, and never becomes the latest.
+
+   **Only main's newest commit gets a full run.** `ci.yml` and `update-rehearsal.yml` put
+   every push to `main` in one concurrency group with `cancel-in-progress`: when a newer
+   commit lands, the older commit's run (queued or running) is cancelled. With a dozen merges
+   an hour, keeping every run queued them all behind the scarce macOS runners and the newest
+   commit (the one tagged) waited hours. So:
+   - **Tag main's tip**, or the newest commit with a green CI *and* rehearsal run. The guard
+     checks the tagged commit's own runs only: its ancestors' runs being cancelled does not
+     matter. A commit whose run was cancelled has no green run and is refused; tag the
+     newer one instead.
+   - **To prove an older commit** (a deliberate tag of it), re-run its cancelled runs
+     (`gh run rerun <id>`): a re-run (attempt 2+) gets its commit's own group, so it never
+     cancels main's newest run and is never cancelled by a newer one.
+   - Pull requests keep one group each (a newer push cancels the PR's older run); `release/**`
+     pushes, the nightly rehearsal and hand runs keep one group per commit and are never
+     cancelled.
+   - The coverage map (`coverage-map.yml`, after CI on main) skips a cancelled CI run in a
+     group of its own, so the latest successful run's map stays until the newer run's.
+   - `tools/ci/tests/test_ci_paths.py` checks these groups.
 3. **Draft first.** The guard opens the tag's release as a draft; every workflow uploads to
    it, and whichever finishes last publishes it, once `release.json`, `checksums.txt` and its
    signature are in and the apps' update feed has every server-carrying app. It becomes

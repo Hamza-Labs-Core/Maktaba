@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -338,3 +339,76 @@ def test_globs_read_as_paths_filter_does() -> None:
 def test_expressions(expr: str, want: bool) -> None:
     ctx = {"github": {"event_name": "push"}, "needs": {"changes": {"outputs": {}}}, "steps": {"filter": {"outputs": {}}}}
     assert ci_paths.evaluate(expr, ctx) is want
+
+
+# ---- concurrency: main keeps only its newest commit's run -------------------------------
+
+WORKFLOWS = ci_paths.CI_YML.parent
+
+
+def _resolve(value: str, ctx: dict[str, object]) -> str:
+    prefix, _, expr = value.partition("${{")
+    return prefix + str(ci_paths.evaluate("${{" + expr, ctx)) if expr else prefix
+
+
+def _concurrency(workflow: str, **github: object) -> tuple[str, bool]:
+    conc = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))["concurrency"]
+    ctx: dict[str, object] = {"github": {"run_attempt": "1", **github}}
+    return _resolve(conc["group"], ctx), ci_paths.evaluate(conc["cancel-in-progress"], ctx) is True
+
+
+def _push(sha: str, ref: str = "refs/heads/main", attempt: str = "1") -> dict[str, object]:
+    return {"event_name": "push", "ref": ref, "sha": sha, "run_attempt": attempt}
+
+
+def _pr(number: int, sha: str) -> dict[str, object]:
+    return {
+        "event_name": "pull_request",
+        "ref": f"refs/pull/{number}/merge",
+        "sha": sha,
+        "event": {"pull_request": {"number": number}},
+    }
+
+
+@pytest.mark.parametrize(("workflow", "name"), [("ci.yml", "ci"), ("update-rehearsal.yml", "update-rehearsal")])
+def test_main_pushes_share_one_cancelling_group_and_prs_stay_per_pr(workflow: str, name: str) -> None:
+    # two main commits: one group, the newer one cancels the older one's run
+    assert _concurrency(workflow, **_push("aaa")) == (f"{name}-main", True)
+    assert _concurrency(workflow, **_push("bbb")) == (f"{name}-main", True)
+    # pull requests: each its own group, cancelled by its own newer push only
+    assert _concurrency(workflow, **_pr(12, "ccc")) == (f"{name}-12", True)
+    assert _concurrency(workflow, **_pr(13, "ddd")) == (f"{name}-13", True)
+    # a release/** push keeps its commit's own group, never cancelled
+    assert _concurrency(workflow, **_push("eee", ref="refs/heads/release/0.3")) == (f"{name}-eee", False)
+    # a re-run of an older main commit never cancels main's newest run
+    assert _concurrency(workflow, **_push("aaa", attempt="2")) == (f"{name}-aaa", False)
+
+
+def test_rehearsal_nightly_and_hand_runs_are_never_cancelled() -> None:
+    for event in ("schedule", "workflow_dispatch"):
+        got = _concurrency("update-rehearsal.yml", event_name=event, ref="refs/heads/main", sha="fff")
+        assert got == ("update-rehearsal-fff", False)
+
+
+def test_coverage_map_skips_a_cancelled_ci_run_in_a_group_of_its_own() -> None:
+    wf = yaml.safe_load((WORKFLOWS / "coverage-map.yml").read_text(encoding="utf-8"))
+    run = {"event": "push", "head_branch": "main", "head_repository": {"full_name": "o/r"}}
+
+    def ctx(conclusion: str) -> dict[str, object]:
+        return {
+            "github": {
+                "event_name": "workflow_run",
+                "repository": "o/r",
+                "run_id": "7",
+                "event": {"workflow_run": {**run, "conclusion": conclusion}},
+            }
+        }
+
+    group = wf["concurrency"]["group"]
+    assert _resolve(group, ctx("success")) == "coverage-map"
+    assert _resolve(group, ctx("failure")) == "coverage-map"
+    assert _resolve(group, ctx("cancelled")) == "coverage-map-cancelled-7"
+    for job in ("go", "python", "map"):
+        cond = wf["jobs"][job]["if"]
+        assert ci_paths.evaluate(cond, ctx("success")) is True, job
+        assert ci_paths.evaluate(cond, ctx("cancelled")) is False, job
