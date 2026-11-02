@@ -960,6 +960,10 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - The iPhone simulator reports no Picture in Picture (the iPad one floats it); the PiP UI
     test asserts there is no PiP button on iPhone (no skip: the owner's rule). `AVRoutePickerView` adds its inner button late on iPad:
     `AirPlayButton.Picker` names every control in it once it is on screen.
+  - The Mac menu helper clicked View ▸ Profile when asked for Live TV: a coordinate on a menu
+    item finds it again by identifier, and every SwiftUI menu item's is `menuAction:` (the
+    recording showed the pointer move from Live TV to Profile). It now clicks the item's point
+    from the menu bar item, whose title is unique.
 - 2026-11-01 · play-bundles agent of `b743b7d4`: [#517] (not merged) attaches signed Google Play
   bundles to every `v*` tag (`play-bundles.yml`): `maktaba-{player,remote,tv}-<version>.aab`,
   upload key from `ANDROID_UPLOAD_KEYSTORE_BASE64` / `_KEY_ALIAS` / `_KEY_PASSWORD` (/ optional
