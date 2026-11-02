@@ -69,13 +69,27 @@ import Network
     public func stop() {}
 }
 
-extension BonjourDiscovery {
-    /// The discovery an app uses: Bonjour, except in a debug build launched with
-    /// `-maktaba-permissions-fake` (the UI tests), where the local network is scripted.
-    static func forThisApp(arguments: [String] = CommandLine.arguments) -> any HomeDiscovering {
+/// A debug build run by tests: launched by the UI tests with a scripted local network
+/// (`-maktaba-permissions-fake`), or the host of in-process tests (XCTest sets
+/// `XCTestConfigurationFilePath`; the Mac Player's menu tests run inside the app). Neither
+/// may browse the real network: the system's "find devices on local networks?" question
+/// would come up and stay over the screen for the rest of the run (CI: the Mac's in-process
+/// tests ran first, and the UI tests' clicks on Playback > Stop landed on that question).
+enum TestLaunch {
+    static func scriptsTheNetwork(arguments: [String] = CommandLine.arguments,
+                                  environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
         #if DEBUG
-        if arguments.contains("-maktaba-permissions-fake") { return NoDiscovery() }
+        return arguments.contains("-maktaba-permissions-fake") || environment["XCTestConfigurationFilePath"] != nil
+        #else
+        return false
         #endif
-        return BonjourDiscovery()
+    }
+}
+
+extension BonjourDiscovery {
+    /// The discovery an app uses: Bonjour, except in a debug build run by tests (`TestLaunch`).
+    static func forThisApp(arguments: [String] = CommandLine.arguments,
+                           environment: [String: String] = ProcessInfo.processInfo.environment) -> any HomeDiscovering {
+        TestLaunch.scriptsTheNetwork(arguments: arguments, environment: environment) ? NoDiscovery() : BonjourDiscovery()
     }
 }

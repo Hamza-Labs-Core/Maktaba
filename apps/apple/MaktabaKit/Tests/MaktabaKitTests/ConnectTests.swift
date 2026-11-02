@@ -749,7 +749,12 @@ extension RouteStub.Answer {
         d.stop()
     }
 
+    @Test func theHostOfInProcessTestsBrowsesNothing() {
+        let d = BonjourDiscovery.forThisApp(arguments: ["app"], environment: ["XCTestConfigurationFilePath": "/x.xctestconfiguration"])
+        #expect(d is NoDiscovery)
+    }
+
     @Test func anOrdinaryLaunchBrowsesBonjour() {
-        #expect(BonjourDiscovery.forThisApp(arguments: ["app"]) is BonjourDiscovery)
+        #expect(BonjourDiscovery.forThisApp(arguments: ["app"], environment: [:]) is BonjourDiscovery)
     }
 }
