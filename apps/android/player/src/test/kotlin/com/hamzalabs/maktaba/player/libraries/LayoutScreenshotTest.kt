@@ -7,7 +7,6 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollToIndex
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -16,6 +15,7 @@ import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.uprightHinge
 import com.hamzalabs.maktaba.player.harness.folded
 import com.hamzalabs.maktaba.player.harness.info
+import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.harness.acrossHinge
 import com.hamzalabs.maktaba.player.shell.PlayerSection
@@ -54,11 +54,11 @@ class LayoutScreenshotTest {
         compose.setLibraries(home, window, sections = PlayerSection.entries, info = info)
         compose.settledUntil(10_000) { exists("section-Libraries") }
         compose.onNodeWithTag("section-Libraries").performClick()
-        compose.settledUntil(10_000) { exists("libraries-detail") && exists("video-v1") }
-        // the hub's rows can land after the videos, and the grid then keeps the first video in
-        // view (scrolled down a row): every picture shows the page from its top
+        // the page's top: its hub rows (on the tabletop's half page the tabs and videos are below
+        // it). The home's idling resource holds each settle until every answer is in, the videos'
+        // too; the rows can land after the videos and the page stays at its top (StaysAtTopWhen)
+        compose.settled(home, "the library page's top shows") { exists("libraries-detail") && exists("row-continue") }
         compose.waitForIdle()
-        compose.onNodeWithTag("library-grid").performScrollToIndex(0)
     }
 
     private fun shoot(name: String) {
