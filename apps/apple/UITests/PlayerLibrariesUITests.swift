@@ -265,24 +265,20 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         for _ in 0 ..< swipes + 2 { grid.swipeDown() }
     }
 
-    /// A hub row (`rail.cards`) is a lazy row: a card past the screen's edge is made only when
-    /// something reaches for it, and its poster is fetched then. The audit reaches for every
-    /// element, so on an iPad's Libraries root (the first library's rows beside the list) it
-    /// made the rows' last cards mid-audit: their posters were asked for during it (CI: `GET
-    /// /api/videos/v8/poster, GET /api/videos/v7/poster`), each drawn as a moving placeholder
-    /// until it came, and on a loaded runner the audit never saw the page still ("Audit failed
-    /// to complete in time"). So each row is scrolled to its end and back first, and the page
-    /// read until it asks the home for no more pictures: every card made, every poster in the
-    /// image cache, nothing left for the audit to bring in.
+    /// The audit starts once the page asks the home for no more pictures: a poster arriving
+    /// mid-audit is drawn as a moving placeholder until it comes, and on a loaded runner the
+    /// audit never saw the page still ("Audit failed to complete in time", CI: `GET
+    /// /api/videos/v8/poster, GET /api/videos/v7/poster` during it). A hub row (`Rail`) makes
+    /// every card as it shows (a plain `HStack` since #569, not a lazy one), so each poster is
+    /// asked for with its row; the page is read until no more are.
+    ///
+    /// The rows are not scrolled to make their cards (they were while the row was lazy): a
+    /// swipe back did not always bring a row to its start, and on an iPad a row left part
+    /// way along has its first card under the sidebar, its title drawn behind the sidebar's
+    /// panel. The audit measured that title there (CI run 41530666969: "Contrast failed
+    /// [Tafsir al-Kahf, part 2 (290, 958)]", inside the sidebar's column), on a page no one
+    /// sees as it opens.
     private func loadEveryRail() {
-        let rails = app.descendants(matching: .any).matching(identifier: "rail.cards")
-        for i in 0 ..< rails.count {
-            let rail = rails.element(boundBy: i)
-            guard rail.exists, rail.isHittable else { continue }
-            // the end is on the left in Arabic
-            if language == "ar" { rail.swipeRight() } else { rail.swipeLeft() }
-            if language == "ar" { rail.swipeLeft() } else { rail.swipeRight() }
-        }
         let pictures = { self.home.requests.filter { $0.method == "GET" && $0.path.hasSuffix("/poster") }.count }
         var asked = pictures()
         for _ in 0 ..< 10 {
