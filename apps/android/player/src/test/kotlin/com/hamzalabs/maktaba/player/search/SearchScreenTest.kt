@@ -24,6 +24,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.setShell
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.AppScreens
 import com.hamzalabs.maktaba.player.shell.PlayerScreens
 import com.hamzalabs.maktaba.player.shell.PlayerSection
@@ -66,10 +67,10 @@ class SearchScreenTest {
     }
 
     private fun waitFor(text: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty() }
 
     private fun field(): SemanticsNodeInteraction = compose.onNode(hasSetTextAction())
 
@@ -93,7 +94,7 @@ class SearchScreenTest {
         open()
         field().performClick()
         field().performTextInput("pati")
-        compose.waitUntil(5_000) { compose.onAllNodesWithTag("suggestion").fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodesWithTag("suggestion").fetchSemanticsNodes().isNotEmpty() }
         compose.onNode(hasTestTag("suggestion") and hasText("patience in hardship", substring = true)).assertIsDisplayed()
         val asked = home.requests.last { it.url.encodedPath == "/api/search/suggest" }
         assertEquals("pati", asked.url.queryParameter("q"))
@@ -175,8 +176,8 @@ class SearchScreenTest {
 
         // ✕ forgets one on the home
         compose.onNode(hasContentDescription("Remove the night journey")).performClick()
-        compose.waitUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/search/recent/r1" } }
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("the night journey")).fetchSemanticsNodes().isEmpty() }
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/search/recent/r1" } }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("the night journey")).fetchSemanticsNodes().isEmpty() }
 
         // a tap runs it again
         compose.onNode(hasTestTag("recent") and hasText("patience", substring = true)).performClick()
@@ -189,7 +190,7 @@ class SearchScreenTest {
         open()
         waitForTag("recent-clear")
         compose.onNodeWithTag("recent-clear").performClick()
-        compose.waitUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/search/recent" } }
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/search/recent" } }
         waitFor("Search for a title")
     }
 

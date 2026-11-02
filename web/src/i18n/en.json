@@ -5896,5 +5896,13 @@
   "queue.dup.kbps": "{n} kb/s",
   "queue.dup.watched": "Watched by {viewers}, finished by {done}",
   "queue.dup.unwatched": "Not watched",
-  "queue.items.loadError": "The list of items could not be loaded."
+  "queue.items.loadError": "The list of items could not be loaded.",
+  "queue.card.pausedBy": "Paused by {who}",
+  "queue.detail.pausedBanner": "Paused by {who}, {time}. Nothing in this queue starts until you resume it.",
+  "queue.detail.pausedBannerNoTime": "Paused by {who}. Nothing in this queue starts until you resume it.",
+  "queue.pause.byUser": "{name}",
+  "queue.pause.byAdmin": "an admin",
+  "queue.pause.byStorage": "the share path conversion",
+  "queue.pause.bySystem": "Maktaba",
+  "queue.pause.byNobody": "no one on record"
 }

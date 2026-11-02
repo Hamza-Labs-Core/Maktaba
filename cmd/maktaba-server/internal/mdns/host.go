@@ -21,8 +21,13 @@ import (
 )
 
 // register announces instance on port with this machine's bare host name, so the
-// service's target is "<host>.local.".
-func register(instance, service, domain string, port int, txt []string) (*zeroconf.Server, error) {
+// service's target is "<host>.local.": through the system's responder where it has one
+// (announce.go), else through zeroconf.
+func register(instance, service, domain string, port int, txt []string) (announcement, error) {
+	// a Mac's responder already answers for its name: it announces the service for us
+	if path := systemResponder(); path != "" {
+		return startDNSSD(path, instance, service, domain, port, txt)
+	}
 	h := hostName()
 	ips := interfaceIPs()
 	if len(ips) == 0 {

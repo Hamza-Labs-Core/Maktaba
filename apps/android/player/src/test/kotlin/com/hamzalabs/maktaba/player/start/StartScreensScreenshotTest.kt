@@ -4,7 +4,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.material3.Surface
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -22,6 +22,7 @@ import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SignIn
 import com.hamzalabs.maktaba.core.ui.ThemeMode
 import com.hamzalabs.maktaba.core.ui.ThemeStore
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -94,14 +95,14 @@ class StartScreensScreenshotTest {
         show { HomePicker(session, MaktabaApp.Player) }
         // past the search for homes on the network (it says when it found none)
         compose.mainClock.advanceTimeBy(7_000)
-        compose.waitUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
         capture(name)
     }
 
     private fun password(name: String) {
         session.use(HOME)
         show { SignIn(session, MaktabaApp.Player) }
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("signin-password-tab")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("signin-password-tab")).fetchSemanticsNodes().isNotEmpty() }
         capture(name)
     }
 
@@ -109,7 +110,7 @@ class StartScreensScreenshotTest {
         session.use(HOME)
         show { SignIn(session, MaktabaApp.Player) }
         compose.onNodeWithTag("signin-code-tab").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodes(hasTestTag("signin-code")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(10_000) { compose.onAllNodes(hasTestTag("signin-code")).fetchSemanticsNodes().isNotEmpty() }
         capture(name)
     }
 

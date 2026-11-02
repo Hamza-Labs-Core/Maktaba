@@ -1621,6 +1621,9 @@ summary.mkt-q-lane__title {
 .mkt-q-card__flag--waiting {
   color: var(--q-running);
 }
+.mkt-q-card__flag--paused {
+  color: var(--color-warn);
+}
 .mkt-q-failures__filters {
   display: flex;
   flex-wrap: wrap;
