@@ -1184,3 +1184,9 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#469]: https://github.com/Hamza-Labs-Core/Maktaba/pull/469
 [#510]: https://github.com/Hamza-Labs-Core/Maktaba/pull/510
 [#516]: https://github.com/Hamza-Labs-Core/Maktaba/pull/516
+
+## 2026-11-02 — v0.3.51 had no Play bundles: the TV wrapper jar wasn't Gradle's
+
+- play-bundles.yml on v0.3.51 stopped at "Gradle wrappers are Gradle's": apps/tv/android named Gradle 9.8.2 but its jar wasn't 9.8.2's (sha cb0da675…). The phone apps' jar matched.
+- Fix: TV takes the phone apps' verified 9.8.2 wrapper (jar, gradlew, gradlew.bat). _android-tv.yml now runs the same check on every PR, so a wrong jar fails the PR, not the release tag.
+- v0.3.51 stays without .aab files; the next tag carries them.
