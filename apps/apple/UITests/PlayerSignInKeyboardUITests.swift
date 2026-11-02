@@ -5,10 +5,11 @@ import XCTest
 /// the on-screen keyboard, and Return on the password signs in. The mock home refuses the
 /// password; what is checked is that it was sent.
 ///
-/// The on-screen keyboard is the one measured: CI's simulators are made with no hardware
-/// keyboard and keep the software keyboard up while keys are typed
-/// (`.github/workflows/_apple-apps.yml`), so a missing keyboard fails here instead of the
-/// field passing as "above" the screen's edge.
+/// The on-screen keyboard is the one measured (`app.keyboards`, its frame), and a missing one
+/// fails here instead of the field passing as "above" the screen's edge. CI's simulators keep
+/// the software keyboard up (`.github/workflows/_apple-apps.yml`: no hardware keyboard, no
+/// minimizing it while keys are typed). Its shots are of the whole screen: the keyboard is a
+/// window of its own, which the app's screenshot leaves out.
 final class PlayerSignInKeyboardUITests: PlayerUITestCase {
     func testReturnMovesToThePasswordThenSignsIn() {
         returnMovesToThePasswordThenSignsIn()
@@ -40,7 +41,7 @@ final class PlayerSignInKeyboardUITests: PlayerUITestCase {
         let password = app.secureTextFields["signin.password"]
         XCTAssertTrue(hasFocus(password), "Return on the username moved the keyboard to the password", file: file, line: line)
         assertAboveTheKeyboard(password, file: file, line: line)
-        shot(shotName)
+        shot(shotName, wholeScreen: true)
 
         // the password already has the keyboard (typeExactly taps only a field that has not)
         password.typeExactly("not-the-password", in: app, secure: true)
@@ -65,7 +66,11 @@ final class PlayerSignInKeyboardUITests: PlayerUITestCase {
             kb = keyboard.exists ? keyboard.frame : .null
             field = e.exists ? e.frame : .null
             let up = !kb.isNull && kb.height >= Self.fullKeyboard && kb.minY < screen.maxY
-            if up, !field.isNull, !field.isEmpty, field.minY >= screen.minY, field.maxY <= kb.minY { return }
+            if up, !field.isNull, !field.isEmpty, field.minY >= screen.minY, field.maxY <= kb.minY {
+                // in the test's log (the CI report): what was measured
+                print("\(e.identifier) at \(field), above the on-screen keyboard at \(kb) (screen \(screen))")
+                return
+            }
             RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         } while Date() < end
         XCTFail("\(e.identifier) at \(field) is not above the on-screen keyboard at \(kb) (screen \(screen))",

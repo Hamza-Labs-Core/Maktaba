@@ -1,14 +1,23 @@
 package com.hamzalabs.maktaba.player.start
 
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.Surface
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.core.graphics.Insets
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.MemoryTokens
@@ -42,6 +51,10 @@ import org.robolectric.annotation.Config
  * keyboard's Next on a field moves to the next one, and its Go on the last one signs in. The
  * home's and the cloud's sign-ins talk to a MockWebServer that refuses them; what is checked is
  * that the sign-in was sent.
+ *
+ * And the focused field stays above the keyboard: in a short window the keyboard (its IME
+ * inset, dispatched to the app as Android does when it slides up) rises over the password the
+ * focus just moved to, and the form scrolls the password up above it (`rememberKeptAboveKeyboard`).
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
@@ -140,5 +153,91 @@ class SignInKeyboardTest {
         compose.onNodeWithTag("cloud-address").assertIsFocused()
         compose.onNodeWithTag("cloud-address").performImeAction()
         sent("POST /v1/auth/login")
+    }
+
+    // MARK: above the keyboard
+
+    /** Where the node tagged `tag` is drawn in the window, whether or not the form clips it. */
+    private fun boundsOf(tag: String) = compose.onNodeWithTag(tag).getUnclippedBoundsInRoot()
+
+    private val window: Dp get() = compose.onRoot().getBoundsInRoot().bottom
+
+    /**
+     * The keyboard slides up to `height`: the IME inset dispatched to the app's views, as the
+     * system does when the keyboard shows (Compose's `WindowInsets.ime` reads it).
+     */
+    private fun raiseKeyboard(height: Dp) {
+        compose.runOnUiThread {
+            val px = (height.value * compose.activity.resources.displayMetrics.density).toInt()
+            val insets = WindowInsetsCompat.Builder()
+                .setInsets(WindowInsetsCompat.Type.ime(), Insets.of(0, 0, 0, px))
+                .setVisible(WindowInsetsCompat.Type.ime(), true)
+                .build()
+            ViewCompat.dispatchApplyWindowInsets(compose.activity.findViewById<ViewGroup>(android.R.id.content), insets)
+        }
+        compose.waitForIdle()
+    }
+
+    /** `field` lies wholly on the screen above the top of a keyboard `keyboard` high. */
+    private fun assertAboveTheKeyboard(field: String, keyboard: Dp) {
+        val top = window - keyboard
+        settledUntil("$field ends above the keyboard's top at $top, on the screen") {
+            val b = boundsOf(field)
+            b.bottom > b.top && b.top >= 0.dp && b.bottom <= top
+        }
+    }
+
+    /**
+     * The focus is on `field`; then the keyboard rises over all of it (its top 24 dp above
+     * the field's). The form must scroll the field up above the keyboard.
+     */
+    private fun keptAboveTheRisingKeyboard(field: String) {
+        compose.onNodeWithTag(field).assertIsFocused()
+        val keyboard = window - boundsOf(field).top + 24.dp
+        raiseKeyboard(keyboard)
+        assertAboveTheKeyboard(field, keyboard)
+    }
+
+    private fun homeSignIn() {
+        session.use(Home(url = "http://192.168.1.20:8088", name = "Darwish home"))
+        compose.setContent { MaktabaTheme(ThemeMode.Dark) { Surface { SignIn(session, MaktabaApp.Player) } } }
+        shows("signin-username")
+        compose.onNodeWithTag("signin-username").performClick()
+        compose.onNodeWithTag("signin-username").performTextInput("tester")
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp")
+    fun homeSignInPasswordRisesAboveTheKeyboard() {
+        homeSignIn()
+        compose.onNodeWithTag("signin-username").performImeAction()
+        keptAboveTheRisingKeyboard("signin-password")
+    }
+
+    /** The keyboard is up while the username is typed; Next moves to a password under it. */
+    @Test
+    @Config(qualifiers = "w360dp-h640dp")
+    fun homeSignInNextBringsThePasswordAboveTheKeyboard() {
+        homeSignIn()
+        // a keyboard whose top is just below the username: the password is under it
+        val keyboard = window - boundsOf("signin-username").bottom - 8.dp
+        raiseKeyboard(keyboard)
+        val under = boundsOf("signin-password")
+        assertTrue("the password ($under) starts under the keyboard's top at ${window - keyboard}", under.top > window - keyboard)
+        compose.onNodeWithTag("signin-username").performImeAction()
+        compose.onNodeWithTag("signin-password").assertIsFocused()
+        assertAboveTheKeyboard("signin-password", keyboard)
+    }
+
+    @Test
+    @Config(qualifiers = "w360dp-h640dp")
+    fun cloudSignInPasswordRisesAboveTheKeyboard() {
+        cloud()
+        shows("cloud-email")
+
+        compose.onNodeWithTag("cloud-email").performClick()
+        compose.onNodeWithTag("cloud-email").performTextInput("tester@example.com")
+        compose.onNodeWithTag("cloud-email").performImeAction()
+        keptAboveTheRisingKeyboard("cloud-password")
     }
 }
