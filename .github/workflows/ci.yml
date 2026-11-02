@@ -292,7 +292,8 @@ jobs:
   # one the gate works from its searches. Seconds: it reads git, it runs no test.
   affected-tests:
     # ci-paths: always-run, pr-only
-    if: github.event_name == 'pull_request'
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.repo == 'true'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
