@@ -181,4 +181,8 @@
     <string name="progress_retry">إعادة المحاولة</string>
     <string name="progress_signing_in_button">جارٍ تسجيل الدخول…</string>
     <string name="progress_cloud_loading">جارٍ تحميل أجهزتك الرئيسية من سحابة مكتبة…</string>
+    <string name="split_divider">الفاصل بين القائمة والصفحة</string>
+    <string name="split_widen_list">توسيع القائمة</string>
+    <string name="split_narrow_list">تضييق القائمة</string>
+    <string name="split_list_share">القائمة %1$d٪ من العرض</string>
 </resources>

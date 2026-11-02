@@ -1,6 +1,7 @@
 package com.hamzalabs.maktaba.player.libraries
 
 import androidx.compose.material3.Surface
+import androidx.compose.material3.adaptive.WindowAdaptiveInfo
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -114,12 +115,16 @@ const val EPISODES = """{"seasons":[
  * The shell with the Libraries section alone (so it opens there whatever else ships) in the dark theme, signed in to [home], laid out for
  * [window]; [panes] stands in for a fold the JVM cannot report, and posters are drawn by
  * [FakePictures] by path ([portlessPictures]) so screenshots are the same on every run and machine.
+ * [sections] other than Libraries alone show the navigation too (Libraries chosen first: it is
+ * passed first); [info] replaces the window's adaptive info (a faked hinge, [folded]).
  */
 fun ComposeContentTestRule.setLibraries(
     home: FakeHome,
     window: Window = Window.Phone,
     panes: Panes? = null,
     rtl: Boolean? = null,
+    sections: List<PlayerSection> = listOf(PlayerSection.Libraries),
+    info: WindowAdaptiveInfo = window.info(),
 ) {
     setContent {
         val context = LocalContext.current
@@ -136,7 +141,7 @@ fun ComposeContentTestRule.setLibraries(
             LocalLayoutDirection provides direction,
         ) {
             MaktabaTheme(ThemeMode.Dark) {
-                Surface { PlayerShell(sections = listOf(PlayerSection.Libraries), adaptiveInfo = window.info()) }
+                Surface { PlayerShell(sections = sections, adaptiveInfo = info) }
             }
         }
     }
