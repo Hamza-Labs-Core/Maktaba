@@ -199,7 +199,9 @@ async def test_pausing_the_stage_stops_after_the_current_item(
     async def pause(y: str) -> None:
         if y == ids[2]:
             await db.execute(
-                "UPDATE job_stages SET paused = $1 WHERE stage = 'youtube_backfill'", yes
+                "UPDATE job_stages SET paused = $1, paused_at = CURRENT_TIMESTAMP,"
+                " paused_by = 'test' WHERE stage = 'youtube_backfill'",
+                yes,
             )
 
     fake.before_download = pause
@@ -211,7 +213,11 @@ async def test_pausing_the_stage_stops_after_the_current_item(
     assert await live_backfill(db) is not None  # the next one waits for the resume
 
     fake.before_download = None
-    await db.execute("UPDATE job_stages SET paused = $1 WHERE stage = 'youtube_backfill'", no)
+    await db.execute(
+        "UPDATE job_stages SET paused = $1, paused_at = NULL, paused_by = NULL"
+        " WHERE stage = 'youtube_backfill'",
+        no,
+    )
     assert await work(db, rt) == ["youtube_backfill"] * 7
     assert fake.downloaded == ids  # each once
 

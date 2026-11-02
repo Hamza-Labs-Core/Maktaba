@@ -36,6 +36,7 @@ import (
 	"errors"
 	"net/http"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -306,7 +307,31 @@ func (h *Handler) loadStages(ctx context.Context) ([]StageInfo, error) {
 	}
 	sortStages(out)
 	fillFedBy(out)
+	h.fillPausedByNames(ctx, out)
 	return out, nil
+}
+
+// fillPausedByNames sets PausedByName on each stage an admin paused (paused_by
+// "user:<id>", what PauseStage writes): the Queues page says who paused it. Best
+// effort, one lookup per admin: a user since deleted keeps only the id.
+func (h *Handler) fillPausedByNames(ctx context.Context, stages []StageInfo) {
+	names := map[string]*string{}
+	for i := range stages {
+		by := stages[i].PausedBy
+		if !stages[i].Paused || by == nil || !strings.HasPrefix(*by, "user:") {
+			continue
+		}
+		id := strings.TrimPrefix(*by, "user:")
+		name, seen := names[id]
+		if !seen {
+			var n string
+			if err := h.DB.QueryRowContext(ctx, `SELECT username FROM users WHERE id::text = $1`, id).Scan(&n); err == nil && n != "" {
+				name = &n
+			}
+			names[id] = name
+		}
+		stages[i].PausedByName = name
+	}
 }
 
 // loadStage reads one stage; sql.ErrNoRows when unknown.
@@ -315,6 +340,9 @@ func (h *Handler) loadStage(ctx context.Context, stage string) (StageInfo, error
 	if err != nil {
 		return StageInfo{}, err
 	}
+	one := []StageInfo{s}
+	h.fillPausedByNames(ctx, one)
+	s = one[0]
 	// FedBy needs the whole graph.
 	all, err := h.loadStages(ctx)
 	if err == nil {
