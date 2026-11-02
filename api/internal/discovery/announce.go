@@ -161,17 +161,17 @@ func (d *systemDNSSD) Shutdown() {
 	d.end()
 }
 
-// dnsLabel is s as DNS-SD takes it: no control characters, at most max bytes, cut on a
+// dnsLabel is s as DNS-SD takes it: no control characters, at most limit bytes, cut on a
 // character boundary. A longer instance name (a long home name) makes dns-sd refuse it,
 // and the announcement would be retried for ever.
-func dnsLabel(s string, max int) string {
+func dnsLabel(s string, limit int) string {
 	s = strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
 	}, s)
-	for len(s) > max {
+	for len(s) > limit {
 		_, size := utf8.DecodeLastRuneInString(s)
 		s = s[:len(s)-size]
 	}
