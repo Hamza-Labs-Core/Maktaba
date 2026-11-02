@@ -15,7 +15,7 @@ import (
 
 // On a Linux with systemd-resolved (the CI runner among them) the probe answers at once,
 // and the RegisterService this binding calls has the arguments it sends:
-// id, name template, type, port, priority, weight, TXT records (ssqqqaa{say}) → path (o).
+// id, name template, type, port, priority, weight, TXT records (sssqqqaa{say}) → path (o).
 func TestResolvedOnThisMachine(t *testing.T) {
 	if _, err := os.Stat("/run/dbus/system_bus_socket"); err != nil {
 		t.Skip("no system bus here")
@@ -60,7 +60,7 @@ func TestResolvedOnThisMachine(t *testing.T) {
 	if err := xml.Unmarshal([]byte(raw), &node); err != nil {
 		t.Fatalf("introspection: %v", err)
 	}
-	want := map[string]string{"RegisterService": "ssqqqaa{say}>o", "UnregisterService": "o>", "GetLink": "i>o"}
+	want := map[string]string{"RegisterService": "sssqqqaa{say}>o", "UnregisterService": "o>", "GetLink": "i>o"}
 	for _, ifc := range node.Interfaces {
 		if ifc.Name != resolveManager {
 			continue
