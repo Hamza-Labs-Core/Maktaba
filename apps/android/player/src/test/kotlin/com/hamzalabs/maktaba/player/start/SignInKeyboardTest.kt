@@ -54,7 +54,7 @@ import org.robolectric.annotation.Config
  *
  * And the focused field stays above the keyboard: in a short window the keyboard (its IME
  * inset, dispatched to the app as Android does when it slides up) rises over the password the
- * focus just moved to, and the form scrolls the password up above it (`rememberKeptAboveKeyboard`).
+ * focus just moved to, and the form (`StartFrame`, shrunk by the IME padding) scrolls the password up above it.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
