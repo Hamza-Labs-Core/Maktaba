@@ -7,12 +7,17 @@ name: Integration
 
 on:
   workflow_call:
+    # each part when its files changed (ci.yml, from .github/ci-paths.yml)
+    inputs:
+      integration: { type: boolean, default: true }
+      compat_prev: { type: boolean, default: true }
 
 permissions:
   contents: read
 
 jobs:
   integration:
+    if: inputs.integration
     runs-on: ubuntu-22.04
     timeout-minutes: 20
 
@@ -169,6 +174,7 @@ jobs:
   # fails the build unless a newer migration is marked "Breaking for the previous release"
   # (tools/compat-prev/run.sh).
   compat-prev:
+    if: inputs.compat_prev
     runs-on: ubuntu-22.04
     timeout-minutes: 25
 
