@@ -17,4 +17,5 @@
     <string name="search_no_results">Nothing matches “%1$s”.</string>
     <string name="search_degraded">Text matches only: the meaning search did not answer.</string>
     <string name="search_failed">Search failed</string>
+    <string name="search_preview_hint">Choose a result to see it on this page.</string>
 </resources>

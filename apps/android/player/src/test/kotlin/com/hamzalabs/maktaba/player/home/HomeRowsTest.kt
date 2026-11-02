@@ -30,6 +30,19 @@ class HomeRowsTest {
     }
 
     @Test
+    fun likeABookTheRowsKeepTheirOrderAcrossTheTwoPages() {
+        val rows = homeRows(rails, recs, now)
+        // the hero tops the start page: it takes the smaller half
+        val (start, end) = bookPages(rows, hero = true)
+        assertEquals(HomeFixtures.ROW_ORDER.take(4), start.map { it.key })
+        assertEquals(HomeFixtures.ROW_ORDER.drop(4), end.map { it.key })
+        val odd = rows.dropLast(1)
+        assertEquals(3, bookPages(odd, hero = true).first.size)
+        assertEquals(4, bookPages(odd, hero = false).first.size)
+        assertEquals(emptyList<HomeRow>() to emptyList<HomeRow>(), bookPages(emptyList(), hero = true))
+    }
+
+    @Test
     fun withoutRecommendationsOrLiveTvTheirRowsAreAbsent() {
         val rows = homeRows(rails, recs = null, now = null)
         assertEquals(HomeFixtures.ROW_ORDER - setOf(KEY_LIVE, KEY_FOR_YOU, KEY_FROM_LIBRARY), rows.map { it.key })

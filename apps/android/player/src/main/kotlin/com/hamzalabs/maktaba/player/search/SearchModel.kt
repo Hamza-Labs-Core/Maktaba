@@ -38,6 +38,9 @@ data class SearchAnswer(
     val isEmpty: Boolean get() = titles.isEmpty() && transcripts.isEmpty()
     val moreTitles: Boolean get() = searchId.isNotEmpty() && titles.size < titlesTotal
     val moreTranscripts: Boolean get() = searchId.isNotEmpty() && transcripts.size < transcriptsTotal
+
+    /** The video a page beside the results shows when none is chosen: the first title, else the first transcript's. */
+    val first: String? get() = titles.firstOrNull()?.videoId ?: transcripts.firstOrNull()?.videoId
 }
 
 /**
@@ -70,6 +73,12 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
     var submitted by mutableStateOf<String?>(null)
         private set
 
+    /**
+     * The video shown beside the results when the window is half folded like a book (the
+     * other page); null: the first result. A new search forgets it.
+     */
+    var chosen by mutableStateOf<String?>(null)
+
     private var generation = 0
 
     /** Asks for the suggestions for [q]; blank asks nothing. A failure keeps the list empty. */
@@ -91,6 +100,7 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
         if (q.isBlank()) return
         query = q
         submitted = q
+        chosen = null
         suggestions = emptyList()
         val mine = ++generation
         searching = true
