@@ -1,0 +1,362 @@
+# Which CI jobs a pull request runs: the path filters of ci.yml's `changes` job
+# (dorny/paths-filter reads this file). A filter is true when a changed file matches one of
+# its globs (`**` spans folders, `*` stays in one; no `!`, braces or brackets). On a push
+# to main or release/* every filter is true, so main and the tags get the full run.
+#
+# Each filter lists what its job really builds or tests: its sources, the files its tests
+# read outside them, its workflow file, the Makefile when it runs make, and ci.yml (a
+# change there can change any job). A key starting with `_` is a group the filters share
+# (a YAML anchor), no job's filter.
+#
+# tools/ci/ci_paths.py checks this file and ci.yml on every pull request (the lint job):
+# every job is gated by a filter here or marked always-run, every filter is used, and
+# every tracked file is read by some filter or listed as built by no CI job. Its tests
+# (tools/ci/tests/test_ci_paths.py) say which jobs a change runs.
+
+# ---- groups ---------------------------------------------------------------------------
+
+_ci: &ci
+  - '.github/workflows/ci.yml'
+
+_make: &make
+  - 'Makefile'
+
+# tools/test-budget.sh wraps tools/test-budget (unit, integration, e2e, media-e2e, perf-ci)
+_budget: &budget
+  - 'tools/test-budget.sh'
+  - 'tools/test-budget/**'
+
+# the Go modules (the Makefile's GO_MODULES, and cloud), what their tests read outside
+# them, and the lint and coverage tools run over them
+_go: &go
+  - 'api/**'
+  - 'streaming/**'
+  - 'cloud/**'
+  - 'cmd/**'
+  # the Go libraries, the migrations (and their MANIFEST.md, read by the schema guard),
+  # the schema, fixtures and test data
+  - 'shared/**'
+  - 'tools/release/**'
+  - 'tools/test-budget.sh'
+  - 'tools/test-budget/**'
+  - 'tools/log-lint/**'
+  - 'tools/migration-lint/**'
+  - 'tools/coverage-floor.sh'
+  - 'tools/coverage-floor/**'
+  # the affected-tests gate's own module (in GO_MODULES)
+  - 'tools/affected-tests/**'
+  # api/internal/handlers/browse's native fixtures are the Apple apps' own
+  - 'apps/apple/MaktabaKit/Tests/Fixtures/**'
+
+# the pipeline, and what its tests read outside it
+_pipeline: &pipeline
+  - 'pipeline/**'
+  - 'shared/**'
+  # the packaging files and docs its tests check
+  - 'deploy/packaging/**'
+  # test_help_coverage reads the web's help pages
+  - 'web/src/help/**'
+  # tests/lint/test_docs_links.py checks these docs' links, and that they are listed here
+  - 'docs/tv-cluster-and-remote.md'
+  - 'specs/epics/32-tv-streaming-cluster-remote/**'
+  - 'docs/updates.md'
+  - 'docs/auto-update.md'
+  - 'docs/cluster/**'
+  - 'specs/epics/35-cluster-full-nodes-and-updates/**'
+  - '.github/ci-paths.yml'
+
+# the web app, and what its tests read outside it
+_web: &web
+  - 'web/**'
+  - 'shared/testtier/ts/**'
+  # help.coverage.test.ts checks the help against these
+  - 'api/internal/handlers/rules/schema.json'
+  - 'api/internal/handlers/systemstatus/types.go'
+
+# make test-tokens: the token source and the files built from it
+_tokens: &tokens
+  - 'web/design-system/**'
+  - 'web/src/styles/tokens.css'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift'
+  - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt'
+
+# node-packaging: the release's node assets (the wheel from the pipeline, the installers,
+# the release tooling that writes release.json)
+_node_packaging: &node_packaging
+  - 'pipeline/**'
+  - 'deploy/packaging/**'
+  - 'tools/release/**'
+  - 'shared/go/**'
+  - '.github/workflows/_node-packaging.yml'
+
+# ---- lint (_lint.yml; its repository checks run on every pull request) ----------------
+
+lint_go:
+  - *ci
+  - *make
+  - *go
+  - '.github/workflows/_lint.yml'
+
+lint_pipeline:
+  - *ci
+  - *make
+  - *pipeline
+  - '.github/workflows/_lint.yml'
+
+lint_web:
+  - *ci
+  - *make
+  - *web
+  - '.github/workflows/_lint.yml'
+
+# ---- unit (_unit.yml) -----------------------------------------------------------------
+
+unit_go:
+  - *ci
+  - *make
+  - *go
+  - '.github/workflows/_unit.yml'
+
+# the pipeline's unit tier, and its cluster tests on Windows
+unit_pipeline:
+  - *ci
+  - *make
+  - *pipeline
+  - '.github/workflows/_unit.yml'
+
+# the web's unit tier and its player edition build
+unit_web:
+  - *ci
+  - *make
+  - *web
+  - '.github/workflows/_unit.yml'
+
+unit_tokens:
+  - *ci
+  - *make
+  - *tokens
+  - '.github/workflows/_unit.yml'
+
+# the Tauri shell's tests on macOS, Windows and Linux
+desktop_shell:
+  - *ci
+  - 'apps/desktop/**'
+  - '.github/workflows/_unit.yml'
+
+# ---- the server's tiers ---------------------------------------------------------------
+
+# Postgres + Chroma: the Go modules' and the pipeline's integration tiers, cloud's, and the
+# pipeline's real-ffmpeg tests (the relay test builds the api)
+integration:
+  - *ci
+  - *make
+  - *go
+  - *pipeline
+  - 'tools/ci/apt-install.sh'
+  - 'tools/ci/integration-go.sh'
+  - '.github/workflows/_integration.yml'
+
+# the previous release's api tests on this build's migrations
+compat_prev:
+  - *ci
+  - *make
+  - 'api/**'
+  - 'shared/**'
+  - 'tools/compat-prev/**'
+  - '.github/workflows/_integration.yml'
+
+# the machines' copies and switching the home (api, the server, the launcher, streaming
+# are built and run)
+replica:
+  - *ci
+  - 'api/**'
+  - 'streaming/**'
+  - 'cmd/**'
+  - 'shared/**'
+  - 'tools/ci/no-pg-skips.sh'
+  - '.github/workflows/_replica.yml'
+
+# the compose stack (the api, streaming, pipeline and web images) driven by tests/e2e
+e2e:
+  - *ci
+  - *make
+  - *budget
+  - 'api/**'
+  - 'streaming/**'
+  - 'pipeline/**'
+  - 'web/**'
+  - 'shared/**'
+  - 'tools/healthcheck/**'
+  - 'deploy/compose/**'
+  - 'deploy/docker/**'
+  - '.dockerignore'
+  - 'tests/__init__.py'
+  - 'tests/e2e/**'
+  - 'pyproject.toml'
+  - '.github/workflows/_e2e.yml'
+
+# the api's and streaming's tests with a real ffmpeg (tools/media-e2e.sh)
+media_e2e:
+  - *ci
+  - *make
+  - *budget
+  - 'api/**'
+  - 'streaming/**'
+  - 'shared/**'
+  - 'tools/media-e2e.sh'
+  - 'tools/ci/apt-install.sh'
+  - '.github/workflows/_media-e2e.yml'
+
+# tests/perf against shared/perf_budgets.yaml (run in the pipeline's environment), and the
+# cluster link's latency test in the api
+perf_ci:
+  - *ci
+  - *make
+  - *budget
+  - 'tests/__init__.py'
+  - 'tests/perf/**'
+  - 'pyproject.toml'
+  - 'api/**'
+  - 'shared/**'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/.python-version'
+  - '.github/workflows/_perf-ci.yml'
+
+# make build-go (api, streaming, the cloudlink), the relay binary and make build-web
+build_artifacts:
+  - *ci
+  - *make
+  - 'api/**'
+  - 'streaming/**'
+  - 'cloud/**'
+  - 'shared/**'
+  - 'web/**'
+  - '.github/workflows/_build-artifacts.yml'
+
+# ---- install and packaging ------------------------------------------------------------
+
+node_packaging:
+  - *ci
+  - *node_packaging
+
+# the release venv built by the server's own code (internal/appvenv) from the wheel
+release_venv:
+  - *ci
+  - *node_packaging
+  - 'cmd/maktaba-server/**'
+
+# the install layout and maktaba-launcher on three OSes, the server's and streaming's
+# per-OS tests, the api's passfile test, the .deb and .rpm
+launcher:
+  - *ci
+  - 'cmd/**'
+  - 'shared/go/**'
+  - 'streaming/**'
+  - 'api/internal/pgdsn/**'
+  - 'api/go.mod'
+  - 'api/go.sum'
+  - 'deploy/packaging/**'
+  - '.github/workflows/_launcher.yml'
+
+# The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into the app or how
+# it is built changes.
+mac_app:
+  - *ci
+  - 'tools/release/mac-app/**'
+  - 'apps/desktop/**'
+  - 'cmd/maktaba-launcher/**'
+  - 'deploy/packaging/node/build-release.sh'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - '.github/workflows/_mac-app.yml'
+  - '.github/workflows/desktop-release.yml'
+  - 'Makefile'
+
+# The Windows app gate (windows-latest, ~25 min): what goes into the app or its installer,
+# or how they are built.
+win_app:
+  - *ci
+  - 'tools/release/win-app/**'
+  - 'apps/desktop/**'
+  - 'cmd/maktaba-launcher/**'
+  - 'deploy/packaging/node/build-release.sh'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
+  - '.github/workflows/_win-app.yml'
+  - '.github/workflows/desktop-release.yml'
+  - 'Makefile'
+
+# The Linux app gate (x86_64 + aarch64, ~25 min each): what goes into the payload or the
+# app, or how they are built.
+linux_app:
+  - *ci
+  - 'tools/release/linux-app/**'
+  - 'apps/desktop/**'
+  - 'cmd/maktaba-launcher/**'
+  - 'deploy/packaging/node/build-release.sh'
+  - 'deploy/docker/server/**'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
+  - '.github/workflows/_linux-app.yml'
+  - 'Makefile'
+
+# ---- the native apps ------------------------------------------------------------------
+
+# Player and Remote for Android (~10 min): their project and gate.
+android_apps:
+  - *ci
+  - 'apps/android/**'
+  - '.github/workflows/_android-apps.yml'
+  - '.github/workflows/play-bundles.yml'
+  - 'tools/release/play-version.sh'
+  - 'tools/release/play-version-test.sh'
+
+# The Android TV app (~8 min): its project, the phone apps' core and catalog it builds on.
+android_tv:
+  - *ci
+  - 'apps/tv/android/**'
+  - 'apps/android/core/**'
+  - 'apps/android/client/**'
+  - 'apps/android/gradle/libs.versions.toml'
+  - '.github/workflows/_android-tv.yml'
+  - '.github/workflows/play-bundles.yml'
+
+# The desktop Player for Windows and Linux (Epic 42.4): its project, the portable client
+# and the fonts it shares with the Android apps, the catalog.
+desktop_player:
+  - *ci
+  - 'apps/desktop-player/**'
+  - 'apps/android/client/**'
+  - 'apps/android/core/src/main/res/font/**'
+  - 'apps/android/gradle/libs.versions.toml'
+  - '.github/workflows/_desktop-player.yml'
+
+# The Apple apps' build job: MaktabaKit's tests, a build of the Remote, the Player (iPhone
+# and Mac) and the TV app, their String Catalogs.
+apple_apps:
+  - *ci
+  - 'apps/apple/**'
+  - 'apps/tv/tvos/**'
+  - 'tools/apple/**'
+  - '.github/workflows/_apple-apps.yml'
+
+# The Player's UI tests (nine macOS jobs): what the Player's targets build (project.yml:
+# Player/, Shared/Assets.xcassets, MaktabaKit's package) and their test targets (UITests/,
+# PlayerMacTests/), the Player's schemes, the shard script. The shared project file
+# (project.pbxproj) counts when tools/ci/apple_player_scope.py finds a Player object among
+# its changes (the changes job). The Remote's and the TV app's own files are not here.
+apple_player_ui:
+  - *ci
+  - 'apps/apple/Player/**'
+  - 'apps/apple/Shared/**'
+  - 'apps/apple/MaktabaKit/Package.swift'
+  - 'apps/apple/MaktabaKit/Sources/**'
+  - 'apps/apple/UITests/**'
+  - 'apps/apple/PlayerMacTests/**'
+  - 'apps/apple/Maktaba.xcodeproj/project.xcworkspace/**'
+  - 'apps/apple/Maktaba.xcodeproj/xcshareddata/xcschemes/Maktaba Player*'
+  - 'tools/apple/ui-shard.py'
+  - '.github/workflows/_apple-apps.yml'

@@ -692,13 +692,20 @@ format:  ## Auto-format every language (in-place).
 
 ##@ Misc
 
-.PHONY: lockfile-check
-lockfile-check:  ## Fail if uv.lock / pnpm-lock.yaml / go.mod drift from sources.
+.PHONY: lockfile-check lockfile-check-py lockfile-check-web lockfile-check-go
+lockfile-check: lockfile-check-py lockfile-check-web lockfile-check-go  ## Fail if uv.lock / pnpm-lock.yaml / go.mod drift from sources.
+
+# one per language: CI's lint job runs the ones whose files changed
+lockfile-check-py:
 	@echo "==> uv lock --check"
 	cd $(PIPELINE_DIR) && uv lock --check
+
+lockfile-check-web:
 	@echo "==> pnpm install --frozen-lockfile (lockfile-only)"
 	pnpm -C $(WEB_DIR) install --frozen-lockfile --lockfile-only --reporter=silent
 	@git diff --exit-code $(WEB_DIR)/pnpm-lock.yaml
+
+lockfile-check-go:
 	@for mod in $(GO_MODULES); do \
 		echo "==> go mod verify ($$mod)"; \
 		(cd $$mod && go mod verify); \

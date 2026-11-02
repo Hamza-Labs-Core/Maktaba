@@ -4,6 +4,14 @@
 # job branch protection requires. Adding a new gate means wiring it into
 # `ci-success.needs:` — branch protection config never has to change.
 #
+# CI runs what a change touches (the owner, 2026-11-02): on a pull request each job runs
+# only when a file it builds or tests changed (the filters in .github/ci-paths.yml); on a
+# push to main or release/* every job runs, which is what the tag guard waits for. A job
+# skipped by its filter counts as passed in ci-success; a failed or cancelled one fails it.
+# Every job is gated by a filter or marked with a `# ci-paths:` comment (always-run,
+# push-only, pr-only, not-a-gate): tools/ci/ci_paths.py checks that in the lint job, and
+# `tools/ci/ci_paths.py which <files>` says which jobs a change runs.
+#
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
 # story lands, treat the tags below as the source of truth and keep
@@ -31,166 +39,112 @@ concurrency:
 
 jobs:
   changes:
-    # Path filter — short-circuits the heavy gates for docs-only PRs (EC3).
+    # The path filters: one output per filter of .github/ci-paths.yml, true on a push.
     runs-on: ubuntu-22.04
     outputs:
-      # docs only: no file outside the docs changed (code), and nothing in .github/ or the
-      # Makefile (meta), which count as code whatever their extension
-      docs_only: ${{ steps.code.outputs.code != 'true' && steps.filter.outputs.meta != 'true' }}
-      mac_app: ${{ steps.filter.outputs.mac_app }}
-      win_app: ${{ steps.filter.outputs.win_app }}
-      linux_app: ${{ steps.filter.outputs.linux_app }}
-      android_apps: ${{ steps.filter.outputs.android_apps }}
-      android_tv: ${{ steps.filter.outputs.android_tv }}
-      desktop_player: ${{ steps.filter.outputs.desktop_player }}
-      apple_apps: ${{ steps.filter.outputs.apple_apps }}
+      lint_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_go == 'true' }}
+      lint_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_pipeline == 'true' }}
+      lint_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_web == 'true' }}
+      unit_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_go == 'true' }}
+      unit_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_pipeline == 'true' }}
+      unit_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_web == 'true' }}
+      unit_tokens: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_tokens == 'true' }}
+      desktop_shell: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_shell == 'true' }}
+      integration: ${{ github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true' }}
+      compat_prev: ${{ github.event_name != 'pull_request' || steps.filter.outputs.compat_prev == 'true' }}
+      replica: ${{ github.event_name != 'pull_request' || steps.filter.outputs.replica == 'true' }}
+      e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.e2e == 'true' }}
+      media_e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.media_e2e == 'true' }}
+      perf_ci: ${{ github.event_name != 'pull_request' || steps.filter.outputs.perf_ci == 'true' }}
+      build_artifacts: ${{ github.event_name != 'pull_request' || steps.filter.outputs.build_artifacts == 'true' }}
+      node_packaging: ${{ github.event_name != 'pull_request' || steps.filter.outputs.node_packaging == 'true' }}
+      release_venv: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release_venv == 'true' }}
+      launcher: ${{ github.event_name != 'pull_request' || steps.filter.outputs.launcher == 'true' }}
+      mac_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mac_app == 'true' }}
+      win_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.win_app == 'true' }}
+      linux_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.linux_app == 'true' }}
+      android_apps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android_apps == 'true' }}
+      android_tv: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android_tv == 'true' }}
+      desktop_player: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_player == 'true' }}
+      apple_apps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple_apps == 'true' }}
+      # the Player's own files, or a Player object among the project file's changes
+      apple_player_ui: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple_player_ui == 'true' || steps.apple.outputs.player_ui == 'true' }}
     steps:
+      # a pull request's merge commit and its first parent (the base): the project file
+      # at both
       - uses: actions/checkout@v6.0.2
-      # A filter is true when at least one changed file matches it. Whether a file
-      # matches a filter of several patterns is the step's predicate-quantifier: 'some'
-      # (the default: any one pattern) or 'every' (all of them, an exclusion included).
-      # (A nested key in a filter is a change type, such as `added|modified:`, so an
-      # `every:` key there matches no file: docs_only was never true.)
-      - uses: dorny/paths-filter@v4.0.1
-        id: code
         with:
-          predicate-quantifier: 'every'
-          filters: |
-            # a changed file outside the docs
-            code:
-              - '**'
-              - '!specs/**'
-              - '!docs/**'
-              - '!**/*.md'
+          fetch-depth: 2
+      # A filter is true when a changed file matches any one of its globs (paths-filter's
+      # default predicate-quantifier 'some', so the file has no `!` globs: under 'some' a
+      # `!x` matches nearly every file). On a push it does not run: every output is true.
       - uses: dorny/paths-filter@v4.0.1
         id: filter
+        if: github.event_name == 'pull_request'
         with:
-          filters: |
-            # code whatever its extension: the workflows and the Makefile, and the
-            # markdown that code, tests, lint or a build read. A test that reads a
-            # markdown file says so here (test_docs_links checks its own are listed).
-            meta:
-              - '.github/**'
-              - 'Makefile'
-              # the help pages the web bundles and its coverage tests check
-              - 'web/src/help/**'
-              # the migrations' MANIFEST.md, read by the schema guard and genrelease
-              - 'shared/db/migrations/**'
-              # the TV runbook and Epic 32's specs: test_docs_links checks their links,
-              # and the anchors the Live TV admin page links to
-              - 'docs/tv-cluster-and-remote.md'
-              - 'specs/epics/32-tv-streaming-cluster-remote/**'
-              # the update docs and Epic 35's specs: test_docs_links checks their links
-              # (story 35.15 TC5)
-              - 'docs/updates.md'
-              - 'docs/auto-update.md'
-              - 'docs/cluster/**'
-              - 'deploy/packaging/README.md'
-              - 'deploy/packaging/upgrade.md'
-              - 'deploy/packaging/node/README.md'
-              - 'specs/epics/35-cluster-full-nodes-and-updates/**'
-              # the web's markdown (test-cases/, help/): lint-web's prettier --check
-              - 'web/**/*.md'
-              # the pipeline's README: the wheel's metadata (pyproject readme)
-              - 'pipeline/README.md'
-            # The Maktaba.app gate (macOS arm64, ~20 min) runs only when what goes into
-            # the app or how it is built changes.
-            mac_app:
-              - 'tools/release/mac-app/**'
-              - 'apps/desktop/**'
-              - 'cmd/maktaba-launcher/**'
-              - 'deploy/packaging/node/build-release.sh'
-              - 'pipeline/pyproject.toml'
-              - 'pipeline/uv.lock'
-              - '.github/workflows/_mac-app.yml'
-              - '.github/workflows/desktop-release.yml'
-              - 'Makefile'
-            # The Windows app gate (windows-latest, ~25 min): what goes into the app or its
-            # installer, or how they are built.
-            win_app:
-              - 'tools/release/win-app/**'
-              - 'apps/desktop/**'
-              - 'cmd/maktaba-launcher/**'
-              - 'deploy/packaging/node/build-release.sh'
-              - 'pipeline/pyproject.toml'
-              - 'pipeline/uv.lock'
-              - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
-              - '.github/workflows/_win-app.yml'
-              - '.github/workflows/desktop-release.yml'
-              - 'Makefile'
-            # The Linux app gate (x86_64 + aarch64, ~25 min each): what goes into the
-            # payload or the app, or how they are built.
-            linux_app:
-              - 'tools/release/linux-app/**'
-              - 'apps/desktop/**'
-              - 'cmd/maktaba-launcher/**'
-              - 'deploy/packaging/node/build-release.sh'
-              - 'deploy/docker/server/**'
-              - 'pipeline/pyproject.toml'
-              - 'pipeline/uv.lock'
-              - 'pipeline/src/maktaba_pipeline/venv_bootstrap.py'
-              - '.github/workflows/_linux-app.yml'
-              - 'Makefile'
-            # The native Android apps (Player and Remote, ~10 min): their project and gate.
-            android_apps:
-              - 'apps/android/**'
-              - '.github/workflows/_android-apps.yml'
-              - '.github/workflows/play-bundles.yml'
-              - 'tools/release/play-version.sh'
-              - 'tools/release/play-version-test.sh'
-            # The Android TV app (~8 min): its project, the phone apps' core and catalog it
-            # builds on, and its gate.
-            android_tv:
-              - 'apps/tv/android/**'
-              - 'apps/android/core/**'
-              - 'apps/android/client/**'
-              - 'apps/android/gradle/libs.versions.toml'
-              - '.github/workflows/_android-tv.yml'
-              - '.github/workflows/play-bundles.yml'
-            # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable
-            # client and the fonts it shares with the Android apps, the catalog, its gate.
-            desktop_player:
-              - 'apps/desktop-player/**'
-              - 'apps/android/client/**'
-              - 'apps/android/core/src/main/res/font/**'
-              - 'apps/android/gradle/libs.versions.toml'
-              - '.github/workflows/_desktop-player.yml'
-            # The native Apple apps (Epic 42): MaktabaKit, the Remote and Player, the Apple TV
-            # app, their String Catalogs (English and Arabic) and the catalogs' check.
-            apple_apps:
-              - 'apps/apple/**'
-              - 'apps/tv/tvos/**'
-              - 'tools/apple/**'
-              - '.github/workflows/_apple-apps.yml'
+          filters: .github/ci-paths.yml
+      # Every app shares apps/apple/Maktaba.xcodeproj/project.pbxproj: the Player's UI tests
+      # run when one of the objects that changed in it is the Player's (renaming the Remote
+      # changes only the Remote's).
+      - name: Does the project file change touch the Player?
+        id: apple
+        if: >-
+          github.event_name == 'pull_request'
+          && steps.filter.outputs.apple_apps == 'true'
+          && steps.filter.outputs.apple_player_ui != 'true'
+        run: python3 tools/ci/apple_player_scope.py --base HEAD^1 --head HEAD
 
   lint:
+    # ci-paths: always-run
+    # Its repository checks (no binaries, this routing's guard and tests) run on every pull
+    # request; each language's linters when its files changed.
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
     uses: ./.github/workflows/_lint.yml
+    with:
+      go: ${{ needs.changes.outputs.lint_go == 'true' }}
+      pipeline: ${{ needs.changes.outputs.lint_pipeline == 'true' }}
+      web: ${{ needs.changes.outputs.lint_web == 'true' }}
 
   unit:
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: >-
+      needs.changes.outputs.unit_go == 'true'
+      || needs.changes.outputs.unit_pipeline == 'true'
+      || needs.changes.outputs.unit_web == 'true'
+      || needs.changes.outputs.unit_tokens == 'true'
+      || needs.changes.outputs.desktop_shell == 'true'
     uses: ./.github/workflows/_unit.yml
+    with:
+      go: ${{ needs.changes.outputs.unit_go == 'true' }}
+      pipeline: ${{ needs.changes.outputs.unit_pipeline == 'true' }}
+      web: ${{ needs.changes.outputs.unit_web == 'true' }}
+      tokens: ${{ needs.changes.outputs.unit_tokens == 'true' }}
+      desktop_shell: ${{ needs.changes.outputs.desktop_shell == 'true' }}
 
   integration:
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.integration == 'true' || needs.changes.outputs.compat_prev == 'true'
     uses: ./.github/workflows/_integration.yml
+    with:
+      integration: ${{ needs.changes.outputs.integration == 'true' }}
+      compat_prev: ${{ needs.changes.outputs.compat_prev == 'true' }}
 
   replica:
     # Epic 37: the machines' copies and switching the home against real Postgres 16,
     # with the end-to-end runs (see _replica.yml)
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.replica == 'true'
     uses: ./.github/workflows/_replica.yml
 
   e2e:
     needs: [changes, integration]
-    # Fork PRs have no secrets, so e2e (which may need them) is skipped
-    # with a maintainer-rerun comment. EC2 in story-22-01.
+    # After integration (not when it failed); also when integration was not needed. Fork
+    # PRs have no secrets, so e2e (which may need them) is skipped with a maintainer-rerun
+    # comment. EC2 in story-22-01.
     if: >-
-      needs.changes.outputs.docs_only != 'true'
+      !cancelled()
+      && (needs.integration.result == 'success' || needs.integration.result == 'skipped')
+      && needs.changes.outputs.e2e == 'true'
       && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
     uses: ./.github/workflows/_e2e.yml
 
@@ -198,29 +152,34 @@ jobs:
     # The Go tests that need a real ffmpeg (and Postgres); they skip in
     # every other tier. Its own job and budget (see _media-e2e.yml).
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.media_e2e == 'true'
     uses: ./.github/workflows/_media-e2e.yml
 
   perf-ci:
     needs: [changes, integration]
     if: >-
-      needs.changes.outputs.docs_only != 'true'
+      !cancelled()
+      && (needs.integration.result == 'success' || needs.integration.result == 'skipped')
+      && needs.changes.outputs.perf_ci == 'true'
       && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false)
     uses: ./.github/workflows/_perf-ci.yml
 
   build-artifacts:
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.build_artifacts == 'true'
     uses: ./.github/workflows/_build-artifacts.yml
 
   node-packaging:
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.node_packaging == 'true' || needs.changes.outputs.release_venv == 'true'
     uses: ./.github/workflows/_node-packaging.yml
+    with:
+      packaging: ${{ needs.changes.outputs.node_packaging == 'true' }}
+      release_venv: ${{ needs.changes.outputs.release_venv == 'true' }}
 
   launcher:
     needs: [changes]
-    if: needs.changes.outputs.docs_only != 'true'
+    if: needs.changes.outputs.launcher == 'true'
     uses: ./.github/workflows/_launcher.yml
 
   mac-app:
@@ -254,15 +213,20 @@ jobs:
     uses: ./.github/workflows/_desktop-player.yml
 
   apple-apps:
+    # the build job for any Apple change; the Player's UI tests for the Player's
     needs: [changes]
-    if: needs.changes.outputs.apple_apps == 'true'
+    if: needs.changes.outputs.apple_apps == 'true' || needs.changes.outputs.apple_player_ui == 'true'
     uses: ./.github/workflows/_apple-apps.yml
+    with:
+      build: ${{ needs.changes.outputs.apple_apps == 'true' }}
+      player_ui: ${{ needs.changes.outputs.apple_player_ui == 'true' }}
 
   # The Linux app's pinned downloads (~150 MB a runner) in a cache on main: a pull
   # request's run restores main's caches but not another pull request's, so without
   # this one every run downloads them again (and fails while their host is down).
   # Only a push to main saves it; when it is there already this is one lookup.
   linux-app-downloads:
+    # ci-paths: push-only, not-a-gate
     if: github.event_name == 'push'
     name: Linux app downloads (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -298,6 +262,7 @@ jobs:
           key: linux-app-downloads-${{ matrix.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
 
   pr-body-check:
+    # ci-paths: always-run, pr-only
     if: github.event_name == 'pull_request'
     uses: ./.github/workflows/_pr-body-check.yml
 
@@ -307,6 +272,7 @@ jobs:
   # trailer lets it through. The coverage map comes from coverage-map.yml (main); without
   # one the gate works from its searches. Seconds: it reads git, it runs no test.
   affected-tests:
+    # ci-paths: always-run, pr-only
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-22.04
     timeout-minutes: 10
@@ -333,12 +299,13 @@ jobs:
 
   fork-rerun-comment:
     # EC2: bot comment on fork PRs telling maintainers how to rerun
-    # the gated jobs once they've reviewed the diff.
+    # the gated jobs once they've reviewed the diff (when the change selects them).
+    # ci-paths: pr-only, not-a-gate
     needs: [changes]
     if: >-
       github.event_name == 'pull_request'
       && github.event.pull_request.head.repo.fork == true
-      && needs.changes.outputs.docs_only != 'true'
+      && (needs.changes.outputs.e2e == 'true' || needs.changes.outputs.perf_ci == 'true')
     runs-on: ubuntu-22.04
     permissions:
       pull-requests: write
@@ -398,14 +365,16 @@ jobs:
         run: |
           echo "Gate results:"
           echo "$RESULTS"
-          # Fail if any required gate failed or was cancelled. Skipped
-          # is acceptable (docs-only PR, fork-skipped e2e/perf-ci), but not
-          # for the path filter itself: when it fails every gate is skipped.
+          # Fail if any gate failed or was cancelled. Skipped is acceptable: its path filter
+          # did not select it (.github/ci-paths.yml), a fork PR's e2e/perf-ci, a pull request's
+          # push-only job. Not for the path filter itself: when it fails every gate is
+          # skipped. Every job in needs: is checked (tools/ci/ci_paths.py keeps every gate
+          # in needs:).
           fail=0
           changes=$(echo "$RESULTS" | jq -r '.changes.result // "missing"')
           echo "  changes: $changes"
           if [ "$changes" != success ]; then fail=1; fi
-          for gate in lint unit integration replica e2e media-e2e perf-ci build-artifacts node-packaging launcher mac-app win-app linux-app android-apps android-tv desktop-player apple-apps pr-body-check affected-tests; do
+          for gate in $(echo "$RESULTS" | jq -r 'keys[] | select(. != "changes")'); do
             result=$(echo "$RESULTS" | jq -r ".\"$gate\".result // \"skipped\"")
             echo "  $gate: $result"
             case "$result" in
@@ -417,4 +386,4 @@ jobs:
             echo "::error::One or more required gates failed or were cancelled."
             exit 1
           fi
-          echo "All gates passed (or skipped intentionally)."
+          echo "All gates passed (or were not selected by the change)."
