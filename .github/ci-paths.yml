@@ -365,7 +365,7 @@ apple_apps:
 # The Player's UI tests (a build per device, six shards each, the Mac): what the Player's
 # targets build (project.yml: Player/, Shared/Assets.xcassets, MaktabaKit's package) and their
 # test targets (UITests/, PlayerMacTests/), the Player's schemes, the shard script and its
-# measured durations. The shared project file
+# measured durations, the app-log check. The shared project file
 # (project.pbxproj) counts when tools/ci/apple_player_scope.py finds a Player object among
 # its changes (the changes job). The Remote's and the TV app's own files are not here.
 apple_player_ui:
@@ -380,4 +380,5 @@ apple_player_ui:
   - 'apps/apple/Maktaba.xcodeproj/xcshareddata/xcschemes/Maktaba Player*'
   - 'tools/apple/ui-shard.py'
   - 'tools/apple/ui-durations.json'
+  - 'tools/apple/check-app-log.py'
   - '.github/workflows/_apple-apps.yml'

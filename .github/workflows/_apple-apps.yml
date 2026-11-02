@@ -207,6 +207,15 @@ jobs:
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcrun simctl ui "$udid" appearance dark
+          # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
+          # id; a parent's config is not inherited): by default `log show` finds its errors and
+          # notices alone. Kept, not streamed: a live stream slows the simulator (accessibility
+          # audits timed out), and the other subsystems stay as they are
+          case "$device" in
+            iphone) bundle=com.hamzalabs.maktaba.player ;;
+            ipad) bundle=com.hamzalabs.maktaba.player.tablet ;;
+          esac
+          xcrun simctl spawn "$udid" log config --subsystem "$bundle" --mode "level:debug,persist:debug"
           # the keyboard types only what a test types: no suggestions, autocorrection or
           # capitals of its own, no slide-to-type introduction over the keys (CI: the home's
           # address in the picker came out with its port three times)
@@ -278,14 +287,18 @@ jobs:
       # sign-ins), kept with the results, read once the tests are done: a failed wait
       # shows what the app did meanwhile. Read after, not streamed: a stream makes each
       # line the app's frameworks log cost while the tests run (CI: a stream at info
-      # took accessibility's per-element lines, snapshots took 15 s, an audit timed out)
-      - name: Read the app's log and delete the simulator
+      # took accessibility's per-element lines, snapshots took 15 s, an audit timed out).
+      # The simulator is the run's own, so the log covers its whole life: every launch.
+      - name: Read and check the app's log, delete the simulator
         if: always() && env.UDID != ''
         run: |
+          log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
           xcrun simctl spawn "$UDID" log show --style compact --info --debug \
-            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log" || true
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$log" || true
           xcrun simctl shutdown "$UDID" || true
           xcrun simctl delete "$UDID" || true
+          # checked whole: every launch's info and debug lines are in it
+          python3 tools/apple/check-app-log.py "$log"
 
       - name: Keep the screenshots, results and the app's log
         if: always()
@@ -329,6 +342,12 @@ jobs:
           # a push to main measures coverage for the affected-tests map
           cover=()
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF" = refs/heads/main ]; then cover=(-enableCodeCoverage YES); fi
+          mkdir -p "$RESULTS"
+          # the app's own log, whole (info and debug too), as on the iPhone and iPad: the
+          # runner keeps its subsystem's lines while it runs, read once the tests are done
+          sudo log config --subsystem com.hamzalabs.maktaba.player.mac --mode "level:debug,persist:debug"
+          start=$(date '+%Y-%m-%d %H:%M:%S')
+          status=0
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
             -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
             CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
@@ -336,7 +355,12 @@ jobs:
             -resultBundlePath "$RESULTS/mac.xcresult" \
             -only-testing "Maktaba Player Mac Tests/PlayerMenus" \
             -only-testing "Maktaba Player Mac Tests/MacPlayerSurface" \
-            -only-testing "Maktaba Player Mac UITests"
+            -only-testing "Maktaba Player Mac Tests/PlayerLaunchLog" \
+            -only-testing "Maktaba Player Mac UITests" || status=1
+          log show --start "$start" --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
+          python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
+          exit $status
 
       # tools/affected-tests: which source files the Mac Player's tests execute. The iPhone and
       # iPad runs are not measured (they take most of an hour as it is): their tests are

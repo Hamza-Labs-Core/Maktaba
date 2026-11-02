@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import OSLog
 import SwiftUI
 import Testing
 @testable import Maktaba_Player_Mac
@@ -78,6 +79,22 @@ import Testing
 
     static func modifiers(_ item: NSMenuItem) -> NSEvent.ModifierFlags {
         item.keyEquivalentModifierMask.intersection([.command, .shift, .control, .option])
+    }
+}
+
+/// The app logged its launch (PlayerApp's init calls `Log.launched`): the info line the CI
+/// jobs' app-log check (tools/apple/check-app-log.py) looks for, read from the log of this
+/// process, the app hosting these tests. The Mac job keeps the subsystem at persist:debug.
+@Suite struct PlayerLaunchLog {
+    @Test func theLaunchIsLogged() throws {
+        let bundle = try #require(Bundle.main.bundleIdentifier)
+        #expect(bundle == "com.hamzalabs.maktaba.player.mac")
+        let store = try OSLogStore(scope: .currentProcessIdentifier)
+        let lines = try store.getEntries(matching: NSPredicate(format: "subsystem == %@ AND category == %@", bundle, "session"))
+            .compactMap { $0 as? OSLogEntryLog }
+        let launched = lines.filter { $0.composedMessage.hasPrefix("launched \(bundle) ") }
+        #expect(!launched.isEmpty, "no launch line among \(lines.count) session lines")
+        #expect(launched.allSatisfy { $0.level == .info })
     }
 }
 #endif

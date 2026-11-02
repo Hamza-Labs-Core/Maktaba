@@ -148,6 +148,11 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { delays["\(method) \(path)"] = delay }
     }
 
+    /// The latency `delay` added to `method path`, nil when none is kept.
+    func delay(of method: String, _ path: String) -> TimeInterval? {
+        lock.withLock { delays["\(method) \(path)"] }
+    }
+
     /// From now on, `method path` (any query) is answered only when the test calls `release`:
     /// a latch, so "before the home answers" never races a timer on a slow runner.
     func hold(_ method: String, _ path: String) {
