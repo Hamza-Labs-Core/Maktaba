@@ -105,7 +105,7 @@ after 48.23 / 48.32. Phase 1 is ten agents at once; phase 3 up to seventeen.
 | **AN** Android Player | `apps/android/player/**`, `apps/android/gradle/libs.versions.toml`, `.github/workflows/_android-apps.yml` | 48.15 → 48.16 → {48.26 … 48.31} in parallel, 48.32 → 48.33 |
 | **TA** Apple TV | `apps/tv/tvos/**` | 48.34 |
 | **TN** Android TV | `apps/tv/android/**` | 48.35 |
-| **H** help | `web/src/help/content/**`, `CHANGELOG.md`, `docs/claude-trail.md` | 48.36 |
+| **H** help | `web/src/help/content/**`, `CHANGELOG.md` | 48.36 |
 
 Inside AP and AN, the screen stories run in parallel because each owns its own folder and its
 own strings table (`Player/<Screen>/` + `<Screen>.xcstrings`; `player/…/<screen>/` +
@@ -118,8 +118,8 @@ own strings table (`Player/<Screen>/` + `<Screen>.xcstrings`; `player/…/<scree
 - 48.25 (Mac) edits `PlayerApp.swift`'s commands; no other phase-3 story touches that file.
 - 48.23 and 48.24 both edit `Playback.swift`, so they are serial; so are 48.32 and 48.33.
 
-Every story also appends to `CHANGELOG.md` and `docs/claude-trail.md`: append-only lines, a
-rebase resolves them.
+Every story also appends to `CHANGELOG.md` (append-only lines, a rebase resolves them); its trail
+entry goes in a trail-only PR of its own (`CLAUDE.md`), never in the story's PR.
 
 ## 3. Merge order
 

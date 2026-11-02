@@ -12,6 +12,9 @@
 # every job is gated by a filter here or marked always-run, every filter is used, and
 # every tracked file is read by some filter or listed as built by no CI job. Its tests
 # (tools/ci/tests/test_ci_paths.py) say which jobs a change runs.
+#
+# No filter matches docs/claude-trail.md: a pull request that changes only the trail runs no
+# job (ci.yml's `repo` output turns the always-run jobs off too; the guard checks both).
 
 # ---- groups ---------------------------------------------------------------------------
 

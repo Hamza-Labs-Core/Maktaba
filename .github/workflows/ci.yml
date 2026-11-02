@@ -12,6 +12,11 @@
 # push-only, pr-only, not-a-gate): tools/ci/ci_paths.py checks that in the lint job, and
 # `tools/ci/ci_paths.py which <files>` says which jobs a change runs.
 #
+# A pull request that changes only the Claude trail (docs/claude-trail.md) runs nothing but
+# `changes` and `ci-success` (the owner, 2026-11-02: "Update trail on its own PRs, no ci no
+# test"). The always-run jobs are gated by the `repo` output: a file other than the trail
+# changed. No filter matches the trail.
+#
 # Third-party Actions are pinned to a full semver tag here; Renovate
 # rewrites them to commit SHAs (Story 22.7-supply-chain). Until that
 # story lands, treat the tags below as the source of truth and keep
@@ -42,6 +47,8 @@ jobs:
     # The path filters: one output per filter of .github/ci-paths.yml, true on a push.
     runs-on: ubuntu-22.04
     outputs:
+      # a file other than the Claude trail changed: the always-run jobs run
+      repo: ${{ github.event_name != 'pull_request' || steps.repo.outputs.repo == 'true' }}
       lint_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_go == 'true' }}
       lint_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_pipeline == 'true' }}
       lint_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_web == 'true' }}
@@ -83,6 +90,16 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           filters: .github/ci-paths.yml
+      # `repo`: a changed file other than docs/claude-trail.md. Here every glob must match
+      # (predicate-quantifier every), so the one negated glob matches any other file.
+      - uses: dorny/paths-filter@v4.0.1
+        id: repo
+        if: github.event_name == 'pull_request'
+        with:
+          predicate-quantifier: every
+          filters: |
+            repo:
+              - '!docs/claude-trail.md'
       # Every app shares apps/apple/Maktaba.xcodeproj/project.pbxproj: the Player's UI tests
       # run when one of the objects that changed in it is the Player's (renaming the Remote
       # changes only the Remote's).
@@ -97,8 +114,9 @@ jobs:
   lint:
     # ci-paths: always-run
     # Its repository checks (no binaries, this routing's guard and tests) run on every pull
-    # request; each language's linters when its files changed.
+    # request but a trail-only one; each language's linters when its files changed.
     needs: [changes]
+    if: needs.changes.outputs.repo == 'true'
     uses: ./.github/workflows/_lint.yml
     with:
       go: ${{ needs.changes.outputs.lint_go == 'true' }}
@@ -263,7 +281,8 @@ jobs:
 
   pr-body-check:
     # ci-paths: always-run, pr-only
-    if: github.event_name == 'pull_request'
+    needs: [changes]
+    if: github.event_name == 'pull_request' && needs.changes.outputs.repo == 'true'
     uses: ./.github/workflows/_pr-body-check.yml
 
   fork-rerun-comment:

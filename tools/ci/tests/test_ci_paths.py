@@ -216,8 +216,49 @@ def test_guard_catches_an_ungated_unmarked_job() -> None:
 
 
 def test_guard_accepts_a_marked_always_run_job() -> None:
-    wf = _wf_with("new-tests", {"runs-on": "ubuntu-22.04", "steps": []}, marker="always-run")
+    body = {"needs": ["changes"], "if": "needs.changes.outputs.repo == 'true'", "steps": []}
+    wf = _wf_with("new-tests", body, marker="always-run")
     assert ci_paths.guard(wf) == []
+
+
+def test_guard_catches_an_always_run_job_that_runs_on_a_trail_only_change() -> None:
+    wf = _wf_with("new-tests", {"runs-on": "ubuntu-22.04", "steps": []}, marker="always-run")
+    assert any("new-tests runs on a pull request that changes only docs/claude-trail.md" in e for e in ci_paths.guard(wf))
+
+
+def test_guard_catches_a_filter_that_matches_the_trail() -> None:
+    filters = ci_paths.load_filters()
+    filters["lint_go"] = [*filters["lint_go"], "docs/**"]
+    assert any("filter lint_go matches docs/claude-trail.md" in e for e in ci_paths.guard(filters=filters, files=[]))
+
+
+def test_guard_catches_a_missing_repo_step() -> None:
+    wf = ci_paths.load_workflow()
+    changes = wf.jobs["changes"]
+    changes["steps"] = [s for s in changes["steps"] if s.get("id") != "repo"]
+    assert any("needs a `repo` paths-filter step" in e for e in ci_paths.guard(wf))
+
+
+# ---- the Claude trail: its own pull requests run nothing --------------------------------
+
+
+def test_a_trail_only_change_runs_nothing() -> None:
+    assert ran(run("docs/claude-trail.md")) == {"changes", "ci-success"}
+
+
+def test_the_trail_with_code_runs_the_codes_jobs() -> None:
+    alone = run("web/src/pages/Home.tsx")
+    both = run("docs/claude-trail.md", "web/src/pages/Home.tsx")
+    assert ran(both) == ran(alone) == ALWAYS | {"unit", "e2e", "build-artifacts"}
+    assert parts(both, "lint") == {"web"}
+
+
+def test_the_trail_with_another_doc_runs_the_repository_checks() -> None:
+    assert ran(run("docs/claude-trail.md", "README.md")) == ALWAYS
+
+
+def test_a_push_of_the_trail_runs_everything() -> None:
+    assert ran(run("docs/claude-trail.md", event="push")) == ran(run(event="push"))
 
 
 def test_guard_catches_a_filter_that_does_not_exist() -> None:
