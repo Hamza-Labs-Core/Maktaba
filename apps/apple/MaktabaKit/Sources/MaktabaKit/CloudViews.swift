@@ -15,29 +15,37 @@ struct CloudSheet: View {
     @State private var signingInto: String?
     @State private var problem: String?
     @State private var showAdvanced = false
+    /// The field the keyboard types in: Return moves email -> password (-> the address, when
+    /// Advanced shows it); Return on the last one signs in.
+    @FocusState private var focus: Field?
+
+    enum Field: Hashable { case email, password, address }
 
     var body: some View {
         NavigationStack {
-            Form {
-                if let problem {
-                    Section {
-                        Label(problem, systemImage: "exclamationmark.triangle")
-                            .foregroundStyle(.red)
-                            .accessibilityIdentifier("cloud.problem")
+            ScrollViewReader { rows in
+                Form {
+                    if let problem {
+                        Section {
+                            Label(problem, systemImage: "exclamationmark.triangle")
+                                .foregroundStyle(.red)
+                                .accessibilityIdentifier("cloud.problem")
+                        }
+                    }
+                    // the chosen home being reached and signed in to, step by step
+                    if signingInto != nil, let p = session.progress, p.isWorking {
+                        Section {
+                            ConnectProgressView(p, locale: words.locale)
+                        }
+                        .accessibilityIdentifier("cloud.progress")
+                    }
+                    if let user = session.cloudUser {
+                        homes(user)
+                    } else {
+                        signInForm
                     }
                 }
-                // the chosen home being reached and signed in to, step by step
-                if signingInto != nil, let p = session.progress, p.isWorking {
-                    Section {
-                        ConnectProgressView(p, locale: words.locale)
-                    }
-                    .accessibilityIdentifier("cloud.progress")
-                }
-                if let user = session.cloudUser {
-                    homes(user)
-                } else {
-                    signInForm
-                }
+                .keepsFocusInView(focus, rows)
             }
             .formStyle(.grouped)
             .navigationTitle(words.text(.throughCloud))
@@ -70,10 +78,19 @@ struct CloudSheet: View {
                 .textInputAutocapitalization(.never)
                 #endif
                 .environment(\.layoutDirection, .leftToRight)
+                .focused($focus, equals: .email)
+                .submitLabel(.next)
+                .onSubmit { focus = .password }
+                .id(Field.email)
                 .accessibilityIdentifier("cloud.email")
             SecureField(words.text(.password), text: $password)
                 .textContentType(.password)
-                .onSubmit(signIn)
+                .focused($focus, equals: .password)
+                .submitLabel(showAdvanced ? .next : .go)
+                .onSubmit {
+                    if showAdvanced { focus = .address } else { signIn() }
+                }
+                .id(Field.password)
                 .accessibilityIdentifier("cloud.password")
         } header: {
             Text(words.text(.cloudSignInTitle))
@@ -100,6 +117,10 @@ struct CloudSheet: View {
                     .textInputAutocapitalization(.never)
                     #endif
                     .environment(\.layoutDirection, .leftToRight)
+                    .focused($focus, equals: .address)
+                    .submitLabel(.go)
+                    .onSubmit(signIn)
+                    .id(Field.address)
                     .accessibilityIdentifier("cloud.address")
                 if !address.isEmpty {
                     Button(words.text(.useStandard)) { address = "" }
