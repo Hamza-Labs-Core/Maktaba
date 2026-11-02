@@ -69,6 +69,15 @@ struct LibraryBrowser: View {
                 }
             }
             .navigationSplitViewStyle(.balanced)
+            .onAppear {
+                // a library opened at launch is the page beside the list, chosen there, not
+                // pushed over the first library's page (two library pages in one stack, the
+                // same rows twice in the accessibility tree)
+                if path.count == 1, case let .library(id) = path[0] {
+                    choice = .library(id)
+                    path = []
+                }
+            }
             .onChange(of: choice) { old, _ in if old != nil { path = [] } }
             .onChange(of: model.libraries.first?.id, initial: true) { _, first in
                 // a wide window shows a page, not an empty column
