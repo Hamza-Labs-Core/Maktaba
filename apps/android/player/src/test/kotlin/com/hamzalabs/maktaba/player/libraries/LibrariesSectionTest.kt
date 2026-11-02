@@ -17,7 +17,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.settled
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.ShellNavigation
 import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
 import org.junit.Assert.assertEquals
@@ -27,6 +29,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+import java.util.concurrent.CountDownLatch
 
 /**
  * The Libraries section on a phone (story 48.27, FR-14 to FR-17), in the shell as it ships,
@@ -111,6 +114,34 @@ class LibrariesSectionTest {
         settled("Films leads again") { first("library-l1", "library-l2") }
     }
 
+    @Test
+    fun unpinningTheFirstLibraryLeavesTheGridAtItsTop() {
+        // more libraries than a screen holds, 3 and 4 pinned before the rest: unpinning 3 sends it
+        // back to its place, on the grid's second line
+        val libraries = (1..14).joinToString(",") { n ->
+            val pin = listOf(3, 4).indexOf(n)
+            val pinned = if (pin >= 0) ""","pinned":true,"pin_position":$pin""" else ""","pinned":false"""
+            """{"id":"l$n","name":"Library $n","videos":$n,"poster_video_ids":["v1"]$pinned}"""
+        }
+        home.answer("/api/libraries/summary") { json("""{"items":[$libraries]}""") }
+        compose.setLibraries(home)
+        waitForTag("library-l3")
+        assertTrue("3 leads before the unpin", first("library-l3", "library-l4"))
+
+        compose.onNodeWithTag("pin-l3").performClick()
+
+        waitForRequest("a PUT of the pins") { it.method == "PUT" }
+        assertEquals(listOf("l4"), home.requests.last { it.method == "PUT" }.ids("library_ids"))
+        // the grid hasn't been scrolled: it still starts with its first library, now 4
+        val grid = compose.onNodeWithTag("libraries-grid").getUnclippedBoundsInRoot()
+        settled("4 shows at the grid's top") {
+            compose.onAllNodes(hasTestTag("library-l4")).fetchSemanticsNodes().isNotEmpty() &&
+                compose.onNodeWithTag("library-l4").getUnclippedBoundsInRoot().top >= grid.top &&
+                first("library-l1", "library-l3")
+        }
+        compose.onNodeWithTag("library-l4").assertIsDisplayed()
+    }
+
     /** True when [a] comes before [b] in reading order (above, or beside it on the same row). */
     private fun first(a: String, b: String): Boolean {
         val ra = compose.onNodeWithTag(a).getUnclippedBoundsInRoot()
@@ -128,6 +159,30 @@ class LibrariesSectionTest {
         compose.onNodeWithTag("row-recently-added").assertExists()
         compose.onAllNodesWithTag("row-on-deck").assertCountEquals(0)
         compose.onAllNodesWithTag("row-recently-watched").assertCountEquals(0)
+    }
+
+    @Test
+    fun aSlowHubLeavesThePageAtItsTop() {
+        // the hub answers only when the test lets it: after the videos are in, as a slow home does
+        val gate = CountDownLatch(1)
+        home.answer("/api/libraries/l1/hub") { gate.await(); json(HUB) }
+        // the held call keeps the home busy, so these waits settle Compose alone
+        compose.unregisterIdlingResource(home.idling)
+        try {
+            openLibrary()
+            compose.settledUntil(10_000) { compose.onAllNodes(hasTestTag("video-v4")).fetchSemanticsNodes().isNotEmpty() }
+            assertTrue("the hub is not in yet", compose.onAllNodes(hasTestTag("row-continue")).fetchSemanticsNodes().isEmpty())
+        } finally {
+            gate.countDown()
+        }
+        compose.registerIdlingResource(home.idling)
+        waitForTag("row-continue")
+
+        // the rows came in above the tabs, and the page the person hasn't scrolled still starts with them
+        val grid = compose.onNodeWithTag("library-grid").getUnclippedBoundsInRoot()
+        val row = compose.onNodeWithTag("row-continue").getUnclippedBoundsInRoot()
+        assertEquals("Continue Watching starts where the grid does", grid.top, row.top)
+        compose.onNodeWithText("Continue Watching").assertIsDisplayed()
     }
 
     @Test

@@ -40,6 +40,7 @@ and `docs/`.
 | **Secrets are never printed or committed:** Plex token, DB password, signing keys, API keys. Credentials are typed by the owner only. Test accounts are used through the API (`login.sh` reads the Keychain unseen); never type passwords into sign-in forms.                                                                     | standing               | Security. [#328] removed the DB password from every URL a process gets.                                                                                                              |
 | **Live data only for justified recovery.** Tests never touch the live DB: use scratch Postgres clusters. Read-only checks are fine. Don't change Plex DVRs (use Add to Plex). Never call live Cloudflare, Stripe, DNS or the VPS without the owner's OK. Don't bypass the admin API to create users.                              | standing               | Outages and the classifier's denials taught this.                                                                                                                                    |
 | **Fix flaky tests at the root.** Never only re-run, never skip a test.                                                                                                                                                                                                                                                            | 2026-10-26             | "wtf skipping tests? fix them".                                                                                                                                                      |
+| **Changed code needs its tests changed, in the same push.** The pre-push hook (`tools/affected-tests/install-hook.sh`) and CI's `affected-tests` job enforce it. The way out is a commit trailer `No-Test-Change: <reason>`. Never run Mac or simulator UI tests locally: the hook only compiles them. | 2026-11-01 | [#469] left the Mac UI tests stale ([#516]). |
 | **Throwaway simulators.** iOS sim tests create a device (`xcrun simctl create`), run, and delete it. Never reboot the shared "iPhone 17". Stop any `simctl log stream` you start.                                                                                                                                                 | 2026-10-31             | SpringBoard crashed 19 times in a day and every crash put a dialog in front of the owner.                                                                                            |
 | **Screenshots in the dark theme** unless showing a light-only issue.                                                                                                                                                                                                                                                              | 2026-10-28             | Owner preference.                                                                                                                                                                    |
 | **Plain, short answers.** Explain without jargon.                                                                                                                                                                                                                                                                                 | standing               | "don't understand" came often.                                                                                                                                                       |
@@ -965,6 +966,49 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - Waiting on the owner: make the upload key (keytool in `docs/google-play.md`) and add the
     secrets; create the three apps in Play Console and upload each first bundle by hand; later
     turn on `PLAY_UPLOAD`.
+- 2026-11-01 · affected-tests agent of `b743b7d4`: [#516] (not merged; the owner asked for the PR
+  only). **New owner rule:** a push that changes code also changes the tests that cover it, and
+  this fails at once, before CI. Why: [#469] made the Player's sign-in a segmented choice, and the
+  Mac UI tests (`PlayerMacTests/UI/PlayerMacMenuUITests.swift`, which tap "With a code") went
+  stale with nothing running them.
+  - `tools/affected-tests` lists a range's tests by platform. It uses a coverage map, the UI
+    search (identifiers and the strings on the changed lines, keyed strings resolved) and naming.
+    The web adds its import graph. `gate` blocks in three cases: a source with none of its tests
+    changed, a UI platform whose tests use the changed phrase but did not change, or a test still
+    using a string that no source has any more. A commit trailer `No-Test-Change: <reason>` lets a
+    push through.
+  - The hook: `tools/affected-tests/install-hook.sh` writes `.git/hooks/pre-push`, which runs
+    `.githooks/pre-push`. `core.hooksPath` was rejected: the pre-commit framework refuses to
+    install with it set. The hook runs Go, Python, web, Android/JVM and MaktabaKit tests. Apple
+    UI targets are only compiled (`build-for-testing`, unsigned), and `safeToRun` refuses any
+    other `xcodebuild test`.
+  - CI: the `affected-tests` job reports into `ci-success`. The map is built in its own
+    `coverage-map.yml` (`workflow_run` after CI on main), not in ci.yml: the tag guard needs
+    CI's whole run on the commit green, so a map job there could block a release and would add
+    to its wait.
+  - Granularity: Go per package (`-coverpkg` over the module); Python per test (`--cov-context=test`);
+    MaktabaKit and the Mac Player per xccov target; Android per JaCoCo module, through an init
+    script; web per test file, from its import graph. iPhone/iPad UITests are not measured: that
+    run takes most of an hour, so coverage there could hit its 60-minute limit.
+  - Failed first, then fixed: the first pytest-context map pinned 100+ modules on whichever test
+    imported them first. Now a `-p pytest_preimport` plugin imports the package before any test,
+    and only lines inside functions count. A UI hit on any platform used to satisfy the gate,
+    which would not have caught [#469]: strict terms (identifiers, phrases with a space) now need
+    a change on each test platform that uses them.
+  - Not verified until it runs on GitHub: the coverage-map workflow, the xccov and JaCoCo
+    fragment steps (JaCoCo via the init script was checked locally for `:client` and `:core`).
+  - CodeQL #108 (cache poisoning) was raised against the first `coverage-map.yml`, which checked
+    out the triggering run's `head_sha` and used setup-go/setup-uv caches. Fixed rather than
+    dismissed. It now runs only for a CI run of a push to main in this repo (or a manual run on
+    main), checks out its own commit, has every cache off, and reads artifacts as data only.
+    Keep it that way: any `workflow_run` workflow with caches brings the alert back.
+  - The `Player UI tests (mac)` job failed on #516 with "the home picker" in
+    `PlayerMacMenuUITests`. It runs only because this PR touches `_apple-apps.yml`, and
+    `feat/airplay` fails the same way. That is the existing Mac UI window bug that [#510] fixes,
+    not this change.
+  - Fitted to [#528]'s path filters: `affected-tests` is `# ci-paths: always-run, pr-only` (every
+    change may need its tests). `tools/affected-tests/**` sits in the `_go` group (it is in
+    GO_MODULES). `.githooks/**` and `coverage-map.yml` are listed in `NOT_IN_CI`.
 - 2026-11-01 · `b743b7d4`: CVE-2026-98432 (Linux IPv4 TCP use-after-free, critical). Its reported
   exploit needs a multipath TCP listener, which Go 1.24+ opens by default. `godebug
   multipathtcp=0` in the api, cloud, streaming, maktaba-server and maktaba-launcher `go.mod`s,
@@ -1140,6 +1184,11 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+[#469]: https://github.com/Hamza-Labs-Core/Maktaba/pull/469
+[#510]: https://github.com/Hamza-Labs-Core/Maktaba/pull/510
+[#516]: https://github.com/Hamza-Labs-Core/Maktaba/pull/516
+[#528]: https://github.com/Hamza-Labs-Core/Maktaba/pull/528
+
 [#523]: https://github.com/Hamza-Labs-Core/Maktaba/pull/523
 [#524]: https://github.com/Hamza-Labs-Core/Maktaba/pull/524
 
@@ -1176,15 +1225,16 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Fix: `testDB` opens with `_pragma=synchronous(OFF)&_pragma=journal_mode(MEMORY)` in the DSN, so every pooled connection gets them. Same idea as dd1fb356 (tvchangetest). Simulated fsync: 0.99 s -> 0.08 s. Every browse test that uses `newEnv` gets faster.
 - The same PR (#521) also fixes a search test that failed integration/compat-prev: `TestEmbedCacheConcurrentSameKeyNoCorruption` compared response bodies byte for byte, including the wall-clock `took_ms` ("semantic":0 vs 1). Both subtests (concurrent, and sequential miss->hit->hit) now decode the bodies, drop `took_ms` and compare the rest (`withoutTiming`). Passed `-race -count=20`.
 
-## 2026-11-02 — Sign-in forms: Return goes to the next field, the field stays above the keyboard
+## 2026-11-02 — thumbnails in a channel's `.thumbs/` were never found
 
-- Owner: "both iOS and Android, sign in need the next field arrow ... because the keyboard blocks the field."
-- Apple (MaktabaKit `StartViews.swift`, `CloudViews.swift`): `@FocusState` field chain. Username Next -> password Go; cloud email Next -> password (Next -> address when Advanced shows it, else Go) -> address Go; picker address Go. `keepsFocusInView` (`KeyboardFocus.swift`) scrolls the focused row to the middle on each focus change and again 350 ms later, once the keyboard is up. No new visible text, so no new strings.
-- Android (core `StartScreens.kt`, `CloudScreens.kt`): FocusRequester chain, same order. The last field takes Go. `rememberKeptAboveKeyboard()` (`KeyboardFields.kt`) brings the focused field into view on focus and on every IME height change. The activities were already edge-to-edge + adjustResize, and `StartFrame` already pads for the IME.
-- Tests: `SignInKeyboardTest` (player, Robolectric, v2 compose rule) for home, cloud and cloud+Advanced. `PlayerSignInKeyboardUITests` (iPhone/iPad CI): Return moves keyboard focus to the password, the password is above the keyboard, and Return sends the login. Text goes in through `typeExactly` (#510); only Return uses `typeText("\n")`.
-- The PR's first CI run (before main was merged in) failed for reasons outside this change. Mac PlayerMacMenuUITests:155 and Android LibrariesSectionTest were fixed by #510 and #508. The iPhone/iPad accessibility audits also failed (Libraries, Profile, Search). On the iPad run, `PlayerSignInKeyboardUITests` passed.
-- A local run of `LibrariesScreenshotTest.tabletEnglish` timed out once, under load from a parallel Xcode build. It passed on the re-run. Unrelated (FakeHome settling, #510).
-
+- On the NAS, 69 channel folders keep yt-dlp thumbnails in `<channel>/.thumbs/<stem>.jpg` (e.g. "Abdul Basit- Mojawwad/.thumbs/Abasa： 80.jpg"). `thumb_hash` and `thumb_small` only looked next to the video, so these videos fell back to the poster, and the poster's `thumbnail` stage is the one that has been stuck.
+- One rule now: `discovery/ytdlp_sidecars.find_sidecar_thumbnail` checks `<dir>/<stem><ext>`, then `<dir>/.thumbs/<stem><ext>`, for each ext in THUMB_EXTS. Stats only, no listings. Both stages use it through `thumb_hash.find_thumbnail`. The Go API never looks for a sidecar: `videos/poster.go` serves `poster_path` and the cache files. No other reader found.
+- How videos that were already processed get fixed, without a version bump. A bump re-queues every subject, and `run.py` only skips a job when the stage version matches, so ~230k thumb_hash jobs would re-read their images. Instead:
+  1. Both fingerprints add `"thumbs": <name>`, but only when the image is found in `.thumbs/`. Every other video keeps exactly the fingerprint it had.
+  2. A reconciler step, `_thumbs_dir_sweep`, queues `thumb_hash` once for each video whose latest real run used the poster or found nothing (source null or `poster.*`). It skips summaries that already have `thumbs_dir` (written by runs of this release) and imported rows. The reason "thumbnail may be in .thumbs/" marks a video so it is never queued again, so the sweep stops on its own. The affected videos run again and their dhash changes. The rest are skipped after a few stats.
+  3. The dhash change triggers `thumb_small`. That stage used to keep any copy already on disk. Now, if its last summary says the copy was made from the poster and the video's own thumbnail is found, it makes a new copy from the sidecar. Copies it keeps also record their `source` in the summary.
+- Scan: hidden folders like `.thumbs` were already pruned. `@eaDir` (Synology's index) joins `DEFAULT_IGNORE_DIRNAMES` (walker, watcher, youtube_sync). youtube_sync's os.walk and the watcher now skip hidden folders too.
+- Tests: `tests/stages/test_thumbs_subfolder.py` (names with Arabic and fullwidth colons; sqlite and a scratch PG on :55471 started from the app's bundled binaries, data in the scratchpad) and a walker test.
 ## 2026-11-02 — Android Player: a collapsible rail, a draggable list-detail divider, half-fold layouts ([#523])
 
 - Owner's report: on a foldable open flat (sideways, 841 dp) and a big tablet, Libraries showed a permanent 360 dp drawer, the list (380 dp) and the videos squeezed to ~100 dp. Cause: `navigationFor` gave expanded windows `NavigationDrawer`, and the list had a fixed 380 dp.
@@ -1216,6 +1266,14 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - the Queues API adds `paused_by_name`, and the web card and queue page say who paused a stage and when (English and Arabic)
 - Fairness: stride scheduling per pool (`claim_shares`, `engine/claim.py`) between priority classes, not stages. Each stage's head is due at `GREATEST(class pass + priority, pool clock)`, and the claim takes the head due first. Equal priorities stay in id order across stages. A first cut kept a share per stage, which round-robined equal stages, split fp_gate's batch and ran detect 4 times (`test_fingerprint_flow` seed 2, CI integration). Priority ≤ 50 (Process now) still goes first, strictly. 900 vs 100 gets 1 claim in 9. The new partial index `processing_jobs_claimable_idx` brought a claim with 203k claimable rows from 64 ms to 0.3–0.8 ms. Legacy `claim_one` (non-pool mode) is unchanged: it has a semaphore per stage, so no cross-stage starvation.
 - Live state: unchanged by this session. Extract resumes when a release with slot 0172 is installed (the owner tags and moves it live). Check `index` and `chapter_infer` then too: if they are still hand-paused, 0172 resumes them as well.
+
+## 2026-11-02 — Library page opened scrolled on a slow home (Android Player)
+
+- PR #513's CI (run 41481083121) failed LibrariesScreenshotTest.libraryEnglish: `libraries_library_phone_dark_en` scrolled ~27dp, Continue Watching cut at the top. A real user bug, not a flake.
+- Cause: a lazy grid keeps its first visible item's key in place. When the videos answer before the hub, the first layout is [tabs, filters, videos] with `tabs` first; the hub rows then come in above it and the grid scrolls to keep `tabs` at the top, as far as its end allows, so the page opens part way down (the offset is the content's overflow at that moment: 27dp on CI, 185dp in the new test). Same pattern in the Libraries grid: unpinning the first pinned library moves it to a later line and the grid followed it.
+- Fix: `StaysAtTopWhen(key)` (libraries/GridTop.kt): when what leads the grid changes and the grid is at its top (index 0, offset 0), `requestScrollToItem(0)` before the next measure. A scrolled grid keeps its key as before. Used by LibraryPage (key: hub rows) and the Libraries grid (key: library order). Series grid only appends: not affected.
+- Tests: LibrariesSectionTest `aSlowHubLeavesThePageAtItsTop` (hub held on a latch until v4 shows; failed before the fix: row at -121dp, grid at 64dp) and `unpinningTheFirstLibraryLeavesTheGridAtItsTop` (14 libraries; failed before the fix). Screenshots unchanged (verify).
+- Merged main (#523): LayoutScreenshotTest's workaround (`performScrollToIndex(0)` before each picture) is gone. Its wait for `video-v1` also leaned on the bug: on the tabletop's half page the videos are only composed when the grid jumps down, so it now waits for the page's top (`row-continue`), the idling resource holding it until every answer is in. References unchanged; 3/3 runs green.
 
 ## 2026-11-02 — extract writes no WAV on a streaming backend
 

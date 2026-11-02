@@ -43,6 +43,8 @@ _go: &go
   - 'tools/migration-lint/**'
   - 'tools/coverage-floor.sh'
   - 'tools/coverage-floor/**'
+  # the affected-tests gate's own module (in GO_MODULES)
+  - 'tools/affected-tests/**'
   # api/internal/handlers/browse's native fixtures are the Apple apps' own
   - 'apps/apple/MaktabaKit/Tests/Fixtures/**'
 

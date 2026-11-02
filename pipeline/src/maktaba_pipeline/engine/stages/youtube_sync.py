@@ -117,7 +117,10 @@ def discover_folders(roots: Iterable[str]) -> FolderDiscovery:
     seen_playlists: set[str] = set()
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if d not in DEFAULT_IGNORE_DIRNAMES)
+            # as the scanner: no hidden folder (.thumbs/) and no NAS index (@eaDir)
+            dirnames[:] = sorted(
+                d for d in dirnames if d not in DEFAULT_IGNORE_DIRNAMES and not d.startswith(".")
+            )
             names = sorted(filenames)
             stems = {
                 n.rsplit(".", 1)[0]
