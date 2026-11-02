@@ -10,8 +10,13 @@ no version churn) — instead we add the parent directory to
 from __future__ import annotations
 
 import gc
+import os
 import sys
+import threading
+import time
+from collections.abc import Generator
 from pathlib import Path
+from typing import NoReturn
 
 # pipeline/tests/conftest.py → repo root is three parents up.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -35,6 +40,68 @@ def pytest_collection_finish(session: pytest.Session) -> None:
     20.1 AC4). Objects the tests make are still collected as usual."""
     gc.collect()
     gc.freeze()
+
+
+#: the test run's own process (a forked child still exits for real)
+_PYTEST_PID = os.getpid()
+_REAL_OS_EXIT = os._exit
+#: how long a thread a test started may take to end once the test is over
+_THREAD_END_GRACE_SEC = 2.0
+_THREADS_BEFORE = pytest.StashKey[frozenset[threading.Thread]]()
+
+
+def _non_daemon_threads() -> frozenset[threading.Thread]:
+    return frozenset(
+        t
+        for t in threading.enumerate()
+        if t is not threading.main_thread() and not t.daemon and t.is_alive()
+    )
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtest_setup(item: pytest.Item) -> Generator[None, None, None]:
+    item.stash[_THREADS_BEFORE] = _non_daemon_threads()
+    return (yield)
+
+
+@pytest.hookimpl(wrapper=True, trylast=True)
+def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, None, None]:
+    """A test leaves no non-daemon thread running once its fixtures are torn down. One
+    that did made a later test end the whole run: the worker's exit (``__main__``
+    ``_exit_if_threads_linger``) counts the threads still running and leaves with
+    ``os._exit``, and pytest stopped at that test with no summary (a model thread the
+    second listen loaded in tests/stages/test_transcribe.py, then the run test in
+    tests/cluster/test_node_cli.py)."""
+    result = yield
+    before = item.stash.get(_THREADS_BEFORE, frozenset())
+    deadline = time.monotonic() + _THREAD_END_GRACE_SEC
+    for t in _non_daemon_threads() - before:
+        t.join(max(0.0, deadline - time.monotonic()))
+    left = sorted(t.name for t in _non_daemon_threads() - before)
+    if left:
+        pytest.fail(f"the test left non-daemon threads running: {left}", pytrace=False)
+    return result
+
+
+@pytest.fixture(autouse=True)
+def _no_process_exit(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """``os._exit`` in the test run's process fails the test instead of ending the run.
+    It skips pytest's summary and keeps the exit code it was given: a worker's exit
+    with code 0 under a test made a truncated run look green. A test of the exit path
+    stands in for it (tests/test_exit_after_stop.py)."""
+    calls: list[int] = []
+
+    def refuse(code: int) -> NoReturn:
+        if os.getpid() != _PYTEST_PID:
+            _REAL_OS_EXIT(code)
+        if threading.current_thread() is not threading.main_thread():
+            calls.append(code)
+        pytest.fail(f"a test reached os._exit({code}): it would end the run with no summary")
+
+    monkeypatch.setattr(os, "_exit", refuse)
+    yield
+    if calls:  # raised on another thread, where pytest does not see it
+        pytest.fail(f"a test reached os._exit{tuple(calls)}")
 
 
 @pytest.fixture(autouse=True)
@@ -67,6 +134,29 @@ def _no_remembered_load_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
     monkeypatch.setattr(cohere, "_FAILED", {})
+
+
+@pytest.fixture(autouse=True)
+def _no_real_second_listen_model(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """No test loads the second listen's real model (stt/cohere.py): on a Mac with
+    mlx-audio and the model in its Hugging Face cache, the engine's transcribe stage
+    loaded it onto the GPU (11 s) and kept it, and its thread, for the rest of the run.
+    A test that needs a recogniser stands in for the load (tests/stt/test_model_share.py).
+    Each test starts with none loaded, and the ones it loaded are shut down after it."""
+    from maktaba_pipeline.stt import cohere
+
+    def refuse(_self: cohere.CohereRecogniser) -> NoReturn:
+        raise RuntimeError("a test must stand in for the second listen's model")
+
+    loaded: dict[str, cohere.Recogniser] = {}
+    monkeypatch.setattr(cohere.CohereRecogniser, "_load", refuse)
+    monkeypatch.setattr(cohere, "_REC", loaded)
+    monkeypatch.setattr(cohere, "_PUBLISHED", set())
+    yield
+    for rec in loaded.values():
+        gpu = getattr(rec, "_gpu", None)
+        if gpu is not None:
+            gpu.shutdown(wait=True)
 
 
 @pytest.fixture(autouse=True)
