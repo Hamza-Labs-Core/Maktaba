@@ -50,7 +50,8 @@ type systemDNSAPI struct {
 
 func startDNSAPI(api dnsAPI, instance, service, domain, host string, port int, ips, txt []string) (*systemDNSAPI, error) {
 	d := &systemDNSAPI{api: api, svc: winService{
-		instance: dnsLabel(instance, 63) + "." + service + "." + strings.TrimSuffix(domain, "."),
+		// the whole name, so a "." or "\" of the instance's is escaped (RFC 6763 §4.3)
+		instance: escapeInstance(dnsLabel(instance, 63)) + "." + service + "." + strings.TrimSuffix(domain, "."),
 		host:     host,
 		port:     port,
 	}}

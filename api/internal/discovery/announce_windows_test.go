@@ -3,8 +3,12 @@
 package discovery
 
 import (
+	"net"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/miekg/dns"
 )
 
 // Windows 10+ (the CI runner among them) has the registration API, so a home there
@@ -49,6 +53,66 @@ func TestWindowsDNSAPIRegistersAndWithdraws(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the withdrawal was not answered")
 	}
+}
+
+// A home name with a "." (and a "\", and Arabic) goes on the wire as one label: the
+// escaped name DnsServiceConstructInstance gets is the one Windows answers with. Asked as
+// a legacy unicast query (from a port other than 5353), the responder answers this
+// process directly.
+func TestWindowsDNSAPIKeepsADottedNameOneLabel(t *testing.T) {
+	const service = "_maktaba-dot._tcp"
+	name := "Maktaba v1.2 a\\b مكتبة " + time.Now().Format("150405.000000")
+	a, err := startDNSAPI(windowsDNSAPI{}, name, service, "local.", announcedHost(systemResponder())+".local", 18087,
+		interfaceIPs(), []string{"role=home"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Shutdown()
+
+	conn, err := net.ListenUDP("udp4", &net.UDPAddr{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	q := new(dns.Msg)
+	q.SetQuestion(service+".local.", dns.TypePTR)
+	q.Id = 0x4d4b
+	wire, err := q.Pack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := &net.UDPAddr{IP: net.IPv4(224, 0, 0, 251), Port: 5353}
+	want := zeroconfInstance(name) + "." + service + ".local." // the label as the DNS library writes it
+	var seen []string
+	buf := make([]byte, 9000)
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := conn.WriteToUDP(wire, group); err != nil {
+			t.Fatalf("query: %v", err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		for {
+			n, _, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				break
+			}
+			m := new(dns.Msg)
+			if m.Unpack(buf[:n]) != nil {
+				continue
+			}
+			for _, rr := range append(m.Answer, m.Extra...) {
+				ptr, ok := rr.(*dns.PTR)
+				if !ok || !strings.EqualFold(ptr.Hdr.Name, service+".local.") {
+					continue
+				}
+				if ptr.Ptr == want {
+					return
+				}
+				seen = append(seen, ptr.Ptr)
+			}
+		}
+	}
+	t.Fatalf("no answer naming %q; answers: %q", want, seen)
 }
 
 // Through the announcement: a new TXT and Shutdown on the real API, withdrawn when done.
