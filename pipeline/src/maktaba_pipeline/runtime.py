@@ -37,6 +37,7 @@ from typing import Any
 from uuid import UUID
 
 from . import __version__
+from .audio.extract import run_audio_cache_sweep
 from .channels.pass_ import run_topup_loop
 from .cluster import exitcodes
 from .cluster.agent import enabled as cluster_agent_enabled
@@ -431,6 +432,11 @@ async def run(
         stage_names = started.served
         # every graph stage: the served set changes while the worker runs
         stage_pools = {name: st.pool for name, st in engine_rt.graph.items()}
+    else:
+        # the engine runs it as one of its writers (a node's only while the schema fits)
+        background.append(
+            asyncio.create_task(run_audio_cache_sweep(database, shutdown), name="audio-cache-sweep")
+        )
     for task in background:
         # a loop that dies says so when it does, not never (log/tasks.py)
         watch_task(task)
@@ -687,6 +693,8 @@ async def _start_engine(
         asyncio.create_task(agent.run_refresher(cfg.stage_refresh_sec), name="stage-selection"),
         writer("reconciler", lambda stop: run_reconciler(database, runtime.graph, stop)),
         writer("pruner", lambda stop: run_pruner(database, stop)),
+        # the WAVs nothing will read: this machine's cache, and rows no job needs
+        writer("audio-cache-sweep", lambda stop: run_audio_cache_sweep(database, stop)),
         writer(
             "channel-topup",
             lambda stop: run_topup_loop(database, stop, listeners=after_topup),

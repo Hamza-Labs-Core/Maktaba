@@ -104,8 +104,13 @@ async def probe_handler(
     job: Job,
     *,
     run_probe: ProbeRunner | None = None,
+    chain_extract: bool = True,
 ) -> None:
     """Real PROBE stage: ffprobe the source file then ``commit_probe``.
+
+    ``chain_extract``: whether the probe enqueues EXTRACT (the ``--no-engine``
+    chain). The queue engine passes False: its transcribe asks for extract only
+    when the STT backend reads a file (graph ``may_request``).
 
     The heavy lifting (parsing ffprobe JSON, the media_info /
     audio_tracks UPSERTs, the FSM advance, and the follow-on EXTRACT
@@ -155,7 +160,12 @@ async def probe_handler(
         # which is a strict superset of ``DBConn`` and satisfies the
         # probe module's ``_ProbeDB`` protocol — the same cast the probe
         # module itself uses internally for the enqueue() call.
-        await commit_probe(cast("_ProbeDB", db), video_id=job.video_id, result=result)
+        await commit_probe(
+            cast("_ProbeDB", db),
+            video_id=job.video_id,
+            result=result,
+            chain_extract=chain_extract,
+        )
         await mark_done(db, job_id=job.id)
     except Exception as exc:  # noqa: BLE001 — funnel every failure to the retry helper
         _log.warning(
@@ -512,6 +522,25 @@ async def scan_handler(
         )
 
 
+async def _source_artifact(db: DBConn, job: Job, *, content_hash: str, path: str) -> Any:
+    """The audio a streaming backend reads: the source file itself, on the track
+    extract chose (its payload's ``audio_track_id``, else the selection policy)."""
+    from .stt.transcribe import AudioArtifact  # noqa: PLC0415
+
+    assert job.video_id is not None
+    track_id = (job.payload or {}).get("audio_track_id")
+    if track_id is None:
+        from .audio.extract import load_selected_track  # noqa: PLC0415
+
+        selected = await load_selected_track(cast("_ExtractDB", db), video_id=job.video_id)
+        if selected is None:
+            return None
+        track_id = selected.db_id
+    return AudioArtifact(
+        content_hash=content_hash, video_id=job.video_id, audio_track_id=int(track_id), path=path
+    )
+
+
 async def transcribe_handler(
     db: DBConn,
     job: Job,
@@ -538,9 +567,16 @@ async def transcribe_handler(
        ``commit_extract`` uses),
     5. flip the job ``done``.
 
-    Failure classification: a missing payload / missing ``audio_cache``
-    row is *non-retryable* (a data inconsistency — EXTRACT only
-    enqueues TRANSCRIBE after persisting the artifact); a transient
+    A streaming backend (``requires_file`` false: whisper-mlx,
+    faster-whisper) needs no WAV: when extract wrote none (2026-11, it writes
+    one only for a backend that reads a file) the backend is handed the
+    source file and decodes it itself. A WAV that was read is released
+    (file and ``audio_cache`` row) once the transcript is committed.
+
+    Failure classification: no content hash, or no ``audio_cache`` row
+    for a backend that reads a file, is *non-retryable* (a data
+    inconsistency — EXTRACT only enqueues TRANSCRIBE after persisting
+    the artifact); a transient
     backend / IO error mid-stream is *retryable*; a video that vanished
     mid-flight is terminal (mirrors EXTRACT's ``LookupError`` guard).
     """
@@ -575,7 +611,11 @@ async def transcribe_handler(
             )
             return
         payload = job.payload or {}
-        content_hash = payload.get("content_hash")
+        src = await db.fetchrow(_SELECT_VIDEO_SRC, job.video_id)
+        # extract's payload names the hash; a job from elsewhere uses the video's own
+        content_hash = payload.get("content_hash") or (
+            src["content_hash"] if src is not None else None
+        )
         if not content_hash:
             await mark_failed_or_retry(
                 db,
@@ -584,7 +624,7 @@ async def transcribe_handler(
                     kind="transcribe_missing_payload",
                     message=(
                         f"TRANSCRIBE job {job.id} has no payload.content_hash"
-                        " — EXTRACT should have enqueued it with one"
+                        " and its video no content_hash"
                     ),
                     retryable=False,
                 ),
@@ -594,22 +634,39 @@ async def transcribe_handler(
         artifact = await load_audio_artifact(
             cast("_TranscribeDB", db), content_hash=str(content_hash)
         )
-        if artifact is None:
-            await mark_failed_or_retry(
-                db,
-                job_id=job.id,
-                error=StageError(
-                    kind="transcribe_missing_audio_cache",
-                    message=(
-                        f"no audio_cache row for content_hash={content_hash}"
-                        " — EXTRACT should not have enqueued TRANSCRIBE"
-                    ),
-                    retryable=False,
-                ),
-            )
-            return
-
         backend, name, version = await pick(video_id=job.video_id)
+        cached = artifact is not None
+        if artifact is None:
+            if getattr(backend, "requires_file", False) or src is None or not src["path"]:
+                await mark_failed_or_retry(
+                    db,
+                    job_id=job.id,
+                    error=StageError(
+                        kind="transcribe_missing_audio_cache",
+                        message=(
+                            f"no audio_cache row for content_hash={content_hash}"
+                            f" and backend {name} reads a file"
+                            " — EXTRACT should not have enqueued TRANSCRIBE"
+                        ),
+                        retryable=False,
+                    ),
+                )
+                return
+            # a streaming backend (extract wrote no WAV): it reads the source itself
+            artifact = await _source_artifact(
+                db, job, content_hash=str(content_hash), path=to_local(str(src["path"]))
+            )
+            if artifact is None:
+                await mark_failed_or_retry(
+                    db,
+                    job_id=job.id,
+                    error=StageError(
+                        kind="transcribe_no_audio_track",
+                        message=f"no selectable audio_tracks row for video_id={job.video_id}",
+                        retryable=False,
+                    ),
+                )
+                return
 
         await commit_transcribe(
             cast("_TranscribeDB", db),
@@ -621,6 +678,13 @@ async def transcribe_handler(
             language=None,
         )
         await mark_done(db, job_id=job.id)
+        if cached:
+            # the WAV was this transcription's only reader. After the job is done: a
+            # crash before it re-runs the job, which still finds its WAV; one after it
+            # leaves a WAV no job needs, which the sweep removes
+            from .audio.extract import release_audio_cache  # noqa: PLC0415
+
+            await release_audio_cache(cast("_ExtractDB", db), content_hash=str(content_hash))
     except LookupError as exc:
         # TOCTOU: the video row vanished between the artifact read and
         # commit_transcribe's state read. Terminal — a re-run cannot
@@ -1001,8 +1065,15 @@ async def index_handler(
         )
 
 
-def build_real_dispatch() -> dict[Stage | str, Callable[[DBConn, Job], Awaitable[None]]]:
+def build_real_dispatch(
+    *, engine: bool = True
+) -> dict[Stage | str, Callable[[DBConn, Job], Awaitable[None]]]:
     """Return the dispatch-override map for the daemon entry point.
+
+    ``engine`` (the daemon's mode): on the queue engine PROBE does not chain
+    EXTRACT (the engine's transcribe asks for it when the backend reads a file);
+    with ``--no-engine`` (False) the legacy probe -> extract -> transcribe chain
+    stays.
 
     Every stage now has a genuine thin-wrapper adapter and is
     registered — including ``THUMBNAIL`` (see the Track-THUMBNAIL note
@@ -1063,9 +1134,12 @@ def build_real_dispatch() -> dict[Stage | str, Callable[[DBConn, Job], Awaitable
     the THUMBNAIL job once the video reaches INDEXED.
     """
 
+    async def probe_on_engine(db: DBConn, job: Job) -> None:
+        await probe_handler(db, job, chain_extract=False)
+
     return {
         Stage.SCAN: scan_handler,
-        Stage.PROBE: probe_handler,
+        Stage.PROBE: probe_on_engine if engine else probe_handler,
         Stage.EXTRACT: extract_handler,
         Stage.TRANSCRIBE: transcribe_handler,
         Stage.INDEX: index_handler,

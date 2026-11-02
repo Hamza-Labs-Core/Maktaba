@@ -263,7 +263,9 @@ async def _serve(args: argparse.Namespace, log: Any) -> int:
         # THUMBNAIL) now have a thin-wrapper adapter and are in the map,
         # so every stage in _DEFAULT_STAGES runs real work rather than a
         # silent no-op drain — see maktaba_pipeline.handlers.
-        code = await run(cfg, db=database, dispatch_overrides=build_real_dispatch())
+        code = await run(
+            cfg, db=database, dispatch_overrides=build_real_dispatch(engine=cfg.engine)
+        )
         return code
     except BaseException as exc:
         failure = exc
