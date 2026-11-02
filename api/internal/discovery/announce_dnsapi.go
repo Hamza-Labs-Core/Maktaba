@@ -50,7 +50,8 @@ type systemDNSAPI struct {
 
 func startDNSAPI(api dnsAPI, instance, service, domain, host string, port int, ips, txt []string) (*systemDNSAPI, error) {
 	d := &systemDNSAPI{api: api, svc: winService{
-		instance: dnsLabel(instance, 63) + "." + service + "." + strings.TrimSuffix(domain, "."),
+		// the whole name: a "." of the instance's would split it (announce.go)
+		instance: dnsLabel(windowsInstance(instance), 63) + "." + service + "." + strings.TrimSuffix(domain, "."),
 		host:     host,
 		port:     port,
 	}}

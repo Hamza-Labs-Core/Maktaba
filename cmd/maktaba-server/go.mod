@@ -9,8 +9,10 @@ godebug multipathtcp=0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify v0.0.0
+	github.com/godbus/dbus/v5 v5.1.0
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/lib/pq v1.11.2
+	github.com/miekg/dns v1.1.72
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/sys v0.47.0
@@ -67,7 +69,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jedisct1/go-minisign v0.0.0-20211028175153-1c139d1cc84b // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/miekg/dns v1.1.72 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect

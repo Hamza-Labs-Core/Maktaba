@@ -12,6 +12,10 @@ package discovery
 //   - Linux (any Unix): Avahi when avahi-daemon runs, through `avahi-publish-service`;
 //     when it runs without that tool (no avahi-utils), zeroconf announces under a host
 //     name of its own ("<host>-maktaba"), so the two never claim one name;
+//   - Linux: systemd-resolved when it is the mDNS responder (MulticastDNS=yes, globally
+//     and on a link), through its D-Bus RegisterService (announce_resolved*.go); where
+//     this process may not register there (polkit lets root, or whom a rule names), or
+//     resolved has no RegisterService, zeroconf announces under "<host>-maktaba" too;
 //   - Windows 10+: the DNS Client's responder, through DnsServiceRegister (dnsapi.dll,
 //     announce_dnsapi.go and announce_windows.go).
 //
@@ -19,6 +23,7 @@ package discovery
 // the same files (another module).
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -47,13 +52,15 @@ const (
 	viaAvahi                                // avahi-publish-service
 	viaZeroconfOwnHost                      // zeroconf, under a host name Avahi does not hold
 	viaDNSAPI                               // Windows: DnsServiceRegister
+	viaResolved                             // systemd-resolved: RegisterService (D-Bus)
 )
 
 // responder is the system's own announcer, and the command that reaches it (dns-sd,
-// avahi-publish-service).
+// avahi-publish-service) or the host name it answers for (systemd-resolved's).
 type responder struct {
 	kind responderKind
 	path string
+	host string
 }
 
 // responderEnv is what choosing a responder looks at (fakes in tests).
@@ -62,6 +69,7 @@ type responderEnv struct {
 	lookPath func(string) (string, error)
 	exists   func(string) bool
 	dnsapi   func() bool
+	resolved func() resolvedState
 }
 
 // avahiSockets are where a running avahi-daemon listens.
@@ -69,7 +77,9 @@ var avahiSockets = []string{"/run/avahi-daemon/socket", "/var/run/avahi-daemon/s
 
 // systemResponder is this machine's announcer.
 func systemResponder() responder {
-	return systemResponderFor(responderEnv{goos: runtime.GOOS, lookPath: exec.LookPath, exists: fileExists, dnsapi: dnsapiAvailable})
+	return systemResponderFor(responderEnv{
+		goos: runtime.GOOS, lookPath: exec.LookPath, exists: fileExists, dnsapi: dnsapiAvailable, resolved: probeResolved,
+	})
 }
 
 func systemResponderFor(env responderEnv) responder {
@@ -83,13 +93,21 @@ func systemResponderFor(env responderEnv) responder {
 			return responder{kind: viaDNSAPI}
 		}
 	default:
-		if !avahiRunning(env.exists) {
+		if avahiRunning(env.exists) {
+			if path, err := env.lookPath("avahi-publish-service"); err == nil {
+				return responder{kind: viaAvahi, path: path}
+			}
+			return responder{kind: viaZeroconfOwnHost}
+		}
+		if env.goos != "linux" {
 			break
 		}
-		if path, err := env.lookPath("avahi-publish-service"); err == nil {
-			return responder{kind: viaAvahi, path: path}
+		if st := env.resolved(); st.responds {
+			if st.canRegister && st.host != "" {
+				return responder{kind: viaResolved, host: st.host}
+			}
+			return responder{kind: viaZeroconfOwnHost}
 		}
-		return responder{kind: viaZeroconfOwnHost}
 	}
 	return responder{kind: viaZeroconf}
 }
@@ -261,6 +279,42 @@ func dnsLabel(s string, limit int) string {
 		s = s[:len(s)-size]
 	}
 	return s
+}
+
+// windowsInstance is an instance name as DnsServiceConstructInstance can take it.
+// Windows takes the whole name ("<instance>._maktaba._tcp.local") and splits it at every
+// ".", escaped or not: RFC 6763's "\." reaches the wire as a label ending in "\" and the
+// rest as another (read off the adapter in CI), so a home named "Studio 1.2" would be
+// announced as "Studio 1\" in a domain "2". No escape keeps a "." in the label there, so
+// a "." is U+2024 ONE DOT LEADER, which reads the same. A "\" Windows keeps as it is. Not
+// for dns-sd -R, avahi-publish-service and RegisterService: they take the instance name
+// alone, a "." in it included, and escape it themselves (dns-sd checked on macOS).
+func windowsInstance(s string) string {
+	return strings.ReplaceAll(s, ".", "\u2024")
+}
+
+// zeroconfInstance is an instance name as zeroconf takes it: the label as the DNS library
+// under it writes one (github.com/miekg/dns: a backslash before ".", "\" and its other
+// special characters, "\DDD" for a byte outside printable ASCII), so the name it answers
+// with is one label, and a query for it, which the library writes the same way, matches
+// it. zeroconf trims dots at the ends of the name: a last "." is "\046".
+func zeroconfInstance(s string) string {
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		switch {
+		case c == '.' && i == len(s)-1:
+			b.WriteString(`\046`)
+		case strings.IndexByte(`. '@;()"\`, c) >= 0:
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		case c < ' ' || c > '~':
+			fmt.Fprintf(&b, "\\%03d", c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // txtStrings are the TXT entries as DNS-SD takes them: each at most 255 bytes.
