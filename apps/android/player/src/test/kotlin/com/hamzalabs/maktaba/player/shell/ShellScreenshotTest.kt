@@ -21,8 +21,8 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The shell's screenshots (NFR-20): dark, English and Arabic, on a phone (the bar), a foldable
  * open flat (the rail) and a large tablet (the drawer), every section on and Libraries shown,
- * against the fake home. `recordRoborazziPhoneDebug` writes the references under
- * `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer matches.
+ * against the fake home. `recordRoborazziDebug` writes the references under
+ * `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

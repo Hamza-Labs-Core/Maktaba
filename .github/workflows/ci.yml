@@ -135,6 +135,9 @@ jobs:
             android_apps:
               - 'apps/android/**'
               - '.github/workflows/_android-apps.yml'
+              - '.github/workflows/play-bundles.yml'
+              - 'tools/release/play-version.sh'
+              - 'tools/release/play-version-test.sh'
             # The Android TV app (~8 min): its project, the phone apps' core and catalog it
             # builds on, and its gate.
             android_tv:
@@ -143,6 +146,7 @@ jobs:
               - 'apps/android/client/**'
               - 'apps/android/gradle/libs.versions.toml'
               - '.github/workflows/_android-tv.yml'
+              - '.github/workflows/play-bundles.yml'
             # The desktop Player for Windows and Linux (Epic 42.4): its project, the portable
             # client and the fonts it shares with the Android apps, the catalog, its gate.
             desktop_player:

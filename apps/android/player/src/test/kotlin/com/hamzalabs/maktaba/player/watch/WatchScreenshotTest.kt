@@ -47,7 +47,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * The player's screenshots (NFR-20): dark, English and Arabic, on a phone and a tablet, against
  * the fake home's stream, paused at 0:02 of an episode with a next one: the controls, the
- * subtitle and audio picker, and Up next. `recordRoborazziPhoneDebug` writes the references.
+ * subtitle and audio picker, and Up next. `recordRoborazziDebug` writes the references.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

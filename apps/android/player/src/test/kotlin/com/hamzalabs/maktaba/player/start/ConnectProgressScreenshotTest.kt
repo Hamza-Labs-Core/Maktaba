@@ -47,8 +47,8 @@ import org.robolectric.annotation.GraphicsMode
  * address tried, found, signing in, waiting for a code's approval (its countdown), reconnecting
  * on launch, the home busy (its countdown), and a failure on retry (why, the addresses tried,
  * Retry, attempt 2). Dark, English and Arabic, on a phone and a tablet. The clock is fixed, so a
- * countdown reads the same on every run. `recordRoborazziPhoneDebug` writes the references
- * under `src/test/screenshots`; CI's `verifyRoborazziPhoneDebug` fails when one no longer
+ * countdown reads the same on every run. `recordRoborazziDebug` writes the references
+ * under `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer
  * matches.
  */
 @RunWith(AndroidJUnit4::class)
