@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/version"
 )
 
 func sha(b []byte) string {
@@ -115,6 +116,35 @@ func TestCompareVersions(t *testing.T) {
 		}
 		if got := rv.CompareVersions(c.b, c.a); got != -c.want {
 			t.Errorf("CompareVersions(%q,%q) = %d, want %d", c.b, c.a, got, -c.want)
+		}
+	}
+}
+
+// releaseverify's version names are the version package's rules, moved there so a tool
+// that only orders releases (tools/release/releaseorder, the tag guard) builds offline:
+// the same answer for every version and tag, and Verify's tag rule is ValidTag's.
+func TestVersionNamesAreTheVersionPackages(t *testing.T) {
+	vs := []string{"1.5.0", "v1.5.0", "1.5.0-rc.1", "1.5.0-rc.10", "1.5", "dev", "", "v0.2.0-12-gabc1234",
+		"v0.2.0-dirty", "1.0.0-rc.1-3-g1a2b3c4d", "0.3.0", "0.2.5", "1.5.0+build"}
+	for _, a := range vs {
+		if rv.IsPrerelease(a) != version.IsPrerelease(a) {
+			t.Errorf("IsPrerelease(%q) differs", a)
+		}
+		for _, b := range vs {
+			if rv.CompareVersions(a, b) != version.Compare(a, b) {
+				t.Errorf("CompareVersions(%q,%q) differs", a, b)
+			}
+			if rv.SameLine(a, b) != version.SameLine(a, b) {
+				t.Errorf("SameLine(%q,%q) differs", a, b)
+			}
+		}
+	}
+	for tag, want := range map[string]bool{
+		"v0.3.0": true, "v0.3.0-rc.7": true, "v1.2.3-a.b-c": true,
+		"0.3.0": false, "v0.3": false, "refs/tags/v0.3.0": false, "v0.3.0 x": false, "v0.3.0/../x": false,
+	} {
+		if got := rv.ValidTag(tag); got != want || got != version.ValidTag(tag) {
+			t.Errorf("ValidTag(%q) = %v, want %v (version.ValidTag %v)", tag, got, want, version.ValidTag(tag))
 		}
 	}
 }

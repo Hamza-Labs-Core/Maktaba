@@ -77,10 +77,14 @@ public final class LiveRelayLoader: NSObject, AVAssetResourceLoaderDelegate, @un
 
     /// Follows a source's events while the stream plays: each new token is applied here.
     /// Returns when the events end: true when the home ended the session.
-    public func follow(_ source: LiveSource) async -> Bool {
+    /// `applied`: after each new token (an AirPlay receiver, which reads the signed URL itself,
+    /// is handed the new one).
+    public func follow(_ source: LiveSource, applied: @MainActor (URL) -> Void = { _ in }) async -> Bool {
         for await e in source.events {
             switch e {
-            case let .token(url): apply(url)
+            case let .token(url):
+                apply(url)
+                await applied(current)
             case .ended: return true
             }
         }

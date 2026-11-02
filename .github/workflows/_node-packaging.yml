@@ -109,10 +109,28 @@ jobs:
       # migrations, SCHEMA_REV / SchemaRev and the MANIFEST markers. (Signing
       # needs a tag's OIDC identity; the bundle path is covered by
       # shared/go/releaseverify's tests against a local fake Sigstore.)
+      #
+      # The module cache is keyed on both go.sums gen-release-json builds from (tools/release
+      # replaces releaseverify with ../../shared/go/releaseverify): its ~40 modules (Sigstore,
+      # gRPC, protobuf) came from proxy.golang.org on every run, and a proxy INTERNAL_ERROR
+      # failed a build (PR #533). The same Go, runner and key as release.yml's
+      # sign-and-release, so main's run here leaves the cache a tag's release restores.
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache: false
+          cache-dependency-path: |
+            tools/release/go.sum
+            shared/go/releaseverify/go.sum
+
+      # every module both go.sums name, so the cache this job saves holds what
+      # sign-and-release runs too (gen-release-json, release-order, releaseverify's tests);
+      # a cache hit reads them from disk, and go mod verify checks them against go.sum
+      - name: Go modules (from the cache, verified)
+        run: |
+          set -euo pipefail
+          for m in tools/release shared/go/releaseverify; do
+            ( cd "$m" && go mod download && go mod verify )
+          done
 
       - name: release-manifest-check (dry run)
         run: |
@@ -171,12 +189,14 @@ jobs:
       - name: install.sh systemd service
         run: bash deploy/packaging/tests/install-sh-systemd.sh
       # The tag guard (tools/release/tag-guard.sh) against a scratch repository: the order,
-      # main or a release/* branch, the newest release's commit in the tag's history.
+      # main or a release/* branch, the newest release's commit in the tag's history. Its
+      # release-order builds from the checkout alone (no module: the test runs it with
+      # GOPROXY=off), so there is no module cache to restore.
       - uses: actions/setup-go@v6.4.0
         if: runner.os == 'Linux'
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: tools/release/go.sum
+          cache: false
       - name: tag guard
         if: runner.os == 'Linux'
         run: bash tools/release/tag-guard-test.sh

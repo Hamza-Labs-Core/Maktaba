@@ -17,4 +17,5 @@
     <string name="search_no_results">لا شيء يطابق «%1$s».</string>
     <string name="search_degraded">مطابقات نصية فقط: لم يستجب البحث بالمعنى.</string>
     <string name="search_failed">تعذّر البحث</string>
+    <string name="search_preview_hint">اختر نتيجة لتراها في هذه الصفحة.</string>
 </resources>

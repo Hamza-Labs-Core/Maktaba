@@ -10,14 +10,20 @@ import SwiftUI
 public struct PlayerSurface: NSViewRepresentable {
     let player: AVPlayer
     let showsControls: Bool
+    let onLayer: ((AVPlayerLayer) -> Void)?
 
-    public init(player: AVPlayer, showsControls: Bool = true) {
+    /// `onLayer`: the bare picture's layer once made (Picture in Picture draws from it).
+    public init(player: AVPlayer, showsControls: Bool = true, onLayer: ((AVPlayerLayer) -> Void)? = nil) {
         self.player = player
         self.showsControls = showsControls
+        self.onLayer = onLayer
     }
 
     public func makeNSView(context: Context) -> NSView {
-        showsControls ? PlayerHostView(player: player) : PlayerLayerView(player: player)
+        if showsControls { return PlayerHostView(player: player) }
+        let v = PlayerLayerView(player: player)
+        onLayer?(v.playerLayer)
+        return v
     }
 
     public func updateNSView(_ v: NSView, context: Context) {
@@ -57,25 +63,33 @@ public final class PlayerLayerView: NSView {
 public struct PlayerSurface: View {
     let player: AVPlayer
     let showsControls: Bool
+    let onLayer: ((AVPlayerLayer) -> Void)?
 
-    public init(player: AVPlayer, showsControls: Bool = true) {
+    /// `onLayer`: the bare picture's layer once made (Picture in Picture draws from it).
+    public init(player: AVPlayer, showsControls: Bool = true, onLayer: ((AVPlayerLayer) -> Void)? = nil) {
         self.player = player
         self.showsControls = showsControls
+        self.onLayer = onLayer
     }
 
     public var body: some View {
         if showsControls {
             VideoPlayer(player: player)
         } else {
-            PlayerLayerRepresentable(player: player)
+            PlayerLayerRepresentable(player: player, onLayer: onLayer)
         }
     }
 }
 
 private struct PlayerLayerRepresentable: UIViewRepresentable {
     let player: AVPlayer
+    let onLayer: ((AVPlayerLayer) -> Void)?
 
-    func makeUIView(context: Context) -> PlayerLayerView { PlayerLayerView(player: player) }
+    func makeUIView(context: Context) -> PlayerLayerView {
+        let v = PlayerLayerView(player: player)
+        onLayer?(v.playerLayer)
+        return v
+    }
 
     func updateUIView(_ v: PlayerLayerView, context: Context) { v.player = player }
 }

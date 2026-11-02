@@ -7,6 +7,7 @@ reason in ``reasons`` and what was measured in ``measured``.
 
 from __future__ import annotations
 
+import random
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from maktaba_pipeline.engine import media
 from maktaba_pipeline.engine.media import ProcResult
 from maktaba_pipeline.library_mgmt.swap import SwapVerifyFailed, swap_in
 from maktaba_pipeline.library_mgmt.verify import (
+    ProbeInfo,
     VerifyResult,
     count_frames,
     duration_tolerance,
@@ -141,6 +143,52 @@ async def test_a_missing_or_empty_file_fails(tmp_path: Path) -> None:
     empty.write_bytes(b"")
     assert not (await verify_media(str(empty), None)).ok
     assert not (await verify_media(str(tmp_path / "nope.mp4"), None)).ok
+
+
+@pytest.mark.asyncio
+async def test_a_duration_that_does_not_match_the_originals_fails(
+    originals: dict[str, Path],
+) -> None:
+    info = await probe(str(originals["mkv"]))
+    assert info is not None and info.duration is not None
+    longer = ProbeInfo(info.path, info.format_name, info.duration + 2.0, info.size, info.streams)
+    r = await verify_media(str(originals["remux"]), longer, mode="remux", full_decode=False)
+    assert not r.ok
+    assert any(x.startswith("duration ") for x in r.reasons), r.reasons
+    assert abs(r.measured["duration_delta"]) > r.measured["duration_tolerance"]
+    # within max(0.5 s, 0.5 %) passes
+    near = ProbeInfo(info.path, info.format_name, info.duration + 0.3, info.size, info.streams)
+    assert (await verify_media(str(originals["remux"]), near, full_decode=False)).ok
+
+
+def _h263_junk(d: Path) -> Path:
+    """One real H.263 frame, then seeded junk: ffprobe guesses a raw ``h263`` stream with
+    no duration and 1 frame (what ~1 % of random 200 kB files read as, #526)."""
+    one = d / "one.h263"
+    mf._ff("-f", "lavfi", "-i", "testsrc2=size=352x288:rate=25", "-frames:v", "1",
+           "-c:v", "h263", "-f", "h263", str(one))  # fmt: skip
+    junk = d / "junk.mkv"
+    junk.write_bytes(one.read_bytes() + random.Random(47_4).randbytes(200_000))
+    return junk
+
+
+@pytest.mark.asyncio
+async def test_an_original_ffprobe_only_guessed_at_has_nothing_to_compare(
+    tmp_path: Path,
+) -> None:
+    junk = _h263_junk(tmp_path)
+    info = await probe(str(junk))
+    assert info is not None and info.format_name == "h263" and info.duration is None
+    # its 1-frame re-encode matches it on frames, size and codec: only the duration rule
+    # stops it (before, the duration check was skipped and the MP4 passed)
+    out = mf.reencode_to_mp4(junk, tmp_path / "junk.mp4")
+    for original in (str(junk), info):
+        r = await verify_media(str(out), original, mode="reencode", full_decode=False)
+        assert not r.ok and "the original has no duration to compare with" in r.reasons
+    # an original with no video stream (a download's expected duration) is not affected
+    audio_only = ProbeInfo(str(junk), None, None, None, ())
+    r = await verify_media(str(out), audio_only, mode="remux", full_decode=False)
+    assert "the original has no duration to compare with" not in r.reasons
 
 
 @pytest.mark.asyncio

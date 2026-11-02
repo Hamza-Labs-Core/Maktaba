@@ -12,19 +12,6 @@ import (
 // passes it by quietly.
 var ErrOlderBuild = errors.New("release built before the installed one")
 
-// SameLine reports whether two versions are on one major.minor line (1.5.0 and
-// 1.5.2-rc.1: yes; 0.2.5 and 0.3.0: no). An unparseable version is on no line.
-func SameLine(a, b string) bool {
-	ta, _, _ := splitDescribe(a)
-	tb, _, _ := splitDescribe(b)
-	ca, _ := splitVersion(ta)
-	cb, _ := splitVersion(tb)
-	if len(ca) < 2 || len(cb) < 2 {
-		return false
-	}
-	return ca[0] == cb[0] && ca[1] == cb[1]
-}
-
 // OlderBuild is Maktaba's one "never go back" rule for a release newer in version than
 // the installed one (every updater applies it: the home's choice of a target, a plain or
 // layout install, a runtime, an app bundle): such a candidate is an older build when it

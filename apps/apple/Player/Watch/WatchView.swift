@@ -23,7 +23,7 @@ struct WatchView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let player = playback.player {
-                PlayerSurface(player: player, showsControls: false)
+                PlayerSurface(player: player, showsControls: false) { playback.pip.attach($0) }
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
                 tapZones

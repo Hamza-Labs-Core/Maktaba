@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "AirPlay" : {
+      "comment" : "Plays the video on an Apple TV or another AirPlay screen",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        }
+      }
+    },
     "Audio" : {
       "comment" : "The audio track choices' heading",
       "localizations" : {
@@ -107,6 +118,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Picture in Picture" : {
+      "comment" : "Floats the video in a small window over other apps",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صورة داخل صورة"
           }
         }
       }
