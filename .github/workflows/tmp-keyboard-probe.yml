@@ -1,0 +1,49 @@
+# TEMPORARY (removed before merge): which simulator setting shows the on-screen keyboard
+# under headless xcodebuild UI tests.
+name: Keyboard probe
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: Keyboard probe (${{ matrix.variant }})
+    runs-on: macos-26
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [none, simulator-pref, minimization, both]
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Select Xcode
+        run: |
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+      - name: Run
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="iOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+          dt=$(xcrun simctl list devicetypes -j | python3 -c "
+          import json, re, sys
+          t = [(int(m.group(1)), d['identifier']) for d in json.load(sys.stdin)['devicetypes'] if (m := re.match(r'^iPhone (\d+)$', d['name']))]
+          print(max(t)[1])")
+          udid=$(xcrun simctl create "probe-${GITHUB_RUN_ID}" "$dt" "$runtime")
+          v="${{ matrix.variant }}"
+          if [ "$v" = simulator-pref ] || [ "$v" = both ]; then
+            defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
+          fi
+          xcrun simctl boot "$udid"
+          if [ "$v" = minimization ] || [ "$v" = both ]; then
+            xcrun simctl spawn "$udid" defaults write com.apple.Preferences AutomaticMinimizationEnabled -bool false
+          fi
+          mkdir -p ../../build/shots
+          TEST_RUNNER_MAKTABA_SHOTS="$PWD/../../build/shots" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player" \
+            -destination "id=$udid" -derivedDataPath ../../build/d CODE_SIGNING_ALLOWED=NO \
+            -resultBundlePath ../../build/r.xcresult -only-testing "Maktaba Player UITests/PlayerSignInKeyboardUITests" || true
+          xcrun simctl delete "$udid" || true
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: probe-${{ matrix.variant }}
+          path: build/shots
