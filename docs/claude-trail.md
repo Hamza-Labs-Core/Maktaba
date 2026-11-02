@@ -1132,3 +1132,9 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
+
+## 2026-11-02 — LibrariesSectionTest: "library-l1 shows" missed once on CI
+
+- One CI run (41376606909): aLibraryShowsItsHubRowsAndLeavesTheEmptyOnesOut waited 10 s for the libraries list; the other 11 tests took ~0.5 s. Six local runs of the class all passed; the report held no app log (Robolectric drops android.util.Log), so the cause wasn't recorded.
+- Changes: a missed wait now says which paths the app asked the home and what the screen showed. Each FakeHome gets its own OkHttp connection pool (it shared defaultHttp's across tests).
+- Not root-caused yet: the next miss names it.

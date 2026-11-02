@@ -17,6 +17,7 @@ import mockwebserver3.Dispatcher
 import mockwebserver3.MockResponse
 import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
+import okhttp3.ConnectionPool
 import okhttp3.Dispatcher as CallDispatcher
 import org.junit.rules.ExternalResource
 
@@ -55,7 +56,11 @@ class FakeHome : ExternalResource() {
     lateinit var home: PlayerHome
         private set
 
-    /** The client's calls, on a dispatcher of their own so they can be counted. */
+    /**
+     * The client's calls, on a dispatcher of their own so they can be counted, and over a
+     * connection pool of their own: a kept-alive connection from an earlier test's home is never
+     * offered to this one (the OS can give the new server the old one's port).
+     */
     private val calls = CallDispatcher()
 
     /**
@@ -92,7 +97,7 @@ class FakeHome : ExternalResource() {
         server.start()
         // a token good for a day: the client never asks to refresh it
         val tokens = MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh")
-        val client = ApiClient(server.url("/"), tokens, ApiClient.defaultHttp.newBuilder().dispatcher(calls).build())
+        val client = ApiClient(server.url("/"), tokens, ApiClient.defaultHttp.newBuilder().dispatcher(calls).connectionPool(ConnectionPool()).build())
         val session = AppSession(MapStore(), scope, { MemoryTokens() })
         home = PlayerHome(session, user, client, ThemeStore(MapStore()))
     }

@@ -49,8 +49,16 @@ class LibrariesSectionTest {
     private fun settled(what: String, check: () -> Boolean) {
         compose.waitForIdle()
         runCatching { compose.waitUntil(10_000) { check() } }
-        assertTrue(what, check())
+        // a miss says what the app asked the home and what the screen showed, so a failure on
+        // a runner can be read from its report
+        assertTrue("$what; asked ${home.paths}; showing ${shown()}", check())
     }
+
+    private fun shown(): List<String> = compose.onAllNodes(SemanticsMatcher("any") { true }, useUnmergedTree = true)
+        .fetchSemanticsNodes().flatMap { n ->
+            listOfNotNull(n.config.getOrNull(SemanticsProperties.TestTag)) +
+                n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text }
+        }
 
     private fun waitForTag(tag: String) =
         settled("$tag shows") { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
