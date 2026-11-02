@@ -293,7 +293,7 @@ final class PlayerVideoUITests: PlayerUITestCase {
     /// NFR-6 on the page as it shows: labels, contrast, hit regions, clipped text.
     private func audit() {
         do {
-            try app.performAccessibilityAudit { issue in
+            try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // an element partly off screen: the audit samples pixels beyond it

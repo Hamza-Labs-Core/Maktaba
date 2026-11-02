@@ -102,6 +102,8 @@ final class PlayerMacMenuUITests: XCTestCase {
         reveal(card)
         card.click()
         XCTAssertTrue(element("screen.video").waitForExistence(timeout: 10), "the video's page")
+        // the sidebar beside the page (the player must cover it)
+        XCTAssertTrue(sidebarRow.waitForExistence(timeout: 5) && sidebarRow.isHittable, "the sidebar beside the page")
         let play = element("video.play")
         XCTAssertTrue(play.waitForExistence(timeout: 10), "the video's Play")
         play.click()
@@ -115,12 +117,12 @@ final class PlayerMacMenuUITests: XCTestCase {
         app.typeKey(.escape, modifierFlags: [])
 
         let window = app.windows.firstMatch
-        try assertPlayerCovers(window, "the window")
+        assertPlayerCovers(window, "the window")
         shot("player-window")
 
         app.typeKey("f", modifierFlags: [.control, .command])
         XCTAssertTrue(wait { self.isFullScreen }, "⌃⌘F: full screen")
-        try assertPlayerCovers(window, "the screen")
+        assertPlayerCovers(window, "the screen")
         app.menuBars.menuBarItems["View"].click()
         XCTAssertTrue(app.menuBars.menuItems["Exit Full Screen"].waitForExistence(timeout: 3))
         app.menuBars.menuItems["Exit Full Screen"].click()
@@ -201,21 +203,26 @@ final class PlayerMacMenuUITests: XCTestCase {
         return condition()
     }
 
-    /// The player's black reaches every corner of the window: nothing of the library around it.
-    private func assertPlayerCovers(_ window: XCUIElement, _ what: String) throws {
-        let image = window.screenshot().image
-        let rep = try XCTUnwrap(image.representations.first as? NSBitmapImageRep
-                                ?? image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
-        let (w, h) = (rep.pixelsWide, rep.pixelsHigh)
-        // a little in from each edge (the window's rounded corners), then the middle of each side
-        let inset = max(w, h) / 40
-        let points = [(inset, h / 2), (w - inset, h / 2), (w / 2, h - inset), (inset, h - inset), (w - inset, h - inset),
-                      (w / 3, h / 2), (2 * w / 3, h / 2)]
-        for (x, y) in points {
-            let c = try XCTUnwrap(rep.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB))
-            let level = max(c.redComponent, c.greenComponent, c.blueComponent)
-            XCTAssertLessThan(level, 0.08, "the player covers \(what) at (\(x), \(y)): \(c)")
+    /// The player covers the whole window: its frame is the window's, and the sidebar, seen
+    /// beside the page before (`sidebarRow`), is under it and out of reach.
+    ///
+    /// Not by pixels: by the time this runs the mock home's stream is showing its picture (bars
+    /// of colour, white at the right edge), so "black at every edge" fails on the video itself.
+    private func assertPlayerCovers(_ window: XCUIElement, _ what: String) {
+        let player = element("player.window")
+        XCTAssertTrue(player.waitForExistence(timeout: 5), "the window's player (\(what))")
+        let (p, w) = (player.frame, window.frame)
+        for (edge, a, b) in [("left", p.minX, w.minX), ("right", p.maxX, w.maxX), ("top", p.minY, w.minY), ("bottom", p.maxY, w.maxY)] {
+            XCTAssertEqual(a, b, accuracy: 2, "the player reaches \(what)'s \(edge) edge: player \(p), window \(w)")
         }
+        let row = sidebarRow
+        XCTAssertFalse(row.exists && row.isHittable, "the sidebar is under the player in \(what)")
+    }
+
+    /// The sidebar's Libraries row (not the View menu's item).
+    private var sidebarRow: XCUIElement {
+        app.windows.firstMatch.descendants(matching: .any).matching(NSPredicate(format: "label == 'Libraries'"))
+            .matching(NSPredicate(format: "elementType != %d", XCUIElement.ElementType.menuItem.rawValue)).firstMatch
     }
 
     private func shot(_ name: String) {

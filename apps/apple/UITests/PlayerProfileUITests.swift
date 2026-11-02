@@ -221,11 +221,18 @@ final class PlayerProfileUITests: PlayerUITestCase {
     /// under the bar, which reads as "partially unsupported" (the same row scrolled up passes).
     private func audit() throws {
         let barTop = app.tabBars.firstMatch.exists ? app.tabBars.firstMatch.frame.minY : app.windows.firstMatch.frame.maxY
-        try app.performAccessibilityAudit(for: [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]) { issue in
+        // every issue of the screen in one failure, with the element it is on (the audit
+        // itself stops at the first and names only its class)
+        var found: [String] = []
+        try accessibilityAudit(for: [.dynamicType, .sufficientElementDescription, .hitRegion, .contrast]) { issue in
             if issue.auditType == .dynamicType, (issue.element?.frame.maxY ?? 0) > barTop - 100 { return true }
             if self.contrastOutOfView(issue) { return true }
-            return false
+            // an iPad's tab bar names its sections in UIKit labels of one size
+            if self.systemFixedLabel(issue) { return true }
+            found.append(self.described(issue))
+            return true
         }
+        XCTAssertTrue(found.isEmpty, found.joined(separator: "; "))
     }
 
     // MARK: helpers

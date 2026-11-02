@@ -34,8 +34,10 @@ final class PlayerSearchUITests: PlayerUITestCase {
 
     /// NFR-6: labels, roles, contrast, Dynamic Type, clipped text, hit regions.
     private func audit(_ name: String) {
+        // every issue of the screen in one failure, with the element it is on
+        var found: [String] = []
         do {
-            try app.performAccessibilityAudit { issue in
+            try accessibilityAudit { issue in
                 // a row half under the tab bar or past the screen's foot: the audit samples
                 // pixels beyond it (the rows fully on screen are still checked)
                 if self.contrastOutOfView(issue) { return true }
@@ -45,14 +47,15 @@ final class PlayerSearchUITests: PlayerUITestCase {
                 // the system's own search field (UISearchTextField) reports its placeholder as
                 // clipped although it shows in full (the shots); this screen's texts are checked
                 if issue.auditType == .textClipped, issue.element?.elementType == .searchField { return true }
-                // and on an iPad its empty field's placeholder, a UIKit UILabel with no element,
-                // as fixed size (this screen's texts are SwiftUI, never a UILabel, and checked)
-                if issue.auditType == .dynamicType, issue.element == nil, issue.detailedDescription.contains("UILabel") { return true }
-                return false
+                // and on an iPad its empty field's placeholder, and the tab bar's section names
+                if self.systemFixedLabel(issue) { return true }
+                found.append(self.described(issue))
+                return true
             }
         } catch {
-            XCTFail("\(name) \(language): \(error)")
+            found.append("\(error)")
         }
+        XCTAssertTrue(found.isEmpty, "\(name) \(language): " + found.joined(separator: "; "))
     }
 
     func testTypingShowsSuggestions() {

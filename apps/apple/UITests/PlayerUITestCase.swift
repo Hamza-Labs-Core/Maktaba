@@ -43,8 +43,11 @@ class PlayerUITestCase: XCTestCase {
     /// (in a signed build only: an unsigned one, as on CI, keeps no token in the Keychain).
     /// `extra`: more launch arguments (the components' gallery, a Dynamic Type size).
     /// `theme`: the theme forced for the run (nil: the stored choice, as Settings changes it).
+    /// `controlsStay`: the player's controls stay up once shown instead of hiding 4 s after the
+    /// last touch (`WatchView.hideAfter`), so a test that shows them and taps one does not race
+    /// the 4 s on a slow runner; the test of the 4 s turns it off.
     func launch(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
-                fresh: Bool = true, theme: String? = "dark", extra: [String] = []) {
+                fresh: Bool = true, theme: String? = "dark", controlsStay: Bool = true, extra: [String] = []) {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale]
@@ -56,6 +59,7 @@ class PlayerUITestCase: XCTestCase {
         if let sections { args += ["-maktaba-sections", sections.joined(separator: ",")] }
         if let section { args += ["-maktaba-section", section] }
         if let open { args += ["-maktaba-open", open] }
+        if controlsStay { args += ["-player.controls_hide_after", "600"] }
         app.launchArguments = args + extra
         app.launch()
         if fresh {
@@ -89,8 +93,9 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// A first run, signed in to the mock home.
-    func launchSignedIn(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil) {
-        launch(language, sections: sections, section: section, open: open)
+    func launchSignedIn(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
+                        controlsStay: Bool = true) {
+        launch(language, sections: sections, section: section, open: open, controlsStay: controlsStay)
         signIn()
     }
 
@@ -130,17 +135,75 @@ class PlayerUITestCase: XCTestCase {
         XCTAssertEqual(last()?["start_sec"] as? Int ?? 0, start, why)
     }
 
+    /// `performAccessibilityAudit`, run again when it could not finish in time (error -56,
+    /// "Audit failed to complete in time", seen on a loaded CI runner while the screen was
+    /// still drawing). Any other error, and every issue `handler` does not excuse, still fails.
+    func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
+                            _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
+        for attempt in 1 ... 3 {
+            do {
+                try app.performAccessibilityAudit(for: types, handler)
+                return
+            } catch let error as NSError
+                        where error.domain == "com.apple.xcode.xctest.accessibilityAudit" && error.code == -56 && attempt < 3 {
+                continue
+            }
+        }
+    }
+
+    /// An audit issue with the element it is on (identifier, label, frame), for a failure that
+    /// says where to look: the audit's own message names only the element's class.
+    func described(_ issue: XCUIAccessibilityAuditIssue) -> String {
+        guard let e = issue.element else { return "\(issue.compactDescription) [no element: \(issue.detailedDescription)]" }
+        return "\(issue.compactDescription) [\(e.identifier)|\(e.label)|\(e.frame)]"
+    }
+
+    /// A Dynamic Type issue on a UIKit UILabel the audit cannot map to an element: on an iPad,
+    /// the section names of the tab bar at the top of the window (four in Libraries, where four
+    /// sections are named; two in Profile, launched with two), which iPadOS keeps at one size
+    /// and shows in the large content viewer instead; and the system search field's empty
+    /// placeholder. This app's own texts are SwiftUI `Text`, which the audit always maps to an
+    /// element (`rail.title`, a card's title), so they are still checked.
+    func systemFixedLabel(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+        isPad && issue.auditType == .dynamicType && issue.element == nil && issue.detailedDescription.contains("UILabel")
+    }
+
     /// A contrast issue the audit can't judge: an element half off the screen, or partly under
     /// the floating tab bar, is sampled against what lies past it (a row scrolls on under the
     /// bar; the elements in the clear are still checked).
+    ///
+    /// The audit may give no element for such an issue: a List row (UIKit's collection view)
+    /// part under the tab bar's soft edge, or scrolled up under the status and navigation bars,
+    /// is a node it cannot map ("Contrast failed for SwiftUI.AccessibilityNode"). Profile
+    /// showed it: one such issue with "Settings on this device" under the tab bar, three with
+    /// "Account" and its rows under the top once scrolled to the end. So an issue without an
+    /// element is excused only while some text of the page is partly under a bar
+    /// (`textUnderABar`); with nothing there it fails. An element in full view always maps.
     private static let barEdge: CGFloat = 44
 
     func contrastOutOfView(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
-        guard issue.auditType == .contrast, let f = issue.element?.frame else { return false }
+        guard issue.auditType == .contrast else { return false }
+        guard let f = issue.element?.frame else { return textUnderABar() }
         if !app.windows.firstMatch.frame.contains(f) { return true }
         // the bar, and the soft edge iOS draws above it over the scrolling content
         let bar = app.tabBars.firstMatch
         return bar.exists && bar.frame.insetBy(dx: 0, dy: -Self.barEdge).intersects(f)
+    }
+
+    /// Some text of the page (not a bar's own) lies partly under the tab bar or its soft edge,
+    /// or above the navigation bar's foot (under it and the status bar).
+    private func textUnderABar() -> Bool {
+        let window = app.windows.firstMatch.frame
+        let tab = app.tabBars.firstMatch, nav = app.navigationBars.firstMatch
+        var zones: [CGRect] = []
+        if tab.exists { zones.append(tab.frame.insetBy(dx: 0, dy: -Self.barEdge)) }
+        let top = nav.exists ? nav.frame.maxY : window.minY
+        zones.append(CGRect(x: window.minX, y: window.minY - window.height, width: window.width, height: top - window.minY + window.height))
+        let bars = [tab, nav].filter(\.exists).map(\.frame)
+        return app.staticTexts.allElementsBoundByIndex.contains { text in
+            let f = text.frame
+            return !f.isEmpty && !bars.contains { $0.contains(f) } && zones.contains { $0.intersects(f) }
+        }
     }
 
     /// Swipes up until `e` is on screen and can be tapped (a few swipes at most).

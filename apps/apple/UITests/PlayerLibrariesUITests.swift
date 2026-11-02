@@ -245,14 +245,16 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         // every issue of the page in one failure (the audit itself stops at the first)
         var found: [String] = []
         do {
-            try app.performAccessibilityAudit { issue in
+            try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target (as 48.14's audit)
                 if issue.auditType == .hitRegion, issue.element?.identifier == "progress.strip" { return true }
                 // a card half off the screen's edge (a row scrolls sideways): the audit samples
                 // pixels beyond it; the cards fully on screen are still checked (as 48.14's audit)
                 if self.contrastOutOfView(issue) { return true }
+                // an iPad's tab bar names its sections in UIKit labels of one size
+                if self.systemFixedLabel(issue) { return true }
                 if issue.auditType == .dynamicType, let f = issue.element?.frame, lowOnThePage.contains(where: { $0.contains(f) }) { return true }
-                found.append("\(issue.compactDescription) [\(issue.element?.identifier ?? "")|\(issue.element?.label ?? "")]")
+                found.append(self.described(issue))
                 return true
             }
         } catch {
