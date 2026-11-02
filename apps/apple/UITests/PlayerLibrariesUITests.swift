@@ -44,7 +44,16 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     func testSeriesTabListsEverySeries() {
         launchSignedIn(section: "libraries")
         XCTAssertTrue(element("libraries.tabs").waitForExistence(timeout: 20))
+        // The tabs show while the cards still load. On an iPad the cards' answer then chooses
+        // the first library, and its page draws beside the list: a tap on Series while that
+        // page was drawing was lost on CI (the thumb lifted and fell back on Libraries, no
+        // GET /api/series was ever sent). So the tap waits for the Libraries root as a person
+        // sees it: the cards in, the page beside drawn, the whole screen still.
+        XCTAssertTrue(element("library.lib-lectures").waitForExistence(timeout: 20), "the library cards")
+        if isPad { XCTAssertTrue(element("screen.library").waitForExistence(timeout: 10), "the first library beside the list") }
+        XCTAssertNotNil(settledPage(), "the Libraries root, drawn")
         element("libraries.tabs").buttons["Series"].tap()
+        XCTAssertNotNil(waitForRequest { $0.method == "GET" && $0.path == "/api/series" }, "the Series tab asks the home")
         let seerah = element("series.s-seerah")
         XCTAssertTrue(seerah.waitForExistence(timeout: 10), "the series grid")
         XCTAssertTrue(element("series.s-tafsir").exists)
