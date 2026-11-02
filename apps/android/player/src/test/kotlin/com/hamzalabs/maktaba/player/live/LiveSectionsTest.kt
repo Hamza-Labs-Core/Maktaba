@@ -9,6 +9,7 @@ import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.ListScreens
 import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.info
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.PlayerSection
 import com.hamzalabs.maktaba.player.shell.PlayerSection.Libraries
 import com.hamzalabs.maktaba.player.shell.PlayerSection.LiveTv
@@ -51,7 +52,7 @@ class LiveSectionsTest {
     fun noChannelsHidesTheLiveTvSection() {
         LiveFixtures.install(home, channels = emptyList())
         shell()
-        compose.waitUntil(5_000) { "/api/channels/now" in home.paths }
+        compose.settledUntil(5_000) { "/api/channels/now" in home.paths }
         compose.waitForIdle()
         compose.onAllNodes(hasTestTag("section-Libraries")).assertCountEquals(1)
         compose.onAllNodes(hasTestTag("section-LiveTv")).assertCountEquals(0)
@@ -62,14 +63,14 @@ class LiveSectionsTest {
     fun aChannelShowsTheLiveTvSection() {
         LiveFixtures.install(home)
         shell()
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag("section-LiveTv")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag("section-LiveTv")).fetchSemanticsNodes().isNotEmpty() }
     }
 
     @Test
     fun anUnreachableHomeDoesNotOfferLiveTv() {
         // the fake home answers 404 to /api/channels/now: no answer, no section
         shell()
-        compose.waitUntil(5_000) { "/api/channels/now" in home.paths }
+        compose.settledUntil(5_000) { "/api/channels/now" in home.paths }
         compose.waitForIdle()
         compose.onAllNodes(hasTestTag("section-LiveTv")).assertCountEquals(0)
     }

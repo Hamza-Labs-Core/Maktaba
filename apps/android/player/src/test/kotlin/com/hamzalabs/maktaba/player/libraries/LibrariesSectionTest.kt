@@ -17,6 +17,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.settled
 import com.hamzalabs.maktaba.player.shell.ShellNavigation
 import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
 import org.junit.Assert.assertEquals
@@ -40,17 +41,12 @@ class LibrariesSectionTest {
     @Before fun routes() = home.answerLibraries()
 
     // Every wait is for the app to settle: the fake home has answered each call (its idling
-    // resource), Compose is idle, and what is looked for is there. The screen can start its
-    // next call a moment after Compose turns idle (its coroutine hops dispatchers first), so
-    // one look after idle can come too early on a busy runner: the check is what decides, and
+    // resource), Compose is idle, and what is looked for is there. An answer can land after
+    // the last idle, so each look settles first (settledUntil): the check is what decides, and
     // the time is only a ceiling, so a busy runner is only slower, never wrong.
     @Before fun idleOnTheHome() = compose.registerIdlingResource(home.idling)
 
-    private fun settled(what: String, check: () -> Boolean) {
-        compose.waitForIdle()
-        runCatching { compose.waitUntil(10_000) { check() } }
-        assertTrue(what, check())
-    }
+    private fun settled(what: String, check: () -> Boolean) = compose.settled(home, what, check = check)
 
     private fun waitForTag(tag: String) =
         settled("$tag shows") { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }

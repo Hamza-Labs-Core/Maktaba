@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -39,7 +40,7 @@ class LiveTvScreenTest {
     private val engine = FakeLiveEngine()
 
     private fun waitForTag(tag: String) =
-        compose.waitUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun openLive(window: Window = Window.Phone) {
         LiveFixtures.install(home)
@@ -78,7 +79,7 @@ class LiveTvScreenTest {
         openLive()
         compose.onNodeWithTag("channel-c2").performClick()
         waitForTag("channel-player")
-        compose.waitUntil(5_000) { engine.played.isNotEmpty() }
+        compose.settledUntil(5_000) { engine.played.isNotEmpty() }
         assertEquals("/stream/channel/c2/index.m3u8", engine.played.first().encodedPath)
     }
 
@@ -115,14 +116,14 @@ class LiveTvScreenTest {
         waitForTag("guide-row-c1")
         compose.onNodeWithTag("day-1").performClick()
         compose.waitForIdle()
-        compose.waitUntil(5_000) {
+        compose.settledUntil(5_000) {
             home.requests.any { it.url.encodedPath == "/api/channels/guide" && it.url.queryParameter("start") == "2026-11-01T17:30:00Z" }
         }
         // the next day's guide shows, then Later moves it on by the window's three hours
         waitForTag("guide-row-c1")
         compose.onNodeWithTag("guide-later").performClick()
         compose.waitForIdle()
-        compose.waitUntil(5_000) {
+        compose.settledUntil(5_000) {
             home.requests.any { it.url.encodedPath == "/api/channels/guide" && it.url.queryParameter("start") == "2026-11-01T20:30:00Z" }
         }
     }
@@ -138,7 +139,7 @@ class LiveTvScreenTest {
         compose.onNode(hasText("Quran · 18:00 – 18:40")).assertIsDisplayed()
         compose.onNodeWithTag("programme-watch").performClick()
         waitForTag("channel-player")
-        compose.waitUntil(5_000) { engine.played.isNotEmpty() }
+        compose.settledUntil(5_000) { engine.played.isNotEmpty() }
         assertEquals("/stream/channel/c1/index.m3u8", engine.played.first().encodedPath)
     }
 

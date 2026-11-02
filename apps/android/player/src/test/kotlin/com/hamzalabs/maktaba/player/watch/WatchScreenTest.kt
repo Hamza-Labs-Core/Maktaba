@@ -122,6 +122,7 @@ class WatchScreenTest {
 
     /** Waits, moving the players' clock on a little each time, until [condition]. */
     private fun until(timeoutMs: Long = 10_000, stepMs: Long = 20, condition: () -> Boolean) = try {
+        // bare: it steps the players' clock by stepMs and idles the looper itself; settling would also advance Compose's clock
         compose.waitUntil(timeoutMs) {
             clock.advanceTime(stepMs)
             // the player's work runs on the main looper: let it
@@ -233,10 +234,12 @@ class WatchScreenTest {
         compose.mainClock.advanceTimeBy(3_000)
         compose.onNodeWithTag("controls").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(1_500)
+        // bare: the test steps the clock by hand here; settling would advance it and could bring the next state early
         compose.waitUntil(2_000) { !shown("controls") }
 
         compose.onNodeWithTag("watch-surface").performTouchInput { click(center) }
         compose.mainClock.advanceTimeBy(500)
+        // bare: the controls hide again after 4 s, and settling advances the clock between looks
         compose.waitUntil(2_000) { shown("controls") }
     }
 
@@ -245,6 +248,7 @@ class WatchScreenTest {
         open(Route.Watch("v1", startSec = 2))
         untilPlaying()
         compose.onNodeWithTag("watch-surface").performTouchInput { doubleClick(centerLeft + androidx.compose.ui.geometry.Offset(40f, 0f)) }
+        // bare: the seek flash fades by itself, and settling advances the clock between looks
         compose.waitUntil(2_000) { shown("seek-flash") }
         compose.onNodeWithText("Back 10 seconds").assertIsDisplayed()
     }
@@ -256,6 +260,7 @@ class WatchScreenTest {
         untilPlaying()
         // the right side is where an Arabic video starts: back
         compose.onNodeWithTag("watch-surface").performTouchInput { doubleClick(centerRight - androidx.compose.ui.geometry.Offset(40f, 0f)) }
+        // bare: the seek flash fades by itself, and settling advances the clock between looks
         compose.waitUntil(2_000) { shown("seek-flash") }
         compose.onNodeWithText("رجوع ١٠ ثوانٍ").assertIsDisplayed()
     }
@@ -292,6 +297,7 @@ class WatchScreenTest {
         // Next still plays the next episode
         compose.onNodeWithTag("watch-surface").performTouchInput { click(center) }
         compose.mainClock.advanceTimeBy(500)
+        // bare: Next sits in the controls, which hide by themselves while settling advances the clock
         compose.waitUntil(2_000) { shown("next") }
         compose.onNodeWithTag("next").performClick()
         until { streams.opens().size == 2 }

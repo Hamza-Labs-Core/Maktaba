@@ -3,7 +3,7 @@ package com.hamzalabs.maktaba.player.video
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
@@ -11,6 +11,7 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.ui.components.PictureState
 import org.junit.Rule
 import org.junit.Test
@@ -38,7 +39,7 @@ class VideoScreenshotTest {
         val pictures = VideoPictures(compose.activity)
         compose.setVideoShell(fake, pictures, VideoLink.of(id), window)
         val shown = if (id == "vnoposter") PictureState.Missing else PictureState.Shown
-        compose.waitUntil(5_000) {
+        compose.settledUntil(5_000) {
             compose.onAllNodes(hasTestTag("video-poster") and SemanticsMatcher.expectValue(PosterStateKey, shown)).fetchSemanticsNodes().isNotEmpty()
         }
         compose.waitForIdle()

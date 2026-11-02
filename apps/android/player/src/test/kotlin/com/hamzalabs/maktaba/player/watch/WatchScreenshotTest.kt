@@ -12,7 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -71,6 +71,7 @@ class WatchScreenshotTest {
         home.answer("/api/videos/v3") { FakeHome.json(FakeHome.video("v3", "Omar, Episode 2")) }
     }
 
+    // bare: it steps the players' clock and idles the looper itself; settling would advance Compose's clock past the controls
     private fun until(condition: () -> Boolean) = compose.waitUntil(10_000) {
         clock.advanceTime(20)
         shadowOf(Looper.getMainLooper()).idle()

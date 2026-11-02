@@ -22,6 +22,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
+import com.hamzalabs.maktaba.player.harness.settledUntil
 import com.hamzalabs.maktaba.player.shell.ShellNavigation
 import com.hamzalabs.maktaba.player.shell.ShellNavigationKey
 import org.junit.Assert.assertEquals
@@ -51,11 +52,11 @@ class HomeScreenTest {
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
     private fun waitForTag(tag: String, timeout: Long = 5_000) =
-        compose.waitUntil(timeout) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(timeout) { compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isNotEmpty() }
 
     /** [text] shown: as a text, or in a card's words (a card speaks as one node). */
     private fun waitForText(text: String, timeout: Long = 5_000) =
-        compose.waitUntil(timeout) { compose.onAllNodes(hasText(text) or hasContentDescription(text, substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(timeout) { compose.onAllNodes(hasText(text) or hasContentDescription(text, substring = true)).fetchSemanticsNodes().isNotEmpty() }
 
     private fun inRow(row: String, tag: String) = hasTestTag(tag) and hasAnyAncestor(hasTestTag("row-$row"))
 
@@ -125,8 +126,8 @@ class HomeScreenTest {
         assertTrue("a recommendation offers no Resume", compose.onAllNodes(hasTestTag("menu-resume")).fetchSemanticsNodes().isEmpty())
         compose.onNodeWithTag("menu-not-interested").performClick()
 
-        compose.waitUntil(5_000) { compose.onAllNodes(card).fetchSemanticsNodes().isEmpty() }
-        compose.waitUntil(5_000) { count("/api/recommendations/items/${HomeFixtures.REC_1}", "DELETE") == 1 }
+        compose.settledUntil(5_000) { compose.onAllNodes(card).fetchSemanticsNodes().isEmpty() }
+        compose.settledUntil(5_000) { count("/api/recommendations/items/${HomeFixtures.REC_1}", "DELETE") == 1 }
         // the rest of the rail stays
         compose.onNode(inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_2}")).assertExists()
     }
@@ -138,7 +139,7 @@ class HomeScreenTest {
         compose.setHome(home, launch = launch)
         waitForTag("row-$KEY_CONTINUE")
         val kept = File(ApplicationProvider.getApplicationContext<android.content.Context>().cacheDir, HomeCache.FOLDER)
-        compose.waitUntil(5_000) { kept.listFiles().orEmpty().any { it.name.endsWith(".json") } }
+        compose.settledUntil(5_000) { kept.listFiles().orEmpty().any { it.name.endsWith(".json") } }
 
         // the home now answers only when the test lets it, with a new title
         val gate = CountDownLatch(1)
@@ -150,7 +151,7 @@ class HomeScreenTest {
             // while the home has not answered: the kept rows, and Home asking again behind them
             // (a node query first: it lets Compose run the new launch, which a request count alone does not)
             waitForTag("row-$KEY_CONTINUE", timeout = 15_000)
-            compose.waitUntil(15_000) { compose.waitForIdle(); count("/api/home") > asked }
+            compose.settledUntil(15_000) { count("/api/home") > asked }
             compose.onNode(inRow(KEY_CONTINUE, "card-${HomeFixtures.CONTINUE}")).assertExists()
             assertTrue("the new answer is not in yet", compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isEmpty())
         } finally {
@@ -158,16 +159,16 @@ class HomeScreenTest {
         }
 
         // then the fresh answer replaces them
-        compose.waitUntil(15_000) { compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(15_000) { compose.onAllNodes(hasContentDescription("Fiqh of Fasting 8", substring = true)).fetchSemanticsNodes().isNotEmpty() }
         assertTrue(compose.onAllNodes(hasContentDescription("Fiqh of Fasting 7", substring = true)).fetchSemanticsNodes().isEmpty())
     }
 
     @Test
     fun pullToRefreshReadsHomeAgain() {
         showFull()
-        compose.waitUntil(5_000) { count("/api/home") == 1 }
+        compose.settledUntil(5_000) { count("/api/home") == 1 }
         compose.onNodeWithTag("home-rows").performTouchInput { swipeDown() }
-        compose.waitUntil(5_000) { count("/api/home") == 2 }
+        compose.settledUntil(5_000) { count("/api/home") == 2 }
     }
 
     @Test
@@ -186,7 +187,7 @@ class HomeScreenTest {
     @Test
     fun aRefreshThatFailsKeepsTheRowsAndSaysSo() {
         showFull()
-        compose.waitUntil(5_000) { count("/api/home") == 1 }
+        compose.settledUntil(5_000) { count("/api/home") == 1 }
         home.answer("/api/home") { FakeHome.json("{}", code = 503) }
         compose.onNodeWithTag("home-rows").performTouchInput { swipeDown() }
         waitForTag("home-stale")
@@ -201,7 +202,7 @@ class HomeScreenTest {
         compose.onNode(hasText("Nothing to watch yet") and isHeading()).assertIsDisplayed()
         compose.onNodeWithTag("home-switch").assertIsDisplayed()
         compose.onNodeWithTag("home-sign-out").assertIsDisplayed().performClick()
-        compose.waitUntil(2_000) { home.home.session.phase.value == AppSession.Phase.SigningIn }
+        compose.settledUntil(2_000) { home.home.session.phase.value == AppSession.Phase.SigningIn }
     }
 
     @Test
@@ -211,7 +212,7 @@ class HomeScreenTest {
         compose.setHome(home)
         waitForTag("home-switch")
         compose.onNodeWithTag("home-switch").performClick()
-        compose.waitUntil(2_000) { home.home.session.phase.value == AppSession.Phase.ChoosingHome }
+        compose.settledUntil(2_000) { home.home.session.phase.value == AppSession.Phase.ChoosingHome }
     }
 
     @Test
