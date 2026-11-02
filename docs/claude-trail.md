@@ -945,6 +945,28 @@ Append here: date, session, one to five lines on what changed. Newest last.
     machine agent connects or leaves, not only every 30 s; [#475] the relay records a home online
     before routable and offline after removal, one at a time per slug; [#472] host apt installs
     get retries, timeouts and an 8-minute step limit after stalled mirrors hung jobs 30 min.
+- 2026-11-01 · airplay (side session of `local_7c0a4c88`): [#512] Epic 48 story 48.24 in the
+  Apple Player: AirPlay route button, PiP (button and on going home) and Now Playing with
+  remote commands, for videos and live TV, English and Arabic.
+  - Decided: a receiver can't reach the app's loopback `StreamProxy`. A video hands it the
+    signed session URL (48.12). A channel at home has no signed URL (the web port's gate keeps
+    channel paths to a signed-in caller), so a second `StreamProxy` listens on the phone's LAN
+    address while AirPlay is on, serving that one channel under its own secret: no server
+    change. Away, the Cloudflare signed URL is handed over and re-handed at each new token
+    (about every 30 min). The phone stays in the loop either way (progress, heartbeat).
+  - Not verified: playback on a real Apple TV (no receiver in CI); the spec box for that
+    stays unticked until the owner checks it by hand.
+  - Gotcha: a closure a system framework calls on its own queue (`MPMediaItemArtwork`'s
+    image, KVO handlers, `MPRemoteCommand` targets) must not be made inside a `@MainActor`
+    method: Swift 6 gives it main-actor isolation and traps off the main thread. Make it in a
+    `nonisolated static func` and hop on. The first CI run of [#512] crashed every watch test so.
+  - The iPhone simulator reports no Picture in Picture (the iPad one floats it); the PiP UI
+    test asserts there is no PiP button on iPhone (no skip: the owner's rule). `AVRoutePickerView` adds its inner button late on iPad:
+    `AirPlayButton.Picker` names every control in it once it is on screen.
+  - The Mac menu helper clicked View ▸ Profile when asked for Live TV: a coordinate on a menu
+    item finds it again by identifier, and every SwiftUI menu item's is `menuAction:` (the
+    recording showed the pointer move from Live TV to Profile). It now clicks the item's point
+    from the menu bar item, whose title is unique.
 - 2026-11-01 · play-bundles agent of `b743b7d4`: [#517] (not merged) attaches signed Google Play
   bundles to every `v*` tag (`play-bundles.yml`): `maktaba-{player,remote,tv}-<version>.aab`,
   upload key from `ANDROID_UPLOAD_KEYSTORE_BASE64` / `_KEY_ALIAS` / `_KEY_PASSWORD` (/ optional
@@ -1185,6 +1207,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 [#477]: https://github.com/Hamza-Labs-Core/Maktaba/pull/477
 [#479]: https://github.com/Hamza-Labs-Core/Maktaba/pull/479
 [#480]: https://github.com/Hamza-Labs-Core/Maktaba/pull/480
+[#512]: https://github.com/Hamza-Labs-Core/Maktaba/pull/512
 [#517]: https://github.com/Hamza-Labs-Core/Maktaba/pull/517
 [#469]: https://github.com/Hamza-Labs-Core/Maktaba/pull/469
 [#510]: https://github.com/Hamza-Labs-Core/Maktaba/pull/510

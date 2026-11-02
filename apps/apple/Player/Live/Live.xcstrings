@@ -12,6 +12,17 @@
         }
       }
     },
+    "AirPlay" : {
+      "comment" : "The live player: plays the channel on an Apple TV or another AirPlay screen",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AirPlay"
+          }
+        }
+      }
+    },
     "Back" : {
       "comment" : "Leaves the live player",
       "localizations" : {
@@ -173,6 +184,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "إيقاف مؤقت"
+          }
+        }
+      }
+    },
+    "Picture in Picture" : {
+      "comment" : "The live player: floats the channel in a small window over other apps",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صورة داخل صورة"
           }
         }
       }

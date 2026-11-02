@@ -202,7 +202,12 @@ final class PlayerMacMenuUITests: XCTestCase {
         if !wait(3, { it.isHittable }) { bar.click() } // a click that landed as the bar redrew
         XCTAssertTrue(wait(3) { it.isHittable }, "\(top) opens, showing \(item)")
         XCTAssertTrue(it.isEnabled, "\(top) ▸ \(item) is on")
-        it.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).click()
+        // Click the item's point from the bar, not from the item: a coordinate on the item finds
+        // it again by its identifier, and every SwiftUI menu item's is "menuAction:", so the
+        // click could land on another item (View ▸ Live TV once opened Profile).
+        let at = it.frame, from = bar.frame
+        bar.coordinate(withNormalizedOffset: .zero)
+            .withOffset(CGVector(dx: at.midX - from.minX, dy: at.midY - from.minY)).click()
     }
 
     /// The window covers its screen (the menu bar hides in full screen).
