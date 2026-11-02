@@ -1,8 +1,8 @@
 """The reconciler (plan 06-11 section 6.5).
 
-Runs every 60 s on whichever worker holds the leader lock (Postgres advisory
-lock; on SQLite there is one process, so it is always the leader). It repairs
-and schedules:
+Runs every 60 s on whichever worker holds the leader lock (Postgres: a session
+advisory lock held for the pass, engine/leader.py; on SQLite there is one process, so it
+is always the leader). It repairs and schedules:
 
 1. ``done`` rows whose propagation never ran (a crash between a legacy
    handler's ``mark_done`` and the engine bookkeeping);
@@ -39,10 +39,11 @@ from uuid import UUID
 from ..log import get_logger
 from .enqueue import enqueue_job
 from .graph import CATALOG_ID, EPIC47_PRIORITIES, StageDef
+from .leader import leader
 from .propagate import after_legacy_done
 from .sql import is_pg, loads, now, to_ts, uid
 
-__all__ = ["ReconcileReport", "reconcile_once", "run_reconciler"]
+__all__ = ["LEADER_KEY", "ReconcileReport", "reconcile_once", "run_reconciler"]
 
 _log = get_logger()
 
@@ -56,6 +57,8 @@ DEFAULT_SOURCE_REFRESH_HOURS = 24.0
 SOURCE_REFRESH_PRIORITY = 110
 #: Epic 47: the trash is emptied of what is past its grace period once a day
 TRASH_PURGE_EVERY_HOURS = 24.0
+#: the leader lock (Postgres): ``hashtext`` of it, a session advisory lock held for a pass
+LEADER_KEY = "maktaba.reconciler"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,25 +83,32 @@ async def reconcile_once(
 ) -> ReconcileReport:
     """One reconciliation pass; returns what it did (``leader=False`` => nothing).
 
-    On Postgres the pass runs in one transaction that holds the advisory lock (the pool
-    gives every other loop its own connection). On SQLite every loop of the process
-    shares one connection behind a lock, and one transaction over the whole pass held it
-    for the pass (a 1000-row sweep: thousands of statements), long enough to miss the
-    worker's heartbeat. So SQLite has no transaction around the pass, as the queue-health
-    round (engine/watchers.py): each unit of work commits on its own and the connection
-    is free between them. The units are what must be atomic, and each already is: one
-    enqueue (``_enqueue_sqlite``'s transaction, the coalescing and a sweep's reason
-    together), one legacy repair (``finalize_success``'s transaction, guarded by
-    ``propagated_at IS NULL``), one ``propagated_at`` mark (a statement). A pass stopped
-    between them leaves only whole units; the next pass does the rest, as each step only
-    selects what is still to do. Another loop may now write between a step's read and
-    its enqueue, as on Postgres, where each statement already reads what others
-    committed: the enqueue's coalescing makes that at most a rerun request."""
+    There is no transaction around the pass, on either dialect: each unit of work
+    commits on its own. The units are what must be atomic, and each already is: one
+    enqueue (Postgres: one ``processing_jobs_enqueue`` statement; SQLite:
+    ``_enqueue_sqlite``'s transaction, the coalescing and a sweep's reason together), one
+    legacy repair (``finalize_success``'s transaction, guarded by ``propagated_at IS
+    NULL``), one ``propagated_at`` mark (a statement). A pass stopped between them leaves
+    only whole units; the next pass does the rest, as each step only selects what is
+    still to do. Another loop may write between a step's read and its enqueue: the
+    enqueue's coalescing makes that at most a rerun request.
+
+    SQLite: every loop of the process shares one connection behind a lock, and one
+    transaction over the pass held it for the pass (a 1000-row sweep: thousands of
+    statements), long enough to miss the worker's heartbeat. There is one process, so it
+    is always the leader.
+
+    Postgres: one transaction over the pass also held the leader lock
+    (``pg_try_advisory_xact_lock``), so the jobs it queued could not be claimed before
+    the whole pass committed, and its row locks lasted as long. The leader lock is now a
+    session lock on a connection of its own (engine/leader.py), held for the pass; the
+    units run on other pool connections. Two workers never run passes at once, a dead
+    worker's lock ends with its connection, and a stopped pass is finished by the next
+    one, whichever worker runs it."""
     t = at or now()
     if not is_pg(db):
         return await _pass(db, graph, t, yt_refresh_hours)
-    async with db.transaction():
-        got = await db.fetchval("SELECT pg_try_advisory_xact_lock(hashtext('maktaba.reconciler'))")
+    async with leader(db, LEADER_KEY) as got:
         if not got:
             return ReconcileReport(leader=False)
         return await _pass(db, graph, t, yt_refresh_hours)
