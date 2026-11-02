@@ -123,9 +123,12 @@ final class PlayerMacMenuUITests: XCTestCase {
         app.typeKey("f", modifierFlags: [.control, .command])
         XCTAssertTrue(wait { self.isFullScreen }, "⌃⌘F: full screen")
         assertPlayerCovers(window, "the screen")
-        app.menuBars.menuBarItems["View"].click()
-        XCTAssertTrue(app.menuBars.menuItems["Exit Full Screen"].waitForExistence(timeout: 3))
-        app.menuBars.menuItems["Exit Full Screen"].click()
+        // XCUITest opens the item's menu itself on the click: in full screen it finds the hidden
+        // menu bar's View menu shut, so a View opened here first is clicked shut again (CI:
+        // "open menu during menu traversal")
+        let exit = app.menuBars.menuItems["Exit Full Screen"]
+        XCTAssertTrue(exit.waitForExistence(timeout: 3), "View ▸ Exit Full Screen, in full screen")
+        exit.click()
         XCTAssertTrue(wait { !self.isFullScreen }, "View ▸ Exit Full Screen")
 
         menu("Playback", "Stop")
