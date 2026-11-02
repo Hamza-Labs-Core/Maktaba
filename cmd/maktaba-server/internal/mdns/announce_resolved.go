@@ -183,8 +183,6 @@ func (d *systemResolved) Shutdown() {
 	d.api.close()
 }
 
-// resolvedTXT is the TXT entries as one record of RegisterService's: key → value (an entry
-// without "=" is a key with an empty value), each entry at most 255 bytes.
 // resolvedInstance is an instance name as RegisterService takes it. resolved expands "%"
 // specifiers in it (a "%" is "%%"), then reads the result as a DNS name in presentation
 // form when it joins it to the type (resolved-dnssd.c, dns_name_concat): a "." there splits
@@ -205,6 +203,8 @@ func resolvedInstance(s string) string {
 	return strings.ReplaceAll(esc, "%", "%%")
 }
 
+// resolvedTXT is the TXT entries as one record of RegisterService's: key → value (an entry
+// without "=" is a key with an empty value), each entry at most 255 bytes.
 func resolvedTXT(txt []string) map[string][]byte {
 	keys, values := txtPairs(txt)
 	out := make(map[string][]byte, len(keys))
