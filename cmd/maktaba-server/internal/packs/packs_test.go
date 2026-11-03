@@ -655,3 +655,22 @@ func TestImportRefusesOtherPaths(t *testing.T) {
 		}
 	}
 }
+
+// A folder source reads only its own files: a version naming another folder is refused.
+func TestFolderSourceReadsOnlyItsFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{rv.ChecksumsFile, rv.BundleFile, rv.ManifestFile} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := &FolderSource{Dir: dir}
+	if _, err := f.Signed(context.Background(), "1.2.3"); err != nil {
+		t.Fatalf("a plain version: %v", err)
+	}
+	for _, v := range []string{"../../etc/x", "1.2.3/../../x", `1.2.3\..\x`} {
+		if _, err := f.Signed(context.Background(), v); err == nil || !strings.Contains(err.Error(), "not a file of the release's folder") {
+			t.Errorf("Signed(%q) = %v, want refused", v, err)
+		}
+	}
+}

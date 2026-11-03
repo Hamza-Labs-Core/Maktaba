@@ -41,6 +41,11 @@ struct LiveTVScreen: View {
         }
         // decided again each time the screen comes into view (the tab chosen again)
         .onAppear { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
+        // opened before the home first said what is on (a slow home, a launch into Live TV):
+        // that first answer decides, once; a later change leaves the open screen as it is
+        .onChange(of: context.session.capabilities.answered) { _, answered in
+            if answered { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
+        }
     }
 
     /// Live TV is off on the home (story 51.11): an admin reads so, with a button to the

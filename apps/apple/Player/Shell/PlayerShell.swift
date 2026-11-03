@@ -41,6 +41,9 @@ struct PlayerShell: View {
     /// A link into Live TV while it is off for this viewer (story 51.11): Home, and a short
     /// line saying Live TV isn't available on this home.
     @State private var unavailable: Bool
+    /// The launch went to Live TV (its section, or a channel's link): decided again at the
+    /// home's first answer of what is on when the shell came before it.
+    private let launchedToLive: Bool
 
     init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
          sections: [PlayerSection] = PlayerSection.visible(),
@@ -52,6 +55,7 @@ struct PlayerShell: View {
         self.sections = sections
         let toLive: Bool = if start == .liveTV { true } else if case .channel = route { true } else { false }
         let blocked = liveTVHidden && toLive
+        launchedToLive = toLive
         let first = start.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first ?? .libraries
         _selection = State(initialValue: first)
         _paths = State(initialValue: (blocked ? nil : route).map { [first: [$0]] } ?? [:])
@@ -74,6 +78,14 @@ struct PlayerShell: View {
             } else {
                 tabs
             }
+        }
+        // the shell came before the home first said what is on (a slow home): a launch into
+        // Live TV, off for this viewer, lands on Home and says so, as at a launch after it
+        .onChange(of: context.session.capabilities.answered) { _, answered in
+            guard answered, launchedToLive, !sections.contains(.liveTV), selection == .liveTV else { return }
+            paths[.liveTV] = nil
+            selection = sections.first ?? .libraries
+            unavailable = true
         }
         .onChange(of: link, initial: true) { _, route in
             guard let route else { return }

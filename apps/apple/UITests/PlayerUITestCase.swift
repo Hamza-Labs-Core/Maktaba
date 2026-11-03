@@ -55,7 +55,7 @@ class PlayerUITestCase: XCTestCase {
     /// So before the first test the app goes the way a test takes it, on a mock home of its
     /// own (the test's mock sees none of it): launched, signed in, the shell drawn on
     /// Libraries, and read until three snapshots running each come back within 2 s (a page
-    /// read at its usual pace), and one cheap accessibility audit run (a process's first is
+    /// read at its usual pace), and one full accessibility audit run (a process's first is
     /// slow as well); then closed. What it took is in the test log and the result
     /// bundle. A later test process (after a crash) finds the simulator ready and pays one
     /// sign-in.
@@ -85,11 +85,11 @@ class PlayerUITestCase: XCTestCase {
                 quick = took < 2 ? quick + 1 : 0
             }
             let pace = !shell ? "no shell in 120 s" : quick >= 3 ? "read at its usual pace" : "still slow after 180 s"
-            // the process's first accessibility audit is slow too (the audit's own set-up): one
-            // cheap audit here, so a first test's audit keeps to its deadline (testHero, first
-            // in its shard, took 16 s against about 15)
+            // the process's first full accessibility audit is slow too (15 to 16 s on CI, 2 to
+            // 2.5 s after; one of a single cheap type warmed nothing): a full one here, its
+            // findings ignored, so a first test's audit keeps to its deadline
             let audited = Date()
-            if shell { try? app.performAccessibilityAudit(for: .sufficientElementDescription) { _ in true } }
+            if shell { try? app.performAccessibilityAudit(for: XCUIAccessibilityAuditType.all.subtracting(.dynamicType)) { _ in true } }
             let audit = Date().timeIntervalSince(audited)
             let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s; first audit %.1f s",
                               drawn, pace, Date().timeIntervalSince(start), looks.joined(separator: ", "), audit)

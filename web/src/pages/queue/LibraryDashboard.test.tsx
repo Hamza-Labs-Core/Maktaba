@@ -29,6 +29,17 @@ vi.mock("../../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post, put, patch, delete: del } };
 });
 vi.mock("../../lib/ws", () => ({ subscribe: hub.subscribe }));
+// what the home has on (Epic 51): YouTube on unless a test turns it off
+const { ytGate } = vi.hoisted(() => ({ ytGate: { value: "show" as "show" | "explain" | "hide" } }));
+vi.mock("../../lib/capabilities", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../lib/capabilities")>("../../lib/capabilities");
+  return {
+    ...actual,
+    useFeatureGate: (id: string) =>
+      id === "youtube" ? ytGate.value : actual.useFeatureGate(id as never),
+  };
+});
 
 import { LibraryDashboard } from "./LibraryDashboard";
 import { renderPage, memberUser } from "../../test/pageHarness";
@@ -92,6 +103,7 @@ const tileNames = () =>
 
 beforeEach(() => {
   for (const f of [get, post, put, patch, del]) f.mockReset();
+  ytGate.value = "show";
 });
 afterEach(() => {
   document.documentElement.removeAttribute("dir");
@@ -179,6 +191,21 @@ describe("LibraryDashboard", () => {
     await userEvent.click(screen.getByRole("button", { name: "Select the 3 shown" }));
     await userEvent.click(screen.getByRole("button", { name: "Unselect the shown" }));
     expect(screen.getByText("0 selected")).toBeInTheDocument();
+  });
+
+  it("with YouTube off on the home, offers no refresh from YouTube and says where to turn it on", async () => {
+    ytGate.value = "explain";
+    open();
+    await waitFor(() => expect(tiles()).toHaveLength(3));
+    await userEvent.click(screen.getByRole("checkbox", { name: "Select Islamic lectures" }));
+    await userEvent.click(screen.getByRole("button", { name: "With selected (1)" }));
+    expect(screen.getAllByRole("menuitem").map((m) => m.textContent)).toEqual([
+      "Convert to MP4",
+      "Find duplicates",
+    ]);
+    await userEvent.keyboard("{Escape}");
+    const note = document.querySelector('[data-feature-off="youtube"]');
+    expect(note?.textContent).toMatch(/YouTube/);
   });
 
   it("a tile's YouTube badge opens its sources; its name opens the library page", async () => {

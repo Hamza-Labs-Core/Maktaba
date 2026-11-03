@@ -260,6 +260,10 @@ func (f *FolderSource) Kind() string { return "folder" }
 func (f *FolderSource) Signed(_ context.Context, version string) (Signed, error) {
 	var s Signed
 	read := func(name string, optional bool) ([]byte, error) {
+		// a file of the folder itself: the index's name carries the version asked for
+		if strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
+			return nil, fmt.Errorf("%q: not a file of the release's folder", name)
+		}
 		b, err := readSmall(filepath.Join(f.Dir, name))
 		if optional && errors.Is(err, os.ErrNotExist) {
 			return nil, nil
