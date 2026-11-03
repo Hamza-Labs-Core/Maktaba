@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
@@ -51,6 +52,7 @@ const (
 const (
 	StepPreflight = "preflight"
 	StepStage     = "stage"
+	StepPacks     = "packs" // the next release's packs fetched and verified (story 51.18, packs.go)
 	StepSmoke     = "smoke"
 	StepRehearse  = "rehearse"
 	StepOrder     = "order"  // the app's order, until the app staged the release
@@ -210,6 +212,9 @@ type Journal struct {
 	Staged    string     `json:"staged,omitempty"`
 	FromRef   string     `json:"from_ref,omitempty"`
 	Rehearsal *Rehearsal `json:"rehearsal,omitempty"`
+	// Packs are the folders the packs step readied for the new release (story 51.18):
+	// what a run that ends before its switch deletes, and what a rollback looks for.
+	Packs []packs.Staged `json:"packs,omitempty"`
 	// App is the app's last answer to the order (ordered, staged).
 	App string `json:"app,omitempty"`
 	// InstallBy is the latest an automatic run gives the go (its window's end and overrun:
@@ -285,6 +290,7 @@ func (j *Journal) clone() *Journal {
 		t := *j.TV
 		c.TV = &t
 	}
+	c.Packs = append([]packs.Staged(nil), j.Packs...)
 	c.Job.Assets = make(map[string]string, len(j.Job.Assets))
 	for k, v := range j.Job.Assets {
 		c.Job.Assets[k] = v

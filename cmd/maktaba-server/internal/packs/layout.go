@@ -18,6 +18,10 @@ const (
 	lockFile     = ".lock"
 	removingFile = ".removing"
 	removedFile  = ".removed"
+	// missingFile names the release whose folder a rollback found gone (story 51.18)
+	missingFile = ".missing"
+	// versionsFile, in a model's rev_ folder, lists the releases whose index pins it
+	versionsFile = "versions"
 	partialDir   = ".partial"
 	stagingPre   = ".staging-"
 	revPre       = "rev_"

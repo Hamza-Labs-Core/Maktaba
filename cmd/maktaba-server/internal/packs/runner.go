@@ -208,6 +208,11 @@ func (r *Runner) Rows() []store.Status {
 			inst.Reason, inst.Params = p.Reason, p.Params
 		case installed:
 			row.Phase = components.PhaseOff
+		case r.M.Version != "" && r.M.Layout.Missing(id) == r.M.Version:
+			// a rollback came back to this release and its folder was gone (story 51.18):
+			// installing it again clears this
+			row.Phase = components.PhaseFailed
+			inst.Reason, inst.Params = ReasonPackMissing, map[string]any{"component": id}
 		default:
 			row.Phase = components.PhaseNotInstalled
 			if r.M.Disabled && (d.Want == components.WantInstalled || d.Want == components.WantEnabled) {
