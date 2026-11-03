@@ -21,6 +21,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/attempts"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
@@ -135,6 +136,15 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		wheels := updater.WheelhouseDir(filepath.Join(updatesDirOf(cfg, ""), wheelhouseFolder), cur.Version)
 		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv"), Wheelhouse: wheels},
 			updates: updatesDirOf(cfg, ""), version: cur.Version}
+		// Epic 51 story 51.16: runtime.ml removed through its pack keeps the venv without
+		// its extras (the default would bring them back from PyPI)
+		if pl := (packs.Layout{Root: packsDir(cfg)}); pl.Removed("runtime.ml") {
+			if pl.Current("tool.yt-dlp") != "" {
+				venv.spec.Extras = "mediaintel"
+			} else {
+				venv.spec.NoExtras = true
+			}
+		}
 		venvStep = &sharedStep{wait: detail("venv_waiting", "Waiting for the transcription tools"), run: venv.run}
 	} else {
 		fmt.Fprintf(log, "[serve] the pipeline runs %s (MAKTABA_PYTHON or [pipeline] python): the app's venv is not built\n", py)

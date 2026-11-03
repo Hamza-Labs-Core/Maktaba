@@ -119,6 +119,18 @@ func ParseSums(b []byte) ([]Entry, error) {
 			}
 		}
 	}
+	// two paths (or folders on the way) that differ only by case: one file on the Mac's
+	// and Windows' disks
+	folded := map[string]string{}
+	for _, e := range out {
+		for p := e.Path; p != "."; p = path.Dir(p) {
+			k := strings.ToLower(p)
+			if was, ok := folded[k]; ok && was != p {
+				return nil, invalid("%s: %s and %s differ only by case", SumsName, was, p)
+			}
+			folded[k] = p
+		}
+	}
 	return out, nil
 }
 

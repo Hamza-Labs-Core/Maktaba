@@ -207,6 +207,19 @@ type ComponentsSection struct {
 	// stop components as their desired state says; "off" is the kill switch: every
 	// runner reports, none acts (the processes are the ones server.toml builds).
 	Reconcile string `toml:"reconcile,omitempty"`
+	// Packs: "on" (default) lets this machine install asset components from packs and
+	// offline files (story 51.16); "off" installs nothing new (packs_disabled), and what
+	// is on disk keeps working and is reported.
+	Packs string `toml:"packs,omitempty"`
+}
+
+// PacksOn reports whether packs may be installed (anything but off/false/no/0).
+func (c ComponentsSection) PacksOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.Packs)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // ReconcileOn reports whether the runners act on desired state (anything but

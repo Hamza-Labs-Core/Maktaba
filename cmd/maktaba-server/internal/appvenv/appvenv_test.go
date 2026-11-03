@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"testing"
@@ -266,6 +267,37 @@ func TestRunTakesTheHomesWheelhouseFirst(t *testing.T) {
 	}
 	if e := envOf(cs[2]); e["PIP_NO_INDEX"] != "" || e["PIP_FIND_LINKS"] != wh {
 		t.Fatalf("the second build: %v", e)
+	}
+}
+
+// Story 51.16: a pack's wheels alone (Offline: never PyPI, a failure is final), every
+// wheelhouse as a file URL (a path with a space stays one), and NoExtras asks for none.
+func TestRunOfflineFromPacksAndNoExtras(t *testing.T) {
+	payload := fakePayload(t, "wheels")
+	dir := filepath.Join(t.TempDir(), "Application Support")
+	ml, yt := filepath.Join(dir, "ml", "wheels"), filepath.Join(dir, "yt", "wheels")
+	s := spec(payload)
+	s.Offline, s.Wheelhouse, s.Wheelhouses, s.NoExtras = true, ml, []string{yt}, true
+	if _, err := Run(context.Background(), s, nil); err == nil {
+		t.Fatal("an offline build that lacks a package went on with PyPI")
+	}
+	cs := calls(t, payload)
+	if len(cs) != 2 {
+		t.Fatalf("%d calls, want the check and the packs' build alone", len(cs))
+	}
+	env := map[string]string{}
+	for _, kv := range cs[1].Env {
+		k, v, _ := strings.Cut(kv, "=")
+		env[strings.ToUpper(k)] = v
+	}
+	links := strings.Fields(env["PIP_FIND_LINKS"])
+	if env["PIP_NO_INDEX"] != "1" || len(links) != 2 || !strings.HasPrefix(links[0], "file://") ||
+		!strings.Contains(links[0], "Application%20Support") || !strings.HasSuffix(links[1], "/yt/wheels") {
+		t.Fatalf("the offline build's pip: %v", env)
+	}
+	i := slices.Index(cs[1].Args, "--extras")
+	if i < 0 || i == len(cs[1].Args)-1 || cs[1].Args[i+1] != "" {
+		t.Fatalf("NoExtras: %v", cs[1].Args)
 	}
 }
 
