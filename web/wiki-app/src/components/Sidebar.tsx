@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BookMarked,
   ChevronRight,
+  CircleDot,
   Database,
   ExternalLink,
   FileText,
@@ -16,7 +17,6 @@ import {
   Search,
   Sparkles,
   Sun,
-  Zap,
 } from 'lucide-react';
 import {
   KeyboardEvent,
@@ -27,10 +27,11 @@ import {
 } from 'react';
 import type { EntryType, WikiBundle, WikiEntry } from '@/types/wiki';
 import {
+  GITHUB_ISSUES,
   GITHUB_REPO,
-  LINEAR_PROJECT,
   PENPOT_LINK,
   PHASE_INFO,
+  PHASES,
 } from '@/lib/labels';
 
 interface Props {
@@ -124,7 +125,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto p-2 text-[13px]">
         {/* External */}
         <Section heading="External">
-          <ExternalRow href={LINEAR_PROJECT} icon={<Zap className="h-3.5 w-3.5" />} label="Linear" hint="project" />
+          <ExternalRow href={GITHUB_ISSUES} icon={<CircleDot className="h-3.5 w-3.5" />} label="Issues · المشكلات" hint="GitHub" />
           <ExternalRow href={PENPOT_LINK} icon={<Sparkles className="h-3.5 w-3.5" />} label="Penpot" hint="design" />
           <ExternalRow href={GITHUB_REPO} icon={<Github className="h-3.5 w-3.5" />} label="GitHub" hint="repo" />
         </Section>
@@ -135,7 +136,7 @@ export function Sidebar({
         </Section>
 
         {/* Phases & epics */}
-        {[1, 2, 3, 4].map((ph) => {
+        {PHASES.map((ph) => {
           const phaseEpics = phases.get(ph);
           if (!phaseEpics || !phaseEpics.length) return null;
           const phaseStoryCount = phaseEpics.reduce(
@@ -143,7 +144,17 @@ export function Sidebar({
             0,
           );
           return (
-            <Section heading={PHASE_INFO[ph].title} key={ph}>
+            <Section
+              heading={
+                <>
+                  {PHASE_INFO[ph].title}{' '}
+                  <span lang="ar" dir="rtl" className="normal-case tracking-normal">
+                    {PHASE_INFO[ph].titleAr}
+                  </span>
+                </>
+              }
+              key={ph}
+            >
               <CollapsibleGroup
                 label={`${phaseEpics.length} epics`}
                 count={phaseStoryCount}
@@ -237,7 +248,7 @@ function Section({
   heading,
   children,
 }: {
-  heading?: string;
+  heading?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (

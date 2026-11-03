@@ -72,6 +72,10 @@ for code that is not built from Maktaba's own commit.
 - Maktaba Cloud (`cloud/`) already has accounts, a billing package (`cloud/internal/billing/`),
   a webhook handler, plans, metering, a licence issuer (`cloud/internal/license/issuer.go`) and entitlements. Homes reach
   it through the cloud link (`maktaba-cloudlink`). Epic 50 makes it highly available.
+  **The store uses none of it** (decided 2026-11-03, README §6.0): it has its own accounts,
+  database, deploy, entitlement signing and payments on Cloudflare, so cloud accounts,
+  billing, the licence issuer and the cloud link are listed here only as what the store
+  stops depending on.
 - Domains (standing rule): **maktaba.tv** is everything users touch; **maktaba.dev** is the
   developer wiki, source and security.txt; maktaba.app is not ours.
 

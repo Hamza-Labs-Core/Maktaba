@@ -1,7 +1,9 @@
 # Deploys maktaba.dev, the developer portal (web/packages/devportal), to Cloudflare Workers.
 #
-# On a push to main that changes the portal, the wiki or a doc it publishes, and by hand
-# (Actions → Deploy maktaba.dev → Run workflow). Pull requests never deploy: ci.yml's
+# On a push to main that changes the portal or a doc it publishes, by hand (Actions →
+# Deploy maktaba.dev → Run workflow), and monthly: each build renders security.txt with an
+# Expires 11 months after the build day (api/internal/security/disclosure.go,
+# ExpiryMonths), so the monthly deploy keeps it always 10 to 11 months ahead. Pull requests never deploy: ci.yml's
 # devportal job builds and tests them. The deploy runs only after this run's own build,
 # tests and public-safety scan pass, and deploys the dist/ that build uploaded.
 #
@@ -18,16 +20,17 @@ on:
     # the devportal filter of .github/ci-paths.yml: what the site is built from
     paths:
       - 'web/packages/devportal/**'
-      - 'web/wiki-app/**'
-      - 'specs/epics/54-plugins/**'
+      - 'docs/developers/**'
       - 'CHANGELOG.md'
-      - 'specs/diagrams/**'
       - 'shared/api/openapi.json'
       - 'api/internal/security/disclosure.go'
       - 'web/public/icons/**'
       - '.github/workflows/_devportal.yml'
       - '.github/workflows/devportal-deploy.yml'
   workflow_dispatch:
+  # the 1st of each month, 06:17 UTC: security.txt's Expires rolls forward
+  schedule:
+    - cron: '17 6 1 * *'
 
 permissions:
   contents: read

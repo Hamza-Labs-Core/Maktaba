@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -32,6 +33,27 @@ func TestSecurityTxtIsPublic(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Contact:") {
 		t.Fatal("missing Contact:")
+	}
+}
+
+// The served Expires is rendered per request: ahead of now and under a year, whenever
+// the API started.
+func TestSecurityTxtExpiresAhead(t *testing.T) {
+	_, r := newRouter(t)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/.well-known/security.txt", nil))
+	var exp time.Time
+	for _, line := range strings.Split(rec.Body.String(), "\n") {
+		if v, ok := strings.CutPrefix(line, "Expires: "); ok {
+			var err error
+			if exp, err = time.Parse(time.RFC3339, v); err != nil {
+				t.Fatalf("Expires %q: %v", v, err)
+			}
+		}
+	}
+	now := time.Now()
+	if !exp.After(now) || !exp.Before(now.AddDate(1, 0, 0)) {
+		t.Fatalf("Expires %v: want ahead of now and under a year", exp)
 	}
 }
 

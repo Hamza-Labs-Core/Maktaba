@@ -71,7 +71,7 @@ export function buildBundle(
         merged.set(e.id, { ...e });
         continue;
       }
-      // Merge: prefer richer content, union arrays, prefer non-null linear.
+      // Merge: prefer richer content, union arrays.
       if ((e.content?.length || 0) > (cur.content?.length || 0))
         cur.content = e.content;
       cur.related = Array.from(
@@ -79,7 +79,6 @@ export function buildBundle(
       );
       cur.tags = Array.from(new Set([...(cur.tags || []), ...(e.tags || [])]));
       cur.files = { ...(e.files || {}), ...(cur.files || {}) };
-      if (!cur.linear && e.linear) cur.linear = e.linear;
     }
   };
   add(primary.entries);

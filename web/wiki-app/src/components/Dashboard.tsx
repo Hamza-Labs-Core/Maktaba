@@ -1,10 +1,11 @@
 import { Link } from '@tanstack/react-router';
-import { ExternalLink, Github, Sparkles, Zap } from 'lucide-react';
+import { CircleDot, ExternalLink, Github, Sparkles } from 'lucide-react';
 import {
+  GITHUB_ISSUES,
   GITHUB_REPO,
-  LINEAR_PROJECT,
   PENPOT_LINK,
   PHASE_INFO,
+  PHASES,
 } from '@/lib/labels';
 import type { WikiBundle } from '@/types/wiki';
 
@@ -17,7 +18,9 @@ export function Dashboard({ bundle }: Props) {
   const epics = bundle.byType.get('epic') || [];
   const totalStories = c.story || 0;
 
-  const phaseStoryCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0 };
+  const phaseStoryCounts: Record<number, number> = Object.fromEntries(
+    PHASES.map((ph) => [ph, 0]),
+  );
   for (const e of epics) {
     const ph = e.phase ?? 0;
     if (phaseStoryCounts[ph] !== undefined) {
@@ -46,8 +49,11 @@ export function Dashboard({ bundle }: Props) {
           {bundle.meta.description}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <QuickLink href={LINEAR_PROJECT} icon={<Zap className="h-3 w-3" />}>
-            Linear board
+          <QuickLink href={GITHUB_ISSUES} icon={<CircleDot className="h-3 w-3" />}>
+            GitHub issues ·{' '}
+            <span lang="ar" dir="rtl">
+              مشكلات GitHub
+            </span>
           </QuickLink>
           <QuickLink href={GITHUB_REPO} icon={<Github className="h-3 w-3" />}>
             GitHub repo
@@ -83,7 +89,7 @@ export function Dashboard({ bundle }: Props) {
           Phases
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map((ph) => {
+          {PHASES.map((ph) => {
             const count = phaseStoryCounts[ph];
             const pct = totalStories ? Math.round((count / totalStories) * 100) : 0;
             const lbl = PHASE_INFO[ph];
@@ -95,6 +101,9 @@ export function Dashboard({ bundle }: Props) {
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-semibold text-slate-900 dark:text-slate-100 text-[13.5px]">
                     {lbl.title}
+                    <span lang="ar" dir="rtl" className="block font-normal text-[12px] text-slate-600 dark:text-slate-300">
+                      {lbl.titleAr}
+                    </span>
                   </span>
                   <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
                     {count} stories
@@ -103,6 +112,9 @@ export function Dashboard({ bundle }: Props) {
                 <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2 min-h-[34px]">
                   {lbl.sub}
                 </p>
+                <p lang="ar" dir="rtl" className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
+                  {lbl.subAr}
+                </p>
                 <div className="mt-2 h-1.5 bg-slate-100 dark:bg-slate-800 rounded overflow-hidden">
                   <div
                     className="h-full bg-gradient-to-r from-brand-500 to-violet-500"
@@ -110,7 +122,9 @@ export function Dashboard({ bundle }: Props) {
                   />
                 </div>
                 <div className="mt-2 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                  <span>{lbl.range}</span>
+                  <span>
+                    {lbl.range} · <span lang="ar" dir="rtl">{lbl.rangeAr}</span>
+                  </span>
                   <span>{pct}% of stories</span>
                 </div>
               </div>

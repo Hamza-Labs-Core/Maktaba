@@ -1,0 +1,1622 @@
+{
+  "version": "2.0",
+  "part": "wiki-epics-37-45.json",
+  "entries": [
+    {
+      "id": "story-40.1",
+      "type": "story",
+      "title": "Failure classes and parking",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "Failure classes and parking. migration 0143; `causes.py` new codes; `engine/failure_classes.py` (table + overrides); `rules.queue_health` + schema.json; `mark_failed_or_retry` decides by class on an engine connection (park / retry within the class budget / fail); `on_failure` records class and logs `parked`; the claim clears `parked_on`; job events carry `class`. **AC:** a `model_unavailable` failure with the model unhealthy parks with attempts unchanged; with the model healthy it retries as `unknown`; `nas_timeout` retries up to 5; `ffmpeg_decode` fails at once; an override row changes a clas",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "failure-classes-and-parking",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-40.2",
+      "type": "story",
+      "title": "Dependency watchers",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "Dependency watchers. the leader loop: model, share and disk probes, the shm cooldown, `dependency_health`, release of parked jobs when healthy, the `park_max_hours` backstop. **AC:** a parked job is released within one interval of its dependency turning healthy; a down dependency releases nothing; only one worker probes.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "dependency-watchers",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-40.3",
+      "type": "story",
+      "title": "Missing files at the scan, access checks, requested re-downloads",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "Missing files at the scan, access checks, requested re-downloads. `file_missing` → `dependency:share:<root>` when the root is down; the scanner's post-scan check (heal and requeue, or confirm); the `access_check` stage; `repair_broken` takes `item_requests` (`redownload`) even when automatic repair is off. **AC:** a file back on the share is requeued by the next scan; a confirmed one gets `missing_confirmed_at`; a readable access check requeues the video's failures.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "missing-files-at-the-scan-access-checks-requested-re-downloa",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-40.4",
+      "type": "story",
+      "title": "API: tile health and the failures list",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "API: tile health and the failures list. `QueueSummary.health {state, failed_window, finished_window, failure_share, waiting[], needs_you, failing?}`; `GET /api/queues/failures` (filters, keyset paging, facets); `POST /api/queues/failures/actions` (`retry`, `ignore`, `unignore`, `rescan`, `remove`, `redownload`, `fix_path`, `path_map`, `check_access`) with audit; ignored items leave every count. **AC:** handler tests per action (admin only, audited, counts), a red tile only for a dominant signature over the share.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health",
+        "ep-get-queues"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /queues"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "api-tile-health-and-the-failures-list",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-40.5",
+      "type": "story",
+      "title": "Web: tiles and the failures page",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "Web: tiles and the failures page. `QueueCard` states from `health` (Failing, Waiting, OK) with the Needs-you badge and links; `/queue/failures` with URL filters, groups, selection, bulk and per-item actions, the fix-path / path-map / access dialogs, the Ignored filter; en + ar strings. **AC:** vitest per state and action, a11y.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-tiles-and-the-failures-page",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-40.6",
+      "type": "story",
+      "title": "Move today's failures",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "Move today's failures. a one-time backfill on the leader (`app_settings` key `queue_health.backfill`): every open failed row without a class is classified; dependency/resource classes get a new parked row (released at once by the watcher if the dependency is up), transient ones under budget are queued again, the rest keep their failed row with the class (Needs you). **AC:** model failures become Waiting, missing files Needs you, fingerprint partial reads retried; idempotent.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "move-today-s-failures",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-41.1",
+      "type": "story",
+      "title": "This spec",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "This spec. the audit, the information architecture, the URL scheme, the stories",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "this-spec",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-41.2",
+      "type": "story",
+      "title": "Help area",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "Help area. `/help` index with search (both languages, Arabic letter forms and diacritics folded), topic pages with a contents list, anchors that scroll and highlight, a copy-link button per section, phone layout, RTL; \"Help\" in the nav",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help-area",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-41.3",
+      "type": "story",
+      "title": "Links and registry",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "Links and registry. `helpLink`, the registry, `PageHelp` next to every page title, rules field links, queue tile / cause / waiting reason / item history / transcription links",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "links-and-registry",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-41.4",
+      "type": "story",
+      "title": "Coverage tests",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "Coverage tests. the six tests above, in the web, pipeline and API suites",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "coverage-tests",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-41.5",
+      "type": "story",
+      "title": "Content",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "Content. the 33 topics in English and Arabic",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "content",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-41.6",
+      "type": "story",
+      "title": "Queue-health classes",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "Queue-health classes. link the queue-health epic's failure classes (\"Failing items\") through `failureClassHelp()` once it is on main",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "queue-health-classes",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.1",
+      "type": "story",
+      "title": "Apple Player and Remote",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Apple Player and Remote. `apps/apple` (SwiftUI, `MaktabaKit`): home by address, sign-in, libraries, a video, watching (stream sessions, progress), needs attention with Retry. iPhone (iPhone Duo), iPad, Mac; Xcode automatic signing. (Started.)",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "apple-player-and-remote",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.2",
+      "type": "story",
+      "title": "Home picker",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Home picker. mDNS (Bonjour on Apple, NSD on Android), by address, QR; several homes. (Server and web built, 2026-10-27: TXT `home`/`id`/`name`/`tls`/`path`, `GET /api/discovery/home`, the `maktaba://connect` link and the Connect an app page; see Contract. Apps: tracks A and D.) Apple (Player, Remote; iPhone, iPad, Mac): on this network (`role=home` only, deduped by TXT `home`, `id`, host:port; web `path`), recent homes (rename, remove), by address or a pasted `maktaba://connect` link (checked with `/api/discovery/home`, `/api/system/version` on older homes), a scanned QR (iPhone, iPad); the `m",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server",
+        "ep-get-system-version"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /system/version"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "home-picker",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.3",
+      "type": "story",
+      "title": "Android Player and Remote",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Android Player and Remote. Compose, phone / foldable / tablet, sharing with Android TV. (Started: `apps/android`, the Player and the Remote for each form factor on a shared `core`.)",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "android-player-and-remote",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.4",
+      "type": "story",
+      "title": "Desktop Player on Windows and Linux",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Desktop Player on Windows and Linux. Compose for Desktop, release legs, `latest-player.json`. (Built, 2026-10-27: `apps/desktop-player`, on `apps/android/client`, the plain-Kotlin part of the Android core moved into a JVM module that the Android apps, Android TV and the desktop player all build on (the API client, sign-in by password and code, token sealing, the picker's rules, approving a sign-in, the stream's authorization). The picker (JmDNS, saved homes, address or `maktaba://connect` link, confirmed first), sign-in, libraries and search, watching (JavaFX through a loopback proxy that adds",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "desktop-player-on-windows-and-linux",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.5",
+      "type": "story",
+      "title": "Web editions",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Web editions. `VITE_MAKTABA_EDITION`, lazy server routes, \"Manage\" in `full`. (Built, 2026-10-27: `web/src/lib/edition.ts`; `pnpm build` is `full`, unchanged for the server; `pnpm build:player` and `build:remote` (`vite build --mode player|remote`, from `web/.env.player|remote`); an unknown value fails the build. The server routes live in `web/src/serverRoutes.tsx`, each page its own lazy chunk; the player build leaves the module out and `vite.config.ts` fails it if any server page code is in the bundle (CI: `_unit.yml`). The player hides the admin links on viewer pages too (Manage libraries, ",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server",
+        "ep-get-system-version"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /system/version"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-editions",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.6",
+      "type": "story",
+      "title": "Sign-in by code",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Sign-in by code. endpoints, the approve screen, mobile, desktop and TV. (Server and web built, 2026-10-27: what asks recorded from `X-Maktaba-Client`, `GET /api/pairing/device/{code}`, `verify_url`, sessions labelled by app, the `/pair` page shows the device and needs an explicit Approve; role tests in `handlers/discovery/device42_test.go`. See Contract.) Apple: sign-in offers a password or a code (large, with a QR of `verify_url`, renewed on expiry); \"Approve a sign-in\" in the Remote's and the Player's account menus (type or scan the code, see what asks, approve explicitly). The TV apps: stor",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "sign-in-by-code",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.7",
+      "type": "story",
+      "title": "Linked accounts and the cloud",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Linked accounts and the cloud. linking (home Account page, `home_user_links`), the cloud's home assertion, `POST /api/auth/cloud`, the app's cloud sign-in and home list, both addresses per home (local and relay). (Built, 2026-10-27. The home's and the cloud's API, with the role tests: PR 327 (`api/internal/handlers/auth/cloud.go`, `cloud_pg_test.go`; `cloud/internal/handlers/homes`). *Linking:* Account → Linked accounts (`web/src/pages/Profile/CloudLink.tsx`): the home's nonce, then `GET {cloud_api}/v1/homes/{id}/link`, which redirects to the cloud web's own `/link-home` (never elsewhere): sig",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server",
+        "entity-users"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "users"
+      ],
+      "metadata": {
+        "slug": "linked-accounts-and-the-cloud",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.8",
+      "type": "story",
+      "title": "Tablet and foldable",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Tablet and foldable. two-pane and fold-aware layouts, their own listings. (Built, 2026-10-27. Android: `core/layout/Panes.kt` (one pane under 600 dp, the list beside the page from 600 dp, tabletop and book split at the hinge, the book's halves mirrored right to left), used by the Player's browser and every Remote screen; `PanesTest`, instrumented `HingeSplitTest`; flavours `phone`, `foldable`, `tablet`, removed 2026-11-01 for one Google Play package per app). Apple: the Player's `NavigationSplitView` (iPad, Mac; `ArrangementView` half folded); the Remote's queue shows the stages beside a stage",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tablet-and-foldable",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.9",
+      "type": "story",
+      "title": "Cloud web player and remote",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "Cloud web player and remote. the cloud serves the SPA editions for a connected home. (Built, 2026-10-27. The relay serves the web app's player and remote editions on each claimed home's own relay address, `https://<slug>.<relay>/play/` and `/manage/` (`cloud/internal/handlers/relay/editions.go`, `relay.editions_dir`; the image builds them in a web stage: `pnpm build:player:cloud`, `build:remote:cloud`, Vite's `--base`, the router's `basename` from `web/src/lib/basePath.ts`, no service worker under a base). Every other path on that host (`/api`, `/stream/`, the home's own UI at the root) goes o",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cloud-web-player-and-remote",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-42.10",
+      "type": "story",
+      "title": "TV",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "TV. the home picker and sign-in by code on tvOS and Android TV. (Built, 2026-10-27.) *Apple TV* (`apps/tv/tvos`, on MaktabaKit's `AppSession`, `HomeBrowser`, `CodeSignIn`; TV words and choices in `MaktabaKit/TVStart.swift`): Recent homes (hold Select: Rename, Remove), On this network (`role=home` only, one row per TXT `home`), By address or a pasted `maktaba://connect` link (checked with `/api/discovery/home`); the code first (large, a QR of `verify_url`, a new code on 410 or expiry), Username & password as the home allows; the `maktaba` URL scheme asks first (Cancel focused). English and Arab",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-43.1",
+      "type": "story",
+      "title": "pgvector in every Postgres we run",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "pgvector in every Postgres we run. the app bundles (mac, linux, windows), CI and compose create `vector`; checks prove it",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "pgvector-in-every-postgres-we-run",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-43.2",
+      "type": "story",
+      "title": "`segment_embeddings` and the Postgres backend",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "`segment_embeddings` and the Postgres backend. migration 0152; `semantic.py` on Postgres behind the same interface; index stage, `chapter_infer`, gRPC search on it; tests on a pgvector Postgres",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "segment-embeddings-and-the-postgres-backend",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-43.3",
+      "type": "story",
+      "title": "Copy the existing vectors",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "Copy the existing vectors. resumable copy, index built after, recall check, switch, Chroma folder deleted a start later",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "copy-the-existing-vectors",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-43.4",
+      "type": "story",
+      "title": "Machines and switchover",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "Machines and switchover. `segment_embeddings` excluded from copies; a new home re-indexes what it lacks",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "machines-and-switchover",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-43.5",
+      "type": "story",
+      "title": "Chroma retired",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "Chroma retired. `chromadb` out of the pipeline's deps and venv checks, compose/CI services, env vars, doctor, devmigrate/adopt/uninstall references, docs",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "chroma-retired",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-43.6",
+      "type": "story",
+      "title": "Measured on the home Mac",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "Measured on the home Mac. p50/p95 of the semantic leg at 13.9 M rows, disk before/after, recall vs Chroma, in the PR",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "measured-on-the-home-mac",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.1",
+      "type": "story",
+      "title": "Schema (slot 0158)",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "Schema (slot 0158): `watch_sessions` columns, `tv_watch_sessions`, `api_usage_daily`, `api_usage_people_daily`, `hdhr_tuner_leases` writer columns",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "schema-slot-0158",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.2",
+      "type": "story",
+      "title": "`X-Maktaba-Client`: the middleware",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "`X-Maktaba-Client`: the middleware; every app sends it (web, desktop and mobile shells, Apple apps, Android apps, Android TV, tvOS)",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "x-maktaba-client-the-middleware",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.3",
+      "type": "story",
+      "title": "Plays from the stream session (`/progress`, close, reaper)",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "Plays from the stream session (`/progress`, close, reaper); the web's `/api/watch/*` calls removed; Android TV's labelled",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plays-from-the-stream-session-progress-close-reaper",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.4",
+      "type": "story",
+      "title": "Live TV viewings: the front door's tracker, the tuner's leases; remote TV read as is",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "Live TV viewings: the front door's tracker, the tuner's leases; remote TV read as is",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv-viewings-the-front-door-s-tracker-the-tuner-s-leases",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.5",
+      "type": "story",
+      "title": "API use per app: the counters, the minute flush, the retention, the Prometheus label",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "API use per app: the counters, the minute flush, the retention, the Prometheus label",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "api-use-per-app-the-counters-the-minute-flush-the-retention-",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.6",
+      "type": "story",
+      "title": "Analytics API over plays, viewings and app use (admin, role tests)",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "Analytics API over plays, viewings and app use (admin, role tests)",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "analytics-api-over-plays-viewings-and-app-use-admin-role-tes",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-44.7",
+      "type": "story",
+      "title": "The analytics page (tabs, filters, now, export), English and Arabic, help page",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "The analytics page (tabs, filters, now, export), English and Arabic, help page",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-analytics-page-tabs-filters-now-export-english-and-arabi",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.1",
+      "type": "story",
+      "title": "Path resolver",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Path resolver; the folder check through the path map. Role tests unchanged.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "path-resolver",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.2",
+      "type": "story",
+      "title": "`GET /api/libraries/manage`",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "`GET /api/libraries/manage`, conflicts, `GET /api/libraries/folders`, `impact`, `merge`, `empty-trash`; admin role tests for each.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "get-api-libraries-manage",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.3",
+      "type": "story",
+      "title": "Supervisor `/config/` (settings, validation, restart) and the API's `/api/server/*` proxy",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Supervisor `/config/` (settings, validation, restart) and the API's `/api/server/*` proxy; admin role tests; config round-trip tests (unknown keys kept).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "supervisor-config-settings-validation-restart-and-the-api-s-",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.4",
+      "type": "story",
+      "title": "Migration 0159",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Migration 0159; `summary`, pins, `home`, `hub`, the `/api/videos` sorts and filters; library-ACL role tests (a viewer never sees another library's videos in any row or count).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui",
+        "ep-get-videos"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "migration-0159",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.5",
+      "type": "story",
+      "title": "Web",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Web: Manage libraries page and dialogs; Storage & discovery settings.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.6",
+      "type": "story",
+      "title": "Web",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Web: Home, Libraries, library page, All videos, pinned navigation.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.7",
+      "type": "story",
+      "title": "Help (en/ar)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Help (en/ar), i18n, RTL check, browser verification on a branch stack (never the live database), and fixing the home's three duplicate libraries through the new Merge, by the owner.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help-en-ar",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.8",
+      "type": "story",
+      "title": "Mark watched / unwatched, one and many",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Mark watched / unwatched, one and many; watched ticks and progress bars on the grid.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "mark-watched-unwatched-one-and-many",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.9",
+      "type": "story",
+      "title": "Favorites (per user)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Favorites (per user): the route, the grid filter, the Home row, the button on the video page.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "favorites-per-user",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.10",
+      "type": "story",
+      "title": "Playlists (per user)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Playlists (per user): the routes, the Playlists pages, Add to playlist from the video page and from a selection.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "playlists-per-user",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.11",
+      "type": "story",
+      "title": "Facets and the grid's filters",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Facets and the grid's filters: the search box, Tag, Speaker and Language.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "facets-and-the-grid-s-filters",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.12",
+      "type": "story",
+      "title": "The A to Z jump bar (`letter=`, the first-character index)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "The A to Z jump bar (`letter=`, the first-character index).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-a-to-z-jump-bar-letter-the-first-character-index",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.13",
+      "type": "story",
+      "title": "Play all, Shuffle, Play from here, the queue and the player's Up next",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Play all, Shuffle, Play from here, the queue and the player's Up next.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "play-all-shuffle-play-from-here-the-queue-and-the-player-s-u",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.14",
+      "type": "story",
+      "title": "The video page's actions and series position (previous, next, progress)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "The video page's actions and series position (previous, next, progress).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-video-page-s-actions-and-series-position-previous-next-p",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.15",
+      "type": "story",
+      "title": "On Deck (Home and the library page)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "On Deck (Home and the library page).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "on-deck-home-and-the-library-page",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.16",
+      "type": "story",
+      "title": "Multi-select on the grid with the bulk actions",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Multi-select on the grid with the bulk actions.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "multi-select-on-the-grid-with-the-bulk-actions",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.17",
+      "type": "story",
+      "title": "Collections in the web",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Collections in the web: a Collections row and page per library and a page per collection, curated by admins (create, rename, add, remove, reorder, delete); smart collections as saved filters.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "collections-in-the-web",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.18",
+      "type": "story",
+      "title": "Recently Added grouped by series (\"12 new lessons in Tafsir\") on Home and the hub",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Recently Added grouped by series (\"12 new lessons in Tafsir\") on Home and the hub.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "recently-added-grouped-by-series-12-new-lessons-in-tafsir-on",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.19",
+      "type": "story",
+      "title": "Scrub thumbnails (trickplay)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Scrub thumbnails (trickplay): a sprite sheet and its index per video from the thumbnail stage, served by the API, shown over the player's progress bar.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "scrub-thumbnails-trickplay",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.20",
+      "type": "story",
+      "title": "Length and added-date filters (short / medium / long",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Length and added-date filters (short / medium / long; last week / month / year) and a resolution filter from `media_info`.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui",
+        "entity-media_info"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "media_info"
+      ],
+      "metadata": {
+        "slug": "length-and-added-date-filters-short-medium-long",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.21",
+      "type": "story",
+      "title": "A featured hero on Home",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "A featured hero on Home: the newest series, or a lesson an admin picks.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "a-featured-hero-on-home",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.22",
+      "type": "story",
+      "title": "Per-user star ratings, if favorites prove too coarse",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Per-user star ratings, if favorites prove too coarse.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "per-user-star-ratings-if-favorites-prove-too-coarse",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.23",
+      "type": "story",
+      "title": "Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low: each person signs in).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "profiles-with-a-pin-in-the-mac-app-s-window-and-parental-lim",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.24",
+      "type": "story",
+      "title": "A library's Series and Collections tabs",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "A library's Series and Collections tabs: the series with the user's progress, and one list of the library's collections, automatic (topic, clip) and curated, each kind labelled; an automatic collection's page; the old Collections page redirects to the tab.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "a-library-s-series-and-collections-tabs",
+        "inline": true
+      }
+    }
+  ]
+}

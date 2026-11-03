@@ -109,9 +109,9 @@ turning the component on is the decision (Epic 51).
 | File | Change |
 |---|---|
 | `shared/plugins/manifest.schema.json` | §1 fields, `x-trusted-only`. |
-| `api/internal/plugins/manifest/`, `plugind/src/manifest.rs`, `plugins/sdk/python/…/manifest.py`, `cloud/internal/store/manifest/` | Validators honour `x-trusted-only`. |
+| `api/internal/plugins/manifest/`, `plugind/src/manifest.rs`, `plugins/sdk/python/…/manifest.py`, `store/manifest/` (TypeScript, the same JSON schema) | Validators honour `x-trusted-only`. |
 | `api/internal/plugins/trusted.go` (new) | §2 check against `shared/go/releaseverify`. |
-| `cloud/internal/store/checks/c3a_trusted.go` (new) | §3. |
+| `store/checks/c3a_trusted.ts` (new) | §3. |
 | `web/src/pages/Plugins*`, `web/src/i18n/{en,ar}.json` | §4 "Built into Maktaba" and the sheet. |
 | `.github/workflows/` `plugins-trusted` job | T06. |
 

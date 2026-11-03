@@ -5,10 +5,10 @@
 > (components, desired and actual state, drain without lost work, signed packs, offline import),
 > [Epic 6](../06-job-queue/README.md) (the queue), [Epic 40](../40-queue-health/README.md)
 > (failure classes and parking), [Epic 53](../53-logs-errors-reports/README.md) (logs, health and
-> problem reports per component), [Epic 25](../25-cloud-relay/README.md) and
-> [Epic 50](../50-cloud-no-downtime/README.md) (Maktaba Cloud, accounts, no downtime),
-> [Epic 16](../16-subscriptions/README.md) (licences) and
-> [Epic 42](../42-apps-player-remote-server/README.md) (the apps and the Maktaba service admin).
+> problem reports per component), [Epic 16](../16-subscriptions/README.md) (the licence grace
+> rules, reused as numbers only) and
+> [Epic 42](../42-apps-player-remote-server/README.md) (the apps). The store does not build on
+> Epics 25 or 50: it is independent of Maktaba Cloud (§6.0).
 > **Research:** [research.md](research.md): the queue and extension code as it is, Jellyfin,
 > Plex, Home Assistant, Nextcloud, VS Code, Obsidian, Deno and WASI, Wasmtime, OS sandboxes,
 > marketplace payouts and store moderation, with sources.
@@ -75,8 +75,10 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
    (Epic 53).
 5. **A Maktaba store.** Developer accounts, submission, automated checks and human review,
    signing by the developer and by Maktaba, a revocation list homes honour, free and paid
-   plugins (the payment provider is chosen at Phase 3, §6.5), ratings and reports. Users
-   browse on maktaba.tv and in the web app; developers read docs on maktaba.dev.
+   plugins (the payment provider is chosen at Phase 3, §6.5), ratings and reports. **The store
+   is independent of Maktaba Cloud** (§6.0): its own accounts, database, deploy, hostname
+   (`plugins.maktaba.tv`) and payments, all on Cloudflare. Users browse there and in the web
+   app; developers read docs on maktaba.dev.
 6. **Offline still works.** A plugin installs from a file. A store-signed file installs like
    one from the store. An unsigned or developer-only file needs the admin's opt-in and is
    marked "Unreviewed" everywhere. The sandbox is the same either way.
@@ -452,25 +454,57 @@ supervisor's plugin role, and nightly:
 
 ## 6. The store
 
+### 6.0 Why the store is independent of Maktaba Cloud
+
+Decided 2026-11-03: the store has its own accounts and sign-in for developers and buyers, its
+own database and deploy, its own hostname and, if payments are added, its own payment setup.
+It shares no tables, sessions or cookies with the cloud and keeps working when the cloud is
+down. The reasons, in short (story 54.15 has them in full):
+
+- the people differ (developers, reviewers and buyers are not relay subscribers);
+- failures stay apart (a cloud outage never stops revocations, entitlements or installs, and a
+  store incident never touches the relay);
+- the money differs (third-party resale with an 85/15 split, payouts and refunds is not
+  Maktaba's own plan billing);
+- the store holds the online key every home trusts, safer behind its own MFA-only sign-in;
+- nothing shared means nothing to unwind if either side changes.
+
 ### 6.1 Where it lives
 
-- **Users** browse plugins on **maktaba.tv/plugins** (listing pages, ratings) and inside their
-  home's web app (Settings → Plugins → Browse), which shows only what fits their server version
-  and platform.
-- **Developers** read docs, the SDK and the API reference on **maktaba.dev/plugins**. Their
-  console (account, keys, submissions, payouts) is at **maktaba.tv/developers**, signed in with
-  a Maktaba Cloud account (Epic 25). maktaba.app is not ours and is never used.
-- **The store service** is a new part of Maktaba Cloud (`cloud/internal/store/`), on Epic 50's
-  two-node setup, with packages in its object storage and a CDN in front.
-- **Homes fetch** the catalog, packages and the revocation list from the store **through the
-  home server's own connection to Maktaba Cloud**. That is Maktaba's own code, not a plugin.
-  A home without the cloud link fetches the same signed files over plain HTTPS from
-  `store.maktaba.tv`; signatures, not the channel, are what it trusts.
+- **One hostname for the store: `plugins.maktaba.tv`.** It hosts the listing pages, buyer
+  accounts, the developer console, the store API, linking a home (`/link`) and the store-admin
+  and review pages (`/admin`). Developer docs, the SDK and the API reference stay on
+  **maktaba.dev/plugins**. maktaba.app is not ours and is never used.
+- **Public signed files on the Cloudflare CDN: `plugins-cdn.maktaba.tv`.** Packages, icons,
+  the catalog, the revocation list and `store-keys.json` from R2 through Cloudflare's cache;
+  paid packages through a small Worker that checks a signed URL. Both names are proxied by
+  Cloudflare.
+- **All on Cloudflare, no VPS ever:** Workers for the console, API and accounts; D1 for
+  accounts, listings, versions, reviews and entitlements; Durable Objects for rate limits,
+  lockouts and pairing codes; R2 for files; Queues and Cron Triggers for background work;
+  upload checks in a Worker plus an isolated runner (Cloudflare Containers, or a CI runner
+  with no secrets and no network); payment webhooks to a Worker. Deployed by GitHub Actions
+  with the org's Cloudflare secrets. The limits (D1 size and writes, Worker CPU and body size,
+  Containers' maturity), backups (D1 Time Travel plus a nightly export to R2) and a cost
+  estimate (about $5 a month at launch, about $60 at 50,000 homes) are in story 54.15.
+- **Store accounts** are the store's own: email verification; MFA required for developers
+  (TOTP or passkeys) and offered to buyers; passkeys required for reviewers and store admins;
+  re-authentication for sensitive actions; roles enforced by the store API with role tests.
+- **Store admin and review** are on the store host (`plugins.maktaba.tv/admin`), not on
+  `admin.maktaba.tv`, which is the cloud's operator console: putting them there would tie the
+  store to cloud accounts and cloud uptime. Sign-in is the store's own; no Cloudflare Access.
+- **Users** browse plugins on `plugins.maktaba.tv` and inside their home's web app
+  (Settings → Plugins → Browse), which shows only what fits their server version and platform.
+- **Homes fetch** the catalog, packages and the revocation list **straight from
+  `plugins-cdn.maktaba.tv` over HTTPS**, never through Maktaba Cloud. That is Maktaba's own
+  code, not a plugin; signatures, not the channel, are what it trusts. A home **links to a
+  store account** only to buy paid plugins and to rate, with a device code like the TV
+  pairing (54.15 §5); its entitlements are signed by the store and checked offline (§6.5).
 
 ### 6.2 Developer accounts and submission
 
-1. A developer signs up with a Maktaba Cloud account, verifies email, turns on two-factor
-   sign-in (required to publish), accepts the developer agreement and chooses an **id prefix**
+1. A developer signs up for a **store account** (not a Maktaba Cloud account), verifies email,
+   turns on MFA (TOTP or a passkey, required to publish), accepts the developer agreement and chooses an **id prefix**
    (`dev.example`), proven by a DNS TXT record or reserved under `tv.maktaba.community.<name>`.
 2. The developer makes a signing key with the SDK (`mkp keys new`, Ed25519; the private key
    never leaves their machine) and registers its public half. A key can be rotated; old
@@ -518,8 +552,9 @@ supervisor's plugin role, and nightly:
   2026-11-03). It is stored per plugin id in `plugin_keep_off`, outside the install
   row, so removing and reinstalling the plugin does not clear it. A store `disable` and a
   keep-off can both apply; turning keep-off off never undoes a store `disable`.
-- **How fast:** a home linked to the cloud gets a push over the cloud link within 5 minutes
-  and checks the list every hour; a home without the link checks every hour over HTTPS. Each
+- **How fast:** every home, linked or not, polls a tiny signed `revoked-head.json` on the CDN
+  every 5 minutes and fetches the full list when it changed (and every hour regardless), so a
+  `disable` reaches it within about 7 minutes without any Maktaba Cloud connection. Each
   server release also carries the revocation list as of its build, so an offline home that
   updates gets it.
 - **Developer key compromise:** the store revokes the key; every version signed only by it
@@ -528,7 +563,7 @@ supervisor's plugin role, and nightly:
 
 ### 6.4 Offline install from a file
 
-- **Store-signed file** (downloaded from maktaba.tv, carried on a USB stick): installs like
+- **Store-signed file** (downloaded from `plugins.maktaba.tv`, carried on a USB stick): installs like
   from the store, offline. The install dialog shows the age of the revocation list the home
   has ("Last checked for withdrawn plugins: 12 days ago").
 - **Developer-signed or unsigned file**: refused unless an admin has turned on **Allow
@@ -545,25 +580,30 @@ supervisor's plugin role, and nightly:
 Decisions of 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
 any Stripe-owned service such as Lemon Squeezy); Maktaba keeps **15 %** of each paid plugin
 sale and the developer gets **85 %**; publishing free plugins is free, selling needs a
-**one-time $25** developer fee.
+**one-time $25** developer fee. Payments belong to the store, not to Maktaba Cloud: its own
+provider account and seller-of-record choice, separate from cloud billing, and payouts, tax
+records and refunds owned by the store.
 
 - **Payment processor and seller of record: open, decided at Phase 3.** The store resells
   third-party products, which many sellers of record restrict (Paddle among them), so every
-  candidate must confirm in writing that it allows plugin resale before it is chosen.
-  Candidates:
-  1. **Paddle as seller of record**, and Maktaba pays developers their 85 % monthly;
-  2. **Maktaba as seller** with a marketplace payment provider such as **Adyen for
-     Platforms**, and Maktaba files the VAT and sales tax;
-  3. **Developers sell directly** on their own checkout, and Maktaba verifies their licence
-     keys offline (the buyer pays the developer; Maktaba invoices its 15 %).
+  candidate must confirm in writing that it allows plugin resale, and that it does not run on
+  Stripe, before it is chosen. Models and non-Stripe candidates:
+  1. **A merchant of record sells for the store** (Paddle, FastSpring, 2Checkout), and the
+     store pays developers their 85 % monthly;
+  2. **The store as seller** with a marketplace payment provider (Adyen for Platforms, PayPal's
+     marketplace platform, Checkout.com; Tap Payments, PayTabs or Paymob for the Gulf and
+     Egypt), and the store files the VAT and sales tax;
+  3. **Developers sell directly** on their own checkout, and the store verifies their licence
+     keys offline (the buyer pays the developer; the store invoices its 15 %).
 
   Story 54.19 is written against a `PaymentProvider` interface so any of the three fits.
 - **Split:** developer 85 %, Maktaba 15 % of the price.
 - **Prices:** one-time or yearly. Refunds within 14 days, no questions; a refund revokes the
   entitlement at the next refresh.
-- **Entitlement:** the cloud's licence issuer (`cloud/internal/license/issuer.go`) signs a
-  plugin entitlement bound to the home id (31 days, refreshed daily, the licence store's grace
-  rules). The home checks it offline. A lapsed entitlement holds the plugin (Epic 51 *Waiting*
+- **Entitlement:** the store signs a plugin entitlement with its own entitlement key (listed
+  in `store-keys.json` under the plugin root), bound to the store's home id and the home's
+  store key (31 days, refreshed daily, the same grace numbers as Epic 16's licences). The home
+  checks it offline and never calls Maktaba Cloud for it. A lapsed entitlement holds the plugin (Epic 51 *Waiting*
   `licence_missing`), never deletes data. With candidate 3 the developer's licence key is
   checked instead, offline, against a public key the developer registered with the store.
 - **Plugins never handle payment.** No capability touches money; a plugin cannot show a
@@ -571,15 +611,15 @@ sale and the developer gets **85 %**; publishing free plugins is free, selling n
 
 ### 6.6 Ratings and reports
 
-- One rating (1–5 stars, optional text in any language) per Maktaba account per plugin, only
-  from an admin of a home that has the plugin installed for at least 24 hours (the home
-  confirms it through the cloud link). Developers can reply once per review.
+- One rating (1–5 stars, optional text in any language) per store account per plugin, only
+  from an account linked to a home that has had the plugin installed for at least 24 hours
+  (the home confirms it with its signed `seen` report). Developers can reply once per review.
 - **Report** a plugin from the home or the listing: reasons from a fixed list (malware, data
   misuse, does not work, misleading, offensive, copyright), optional details. Malware and data
-  misuse reports page the store on-call (Epic 50.12) and are triaged within 24 hours; others
-  within 2 business days.
-- Moderation is done by the **Maktaba service admin** with a new `store_reviewer` role (Epic
-  42's service admin, not home admins), every action audited.
+  misuse reports alert the store on-call (the store's `store_admin`s) and are triaged within
+  24 hours; others within 2 business days.
+- Moderation is done by store accounts with the store-side `store_reviewer` role (not home
+  admins and not cloud accounts), every action audited.
 
 ## 7. Requirements
 
@@ -598,10 +638,10 @@ sale and the developer gets **85 %**; publishing free plugins is free, selling n
 | F9 | A crashing plugin fails only its jobs; the circuit breaker holds it; the host restarts without losing jobs. |
 | F10 | Each plugin has its own logs (Epic 53), health and counters on the Plugins page. |
 | F11 | Plugins install from a file offline; files without a store signature need the admin opt-in and show "Unreviewed". |
-| F12 | The store has developer accounts with 2FA, signing keys, submission, automated checks, human review, countersigning, a signed catalog and a signed revocation list. |
-| F13 | Homes fetch the catalog, packages and revocation list through the home server, honour `disable` revocations within one fetch, and refuse expired or rolled-back lists. |
-| F14 | Paid plugins (Phase 3) are bought on maktaba.tv through a payment provider chosen at Phase 3 (never Stripe); the developer gets 85 %, Maktaba 15 %; the home checks a signed entitlement offline. |
-| F15 | Ratings and reports, with moderation by the Maktaba service admin. |
+| F12 | The store is a service independent of Maktaba Cloud (own accounts, database, deploy and hostname `plugins.maktaba.tv`, all on Cloudflare, no VPS), with store accounts (email verification, MFA required for developers, passkeys for reviewers and store admins, re-auth for sensitive actions, server-side roles), signing keys per developer account, submission, automated checks, human review, countersigning, a signed catalog and a signed revocation list. |
+| F13 | Homes fetch the catalog, packages and revocation list through the home server, straight from the store's CDN and never through Maktaba Cloud, honour `disable` revocations within one fetch, and refuse expired or rolled-back lists. |
+| F14 | Paid plugins (Phase 3) are bought on `plugins.maktaba.tv` by a home linked to a store account, through the store's own payment provider chosen at Phase 3 (never Stripe, separate from cloud billing); the developer gets 85 %, Maktaba 15 %; the home checks a store-signed entitlement offline. |
+| F15 | Ratings and reports, with moderation by store reviewers. |
 | F16 | All `/api/plugins/*` routes are admin-only with role tests; viewers see plugin outputs and the panels of installed plugins, only for subjects their library access allows. |
 | F17 | SDK, templates and a local harness with a mock plugin API for Rust, JS/TS, Python and TinyGo; docs on maktaba.dev. |
 | F18 | Every Maktaba string added by this epic ships in English and Arabic on every platform in the same PR. |
@@ -625,7 +665,7 @@ sale and the developer gets **85 %**; publishing free plugins is free, selling n
 | N7 | A runaway job stopped after its deadline | ≤ deadline + 200 ms | hostile tests |
 | N8 | Successful network connections from the host or a plugin | **0** in every run on every OS | escape probes + canary |
 | N9 | Disable → no plugin job claimed | ≤ 2 s; drained ≤ min(timeout, 120 s); 0 lost jobs over 100 flips under load | `components-chaos` gains plugin stages |
-| N10 | Revocation `disable` reaches a linked home | ≤ 5 min (push), ≤ 65 min worst case (poll) | store integration test with a fake clock |
+| N10 | Revocation `disable` reaches a home (linked or not) | ≤ 7 min (5-minute head poll + 60 s edge cache); ≤ 65 min if the head poll fails | home integration test with a fake clock |
 | N11 | Store automated checks | ≤ 30 min p95 from upload to report | store job metrics |
 | N12 | Human review | first response ≤ 5 business days for a new plugin, ≤ 2 for an update; malware reports triaged ≤ 24 h | store dashboard, published on maktaba.dev |
 | N13 | Catalog page in the web app | ≤ 300 ms p95 from the home's cache, ≤ 1.5 s on a cold fetch | web perf test |
@@ -687,12 +727,12 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | T7 | **Escaping Wasm** (a Wasmtime bug) | The OS sandbox still denies network and files; Wasmtime pinned and patched within 14 days of an advisory; fuzzing of host functions (`cargo fuzz`) in nightly CI. |
 | T8 | **Denial of service** (CPU, memory, disk, queue flooding, log flooding) | §4.7 limits; per-plugin concurrency; the `plugins` pool; enqueue only to own stages and rate-limited (1,000 requests per job); circuit breaker; Epic 53 log rate limits. |
 | T9 | **Supply chain: a tampered package** (CDN, mirror, USB stick) | Two signatures over `files.json`; every file's sha256 checked before unpack; unpack refuses absolute paths, `..`, links and devices (as Epic 51 §6.4). |
-| T10 | **Supply chain: a stolen developer key or a hijacked account** | 2FA to publish; key revocation; store countersignature after checks; new capability → human review; revocation list. |
+| T10 | **Supply chain: a stolen developer key or a hijacked account** | MFA to publish, re-auth for key changes and submissions, passkeys for reviewers and store admins, a 7-day hold on MFA resets; key revocation; store countersignature after checks; new capability → human review; revocation list. |
 | T11 | **Supply chain: a stolen store key** | Root keys offline (two, either can rotate); online keys short-lived; anti-rollback; the server refuses a `store-keys.json` not signed by the embedded root. |
 | T12 | **Freeze or rollback attacks** (serving an old catalog to hide a revocation) | Expiry (catalog 7 days, revocation 48 h) and newest-seen versions per home. An expired revocation list does not stop plugins (that would let a network outage kill every plugin); it shows a warning and blocks new installs from the store until refreshed. |
 | T13 | **A plugin that misleads** (claims to be by Maktaba, squats a name, hides behaviour) | Verified id prefixes; reserved words (`maktaba`, `مكتبة`, `official`); human review on first submission; ratings and reports; `delist` and `disable`. |
 | T14 | **A plugin that harms the library** (deletes, overwrites) | No delete calls on core data; admin-set titles never overwritten; every write attributed and revertible per plugin; purge reverts what no one changed since. |
-| T15 | **Privacy of the home** | The store learns: the home id (when linked), server version and platform for compatibility, and which plugins were downloaded. It never learns libraries, titles, plugin outputs or logs. Install counts shown on listings are aggregated. Ratings are tied to a Maktaba account, shown with a display name only. |
+| T15 | **Privacy of the home** | The store learns: the store's own home id (only when the home is linked to a store account; unrelated to any cloud home id), server version and platform for compatibility, and which plugins were downloaded. It never learns libraries, titles, plugin outputs or logs. Install counts shown on listings are aggregated. Ratings are tied to a store account, shown with a display name only. |
 | T16 | **A third-party package claims first-party rights** (`[trusted]`, a `tv.maktaba.*` id, an exact core stage name) | `[trusted]` counts only when the package's digest is in the running release's Sigstore-verified `checksums.txt` and its version equals the server's; the store refuses such submissions (54.16 C3); the `tv.maktaba.` prefix and core stage names are reserved; CI test per refusal path (54.22). |
 | T17 | **A first-party plugin bug writes outside its job** (wrong subject, wrong table) | Named statements only, registered from the signed package; scope arguments bound by the API from the token; a per-plugin Postgres role with grants on the manifest's tables only; per-plugin CI tests of each refusal (§15.10). |
 | T18 | **A first-party runner is compromised** (a malicious file parsed by ffmpeg, a hostile page fetched by yt-dlp) | The runner has no database login and no secrets; its OS sandbox allows only its declared files, tools and (for `net` groups) network; secrets-bearing services only through the service door; the API checks every call it makes. |
@@ -723,18 +763,19 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | H7 | **Plugins follow stable events, not internal stage names.** | *Edges from any stage*: every Maktaba release could break every plugin (Jellyfin's ABI churn). |
 | H8 | **No secrets and no network means no settings secrets.** | *Secret fields like built-in extensions*: nothing to sign in to; a secret field would only be a place to hide exfiltrated data. |
 | H9 | **Store signing uses its own keys (offline root + online keys), not the release Sigstore identity.** | *Reuse Epic 51's release identity*: it means "built by Maktaba's release workflow from Maktaba's commit", which a third-party plugin is not; the store signs outside GitHub Actions. *Sigstore keyless for developers*: ties developers to an OIDC provider and makes offline verification of a developer's identity need Rekor; Ed25519 keys are simpler for an offline home. |
-| H10 | **Revocation `disable` cannot be undone; an admin's own "keep off" sticks through updates, restores and reinstalls; an expired revocation list warns but does not stop plugins.** | *Admin override of everything*: a known-malware plugin would keep running. *Keep-off on the install row*: a reinstall or a restore would silently turn back on a plugin the admin switched off. *Expired list stops plugins*: a cloud outage would switch off every plugin in every home (Epic 50's "no downtime" says no). |
+| H10 | **Revocation `disable` cannot be undone; an admin's own "keep off" sticks through updates, restores and reinstalls; an expired revocation list warns but does not stop plugins.** | *Admin override of everything*: a known-malware plugin would keep running. *Keep-off on the install row*: a reinstall or a restore would silently turn back on a plugin the admin switched off. *Expired list stops plugins*: a store or network outage would switch off every plugin in every home. |
 | H11 | **Unreviewed install is allowed, off by default, behind a re-authenticated admin opt-in, and marked everywhere.** | *Never allow it*: kills development, offline sharing and private plugins; the sandbox does not depend on review. *Allow silently*: Obsidian learned to start in Restricted Mode. |
 | H12 | **Third-party plugin stages run on the home only in this epic** (first-party ones keep their placement, §15.4). | *Any machine*: each node would need its own host, plugin API endpoint and token minting, and media handles across machines. Later, on the same model. |
 | H13 | **Heavy compute is a host service, not plugin code.** | *Let plugins bring ML runtimes*: impossible in Wasm today (no NumPy/torch), huge packages, and duplicates what Maktaba already runs. |
-| H14 | **85/15 split; the payment provider and seller of record are chosen at Phase 3, never Stripe; payouts sit behind a provider-agnostic interface.** | *70/30*: high for a small ecosystem. *No paid plugins*: paid plugins are a requirement; developers need a reason to maintain plugins (Plex's lesson). *Stripe Connect*: ruled out (no Stripe, ever). *Choosing a seller of record now*: many restrict resale of third-party products; it needs written confirmation first. |
-| H15 | **English and Arabic strings are required for store listing.** | *English only*: the product is Arabic-first; a plugin that can't name itself in Arabic would show English in an RTL UI. Developers may use machine translation; the listing says so (decided 2026-11-03). |
+| H14 | **85/15 split; the payment provider and seller of record are chosen at Phase 3, never Stripe; payouts sit behind a provider-agnostic interface.** | *70/30*: high for a small ecosystem. *No paid plugins*: the owner asked for them; developers need a reason to maintain plugins (Plex's lesson). *Stripe Connect*: ruled out (no Stripe, ever). *Choosing a seller of record now*: many restrict resale of third-party products; it needs written confirmation first. |
+| H15 | **English and Arabic strings are required for store listing.** | *English only*: the product is Arabic-first; a plugin that can't name itself in Arabic would show English in an RTL UI. Developers may use machine translation; the listing says so (owner decision 2026-11-03). |
 | H16 | **First-party plugins run as native Python in supervised runners, behind the same manifest, dispatch and plugin API, with a trusted capability set.** | *Compile first-party stages to Wasm and run them in `maktaba-plugind`*: they need torch, MLX, faster-whisper, ffmpeg, yt-dlp and the GPU, none of which run in WASI today (§2), and N5's 2× would cost hours on transcription. *Keep them in-process and call it a plugin*: no boundary at all, a back door by another name. *One process per plugin*: fifteen Python interpreters on every home; runner groups give the same boundary at a fraction of the memory. |
 | H17 | **The database is reached through named statements and per-plugin Postgres roles, not a typed Go endpoint per write and not a database login.** | *A typed Go endpoint for every write*: rewriting about 780 Python SQL statements in Go, two languages for every change, years of work. *A database login per plugin*: no per-call check, no token scope, any SQL a bug produces. Named statements keep the SQL where it is reviewed today and let the API check every call. |
 | H18 | **First-party plugins move with the server version; they are not updated through the store.** | *Store updates for first-party plugins*: the trusted interfaces follow the schema, which follows the server; a separately updated plugin would need cross-version statement compatibility and its own rehearsal. A fix ships as a server release. |
 | H19 | **Exact stage names, equal fingerprints, a per-stage switch.** | *New `tv.maktaba.*` stage names*: every queue row, output hash and `job_events` row would need rewriting, and every subject would rerun. *A big-bang move*: one failure would roll back all 56 stages. |
 | H20 | **The migration proves identity, not similarity.** | *Tolerances on outputs*: drift would compound across the graph; deterministic fakes plus a seeded CPU model make exact comparison possible. |
 | H21 | **One first-party plugin per Epic 51 component.** | *One plugin per stage*: 56 components, against Epic 51's "a component is a feature, not a stage" (51 H11). *One plugin for everything*: nothing could be turned off. |
+| H22 | **The store is a separate service on Cloudflare (Workers, D1, Durable Objects, R2), with its own accounts, hostname and payments, sharing nothing with Maktaba Cloud.** | *A part of the cloud API* (the first draft): shared accounts, database and uptime, so a cloud outage would stop store sign-in and purchases and a store incident would sit inside the relay. *A separate service on the cloud's Hetzner nodes*: still a shared failure domain and a VPS to run. *Cloud accounts for developers*: developers are not relay customers. *Store review on `admin.maktaba.tv`*: ties review to the cloud's SSO and nodes. *Cloudflare Access for admin pages*: a second identity system; the store's own passkey sign-in is enough and stays in one audit trail. |
 
 ## 12. Stories
 
@@ -754,7 +795,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | 54.12 | [SDK, templates, test harness and docs](story-54-12-sdk-harness.md) | 1 | 54.02, 54.04 |
 | 54.13 | [The admin Plugins page](story-54-13-plugins-page.md) | 1 | 54.08, 54.09, 54.10, 54.11 |
 | 54.14 | [Signing, the trust root and the revocation list](story-54-14-signing-trust.md) | 2 | 54.01 |
-| 54.15 | [The store service and developer accounts](story-54-15-store-service.md) | 2 | 54.14, Epic 50 (50.07) |
+| 54.15 | [The store service, store accounts and linking a home](story-54-15-store-service.md) | 2 | 54.14 |
 | 54.16 | [Automated checks and human review](story-54-16-review.md) | 2 | 54.03, 54.12, 54.15 |
 | 54.17 | [The home's catalog, updates and the kill switch](story-54-17-catalog-kill-switch.md) | 2 | 54.07, 54.14, 54.15 |
 | 54.18 | [Store browser, listing pages, ratings and reports](story-54-18-store-browser.md) | 2 | 54.13, 54.17 |
@@ -804,7 +845,6 @@ graph LR
   S10 --> S13
   S11 --> S13
   S14 --> S15[54.15 store service]
-  E50[Epic 50: 50.07] --> S15
   S03 --> S16[54.16 review]
   S12 --> S16
   S15 --> S16
@@ -859,7 +899,8 @@ each needs the previous one green in a tagged release.
 | `plugins-api` | PRs touching `api/internal/plugins/` | capability, scope and quota tests for every interface; role tests for every `/api/plugins/*` route |
 | `plugins-e2e` | PRs touching the pipeline plugin loader, the host or the API | a sample plugin per SDK language installed, granted, run on fixture media, updated, rolled back, disabled under load (0 lost jobs), uninstalled with purge |
 | `plugins-fuzz` (nightly, CI only) | nightly | `cargo fuzz` of host function argument decoding and the manifest and package parsers |
-| `store` | PRs touching `cloud/internal/store/` | submission, checks, countersigning, catalog and revocation signing, expiry and anti-rollback, ratings, reports, payouts against a fake `PaymentProvider` (no live payment calls) |
+| `store` | PRs touching `store/`, `shared/plugins/` or `api/internal/plugins/storelink/` | in Miniflare (local Workers, D1, Durable Objects, R2): store accounts, MFA, re-auth, role tests, home linking, submission, checks, countersigning, catalog and revocation signing, expiry and anti-rollback, ratings, reports, entitlements, payouts against a fake `PaymentProvider`; no import from `cloud/`; no Stripe; no live Cloudflare, email or payment calls. Weekly: restore drill from a D1 export fixture |
+| `store-deploy` | tags `store-v*`, after `store` passed on that commit | D1 migrations, then gradual `wrangler deploy` with the org Cloudflare secrets |
 | `components-chaos` (Epic 51) | as Epic 51 | gains plugin stages in its 100 flips |
 | `catalog` (Epic 51) | as Epic 51 | plugin reason codes and capability words have English and Arabic |
 | `plugins-parity` (§15.8) | PRs touching `plugins/first-party/`, `plugins/sdk/python/`, the runner, the statement registry or `pipeline/src/maktaba_pipeline/engine/`; nightly for all stages | each migrated stage writes the same rows and files, returns the same result and fingerprints as in-process; N16, N17, N19 |
@@ -871,7 +912,8 @@ each needs the previous one green in a tagged release.
 
 ## 14. Decisions (2026-11-03)
 
-All eight questions are decided. Phase 3 keeps one open decision: the payment provider.
+Items 1 and 3–9 are decided. Open: the payment provider (item 2, at Phase 3), the
+email provider (item 10) and the isolated check runner (item 11).
 
 1. **Revenue split: decided.** Developer 85 %, Maktaba 15 % of each paid plugin sale.
 2. **Seller of record and payment processor: decide at Phase 3.** No Stripe, ever (no Stripe,
@@ -896,6 +938,18 @@ All eight questions are decided. Phase 3 keeps one open decision: the payment pr
    home, viewers included, once the plugin is installed. No separate viewer approval step;
    the store review is the guard, and the admin can still disable or uninstall (§9 T4, story
    54.20).
+9. **The store is independent of Maktaba Cloud: decided.** Its own accounts and sign-in for
+   developers and buyers, its own D1 databases and deploy, its own hostname
+   (`plugins.maktaba.tv`, files on `plugins-cdn.maktaba.tv`), all on Cloudflare with no VPS,
+   and its own payment setup separate from cloud billing. Review and store-admin pages on the
+   store host, with the store's own sign-in and no Cloudflare Access (§6.0, §6.1, H22,
+   stories 54.15 and 54.19).
+10. **Email provider for the store: open.** Cloudflare's Email Service (sending) if it is
+    available on the account when the store is built, otherwise a non-Stripe provider such as
+    Amazon SES or Postmark (story 54.15 §1).
+11. **Isolated check runner: open, after a spike.** Cloudflare Containers if its limits and
+    maturity fit and the plugin sandbox profile applies inside it; otherwise a CI runner job
+    with no secrets and no network (story 54.16 §1).
 
 ## 15. Maktaba's own stages as first-party plugins
 
