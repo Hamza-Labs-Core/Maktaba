@@ -746,7 +746,7 @@ export const failureGroupsFixture: FailureGroup[] = [
   {
     stage: "link",
     cause: "youtube_bot_check",
-    label: "YouTube asked to confirm we are not a bot",
+    label: "YouTube asked for a bot check",
     count: 7,
     first_at: ago(7200),
     last_at: ago(600),

@@ -131,9 +131,7 @@ describe("QueueOverview", () => {
     expect(document.querySelector("details.mkt-q-lane--media")).toHaveAttribute("open");
     // issues: grouped by cause with one action, no Apply flow by default
     const issues = screen.getByRole("heading", { name: "Needs attention" }).closest("section")!;
-    expect(
-      within(issues).getByText("YouTube asked to confirm we are not a bot")
-    ).toBeInTheDocument();
+    expect(within(issues).getByText("YouTube asked for a bot check")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
     // libraries table
     expect(screen.getByRole("link", { name: /Islamic lectures/ })).toHaveAttribute(

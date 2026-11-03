@@ -9,6 +9,7 @@ import type { FailureGroup } from "../../lib/queueApi";
 import { useFmt } from "./format";
 import { HelpLink } from "../../help/HelpLink";
 import { causeHelp } from "../../help/registry";
+import { groupTitle, readableMessage } from "../../lib/attentionWords";
 
 export const groupKey = (g: FailureGroup) => `${g.stage}:${g.cause}`;
 
@@ -43,11 +44,13 @@ export function IssueList({
       {groups.map((g) => {
         const key = groupKey(g);
         const nasNote = g.cause.startsWith("nas_") && nasP95Ms != null;
+        const title = groupTitle(g, t);
+        const message = readableMessage(g.sample_message ?? "");
         return (
           <li className={`mkt-q-issue mkt-q-issue--${g.action}`} key={key}>
             <div className="mkt-q-issue__main">
               <p className="mkt-q-issue__label">
-                <span className="mkt-q-issue__count">{n(g.count)}</span> {g.label}
+                <span className="mkt-q-issue__count">{n(g.count)}</span> {title}
               </p>
               <p className="mkt-q-issue__meta">
                 {!hideStage && <span className="mkt-q-chip">{stageLabel(g.stage)}</span>}{" "}
@@ -55,10 +58,10 @@ export function IssueList({
                 {" · "}
                 <HelpLink
                   to={causeHelp(g.cause)}
-                  label={t("help.causeHelpNamed", { cause: g.label })}
+                  label={t("help.causeHelpNamed", { cause: title })}
                 />
               </p>
-              {g.sample_message && <p className="mkt-q-issue__msg">{g.sample_message}</p>}
+              {message && <p className="mkt-q-issue__msg">{message}</p>}
               {g.sample_subjects.length > 0 && (
                 <p className="mkt-q-issue__subjects">
                   {g.sample_subjects.map((s, i) => (
