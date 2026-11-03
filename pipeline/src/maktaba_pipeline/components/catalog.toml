@@ -576,8 +576,18 @@ title_key  = "components.model.whisper-turbo.title"
 desc_key   = "components.model.whisper-turbo.desc"
 requires   = ["runtime.ml"]
 source     = "hf:dropbox-dash/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
-sources    = { darwin-arm64 = "hf:mlx-community/whisper-large-v3-turbo" }
+sources    = { darwin-arm64 = "hf:mlx-community/whisper-large-v3-turbo@a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb" }
 in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "config.json", sha256 = "b0253ea6c0d3bea6b1e19e91a02acfd3b53f4467362efcb5a3e6b16c9b3a9b7e", size = 2263 },
+  { path = "model.bin", sha256 = "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da", size = 1617884929 },
+  { path = "preprocessor_config.json", sha256 = "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711", size = 340 },
+  { path = "tokenizer.json", sha256 = "297b13372ac43916285644fb9687add3cc62ee2a1adb60da3dc25cc94c1871fd", size = 2710337 },
+  { path = "vocabulary.json", sha256 = "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1", size = 1068114 },
+  { source = "hf:mlx-community/whisper-large-v3-turbo@a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb", path = "config.json", sha256 = "b34fc29e4e11e0a25e812775dd67f4dd16fc2c8eb43d28ae25ff7d660ecb6379", size = 268 },
+  { source = "hf:mlx-community/whisper-large-v3-turbo@a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb", path = "weights.safetensors", sha256 = "951ed3fc1203e6a62467abb2144a96ce7eafca8fa77e3704fdb8635ff3e7f8a6", size = 1613977612 },
+]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "worker"]
 since      = "0.3.66"
@@ -590,8 +600,18 @@ title_key  = "components.model.whisper-large-v3.title"
 desc_key   = "components.model.whisper-large-v3.desc"
 requires   = ["runtime.ml"]
 source     = "hf:Systran/faster-whisper-large-v3@edaa852ec7e145841d8ffdb056a99866b5f0a478"
-sources    = { darwin-arm64 = "hf:mlx-community/whisper-large-v3-mlx" }
+sources    = { darwin-arm64 = "hf:mlx-community/whisper-large-v3-mlx@49e6aa286ad60c14352c404340ded53710378a11" }
 in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "config.json", sha256 = "a9306624f5ec14270a014b647e5c316b6e03a662c369758d1b90697a7b0655b9", size = 2394 },
+  { path = "model.bin", sha256 = "69f74147e3334731bc3a76048724833325d2ec74642fb52620eda87352e3d4f1", size = 3087284237 },
+  { path = "preprocessor_config.json", sha256 = "7ccc62c6f2765af1f3b46c00c9b5894426835a05021c8b9c01eecb6dfb542711", size = 340 },
+  { path = "tokenizer.json", sha256 = "6d8cbd7cd0d8d5815e478dac67b85a26bbe77c1f5e0c6d76d1ce2abc0e5f21ca", size = 2480617 },
+  { path = "vocabulary.json", sha256 = "c69260f2ab26d659b7c398f9a2b2b48ed0df16c3b47d7326782fd9cba71690c1", size = 1068114 },
+  { source = "hf:mlx-community/whisper-large-v3-mlx@49e6aa286ad60c14352c404340ded53710378a11", path = "config.json", sha256 = "34982ce6ae286095000f82ae9583b3431639e8b092bf60c961f203745e6500e3", size = 269 },
+  { source = "hf:mlx-community/whisper-large-v3-mlx@49e6aa286ad60c14352c404340ded53710378a11", path = "weights.npz", sha256 = "05ff791ce3630fae47e7c51004e9666204d786246ec07cac6110af768099b40d", size = 3083520416 },
+]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
 since      = "0.3.66"
@@ -603,9 +623,18 @@ group      = "models"
 title_key  = "components.model.whisper-medium.title"
 desc_key   = "components.model.whisper-medium.desc"
 requires   = ["runtime.ml"]
-source     = "hf:Systran/faster-whisper-medium"
-sources    = { darwin-arm64 = "hf:mlx-community/whisper-medium-mlx" }
+source     = "hf:Systran/faster-whisper-medium@08e178d48790749d25932bbc082711ddcfdfbc4f"
+sources    = { darwin-arm64 = "hf:mlx-community/whisper-medium-mlx@7fc08c4eac4c316526498f147dfdee6f6303f975" }
 in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "config.json", sha256 = "3622a2ddc41ec0e0fd4e68c13c6830f03b90c38d89aaad184de02c8c642cf807", size = 2257 },
+  { path = "model.bin", sha256 = "9b45e1009dcc4ab601eff815b61d80e60ce3fd8c74c1a14f4a282258286b51ae", size = 1527906378 },
+  { path = "tokenizer.json", sha256 = "fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab", size = 2203239 },
+  { path = "vocabulary.txt", sha256 = "34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913", size = 459861 },
+  { source = "hf:mlx-community/whisper-medium-mlx@7fc08c4eac4c316526498f147dfdee6f6303f975", path = "config.json", sha256 = "3ff0b3f17a5a3a614327ffd835a3c8f6c78f39cbd39e84dbff4b0ae267c4d2e4", size = 268 },
+  { source = "hf:mlx-community/whisper-medium-mlx@7fc08c4eac4c316526498f147dfdee6f6303f975", path = "weights.npz", sha256 = "10b597c2bcb1bcc38b2d3d24cd4f0885f461a7cd70e8444d6ad5a763ece549ea", size = 1524924912 },
+]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = []
 since      = "0.3.66"
@@ -619,6 +648,12 @@ desc_key   = "components.model.cohere-arabic.desc"
 requires   = ["runtime.ml"]
 source     = "hf:CohereLabs/cohere-transcribe-arabic-07-2026@c3e911b42149bf7a1e53d5cef9878aee87515a23"
 in_payload = false
+gated      = true
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "model.safetensors", sha256 = "404ff5dccd66b1985a06059b9d5ed970a676761c0821f9c10756db6e4a1910a5", size = 4131862976 },
+  { path = "tokenizer.model", sha256 = "6d21e6a83b2d0d3e1241a7817e4bef8eb63bcb7cfe4a2675af9a35ff3bbf0e14", size = 492827 },
+]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "worker"]
 since      = "0.3.66"
@@ -644,8 +679,42 @@ group      = "models"
 title_key  = "components.model.embedder.title"
 desc_key   = "components.model.embedder.desc"
 requires   = ["runtime.ml"]
-source     = "hf:intfloat/multilingual-e5-small"
+source     = "hf:intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3"
 in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = ".eval_results/ArguAna.yaml", sha256 = "53c1be5a451d915708a64756b626b7a8772ce8a785d6f4be5a7652709092371c", size = 575 },
+  { path = ".eval_results/BrightAopsRetrieval.yaml", sha256 = "6027ed1058e852c2c0a9d34fbce4c10d18252681de802a6082282f363651e599", size = 641 },
+  { path = ".eval_results/BrightBiologyLongRetrieval.yaml", sha256 = "f4ebcfd606c3f1283907d8b4b434fa32848e0e4a122556e701919a95da75b439", size = 651 },
+  { path = ".eval_results/BrightBiologyRetrieval.yaml", sha256 = "a68fca027604de4c877e7d86b1858c5025c64029c1cddfd351e5d05e010f15d4", size = 647 },
+  { path = ".eval_results/BrightEarthScienceLongRetrieval.yaml", sha256 = "4256206ca8f244b911a94858b8a7d32854fcad90f701e814bfa808d252fb9a68", size = 663 },
+  { path = ".eval_results/BrightEarthScienceRetrieval.yaml", sha256 = "5dd5cae91c338408a31ba5a5b824edb36e0d3b0d913e38ef678240deb274209b", size = 659 },
+  { path = ".eval_results/BrightEconomicsLongRetrieval.yaml", sha256 = "891ee9ad5db6ef7708cc2f73f56bd498ba8ea4ad4b6e061eb33472642f5e9f4b", size = 655 },
+  { path = ".eval_results/BrightEconomicsRetrieval.yaml", sha256 = "7f0c33852f1da36d56e041479ef085c0ef53ecf786bbe972fe4a7e4f1f7b51d9", size = 651 },
+  { path = ".eval_results/BrightLeetcodeRetrieval.yaml", sha256 = "7d163f441cf3f929d684af2c9c9933e1d6090b25926d18f467e1b168c5123823", size = 651 },
+  { path = ".eval_results/BrightPonyLongRetrieval.yaml", sha256 = "502c6c13dd57ae95f4eda6f19f88550b971e7fdb46f13b2873c65d796496e0ab", size = 645 },
+  { path = ".eval_results/BrightPonyRetrieval.yaml", sha256 = "5b99465cbd9eb7df09b34dde9895f478a88abaa3b5ff4474b49a5d0f5155a72c", size = 641 },
+  { path = ".eval_results/BrightPsychologyLongRetrieval.yaml", sha256 = "4ad33f80d26bb613e2def7584455f975c7466cdf61335348cf2159fff877dddd", size = 655 },
+  { path = ".eval_results/BrightPsychologyRetrieval.yaml", sha256 = "fd43e8a64eb654e8773aa3ecbc947026edf42f92c629bdd9da87b8b56d12a137", size = 653 },
+  { path = ".eval_results/BrightRoboticsLongRetrieval.yaml", sha256 = "9dcdf92946535dcf14304cb906cdec0d9db7bd4412a4a0158103cdb1435c64a3", size = 653 },
+  { path = ".eval_results/BrightRoboticsRetrieval.yaml", sha256 = "71fdf00946b422675b53f598a22db9d3353cee4c4a153103f7cf7c2011b82f4f", size = 647 },
+  { path = ".eval_results/BrightStackoverflowLongRetrieval.yaml", sha256 = "d7e90b118eae1abb7b55579913a8da02cf1d337b032c0c998777325910deadf2", size = 665 },
+  { path = ".eval_results/BrightStackoverflowRetrieval.yaml", sha256 = "9dc868231ebc0a78b94b3f4e681d476d67fb9e9c630626832e0af21e840a5aae", size = 659 },
+  { path = ".eval_results/BrightSustainableLivingLongRetrieval.yaml", sha256 = "7ddd8840466a84effef1df193ef79e1a6457567925b4e3b28b034832a6d6a45a", size = 673 },
+  { path = ".eval_results/BrightSustainableLivingRetrieval.yaml", sha256 = "91644839f8ef7ebd5844b2f8ce6719f63af14656e2acef2403895c8b1f859c28", size = 667 },
+  { path = ".eval_results/BrightTheoremQAQuestionsRetrieval.yaml", sha256 = "00408cfa91d8677d9c6eefd98d37786d4a6a03b2a8cbb9c8d8364633377d797c", size = 669 },
+  { path = ".eval_results/BrightTheoremQATheoremsRetrieval.yaml", sha256 = "ecb1a69acecd2cb165ff9cd94aec3da58c63fcecd8972258b446f0dbcf5251f1", size = 667 },
+  { path = "1_Pooling/config.json", sha256 = "987f7a67a38fa564c849bb5d277c52ab9088a84368fc0be31a354125aebb12a0", size = 200 },
+  { path = "config.json", sha256 = "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959", size = 655 },
+  { path = "model.safetensors", sha256 = "1a55775f53449dac10a2bcbc312469fac40b96d53198c407081a831f81c98477", size = 470641600 },
+  { path = "modules.json", sha256 = "c6e29747481e8b5dd2b58401966aeac910de39092f90cda9a704b1545f902b04", size = 387 },
+  { path = "pytorch_model.bin", sha256 = "f0ccb64a2edc689fce7b1895f25146740e4075c3da28c8d0e672a8ba49c51167", size = 470681649 },
+  { path = "sentence_bert_config.json", sha256 = "948201d8329907aae938fa62f9ceeed53f5694dacc2b87b9f3b78b37ee986529", size = 57 },
+  { path = "sentencepiece.bpe.model", sha256 = "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865", size = 5069051 },
+  { path = "special_tokens_map.json", sha256 = "d05497f1da52c5e09554c0cd874037a083e1dc1b9cfd48034d1c717f1afc07a7", size = 167 },
+  { path = "tokenizer.json", sha256 = "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39", size = 17082730 },
+  { path = "tokenizer_config.json", sha256 = "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b", size = 443 },
+]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "worker"]
 since      = "0.3.66"
@@ -657,8 +726,16 @@ group      = "models"
 title_key  = "components.model.llm.qwen2_5-7b.title"
 desc_key   = "components.model.llm.qwen2_5-7b.desc"
 requires   = ["runtime.ollama"]
-source     = "ollama:qwen2.5:7b"
+source     = "ollama:qwen2.5:7b@sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e"
 in_payload = false
+# pinned by tools/release/cmd/pin-models
+files      = [
+  { path = "blobs/sha256-2bada8a7450677000f678be90653b85d364de7db25eb5ea54136ada5f3933730", sha256 = "2bada8a7450677000f678be90653b85d364de7db25eb5ea54136ada5f3933730", size = 4683073952 },
+  { path = "blobs/sha256-2f15b3218f0552c60647ce60ada83632d2c09755b16259b13e3e4458e9ae419d", sha256 = "2f15b3218f0552c60647ce60ada83632d2c09755b16259b13e3e4458e9ae419d", size = 487 },
+  { path = "blobs/sha256-66b9ea09bd5b7099cbb4fc820f31b575c0366fa439b08245566692c6784e281e", sha256 = "66b9ea09bd5b7099cbb4fc820f31b575c0366fa439b08245566692c6784e281e", size = 68 },
+  { path = "blobs/sha256-832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e", sha256 = "832dd9e00a68dd83b3c3fb9f5588dad7dcf337a0db50f7d9483f310cd292e92e", size = 11343 },
+  { path = "blobs/sha256-eb4402837c7829a690fa845de4d7f3fd842c2adee476d5341da8a46ea9255175", sha256 = "eb4402837c7829a690fa845de4d7f3fd842c2adee476d5341da8a46ea9255175", size = 1482 },
+]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full"]
 since      = "0.3.66"

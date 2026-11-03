@@ -85,6 +85,10 @@ _SETTING = re.compile(r"(rules\.[a-z][a-z0-9_]*|toml:[a-z][a-z0-9_]*\.[a-z][a-z0
 _SINCE = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 _LICENCE = re.compile(r"[a-z][a-z0-9_]*")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+#: a model's source is pinned (story 51.15): a Hugging Face repo at a commit, never a
+#: branch; an ollama model at its manifest digest
+_HF_SOURCE = re.compile(r"hf:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*@[0-9a-f]{40}")
+_OLLAMA_SOURCE = re.compile(r"ollama:[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}")
 
 _TOP_KEYS = ("schema", "phases", "reasons", "features", "component")
 _COMPONENT_KEYS = (
@@ -114,6 +118,7 @@ _COMPONENT_KEYS = (
     "sources",
     "files",
     "in_payload",
+    "gated",
 )
 _PARTS = ("stages", "process", "loop")
 _PLURAL = {"stages": "stages", "process": "processes", "loop": "loops"}
@@ -164,12 +169,23 @@ class Component:
     sources: dict[str, str] = field(default_factory=dict)
     files: tuple[dict[str, Any], ...] = ()
     in_payload: bool = False
+    #: a model whose download needs the owner's Hugging Face login
+    gated: bool = False
 
     def has_part(self, part: str) -> bool:
         return part in self.kind.split("+")
 
     def source_for(self, platform: str) -> str:
         return self.sources.get(platform, self.source)
+
+    def files_of(self, source: str) -> list[dict[str, Any]]:
+        """The asset's files that come from ``source`` (a file without its own
+        ``source`` is the default source's)."""
+        return [
+            f
+            for f in self.files
+            if f.get("source", "") == source or (not f.get("source") and source == self.source)
+        ]
 
 
 def _split_requirement(r: str) -> list[str]:
@@ -350,6 +366,7 @@ class Catalog:
                 "source": c.source,
                 "sources": dict(c.sources),
                 "in_payload": c.in_payload,
+                "gated": c.gated,
             }
             for c in self._components
         ]
@@ -428,7 +445,42 @@ def _component(m: dict[str, Any], where: str, bad: list[str]) -> Component:
         sources={str(k): str(v) for k, v in sources.items()},
         files=tuple(dict(f) for f in files),
         in_payload=b("in_payload", False),
+        gated=b("gated", False),
     )
+
+
+def _is_model_source(s: str) -> bool:
+    return s.startswith(("hf:", "ollama:"))
+
+
+def _validate_sources(c: Component, where: str, bad: list[str]) -> None:
+    """Every hf: and ollama: source is pinned and has its files; every file is from one
+    of the asset's model sources, once per path (the Go loader's validateSources)."""
+    used = {s for s in (c.source, *c.sources.values()) if s}
+    for s in sorted(used):
+        if s.startswith("hf:") and not _HF_SOURCE.fullmatch(s):
+            bad.append(
+                f"{where}: source {s!r} must be pinned as hf:<owner>/<repo>@<40-hex commit>,"
+                " never a branch"
+            )
+        elif s.startswith("ollama:") and not _OLLAMA_SOURCE.fullmatch(s):
+            bad.append(
+                f"{where}: source {s!r} must be pinned as"
+                " ollama:<name>:<tag>@sha256:<manifest digest>"
+            )
+        elif _is_model_source(s) and not c.files_of(s):
+            bad.append(
+                f"{where}: source {s!r} has no files (tools/release/cmd/pin-models fills them)"
+            )
+    seen: set[tuple[str, str]] = set()
+    for f in c.files:
+        src = str(f.get("source") or c.source)
+        path = str(f.get("path", ""))
+        if src not in used or not _is_model_source(src):
+            bad.append(f"{where}: file {path!r} is from {src!r}, not one of its model sources")
+        if (src, path) in seen:
+            bad.append(f"{where}: file {path!r} listed twice for {src!r}")
+        seen.add((src, path))
 
 
 def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str]) -> None:
@@ -454,8 +506,8 @@ def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str
                 bad.append(f"{where}: kind {c.kind!r} but no {_PLURAL[part]}")
             if not has and parts[part]:
                 bad.append(f"{where}: lists {_PLURAL[part]} but kind {c.kind!r} has no {part}")
-    if c.kind != "asset" and (c.source or c.sources or c.files or c.in_payload):
-        bad.append(f"{where}: source, sources, files and in_payload are for assets only")
+    if c.kind != "asset" and (c.source or c.sources or c.files or c.in_payload or c.gated):
+        bad.append(f"{where}: source, sources, files, in_payload and gated are for assets only")
     if c.group not in GROUPS:
         bad.append(f"{where}: bad group {c.group!r}")
     if c.title_key != f"components.{c.id}.title":
@@ -498,6 +550,7 @@ def _validate(c: Component, where: str, features: tuple[str, ...], bad: list[str
             or int(f.get("size", 0)) <= 0
         ):
             bad.append(f"{where}: a file needs path, sha256 (64 hex) and size")
+    _validate_sources(c, where, bad)
     if c.placement not in ("any", "home"):
         bad.append(f"{where}: bad placement {c.placement!r}")
     if c.resources.gpu not in ("", "none", "preferred", "required"):

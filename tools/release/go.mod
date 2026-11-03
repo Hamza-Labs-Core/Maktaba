@@ -7,7 +7,10 @@ require (
 	golang.org/x/crypto v0.55.0
 )
 
+require github.com/BurntSushi/toml v1.6.0
+
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -87,3 +90,7 @@ require (
 )
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify => ../../shared/go/releaseverify
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../../shared/components
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack => ../../shared/go/componentpack
