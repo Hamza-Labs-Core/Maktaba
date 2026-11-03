@@ -26,8 +26,8 @@ __all__ = ["TranscriptionConfig"]
 class TranscriptionConfig:
     """Which machines transcribe."""
 
-    #: a machine that cannot run the second listen transcribes too (Whisper's words,
-    #: given their second listen later by a machine that can)
+    #: a machine that cannot run the second listen passes transcripts on with Whisper's
+    #: words (the ``second_listen`` stage; a machine that can gives them theirs later)
     without_second_listen: bool = False
     #: the relisten tries a transcript made without the second listen gets before it is
     #: left as it is (said once, in its job's log)
@@ -70,9 +70,11 @@ settings.register(TranscriptionConfig, {
         minimum=0),
     "without_second_listen": settings.Help(
         _T, "Transcribe without the second listen",
-        "Off: while the second listen is on, only the machines that run it (Apple "
-        "Silicon, and a PC whose NVIDIA GPU holds it beside Whisper) transcribe, so every "
-        "transcript has it. On: the other Windows and Linux machines transcribe too, with "
-        "Whisper alone, faster; a machine that runs the second listen gives those "
-        "transcripts theirs later, a few at a time, after the new files."),
+        "Every machine with Whisper transcribes; the second listen is a step of its own "
+        "after it, which runs on the machines that can (Apple Silicon, and a PC whose "
+        "NVIDIA GPU holds it, beside Whisper or taking turns with it). Off: a transcript "
+        "waits for one of them, so every transcript has it before it is indexed. On: "
+        "when no such machine takes it within 15 minutes, another one passes it on with "
+        "Whisper's words; a machine that runs the second listen gives it its own later, "
+        "a few at a time, after the new files."),
 })  # fmt: skip

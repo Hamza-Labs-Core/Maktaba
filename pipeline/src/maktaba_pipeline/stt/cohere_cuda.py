@@ -5,14 +5,17 @@ transcribes on (:mod:`.ct2`).
 On that GPU only: on the CPU the 2 B model would hear an hour of lectures in hours, so a
 machine without one keeps Whisper's words and says why (:func:`problem`), as a Mac
 without the model does: no NVIDIA GPU, a torch without CUDA, transcription set to the CPU,
-a GPU too small to hold the model beside Whisper (:data:`MIN_GPU_GB`), older than torch's
+a GPU too small to hold the model even with Whisper off it (:data:`MIN_GPU_GB`), older than torch's
 CUDA build runs on (:data:`MIN_COMPUTE`) or with a driver too old for it
 (:data:`MIN_DRIVER`). The answer comes from the driver (NVML) and torch's own version
 file, without importing torch: a worker asks it on its event loop. The model is
 4.1 GB in 16 bits (bfloat16 on a GPU that computes in it, Ampere and newer; float16 before
 that). It loads only when the GPU has room for it at that moment (:func:`room`, from
 ``torch.cuda.mem_get_info``), and it hears the stretches in batches sized from what is left
-once it is loaded, halved when one does not fit.
+once it is loaded, halved when one does not fit. Where the GPU cannot hold it beside
+Whisper, the two take turns on it (:mod:`.gpu_turns`): the model's weights go to the host's
+memory while Whisper runs (:meth:`CudaRecogniser.offload`) and come back for the next
+batch of second listens.
 
 The sizes below were measured on an RTX 2080 SUPER (8 GB, driver 616.64, Windows) with
 torch 2.14.1+cu130, transformers 5.17.0 and the model's architecture with random weights
@@ -28,20 +31,25 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..log import get_logger
 from . import engine
 from .settings import SAMPLE_RATE, WhisperSettings
+
+if TYPE_CHECKING:
+    from .gpu_turns import Mode
 
 __all__ = [
     "ALLOW_PATTERNS",
     "MIN_COMPUTE",
     "MIN_DRIVER",
     "MIN_GPU_GB",
+    "TOGETHER_GPU_GB",
     "CudaRecogniser",
     "LoadError",
     "device_index",
+    "alone_gb",
     "need_gb",
     "problem",
     "room",
@@ -84,13 +92,20 @@ MAX_BATCH = 32
 WHISPER_FILE_GB = 0.14
 #: kept free after the model is loaded, for the batches' own variation
 MARGIN_GB = 0.25
-#: the smallest GPU (total memory, GiB) the second listen fits on beside Whisper. Windows'
-#: WDDM budget leaves a process ~1 GiB short of the card (6.95 of 8 measured), and an 8 GB
-#: card ~5.8 GiB once Whisper is loaded, short of the 6.4 the model, a batch and Whisper's
-#: room need, so it takes a 10 GB card there; elsewhere an 8 GB one, beside Whisper in
-#: int8_float16. The supervisor sizes Whisper to leave the room on such a GPU
-#: (``PlanSTT``, same threshold)
-MIN_GPU_GB = 9.5 if sys.platform == "win32" else 7.5
+#: the smallest GPU (total memory, GiB) the second listen fits on beside Whisper, both
+#: loaded. Windows' WDDM budget leaves a process ~1 GiB short of the card (6.95 of 8
+#: measured), and an 8 GB card ~5.8 GiB once Whisper is loaded, short of the 6.4 the model,
+#: a batch and Whisper's room need, so it takes a 10 GB card there (a smaller one takes
+#: turns, :data:`MIN_GPU_GB`); elsewhere an 8 GB one, beside Whisper in int8_float16. The supervisor sizes Whisper to leave the room on such a GPU
+#: (``PlanSTT``, same threshold). Whether a given GPU keeps both loaded is decided from its
+#: measured free memory (:func:`mode`); this is the supervisor's sizing line
+TOGETHER_GPU_GB = 9.5 if sys.platform == "win32" else 7.5
+#: the smallest GPU (total memory, GiB) the second listen runs on at all: with Whisper off
+#: the GPU while it runs (:mod:`.gpu_turns`), Cohere alone needs 6.1 GiB on Windows
+#: (:func:`alone_gb`: 3.85 + 1.6 + 0.36 + 0.25), inside the 6.95 GiB an 8 GB card leaves a
+#: process there; elsewhere 5.0 GiB, which a 6 GB card holds. The installers, the
+#: environment's bootstrap and the supervisor read the same line (a test keeps them equal)
+MIN_GPU_GB = 7.5 if sys.platform == "win32" else 6.0
 #: the oldest GPU torch's CUDA 13.0 build runs on: Turing (compute capability 7.5); its
 #: kernels are built for sm_75 and newer, so an older card loads nothing
 MIN_COMPUTE = (7, 5)
@@ -177,7 +192,7 @@ def gpu_problem(gpu: Any) -> str | None:
         return (
             f"{gpu.name} has {gpu.total_gb:.1f} GB: the second listen needs a GPU of"
             f" {MIN_GPU_GB:g} GB or more here (Cohere's {WEIGHTS_GB * GIB / 1e9:.1f} GB of"
-            " weights beside Whisper), so Whisper's words are kept"
+            " weights, with Whisper off the GPU while it runs), so Whisper's words are kept"
         )
     if gpu.compute is not None and tuple(gpu.compute) < MIN_COMPUTE:
         return (
@@ -257,23 +272,60 @@ def need_gb(weights: float, whisper_batch: int) -> float:
     )
 
 
-def room(model: str, settings: WhisperSettings) -> str | None:
-    """Why the model cannot load beside Whisper right now, or None: the GPU's free memory
-    (``torch.cuda.mem_get_info``) must hold :func:`need_gb`. Asked before the model loads;
-    no room is remembered like a failed load (``cohere.recogniser``: not asked again until
-    its backoff is over, 10 min doubling to 6 h), and a relisten job that meets it gives
-    itself back, its video's try unspent."""
+def alone_gb(weights: float = WEIGHTS_GB) -> float:
+    """What the model needs free on the GPU with Whisper off it (GiB): :func:`need_gb`
+    without Whisper's room, and the margin its batches keep."""
+    return need_gb(weights, 0) + MARGIN_GB
+
+
+def mode(model: str, settings: WhisperSettings) -> Mode | None:
+    """How the second listen shares the GPU with Whisper here, from the GPU's free memory
+    as its driver measures it (NVML) plus what this process holds there already
+    (:func:`.gpu_turns.decide`): ``together``, ``sequential``, or None when it does not fit
+    even alone (or the driver cannot say: then ``together``, the room check at load time
+    deciding). ``settings`` are Whisper's (its precision and batch)."""
+    from . import ct2, gpu_turns
+
+    index = device_index(settings.device)
+    if index is None:
+        return None
+    gpu = ct2.gpu_info(index)
+    if gpu is None:
+        return gpu_turns.TOGETHER
+    compute = settings.compute_type if settings.compute_type not in ("", "auto") else "float16"
+    whisper = ct2.gpu_need_gb(compute, settings.max_batch)
+    cohere = alone_gb(weights_gb(model))
+    own = 0.0
+    if any(t.on_gpu() for t in ct2.shared_transcribers()):
+        own += whisper
+    from . import cohere as cohere_mod
+
+    rec = cohere_mod.loaded_recogniser(model)
+    if rec is not None and not getattr(rec, "off_gpu", False):
+        own += cohere
+    return gpu_turns.decide(gpu.free_gb + own, whisper, cohere)
+
+
+def room(model: str, settings: WhisperSettings, *, beside_whisper: bool = True) -> str | None:
+    """Why the model cannot load right now, or None: the GPU's free memory
+    (``torch.cuda.mem_get_info``) must hold :func:`need_gb` (``beside_whisper``: with room
+    for Whisper's batch; else Whisper is off the GPU while it runs, :mod:`.gpu_turns`).
+    Asked before the model loads; no room is remembered like a failed load
+    (``cohere.recogniser``: not asked again until its backoff is over, 10 min doubling to
+    6 h), and a second-listen job that meets it gives itself back, its video's try unspent."""
     index = device_index(settings.device) or 0
     import torch
 
     free, total = torch.cuda.mem_get_info(index)
-    need = need_gb(weights_gb(model), settings.max_batch)
+    files = settings.max_batch if beside_whisper else 0
+    need = need_gb(weights_gb(model), files)
     if free / GIB >= need:
         return None
+    room_for = f" room for Whisper's {files} files" if files else " Whisper off the GPU"
     return (
         f"too little free GPU memory for the second listen: {free / GIB:.1f} of"
         f" {total / GIB:.1f} GB free, it needs {need:.1f} GB (Cohere's weights, a batch, and"
-        f" room for Whisper's {settings.max_batch} files)"
+        f"{room_for})"
     )
 
 
@@ -315,13 +367,17 @@ class CudaRecogniser:
         *,
         source: str = "hf",
         settings: WhisperSettings | None = None,
+        beside_whisper: bool = True,
     ) -> None:
         settings = settings or WhisperSettings()
         self.model_id = model_id
         #: where the weights came from: ``hf`` (Hugging Face) or ``share`` (the home's copy)
         self.source = source
         self._lock = threading.Lock()
-        self._whisper_batch = settings.max_batch
+        #: the room its batches leave for Whisper's: none when the two take turns
+        self._whisper_batch = settings.max_batch if beside_whisper else 0
+        #: the weights are in the host's memory (:meth:`offload`), not on the GPU
+        self.off_gpu = False
         t0 = time.monotonic()
         folder = path or model_dir(model_id)
         import torch
@@ -397,6 +453,28 @@ class CudaRecogniser:
         free, _total = self._torch.cuda.mem_get_info(self.device)
         spare = free / GIB - MARGIN_GB - self._whisper_batch * WHISPER_FILE_GB
         return max(1, min(MAX_BATCH, int(spare / STRETCH_GB)))
+
+    def offload(self) -> bool:
+        """Move the weights to the host's memory and give the GPU's memory back (Whisper's
+        turn, :mod:`.gpu_turns`). False when they were not on the GPU."""
+        with self._lock:
+            if self.off_gpu:
+                return False
+            self._model.to("cpu")
+            self._torch.cuda.empty_cache()
+            self.off_gpu = True
+            return True
+
+    def onload(self) -> bool:
+        """Put the weights :meth:`offload` moved back on the GPU, and size the batch again
+        from what is free then. False when they were on it."""
+        with self._lock:
+            if not self.off_gpu:
+                return False
+            self._model.to(self.device)
+            self.off_gpu = False
+            self.batch = self._fit_batch()
+            return True
 
     def __call__(self, stretches: list[Any]) -> list[str]:
         """The text of each stretch (each at most 30 s; a longer one is heard in parts and

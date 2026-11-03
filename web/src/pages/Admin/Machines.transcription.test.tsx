@@ -119,7 +119,7 @@ describe("Machines: the transcription line", () => {
     );
   });
 
-  it("waits for the second listen, and says how to let it transcribe", async () => {
+  it("a machine from before the split waits for the second listen, and says how to let it transcribe", async () => {
     show(pc({}, [], { transcribe: WAITS }));
     const note = await screen.findByTestId("machine-transcription");
     expect(note).toHaveTextContent(/waits for the machines that run the second listen/);
@@ -168,6 +168,69 @@ describe("Machines: the transcription line", () => {
     show(pc({}, ["transcribe"]));
     expect(await screen.findByTestId("machine-transcription")).toHaveTextContent(
       "التفريغ النصي: جاهز على NVIDIA GeForce RTX 2080 SUPER"
+    );
+  });
+});
+
+// The second listen is a stage of its own: the PC transcribes, and its 8 GB card runs the
+// second listen too, taking turns with Whisper (capabilities.second_listen_gpu).
+describe("Machines: the second-listen line", () => {
+  beforeEach(() => {
+    get.mockReset();
+  });
+  afterEach(() => {
+    localStorage.removeItem("mkt:locale");
+    document.documentElement.dir = "ltr";
+  });
+
+  const turns = { gpus: [RTX], stt_backend: "ct2-cuda", second_listen_gpu: "sequential" };
+
+  it("the 8 GB PC: both stages, taking turns on the GPU", async () => {
+    show(pc({ capabilities: turns }, ["transcribe", "second_listen"]));
+    expect(await screen.findByTestId("machine-transcription")).toHaveTextContent(
+      "Transcription: ready on NVIDIA GeForce RTX 2080 SUPER"
+    );
+    expect(await screen.findByTestId("machine-second-listen")).toHaveTextContent(
+      /Second listen: runs here, taking turns with Whisper/
+    );
+  });
+
+  it("a bigger card keeps both loaded", async () => {
+    show(
+      pc({ capabilities: { ...turns, second_listen_gpu: "together" } }, [
+        "transcribe",
+        "second_listen",
+      ])
+    );
+    expect(await screen.findByTestId("machine-second-listen")).toHaveTextContent(
+      "Second listen: runs here, beside Whisper on the same GPU"
+    );
+  });
+
+  it("says why it does not run here, while the machine still transcribes", async () => {
+    const why =
+      "unavailable: the second listen does not run here (NVIDIA GeForce RTX 2060 has 6.0 GB:" +
+      " the second listen needs a GPU of 7.5 GB or more here)";
+    show(pc({}, ["transcribe"], { second_listen: why }));
+    const note = await screen.findByTestId("machine-second-listen");
+    expect(note).toHaveTextContent(/Second listen: doesn't run here\. This machine still transcribes/);
+    expect(within(note).getByText(/has 6\.0 GB/)).toBeInTheDocument();
+    expect(await screen.findByTestId("machine-transcription")).toHaveTextContent(
+      /Transcription: ready/
+    );
+  });
+
+  it("no line for a stage switched off", async () => {
+    show(pc({}, ["transcribe"], { second_listen: "switched_off" }));
+    await screen.findByTestId("machine-transcription");
+    expect(screen.queryByTestId("machine-second-listen")).toBeNull();
+  });
+
+  it("in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    show(pc({ capabilities: turns }, ["transcribe", "second_listen"]));
+    expect(await screen.findByTestId("machine-second-listen")).toHaveTextContent(
+      /الاستماع الثاني: يعمل هنا بالتناوب مع Whisper/
     );
   });
 });

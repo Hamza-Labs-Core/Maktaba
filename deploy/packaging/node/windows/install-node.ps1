@@ -82,7 +82,7 @@
 .PARAMETER Torch
     Which build of torch the stt and search extras install: auto (default) takes the
     CUDA build (2.0 GB, from PyTorch's index: the release's constraints-cuda.txt) when this
-    machine's NVIDIA GPU runs the second listen (9.5 GiB or more, compute capability 7.5 or
+    machine's NVIDIA GPU runs the second listen (7.5 GiB or more, compute capability 7.5 or
     more, driver R580 or later), else the CPU build (124 MB, PyPI's); cpu or cuda choose.
 
 .PARAMETER Source

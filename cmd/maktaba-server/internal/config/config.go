@@ -307,10 +307,12 @@ type TranscriptionSection struct {
 	Model string `toml:"model"`
 	// Refine: "on" (default) lets a second listen correct Whisper's words
 	// (MAKTABA_STT_REFINE); "off" stores them as they are. On Windows and Linux it
-	// runs on the NVIDIA GPU beside Whisper (story 38.9), when the GPU holds both:
-	// 10 GB and up on Windows, 8 GB and up elsewhere, and only while it has the
-	// room free; the GPU's tiers then give Whisper a smaller batch to leave it that
-	// room. Without such a GPU a transcript keeps Whisper's words and says why.
+	// runs on the NVIDIA GPU (story 38.9) as a stage of its own after Whisper's:
+	// beside Whisper where the GPU holds both (10 GB and up on Windows, 8 GB and up
+	// elsewhere; the GPU's tiers then give Whisper a smaller batch to leave it the
+	// room), and taking turns with Whisper on a smaller one (8 GB on Windows, 6 GB
+	// elsewhere: one model on the GPU at a time). Without such a GPU a machine still
+	// transcribes, and one that runs the second listen corrects its transcripts.
 	Refine string `toml:"refine"`
 	// RefineModel is the second listen's model (MAKTABA_STT_REFINE_MODEL);
 	// empty: CohereLabs/cohere-transcribe-arabic-07-2026.

@@ -305,7 +305,7 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 
 // transcriptionStages: a worker that serves only these is a transcription
 // worker (the Mac, a GPU PC); every other is a main worker.
-var transcriptionStages = map[string]bool{"transcribe": true, "relisten": true, "subtitle_gen": true}
+var transcriptionStages = map[string]bool{"transcribe": true, "second_listen": true, "relisten": true, "subtitle_gen": true}
 
 func workerRole(stages []string) string {
 	if len(stages) == 0 {

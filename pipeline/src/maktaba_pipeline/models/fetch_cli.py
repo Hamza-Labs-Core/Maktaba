@@ -19,7 +19,7 @@ The items are exactly what the workers load, from the same settings:
                 elsewhere (:data:`~..stt.cohere_cuda.ALLOW_PATTERNS`); skipped with
                 ``MAKTABA_STT_REFINE=0``, and on a machine that cannot run it (Windows,
                 Linux: no NVIDIA GPU, a torch without CUDA, transcription on the CPU, or a
-                GPU too small to hold it beside Whisper, :func:`~..stt.cohere.unavailable`),
+                GPU too small to hold it even alone, :func:`~..stt.cohere.unavailable`),
                 saying why. When Hugging Face refuses, the home's published copy on
                 ``--share`` (default ``$MAKTABA_MODELS_DIR``) is copied here instead
                 (:mod:`~..stt.model_share`)

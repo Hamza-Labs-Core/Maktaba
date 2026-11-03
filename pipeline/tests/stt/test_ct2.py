@@ -701,3 +701,41 @@ def test_the_progress_line_says_where_the_files_are_decoded(
     assert stage._where(WhisperSettings(model="x/where-cpu", device="cpu")) == "on the CPU"
     monkeypatch.setattr(engine, "current", lambda: engine.MLX)
     assert stage._where(WhisperSettings()) == "on the GPU"
+
+
+@pytest.mark.unit
+def test_whisper_moves_off_the_gpu_for_the_second_listen_s_turn_and_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Where the GPU holds one model at a time (gpu_turns): CTranslate2 moves the weights
+    to the host's memory (``unload_model(to_cpu=True)``, its cached buffers back to the
+    driver) and loads them again on the GPU, without reading the model from disk."""
+    moves: list[str] = []
+    cleared: list[int] = []
+
+    class Movable(FakeWhisper):
+        def unload_model(self, to_cpu: bool = False) -> None:
+            moves.append(f"unload to_cpu={to_cpu}")
+
+        def load_model(self) -> None:
+            moves.append("load")
+
+    monkeypatch.setattr(ct2, "_clear_cuda_cache", lambda: cleared.append(1))
+    t = _transcriber(Movable())
+    assert t.on_gpu()
+    assert t.release_gpu() and t.off_gpu and not t.on_gpu()
+    assert moves == ["unload to_cpu=True"] and cleared == [1]
+    assert not t.release_gpu()  # once
+    assert t.restore_gpu() and t.on_gpu() and moves == ["unload to_cpu=True", "load"]
+    assert not t.restore_gpu()
+
+
+@pytest.mark.unit
+def test_a_model_never_loaded_or_on_the_cpu_has_nothing_to_move() -> None:
+    t = ct2.CT2Transcriber(
+        WhisperSettings(model="fake/whisper"), loader=lambda s: _loaded(FakeWhisper())
+    )
+    assert not t.on_gpu() and not t.release_gpu() and not t.restore_gpu()
+    t._load()
+    t.device = "cpu"
+    assert not t.on_gpu() and not t.release_gpu()

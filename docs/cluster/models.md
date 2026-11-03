@@ -41,8 +41,10 @@ share. It checks every file against the checksums in `manifest.json`, keeps its 
 the machine uses its own copy, even when the share is away.
 
 The second listen runs on Apple Silicon Macs, and on Windows and Linux machines with an
-NVIDIA GPU that holds it beside Whisper: 10 GB or more on Windows, 8 GB or more on Linux, a
-Turing card (RTX 20 series) or newer, and a driver of R580 or later. Other machines don't need
+NVIDIA GPU that holds it: 8 GB or more on Windows, 6 GB or more on Linux, a Turing card (RTX
+20 series) or newer, and a driver of R580 or later. Where the GPU holds Whisper and the second
+listen together (10 GB or more on Windows, 8 GB or more on Linux) both stay loaded; on a
+smaller one they take turns, one model on the GPU at a time. Other machines don't need
 the model and don't download it (a Windows machine also gets the smaller, CPU-only torch):
 their transcripts are Whisper's alone, and say why. While the second listen is on, such
 machines leave transcription to the ones that run it, unless Settings, Transcription,

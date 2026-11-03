@@ -43,6 +43,7 @@ class StageImpl:
 CORE_MODULES: dict[str, str] = {
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
     "transcribe": "maktaba_pipeline.engine.stages.transcribe",
+    "second_listen": "maktaba_pipeline.engine.stages.second_listen",
     "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
     "index": "maktaba_pipeline.engine.stages.index",
     "chapter_infer": "maktaba_pipeline.engine.stages.chapter_infer",
