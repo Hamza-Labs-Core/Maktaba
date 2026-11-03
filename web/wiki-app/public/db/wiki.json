@@ -5893,7 +5893,8 @@
         "story-11.10",
         "story-11.14",
         "story-12.3",
-        "story-26.4"
+        "story-26.4",
+        "story-54.15"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -7336,7 +7337,9 @@
         "Queue",
         "get"
       ],
-      "related": [],
+      "related": [
+        "story-54.15"
+      ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
       },

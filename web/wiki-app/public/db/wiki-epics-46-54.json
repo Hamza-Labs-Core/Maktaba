@@ -4363,24 +4363,29 @@
     {
       "id": "story-54.15",
       "type": "story",
-      "title": "The store service and developer accounts",
+      "title": "The store service, store accounts and linking a home",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.15 — The store service and developer accounts\n\n> Epic 54 · Phase 2 · Depends on: 54.14, Epic 50 (50.07) · Needed by: 54.16, 54.17, 54.19\n\n## Why\n\nSomeone has to hold the catalog, the packages, the developer accounts and the review queue.\nMaktaba Cloud already has accounts, a licence issuer, an admin console and (after Epic\n50) two machines that cover for each other. The store is a new part of it, not a new service to\nrun.\n\n## Description\n\n### 1. Where it runs\n\n- Package `cloud/internal/store/` in the cloud API binary, its own tables in the cloud database\n  (migrations in `cloud/migr",
+      "content": "# Story 54.15 — The store service, store accounts and linking a home\n\n> Epic 54 · Phase 2 · Depends on: 54.14 · Needed by: 54.16, 54.17, 54.18, 54.19\n\n## Why\n\nSomeone has to hold the catalog, the packages, the developer and buyer accounts and the review\nqueue. The store is **its own service, independent of Maktaba Cloud** (decided 2026-11-03): its\nown accounts and sign-in, its own database, its own deploy, its own hostname, and (Phase 3) its\nown payment setup. It runs entirely on Cloudflare (Workers, D1, Durable Objects, R2, Queues),\nso no VPS is ever needed for it.\n\n### Why independent\n\n- **D",
       "tags": [
         "story",
         "54-plugins",
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-post-sessions",
+        "ep-get-workers"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-15-store-service.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "POST /sessions",
+        "GET /workers"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "store-service"
@@ -4418,7 +4423,7 @@
       "title": "The home's catalog, updates and the kill switch",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.17 — The home's catalog, updates and the kill switch\n\n> Epic 54 · Phase 2 · Depends on: 54.07, 54.14, 54.15 · Needed by: 54.18\n\n## Why\n\nThe home server, not any plugin, talks to the store: it fetches the signed catalog, downloads\npackages, offers updates, and above all honours the revocation list so a plugin Maktaba\nwithdraws for malware stops in every home within minutes. This is the server reaching the\ninternet on its own behalf, through Maktaba Cloud, with signatures, not the channel, deciding\nwhat is trusted.\n\n## Description\n\n### 1. Fetching\n\nA new API loop `plugins.catalog` (an",
+      "content": "# Story 54.17 — The home's catalog, updates and the kill switch\n\n> Epic 54 · Phase 2 · Depends on: 54.07, 54.14, 54.15 · Needed by: 54.18\n\n## Why\n\nThe home server, not any plugin, talks to the store: it fetches the signed catalog, downloads\npackages, offers updates, and above all honours the revocation list so a plugin Maktaba\nwithdraws for malware stops in every home within minutes. This is the server reaching the\ninternet on its own behalf, straight to the store's CDN (`plugins-cdn.maktaba.tv`, 54.15), with\nsignatures, not the channel, deciding what is trusted. Nothing here goes through Makt",
       "tags": [
         "story",
         "54-plugins",
@@ -4470,7 +4475,7 @@
       "title": "Paid plugins",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, the Phase 3 payment provider decision · Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). The owner asked for free and paid plugins. Maktaba Cloud already issues signed\nlicences that homes check offline; paid plugins reuse that for entitlements.\n\n## Description\n\n### 1. The Phase 3 decision this story waits for\n\nThe store resells third-party products, which many sellers of record restrict (Paddle among\nthem), so a candidate is chosen only af",
+      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, the Phase 3 payment provider decision · Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider account and seller-of-record choice, its own payouts, tax records and\nrefunds, and its own signed entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home calls the ",
       "tags": [
         "story",
         "54-plugins",

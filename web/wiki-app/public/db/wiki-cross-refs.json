@@ -6496,7 +6496,7 @@
       "epic": 54,
       "num": "15",
       "slug": "store-service",
-      "title": "The store service and developer accounts",
+      "title": "The store service, store accounts and linking a home",
       "story_file": "specs/epics/54-plugins/story-54-15-store-service.md",
       "plan_files": []
     },
