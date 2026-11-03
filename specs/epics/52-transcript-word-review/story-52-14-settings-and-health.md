@@ -103,9 +103,9 @@ library's transcripts, at low priority. It never touches `transcribe`.
 
 ### Files
 
-- `pipeline/src/maktaba_pipeline/review/settings.py`: parse and validate `word_review`, with the
+- `pipeline/src/maktaba_pipeline/word_review/settings.py`: parse and validate `word_review`, with the
   defaults.
-- `pipeline/src/maktaba_pipeline/review/scoring.py`: the sensitivity → threshold table.
+- `pipeline/src/maktaba_pipeline/word_review/scoring.py`: the sensitivity → threshold table.
 - `pipeline/src/maktaba_pipeline/engine/stages/word_check.py`: the setting in the fingerprint,
   and the reasons switch.
 - `pipeline/src/maktaba_pipeline/engine/stages/word_judge.py`: the idle-only claim rule.

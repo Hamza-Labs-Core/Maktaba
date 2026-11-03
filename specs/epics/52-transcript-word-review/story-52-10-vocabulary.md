@@ -111,7 +111,7 @@ their libraries' entries only, and never home scope.
   `router/p6.go`, using `review.canReview` for library scope and `p.IsAdmin` for home scope.
 - `api/internal/handlers/review/review.go`: the vocabulary writes on `name`, `dictionary` and
   `correct`, plus the re-score enqueue.
-- `pipeline/src/maktaba_pipeline/review/vocabulary.py`: loads a library's vocabulary and pairs
+- `pipeline/src/maktaba_pipeline/word_review/vocabulary.py`: loads a library's vocabulary and pairs
   for a run, and the derived prompt (`derived_prompt(db, library_id, tokenizer)`).
 - `pipeline/src/maktaba_pipeline/engine/stages/word_check.py`: passes the vocabulary to the pack,
   plus `near_vocabulary`.
