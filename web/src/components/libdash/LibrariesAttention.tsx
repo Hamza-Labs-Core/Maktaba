@@ -2,7 +2,8 @@
 // most urgent few with why (failures, a YouTube source that did not list,
 // duplicates to review, files to convert), each opening its library page at
 // the queues, and the way to the library dashboard, where every library has
-// its tile and the bulk actions are.
+// its tile and the bulk actions are. A non-admin (the page shows them the
+// queues too) gets each library's queue items instead, and no dashboard link.
 import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
@@ -29,9 +30,11 @@ function ReasonBadge({ h, r }: { h: LibraryHealth; r: Reason }) {
 export function LibrariesAttention({
   rows,
   offline,
+  admin = true,
 }: {
   rows: LibraryQueueRow[];
   offline?: Record<string, OfflineSummary>;
+  admin?: boolean;
 }) {
   const { t, n, locale } = useI18n();
   const all = rows.map((r) => libraryHealth(r, offline?.[r.library_id]));
@@ -40,15 +43,19 @@ export function LibrariesAttention({
     "attention",
     locale
   );
+  const target = (id: string) =>
+    admin ? libraryPath(id, "queues") : `/queue/items/library/${encodeURIComponent(id)}`;
   return (
     <section className="mkt-q-panel mkt-ld-attn" aria-labelledby="mkt-ld-attn-h">
       <div className="mkt-q-section-head">
         <h2 className="mkt-q-section-title" id="mkt-ld-attn-h">
           {t("queue.libs.title")}
         </h2>
-        <Link className="mkt-ld-attn__open" to="/queue/libraries">
-          {t("libdash.open", { n: n(all.length) })}
-        </Link>
+        {admin && (
+          <Link className="mkt-ld-attn__open" to="/queue/libraries">
+            {t("libdash.open", { n: n(all.length) })}
+          </Link>
+        )}
       </div>
       {all.length === 0 ? (
         <p className="mkt-q-empty">{t("libdash.empty.none")}</p>
@@ -62,7 +69,7 @@ export function LibrariesAttention({
           <ul className="mkt-ld-attn__list">
             {needing.slice(0, ATTENTION_SHOWN).map((h) => (
               <li key={h.id}>
-                <Link className="mkt-ld-attn__name" to={libraryPath(h.id, "queues")}>
+                <Link className="mkt-ld-attn__name" to={target(h.id)}>
                   {bidiIsolate(h.name)}
                 </Link>
                 <span className="mkt-ld-attn__why">
@@ -73,7 +80,7 @@ export function LibrariesAttention({
               </li>
             ))}
           </ul>
-          {needing.length > ATTENTION_SHOWN && (
+          {admin && needing.length > ATTENTION_SHOWN && (
             <Link to="/queue/libraries?show=attention">
               {t("libdash.attn.more", { n: n(needing.length - ATTENTION_SHOWN) })}
             </Link>

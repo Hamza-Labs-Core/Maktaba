@@ -306,7 +306,7 @@ export function QueueOverview() {
         </section>
       </div>
 
-      <LibrariesAttention rows={libraries} offline={admin ? offline : undefined} />
+      <LibrariesAttention rows={libraries} offline={admin ? offline : undefined} admin={admin} />
 
       {admin && <OfflineItemsPanel tick={stream.finishedTick + itemsBump} />}
 

@@ -310,6 +310,17 @@ describe("LibrariesAttention", () => {
     );
   });
 
+  it("a non-admin gets each library's queue items and no dashboard links", () => {
+    const rows = Array.from({ length: ATTENTION_SHOWN + 1 }, (_, i) =>
+      failing(`f${i}`, `Failing ${i}`, i + 1)
+    );
+    renderAt(<LibrariesAttention rows={rows} admin={false} />, "/queue");
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(ATTENTION_SHOWN);
+    expect(links[0]).toHaveAttribute("href", "/queue/items/library/f6");
+    expect(screen.queryByRole("link", { name: /dashboard/ })).toBeNull();
+  });
+
   it("with the summaries shows why, and says when nothing needs attention", () => {
     const { unmount } = renderAt(
       <LibrariesAttention
