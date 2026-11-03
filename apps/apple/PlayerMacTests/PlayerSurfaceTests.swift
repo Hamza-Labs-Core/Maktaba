@@ -4,6 +4,7 @@ import AVKit
 import SwiftUI
 import Testing
 import MaktabaKit
+@testable import Maktaba_Player_Mac
 
 /// The Mac's player surface is AppKit's AVPlayerView in our plain host view, on screen in
 /// the app. Launched normally, SwiftUI's VideoPlayer (and AVPlayerView represented
@@ -30,6 +31,17 @@ import MaktabaKit
         // and full screen
         #expect(view.allowsPictureInPicturePlayback)
         #expect(view.showsFullScreenToggleButton)
+    }
+
+    /// The watch and live players play on when the person leaves the app with Picture in
+    /// Picture off (the default policy pauses a video drawn in a layer; on iPhone and iPad that
+    /// cut the sound on going home). Shared code: checked here, where it runs on every PR.
+    @Test func theWatchAndLivePlayersPlayOnWhenTheAppLeaves() {
+        #expect(Playback.newPlayer().audiovisualBackgroundPlaybackPolicy == .continuesIfPossible)
+        let home = URL(string: "http://127.0.0.1:9")!
+        let live = LivePlayback(client: APIClient(home: home, tokens: TokenStore(app: "test.mac.background", home: home)),
+                                channel: "ch-1")
+        #expect(live.player.audiovisualBackgroundPlaybackPolicy == .continuesIfPossible)
     }
 
     static func find<V: NSView>(_: V.Type, in view: NSView) -> V? {

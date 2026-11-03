@@ -186,6 +186,51 @@ final class PlayerWatchUITests: PlayerUITestCase {
         XCTAssertTrue(element("player.surface").waitForNonExistence(timeout: 10), "the player closes, the window with it")
     }
 
+    /// Going home while it plays keeps it playing (the owner's report: leaving the app cut it,
+    /// and the PiP button stayed off). The app ships the audio background mode in its
+    /// Info.plist and its player keeps playing when the app leaves; while it is away it keeps
+    /// reporting progress to the home (a suspended app sends nothing), further on each time, and
+    /// back in the app it is still playing, past where it was. On the iPad simulator Picture in
+    /// Picture may float it meanwhile: it plays on either way.
+    ///
+    /// The simulator does not enforce background modes: without the audio mode and with the
+    /// player's default policy it played on here too (tried on the iPad simulator, iOS 27.0).
+    /// So the first two checks, read from the app as built, are what fail on the old bug; the
+    /// rest proves going home and back keeps the video and its reports going.
+    func testGoingHomeWhilePlayingKeepsItPlaying() {
+        watch("v2")
+        waitFor("it plays", timeout: 20) { state["playing"] == "true" && (state["position"].flatMap(Int.init) ?? 0) >= 1240 }
+        XCTAssertEqual(state["backgroundAudio"], "true", "UIBackgroundModes has audio in the app's Info.plist")
+        XCTAssertEqual(state["backgroundPolicy"], "continues", "the player plays on when the app leaves")
+        let left = state["position"].flatMap(Int.init) ?? 0
+        let reported = progress().count
+
+        XCUIDevice.shared.press(.home)
+        // XCUIApplication.state of an app playing in the background is not reliable in the
+        // simulator (it may read suspended or foreground with Picture in Picture): the home's
+        // progress reports are the proof
+        XCTAssertTrue(XCUIApplication(bundleIdentifier: "com.apple.springboard").wait(for: .runningForeground, timeout: 10),
+                      "the Home Screen is in front")
+        // progress every 10 s: two more while away, the last further on than where it left
+        let end = Date().addingTimeInterval(40)
+        var away: [Int] = []
+        while Date() < end {
+            away = Array(progress().dropFirst(reported))
+            if away.count >= 2, let last = away.last, last >= left + 10 { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTAssertGreaterThanOrEqual(away.count, 2, "progress reports from the background: \(away)")
+        XCTAssertGreaterThanOrEqual(away.last ?? 0, left + 10, "it played on while away: \(away) after \(left)")
+
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        XCTAssertTrue(element("player.surface").waitForExistence(timeout: 15), "the player is still open")
+        waitFor("still playing, past where it left") {
+            state["playing"] == "true" && (state["position"].flatMap(Int.init) ?? 0) >= left + 10
+        }
+        shot("watch-back-from-home")
+    }
+
     /// Taps one of the controls, showing them first when they have hidden (they hide 4 s after
     /// the last touch, so a check and a tap can straddle the moment they go).
     private func tapControl(_ id: String) {

@@ -102,9 +102,14 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player
         TARGETED_DEVICE_FAMILY: "1"
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba
-        INFOPLIST_KEY_UIBackgroundModes: audio
     info:
       path: Player/Info-iPhone.plist
+      properties:
+        # the sound plays on in the background (the screen locked, another app open) and
+        # Picture in Picture can start: iOS allows neither without the audio background mode.
+        # In the Info.plist itself: Xcode has no INFOPLIST_KEY_ for UIBackgroundModes, so a
+        # build setting of that name never reached the app
+        UIBackgroundModes: [audio]
   Maktaba Player iPad:
     templates: [IOSApp]
     sources:
@@ -116,9 +121,14 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.tablet
         TARGETED_DEVICE_FAMILY: "2"
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba
-        INFOPLIST_KEY_UIBackgroundModes: audio
     info:
       path: Player/Info-iPad.plist
+      properties:
+        # the sound plays on in the background (the screen locked, another app open) and
+        # Picture in Picture can start: iOS allows neither without the audio background mode.
+        # In the Info.plist itself: Xcode has no INFOPLIST_KEY_ for UIBackgroundModes, so a
+        # build setting of that name never reached the app
+        UIBackgroundModes: [audio]
   Maktaba Player Mac:
     templates: [App, OpensConnectLinks]
     platform: macOS

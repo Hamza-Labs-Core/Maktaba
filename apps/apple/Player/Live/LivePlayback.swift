@@ -71,6 +71,7 @@ final class LivePlayback {
         channelID = channel
         self.heartbeat = heartbeat
         player.allowAirPlay()
+        player.keepPlayingInBackground()
         externalWatcher = ExternalPlaybackWatcher(player) { [weak self] active in self?.externalPlaybackChanged(active) }
     }
 

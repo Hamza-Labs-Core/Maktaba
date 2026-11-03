@@ -83,3 +83,24 @@ extension PictureInPicture: AVPictureInPictureControllerDelegate {
         done(true)
     }
 }
+
+extension AVPlayer {
+    /// The sound plays on when the person leaves the app with Picture in Picture off (they
+    /// turned off its automatic start in Settings, the device has none, or it is a sound-only
+    /// item). By default (`.automatic`) iOS pauses a player drawn in a layer when the app goes
+    /// to the background unless Picture in Picture takes the picture; this keeps it playing,
+    /// the picture hidden until the app is back. Needs the audio background mode and the
+    /// playback audio session (`PlaybackAudio`), as Picture in Picture does.
+    public func keepPlayingInBackground() {
+        audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+    }
+}
+
+/// The audio background mode, which the sound in the background and Picture in Picture both
+/// need on iPhone and iPad.
+public enum BackgroundAudio {
+    /// `info` (an app's Info.plist) lists `audio` in `UIBackgroundModes`.
+    public static func isDeclared(in info: [String: Any]?) -> Bool {
+        (info?["UIBackgroundModes"] as? [String])?.contains("audio") == true
+    }
+}
