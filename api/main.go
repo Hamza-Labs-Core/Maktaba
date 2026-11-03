@@ -339,6 +339,9 @@ func runServe() error {
 	// Epic 16: the entitlement store is built with the app DB below; the
 	// relay gate in the router's chain reads it through this reference.
 	licRef := &subscriptions.StoreRef{}
+	// Epic 51 story 51.19: the gate also asks the cloud.relay component's Licensed
+	// condition (the row the runners read), the same answer from one source
+	licRef.SetRelayLicensed(func() (bool, bool) { return loops.Licensed("cloud.relay") })
 	// Epic 44 story 44.5: the API's use per app and day. It counts once the
 	// app database is attached (below) and is written every minute and at
 	// shutdown.

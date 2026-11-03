@@ -108,6 +108,9 @@ func runComponents(argv []string) int {
 		}
 	}
 	s.Licensed = func(flag string) bool { return lic.Allows(subscriptions.Feature(flag)) }
+	s.Tier = lic.TierName
+	// a row this command creates says what the licence allows (story 51.19)
+	s.AfterApply = func(ctx context.Context) { _, _ = s.PublishLicences(ctx, lic) }
 	name := "cli"
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		name = u.Username
@@ -241,6 +244,14 @@ func (c *componentsCLI) fail(err error) int {
 		}
 		if len(r.Conflicts) > 0 {
 			fmt.Fprintf(c.errOut, "  Conflicts with: %s (add --with-conflicts to turn them off too)\n", strings.Join(r.Conflicts, ", "))
+		}
+		if r.Code == components.CodeLicence {
+			f := subscriptions.Feature(r.Licence)
+			fmt.Fprintf(c.errOut, "  Needs the %s plan. This home is on %s. Apply a licence in Settings → Subscription.\n",
+				subscriptions.TierLabel(string(subscriptions.RequiredTier(f))), subscriptions.TierLabel(r.Tier))
+			if len(r.Components) > 0 {
+				fmt.Fprintf(c.errOut, "  Not in this home's plan: %s\n", strings.Join(r.Components, ", "))
+			}
 		}
 		return exitComponentsFailed
 	}

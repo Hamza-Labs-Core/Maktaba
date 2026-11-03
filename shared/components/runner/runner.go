@@ -117,13 +117,24 @@ type Options struct {
 	Poll    time.Duration // 0: store.DefaultPoll
 }
 
+// ReasonLicenceMissing is the reason of a component whose licence flag the home's
+// licence does not grant (story 51.19): it waits, and its want is kept.
+const ReasonLicenceMissing = "licence_missing"
+
 // gate is one component's switch as the desired state decides it.
 type gate struct {
 	on         bool
 	phase      string // when off: off, stopped or waiting
-	reason     string // held, dependency_off
+	reason     string // held, dependency_off, licence_missing
 	missing    []string
 	generation int64
+	// licence is the component's licence flag ("" for a free one); licensed whether the
+	// published licence grants it now (true while nothing is published).
+	licence  string
+	licensed bool
+	// published: the API published a licence on the row; until is its end (zero: none)
+	published bool
+	until     time.Time
 }
 
 // Loop states, as status detail.loops says them.
@@ -175,6 +186,9 @@ type Runner struct {
 	phases  map[string]string
 	phaseAt map[string]time.Time
 	sent    string // the last report that was written
+	// licWake is when a published licence next ends (zero: none): the gates are computed
+	// again then, so a component stops on time whether or not the API answers.
+	licWake time.Time
 }
 
 // New is a runner for o.Host. Its gates start on (the database is not read yet): a loop
@@ -362,16 +376,32 @@ func (r *Runner) notify() {
 // Requirements come first in the catalog's order, so each sees its requirements' gates.
 func (r *Runner) computeGates() {
 	out := map[string]gate{}
+	now := r.clock.Now()
+	var wake time.Time
 	for _, id := range r.cat.Order() {
 		c, _ := r.cat.Get(id)
 		d, has := r.desired[id]
-		g := gate{on: true, generation: d.Generation}
+		g := gate{on: true, generation: d.Generation, licence: c.Licence, licensed: true}
+		if c.Licence != "" && has {
+			g.licensed = d.LicensedAt(now)
+			if l := d.Licence; l != nil {
+				g.published = true
+				if l.Until != nil {
+					g.until = *l.Until
+				}
+				if g.licensed && l.Until != nil && (wake.IsZero() || l.Until.Before(wake)) {
+					wake = *l.Until
+				}
+			}
+		}
 		switch {
 		case !c.Switchable || r.noReconcile || !has:
 		case d.Want != components.WantEnabled:
 			g.on, g.phase = false, components.PhaseOff
 		case d.Hold != nil:
 			g.on, g.phase, g.reason = false, components.PhaseStopped, "held"
+		case !g.licensed:
+			g.on, g.phase, g.reason = false, components.PhaseWaiting, ReasonLicenceMissing
 		default:
 			for _, req := range r.cat.Requires(id) {
 				if !slices.ContainsFunc(req.AnyOf, func(x string) bool { return out[x].on }) {
@@ -385,6 +415,48 @@ func (r *Runner) computeGates() {
 		out[id] = g
 	}
 	r.gates.Store(&out)
+	if !r.noReconcile && !wake.Equal(r.licWake) {
+		r.licWake = wake
+		if !wake.IsZero() {
+			r.wakeAt(wake, now)
+		}
+	}
+}
+
+// wakeAt computes the gates again at t, when a licence's grace ends (r.mu held). A newer
+// wake replaces it.
+func (r *Runner) wakeAt(t, now time.Time) {
+	ch := r.clock.After(t.Sub(now))
+	go func() {
+		select {
+		case <-ch:
+		case <-r.root.Done():
+			return
+		}
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		if !r.licWake.Equal(t) || r.closed {
+			return
+		}
+		r.licWake = time.Time{}
+		r.computeGates()
+		r.apply()
+		r.notify()
+	}()
+}
+
+// Licensed reports whether the home's licence grants component id now, as its published
+// desired row says (lock-free), and whether that is known: not on a nil Runner, with the
+// kill switch, before the desired state is read, or while nothing is published.
+func (r *Runner) Licensed(id string) (licensed, known bool) {
+	if r == nil || r.noReconcile {
+		return true, false
+	}
+	g, ok := (*r.gates.Load())[id]
+	if !ok || !g.published {
+		return true, false
+	}
+	return g.licensed && (g.until.IsZero() || r.clock.Now().Before(g.until)), true
 }
 
 // apply starts what should run and stops what should not (r.mu held).
@@ -610,6 +682,14 @@ func (r *Runner) statuses() []store.Status {
 		ready := store.Condition{Type: components.CondReady, Status: "true", ChangedAt: at, Generation: g.generation}
 		if phase != components.PhaseRunning {
 			ready.Status, ready.Reason = "false", reason
+		}
+		if g.licence != "" && !r.noReconcile {
+			lic := store.Condition{Type: components.CondLicensed, Status: "true", ChangedAt: at, Generation: g.generation,
+				Params: map[string]any{"feature": g.licence}}
+			if !g.licensed {
+				lic.Status, lic.Reason = "false", ReasonLicenceMissing
+			}
+			conds = append(conds, lic)
 		}
 		conds = append(conds, req, ready)
 		det := map[string]any{"loops": detail}

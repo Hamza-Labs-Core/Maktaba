@@ -6046,7 +6046,7 @@
   "components.phase.draining": "يُنهي العمل",
   "components.phase.failed": "فشل",
   "components.reason.dependency_off": "يحتاج {component} وهو متوقف.",
-  "components.reason.licence_missing": "ترخيصك لا يشمل هذا.",
+  "components.reason.licence_missing": "يتطلب خطة {required_tier}. هذا الجهاز الرئيسي على خطة {tier}.",
   "components.reason.platform_unsupported": "نظام هذا الجهاز لا يستطيع تشغيله.",
   "components.reason.not_enough_memory": "ذاكرة هذا الجهاز غير كافية.",
   "components.reason.verify_failed": "التنزيل لم يطابق توقيعه فحُذف.",
@@ -6061,5 +6061,9 @@
   "components.reason.component_off": "{component} متوقف عن العمل.",
   "components.reason.component_held": "أوقف أحد المسؤولين {component}.",
   "components.reason.toml_superseded": "ملف server.toml يقول {value}؛ الإعداد هنا هو المعتمد.",
-  "components.reason.required_by": "تحتاجه مكونات أخرى: {components}."
+  "components.reason.required_by": "تحتاجه مكونات أخرى: {components}.",
+  "components.licence.refused": "هذا الجزء غير مشمول في خطة هذا الجهاز الرئيسي. طبّق ترخيصًا من الإعدادات ← الاشتراك.",
+  "components.licence.waiting": "متوقف حتى تشمله الخطة مرة أخرى. اختيارك محفوظ.",
+  "components.licence.locked": "يتطلب خطة",
+  "components.licence.openSubscription": "فتح الاشتراك"
 }

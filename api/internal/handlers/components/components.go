@@ -32,6 +32,7 @@ import (
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
@@ -97,6 +98,14 @@ func (h *Handler) log() *slog.Logger {
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if ref, ok := svc.AsRefusal(err); ok {
 		e := problem(ref.Status, ref.Code, strings.ReplaceAll(ref.Code, "_", " "), ref.Detail)
+		if ref.Code == svc.CodeLicence {
+			// the licence's own problem (story 51.19): clients that read
+			// license-required keep working; code and component added
+			e = subscriptions.ComponentRefusal(ref.ID, subscriptions.Feature(ref.Licence), ref.Tier)
+			if ref.Components != nil {
+				e = e.With("components", ref.Components)
+			}
+		}
 		if ref.ID != "" {
 			e = e.With("id", ref.ID)
 		}

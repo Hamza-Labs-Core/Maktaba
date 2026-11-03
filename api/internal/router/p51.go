@@ -5,8 +5,10 @@
 package router
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -32,7 +34,31 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 	s.Logger = d.Logger
 	ref := d.License
 	s.Licensed = func(flag string) bool { return ref.Store().Allows(subscriptions.Feature(flag)) }
+	s.Tier = func() string { return ref.Store().TierName() }
+	if ref != nil {
+		// story 51.19: the desired rows say what the licence allows, now and on every
+		// change of it (an apply, a refresh, a take-up, a revocation)
+		publish := func(ctx context.Context) { publishLicences(ctx, s, ref.Store()) }
+		s.AfterApply = publish
+		ref.Store().OnChange(func() { publish(context.Background()) })
+		publish(context.Background())
+	}
 	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger}
 	h.Mount(r)
 	return s
+}
+
+// publishLicences writes what lic allows on the desired rows; a database that does not
+// answer is logged and tried again on the next change (the runners keep the last rows).
+func publishLicences(ctx context.Context, s *components.Service, lic *subscriptions.Store) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := s.PublishLicences(ctx, lic); err != nil {
+		l := s.Logger
+		if l == nil {
+			l = slog.Default()
+		}
+		l.Warn("components: what the licence allows cannot be published", "err", err.Error(),
+			"event", "components_licence_publish_failed")
+	}
 }

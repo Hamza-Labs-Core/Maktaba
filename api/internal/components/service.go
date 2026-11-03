@@ -25,6 +25,11 @@ type Service struct {
 	Catalog *components.Catalog
 	// Licensed reports whether the home's licence has a flag (nil: every flag).
 	Licensed func(flag string) bool
+	// Tier is the home's tier, named in a licence_missing refusal (nil: free).
+	Tier func() string
+	// AfterApply runs after a write that changed rows (nil: nothing): the API publishes
+	// what the licence allows on a row the write created.
+	AfterApply func(ctx context.Context)
 	// Now is the clock of a hold's at (nil: time.Now).
 	Now    func() time.Time
 	Logger *slog.Logger
@@ -53,6 +58,15 @@ func (s *Service) licensed(flag string) bool {
 	return s.Licensed == nil || s.Licensed(flag)
 }
 
+func (s *Service) tier() string {
+	if s.Tier != nil {
+		if t := s.Tier(); t != "" {
+			return t
+		}
+	}
+	return "free"
+}
+
 func (s *Service) log() *slog.Logger {
 	if s.Logger != nil {
 		return s.Logger
@@ -72,7 +86,7 @@ func (s *Service) Preview(ctx context.Context, req Request) (Preview, error) {
 	if err != nil {
 		return Preview{}, err
 	}
-	p, err := makePlan(s.cat(), s.licensed, s.now(), rows, rev, req, Actor{By: "preview"}, true)
+	p, err := makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, Actor{By: "preview"}, true)
 	if err != nil {
 		return Preview{}, err
 	}
@@ -99,7 +113,7 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 	batch := uuid.NewString()
 	changed, err := s.Store.SetDesiredBatch(ctx, func(rows map[string]store.Desired, rev int64) (store.BatchPlan, error) {
 		var err error
-		p, err = makePlan(s.cat(), s.licensed, s.now(), rows, rev, req, actor, false)
+		p, err = makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, actor, false)
 		if err != nil {
 			return store.BatchPlan{}, err
 		}
@@ -119,6 +133,9 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 	}
 	if len(p.writes) > 1 || p.bundle != "" {
 		res.BatchID = batch
+	}
+	if len(changed) > 0 && s.AfterApply != nil {
+		s.AfterApply(ctx)
 	}
 	res.Effect.QueuedJobsParked = s.queued(ctx, p.goingOff)
 	res.Revision, _ = s.Store.Revision(ctx)
@@ -245,7 +262,7 @@ func (s *Service) snapshot(ctx context.Context) (*snapshot, error) {
 	for _, r := range all {
 		st[r.ID] = append(st[r.ID], r)
 	}
-	return &snapshot{rows: rows, rev: rev, gates: gates(s.cat(), rows), statuses: st, meta: meta}, nil
+	return &snapshot{rows: rows, rev: rev, gates: gatesLicensed(s.cat(), rows, s.licensed), statuses: st, meta: meta}, nil
 }
 
 // List is every component, in catalog order.
