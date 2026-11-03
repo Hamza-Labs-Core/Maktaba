@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
@@ -78,6 +79,21 @@ class PendingSignInsTest {
         waiting = TWO
         compose.settledUntil { compose.has("pending-banner") }
         assertEquals(compose.activity.getString(CoreR.string.pending_device_named, "Sara's iPhone"), text())
+    }
+
+    @Test @Config(qualifiers = "w393dp-h916dp-440dpi")
+    fun theBannerComingAndGoingKeepsThePlace() {
+        waiting = NONE
+        answerWaiting()
+        compose.setContent { RemoteForTest(home, RemoteWindow.RazrFoldCover.info) }
+        compose.onNode(hasTestTag("place-Queue")).performClick()
+        compose.onNode(hasTestTag("place-Queue")).assertIsSelected()
+        waiting = TV
+        compose.settledUntil { compose.has("pending-banner") }
+        compose.onNode(hasTestTag("place-Queue")).assertIsSelected()
+        waiting = NONE
+        compose.settledUntil { !compose.has("pending-banner") }
+        compose.onNode(hasTestTag("place-Queue")).assertIsSelected()
     }
 
     @Test @Config(qualifiers = "w393dp-h916dp-440dpi")

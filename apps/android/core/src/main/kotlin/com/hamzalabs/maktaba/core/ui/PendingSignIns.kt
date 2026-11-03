@@ -234,11 +234,11 @@ fun PendingSignInsHost(
                 onDismiss = state::dismiss,
                 modifier = Modifier.statusBarsPadding(),
             )
-            // the banner took the status bar's room: the screen below does not add it again
-            Box(Modifier.weight(1f).consumeWindowInsets(WindowInsets.statusBars)) { content() }
-        } else {
-            Box(Modifier.weight(1f)) { content() }
         }
+        // one place for the screens whether the banner shows or not: their state (the place,
+        // the scroll, what is open) stays when it comes and goes. With the banner, it took the
+        // status bar's room: the screen below does not add it again.
+        Box(Modifier.weight(1f).then(if (shown != null) Modifier.consumeWindowInsets(WindowInsets.statusBars) else Modifier)) { content() }
     }
 }
 
