@@ -50,6 +50,7 @@ func everyMount(t *testing.T) chi.Router {
 	MountP31Agent(r, h, P31AgentDeps{DB: db, Driver: "postgres", Config: agent.Config{}})
 	MountClusterAuth(r, ClusterAuthDeps{DB: db})
 	MountNodeLocal(r, NodeLocalDeps{})
+	MountP51(r, P51Deps{DB: db})
 	return r
 }
 
@@ -105,6 +106,9 @@ func TestPlacementExamples(t *testing.T) {
 		{"GET", "/api/tv/changes", placement.Home},
 		{"PATCH", "/api/rules/{section}", placement.Home},
 		{"GET", "/api/rules", placement.Any},
+		{"GET", "/api/components", placement.Home},
+		{"GET", "/api/components/{id}", placement.Home},
+		{"POST", "/api/components/apply", placement.Home},
 	}
 	for _, c := range cases {
 		got, ok := Placement.Classify(c.method, c.pattern)

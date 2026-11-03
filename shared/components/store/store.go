@@ -109,8 +109,11 @@ func (s Status) Reason() string {
 type Audit struct {
 	By          string // user name, or "seed": the row's updated_by
 	ActorUserID string // users.id when a signed-in user did it
-	ActorSource string // admin | cli | seed | system
+	ActorSource string // web | cli | remote | admin | seed | system
 	Action      string
+	// BatchID ties the rows of one batch (an apply, a change with its conflicts, a
+	// bundle) together in their payloads; "" for a single change.
+	BatchID string
 }
 
 // ErrNotFound is a component with no desired row.
@@ -391,7 +394,11 @@ func holdArgs(db *sql.DB, h *Hold) (any, any) {
 }
 
 func (s *Store) audit(ctx context.Context, q queryer, a Audit, id string, before, after any) error {
-	payload, err := json.Marshal(map[string]any{"before": before, "after": after})
+	p := map[string]any{"before": before, "after": after, "by": a.By}
+	if a.BatchID != "" {
+		p["batch_id"] = a.BatchID
+	}
+	payload, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}

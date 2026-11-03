@@ -113,6 +113,8 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "components":
+			os.Exit(runComponents(os.Args[2:]))
 		case "hash-password":
 			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)
@@ -187,6 +189,8 @@ Commands:
   plex-link  Store the Plex server an account token reaches (the desktop
              app's first-run setup; see "plex-link --help")
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
+  components List, turn on, off, stop or start the components
+             (see "components --help"; Epic 51 story 51.08)
   cloudflare spike
              Run the Cloudflare Stream spike against a real account
              (credentials from the environment; tools/tv/cf-spike.md)
@@ -685,6 +689,9 @@ func runServe() error {
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
 			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
+			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
+			// preview and apply), the same service the `components` CLI uses
+			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
