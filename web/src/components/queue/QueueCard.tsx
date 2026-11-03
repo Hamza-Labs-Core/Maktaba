@@ -200,6 +200,23 @@ export function QueueCard({
               <HelpIcon to={tileHealthHelp("failing")} label={t("help.tileHealth")} />
             </span>
           )}
+          {health?.state === "off" && health.waiting[0]?.component && (
+            <span
+              className="mkt-q-card__flag mkt-q-card__flag--off"
+              data-testid="queue-card-component"
+            >
+              {t(
+                health.waiting[0].phase === "stopped"
+                  ? "queue.health.componentHeld"
+                  : "queue.health.componentOff",
+                {
+                  component: componentTitle(health.waiting[0].component, t),
+                  n: n(health.waiting[0].count),
+                }
+              )}{" "}
+              <Link to="/settings/components">{t("queue.health.componentLink")}</Link>
+            </span>
+          )}
           {health?.state === "waiting" && health.waiting[0] && (
             <span
               className="mkt-q-card__flag mkt-q-card__flag--waiting"

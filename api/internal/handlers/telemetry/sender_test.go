@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -278,6 +279,109 @@ func TestNothingButTheAllowList(t *testing.T) {
 		if !isRange(report[k]) {
 			t.Errorf("%s = %v is not a range", k, report[k])
 		}
+	}
+}
+
+// withComponents adds the component tables (slot 0173's twin, the columns read) to db.
+func withComponents(t *testing.T, db *sql.DB, bundle string, rows ...[2]string) {
+	t.Helper()
+	for _, q := range []string{`CREATE TABLE components (id TEXT PRIMARY KEY, want TEXT)`,
+		`CREATE TABLE component_meta (singleton INTEGER, bundle TEXT)`} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO component_meta VALUES (1, ?)`, bundle); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range rows {
+		if _, err := db.Exec(`INSERT INTO components VALUES (?, ?)`, r[0], r[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Epic 51 story 51.14 T07: the report carries the bundle and the enabled catalog ids,
+// never an id the catalog does not have (a third-party extension's name).
+func TestReportComponents(t *testing.T) {
+	db := reportDB(t)
+	r := &Reporter{DB: db, Version: "1.2.3"}
+	if rep := r.Build(context.Background(), time.Now(), true); rep.Bundle != "" || rep.Components != nil {
+		t.Fatalf("a home without the tables: %q %v", rep.Bundle, rep.Components)
+	}
+	withComponents(t, db, "custom", [2]string{"transcription", "installed"}, [2]string{"youtube", "absent"},
+		[2]string{"backups", "enabled"}, [2]string{"ext.someone", "enabled"}, [2]string{"core.api", "enabled"})
+	rep := r.Build(context.Background(), time.Now(), true)
+	if rep.Bundle != "custom" {
+		t.Fatalf("bundle %q", rep.Bundle)
+	}
+	has := map[string]bool{}
+	for _, id := range rep.Components {
+		has[id] = true
+	}
+	if !has["backups"] || !has["classify"] || has["transcription"] || has["youtube"] || has["ext.someone"] || has["core.api"] {
+		t.Fatalf("components %v", rep.Components)
+	}
+	if !sort.StringsAreSorted(rep.Components) {
+		t.Fatalf("not sorted: %v", rep.Components)
+	}
+	b, _ := json.Marshal(rep)
+	if strings.Contains(string(b), "someone") {
+		t.Fatalf("an extension's name in the report: %s", b)
+	}
+}
+
+// T08: an older Maktaba Cloud refuses the fields; the report is sent again without them
+// and accepted.
+func TestSenderDropsComponentsForAnOlderCloud(t *testing.T) {
+	var mu sync.Mutex
+	var reports []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		var e envelope
+		_ = json.Unmarshal(raw, &e)
+		var b map[string]any
+		_ = json.Unmarshal(e.Batches[0], &b)
+		rep := b["report"].(map[string]any)
+		mu.Lock()
+		reports = append(reports, rep)
+		mu.Unlock()
+		if _, ok := rep["bundle"]; ok {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":"invalid","message":"batch 0: report is malformed or has a field that is not allowed"}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+	now := time.Date(2026, 10, 26, 9, 0, 0, 0, time.UTC)
+	s, store, state := newSender(t, srv.URL, &now)
+	withComponents(t, s.Reporter.DB, "full", [2]string{"backups", "enabled"})
+	state.sharing = true
+	s.Tick(context.Background())
+	mu.Lock()
+	defer mu.Unlock()
+	if len(reports) != 2 {
+		t.Fatalf("%d posts, want 2", len(reports))
+	}
+	if _, ok := reports[0]["components"]; !ok {
+		t.Fatal("the first post had no components")
+	}
+	if _, ok := reports[1]["components"]; ok || reports[1]["version"] != "1.2.3" {
+		t.Fatalf("the resend: %v", reports[1])
+	}
+	if len(store.kinds()) != 0 || s.Status().LastSentAt == nil || s.Status().LastError != "" {
+		t.Fatalf("outbox %v, status %+v", store.kinds(), s.Status())
+	}
+}
+
+// A refusal about something else is not resent.
+func TestSenderDoesNotResendOtherRefusals(t *testing.T) {
+	if namesComponentFields(`{"message":"batch 0: day is outside the accepted window"}`) {
+		t.Fatal("a refusal about the day")
+	}
+	if _, ok := withoutComponentFields([]byte(`{"type":"server","report":{"version":"1"}}`)); ok {
+		t.Fatal("a report with neither field")
 	}
 }
 
