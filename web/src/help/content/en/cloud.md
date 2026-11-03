@@ -32,7 +32,7 @@ The home itself enforces the plan: when something is not included, the home refu
 
 For administrators:
 
-- **Maktaba Cloud**: a home linked to Maktaba Cloud gets the license of your cloud plan by itself and renews it every day. **Manage plan** (or **Get a plan**) opens your cloud account's billing page; **Check now** asks the license server at once.
+- **Maktaba Cloud**: a home linked to Maktaba Cloud gets the license of your cloud plan by itself and renews it every day. **Manage plan** (or **Get a plan**) opens your cloud account's billing page; **Check now** asks the license server at once. Maktaba Cloud takes no payments yet: its paid plans show **Payments coming soon**, and a paid plan is set for you by Maktaba's team.
 - **License**: to use a license you received, paste it into **Paste a license** and click **Apply license**. It is checked, applied and never shown again. **Remove license** asks first, then returns the home to Free.
 - A cloud license that cannot be renewed keeps working for about a month; then the home shows _Reconnect to validate the license_ and returns to Free until it can reach Maktaba Cloud again. A license Maktaba revokes stops at once.
 

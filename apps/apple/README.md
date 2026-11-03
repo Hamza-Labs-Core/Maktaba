@@ -41,15 +41,18 @@ calls the Remote makes (`Admin.swift`).
   signed in to afresh, silently with a new assertion when the person is signed in to the
   cloud and the cloud itself gives that address for the home (an address the home announced
   is never handed an assertion), else on the sign-in screen. Signing in: a username and password, or **with a code** the app
-  shows (large, with a QR code) until a signed-in device approves it. Every account menu has
-  **Approve a TV or device** (it was "Approve a sign-in"): type or scan another device's code,
-  see what asks, approve it. The Remote also has it as a button on every screen's toolbar, and
+  shows (large, with a QR code) until a signed-in device approves it. **Approve a TV or
+  device** (it was "Approve a sign-in"): type or scan another device's code, see what asks,
+  approve it. It is in the Player's **Profile**, the Mac Player's **Account** menu and every
+  account menu. The Remote also has it as a button on every screen's toolbar, and
   a banner at the top while a TV waits (`GET /api/pairing/pending`, read every 12 s while the
   app is in front; Enter code opens it, Dismiss hides it until another device asks). The
   device showing the code says where that button is, that a phone found it (`looked_up`), how
   long the code lasts, and offers Get a new code.
   English and Arabic (right to left) after the person's first language.
-- **Player** (iPhone, iPad, Mac): libraries → videos → a video's page → play. Playback goes
+- **Player** (iPhone, iPad, Mac): **Home**, **Libraries**, **Live TV** (shown only when the
+  person may watch a channel), **Search** and **Profile** (Epic 48), a tab bar on iPhone and a
+  sidebar on iPad and the Mac; AirPlay, Picture in Picture and Now Playing. Playback goes
   through `StreamProxy` (every `/stream/` request carries a fresh Bearer token). The layout is
   one `NavigationSplitView`: three columns on iPad and the Mac, one on an iPhone or an iPad in
   a narrow Split View / Slide Over. On the Mac the video fills the window; the **Playback**

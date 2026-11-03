@@ -15,6 +15,9 @@ and the device the home is told (`X-Maktaba-Client`) comes from the screen at st
 (`ClientHeader.deviceFor`: a hinge sensor is a foldable, a smallest width of 600 dp a tablet).
 Until 2026-11-01 each app had `phone`, `foldable` and `tablet` flavours that differed only in
 their package; they were removed. Release bundles for Google Play: `docs/google-play.md`.
+Testers get the apps from Google Play's internal testing track: every release tag uploads them
+there, and the owner adds each tester's Google account in Play Console. The user guide's
+`/help/android-apps#get-the-app` says the same for testers.
 
 ## Build and test
 
@@ -92,9 +95,11 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
 - **Local network permission:** on Android 17 (API 37) and later, reaching a home on the
   local network, by mDNS or by address, needs `ACCESS_LOCAL_NETWORK`, a runtime permission
   (Android shows it as «Nearby devices»). Without it, only an internet address works.
-- **Permissions walkthrough** (`core/permissions`): the apps' only runtime permission is the
-  local network one (no notifications, no background playback or work, no foreground
-  service; NSD needs no Wi-Fi permission). `PermissionsGate` shows the walkthrough over the
+- **Permissions walkthrough** (`core/permissions`): the walkthrough's only permission is the
+  local network one (the camera is asked for at Scan, above; notifications are never asked for, only used
+  for sign-in requests when already allowed; NSD needs no Wi-Fi permission). The Player's playback service (`media.PlaybackService`, a
+  `mediaPlayback` foreground service) keeps a video's sound with the screen off (story 48.33)
+  and needs no runtime permission. `PermissionsGate` shows the walkthrough over the
   app on the first run and again whenever a required permission is missing, read again on
   every resume; «Not now» puts it away until the app next comes back to the foreground. Each
   row asks (`RequestPermission`) while Android still will, else opens the app's settings

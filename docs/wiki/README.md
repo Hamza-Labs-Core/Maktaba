@@ -64,6 +64,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 
 - [Epic 51 — Every part of Maktaba can be turned on, off, added later or left out](epics/epic-51-configurable-components.md)
 
+### Word review (epic 52)
+
+- [Epic 52 — Word review: suspect words go to a person, in every language](epics/epic-52-transcript-word-review.md)
+
 ### Logs, errors and reports (epic 53)
 
 - [Epic 53 — Logs, errors and problem reports, and a UI that never goes dark](epics/epic-53-logs-errors-reports.md)
