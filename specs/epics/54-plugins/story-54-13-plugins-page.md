@@ -37,8 +37,8 @@ The plugin's page:
 
 ### 3. Install from a file
 
-A button opening 54.10's dialog: drop a file, see the summary, capabilities, libraries (all
-ticked by default), rating, badge, typed confirmation for unreviewed, "Install" or "Install and
+A button opening 54.10's dialog: drop a file, see the summary, capabilities, libraries (none
+ticked: the admin ticks each, owner decision 2026-11-03), rating, badge, typed confirmation for unreviewed, "Install" or "Install and
 turn on".
 
 ### 4. Policy

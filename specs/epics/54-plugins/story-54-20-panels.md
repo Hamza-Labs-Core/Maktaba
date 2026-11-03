@@ -39,17 +39,23 @@ key a panel uses, and every app's renderer escapes again.
 
 ### 3. Who sees a panel
 
-- `audience = "admins"` (default): admins only.
-- `audience = "everyone"`: needs human store review (54.16 §2) **and** the admin's approval at
-  install or later (a separate toggle on the plugin page). Then every user who can see the
-  subject sees it. Viewers see values only for subjects in libraries they can access (normal
-  ACL).
+Owner decision 2026-11-03: **panels are shown to everyone in the home, viewers included,
+once the plugin is installed.** There is no `audience` field and no separate viewer approval
+step.
+
+- Every user who can see the subject sees the panel. Viewers see it only on subjects in
+  libraries they can access (normal ACL; a video they can't see is 404 as today).
+- The guard is the store review: a person reviews every first submission and every version
+  that adds a panel (54.16 §2), and the panel schema is read-only and data-only (below).
+- The admin can still disable (keep off, 54.07) or uninstall the plugin at any time; its panels
+  disappear on the next page load.
+- A disabled, held or revoked plugin shows no panels to anyone.
 
 ### 4. API
 
 `GET /api/panels?subject=video:<id>` answers the panels for the signed-in user: the schema,
-strings in the user's language, and values. Filtered by audience, approval, library ACL, plugin
-phase (a held or revoked plugin's panels disappear). ≤ 30 ms p95, ≤ 64 KB. Capabilities
+strings in the user's language, and values. Filtered by library ACL and plugin phase (a
+disabled, held or revoked plugin's panels disappear). ≤ 30 ms p95, ≤ 64 KB. Capabilities
 (Epic 51 51.09) gain `plugin_panels: true|false` so older apps skip the call.
 
 ### 5. Every app
@@ -69,12 +75,12 @@ override characters) and asserts plain text, truncation and no network request.
   **when** an admin opens a video it processed,
   **then** the panel shows under "From plugins" in web, Apple and Android apps, in the admin's
   language.
-- **Given** the same panel,
-  **when** a viewer opens the video,
-  **then** no panel is returned by the API.
-- **Given** a panel with `audience = "everyone"` approved by the admin,
+- **Given** the same panel and no approval step taken by anyone,
   **when** a viewer with access to the library opens the video,
-  **then** it shows; a viewer without access gets 404 for the video as today.
+  **then** the panel shows; a viewer without access gets 404 for the video as today.
+- **Given** an admin disables the plugin,
+  **when** a viewer reloads the video,
+  **then** no panel is returned.
 - **Given** a plugin writing `"https://evil.example/x.png"` into a key a panel shows,
   **when** written,
   **then** `400 plugin_text_forbidden`; and if a value gets past (fault injection), every app
@@ -88,11 +94,11 @@ override characters) and asserts plain text, truncation and no network request.
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
 | T01 | unit ×2 (go, ts) | panel schema corpus | validate | per code |
-| T02 | integration (PG, go) | audiences × roles × ACL | GET panels | filtered correctly |
+| T02 | integration (PG, go) | roles × ACL × plugin phase | GET panels | shown to admins and viewers with access; none for a disabled, held or revoked plugin |
 | T03 | unit (go) | text with URL, HTML, controls | write | refused |
 | T04 | unit (web, Swift, Kotlin) | hostile values | render | plain text; no request (network spy) |
 | T05 | snapshot (each app) | en / ar, dark theme | render | RTL correct; truncation |
-| T06 | role test (go) | panels route | no one / viewer / admin | 401 / filtered / full |
+| T06 | role test (go) | panels route | no one / viewer without access / viewer with access / admin | 401 / 404 / panels / panels |
 | T07 | perf (go) | 3 panels | GET | ≤ 30 ms p95 |
 
 ## Edge cases
@@ -132,5 +138,5 @@ Server answers `plugin_panels: false`; apps hide the section.
 
 ### Dependencies
 
-54.06 (plugin data), 54.13 (approval toggle on the plugin page), Epic 51 51.11 (capabilities in
-apps).
+54.06 (plugin data), 54.13 (the Plugins page, where an admin disables a plugin), Epic 51
+51.11 (capabilities in apps).

@@ -100,7 +100,7 @@ dead relay needs no drain: its homes are already on their standby tunnels.
   capped): the mode comes from `Meter` reading Postgres plus its own in-memory delta
   (`cloud/internal/billing/meter.go`). With N relays a mode switch can lag by at most what N
   relays carry in one 30 s flush. Accepted: a lag only delays a step **down in quality**, never
-  a cut-off, and the pay-as-you-go report to Stripe is clamped to the user's cap (50.19 §4), so
+  a cut-off, and the pay-as-you-go report to the payment provider is clamped to the user's cap (50.19 §4), so
   no one is billed past it.
 - **Concurrent relayed streams** (Basic 2; Pro N plus paid extra streams; 50.19 §3): 50.19
   already counts them in Postgres (`relay_streams`, one row per open media stream, with the

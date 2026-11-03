@@ -46,9 +46,10 @@ code on 2026-11-03 (main at `f45276258`). Prices and outside facts were looked u
   (architecture §13: "Self-hosted features never depend on the cloud").
 - **Cloud features on the home** (relay entitlement flags, editions) keep their last signed
   entitlement for **7 days** (story 25.26).
-- **Payments.** Stripe Checkout is hosted by Stripe, and Stripe retries webhooks for up to three
-  days ([Stripe webhooks](https://docs.stripe.com/webhooks#retries)), so a cloud outage delays
-  a plan change; it doesn't lose it.
+- **Payments.** The payment provider is TBD (not Stripe; owner decision 2026-11-03). A hosted
+  checkout and webhooks the provider retries for days mean a cloud outage delays a plan change
+  but doesn't lose it, so multi-day webhook retries are a selection rule for the provider
+  (50.19 §6).
 
 What does **not** keep working today: a **new** sign-in with a Maktaba Cloud account (the home
 checks the cloud's assertion), the home list in the apps (fetched from `api.maktaba.tv`, not

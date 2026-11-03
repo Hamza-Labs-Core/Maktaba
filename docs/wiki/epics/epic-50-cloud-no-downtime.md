@@ -30,7 +30,7 @@ of relays** (Phase 2).
   cloud processes. Synchronous replication, a wildcard certificate on each node, blue-green
   deploys where homes move their tunnels before the old process stops, pgBackRest backups to
   Object Storage and Cloudflare R2, a canary home probed from outside, a status page off
-  Hetzner, and the Free / Basic / Pro plans enforced by the relay and billed through Stripe.
+  Hetzner, and the Free / Basic / Pro plans enforced by the relay and billed through a payment provider TBD (not Stripe).
 - **Phase 1b:** direct remote access like Plex, **free on every plan**: UPnP / NAT-PMP, an
   outside reachability check, per-home HTTPS names on several separate direct-name domains
   (never under `maktaba.tv`).
@@ -83,7 +83,7 @@ The owner's answers to the epic's open questions (epic README §13):
    home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use (then slower,
    never stopped). **Pro:** full quality within a monthly allowance and N streams, optional
    pay-as-you-go GB (off by default, capped by the user), then Basic's quality, never cut off;
-   extra streams are a paid add-on. Family is dropped; prices are TBD by the owner. Stripe bills
+   extra streams are a paid add-on. Family is dropped; prices are TBD by the owner. The payment provider (TBD, not Stripe) bills
    a flat price per plan, a metered price for pay-as-you-go and a per-unit price for extra
    streams; old code names migrate `pro`→`basic`, `family`→`pro`.
 5. **Direct certificates on several separate domains** (3–4 to start, never under

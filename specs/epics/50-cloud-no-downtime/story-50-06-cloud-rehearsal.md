@@ -63,7 +63,7 @@ Later stories add their own scenarios to the same harness, under these names:
 | C14 | `direct-remote` | 50.15: UPnP mapping on a fake gateway, outside check, IP-encoded name answers on each configured direct-name domain; overflow CA used when the weekly budget is spent |
 | C15 | `relay-pool-kill-one`, `rebalance-add-relay` | 50.16: three relays; one killed, one added |
 | C16 | `logs-survive-node` | Epic 53.17: during C02, the killed node's last `warn`+ lines (≤ 1 s before the kill) are on W and found by the cloud log search; and a 53.16 problem report sent through the canary home arrives |
-| C17 | `relay-plans` | 50.19: a home stack behind the relay and a fake Stripe; Free refused with the tunnel kept, Basic capped and transcoded with a third stream refused, Pro past its allowance falls back to capped quality; no stream stops; meter events sent once |
+| C17 | `relay-plans` | 50.19: a home stack behind the relay and a fake payment provider; Free refused with the tunnel kept, Basic capped and transcoded with a third stream refused, Pro past its allowance falls back to capped quality; no stream stops; meter events sent once |
 
 Each scenario writes a JSON result (`downtime_ms`, `failed_requests`, `reconnect_p50/p95/p99`,
 `budget`), shown in the run summary, and keeps every container's log, Patroni's history and the
@@ -112,7 +112,7 @@ The scenarios with 1,000 homes need about 4 vCPU and 8 GB; GitHub's standard Lin
 - **Given** the rehearsal runs,
   **when** it makes any network call,
   **then** the only hosts outside the runner are GHCR (images) and the Go/Docker caches; no
-  Hetzner, Cloudflare, Let's Encrypt or Stripe host is contacted (the job sets
+  Hetzner, Cloudflare, Let's Encrypt or payment provider host is contacted (the job sets
   `HCLOUD_ENDPOINT` to the fake, and a test asserts the compose networks have no route to those
   hosts' names).
 

@@ -33,7 +33,7 @@ someone remembering to update it, and it must still load when Hetzner is down.
 | Remote access (relay) | canary home probe `https://canary.relay.maktaba.tv/api/health` | The one paying users care about most. |
 | Sign-in and accounts (API) | `https://api.maktaba.tv/readyz` | |
 | Notifications | `push_outbox_lag_seconds` (> 300 s = degraded) | From the witness's Prometheus. |
-| Payments | link to Stripe's own status page | We don't host it; we say where to look. |
+| Payments | link to the payment provider's own status page (provider TBD, not Stripe) | We don't host it; we say where to look. |
 
 States: **operational**, **degraded** (slow, or failing from one network only, or a held
 request rate above 5 %), **outage** (both networks fail two probes in a row), **maintenance**
@@ -159,7 +159,7 @@ states and draws it. No app has two banners.
 | `status.component.relay` | Remote access | الوصول عن بُعد |
 | `status.component.api` | Sign-in and accounts | تسجيل الدخول والحسابات |
 | `status.component.push` | Notifications | الإشعارات |
-| `status.component.payments` | Payments (Stripe) | المدفوعات (Stripe) |
+| `status.component.payments` | Payments | المدفوعات |
 | `status.state.operational` | Working | يعمل |
 | `status.state.degraded` | Slow | بطيء |
 | `status.state.outage` | Down | متوقف |
@@ -168,7 +168,7 @@ states and draws it. No app has two banners.
 | `status.uptime90` | Uptime, last 90 days: {percent} | مدة التشغيل في آخر 90 يومًا: {percent} |
 | `status.pastIncidents` | Past incidents | حوادث سابقة |
 | `status.noIncidents` | No incidents in the last 90 days. | لا حوادث في آخر 90 يومًا. |
-| `status.payments.link` | Payments are handled by Stripe. See Stripe's status page. | تتولى Stripe المدفوعات. راجع صفحة حالة Stripe. |
+| `status.payments.link` | Payments are handled by our payment provider. See its status page. | يتولى مزوّد الدفع لدينا المدفوعات. راجع صفحة حالته. |
 | `banner.relay.degraded` | Remote access is slower than usual. Playback at home is not affected. | الوصول عن بُعد أبطأ من المعتاد. التشغيل داخل المنزل لا يتأثر. |
 | `banner.relay.outage` | Remote access is down. We're working on it. Playback at home still works. | الوصول عن بُعد متوقف، ونعمل على إصلاحه. التشغيل داخل المنزل ما زال يعمل. |
 | `banner.api.outage` | Signing in with Maktaba Cloud isn't working right now. You can sign in to your home with its password. | تسجيل الدخول عبر سحابة مكتبة لا يعمل الآن. يمكنك تسجيل الدخول إلى الجهاز الرئيسي بكلمة مروره. |

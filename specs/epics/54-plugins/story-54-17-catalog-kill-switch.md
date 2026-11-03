@@ -51,6 +51,11 @@ range, developer key id) and acts:
 `disable` also applies to unreviewed copies with a matching id and developer key. Revocation
 works for file-installed store plugins as soon as the home sees a list.
 
+The store's `disable` is the malware switch-off and cannot be undone by an admin. It is
+separate from the admin's own **keep off** (54.07, owner decision 2026-11-03): an admin's
+disable sticks through updates, restores and reinstalls until the admin turns it on; turning
+it on never lifts a `disable` revocation. Auto-update never turns on a kept-off plugin.
+
 ### 4. Offline homes
 
 A home that never reaches the store never gets a fresh list; each server release carries the

@@ -69,9 +69,8 @@ for code that is not built from Maktaba's own commit.
   enforced by the API with a role test (no one, viewer, cloud-linked play sign-in, admin);
   `TestAdminOnly` in `api/internal/handlers/cluster/cluster_test.go` is the model.
 - Machines authenticate as the cluster role and the `maktaba_worker` database login.
-- Maktaba Cloud (`cloud/`) already has accounts, a hand-rolled Stripe client
-  (`cloud/internal/billing/stripe.go`: checkout, portal, charges), a webhook handler, plans,
-  metering, a licence issuer (`cloud/internal/license/issuer.go`) and entitlements. Homes reach
+- Maktaba Cloud (`cloud/`) already has accounts, a billing package (`cloud/internal/billing/`),
+  a webhook handler, plans, metering, a licence issuer (`cloud/internal/license/issuer.go`) and entitlements. Homes reach
   it through the cloud link (`maktaba-cloudlink`). Epic 50 makes it highly available.
 - Domains (owner, standing): **maktaba.tv** is everything users touch; **maktaba.dev** is the
   developer wiki, source and security.txt; maktaba.app is not ours.
@@ -287,19 +286,22 @@ host process as the second, an escape needs two independent bugs.
 
 ### 4.1 Payments
 
-- **Stripe Connect** with destination charges: the platform creates the charge, the full
-  amount goes to the connected account and `application_fee_amount` comes back to the
-  platform; the platform pays Stripe's fee. Stripe recommends separate charges and transfers
-  for some Express setups; either works for one-seller carts.
-  Sources: [Stripe: destination charges](https://docs.stripe.com/connect/destination-charges),
-  [Stripe: application fees](https://docs.stripe.com/connect/application-fees),
-  [Stripe: marketplace app fees](https://docs.stripe.com/connect/marketplace/tasks/app-fees).
-- With destination charges **the platform is the merchant of record**, so VAT and sales tax on
-  digital goods are Maktaba's. An alternative is a merchant-of-record service. This is an
-  owner question (README §14).
+- **Owner decision (2026-11-03): no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
+  Stripe-owned services such as Lemon Squeezy). The payment provider and the seller of record
+  are decided at Phase 3 (README §6.5, §14).
+- **Who is the seller of record decides who owes VAT and sales tax.** When Maktaba sells, the
+  tax on digital goods is Maktaba's; a merchant-of-record service takes it on for a fee.
+- **Resale of third-party products is the known constraint.** A plugin store resells other
+  people's software, which many merchant-of-record services restrict in their seller terms
+  (Paddle among them), so each candidate has to confirm in writing that it accepts plugin
+  resale before it is chosen.
+- **Candidates to evaluate at Phase 3:** Paddle as seller with Maktaba paying developers
+  monthly; Maktaba as seller with a marketplace payment provider such as Adyen for Platforms
+  (split payments to developer sub-accounts, Maktaba files tax); developers selling directly
+  with Maktaba verifying their licence keys offline.
 - Splits in the market: Apple and Google 70/30 (85/15 for small developers and
   subscriptions after a year), Epic Games Store 88/12, VS Code and Obsidian have no paid
-  marketplace. We propose **85/15**.
+  marketplace. The owner decided **85/15** (2026-11-03).
 
 ### 4.2 Review, signing, revocation
 
@@ -317,3 +319,39 @@ host process as the second, an escape needs two independent bugs.
   one older than the newest it has seen.
 - **Scale of review.** The VS Code and Obsidian experience says: automate every version,
   review humans on first submission and on capability increases, and keep a fast report path.
+
+## 5. Maktaba's own stages, read for the first-party move (2026-11-03)
+
+What the code says, for README §15 (first-party plugins):
+
+- **Stages and where they are defined.** `engine/graph.py` `GRAPH`: 49 stages, of which 5 are
+  legacy (`scan`, `probe`, `extract`, `thumbnail`, `categorize`) with handlers in
+  `pipeline/src/maktaba_pipeline/handlers.py` and the thumbnail and classify modules, chaining
+  by hand and recorded by the engine only through output fingerprints in
+  `engine/stages/legacy.py`. The built-in extensions add 7 (`extensions/plex/`,
+  `extensions/dizquetv/`). Handlers bind lazily through `engine/stages/registry.py`
+  `CORE_MODULES`, each module exposing `IMPL: StageImpl` (run, input and output fingerprints,
+  `unavailable`, `still_current`, `refresh`).
+- **Pools.** 12 in `POOLS`; `gpu`'s size is the batch of the worker's shared Whisper
+  (`stt/batched.py`), not a count of GPU users.
+- **SQL.** About 870 SQL string literals in the pipeline package, about 90 of them in the engine
+  and `db/`; the rest (about 780, in about 125 files) belong to stage code and the domain
+  modules it calls. `detect`, `tag`, `transcribe` and `write_channels` have the most call sites.
+  This is why the move uses named statements rather than Go endpoints (README H17).
+- **Fingerprints are code, not queries.** For example `chapter_infer.input_fingerprint` hashes
+  several reads together with the embedding model id and the stage version. So they move as
+  plugin exports served by a light per-machine runner, not as a declarative list (README
+  §15.4).
+- **Processes.** Transcription already runs in supervised `pipeline/stt-N` processes (slot
+  names and metrics in `cmd/maktaba-server/internal/supervisor/instances.go`); the semantic
+  index worker `pipeline/index` also serves gRPC queries for the API (`grpc_server.py`).
+- **Network from stage code.** YouTube and Google APIs (`integrations/youtube*.py`, `yt-dlp`),
+  `ar.wikipedia.org` (`classify/books.py`), the metadata providers in `enrich/web.py`, the
+  language model at `rules.<stage>.url`, an optional OpenAI-compatible speech-to-text URL
+  (`stt/openai_api.py`), and Plex and dizqueTV (through the service door on nodes,
+  story 31.R).
+- **Queue tables** key on the stage name: `processing_jobs` (with `input_hash`, `output_hash`),
+  `job_stages`, `job_events`, `worker_pools`, `workers`, `cluster_node_stages`. Keeping names
+  means nothing in them is rewritten (README H19).
+- **The Go API's queue handlers** (`api/internal/handlers/queues/`) only read and write those
+  tables, and a few routes enqueue a named stage; none runs stage code.

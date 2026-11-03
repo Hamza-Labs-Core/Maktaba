@@ -61,9 +61,9 @@ type Tier struct {
     PriceCents              *int    // nil = TBD
     PAYGPricePerGBCents     *int    // Pro; nil = TBD
     ExtraStreamPriceCents   *int    // Pro; nil = TBD
-    StripePriceID           string  // from config, per environment
-    StripePAYGPriceID       string  // metered price on the relay GB meter (§6)
-    StripeExtraStreamPriceID string // per-unit price (§6)
+    ProviderPriceID         string  // from config, per environment (§6)
+    ProviderPAYGPriceID     string  // metered price for relay GB (§6)
+    ProviderExtraStreamPriceID string // per-unit price (§6)
     MaxServers              int     // kept; values set with the prices
 }
 ```
@@ -81,7 +81,7 @@ already caches (50.05) and which `NOTIFY tier_changed` refreshes within 1 s:
 
 | Mode | When | What the relay does |
 |---|---|---|
-| `refused` | Free plan (or a paid plan that lapsed past Stripe's retries) | Answers `402 relay_needs_plan` without forwarding. The home **still holds its tunnel**: the cloud needs it for direct remote (endpoints, certificates, the outside check), entitlements and push. The app's connection list (50.13) has no `relay` entry for a Free home, so apps try LAN and direct and show `relay.needsPlan`. |
+| `refused` | Free plan (or a paid plan that lapsed past the payment provider's retries) | Answers `402 relay_needs_plan` without forwarding. The home **still holds its tunnel**: the cloud needs it for direct remote (endpoints, certificates, the outside check), entitlements and push. The app's connection list (50.13) has no `relay` entry for a Free home, so apps try LAN and direct and show `relay.needsPlan`. |
 | `full` | Pro, within the allowance or within the pay-as-you-go cap | Forwards untouched. |
 | `capped` | Basic within fair use; Pro past its allowance and its cap | Adds `X-Maktaba-Relay-Cap-Kbps: 3000` to the forwarded request and paces media responses (below). |
 | `capped_slow` | Basic past 500 GB of fair use; Pro past allowance + cap + 500 GB in `capped` | The same with `1500`. |
@@ -141,26 +141,35 @@ by 50.05) is extended:
   **monthly spending cap** in the account's currency (no cap, no pay-as-you-go). It can be
   changed or turned off any time; lowering the cap below what's already spent stops further
   pay-as-you-go at once (the spent amount stays billed).
-- The relay never asks Stripe whether to allow bytes; the cap is enforced from our own meter,
-  so a Stripe outage can't cut anyone off (README §4.3).
+- The relay never asks the payment provider whether to allow bytes; the cap is enforced from
+  our own meter, so a payment provider outage can't cut anyone off (README §4.3).
 - At 80 % and 100 % of the cap the user gets an email and an in-app notice
   (`payg.nearCap`, `payg.capReached`); at 100 % streams drop to capped quality.
 
-### 6. Stripe billing
+### 6. Billing through a payment provider TBD (not Stripe)
 
-| What | Stripe object | How |
+Owner decision 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
+Stripe-owned services). The payment provider is **TBD**; this story builds against a
+provider-agnostic `billing.Provider` interface (`cloud/internal/billing/provider.go`) and a
+fake, and the owner picks the provider before the launch gate (README §12). Selection rules
+from this story: hosted checkout and a self-service page for plan changes, recurring flat
+prices, usage-based (metered) prices with idempotent usage reports, per-unit quantities with
+proration, and webhooks the provider retries for days (README §4.3).
+
+| What | Provider object | How |
 |---|---|---|
-| Basic, Pro | a recurring **flat price** per plan (subscription item 1) | as today: Checkout session (25.13), Customer Portal for changes; price IDs from config. |
-| Pay-as-you-go GB | a **usage-based (metered) price** on a Stripe **Billing Meter** `relay_payg_gb` (subscription item 2, added when the user turns pay-as-you-go on, removed when off) | The worker sends **meter events** every hour with the GB of `bytes_payg` since the last report, each with an idempotency identifier `<server_id>:<month>:<hour>` so a retry never double-bills; clamped to the cap (§4). The month's last report runs on the 1st at 00:30 UTC before Stripe finalises the invoice. |
-| Extra concurrent streams | a **per-unit price** (subscription item 3), quantity = extra streams | Set on the Billing page; Stripe prorates. Billed per stream a month rather than metered, because a stream slot is a monthly entitlement, not consumption. The relay's limit follows the quantity through the webhook (25.14) and `NOTIFY tier_changed`. |
+| Basic, Pro | a recurring **flat price** per plan (subscription item 1) | the provider's hosted checkout (25.13) and self-service page for changes; price IDs from config. |
+| Pay-as-you-go GB | a **usage-based (metered) price** for `relay_payg_gb` (subscription item 2, added when the user turns pay-as-you-go on, removed when off) | The worker sends **meter events** every hour with the GB of `bytes_payg` since the last report, each with an idempotency identifier `<server_id>:<month>:<hour>` so a retry never double-bills; clamped to the cap (§4). The month's last report runs on the 1st at 00:30 UTC before the provider finalises the invoice. |
+| Extra concurrent streams | a **per-unit price** (subscription item 3), quantity = extra streams | Set on the Billing page; the provider prorates. Billed per stream a month rather than metered, because a stream slot is a monthly entitlement, not consumption. The relay's limit follows the quantity through the webhook (25.14) and `NOTIFY tier_changed`. |
 
-- Webhooks (25.14) gain `customer.subscription.updated` handling for items 2 and 3, and the
-  daily reconciliation compares our `relay_usage_monthly.bytes_payg` with what Stripe recorded
+- Webhooks (25.14) gain subscription-changed handling for items 2 and 3, and the
+  daily reconciliation compares our `relay_usage_monthly.bytes_payg` with what the provider recorded
   for the meter; a mismatch over 1 GB alerts (SEV3).
-- If meter events can't be sent (Stripe down), they queue in Postgres and are sent later with
+- If usage reports can't be sent (the provider is down), they queue in Postgres and are sent later with
   the same identifiers; usage is never lost and never billed twice.
-- Prices are **TBD**; nothing in this story creates a Stripe product or price. The owner creates
-  them and puts their IDs in the `production` config (README §12).
+- Prices are **TBD**; nothing in this story creates a product or price at any provider. The
+  owner picks the provider, creates them there and puts their IDs in the `production` config
+  (README §12).
 
 ### 7. Migration from today's code plan names
 
@@ -184,8 +193,8 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
   Whatever else the license already gates on the home keeps its meaning under the new names
   (Basic gets what `home` gave, Pro what `pro` gave), with one change from decision 6: **remote
   access over the direct path is no longer gated on any tier** (50.15 §5).
-- **Stripe**: existing subscriptions on the old `pro` / `family` prices are moved to the new
-  Basic / Pro prices at their next renewal through the Stripe API from the worker (no charge
+- **Billing**: existing subscriptions on the old `pro` / `family` prices are moved to the new
+  Basic / Pro prices at their next renewal through the payment provider's API from the worker (no charge
   change before renewal); Family's seats end. Paid plans aren't switched on before the launch
   gate, so in practice this touches only test and admin-granted accounts; the admin fleet page
   (25.20) lists every account the migration moved.
@@ -218,10 +227,10 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
   **then** it drops to capped quality (3000) and never gets a `402`.
 - **Given** a Pro home with pay-as-you-go on and a cap of 10 (currency units),
   **when** pay-as-you-go use reaches the cap,
-  **then** it drops to capped quality, the user is told, and Stripe is never sent more than the
+  **then** it drops to capped quality, the user is told, and the provider is never sent more than the
   cap's worth of GB for the month.
-- **Given** the worker sends the same hour's meter event twice,
-  **when** Stripe receives them,
+- **Given** the worker sends the same hour's usage report twice,
+  **when** the provider receives them,
   **then** the usage is recorded once.
 - **Given** a Pro home with 2 extra streams bought,
   **when** the webhook arrives,
@@ -247,19 +256,19 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 | T04 | integration | `relay_streams`, two relay processes | open 3 streams on Basic across both | third `429 stream_limit`; rows swept 2 min after a crash |
 | T05 | unit (streaming) | HLS master with renditions 20 / 8 / 3 / 1.5 Mbps | request with cap 3000 | only ≤ 3 Mbps renditions listed; transcode chosen when none fits |
 | T06 | unit | meter | bytes across modes and PAYG | `relay_usage_monthly` columns right; PAYG stops at the cap |
-| T07 | integration | Stripe test-mode mock | hourly meter events, a retry, a Stripe outage | one usage record per hour; queued events sent later with the same identifier |
-| T08 | integration | Stripe mock | buy 2 extra streams | webhook → limit N + 2 within 1 s |
+| T07 | integration | fake payment provider | hourly usage reports, a retry, a provider outage | one usage record per hour; queued events sent later with the same identifier |
+| T08 | integration | fake payment provider | buy 2 extra streams | webhook → limit N + 2 within 1 s |
 | T09 | integration | migration on a fixture with every old plan | migrate | `pro`→`basic`, `family`→`pro`, nothing changed twice; CHECKs accept the new names |
 | T10 | unit (cloud) | `license.TierForPlan` and the home's license reader | old `home` within / past grace | `basic` / refused |
 | T11 | Arabic | every new key | strings check | Arabic present in `web/cloud` `ar.json`, home web `ar.json`, Android `values-ar`, Apple catalog |
 | T12 | unit | launch switch | catalog with a `TBD` price | refused, naming the field |
-| T13 | rehearsal (CI, 50.06 `relay-plans`) | home stack behind the relay, fake Stripe | Free, Basic, Pro over allowance | refused / capped transcode / capped fallback; no stream stops in any |
+| T13 | rehearsal (CI, 50.06 `relay-plans`) | home stack behind the relay, fake payment provider | Free, Basic, Pro over allowance | refused / capped transcode / capped fallback; no stream stops in any |
 
 ## Edge cases
 
 - **A plan changes mid-stream.** The next playlist fetch carries the new cap; playing segments
   finish. An upgrade to Pro lifts the cap on the next fetch.
-- **A paid plan lapses** (Stripe gave up retrying): the home becomes Free, so `refused`; streams
+- **A paid plan lapses** (the provider gave up retrying): the home becomes Free, so `refused`; streams
   already playing finish their current segment and then fail with `relay.needsPlan`. This is the
   one case where relayed play ends, and it is not a plan's limit but no plan.
 - **Month boundary.** Counters reset at 00:00 UTC on the 1st (`MonthStart`); a stream in
@@ -311,13 +320,13 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 | `cloud/internal/billing/meter.go` | Per-mode counting; `Allow` returns a mode, never `ErrOverLimit`. |
 | `cloud/internal/billing/modes.go` (new) | §3 mode function. |
 | `cloud/internal/billing/streams.go` (new), `cloud/cmd/maktaba-cloud/role_worker.go` | `relay_streams` counting and the sweeper. |
-| `cloud/internal/billing/usage_report.go` (new) | Hourly Stripe meter events, queue, clamp, reconciliation. |
-| `cloud/internal/billing/stripe.go` | Meter events; subscription items 2 and 3. |
-| `cloud/internal/handlers/billing/` (plans API and the Stripe webhook) | Plans API (new fields), PAYG on/off and cap, extra streams; webhook for items 2 and 3. |
+| `cloud/internal/billing/usage_report.go` (new) | Hourly usage reports, queue, clamp, reconciliation. |
+| `cloud/internal/billing/provider.go`, `provider_fake.go` (new) | The `billing.Provider` interface (checkout, plan changes, usage reports, items 2 and 3, webhook parsing) and its fake; the real provider (TBD, not Stripe) is added after the owner picks it. |
+| `cloud/internal/handlers/billing/` (plans API and the billing webhook) | Plans API (new fields), PAYG on/off and cap, extra streams; webhook for items 2 and 3. |
 | `cloud/internal/handlers/relay/proxy.go` | Modes: `402 relay_needs_plan`, cap header, pacing, `429 stream_limit`. |
 | `cloud/internal/license/license.go` | `TierForPlan` identity; `home` read as `basic` within grace. |
 | `cloud/internal/handlers/homes/homes.go` | No `relay` connection for Free homes. |
-| `cloud/migrations/` (new, expand-only) | CHECKs widened; `pro`→`basic` then `family`→`pro`; `relay_streams`, `relay_usage_monthly`, `payg_settings`, `stripe_meter_outbox`. A later contract migration drops `family`. |
+| `cloud/migrations/` (new, expand-only) | CHECKs widened; `pro`→`basic` then `family`→`pro`; `relay_streams`, `relay_usage_monthly`, `payg_settings`, `billing_usage_outbox`. A later contract migration drops `family`. |
 | `streaming/internal/` (HLS master playlist and transcode decision) | Honour `X-Maktaba-Relay-Cap-Kbps` on tunnel requests only. |
 | `api/internal/` license reader | New tier names; `home` alias within grace. |
 | `web/cloud/src/pages/Billing.tsx`, `web/cloud/src/i18n/en.json`, `ar.json` | Three plans, usage, PAYG and cap, extra streams; remove `homeTier.*` and `seats`. |
@@ -328,7 +337,7 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 ### Tests
 
 - T01–T12 in `relay.yml`'s `test` job, the streaming service's Go tests and each app's string
-  checks; Stripe only through the test-mode mock, never live.
+  checks; the payment provider only through the fake, never live.
 - **CI only:** rehearsal scenario `relay-plans` (50.06).
 
 ### Rollout
@@ -336,8 +345,8 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 1. Expand migration and the new catalog, with paid plans still off (launch gate).
 2. Home release that honours the cap header and reads the new tier names.
 3. Relay modes on in staging; then production with `relay.plans.enforce = true`.
-4. The owner sets prices, Pro's allowance and N, and creates the Stripe prices and meter
-   (README §12); the launch gate (T12) then allows paid plans on.
+4. The owner picks the payment provider (not Stripe), sets prices, Pro's allowance and N, and
+   creates the prices there (README §12); the launch gate (T12) then allows paid plans on.
 5. Contract migration (drop `family`) one release later.
 
 ### Rollback

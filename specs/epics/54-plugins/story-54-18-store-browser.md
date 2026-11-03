@@ -19,7 +19,8 @@ Settings → Plugins → **Browse** (admin only):
   platform; incompatible versions hidden, with a toggle "Show plugins that need a newer Maktaba";
 - search (name, summary, tags; Arabic-aware with the existing normaliser), categories, sort by
   rating, installs, newest;
-- a plugin's page: icon, names, summary and description (en/ar), developer and verified
+- a plugin's page: icon, names, summary and description (en/ar; a "machine translated"
+  label when the developer marked a language so, 54.16 §4), developer and verified
   prefix, rating and reviews, capabilities in Maktaba's words, review level badge
   (Reviewed / Automated checks), rating 1–6 (54.08), versions and notes, size, price (Phase 3),
   **Install** (54.07 install with the store reference; grants dialog);

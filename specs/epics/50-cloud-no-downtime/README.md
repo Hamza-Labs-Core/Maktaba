@@ -32,7 +32,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | G3 | Homes reconnect without jitter, so they all retry at the same instants. | 50.03 |
 | G4 | One Let's Encrypt certificate **per home**, issued on demand and kept on one disk. Let's Encrypt's limit is 50 new certificates per domain per week, so a fresh standby can't get them in time. | 50.02 |
 | G5 | The relay queries Postgres on **every** request (`BySlug`, `Meter.Allow`), so a 30-second database failover fails 30 seconds of requests. | 50.05 |
-| G13 | The plan limits don't agree, and the relay doesn't enforce stream limits. The architecture doc says Pro 2 / Family 5 streams; `cloud/internal/billing/plans.go` has Free / Pro / Family with 1 / 4 / 10 streams and 5 / 100 / 500 GiB, the license maps them to `free` / `home` / `pro`, and the cloud web app's strings say "Home" and "Pro". Only the billing API reports the limit; no relay enforces it, and the byte cap cuts relayed play off with a `402`. **Decided (§13, decisions 4 and 6):** all of these are replaced by **Free** (no relay; direct remote free), **Basic** (relay capped at ~3 Mbps, 2 streams, 500 GB soft fair use) and **Pro** (full quality, an allowance, N streams, optional pay-as-you-go with a cap, paid extra streams); Family is dropped; prices TBD. The relay enforces each plan and never cuts a paid plan off; old names migrate `pro`→`basic`, `family`→`pro`. | 50.19 (plans, enforcement, metering, Stripe, migration); 50.16 keeps the counts across relays |
+| G13 | The plan limits don't agree, and the relay doesn't enforce stream limits. The architecture doc says Pro 2 / Family 5 streams; `cloud/internal/billing/plans.go` has Free / Pro / Family with 1 / 4 / 10 streams and 5 / 100 / 500 GiB, the license maps them to `free` / `home` / `pro`, and the cloud web app's strings say "Home" and "Pro". Only the billing API reports the limit; no relay enforces it, and the byte cap cuts relayed play off with a `402`. **Decided (§13, decisions 4 and 6):** all of these are replaced by **Free** (no relay; direct remote free), **Basic** (relay capped at ~3 Mbps, 2 streams, 500 GB soft fair use) and **Pro** (full quality, an allowance, N streams, optional pay-as-you-go with a cap, paid extra streams); Family is dropped; prices TBD. The relay enforces each plan and never cuts a paid plan off; old names migrate `pro`→`basic`, `family`→`pro`. | 50.19 (plans, enforcement, metering, billing through a payment provider TBD (not Stripe), migration); 50.16 keeps the counts across relays |
 | G14 | Nothing writes `direct_ip` / `direct_port`, so `direct_url` in the home list is in practice always empty. | 50.15 |
 | G12 | Architecture §13.10 and story 25.14 describe `NOTIFY tier_changed`, but neither the NOTIFY nor a LISTEN exists in the code, so a plan change reaches the relay only when it next queries. | 50.05, 50.17 |
 | G6 | Tunnels are held in one process's memory. Story 25.8's multi-relay routing ("consistent hash on `server_id` at the L4 LB") was never built, and Hetzner's load balancer can't do it. | 50.04, 50.16 |
@@ -85,7 +85,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | F8 | **Incident handling.** Severity levels, runbooks, user messages in English and Arabic, postmortems. | 50.12 |
 | F9 | **Apps ride out the cloud being down.** They keep the last connection list, try direct addresses first, and show plain messages. | 50.13 |
 | F10 | **Direct remote like Plex.** UPnP / NAT-PMP, an outside reachability check, and HTTPS on the direct path, with names on several separate direct-name domains (never under `maktaba.tv`). **Free on every plan.** | 50.15 |
-| F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through Stripe usage-based items. | 50.19 |
+| F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through usage-based items at a payment provider TBD (not Stripe). | 50.19 |
 
 ### 4.2 Non-functional: the numbers
 
@@ -116,7 +116,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | Remote play over the **relay** (Basic and Pro; Free has no relay) | Down. | Down only if **both** nodes are down. |
 | Remote play over a **direct** address (every plan, Free included) | In practice never: the home list has a `direct_url` field, but nothing fills it (G14). | Works from the app's **cached** connection list, over HTTPS, with ports opened by UPnP / NAT-PMP (50.13, 50.15). |
 | Cloud features on the home (relay plan flags) | 7-day grace on the last signed entitlement. | Same (story 25.26). |
-| Paying, changing plans | Stripe hosts checkout and retries webhooks for 3 days. | Same; nothing lost. Pay-as-you-go usage queues in Postgres and reaches Stripe later with the same idempotency identifiers (50.19). |
+| Paying, changing plans | The payment provider (TBD, not Stripe) hosts checkout and retries its webhooks; choosing one that retries for days is a selection rule (50.19 §6). | Same; nothing lost. Pay-as-you-go usage queues in Postgres and reaches the payment provider later with the same idempotency identifiers (50.19). |
 | Push notifications | Down. | Down; the outbox in Postgres sends them after recovery if they are still within their TTL. |
 
 ### 4.4 Security
@@ -130,7 +130,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
   on the `maktaba.tv` zone only. The direct-name domains (50.15) are delegated to our own
   responder, so no token touches them.
 - Backups are encrypted before they leave the machine (pgBackRest `aes-256-cbc`). The key and
-  the cloud's own secrets (token secret, entitlement signing key, Stripe keys) are kept in the
+  the cloud's own secrets (token secret, entitlement signing key, payment provider keys) are kept in the
   owner's password manager too, never in the repo, never in a backup bucket without
   encryption.
 - SSH by key only, no root login, and the deploy key works only for the `deploy` user.
@@ -417,7 +417,7 @@ get.
 
 ## 12. What the owner does (nothing here creates or buys anything)
 
-Building this epic calls no Hetzner, Cloudflare, DNS, Stripe or VPS API. The owner, when ready:
+Building this epic calls no Hetzner, Cloudflare, DNS, payment provider or VPS API. The owner, when ready:
 
 1. Creates a Hetzner project for production, the nodes A, B and W (W a CPX22), the private
    network, a Floating IP and an Object Storage bucket, and a Cloudflare R2 bucket for the
@@ -430,9 +430,10 @@ Building this epic calls no Hetzner, Cloudflare, DNS, Stripe or VPS API. The own
 5. Registers the first 3–4 direct-name domains (never under `maktaba.tv`), delegates their `NS`
    to the responder on A and B, adds their `CAA` records, and lists them in `direct.domains`
    (50.15 §4); later domains are added the same way, by configuration only.
-6. Sets the prices and Pro's numbers, then creates the Stripe products, the flat prices for
-   Basic and Pro, the Billing Meter and metered price for pay-as-you-go GB, and the per-unit
-   price for extra streams, and puts their IDs in the `production` config (50.19 §6).
+6. Picks the payment provider (TBD, not Stripe; 50.19 §6), sets the prices and Pro's numbers,
+   then creates at that provider the flat prices for Basic and Pro, the metered price for
+   pay-as-you-go GB, and the per-unit price for extra streams, and puts their IDs in the
+   `production` config (50.19 §6).
 
 ## 13. Decisions (2026-11-03)
 
@@ -441,8 +442,8 @@ The owner's answers to the open questions, applied to the stories above.
 1. **Downtime credits: none.** The 99.9 % (Phase 2: 99.95 %) uptime target stays, with its
    alerts, error budget and postmortems, and the status page publishes the measured figure.
    But it is a target, not a promise: **no credit, refund or discount** for downtime. 50.12 §5
-   and 50.11 say so in English and Arabic (`uptime.policy`); no credit job, setting or Stripe
-   balance entry exists.
+   and 50.11 say so in English and Arabic (`uptime.policy`); no credit job, setting or payment
+   provider balance entry exists.
 2. **Off-Hetzner backup copy: yes, Cloudflare R2.** pgBackRest writes every backup and the WAL
    archive to Hetzner Object Storage (repo1) and to R2 (repo2), each encrypted with its own
    passphrase; the drill restores from R2 once a month; the encrypted secrets copy is in both
@@ -468,8 +469,8 @@ The owner's answers to the open questions, applied to the stories above.
    - 50.19 specs how the relay enforces each plan (refuse / full / capped / capped-slow, a cap
      header the home transcodes to, pacing as a backstop, `relay_streams` counting), the
      metering (bytes per mode per month, Pro's order: allowance, pay-as-you-go, capped), the
-     Stripe billing (a flat price per plan, a usage-based metered price on a Billing Meter for
-     pay-as-you-go, a per-unit price for extra streams), and the migration from today's code
+     billing through a payment provider TBD, not Stripe (a flat price per plan, a usage-based
+     metered price for pay-as-you-go, a per-unit price for extra streams), and the migration from today's code
      names (`pro`→`basic`, then `family`→`pro`; license tier `home` read as `basic` during the
      grace).
 5. **Direct-connection certificates: several separate direct-name domains, never under

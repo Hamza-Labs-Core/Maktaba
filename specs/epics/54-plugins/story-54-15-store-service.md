@@ -5,7 +5,7 @@
 ## Why
 
 Someone has to hold the catalog, the packages, the developer accounts and the review queue.
-Maktaba Cloud already has accounts, Stripe, a licence issuer, an admin console and (after Epic
+Maktaba Cloud already has accounts, a licence issuer, an admin console and (after Epic
 50) two machines that cover for each other. The store is a new part of it, not a new service to
 run.
 
@@ -141,7 +141,7 @@ downloads made through the cloud link.
 
 ### Tests
 
-- Role T01; integration T02, T03, T05; unit T04, T06; CI T07. No live Stripe, DNS or object
+- Role T01; integration T02, T03, T05; unit T04, T06; CI T07. No live payment, DNS or object
   storage calls: fakes only.
 
 ### Rollout
