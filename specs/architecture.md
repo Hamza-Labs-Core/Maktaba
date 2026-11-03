@@ -2540,7 +2540,13 @@ There is no Kubernetes requirement at any scale; Compose + a small
 
 > **See:** [Epic 25 — Maktaba Cloud: Relay, Accounts &
 > Subscriptions](epics/25-cloud-relay/README.md) for the full story
-> set.
+> set, and [Epic 50 — Maktaba Cloud with no
+> downtime](epics/50-cloud-no-downtime/README.md) for how it runs in
+> production (2026-11-03): two Hetzner nodes with Patroni and a
+> Floating IP, then a relay pool. Hetzner has no managed Postgres, so
+> "Postgres (managed)" in §13.2 means Patroni run by us, and the
+> load-balancer routing by `server_id` in §13.3 is replaced by
+> Epic 50's tunnel directory.
 
 §§ 1–12 describe the **self-hosted** half of Maktaba: the API,
 streaming, pipeline, web/mobile/TV clients, and the database that ties
