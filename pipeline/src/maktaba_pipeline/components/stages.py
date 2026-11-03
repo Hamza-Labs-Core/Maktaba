@@ -34,6 +34,7 @@ __all__ = [
     "OFF",
     "ON",
     "Gate",
+    "extension_name",
     "gates",
     "home_reasons",
     "machine_reasons",
@@ -62,9 +63,22 @@ class Gate:
 
 
 def stage_components(cat: Catalog | None = None) -> list[Component]:
-    """The switchable components that own pipeline stages (stage groups)."""
+    """The switchable components that own pipeline stages: the stage groups, and the
+    built-in extensions (``ext.*``, story 51.07; an extension loaded through an entry
+    point is in no catalog, and keeps its ``extensions`` row as its only switch)."""
     cat = cat or default()
-    return [c for c in cat.components() if c.switchable and c.stages and c.has_part("stages")]
+    return [
+        c
+        for c in cat.components()
+        if c.switchable and c.stages and (c.has_part("stages") or c.kind == "extension")
+    ]
+
+
+def extension_name(c: Component) -> str | None:
+    """The ``extensions`` row of a built-in extension component (``ext.plex`` -> plex)."""
+    if c.kind != "extension" or not c.id.startswith("ext."):
+        return None
+    return c.id.removeprefix("ext.")
 
 
 def _own(c: Component, d: Desired | None) -> Gate:

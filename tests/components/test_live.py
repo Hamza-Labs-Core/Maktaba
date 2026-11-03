@@ -19,7 +19,11 @@ from tests.components import rig as R
 
 pytestmark = pytest.mark.skipif(not R.PG_URL, reason="MAKTABA_TEST_PG_URL not set")
 
-STAGES = ("content_hash", "transcribe", "component_catchup")
+STAGES = ("content_hash", "transcribe", "plex_index", "component_catchup")
+#: a Plex server the sleepy plex_index never calls: the extension counts as set up
+PLEX_ENV = {"MAKTABA_PLEX_URL": "http://plex.invalid:32400", "MAKTABA_PLEX_TOKEN": "ci"}
+#: the catalog's drain grace of a stage group or extension (catalog.toml's default)
+DEFAULT_GRACE_S = 30
 #: the catalog's drain grace of transcription (catalog.toml)
 TRANSCRIPTION_GRACE_S = 120
 
@@ -64,8 +68,9 @@ async def _live() -> None:
 async def _run(r: R.Rig, m: dict[str, Any]) -> None:
     queued = await r.videos(300)
     await r.enqueue("transcribe", queued)
+    await r.extension("plex", True)
     for i in (1, 2):
-        r.start(f"live-{i}", STAGES, sleep=1.0)
+        r.start(f"live-{i}", STAGES, sleep=1.0, env=PLEX_ENV)
     await r.wait_online(2)
     await R.until(lambda: _running(r, "transcribe", 2), 60)
 
@@ -116,10 +121,36 @@ async def _run(r: R.Rig, m: dict[str, Any]) -> None:
     await r.want("transcription", "enabled")
     await R.until(lambda: _done(r, "transcribe", held), 120)
 
+    await _plex(r, m)
+
     assert await r.lost() == 0
     attempts = await r.db.fetchval("SELECT max(attempts) FROM processing_jobs")
     m["max_attempts"] = int(attempts or 0)
     assert m["max_attempts"] <= 1
+
+
+async def _plex(r: R.Rig, m: dict[str, Any]) -> None:
+    """T13 (story 51.07): Plex switched off and on through its extensions route."""
+    await R.until(lambda: _is(r.stage_row("plex_index"), (True, None)), 30)
+    libraries = await r.libraries(40)
+    await r.enqueue("plex_index", libraries, kind="library")
+    await r.run_now("plex_index")  # its 60 s debounce
+    await R.until(lambda: _running(r, "plex_index", 1), 30)
+    t_off = await r.extension("plex", False)
+    m["ext_N4_rows_s"] = await R.until(
+        lambda: _is(r.stage_row("plex_index"), (False, "extension_disabled")), 10
+    )
+    m["ext_N5_drain_s"] = await R.until(
+        lambda: _zero(_in_flight(r, "plex_index")), DEFAULT_GRACE_S + 5
+    )
+    await asyncio.sleep(3)
+    m["ext_claims_after_2s"] = await r.claims_after(["plex_index"], t_off + 2)
+    assert m["ext_claims_after_2s"] == 0
+    t_on = await r.extension("plex", True)
+    await r.run_now("plex_index")
+    m["ext_N2_enable_to_claim_s"] = await R.until(lambda: _claimed_after(r, "plex_index", t_on), 30)
+    assert m["ext_N2_enable_to_claim_s"] <= 5
+    await R.until(lambda: _done(r, "plex_index", libraries), 180)
 
 
 async def _is(coro: Any, want: Any) -> bool:

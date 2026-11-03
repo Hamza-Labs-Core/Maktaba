@@ -6090,5 +6090,6 @@
   "components.detail.pack_importing": "جارٍ قراءة الملف: {name}",
   "components.detail.pack_offline": "جارٍ جمع {name}: {done} من {total}",
   "components.offline.import": "استيراد ملف",
-  "components.offline.download": "تنزيل للاستخدام دون اتصال"
+  "components.offline.download": "تنزيل للاستخدام دون اتصال",
+  "components.reason.not_configured": "يحتاج إلى إعداداته: افتح إعدادات {component}."
 }

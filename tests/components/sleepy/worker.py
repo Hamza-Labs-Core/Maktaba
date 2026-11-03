@@ -4,8 +4,9 @@
 
 Every stage named is registered with a handler that sleeps ``--sleep`` seconds (plus a
 little jitter) and returns a new output, so each job finishes ``changed`` and its edges
-fire; ``component_catchup`` keeps its real handler. Then the real worker runs
-(``maktaba_pipeline.runtime.run``) with its component runner, until SIGTERM.
+fire; ``component_catchup`` keeps its real handler. An extension's stage (``plex_index``)
+sleeps too: its own handler is replaced after the extensions register theirs. Then the
+real worker runs (``maktaba_pipeline.runtime.run``) with its component runner, until SIGTERM.
 """
 
 from __future__ import annotations
@@ -36,13 +37,24 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sleep", type=float, default=0.3)
     a = p.parse_args(argv)
 
+    from maktaba_pipeline import runtime
     from maktaba_pipeline.engine.stages.registry import register_impl
     from maktaba_pipeline.runtime import RuntimeConfig, run
 
     stages = tuple(s for s in a.stages.split(",") if s)
-    for st in stages:
-        if st != "component_catchup":
+    sleepy = [st for st in stages if st != "component_catchup"]
+    for st in sleepy:
+        register_impl(st, _sleepy(a.sleep))
+    # the extensions register their own handlers at start: the sleepy ones go back on top
+    real = runtime.register_extension_impls
+
+    def register_extension_impls(*args: Any, **kwargs: Any) -> Any:
+        out = real(*args, **kwargs)
+        for st in sleepy:
             register_impl(st, _sleepy(a.sleep))
+        return out
+
+    runtime.register_extension_impls = register_extension_impls  # type: ignore[assignment]
     cfg = RuntimeConfig(
         database_url=a.db,
         stages=stages,

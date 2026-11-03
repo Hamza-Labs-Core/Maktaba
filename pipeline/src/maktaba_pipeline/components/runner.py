@@ -36,12 +36,20 @@ from typing import Any
 
 from ..engine.graph import CATALOG_ID, StageDef
 from ..engine.sql import is_pg, now, parse_ts
-from ..engine.sync import COMPONENT_OFF, COMPONENT_REASONS, apply_gates
+from ..engine.sync import COMPONENT_OFF, apply_gates
 from ..log import get_logger
 from ..log.tasks import watch as watch_task
 from . import store
 from .catalog import DEFAULT_STOP_GRACE_S, Catalog, default
-from .stages import HELD, Gate, gates, home_reasons, machine_reasons, stage_components
+from .stages import (
+    HELD,
+    Gate,
+    extension_name,
+    gates,
+    home_reasons,
+    machine_reasons,
+    stage_components,
+)
 from .store import HOME, Condition, Desired, Status
 
 __all__ = [
@@ -173,6 +181,9 @@ class ComponentRunner:
         #: component -> when the leader turned its stages off (None: unknown)
         self._off_since: dict[str, datetime | None] = {}
         self._off_loaded = False
+        #: the built-in extensions' rows (name -> ExtensionState), read at each pass that
+        #: acts (story 51.07: an enabled extension without its settings is Waiting)
+        self.ext_states: Mapping[str, Any] = {}
         self._reported: list[Status] | None = None
         self._wake = asyncio.Event()
         self._listener: Any = None
@@ -300,12 +311,21 @@ class ComponentRunner:
         self.gates = gates(desired, self.catalog)
         if self.machine == HOME:
             self.home_gates = self.gates
+        await self._read_extensions()
         if self.reconcile:
             await self._stage_gates()
             if self.role == "home" and self.machine == HOME:
                 await self._lead()
         self._loops()
         await self._report()
+
+    async def _read_extensions(self) -> None:
+        if self._extension_states is None:
+            return
+        try:
+            self.ext_states = await self._extension_states()
+        except Exception as exc:  # noqa: BLE001 - the last read stands
+            _log.warning("components_extensions_unreadable", error=f"{type(exc).__name__}: {exc}")
 
     async def _stage_gates(self) -> None:
         reasons = self.machine_reasons()
@@ -402,24 +422,21 @@ class ComponentRunner:
 
         await self._load_off_since()
         reasons = home_reasons(self.home_gates, self.catalog)
-        exts = await self._extension_states() if self._extension_states is not None else {}
+        exts = self.ext_states
         managed = self._managed()
         t = now()
+        # the components whose stages make no jobs now (off, not held: a held stage's
+        # jobs queue and wait); each one's time off is kept until it is back
+        closed: set[str] = set()
+        for st, why in reasons.items():
+            comp = self.catalog.by_stage(st)
+            if comp is not None and why == COMPONENT_OFF and st in self._graph_names:
+                closed.add(comp.id)
+        for cid in closed:
+            self._off_since.setdefault(cid, t)
+        back = {cid: at for cid, at in self._off_since.items() if cid not in closed}
         async with self.db.transaction():
             changes = await apply_gates(self.db, self.graph, reasons, exts, stages=managed)
-            back: dict[str, datetime | None] = {}
-            for st, _old_on, old_why, _on, why in changes:
-                comp = self.catalog.by_stage(st)
-                if comp is None:
-                    continue
-                cid = comp.id
-                if why == COMPONENT_OFF and old_why != COMPONENT_OFF:
-                    self._off_since.setdefault(cid, t)
-                if why not in COMPONENT_REASONS and (
-                    old_why == COMPONENT_OFF
-                    or (old_why in COMPONENT_REASONS and cid in self._off_since)
-                ):
-                    back[cid] = self._off_since.get(cid)
             if changes:
                 _log.info(
                     "component_stage_gates_written",
@@ -527,6 +544,7 @@ class ComponentRunner:
                 at = self._off_since[cid]
                 detail["off_since"] = None if at is None else at.isoformat()
             conds: list[Condition] = []
+            ext = self._extension_of(cid)
             if not self.reconcile:
                 phase = "running"
                 conds.append(Condition("Ready", "unknown", "reconcile_off"))
@@ -541,6 +559,14 @@ class ComponentRunner:
             elif self.draining(cid) or any(lp.state() == "stopping" for lp in loops.values()):
                 phase = "draining"
                 conds.append(Condition("Ready", "false"))
+            elif g.open and ext is not None and not ext.enabled:
+                # the extensions row is off (a release before 51.07 wrote it alone, or the
+                # mirror is being repaired): its stages are off as extension_disabled
+                phase = "off"
+                conds.append(Condition("Ready", "false"))
+            elif g.open and ext is not None and not ext.configured:
+                phase = "waiting"
+                conds.append(Condition("Ready", "false", "not_configured"))
             elif g.open:
                 phase = "running"
                 conds.append(Condition("RequirementsMet", "true"))
@@ -569,6 +595,13 @@ class ComponentRunner:
                 )
             )
         return out
+
+    def _extension_of(self, cid: str) -> Any:
+        """The ExtensionState of a built-in extension component (None: not one, or no
+        row read)."""
+        c = self.catalog.get(cid)
+        name = extension_name(c) if c is not None else None
+        return self.ext_states.get(name) if name is not None else None
 
     async def _report(self) -> None:
         rows = self.status_rows()

@@ -88,12 +88,22 @@ class Rig:
     db: Any
     workers: list[Worker] = field(default_factory=list)
 
-    def start(self, worker_id: str, stages: Iterable[str], *, sleep: float = 0.3) -> Worker:
+    def start(
+        self,
+        worker_id: str,
+        stages: Iterable[str],
+        *,
+        sleep: float = 0.3,
+        env: dict[str, str] | None = None,
+    ) -> Worker:
         LOGS.mkdir(parents=True, exist_ok=True)
         log = LOGS / f"{worker_id}.log"
         st = tuple(stages)
-        env = dict(os.environ)
-        env.setdefault("MAKTABA_LOG_FORMAT", "json")
+        penv = {**os.environ, **(env or {})}
+        penv.setdefault("MAKTABA_LOG_FORMAT", "json")
+        # no channel to a home API: whatever listens on this machine is not the rig's
+        penv["MAKTABA_CLUSTER_AGENT"] = "0"
+        penv["MAKTABA_API_URL"] = "http://127.0.0.1:9"
         proc = subprocess.Popen(  # noqa: S603 - our own script
             [
                 sys.executable,
@@ -109,7 +119,7 @@ class Rig:
             ],
             stdout=log.open("ab"),
             stderr=subprocess.STDOUT,
-            env=env,
+            env=penv,
             cwd=str(ROOT / "pipeline"),
         )
         w = Worker(worker_id, st, proc, log)
@@ -150,6 +160,20 @@ class Rig:
             time_now() if hold else None,
         )
         return time.time()
+
+    async def extension(self, name: str, enabled: bool) -> float:
+        """Switch a built-in extension as PUT /api/extensions/{name} does (51.07): its
+        row and its component's desired state in one transaction; the time."""
+        async with self.db.transaction():
+            await self.db.execute(
+                "INSERT INTO extensions (name, enabled, settings, updated_at)"
+                " VALUES ($1, $2, '{}'::jsonb, now())"
+                " ON CONFLICT (name) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()",
+                name,
+                enabled,
+            )
+            at = await self.want(f"ext.{name}", "enabled" if enabled else "installed")
+        return at
 
     # -- the queue -------------------------------------------------------------
 
@@ -197,6 +221,13 @@ class Rig:
             )
             out[row["outcome"]] = out.get(row["outcome"], 0) + 1
         return out
+
+    async def run_now(self, stage: str) -> None:
+        """Lift the debounce of ``stage``'s pending jobs, as the queue's run-now does."""
+        await self.db.execute(
+            "UPDATE processing_jobs SET not_before = NULL WHERE stage = $1 AND state = 'pending'",
+            stage,
+        )
 
     async def states(self, stage: str | None = None) -> dict[str, int]:
         rows = await self.db.fetch(

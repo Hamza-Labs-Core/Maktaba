@@ -2366,7 +2366,8 @@
     "packs_disabled",
     "pack_missing",
     "install_failed",
-    "busy"
+    "busy",
+    "not_configured"
   ],
   "schema": 1
 }

@@ -6077,5 +6077,6 @@
   "components.detail.pack_importing": "Reading the file: {name}",
   "components.detail.pack_offline": "Gathering {name}: {done} of {total}",
   "components.offline.import": "Import a file",
-  "components.offline.download": "Download for offline"
+  "components.offline.download": "Download for offline",
+  "components.reason.not_configured": "Needs its settings: open {component}'s settings."
 }
