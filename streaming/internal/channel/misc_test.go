@@ -53,6 +53,26 @@ func TestParseLook_DefaultsAndOverrides(t *testing.T) {
 	if k := ParseLook([]byte(`{"watermark_skip_filler":true}`), ""); !k.WatermarkSkipFiller {
 		t.Error("watermark_skip_filler not read")
 	}
+	if k := ParseLook([]byte(`{"watermark_skip_filler":false}`), ""); k.WatermarkSkipFiller {
+		t.Error("watermark_skip_filler false not read")
+	}
+}
+
+// TestApplyLook_NoKeyMeansLogoOnFiller: a look with a watermark and no
+// watermark_skip_filler key (the default) airs the corner logo on every
+// block, filler and bumpers included.
+func TestApplyLook_NoKeyMeansLogoOnFiller(t *testing.T) {
+	wm := filepath.Join(t.TempDir(), "bug.png")
+	_ = os.WriteFile(wm, []byte("png"), 0o644)
+	look := ParseLook([]byte(`{"watermark":{"path":"`+filepath.ToSlash(wm)+`"}}`), "")
+	s := &Station{}
+	for _, kind := range []string{KindProgram, KindFiller, KindBumper, KindLive} {
+		in := &BlockInput{}
+		s.applyLook(context.Background(), in, look, kind)
+		if in.Watermark == nil {
+			t.Errorf("%s: no watermark, want the corner logo on every block", kind)
+		}
+	}
 }
 
 // TestApplyLook_WatermarkSkipFiller: with the rule the watermark is left off

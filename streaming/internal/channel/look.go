@@ -17,8 +17,8 @@ import (
 //
 // Missing keys fall back to defaults: no watermark, the logo as the
 // slate card, loudness levelled by speechnorm (rules tv.loudnorm_mode),
-// the watermark on filler and bumpers too (a look written before rules
-// tv.watermark_skip_filler; write_channels stages the new one).
+// the watermark on filler and bumpers too (rules tv.watermark_skip_filler is
+// off by default: the corner logo airs on every block).
 type Look struct {
 	Name        string
 	LogoPath    string
@@ -29,7 +29,8 @@ type Look struct {
 	// laid over rules tv_strip (ApplyStripRules).
 	Strip json.RawMessage
 	// WatermarkSkipFiller leaves the watermark off filler and bumper
-	// blocks, as dizqueTV (rules tv.watermark_skip_filler).
+	// blocks, as dizqueTV (rules tv.watermark_skip_filler, off by default;
+	// a look without the key carries the watermark on every block).
 	WatermarkSkipFiller bool
 }
 

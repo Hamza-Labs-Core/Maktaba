@@ -72,6 +72,8 @@ public struct PermissionsWalkthrough: View {
     let appName: String
     let words: PermissionsStrings
     @Environment(\.openURL) private var openURL
+    /// Closes the sheet this walkthrough is in, whatever its binding says.
+    @Environment(\.dismiss) private var close
 
     public init(model: PermissionsModel, appName: String, words: PermissionsStrings = .forPreferredLanguages()) {
         self.model = model
@@ -107,7 +109,13 @@ public struct PermissionsWalkthrough: View {
             Divider()
             HStack {
                 Spacer()
-                Button(words.text(model.requiredMissing ? .notNow : .continue)) { model.dismiss() }
+                // the model's flag, and the sheet itself: on a loaded iPad simulator the
+                // flag going false alone once left the sheet up, its Continue pressed (PR
+                // #595's iPad run); the sheet's own dismiss closes it either way
+                Button(words.text(model.requiredMissing ? .notNow : .continue)) {
+                    model.dismiss()
+                    close()
+                }
                     .buttonStyle(.borderedProminent)
                     #if !os(tvOS)
                     .keyboardShortcut(.defaultAction)

@@ -195,18 +195,22 @@ extension HomeFailure {
 
 /// The live player, full screen: the picture, a banner on each tune (number, logo, name,
 /// what is on with its progress, what is next), ▲ / ▼ for the next and previous channel,
-/// Select for the mini-guide (the channels around this one, now and next), Menu to close
-/// the mini-guide, then to go back to the Live tab.
+/// Select for the mini-guide (the channels around this one, now and next), Play/Pause for the
+/// banner again, Menu to put the mini-guide or the banner away, then to go back to the Live
+/// tab. When each overlay goes is `LiveOverlays`' (MaktabaKit, unit-tested): the banner
+/// `LiveOverlays.bannerTime` after the channel actually plays, however long it took to start.
+///
+/// The home burns the channel's corner logo (its watermark) into the picture itself, top
+/// right by default: the picture is shown whole (`.resizeAspect`, edge to edge, nothing
+/// cropped) and every overlay sits at the bottom or in the middle, clear of that corner.
 struct LivePlayerScreen: View {
     let model: LiveModel
     @State private var playback: LivePlayback
-    @State private var miniGuide = false
-    @State private var banner = true
+    @State private var overlays = LiveOverlays()
+    /// The moment the overlays are drawn for (moved on each event and at each deadline).
+    @State private var now = ContinuousClock.now
     @Environment(\.dismiss) private var dismiss
     @Environment(\.appSession) private var session
-
-    /// How long the banner stays after a tune.
-    static let bannerTime: Duration = .seconds(6)
 
     init(client: APIClient, model: LiveModel, start: String) {
         self.model = model
@@ -217,6 +221,9 @@ struct LivePlayerScreen: View {
         ZStack {
             Color.black
             LiveVideoLayer(player: playback.player)
+                .accessibilityElement()
+                .accessibilityLabel(Text("Live picture"))
+                .accessibilityIdentifier("live.player.video")
             // the one focusable thing: it takes Select, and ▲ / ▼ / Menu reach the screen
             // through it (the banner and the mini-guide are beside it, so each keeps its
             // own accessibility element)
@@ -228,12 +235,14 @@ struct LivePlayerScreen: View {
             .accessibilityIdentifier("live.player.surface")
             Group {
                 status
-                if miniGuide {
+                if overlays.miniGuide(at: now) {
                     LiveMiniGuide(model: model, channels: playback.channels, current: playback.index)
                         .frame(maxHeight: .infinity, alignment: .bottom)
-                } else if banner, let channel = playback.channel {
+                        .transition(.opacity)
+                } else if overlays.banner(at: now), let channel = playback.channel {
                     LiveBanner(channel: channel, now: model.onNow(channel.id))
                         .frame(maxHeight: .infinity, alignment: .bottom)
+                        .transition(.opacity)
                 }
             }
             .allowsHitTesting(false)
@@ -248,8 +257,11 @@ struct LivePlayerScreen: View {
             default: break
             }
         }
+        .onPlayPauseCommand { change { $0.showBanner(at: $1) } }
         .onExitCommand {
-            if miniGuide { miniGuide = false } else { dismiss() }
+            var handled = false
+            change { handled = $0.back(at: $1) }
+            if !handled { dismiss() }
         }
         .onAppear { playback.tune(playback.index) }
         .onDisappear {
@@ -257,15 +269,29 @@ struct LivePlayerScreen: View {
             Task { await p.close() }
         }
         .onChange(of: model.channels.map(\.id)) { _, _ in playback.update(channels: model.channels) }
-        .task(id: playback.tunes) {
-            // the banner on each tune, gone a moment later (it stays while nothing plays)
-            banner = true
-            try? await Task.sleep(for: Self.bannerTime)
-            guard !Task.isCancelled, playback.phase == .playing else { return }
-            withAnimation { banner = false }
+        .onChange(of: playback.tunes) { _, _ in change { $0.tuned(at: $1) } }
+        .onChange(of: playback.phase) { _, phase in change { $0.playback(playing: phase == .playing, at: $1) } }
+        .task(id: Wake(overlays: overlays, now: now)) {
+            // asleep until the next overlay goes (none while nothing plays), then redrawn
+            guard let next = overlays.nextChange(after: now) else { return }
+            try? await Task.sleep(until: next, clock: .continuous)
+            guard !Task.isCancelled else { return }
+            withAnimation { now = .now }
         }
-        .onChange(of: playback.phase) { _, phase in
-            if phase != .playing { banner = true }
+    }
+
+    /// What the overlays' next redraw depends on.
+    private struct Wake: Equatable {
+        let overlays: LiveOverlays
+        let now: ContinuousClock.Instant
+    }
+
+    /// One event for the overlays, at this moment.
+    private func change(_ apply: (inout LiveOverlays, ContinuousClock.Instant) -> Void) {
+        let t = ContinuousClock.now
+        withAnimation {
+            apply(&overlays, t)
+            now = t
         }
     }
 
@@ -286,7 +312,7 @@ struct LivePlayerScreen: View {
         case .ended:
             playback.retry()
         case .starting, .playing:
-            miniGuide.toggle()
+            change { $0.toggleMiniGuide(at: $1) }
         }
     }
 
