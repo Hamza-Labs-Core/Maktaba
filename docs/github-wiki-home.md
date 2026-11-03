@@ -15,9 +15,14 @@ main repository, pinned to the same commit as the code.
 
 - [Architecture](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/architecture.md)
 - [Build order (phase 0 → phase 17)](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/wiki/build-order.md)
-- [Linear ↔ file cross-reference](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/wiki/linear-map.md)
+- [Issues](https://github.com/Hamza-Labs-Core/Maktaba/issues)
 - [Per-epic pages](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/docs/wiki/epics)
 - [Contributing](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/CONTRIBUTING.md)
+- [Get the apps](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/README.md#get-the-apps) (TestFlight, Google Play internal testing)
+- [Roadmap](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/README.md#roadmap) (epics 50–54)
+- User guide: in the Maktaba web app at `/help`, in English and Arabic
+
+Domains: **maktaba.tv** is for users, **maktaba.dev** for developers (the developer wiki, the source, `security.txt`).
 
 ---
 

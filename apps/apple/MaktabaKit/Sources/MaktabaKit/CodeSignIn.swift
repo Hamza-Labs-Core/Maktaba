@@ -25,6 +25,9 @@ public final class CodeSignIn {
     public private(set) var status: Status = .starting
     /// The last thing that went wrong (it keeps trying).
     public private(set) var problem: String?
+    /// A phone signed in on the home has read the code on screen (the home's `looked_up`):
+    /// the person is about to approve it. False again with each new code.
+    public private(set) var lookedUp = false
     /// What it is doing now, step by step (nil: the home signs in by password only).
     public private(set) var progress: ConnectProgress?
     /// Hears every `progress` published, in order (the tests' transition log).
@@ -36,6 +39,8 @@ public final class CodeSignIn {
     private let finish: @MainActor () async throws -> Void
     private let clock: ConnectClock
     private var attempt: Int
+    /// The person asked for a new code (`newCode`): the one on screen is dropped.
+    private var renewing = false
 
     /// - `label`: this device's name, shown to the person approving it.
     /// - `homeName`: the home's name, as the progress says it.
@@ -64,6 +69,12 @@ public final class CodeSignIn {
         if case let .showing(p) = status { p } else { nil }
     }
 
+    /// Drops the code on screen and asks the home for a new one (at the next poll).
+    public func newCode() {
+        guard case .showing = status else { return }
+        renewing = true
+    }
+
     /// Runs until approved, unsupported or cancelled (the screen goes away).
     public func run() async {
         while !Task.isCancelled {
@@ -77,10 +88,17 @@ public final class CodeSignIn {
                 }
                 status = .showing(p)
                 problem = nil
+                lookedUp = false
+                renewing = false
                 publish(.awaitingApproval(code: p.code, expiresAt: p.expiresAt))
                 if try await wait(for: p) { return }
-                // expired before anyone approved it: said so, then a new code
-                publish(.failed(reason: .approvalExpired, tried: []))
+                if renewing {
+                    // the person asked for a new code: no "it expired" in between
+                    renewing = false
+                } else {
+                    // expired before anyone approved it: said so, then a new code
+                    publish(.failed(reason: .approvalExpired, tried: []))
+                }
                 attempt += 1
             } catch is CancellationError {
                 return
@@ -108,6 +126,7 @@ public final class CodeSignIn {
         while clock.now() < p.expiresAt {
             try await clock.sleep(.seconds(p.interval))
             try Task.checkCancellation()
+            if renewing { return false }
             let state: DevicePairing.State
             do {
                 state = try await client.collectDevicePairing(p, label: label)
@@ -119,6 +138,9 @@ public final class CodeSignIn {
             switch state {
             case .waiting:
                 problem = nil
+            case .lookedUp:
+                problem = nil
+                lookedUp = true
             case .approved:
                 // this device holds the tokens now: keep asking who it is, never for a new code
                 publish(.signingIn(home: homeName))

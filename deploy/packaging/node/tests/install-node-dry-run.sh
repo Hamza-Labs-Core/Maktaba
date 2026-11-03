@@ -26,7 +26,9 @@ run_installer() {
     while [ $# -gt 0 ] && [ "$1" != -- ]; do envs+=("$1"); shift; done
     shift
     set +e
-    OUT="$(env HOME="$T/home" MAKTABA_NODE_OS=linux ${envs[@]+"${envs[@]}"} \
+    # no NVIDIA GPU unless a case gives one (MAKTABA_TEST_NVIDIA_SMI_MIB=<MiB>)
+    OUT="$(env HOME="$T/home" MAKTABA_NODE_OS=linux MAKTABA_TEST_NVIDIA_SMI_MIB= \
+        ${envs[@]+"${envs[@]}"} \
         "$dir/install-node.sh" --dry-run --no-join --no-start --no-linger "$@" 2>&1)"
     STATUS=$?
     set -e
@@ -387,6 +389,18 @@ if grep -q "systemctl --user enable" <<<"$OUT"; then
 else
     ok "--full registers no worker unit"
 fi
+# --- the default extras: stt where an NVIDIA GPU transcribes ------------------------------------------
+run_installer "$BUNDLE" HOME="$T/h-gpu" MAKTABA_NODE_ARCH=x86_64 MAKTABA_TEST_NVIDIA_SMI_MIB=8192 --
+expect_ok "an 8 GB NVIDIA GPU on Linux x86_64"
+has "an 8 GB NVIDIA GPU on Linux x86_64: the stt extra by default" "extras: stt"
+req_has "an 8 GB NVIDIA GPU: the wheel with the stt extra" "$BUNDLE" "maktaba-pipeline[stt] @ file://"
+run_installer "$BUNDLE" HOME="$T/h-small-gpu" MAKTABA_NODE_ARCH=x86_64 MAKTABA_TEST_NVIDIA_SMI_MIB=2048 --
+has "a 2 GB GPU (under Whisper's 4 GiB): no extras" "extras: none"
+run_installer "$BUNDLE" HOME="$T/h-arm-gpu" MAKTABA_NODE_ARCH=aarch64 MAKTABA_TEST_NVIDIA_SMI_MIB=16384 --
+has "Linux aarch64 (no CUDA CTranslate2 there): no extras" "extras: none"
+run_installer "$BUNDLE" HOME="$T/h-gpu-none" MAKTABA_NODE_ARCH=x86_64 MAKTABA_TEST_NVIDIA_SMI_MIB=8192 -- --extras none
+has "--extras none stands" "extras: none"
+
 echo
 printf '%d passed, %d failed\n' "$PASS" "$FAIL"
 [ "$FAIL" = 0 ]

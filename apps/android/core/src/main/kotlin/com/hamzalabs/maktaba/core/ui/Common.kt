@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.material.icons.outlined.ConnectedTv
 import androidx.compose.material.icons.outlined.PhonelinkLock
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -92,6 +93,50 @@ fun Poster(client: ApiClient, video: String, modifier: Modifier = Modifier) {
 }
 
 /**
+ * The full-screen "Approve a sign-in" (story 42.6) for [user] through [client] (the session's
+ * home), while [approving]; [onClose] when it is done or dismissed.
+ */
+@Composable
+fun ApproveSignInDialog(
+    session: AppSession,
+    user: User,
+    approving: Boolean,
+    client: ApiClient? = session.client,
+    onClose: () -> Unit,
+) {
+    val home by session.current.collectAsState()
+    if (!approving || client == null) return
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Surface(Modifier.fillMaxSize()) {
+            ApproveSignIn(
+                client = client,
+                username = user.username,
+                homeName = home?.label ?: client.home.host,
+                onClose = onClose,
+                onSignedOut = { onClose(); session.signedOut() },
+            )
+        }
+    }
+}
+
+/**
+ * "Approve a TV", in sight on a top bar: a TV showing a sign-in code is approved here, not
+ * looked for in the account menu (the owner could not find it there). It opens the same
+ * "Approve a sign-in" as the menu; the home still checks every approval.
+ */
+@Composable
+fun ApproveTvButton(session: AppSession, user: User, client: ApiClient? = session.client) {
+    var approving by rememberSaveable { mutableStateOf(false) }
+    ApproveSignInDialog(session, user, approving, client) { approving = false }
+    IconButton(onClick = { approving = true }, modifier = Modifier.testTag("approve-tv")) {
+        Icon(Icons.Outlined.ConnectedTv, stringResource(R.string.approve_tv))
+    }
+}
+
+/**
  * The account menu: who, which home, approving another device's sign-in (story 42.6), the
  * theme, switch home, sign out.
  */
@@ -101,23 +146,7 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
     var approving by rememberSaveable { mutableStateOf(false) }
     val home by session.current.collectAsState()
     val mode by themes.mode.collectAsState()
-    val client = session.client
-    if (approving && client != null) {
-        Dialog(
-            onDismissRequest = { approving = false },
-            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
-        ) {
-            Surface(Modifier.fillMaxSize()) {
-                ApproveSignIn(
-                    client = client,
-                    username = user.username,
-                    homeName = home?.label ?: client.home.host,
-                    onClose = { approving = false },
-                    onSignedOut = { approving = false; session.signedOut() },
-                )
-            }
-        }
-    }
+    ApproveSignInDialog(session, user, approving) { approving = false }
     Box {
         IconButton(onClick = { open = true }) { Icon(Icons.Filled.AccountCircle, stringResource(R.string.account)) }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
@@ -125,7 +154,7 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
             home?.let { DropdownMenuItem(text = { Text(it.label) }, onClick = {}, enabled = false) }
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.account_approve)) },
+                text = { Text(stringResource(R.string.approve_tv)) },
                 leadingIcon = { Icon(Icons.Outlined.PhonelinkLock, null) },
                 onClick = { open = false; approving = true },
                 modifier = Modifier.testTag("account-approve"),

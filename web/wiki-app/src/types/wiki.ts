@@ -23,7 +23,6 @@ export interface WikiEntry {
   tags?: string[];
   related?: string[];
   files?: Record<string, string | string[] | null>;
-  linear?: string | null;
   api_endpoints?: string[];
   db_tables?: string[];
   metadata?: Record<string, unknown> & {
@@ -45,6 +44,8 @@ export interface WikiDB {
   description?: string;
   generated_from?: string[];
   counts?: Partial<Record<EntryType, number>>;
+  /** wiki.json only: the part files beside it that hold the stories and plans. */
+  parts?: string[];
   entries: WikiEntry[];
 }
 

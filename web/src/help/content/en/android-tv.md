@@ -4,16 +4,23 @@ Maktaba for Android TV and Google TV: your home's libraries on the big screen, d
 
 ## What it is {#what-it-is}
 
-Maktaba for Android TV is a ten-foot app for Android TV and Google TV (Android 9 or later). You browse your home's libraries, search and watch, all with the remote's arrows and its centre button. It shows on the TV's home row as **Maktaba**.
+Maktaba for Android TV is a ten-foot app for Android TV and Google TV (Android 9 or later). It has **Home**, **Libraries**, **Search**, **Live TV** (only when you may watch a channel) and **Account**, all driven with the remote's arrows and its centre button. **Live TV** has **On now** (every channel with what is on) and **Guide**; choose a channel to watch it live. It shows on the TV's home row as **Maktaba**.
 
 ## How to use it {#how-to-use}
+
+### Get the app {#get-the-app}
+
+The app is in testing. Two ways to get it:
+
+- **Google Play's internal testing:** ask the home's owner to add your Google account to the app's testers list in Play Console, open the opt-in link they send, then install **Maktaba** on the TV from Google Play. Updates come through Google Play.
+- **By hand (sideload):** when the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest) lists `maktaba-tv-<version>.apk`, download it and install it on the TV, for example with a file manager app or `adb install`. A new version is installed the same way. Only signed builds are attached; when the release has no `.apk`, use Google Play.
 
 ### Connect and sign in {#connect}
 
 1. Open **Maktaba** from the TV's home screen. On Android 17 and later, the first time, it shows **Before you start** (see [Permissions](/help/android-tv#permissions)).
 2. **Choose your home** lists **Your homes** (the homes this TV used) and the homes **On this network** that announce themselves, one row per home (a machine that only works for a home is not listed). Press and hold the centre button on one of **Your homes** to rename it on this TV (**Name on this device**, then **Save**; empty uses the home's own name) or **Remove** it with its sign-in.
 3. If yours is not listed, use **Enter an address**: type it, like `192.168.1.20:8088`, and choose **Connect**. A `maktaba://connect` link the home shared works too. The TV first checks that a Maktaba home answers there (**Connecting…**).
-4. **Sign in to** your home with a code: the TV shows a code and a QR code. On your phone or computer, signed in to Maktaba, open the address the TV shows (or scan the QR code, or open **Approve a sign-in** in the app's account menu), check that the **Code** and the device shown are the TV, and press **Approve**. The TV signs in by itself. A code that runs out is replaced: **A new code. The last one ran out.**
+4. **Sign in to** your home with a code: the TV shows a code and a QR code. On your phone or computer, signed in to Maktaba, open the address the TV shows (or scan the QR code, or open **Approve a TV or device**: in Maktaba Remote at the top of every screen, in Maktaba Player under **Profile**, on an older app **Approve a sign-in** under the person icon; see [Approve a TV](/help/android-apps#approve)), check that the **Code** and the device shown are the TV, and press **Approve**. The TV signs in by itself. **Runs out in** shows the time left, and **Get a new code** asks for another at once. A code that runs out is replaced: **A new code. The last one ran out.** When a phone has found the code, the TV says **Your phone found this TV — tap “Approve a TV or device” on it.**
    Or choose **Sign in with a password** and type your Maktaba username and password with the remote. A home that cannot sign a TV in with a code yet asks for the password. **Choose another home** goes back to the list.
 5. Move with the arrows; the item in focus has a gold ring. Press the centre button to open it, and **Back** to go back.
 

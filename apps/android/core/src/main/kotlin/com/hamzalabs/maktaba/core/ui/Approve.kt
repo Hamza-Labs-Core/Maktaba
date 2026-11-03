@@ -95,7 +95,7 @@ fun ApproveSignIn(client: ApiClient, username: String, homeName: String, onClose
     val scope = rememberCoroutineScope()
     val invalid = stringResource(R.string.approve_code_invalid)
     val notCode = stringResource(R.string.not_a_code)
-    val unknown = stringResource(R.string.approve_unknown, homeName)
+    val unknown = stringResource(R.string.approve_unknown)
     val already = stringResource(R.string.approve_already)
     val cloud = stringResource(R.string.approve_cloud)
     val unreachable = stringResource(R.string.signin_unreachable, homeName)
@@ -292,6 +292,14 @@ fun ApproveCard(
         request?.expiresMillis?.let { exp ->
             val minutes = ((exp - now()) / 60_000L).coerceAtLeast(0L).toInt() + 1
             Text(stringResource(R.string.approve_expires, minutes), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+        }
+        request?.deviceLabel?.takeIf { it.isNotBlank() }?.let { name ->
+            // the question Approve answers: this device, as this person
+            Text(
+                stringResource(R.string.approve_confirm, name, username),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.testTag("approve-confirm"),
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.WarningAmber, null, tint = colors.error, modifier = Modifier.size(20.dp))

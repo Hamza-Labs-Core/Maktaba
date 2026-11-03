@@ -107,6 +107,22 @@ class PairingTest {
     }
 
     @Test
+    fun theDeviceIsToldOnceAPhoneFoundItsCode() = runBlocking {
+        val home = FakePairing(
+            201 to codeJson("ABCD-1234", "secret-1"),
+            202 to """{"status":"pending","looked_up":false}""",
+            202 to """{"status":"pending","looked_up":true}""",
+            202 to """{"status":"pending","looked_up":true}""",
+            200 to """{"access_token":"a1","refresh_token":"r1"}""",
+        )
+        val device = signIn(home)
+        val code = device.start()
+        var told = 0
+        assertEquals("a1", device.poll(code) { told++ }?.accessToken)
+        assertEquals("told once, when a phone read the code", 1, told)
+    }
+
+    @Test
     fun aCodeThatRunsOutIsReplacedAndShownAgain() = runBlocking {
         val home = FakePairing(
             201 to codeJson("ABCD-1234", "secret-1"),
@@ -220,6 +236,28 @@ class PairingTest {
         client.approvePairing("abcd1234")
         assertEquals("/api/pairing/approve", seen[1].url.encodedPath)
         assertTrue(seen[1].body!!.utf8().contains("\"code\":\"ABCD-1234\""))
+    }
+
+    @Test
+    fun theDevicesWaitingAreReadWithoutTheirCode() = runBlocking {
+        route = { r ->
+            when (r.url.encodedPath) {
+                "/api/pairing/pending" -> json(200, """{"count":2,"requests":[
+                    {"id":"r2","client_app":"tv","platform":"android","device":"tv","device_label":"Living room TV","created_at":"2027-01-15T08:01:00Z","expires_at":"2027-01-15T08:11:00Z"},
+                    {"id":"r1","client_app":"","platform":"","device":"","device_label":"","created_at":"2027-01-15T08:00:00Z","expires_at":"2027-01-15T08:10:00Z"}]}""")
+                else -> json(404, """{"title":"not found"}""")
+            }
+        }
+        val client = ApiClient(server.url("/"), MemoryTokens("t", "r"))
+        val pending = client.pendingSignIns()!!
+        assertEquals(2, pending.count)
+        assertEquals("Living room TV", pending.requests[0].name)
+        assertTrue(pending.requests[0].isTv)
+        assertNull("nothing said: no name", pending.requests[1].name)
+        assertTrue("nothing said: an old TV", pending.requests[1].isTv)
+        assertEquals("Bearer t", seen[0].headers["Authorization"])
+        route = { MockResponse.Builder().code(404).body("404 page not found").build() }
+        assertNull("an older home: nothing to say", client.pendingSignIns())
     }
 
     @Test

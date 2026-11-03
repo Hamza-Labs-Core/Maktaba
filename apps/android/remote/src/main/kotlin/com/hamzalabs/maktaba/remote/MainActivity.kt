@@ -28,6 +28,7 @@ import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.permissions.PermissionsGate
 import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
+import com.hamzalabs.maktaba.core.ui.ApproveRequests
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
@@ -43,7 +44,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val app = application as RemoteApplication
         // opened by a home's link (maktaba://connect…): the app asks before it connects
-        if (savedInstanceState == null) app.session.openLink(intent?.dataString)
+        if (savedInstanceState == null) {
+            app.session.openLink(intent?.dataString)
+            // a tapped sign-in request notification: Approve opens
+            ApproveRequests.handle(intent)
+        }
         setContent {
             val mode by app.themes.mode.collectAsState()
             MaktabaTheme(mode) {
@@ -62,6 +67,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         (application as RemoteApplication).session.openLink(intent.dataString)
+        ApproveRequests.handle(intent)
     }
 }
 
