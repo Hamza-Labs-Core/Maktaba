@@ -42,7 +42,7 @@ import signal
 import socket
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import uuid4
 
@@ -61,6 +61,7 @@ __all__ = [
     "WorkerConfig",
     "default_worker_id",
     "install_signal_handlers",
+    "local_pool_size",
 ]
 
 
@@ -95,6 +96,18 @@ def default_worker_id() -> str:
     a fresh ``default_worker_id()`` to recognise dead claims.
     """
     return f"{socket.gethostname()}/{os.getpid()}/{uuid4().hex[:8]}"
+
+
+def local_pool_size(pool: str) -> int | None:
+    """This process's own size for a per-worker pool, ``MAKTABA_POOL_<POOL>`` (a positive
+    integer), else None (the cluster's, ``worker_pools``). The supervisor sets
+    ``MAKTABA_POOL_GPU`` to the transcription batch it sized from this machine's NVIDIA
+    GPU (``supervisor/stt.go``): a per-worker pool is per machine, and the cluster's size,
+    set for the home's GPU, is not the one an 8 GB card holds."""
+    raw = os.environ.get(f"MAKTABA_POOL_{pool.upper()}", "").strip()
+    if not raw.isdigit() or int(raw) < 1:
+        return None
+    return int(raw)
 
 
 @dataclass(slots=True)
@@ -276,10 +289,21 @@ class ClaimLoop:
     async def reload_pools(self) -> None:
         """Re-read ``worker_pools``; resize per-worker semaphores whose size changed.
 
+        A per-worker pool this process was given a size of its own for
+        (:func:`local_pool_size`: the supervisor sizes the ``gpu`` pool from this machine's
+        GPU) takes that size instead of the cluster's.
+
         A resized semaphore is *replaced* (jobs in flight release into the one
         they acquired), sized so that in-flight plus free slots equals the new size.
         """
-        self._pools = await load_pools(self.db)
+        self._pools = {
+            name: (
+                replace(pool, size=own)
+                if pool.scope == "per_worker" and (own := local_pool_size(name)) is not None
+                else pool
+            )
+            for name, pool in (await load_pools(self.db)).items()
+        }
         for name, pool in self._pools.items():
             if pool.scope != "per_worker":
                 continue

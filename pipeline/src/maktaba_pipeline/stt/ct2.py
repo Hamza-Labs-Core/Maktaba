@@ -46,6 +46,7 @@ from typing import Any
 
 import numpy as np
 
+from ..gpu import NvmlMemory, nvml
 from ..log import get_logger
 from . import engine
 from .align import AlignItem, WordTiming, merge_punctuations, place
@@ -268,27 +269,9 @@ TURBO_BIN_GB = 1.62
 MARGIN_GB = 0.25
 
 
-class _NvmlMemory(ctypes.Structure):
-    _fields_ = [  # noqa: RUF012 - ctypes' own declaration
-        ("total", ctypes.c_ulonglong),
-        ("free", ctypes.c_ulonglong),
-        ("used", ctypes.c_ulonglong),
-    ]
-
-
-def _nvml() -> Any | None:
-    """NVML, the NVIDIA driver's own library (``nvml.dll`` in System32, older drivers'
-    under NVSMI; ``libnvidia-ml.so.1``), or None without one."""
-    names = ["libnvidia-ml.so.1"]
-    if sys.platform == "win32":
-        pf = os.environ.get("PROGRAMFILES", r"C:\Program Files")
-        names = ["nvml.dll", str(Path(pf) / "NVIDIA Corporation" / "NVSMI" / "nvml.dll")]
-    for name in names:
-        try:
-            return ctypes.CDLL(name)
-        except OSError:
-            continue
-    return None
+# NVML, the driver's own library: the probe the capability report uses too (..gpu)
+_NvmlMemory = NvmlMemory
+_nvml = nvml
 
 
 @dataclass(frozen=True)

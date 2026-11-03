@@ -6,12 +6,16 @@ reason is stored as a code in ``workers.stages_off`` (the Machines page translat
 1. ``not_selected``: not in ``--stages`` / in ``--exclude-stages``
 2. ``version_ahead``: newer version in the database (``stages_ahead``)
 3. ``unavailable``: cannot run here (no handler; ``StageImpl.unavailable()``; the
-   detail is logged and kept in :attr:`StageSelector.detail`)
+   detail is logged and kept in :attr:`StageSelector.detail`). A stage's own reason
+   (``StageImpl.unavailable()``) is stored with it, ``unavailable: <why>`` (at most
+   :data:`DETAIL_MAX` characters), so the Machines page says why (transcription: no
+   engine, or the second listen it waits for)
 4. ``home_only``: ``placement == "home"`` on a node (a stage with ``model_rules`` is
    lifted when those settings name a model server that is not localhost, a stage with
    ``relay`` while the home's extension relay is on: ``lifted``)
 5. ``storage``: storage not reachable (``nas_read`` stages need the read check,
-   ``nas_write`` the write check)
+   ``nas_write`` the write check, a stage with ``StageDef.storage`` that check: transcribe
+   reads the file off the share from the ``gpu`` pool)
 6. ``switched_off``: ``cluster_node_stages.enabled = false`` for this machine
 7. ``draining``: ``cluster_nodes.drain``
 
@@ -26,6 +30,7 @@ exposes the current set to the claim loop, which reads it on every poll.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -61,6 +66,8 @@ REASON_DRAIN = "draining"
 
 #: pool -> the storage check it needs
 STORAGE_POOLS: dict[str, str] = {"nas_read": "read", "nas_write": "write"}
+#: the longest stage reason stored beside ``unavailable`` (``workers.stages_off``)
+DETAIL_MAX = 300
 
 _log = get_logger()
 
@@ -75,6 +82,16 @@ def _cannot_run(st: StageDef, handlers: Collection[str]) -> str | None:
     if impl is None or impl.run is None:
         return "not implemented in this version"
     return impl.unavailable() if impl.unavailable is not None else None
+
+
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _steady(off: Mapping[str, str]) -> dict[str, str]:
+    """The reasons without their numbers: a reason that counts down ("next try in 9 min")
+    or reads a moving figure (the GPU's free memory) is no new selection, and is not
+    written to ``workers`` again at every refresh."""
+    return {stage: _NUMBER.sub("#", why) for stage, why in off.items()}
 
 
 def select_stages(
@@ -112,6 +129,8 @@ def select_stages(
             reason = REASON_AHEAD
         elif (why := _cannot_run(st, handlers)) is not None:
             reason = REASON_UNAVAILABLE
+            if not st.legacy and why:
+                reason = f"{REASON_UNAVAILABLE}: {why[:DETAIL_MAX]}"
             if detail is not None:
                 detail[st.name] = why
             if requested is not None:
@@ -120,8 +139,8 @@ def select_stages(
             reason = REASON_HOME_ONLY
         elif (
             storage is not None
-            and st.pool in STORAGE_POOLS
-            and storage.get(STORAGE_POOLS[st.pool]) == "error"
+            and (check := st.storage or STORAGE_POOLS.get(st.pool)) is not None
+            and storage.get(check) == "error"
         ):
             reason = REASON_STORAGE
         elif switches.get(st.name) is False:
@@ -244,9 +263,10 @@ class StageSelector:
             paused=self.paused or self.unreachable,
         )
         self.detail = detail
-        changed = tuple(served) != self.served or off != self.stages_off
+        changed = tuple(served) != self.served or _steady(off) != _steady(self.stages_off)
         self.served = tuple(served)
-        self.stages_off = off
+        if changed:
+            self.stages_off = off
         return changed
 
     def current(self) -> tuple[str, ...]:

@@ -47,6 +47,10 @@ type STTPlan struct {
 	ct2 bool
 	// refine: a plan from refineGPUTiers, each worker also holding the second listen
 	refine bool
+	// gpu: a CTranslate2 plan sized from this machine's NVIDIA GPU: its Batch is also the
+	// worker's own size of the per-worker gpu pool (MAKTABA_POOL_GPU), the files it takes
+	// at once, whatever the cluster's pool says (that one is sized for the home's GPU)
+	gpu bool
 }
 
 // sttTiers size the plan from the RAM, largest first. The top tier is what the
@@ -328,6 +332,7 @@ func planSTT(cfg config.Config, venvTorchRuns func() bool) STTPlan {
 		if !fits {
 			plan, gpuGB = PlanForCPU(numCPU()), 0
 		}
+		plan.gpu = fits
 		// the decoded audio and its spectrogram are in the host's memory here
 		if ram := totalMemory(); ram > 0 {
 			host := PlanForRAM(float64(ram) / (1 << 30))
@@ -679,6 +684,10 @@ func (p STTPlan) knobEnv() []string {
 	add("MAKTABA_STT_DEVICE", p.Device)
 	add("MAKTABA_STT_COMPUTE_TYPE", p.ComputeType)
 	add("MAKTABA_STT_CPU_THREADS", num(float64(p.CPUThreads)))
+	if p.gpu {
+		// the gpu pool is per worker: this GPU's batch, not the cluster's size
+		add("MAKTABA_POOL_GPU", num(float64(p.Batch)))
+	}
 	return env
 }
 
