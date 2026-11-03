@@ -320,7 +320,8 @@ final class PlayerLiveUITests: PlayerUITestCase {
         launchSignedIn(section: "live", extra: ["-maktaba-live", "guide"])
         let guide = app.segmentedControls.buttons["Guide"].firstMatch
         XCTAssertTrue(guide.waitForExistence(timeout: 15), "the Now | Guide switch")
-        XCTAssertTrue(guide.isSelected, "Live TV opened on the guide")
+        // the launch's view wins over the scene the last run left (`LiveTVScreen.launchModeApplied`)
+        XCTAssertTrue(wait(timeout: 5) { guide.isSelected }, "Live TV opened on the guide")
     }
 
     /// The player's banner names a channel (number · name), within a few seconds.
