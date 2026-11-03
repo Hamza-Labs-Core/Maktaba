@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
 import { STRINGS } from "./strings.mjs";
 import { scanDir } from "./scan.mjs";
+import { ORIGIN, isSafeUrl } from "./urls.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
@@ -23,7 +24,7 @@ const DIST = path.join(PKG, "dist");
 const STAGE = path.join(PKG, ".stage");
 const WIKI_APP = path.join(REPO, "web/wiki-app");
 
-export const ORIGIN = "https://maktaba.dev";
+export { ORIGIN };
 export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
 
 // ---- the allow-lists --------------------------------------------------------------------
@@ -321,8 +322,10 @@ export function markdownToHtml(md, fromSrc, published) {
       },
       link({ href, title, tokens }) {
         const text = this.parser.parseInline(tokens);
+        // the source's own href and the one it is rewritten to must both be allowed
+        if (!isSafeUrl(href)) return text;
         const to = rewriteHref(href, fromSrc, published);
-        if (to === null || !/^(https?:|mailto:|\/|#)/i.test(to)) return text;
+        if (to === null || !isSafeUrl(to)) return text;
         return `<a href="${esc(to)}"${title ? ` title="${esc(title)}"` : ""}>${text}</a>`;
       },
       // a heading's id is its text, so in-page links (#5-the-no-internet-guarantee) work

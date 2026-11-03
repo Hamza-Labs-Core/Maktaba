@@ -16,6 +16,7 @@ import {
   securityTxt,
   slug,
 } from "../scripts/build.mjs";
+import { isSafeUrl } from "../scripts/urls.mjs";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 
 type Element = DefaultTreeAdapterMap["element"];
@@ -31,7 +32,6 @@ function elements(node: ParentNode): Element[] {
   if ("content" in node) out.push(...elements((node as DefaultTreeAdapterMap["template"]).content));
   return out;
 }
-const SAFE_SCHEMES = new Set(["https", "http", "mailto"]);
 const attr = (e: Element, name: string) => e.attrs.find((a) => a.name === name)?.value;
 import { STRINGS as RAW } from "../scripts/strings.mjs";
 
@@ -163,6 +163,51 @@ describe("scrubbing markdown", () => {
   });
 });
 
+describe("isSafeUrl", () => {
+  it.each([
+    "https://github.com/Hamza-Labs-Core/Maktaba",
+    "http://example.com/",
+    "mailto:security@maktaba.dev",
+    "/wiki/",
+    "../plugins/",
+    "story-54-01-manifest-package/",
+    "#4-the-plugin-model",
+    "/api/openapi.json?v=1",
+  ])("allows %s", (u) => {
+    expect(isSafeUrl(u)).toBe(true);
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "JavaScript:alert(1)",
+    "  javascript:alert(1)",
+    "java\tscript:alert(1)",
+    "java\nscript:alert(1)",
+    "&#106;avascript:alert(1)",
+    "&#x6A;avascript:alert(1)",
+    "javascript&colon;alert(1)",
+    "DATA:text/html,<script>alert(1)</script>",
+    "data:image/svg+xml;base64,PHN2Zz4=",
+    "vbscript:msgbox(1)",
+    "VBScript:msgbox(1)",
+    "file:///etc/passwd",
+    "ftp://example.com/",
+  ])("rejects %j", (u) => {
+    expect(isSafeUrl(u)).toBe(false);
+  });
+
+  it("the renderer drops a link it rejects, keeping its text", () => {
+    for (const href of ["DATA:text/html,x", "vbscript:x", "&#106;avascript:x"]) {
+      const html = markdownToHtml(`[click](${href})`, "CHANGELOG.md", new Map());
+      expect(
+        elements(parse(html)).some((e) => e.tagName === "a"),
+        href
+      ).toBe(false);
+      expect(html).toContain("click");
+    }
+  });
+});
+
 describe("heading ids", () => {
   it("are letters, digits and hyphens, from the heading's text", () => {
     expect(slug('5. The "no internet" guarantee')).toBe("5-the-no-internet-guarantee");
@@ -218,9 +263,8 @@ describe("English and Arabic", () => {
         for (const a of e.attrs) {
           expect(a.name.startsWith("on"), `${p}: <${e.tagName} ${a.name}>`).toBe(false);
           if (a.name === "href" || a.name === "src") {
-            // an allow-list of URL schemes: http(s) and mailto, or a relative URL
-            const scheme = /^\s*([a-z][a-z0-9+.-]*):/i.exec(a.value)?.[1].toLowerCase();
-            expect(scheme === undefined || SAFE_SCHEMES.has(scheme), `${p}: ${a.value}`).toBe(true);
+            // the renderer's own allow-list: http(s), mailto, or a path on this site
+            expect(isSafeUrl(a.value), `${p}: ${a.value}`).toBe(true);
           }
         }
       }
