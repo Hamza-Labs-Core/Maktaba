@@ -377,6 +377,10 @@ mac_app:
   - *ci
   - 'tools/release/mac-app/**'
   - 'tools/release/bundle-size/**'
+  # the Core leg's dry run (story 51.17): its stamp, its feed
+  - 'tools/release/tauri-stamp.mjs'
+  - 'tools/release/updaterfeed/**'
+  - 'tools/release/cmd/updater-feed/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'

@@ -76,7 +76,8 @@ jobs:
           brew list shellcheck >/dev/null 2>&1 || brew install shellcheck
           shellcheck -x tools/release/mac-app/payload.sh tools/release/mac-app/check.sh tools/release/mac-app/build-app.sh \
             tools/release/mac-app/lib.sh tools/release/mac-app/pins-check.sh tools/release/mac-app/tauri-build.sh \
-            tools/release/mac-app/tauri-build-check.sh
+            tools/release/mac-app/tauri-build-check.sh tools/release/mac-app/stage.sh tools/release/mac-app/stage-check.sh \
+            tools/release/mac-app/check-dmg.sh tools/release/bundle-size/core-home.sh
 
       # dry run of the pins (pins.env complete) and the checked download, offline
       - name: Pins (dry run)
@@ -110,19 +111,35 @@ jobs:
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
 
-  # Epic 51 story 51.17 (N7): the Core payload (no ollama) packed the way the dmg packs it,
-  # held to its budget against the v0.3.62 Full dmg (tools/release/bundle-size/baseline.json).
-  # Beside the app job on its own runner; no tauri build (the shell is the same in both
-  # flavours), so the size is the payload's: a Core grown past 45% of Full fails here.
+  # Epic 51 story 51.17: the release's Core leg, run without a tag, and the Core home's budgets.
+  # The same steps and scripts as desktop-release.yml's macos-arm64-core leg (payload.sh
+  # --flavour core, tauri-stamp.mjs, tauri-build.sh, check.sh, check-dmg.sh, stage.sh), then the
+  # publish job's updater-feed over what it staged, into a scratch folder: the feed must carry
+  # darwin-aarch64-core (and -app) and no Full key. Unsigned and not notarized (that needs the
+  # Developer ID, a tag's); the updater signatures are a throwaway key's, checked with its
+  # public half as the publish job checks the real one. Then the budgets (README N7-N9):
+  #   N7  the Core dmg against the v0.3.62 Full dmg (tools/release/bundle-size/baseline.json)
+  #   N8  a Core home set up from that app as the app does (Core chosen), idle 120 s: the
+  #       launcher's whole tree at or under 700 MB resident (core-home.sh)
+  #   N9  exactly 4 processes besides the launcher and the supervisor: postgres, api,
+  #       streaming, pipeline
+  # What it measured, the feed and the home's logs are kept as the bundle-size artifact.
   bundle-size:
     name: Bundle size (Core payload)
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 75
+    env:
+      VERSION: v0.0.0-ci.${{ github.run_number }}
+      APP: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Maktaba.app
+      BUNDLE: apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle
     steps:
       - uses: actions/checkout@v6.0.2
 
-      - name: Budget tests
-        run: python3 tools/release/bundle-size/test_bundle_size.py -v
+      - name: Budget and staging tests
+        run: |
+          python3 tools/release/bundle-size/test_bundle_size.py -v
+          python3 tools/release/mac-app/test_core_feed_check.py -v
+          bash tools/release/mac-app/stage-check.sh
 
       - uses: actions/setup-go@v6.4.0
         with:
@@ -132,6 +149,7 @@ jobs:
             streaming/go.sum
             cmd/maktaba-server/go.sum
             cmd/maktaba-launcher/go.sum
+            tools/release/go.sum
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -148,30 +166,111 @@ jobs:
         with:
           node-version-file: web/.nvmrc
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            apps/desktop/pnpm-lock.yaml
 
-      - name: Install web deps
-        run: pnpm -C web install --frozen-lockfile
+      - name: Install web + desktop deps
+        run: |
+          pnpm -C web install --frozen-lockfile
+          pnpm -C apps/desktop install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
 
       - uses: actions/cache@v4
         with:
           path: build/mac-app/downloads
           key: mac-app-downloads-${{ hashFiles('tools/release/mac-app/pins.env') }}
 
-      - name: Build the Core payload
-        env:
-          VERSION: v0.0.0-ci.${{ github.run_number }}
-        run: bash tools/release/mac-app/payload.sh --build build/mac-app --flavour core --sign -
-
-      - name: Pack it as the dmg does, and check the budget
+      # a key made for this run only: the bundles get their updater signatures as a release's
+      # do, and the feed below is checked against its public half
+      - name: Stamp the app as the release does (a throwaway updater key)
         run: |
-          test ! -e build/mac-app/server/ollama
-          grep -q '"flavour": "core"' build/mac-app/server/payload.json
-          hdiutil create -quiet -fs HFS+ -format UDZO -volname Maktaba -srcfolder build/mac-app/server build/core-payload.dmg
-          bytes=$(stat -f %z build/core-payload.dmg)
-          echo "core payload dmg: $bytes bytes"
+          set -euo pipefail
+          key="$RUNNER_TEMP/dry-run-updater.key"
+          pnpm -C apps/desktop exec tauri signer generate --ci -w "$key" >/dev/null
           {
-            echo "### Bundle size (Core payload, story 51.17)"
-            python3 tools/release/bundle-size/bundle_size.py --core-bytes "$bytes" --summary || true
+            echo "TAURI_SIGNING_PRIVATE_KEY=$(cat "$key")"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
+            echo "DRY_RUN_PUBKEY=$(cat "$key.pub")"
+          } >>"$GITHUB_ENV"
+          TAG="$VERSION" UPDATER_KEY=true UPDATER_PUBKEY="$(cat "$key.pub")" node tools/release/tauri-stamp.mjs
+
+      - name: Build the Core payload, as the release's Core leg does
+        run: |
+          set -euo pipefail
+          tools/release/mac-app/payload.sh --version "$VERSION" --flavour core
+          tools/release/mac-app/check.sh
+
+      # desktop-release.yml's "Build the Tauri bundles" for the macOS legs, in its environment
+      # without the Apple secrets (set but empty)
+      - name: Build the Core app, as the release's Core leg does
+        working-directory: apps/desktop
+        env:
+          APPLE_ID: ''
+          APPLE_PASSWORD: ''
+          APPLE_TEAM_ID: ''
+          APPLE_API_KEY: ''
+          APPLE_API_ISSUER: ''
+        run: ../../tools/release/mac-app/tauri-build.sh --target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json
+
+      - name: Check the Core app and its .dmg
+        run: |
+          set -euo pipefail
+          tools/release/mac-app/check.sh --app "$APP"
+          dmgs=("$BUNDLE"/dmg/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::expected one .dmg, got: ${dmgs[*]}"; exit 1; }
+          tools/release/mac-app/check-dmg.sh "${dmgs[0]}" core
+
+      # the release's staging and its publish job's feed, into a scratch folder: nothing is
+      # attached or published
+      - name: Stage and feed the Core app, as the release does
+        run: |
+          set -euo pipefail
+          mkdir -p bundle-size
+          staged="$RUNNER_TEMP/staged"
+          tools/release/mac-app/stage.sh --bundle "$BUNDLE" --version "$VERSION" --flavour core --arch aarch64 --out "$staged"
+          (cd tools/release && go run ./cmd/updater-feed --dir "$staged" --repo "$GITHUB_REPOSITORY" --tag "$VERSION" \
+            --out "$GITHUB_WORKSPACE/bundle-size/latest.json" --require darwin-aarch64-core,darwin-aarch64-core-app \
+            --pubkey "$DRY_RUN_PUBKEY")
+          cat bundle-size/latest.json
+          # only the Core keys, naming the Core archive: a Full app never reads a Core bundle
+          python3 tools/release/mac-app/core-feed-check.py bundle-size/latest.json "$VERSION"
+          dmg=("$staged"/Maktaba-Core_*_aarch64.dmg)
+          echo "CORE_DMG_BYTES=$(stat -f %z "${dmg[0]}")" >>"$GITHUB_ENV"
+
+      - name: A Core home, idle (N8, N9)
+        run: bash tools/release/bundle-size/core-home.sh --app "$APP" --out bundle-size/core-home.json --logs bundle-size/logs
+
+      - name: Budgets (N7, N8, N9)
+        if: ${{ !cancelled() && env.CORE_DMG_BYTES != '' }}
+        run: |
+          set -euo pipefail
+          home=()
+          [ ! -f bundle-size/core-home.json ] || home=(--home bundle-size/core-home.json)
+          echo "core dmg: $CORE_DMG_BYTES bytes"
+          {
+            echo "### Bundle size (Core app, story 51.17)"
+            python3 tools/release/bundle-size/bundle_size.py --core-bytes "$CORE_DMG_BYTES" ${home[@]+"${home[@]}"} --summary || true
+            if [ -f bundle-size/core-home.json ]; then
+              echo '```json'
+              cat bundle-size/core-home.json
+              echo '```'
+            fi
           } >>"$GITHUB_STEP_SUMMARY"
-          python3 tools/release/bundle-size/bundle_size.py --core-bytes "$bytes"
+          python3 tools/release/bundle-size/bundle_size.py --core-bytes "$CORE_DMG_BYTES" ${home[@]+"${home[@]}"} | tee bundle-size/budgets.txt
+
+      - name: Keep the measures, the feed and the home's logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: bundle-size
+          path: bundle-size/
+          if-no-files-found: ignore
+          retention-days: 14

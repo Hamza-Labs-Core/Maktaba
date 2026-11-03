@@ -4,11 +4,20 @@
 # desktop OSes on their native runners (Tauri does NOT cross-compile the
 # native shell) and attaches them to the GitHub Release for that tag:
 #
-#   macOS     →  .dmg, two of them:
-#                 arm64  — Maktaba.app WITH the server inside (Epic 36, story 36.7):
-#                          Contents/Resources/server built by tools/release/mac-app/
-#                          payload.sh (Go binaries, Postgres, ffmpeg, Python, the
-#                          pipeline wheel), macOS 15+
+#   macOS     →  .dmg, two of them, both arm64, macOS 15+:
+#                 Full   — Maktaba_<v>_aarch64.dmg: Maktaba.app WITH the server inside
+#                          (Epic 36, story 36.7): Contents/Resources/server built by
+#                          tools/release/mac-app/payload.sh (Go binaries, Postgres, ffmpeg,
+#                          Python, the pipeline wheel, ollama)
+#                 Core   — Maktaba-Core_<v>_aarch64.dmg (Epic 51 story 51.17): the same app
+#                          and payload without ollama (payload.sh --flavour core), signed and
+#                          notarized the same way; its updater archive
+#                          Maktaba-Core_<v>_aarch64.app.tar.gz is the feed's darwin-aarch64-core
+#                          (tools/release/updaterfeed), which only a Core app asks for. The feed
+#                          does not require it: a Core app takes the Full key when it is
+#                          missing, so a failed Core leg never holds back the release.
+#                          CI's bundle-size job (_mac-app.yml) builds, checks, stages and feeds
+#                          this leg on every pull request that touches it, without a tag.
 #                 (no Intel Mac build since v0.3.15: Apple silicon only)
 #   Windows   →  the NSIS -setup.exe WITH the server inside (Epic 38, story 38.11):
 #                <install>\server built by tools/release/win-app/payload.sh (the same
@@ -113,6 +122,16 @@ jobs:
             os: macos-15
             rust-targets: aarch64-apple-darwin
             payload: mac-app
+            flavour: full
+            args: '--target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json'
+          # The Core app (Epic 51 story 51.17): the same leg with payload.sh --flavour core (no
+          # ollama), staged as Maktaba-Core_* (tools/release/mac-app/stage.sh) for the feed's
+          # darwin-aarch64-core. Rollback: remove this entry; Core apps then take the Full key.
+          - label: macos-arm64-core
+            os: macos-15
+            rust-targets: aarch64-apple-darwin
+            payload: mac-app
+            flavour: core
             args: '--target aarch64-apple-darwin --bundles app,dmg --config ../../build/mac-app/tauri.mac-app.conf.json'
           # Windows x86_64: the server payload in <install>\server (the overlay adds
           # it as a resource, with the NSIS installer's hooks).
@@ -295,9 +314,11 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
           PAYLOAD: ${{ matrix.payload }}
+          # the Mac's flavour (story 51.17); the other payloads have one
+          FLAVOUR: ${{ matrix.flavour }}
         run: |
           set -euo pipefail
-          "tools/release/$PAYLOAD/payload.sh" --version "$VERSION"
+          "tools/release/$PAYLOAD/payload.sh" --version "$VERSION" ${FLAVOUR:+--flavour "$FLAVOUR"}
           "tools/release/$PAYLOAD/check.sh"
 
       # The Linux server payload for this runner's architecture and the overlay
@@ -343,31 +364,8 @@ jobs:
           TAG: ${{ github.ref_name }}
           UPDATER_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
           UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
-        run: |
-          node -e "
-            const fs = require('fs');
-            const f = 'apps/desktop/src-tauri/tauri.conf.json';
-            const c = JSON.parse(fs.readFileSync(f, 'utf8'));
-            c.build.beforeBuildCommand = '';
-            const v = (process.env.TAG || '').replace(/^v/, '');
-            if (v) c.version = v;
-            const core = v.split(/[-+]/)[0];
-            if (core !== v) c.bundle.windows.wix.version = core;
-            if (process.env.UPDATER_KEY === 'true') {
-              const pub = (process.env.UPDATER_PUBKEY || '').trim();
-              if (!pub) {
-                console.log('::error::TAURI_SIGNING_PRIVATE_KEY is set but the repository variable TAURI_UPDATER_PUBKEY is not: the apps could not verify their updates');
-                process.exit(1);
-              }
-              c.bundle.createUpdaterArtifacts = true;
-              c.plugins.updater.pubkey = pub;
-            } else {
-              console.log('::notice::no TAURI_SIGNING_PRIVATE_KEY: bundles without updater artifacts (no latest.json)');
-            }
-            fs.writeFileSync(f, JSON.stringify(c, null, 2) + '\n');
-            console.log('version=' + c.version + ' wix.version=' + (c.bundle.windows.wix.version || '(from version)') +
-              ' updater=' + (c.bundle.createUpdaterArtifacts === true));
-          "
+        # tools/release/tauri-stamp.mjs: the same stamp as CI's dry run of the Core leg
+        run: node tools/release/tauri-stamp.mjs
 
       # `tauri build`, nothing published: it signs each updater bundle (.sig) when
       # the signing key secret is present (Story 28.4). A fork without
@@ -491,6 +489,20 @@ jobs:
             tools/release/mac-app/staple.sh "$dmg"
           done
 
+      # What each Mac .dmg holds, mounted (story 51.17): Maktaba.app with the payload of its
+      # leg's flavour, ollama in the full one and none in the core one. After the notarization,
+      # so it is the file the release attaches.
+      - name: Check the .dmg
+        if: matrix.payload == 'mac-app'
+        env:
+          TARGET: ${{ matrix.rust-targets }}
+          FLAVOUR: ${{ matrix.flavour }}
+        run: |
+          set -euo pipefail
+          dmgs=(apps/desktop/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          [ "${#dmgs[@]}" -eq 1 ] || { echo "::error::expected one .dmg, got: ${dmgs[*]}"; exit 1; }
+          tools/release/mac-app/check-dmg.sh "${dmgs[0]}" "${FLAVOUR:-full}"
+
       # Windows "portable" deliverable: zip the raw built executable so
       # users who can't run an installer get a self-contained .zip. Runs
       # only on the Windows leg. The Tauri CLI renames the built exe to
@@ -520,29 +532,26 @@ jobs:
 
       # This leg's checked files for the publish job: the bundles as tauri names
       # them, with their updater signatures (.sig). The macOS updater archive is
-      # Maktaba.app.tar.gz on both architectures, so it takes the .dmg's version and
-      # architecture (Maktaba_<v>_<aarch64|x64>.app.tar.gz).
+      # Maktaba.app.tar.gz in both flavours, so tools/release/mac-app/stage.sh names it
+      # and the .dmg by flavour, version and architecture (Maktaba_<v>_aarch64.*, the Core
+      # app's Maktaba-Core_<v>_aarch64.*), after checking the app's payload is that flavour.
       - name: Stage the checked bundles
         shell: bash
         env:
           TAG: ${{ github.ref_name }}
           TARGET: ${{ matrix.rust-targets }}
+          FLAVOUR: ${{ matrix.flavour }}
         run: |
           set -euo pipefail
           shopt -s nullglob
-          v="${TAG#v}"
           b="apps/desktop/src-tauri/target/${TARGET:+$TARGET/}release/bundle"
           mkdir -p out/release
           case "$RUNNER_OS" in
             macOS)
               arch=x64
               [ "$TARGET" != aarch64-apple-darwin ] || arch=aarch64
-              cp "$b"/dmg/*.dmg out/release/
-              for f in "$b"/macos/*.app.tar.gz; do
-                n="$(basename "$f" .app.tar.gz)_${v}_${arch}.app.tar.gz"
-                cp "$f" "out/release/$n"
-                [ ! -f "$f.sig" ] || cp "$f.sig" "out/release/$n.sig"
-              done
+              tools/release/mac-app/stage.sh --bundle "$b" --version "$TAG" --flavour "${FLAVOUR:-full}" \
+                --arch "$arch" --out out/release
               ;;
             Windows)
               cp "$b"/nsis/*-setup.exe "$b"/nsis/*-setup.exe.sig out/release/
