@@ -2,7 +2,9 @@
 
 > **Status:** spec (2026-11-03). **Builds on:** [Epic 25](../25-cloud-relay/README.md) (the
 > cloud, relay, metering, tiers, entitlements) and [Epic 30](../30-relay-analytics/README.md)
-> (relay metrics). **Research:** [research.md](research.md): the code as it is, Plex, Jellyfin,
+> (relay metrics). **Works with:** [Epic 53](../53-logs-errors-reports/README.md) (logs, errors,
+> problem reports and application metrics: the cloud's come from 53.17; see §4.5 and §10 for
+> who owns what). **Research:** [research.md](research.md): the code as it is, Plex, Jellyfin,
 > Emby, Tailscale, Cloudflare Tunnel, Hetzner prices, all with sources.
 > **Wiki:** [epic-50-cloud-no-downtime.md](../../../docs/wiki/epics/epic-50-cloud-no-downtime.md).
 
@@ -137,8 +139,16 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
   pages.
 - Alerts page the owner within **90 s** (two failed probes in a row). SLO burn alerts: 2 % of
   the month's budget in 1 h (fast), 5 % in 6 h (slow).
-- Metrics kept 30 days, logs 14 days; the existing `/metrics` (architecture §13.12) plus the
-  new ones listed in 50.10 (replication lag, failover count, drain progress, held requests).
+- Metrics kept 30 days; the existing `/metrics` (architecture §13.12) plus the new ones listed
+  in 50.10 (replication lag, failover count, drain progress, held requests).
+- **Logs, error groups and the application metrics come from [Epic 53](../53-logs-errors-reports/README.md),
+  story [53.17](../53-logs-errors-reports/story-53-17-cloud-observability.md):** the cloud's
+  processes use the shared log schema, keep 14 days of logs on each node and forward them to
+  the witness W (so a dead node's last lines survive), group errors, and emit
+  `maktaba_errors_total` and the request metrics that 50.10 scrapes and alerts on. Epic 50 owns
+  the infrastructure metrics, Prometheus, Alertmanager, Grafana, the probes, paging, the status
+  page and incidents; Epic 53 owns what the processes log and report. The split is in Epic 53
+  README §9.
 - Every alert links to its runbook (50.12).
 
 ## 5. Sizing and cost
@@ -325,8 +335,8 @@ managed by the home's streaming ladder instead).
 | 50.07 | [Two nodes, one address](story-50-07-two-nodes.md) | 1 | 50.02, 50.04, 50.05, 50.06 |
 | 50.08 | [Deploys with no downtime](story-50-08-zero-downtime-deploys.md) | 1 | 50.04, 50.07 |
 | 50.09 | [Backups and restore](story-50-09-backups-restore.md) | 1 | 50.07 |
-| 50.10 | [Monitoring, the canary home and alerts](story-50-10-monitoring.md) | 1 | 50.07 |
-| 50.11 | [Status page and in-app status](story-50-11-status-page.md) | 1 | 50.10 |
+| 50.10 | [Monitoring, the canary home and alerts](story-50-10-monitoring.md) | 1 | 50.07, [53.17](../53-logs-errors-reports/story-53-17-cloud-observability.md) |
+| 50.11 | [Status page and in-app status](story-50-11-status-page.md) | 1 | 50.10, [53.06](../53-logs-errors-reports/story-53-06-status-strip.md) |
 | 50.12 | [Incident handling](story-50-12-incident-handling.md) | 1 | 50.10, 50.11 |
 | 50.13 | [Apps ride out a cloud outage](story-50-13-apps-ride-out-outage.md) | 1 | 50.11 |
 | 50.14 | [Load test and sizing](story-50-14-load-test.md) | 1 | 50.06, 50.08 |
@@ -350,6 +360,8 @@ graph LR
   S07 --> S09[50.09 backups]
   S07 --> S10[50.10 monitoring]
   S10 --> S11[50.11 status page]
+  E53_17[Epic 53.17 cloud logs, errors, metrics] --> S10
+  E53_06[Epic 53.06 status strip in every app] --> S11
   S10 --> S12[50.12 incidents]
   S11 --> S12
   S11 --> S13[50.13 apps ride out]
@@ -363,6 +375,11 @@ graph LR
 ```
 
 Work that can start at once, in parallel: **50.01, 50.03, 50.05** (and 50.15 after 50.01).
+
+Two edges come from [Epic 53](../53-logs-errors-reports/README.md): 50.10 needs 53.17 (the
+cloud's logs, error groups and application metrics to watch) and 50.11 needs 53.06 (the one
+status strip every app draws; 50.11 feeds it the cloud's state instead of building its own
+banner).
 
 50.06 builds the rehearsal harness early. Each later story turns on its own scenarios in it
 (they are listed as expected failures until then), so 50.06 only needs 50.01 to start.

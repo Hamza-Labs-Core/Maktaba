@@ -26,7 +26,9 @@ repeats every 5 minutes until acknowledged; SEV2 pushes once; SEV3 is an email d
 ### 2. Runbooks
 
 Each runbook lives in `docs/runbooks/cloud/` (new), one file each, same layout: **When**
-(the alert that links here), **Check** (read-only commands), **Do** (numbered steps, each
+(the alert that links here), **Check** (read-only: first a saved search in the cloud log viewer
+and the error groups of [Epic 53.17](../53-logs-errors-reports/story-53-17-cloud-observability.md),
+which keep a dead node's last lines on the witness; then commands), **Do** (numbered steps, each
 either a one-click GitHub Actions workflow or one command), **Done when**, **Tell users**
 (which template). Every alert in 50.10 links to one.
 
@@ -60,7 +62,8 @@ paying users from the cloud's mailer (25.2's Postmark), using the same text.
 Every SEV1 and every automatic failover gets a postmortem within **5 days**, from
 `docs/runbooks/cloud/postmortem-template.md` (new): summary, impact (minutes, homes, error
 budget used), timeline (UTC), cause, what went well, what didn't, actions with owners and
-issue links. Blameless. A summary goes on the incident's status page entry, and the Claude
+issue links, and the cloud log searches and error groups (Epic 53.17) that show the cause.
+Blameless. A summary goes on the incident's status page entry, and the Claude
 trail gets a line (in a trail-only PR).
 
 ### 5. Credits (proposed; README §13 question 1)
