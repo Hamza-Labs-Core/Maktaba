@@ -64,6 +64,11 @@ type ReleaseOptions struct {
 	LauncherProtocol int
 	// SchemaRev is release.json's schema_rev and min_node_schema (0: 128).
 	SchemaRev int
+	// Extra are more release files (name -> content), listed in checksums.txt: packs.
+	Extra map[string][]byte
+	// ComponentsIndex, when set, is published as components-<version>.json and named
+	// in release.json's "components" (story 51.15).
+	ComponentsIndex []byte
 }
 
 // NewReleaseWith builds and signs a release of repo at tag for platform with o.
@@ -140,10 +145,29 @@ func (s *Sigstore) NewReleaseWith(repo, tag, platform string, o ReleaseOptions) 
 		r.Files[name] = mig
 		r.Manifest["migrations"] = map[string]any{"archive": name, "sha256": hexsum(mig)}
 	}
+	for n, b := range o.Extra {
+		r.Files[n] = b
+	}
+	if o.ComponentsIndex != nil {
+		r.SetComponentsIndex(o.ComponentsIndex)
+	}
 	if err := r.Rebuild(s, GitHubRelease(repo, tag)); err != nil {
 		return nil, err
 	}
 	return r, nil
+}
+
+// ComponentsIndexName is the release's index file name.
+func (r *FakeRelease) ComponentsIndexName() string {
+	return "components-" + strings.TrimPrefix(r.Tag, "v") + ".json"
+}
+
+// SetComponentsIndex puts b in the release as its component index and names it in
+// release.json (call Rebuild afterwards to sign it).
+func (r *FakeRelease) SetComponentsIndex(b []byte) {
+	name := r.ComponentsIndexName()
+	r.Files[name] = b
+	r.Manifest["components"] = map[string]any{"index": name, "sha256": hexsum(b)}
 }
 
 // MustRelease is NewRelease for tests.
