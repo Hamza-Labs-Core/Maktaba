@@ -1,0 +1,1657 @@
+{
+  "about": "The Arabic text of the OpenAPI description's prose, for maktaba.dev/ar/api/. Each key is a JSON pointer into shared/api/openapi.json; `en` is the English it translates (the devportal build fails when the English changes and this file does not), `ar` is the Arabic. Code, paths and identifiers stay as written.",
+  "strings": {
+    "/info/title": {
+      "en": "Maktaba API",
+      "ar": "واجهة مكتبة البرمجية"
+    },
+    "/info/summary": {
+      "en": "Self-hosted video library with automatic transcription, semantic search, and adaptive streaming.",
+      "ar": "مكتبة فيديو مستضافة ذاتيًا مع تفريغ نصي تلقائي وبحث دلالي وبث تكيّفي."
+    },
+    "/info/description": {
+      "en": "The Maktaba API is the control plane for a self-hosted video library. It exposes\nlibraries, videos, transcripts, search, processing jobs, streaming sessions, and\nuser state over a uniform JSON surface.\n\n## Conventions\n\n- **Transport.** HTTP/1.1 and HTTP/2 over TLS. JSON request and response bodies\n  use `Content-Type: application/json; charset=utf-8`. Error responses use\n  [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) `application/problem+json`.\n- **Identifiers.** Resource ids are UUIDv4 unless documented otherwise.\n  `Job.id` and `AudioTrack.id` are 64-bit integers.\n- **Times.** All timestamps are RFC 3339 / ISO 8601 in UTC (`Z` suffix).\n  Durations and offsets are seconds as floats.\n- **Pagination.** Cursor-based. Pass `limit` (default 50, max 200) and the\n  opaque `cursor` returned from the previous page. The page envelope is\n  `{ items: [...], next: \"<cursor>\" | null }`. Cursors encode\n  `(updated_at DESC, id DESC)` and rotate when the schema version changes.\n- **Idempotency.** All `POST /api/jobs/{id}/{action}` endpoints are idempotent.\n  Clients may set `Idempotency-Key: <uuid>` on `POST` and `PATCH` requests; the\n  server replays the original response for 24 hours.\n- **Request correlation.** Every response carries `X-Request-Id` (UUIDv7).\n  Clients may pass their own `X-Request-Id` to thread it through.\n- **Rate limits.** Default: 600 requests / minute / authenticated user, 6 000 /\n  minute / IP. Exhausted requests get `429 Too Many Requests` with `Retry-After`\n  and headers `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Authentication\n\nTwo equivalent paths backed by the same identity:\n\n- **Web** uses `httpOnly` cookies set by `POST /api/auth/login`. State-changing\n  requests must also include the `X-CSRF-Token` header (value mirrored from the\n  `csrf_token` cookie).\n- **Mobile / desktop / TV** uses bearer JWT (RS256, 15 min) with a long-lived\n  opaque refresh token. Public keys are exposed at `/api/.well-known/jwks.json`.\n\nSingle-user installs may pass a static admin token via `Authorization: Bearer`.\n\n## Streaming\n\nThe `/api/sessions` endpoints mint short-lived signed URLs that the client\nsends to the Streaming Service (separate origin) directly. Bytes never round\ntrip the API.\n\n## WebSocket\n\n`GET /api/ws` upgrades to a multiplexed event stream. Messages are JSON\n`{ type, data, at }` envelopes. Clients subscribe by sending\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` on connect.\n",
+      "ar": "واجهة مكتبة البرمجية هي طبقة التحكم في مكتبة فيديو مستضافة ذاتيًا. تتيح\nالمكتبات والفيديوهات والنصوص المفرّغة والبحث ومهام المعالجة وجلسات البث\nوحالة المستخدم عبر واجهة JSON موحّدة.\n\n## الأعراف\n\n- **النقل.** HTTP/1.1 وHTTP/2 فوق TLS. تستخدم أجسام الطلبات والاستجابات بصيغة JSON\n  الترويسة `Content-Type: application/json; charset=utf-8`. تستخدم استجابات الأخطاء\n  الصيغة `application/problem+json` وفق [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457).\n- **المعرّفات.** معرّفات الموارد من نوع UUIDv4 ما لم يُذكر غير ذلك.\n  `Job.id` و`AudioTrack.id` أعداد صحيحة بطول 64 بت.\n- **الأوقات.** كل الطوابع الزمنية بصيغة RFC 3339 / ISO 8601 بتوقيت UTC (باللاحقة `Z`).\n  المُدد والإزاحات بالثواني كأعداد عشرية.\n- **الترقيم.** قائم على المؤشر. مرّر `limit` (الافتراضي 50، والحد الأقصى 200) والمؤشر\n  المعتم `cursor` المُعاد من الصفحة السابقة. غلاف الصفحة هو\n  `{ items: [...], next: \"<cursor>\" | null }`. ترمّز المؤشرات\n  `(updated_at DESC, id DESC)` وتتبدّل عند تغيّر إصدار المخطط.\n- **التكرار الآمن.** كل نقاط الوصول `POST /api/jobs/{id}/{action}` آمنة التكرار.\n  يمكن للعملاء ضبط `Idempotency-Key: <uuid>` في طلبات `POST` و`PATCH`، ويعيد\n  الخادم الاستجابة الأصلية طوال 24 ساعة.\n- **ربط الطلبات.** تحمل كل استجابة `X-Request-Id` (من نوع UUIDv7).\n  يمكن للعملاء تمرير `X-Request-Id` خاص بهم ليُنقل عبر السلسلة.\n- **حدود المعدّل.** الافتراضي: 600 طلب / دقيقة / مستخدم موثَّق، و6 000 /\n  دقيقة / عنوان IP. تتلقى الطلبات المتجاوزة `429 Too Many Requests` مع `Retry-After`\n  والترويسات `X-RateLimit-Limit` و`X-RateLimit-Remaining` و`X-RateLimit-Reset`.\n\n## المصادقة\n\nمساران متكافئان يستندان إلى الهوية نفسها:\n\n- **الويب** يستخدم ملفات تعريف ارتباط `httpOnly` يضبطها `POST /api/auth/login`. ويجب أن\n  تتضمن الطلبات المغيّرة للحالة أيضًا الترويسة `X-CSRF-Token` (قيمتها منسوخة من\n  ملف تعريف الارتباط `csrf_token`).\n- **الجوال / سطح المكتب / التلفاز** يستخدم JWT من نوع حامل (RS256، صالح 15 دقيقة) مع رمز (token)\n  تحديث معتم طويل الأمد. المفاتيح العامة متاحة في `/api/.well-known/jwks.json`.\n\nيمكن لعمليات التثبيت أحادية المستخدم تمرير رمز مشرف ثابت عبر `Authorization: Bearer`.\n\n## البث\n\nتُصدر نقاط الوصول `/api/sessions` عناوين URL موقّعة قصيرة العمر يرسلها العميل\nمباشرة إلى خدمة البث (على أصل منفصل). لا تمر البايتات أبدًا\nعبر الواجهة البرمجية.\n\n## WebSocket\n\nيُرقّي `GET /api/ws` الاتصال إلى تدفق أحداث متعدد القنوات. الرسائل أغلفة JSON\nبالشكل `{ type, data, at }`. يشترك العملاء بإرسال\n`{ type: \"subscribe\", channels: [\"jobs\", \"playback\", \"library\"] }` عند الاتصال.\n"
+    },
+    "/servers/0/description": {
+      "en": "Production",
+      "ar": "الإنتاج"
+    },
+    "/servers/0/variables/host/description": {
+      "en": "The host where the API service is reachable.",
+      "ar": "المضيف الذي يمكن الوصول فيه إلى خدمة الواجهة البرمجية."
+    },
+    "/servers/1/description": {
+      "en": "Local development",
+      "ar": "التطوير المحلي"
+    },
+    "/externalDocs/description": {
+      "en": "Architecture spec",
+      "ar": "مواصفة البنية"
+    },
+    "/tags/0/description": {
+      "en": "Login, token refresh, session lifecycle.",
+      "ar": "تسجيل الدخول، وتحديث الرمز، ودورة حياة الجلسة."
+    },
+    "/tags/1/description": {
+      "en": "Folder collections shared by configuration and language profile.",
+      "ar": "مجموعات مجلدات تتشارك الإعدادات وملف تعريف اللغة."
+    },
+    "/tags/2/description": {
+      "en": "Video metadata, processing controls, transcript window.",
+      "ar": "بيانات الفيديو الوصفية، وعناصر التحكم في المعالجة، ونافذة النص المفرّغ."
+    },
+    "/tags/3/description": {
+      "en": "Hybrid (FTS + semantic) search with filters and saved queries.",
+      "ar": "بحث هجين (نصي كامل + دلالي) مع عوامل تصفية واستعلامات محفوظة."
+    },
+    "/tags/4/description": {
+      "en": "Pipeline job state and pause / resume / cancel / retry control.",
+      "ar": "حالة مهام خط المعالجة والتحكم بالإيقاف المؤقت / الاستئناف / الإلغاء / إعادة المحاولة."
+    },
+    "/tags/5/description": {
+      "en": "Aggregate queue statistics.",
+      "ar": "إحصاءات مجمّعة لطابور المهام."
+    },
+    "/tags/6/description": {
+      "en": "User-curated and smart collections of videos.",
+      "ar": "مجموعات فيديو ينسّقها المستخدم ومجموعات ذكية."
+    },
+    "/tags/7/description": {
+      "en": "Tag taxonomy.",
+      "ar": "تصنيف الوسوم."
+    },
+    "/tags/8/description": {
+      "en": "Speaker labels derived from diarization.",
+      "ar": "تسميات المتحدثين المستخرجة من تمييز المتحدثين."
+    },
+    "/tags/9/description": {
+      "en": "Per-user playback position and completion state.",
+      "ar": "موضع التشغيل وحالة الإكمال لكل مستخدم."
+    },
+    "/tags/10/description": {
+      "en": "Streaming session lifecycle (mint signed URLs, close, capabilities).",
+      "ar": "دورة حياة جلسة البث (إصدار عناوين URL موقّعة، والإغلاق، والإمكانات)."
+    },
+    "/tags/11/description": {
+      "en": "App-wide and per-user settings.",
+      "ar": "إعدادات التطبيق العامة وإعدادات كل مستخدم."
+    },
+    "/tags/12/description": {
+      "en": "Push-notification device registration.",
+      "ar": "تسجيل الأجهزة للإشعارات الفورية."
+    },
+    "/tags/13/description": {
+      "en": "Personalized video suggestions.",
+      "ar": "اقتراحات فيديو مخصّصة."
+    },
+    "/tags/14/description": {
+      "en": "Health, version, metrics. Open to monitoring agents.",
+      "ar": "الصحة، والإصدار، والمقاييس. متاحة لوكلاء المراقبة."
+    },
+    "/tags/15/description": {
+      "en": "Real-time event channel (documented; protocol is WS).",
+      "ar": "قناة أحداث فورية (موثّقة هنا؛ البروتوكول هو WS)."
+    },
+    "/paths/~1auth~1login/post/summary": {
+      "en": "Authenticate with username and password",
+      "ar": "المصادقة باسم المستخدم وكلمة المرور"
+    },
+    "/paths/~1auth~1login/post/description": {
+      "en": "On success, sets `auth` and `csrf_token` cookies (web) **and** returns a\nbearer access token + refresh token in the body (mobile/TV). Clients use\nwhichever they need; the server issues both unconditionally.\n",
+      "ar": "عند النجاح، يضبط ملفي تعريف الارتباط `auth` و`csrf_token` (للويب) **ويعيد**\nرمز وصول من نوع حامل + رمز تحديث في الجسم (للجوال والتلفاز). يستخدم العملاء\nما يحتاجون إليه منهما؛ إذ يُصدر الخادم كليهما دون شرط.\n"
+    },
+    "/paths/~1auth~1login/post/responses/200/description": {
+      "en": "Authenticated.",
+      "ar": "تمّت المصادقة."
+    },
+    "/paths/~1auth~1login/post/responses/200/headers/Set-Cookie/description": {
+      "en": "Sets `auth` (httpOnly secure) and `csrf_token` (readable) cookies.",
+      "ar": "يضبط ملفي تعريف الارتباط `auth` (من نوع httpOnly وsecure) و`csrf_token` (قابل للقراءة)."
+    },
+    "/paths/~1auth~1register/post/summary": {
+      "en": "Create a new user account",
+      "ar": "إنشاء حساب مستخدم جديد"
+    },
+    "/paths/~1auth~1register/post/description": {
+      "en": "Disabled in single-user mode. When enabled, requires either an admin token\n(multi-user with admin-only invites) or open registration if configured.\n",
+      "ar": "معطّل في وضع المستخدم الواحد. عند تفعيله، يتطلب إما رمز مشرف\n(في وضع تعدد المستخدمين مع دعوات من المشرف فقط) أو تسجيلًا مفتوحًا إن كان مُعدًّا.\n"
+    },
+    "/paths/~1auth~1register/post/responses/201/description": {
+      "en": "Account created.",
+      "ar": "تم إنشاء الحساب."
+    },
+    "/paths/~1auth~1register/post/responses/403/description": {
+      "en": "Registration disabled.",
+      "ar": "التسجيل معطّل."
+    },
+    "/paths/~1auth~1register/post/responses/409/description": {
+      "en": "Username already taken.",
+      "ar": "اسم المستخدم مأخوذ مسبقًا."
+    },
+    "/paths/~1auth~1refresh/post/summary": {
+      "en": "Exchange a refresh token for a fresh access token",
+      "ar": "استبدال رمز تحديث برمز وصول جديد"
+    },
+    "/paths/~1auth~1refresh/post/description": {
+      "en": "Rotating refresh tokens; the previous refresh token is invalidated on use.\nWeb clients send the refresh token via the `refresh_token` cookie; native\nclients send `{refresh_token}` in the body.\n",
+      "ar": "رموز تحديث متناوبة؛ يُبطَل رمز التحديث السابق عند استخدامه.\nيرسل عملاء الويب رمز التحديث عبر ملف تعريف الارتباط `refresh_token`، ويرسل\nالعملاء الأصليون `{refresh_token}` في الجسم.\n"
+    },
+    "/paths/~1auth~1refresh/post/requestBody/content/application~1json/schema/properties/refresh_token/description": {
+      "en": "Required for native clients.",
+      "ar": "مطلوب للعملاء الأصليين."
+    },
+    "/paths/~1auth~1refresh/post/responses/200/description": {
+      "en": "New token pair.",
+      "ar": "زوج رموز جديد."
+    },
+    "/paths/~1auth~1refresh/post/responses/401/description": {
+      "en": "Refresh token invalid, revoked, or expired.",
+      "ar": "رمز التحديث غير صالح أو ملغى أو منتهي الصلاحية."
+    },
+    "/paths/~1auth~1logout/post/summary": {
+      "en": "Revoke current credentials",
+      "ar": "إلغاء بيانات الاعتماد الحالية"
+    },
+    "/paths/~1auth~1logout/post/description": {
+      "en": "Clears auth cookies and revokes the bearer refresh token.",
+      "ar": "يمسح ملفات تعريف ارتباط المصادقة ويلغي رمز التحديث من نوع حامل."
+    },
+    "/paths/~1auth~1logout/post/responses/204/description": {
+      "en": "Logged out.",
+      "ar": "تم تسجيل الخروج."
+    },
+    "/paths/~1auth~1logout/post/responses/204/headers/Set-Cookie/description": {
+      "en": "Clears `auth`, `csrf_token`, `refresh_token` cookies.",
+      "ar": "يمسح ملفات تعريف الارتباط `auth` و`csrf_token` و`refresh_token`."
+    },
+    "/paths/~1auth~1me/get/summary": {
+      "en": "Return the authenticated user",
+      "ar": "إعادة المستخدم الموثَّق"
+    },
+    "/paths/~1auth~1me/get/responses/200/description": {
+      "en": "Authenticated user profile.",
+      "ar": "الملف الشخصي للمستخدم الموثَّق."
+    },
+    "/paths/~1libraries/get/summary": {
+      "en": "List libraries",
+      "ar": "سرد المكتبات"
+    },
+    "/paths/~1libraries/get/responses/200/description": {
+      "en": "Page of libraries.",
+      "ar": "صفحة من المكتبات."
+    },
+    "/paths/~1libraries/post/summary": {
+      "en": "Create a library",
+      "ar": "إنشاء مكتبة"
+    },
+    "/paths/~1libraries/post/responses/201/description": {
+      "en": "Library created.",
+      "ar": "تم إنشاء المكتبة."
+    },
+    "/paths/~1libraries/post/responses/201/headers/Location/description": {
+      "en": "Canonical URL of the new library.",
+      "ar": "عنوان URL القانوني للمكتبة الجديدة."
+    },
+    "/paths/~1libraries/post/responses/409/description": {
+      "en": "Name already in use.",
+      "ar": "الاسم مستخدم مسبقًا."
+    },
+    "/paths/~1libraries~1{id}/get/summary": {
+      "en": "Fetch a library",
+      "ar": "جلب مكتبة"
+    },
+    "/paths/~1libraries~1{id}/get/responses/200/description": {
+      "en": "Library.",
+      "ar": "المكتبة."
+    },
+    "/paths/~1libraries~1{id}/patch/summary": {
+      "en": "Update a library",
+      "ar": "تحديث مكتبة"
+    },
+    "/paths/~1libraries~1{id}/patch/description": {
+      "en": "Settings are deep-merged; pass `null` to clear a key.",
+      "ar": "تُدمج الإعدادات دمجًا عميقًا؛ مرّر `null` لمسح مفتاح."
+    },
+    "/paths/~1libraries~1{id}/patch/responses/200/description": {
+      "en": "Updated library.",
+      "ar": "المكتبة بعد التحديث."
+    },
+    "/paths/~1libraries~1{id}/delete/summary": {
+      "en": "Delete a library",
+      "ar": "حذف مكتبة"
+    },
+    "/paths/~1libraries~1{id}/delete/parameters/0/description": {
+      "en": "When `true`, also unlinks media files from disk.",
+      "ar": "عند `true`، يحذف ملفات الوسائط من القرص أيضًا."
+    },
+    "/paths/~1libraries~1{id}/delete/parameters/1/description": {
+      "en": "Required when `purge=true`. Must equal the library id.",
+      "ar": "مطلوب عند `purge=true`. يجب أن يساوي معرّف المكتبة."
+    },
+    "/paths/~1libraries~1{id}/delete/responses/204/description": {
+      "en": "Deleted.",
+      "ar": "تم الحذف."
+    },
+    "/paths/~1libraries~1{id}/delete/responses/207/description": {
+      "en": "Multi-status — soft delete done, some files failed to unlink.",
+      "ar": "حالات متعددة — تمّ الحذف المؤقت، وتعذّر حذف بعض الملفات."
+    },
+    "/paths/~1libraries~1{id}/delete/responses/412/description": {
+      "en": "Confirmation token missing or wrong.",
+      "ar": "رمز التأكيد مفقود أو خاطئ."
+    },
+    "/paths/~1libraries~1{id}~1scan/post/summary": {
+      "en": "Enqueue a scan job for a library",
+      "ar": "إضافة مهمة فحص لمكتبة إلى طابور المهام"
+    },
+    "/paths/~1libraries~1{id}~1scan/post/description": {
+      "en": "Returns immediately with the scan job id; progress is published over WebSocket.",
+      "ar": "يعود فورًا بمعرّف مهمة الفحص؛ ويُنشر التقدم عبر WebSocket."
+    },
+    "/paths/~1libraries~1{id}~1scan/post/responses/202/description": {
+      "en": "Scan enqueued.",
+      "ar": "أُضيف الفحص إلى الطابور."
+    },
+    "/paths/~1libraries~1{id}~1stats/get/summary": {
+      "en": "Aggregate stats for a library",
+      "ar": "إحصاءات مجمّعة لمكتبة"
+    },
+    "/paths/~1libraries~1{id}~1stats/get/responses/200/description": {
+      "en": "Library stats.",
+      "ar": "إحصاءات المكتبة."
+    },
+    "/paths/~1videos/get/summary": {
+      "en": "List videos",
+      "ar": "سرد الفيديوهات"
+    },
+    "/paths/~1videos/get/parameters/4/description": {
+      "en": "Filter by `content_type` (e.g. `lecture`, `film`).",
+      "ar": "التصفية حسب `content_type` (مثل `lecture` و`film`)."
+    },
+    "/paths/~1videos/get/parameters/6/description": {
+      "en": "Lightweight FTS over title + description. Use `POST /search` for full search.",
+      "ar": "بحث نصي كامل خفيف في العنوان + الوصف. استخدم `POST /search` للبحث الكامل."
+    },
+    "/paths/~1videos/get/parameters/7/description": {
+      "en": "Without one, the most recently added first (`created_at`); with `q`, `relevance` (titles that start with `q`, then titles that hold it, then descriptions only, each newest-added first). A sort the caller names always wins; `relevance` needs `q`.",
+      "ar": "دون ترتيب محدد، الأحدث إضافةً أولًا (`created_at`)؛ ومع `q`، الترتيب `relevance` (العناوين التي تبدأ بـ `q`، ثم العناوين التي تحتويه، ثم الأوصاف فقط، وكلٌّ منها الأحدث إضافةً أولًا). الترتيب الذي يحدده المستدعي يتقدّم دائمًا؛ ويتطلب `relevance` وجود `q`."
+    },
+    "/paths/~1videos/get/responses/200/description": {
+      "en": "Page of videos.",
+      "ar": "صفحة من الفيديوهات."
+    },
+    "/paths/~1videos/get/responses/400/description": {
+      "en": "Invalid sort or filter.",
+      "ar": "ترتيب أو عامل تصفية غير صالح."
+    },
+    "/paths/~1videos~1{id}/get/summary": {
+      "en": "Fetch a video with full metadata",
+      "ar": "جلب فيديو مع بياناته الوصفية الكاملة"
+    },
+    "/paths/~1videos~1{id}/get/responses/200/description": {
+      "en": "Video.",
+      "ar": "الفيديو."
+    },
+    "/paths/~1videos~1{id}/patch/summary": {
+      "en": "Update mutable video fields",
+      "ar": "تحديث حقول الفيديو القابلة للتعديل"
+    },
+    "/paths/~1videos~1{id}/patch/description": {
+      "en": "Body is capped at 8 KiB.",
+      "ar": "حجم الجسم محدود بـ 8 KiB."
+    },
+    "/paths/~1videos~1{id}/patch/responses/200/description": {
+      "en": "Updated video.",
+      "ar": "الفيديو بعد التحديث."
+    },
+    "/paths/~1videos~1{id}/patch/responses/413/description": {
+      "en": "Body too large.",
+      "ar": "الجسم كبير جدًا."
+    },
+    "/paths/~1videos~1{id}/delete/summary": {
+      "en": "Delete a video",
+      "ar": "حذف فيديو"
+    },
+    "/paths/~1videos~1{id}/delete/parameters/1/description": {
+      "en": "Required when `purge=true`; must equal the video id.",
+      "ar": "مطلوب عند `purge=true`؛ ويجب أن يساوي معرّف الفيديو."
+    },
+    "/paths/~1videos~1{id}/delete/responses/204/description": {
+      "en": "Deleted.",
+      "ar": "تم الحذف."
+    },
+    "/paths/~1videos~1{id}/delete/responses/412/description": {
+      "en": "Confirmation required for purge.",
+      "ar": "التأكيد مطلوب للحذف النهائي."
+    },
+    "/paths/~1videos~1{id}~1process/post/summary": {
+      "en": "Enqueue a single processing stage for a video",
+      "ar": "إضافة مرحلة معالجة واحدة لفيديو إلى طابور المهام"
+    },
+    "/paths/~1videos~1{id}~1process/post/responses/200/description": {
+      "en": "Job enqueued (or returned if it already existed).",
+      "ar": "أُضيفت المهمة إلى الطابور (أو أُعيدت إن كانت موجودة مسبقًا)."
+    },
+    "/paths/~1videos~1{id}~1process/post/responses/400/description": {
+      "en": "`stage` cannot be enqueued at video scope (e.g. `scan`).",
+      "ar": "لا يمكن إضافة `stage` إلى الطابور على مستوى الفيديو (مثل `scan`)."
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/summary": {
+      "en": "Reset state and reprocess from a given stage",
+      "ar": "إعادة ضبط الحالة وإعادة المعالجة من مرحلة معيّنة"
+    },
+    "/paths/~1videos~1{id}~1reprocess/post/responses/202/description": {
+      "en": "Jobs enqueued.",
+      "ar": "أُضيفت المهام إلى الطابور."
+    },
+    "/paths/~1videos~1{id}~1segments/get/summary": {
+      "en": "Read a transcript window for a video",
+      "ar": "قراءة نافذة من النص المفرّغ لفيديو"
+    },
+    "/paths/~1videos~1{id}~1segments/get/parameters/0/description": {
+      "en": "Inclusive start (seconds).",
+      "ar": "البداية، شاملة (بالثواني)."
+    },
+    "/paths/~1videos~1{id}~1segments/get/parameters/1/description": {
+      "en": "Exclusive end (seconds). Defaults to end of transcript.",
+      "ar": "النهاية، غير شاملة (بالثواني). الافتراضي نهاية النص المفرّغ."
+    },
+    "/paths/~1videos~1{id}~1segments/get/parameters/2/description": {
+      "en": "When `true`, populates `Segment.words` with word-level timing.",
+      "ar": "عند `true`، يملأ `Segment.words` بتوقيت كل كلمة."
+    },
+    "/paths/~1videos~1{id}~1segments/get/parameters/3/description": {
+      "en": "Include segments from superseded transcripts.",
+      "ar": "تضمين المقاطع من النصوص المفرّغة المستبدَلة."
+    },
+    "/paths/~1videos~1{id}~1segments/get/responses/200/description": {
+      "en": "Segments in `[from, to)`.",
+      "ar": "المقاطع ضمن `[from, to)`."
+    },
+    "/paths/~1videos~1{id}~1segments/get/responses/400/description": {
+      "en": "Invalid time window or query.",
+      "ar": "نافذة زمنية أو استعلام غير صالح."
+    },
+    "/paths/~1videos~1{id}~1subtitles/get/summary": {
+      "en": "List subtitle tracks (signed URLs)",
+      "ar": "سرد مسارات الترجمات المصاحبة (عناوين URL موقّعة)"
+    },
+    "/paths/~1videos~1{id}~1subtitles/get/parameters/0/description": {
+      "en": "Preferred language ranking; orders the result.",
+      "ar": "ترتيب اللغات المفضّلة؛ يحدد ترتيب النتيجة."
+    },
+    "/paths/~1videos~1{id}~1subtitles/get/responses/200/description": {
+      "en": "Subtitle tracks. URLs are signed and short-lived.",
+      "ar": "مسارات الترجمات المصاحبة. عناوين URL موقّعة وقصيرة العمر."
+    },
+    "/paths/~1videos~1{id}~1chapters/get/summary": {
+      "en": "List chapters for a video (ordered by `seq`)",
+      "ar": "سرد فصول فيديو (مرتّبة حسب `seq`)"
+    },
+    "/paths/~1videos~1{id}~1chapters/get/responses/200/description": {
+      "en": "Chapters.",
+      "ar": "الفصول."
+    },
+    "/paths/~1videos~1{id}~1tags/patch/summary": {
+      "en": "Add or remove tags on a video",
+      "ar": "إضافة وسوم إلى فيديو أو إزالتها منه"
+    },
+    "/paths/~1videos~1{id}~1tags/patch/responses/200/description": {
+      "en": "Updated video tag list.",
+      "ar": "قائمة وسوم الفيديو بعد التحديث."
+    },
+    "/paths/~1videos~1{id}~1pause/post/summary": {
+      "en": "Pause every active job for this video",
+      "ar": "إيقاف كل مهمة نشطة لهذا الفيديو مؤقتًا"
+    },
+    "/paths/~1videos~1{id}~1pause/post/responses/200/description": {
+      "en": "Number of jobs flagged.",
+      "ar": "عدد المهام المعلَّمة."
+    },
+    "/paths/~1videos~1{id}~1resume/post/summary": {
+      "en": "Resume every paused job for this video",
+      "ar": "استئناف كل مهمة موقوفة مؤقتًا لهذا الفيديو"
+    },
+    "/paths/~1videos~1{id}~1resume/post/responses/200/description": {
+      "en": "Number of jobs resumed.",
+      "ar": "عدد المهام المستأنَفة."
+    },
+    "/paths/~1videos~1{id}~1cancel/post/summary": {
+      "en": "Cancel every active job for this video",
+      "ar": "إلغاء كل مهمة نشطة لهذا الفيديو"
+    },
+    "/paths/~1videos~1{id}~1cancel/post/responses/200/description": {
+      "en": "Number of jobs cancelled.",
+      "ar": "عدد المهام الملغاة."
+    },
+    "/paths/~1videos~1{id}~1progress/get/summary": {
+      "en": "Fetch playback state for the current user and a video",
+      "ar": "جلب حالة التشغيل للمستخدم الحالي وفيديو"
+    },
+    "/paths/~1videos~1{id}~1progress/get/responses/200/description": {
+      "en": "Playback state. Returns zeros if the user has not played the video yet.",
+      "ar": "حالة التشغيل. تُعاد أصفار إن لم يشغّل المستخدم الفيديو بعد."
+    },
+    "/paths/~1videos~1{id}~1progress/put/summary": {
+      "en": "Upsert playback state for the current user and a video",
+      "ar": "إنشاء حالة التشغيل أو تحديثها للمستخدم الحالي وفيديو"
+    },
+    "/paths/~1videos~1{id}~1progress/put/description": {
+      "en": "Server-side debounced (1 Hz per user/video). Fires `playback.completed`\non `false → true` transition. Excluded from per-user rate limits.\n",
+      "ar": "يُخمَّد على الخادم (مرة واحدة في الثانية لكل مستخدم/فيديو). يُطلق `playback.completed`\nعند الانتقال `false → true`. مستثنى من حدود المعدّل لكل مستخدم.\n"
+    },
+    "/paths/~1videos~1{id}~1progress/put/responses/200/description": {
+      "en": "Acknowledged.",
+      "ar": "تم الاستلام."
+    },
+    "/paths/~1videos~1{id}~1progress/put/responses/200/headers/Maktaba-Warning/description": {
+      "en": "Set if `position_sec` was clamped to duration.",
+      "ar": "يُضبط إن قُصّ `position_sec` إلى المدة."
+    },
+    "/paths/~1search/get/summary": {
+      "en": "Hybrid search across the library",
+      "ar": "بحث هجين في المكتبة"
+    },
+    "/paths/~1search/get/description": {
+      "en": "Combines BM25 full-text and vector similarity using reciprocal rank fusion.\nResults carry per-stage timing under `took_ms`. When semantic backend is\noffline, the response sets `degraded=true` and falls back to FTS only.\n",
+      "ar": "يجمع بين البحث النصي الكامل BM25 وتشابه المتجهات باستخدام دمج الرتب التبادلي.\nتحمل النتائج توقيت كل مرحلة ضمن `took_ms`. عندما تكون الخلفية الدلالية\nغير متصلة، تضبط الاستجابة `degraded=true` وتعود إلى البحث النصي الكامل وحده.\n"
+    },
+    "/paths/~1search/get/responses/200/description": {
+      "en": "Search hits.",
+      "ar": "نتائج البحث."
+    },
+    "/paths/~1search/get/responses/400/description": {
+      "en": "Invalid query.",
+      "ar": "استعلام غير صالح."
+    },
+    "/paths/~1search/get/responses/503/description": {
+      "en": "Semantic backend unavailable and `mode=semantic` was requested.",
+      "ar": "الخلفية الدلالية غير متاحة وقد طُلب `mode=semantic`."
+    },
+    "/paths/~1search/post/summary": {
+      "en": "Hybrid search with a structured request body",
+      "ar": "بحث هجين بجسم طلب منظَّم"
+    },
+    "/paths/~1search/post/description": {
+      "en": "Same semantics as `GET /search`; the body form is preferred when filters get long.",
+      "ar": "الدلالات نفسها كما في `GET /search`؛ ويُفضَّل شكل الجسم عندما تطول عوامل التصفية."
+    },
+    "/paths/~1search/post/responses/200/description": {
+      "en": "Search hits.",
+      "ar": "نتائج البحث."
+    },
+    "/paths/~1search/post/responses/400/description": {
+      "en": "Invalid query.",
+      "ar": "استعلام غير صالح."
+    },
+    "/paths/~1search~1suggest/get/summary": {
+      "en": "Autocomplete suggestions",
+      "ar": "اقتراحات الإكمال التلقائي"
+    },
+    "/paths/~1search~1suggest/get/responses/200/description": {
+      "en": "Up to 10 suggestions ranked by frequency.",
+      "ar": "حتى 10 اقتراحات مرتّبة حسب التكرار."
+    },
+    "/paths/~1search~1save/post/summary": {
+      "en": "Save a search query for the current user",
+      "ar": "حفظ استعلام بحث للمستخدم الحالي"
+    },
+    "/paths/~1search~1save/post/responses/201/description": {
+      "en": "Saved.",
+      "ar": "تم الحفظ."
+    },
+    "/paths/~1search~1save/post/responses/409/description": {
+      "en": "A saved search with that name already exists for this user.",
+      "ar": "يوجد بحث محفوظ بهذا الاسم مسبقًا لهذا المستخدم."
+    },
+    "/paths/~1search~1saved/get/summary": {
+      "en": "List the current user's saved searches",
+      "ar": "سرد عمليات البحث المحفوظة للمستخدم الحالي"
+    },
+    "/paths/~1search~1saved/get/responses/200/description": {
+      "en": "Saved searches.",
+      "ar": "عمليات البحث المحفوظة."
+    },
+    "/paths/~1search~1saved~1{id}/delete/summary": {
+      "en": "Delete a saved search",
+      "ar": "حذف بحث محفوظ"
+    },
+    "/paths/~1search~1saved~1{id}/delete/responses/204/description": {
+      "en": "Deleted.",
+      "ar": "تم الحذف."
+    },
+    "/paths/~1jobs/get/summary": {
+      "en": "List processing jobs",
+      "ar": "سرد مهام المعالجة"
+    },
+    "/paths/~1jobs/get/responses/200/description": {
+      "en": "Page of jobs.",
+      "ar": "صفحة من المهام."
+    },
+    "/paths/~1jobs~1{id}/get/summary": {
+      "en": "Fetch a job",
+      "ar": "جلب مهمة"
+    },
+    "/paths/~1jobs~1{id}/get/responses/200/description": {
+      "en": "Job.",
+      "ar": "المهمة."
+    },
+    "/paths/~1jobs~1{id}~1pause/post/summary": {
+      "en": "Request a graceful pause",
+      "ar": "طلب إيقاف مؤقت سلس"
+    },
+    "/paths/~1jobs~1{id}~1pause/post/description": {
+      "en": "Idempotent. With `?force=true`, flips state immediately and drops the in-flight segment.",
+      "ar": "آمن التكرار. مع `?force=true`، يقلب الحالة فورًا ويُسقط المقطع قيد المعالجة."
+    },
+    "/paths/~1jobs~1{id}~1pause/post/responses/200/description": {
+      "en": "Job (with `pause_requested=true` or `state=paused`).",
+      "ar": "المهمة (مع `pause_requested=true` أو `state=paused`)."
+    },
+    "/paths/~1jobs~1{id}~1pause/post/responses/409/description": {
+      "en": "Job is in a terminal state.",
+      "ar": "المهمة في حالة نهائية."
+    },
+    "/paths/~1jobs~1{id}~1resume/post/summary": {
+      "en": "Make a paused job re-claimable",
+      "ar": "جعل مهمة موقوفة مؤقتًا قابلة للالتقاط من جديد"
+    },
+    "/paths/~1jobs~1{id}~1resume/post/responses/200/description": {
+      "en": "Job.",
+      "ar": "المهمة."
+    },
+    "/paths/~1jobs~1{id}~1resume/post/responses/409/description": {
+      "en": "Job is in a terminal state.",
+      "ar": "المهمة في حالة نهائية."
+    },
+    "/paths/~1jobs~1{id}~1cancel/post/summary": {
+      "en": "Cancel a job",
+      "ar": "إلغاء مهمة"
+    },
+    "/paths/~1jobs~1{id}~1cancel/post/description": {
+      "en": "Idempotent. Sets `cancel_requested`, or transitions `pending` → `cancelled` immediately.",
+      "ar": "آمن التكرار. يضبط `cancel_requested`، أو ينقل `pending` → `cancelled` فورًا."
+    },
+    "/paths/~1jobs~1{id}~1cancel/post/responses/200/description": {
+      "en": "Job.",
+      "ar": "المهمة."
+    },
+    "/paths/~1jobs~1{id}~1cancel/post/responses/409/description": {
+      "en": "Job is in a terminal state.",
+      "ar": "المهمة في حالة نهائية."
+    },
+    "/paths/~1jobs~1{id}~1retry/post/summary": {
+      "en": "Reset a failed job to `pending`",
+      "ar": "إعادة مهمة فاشلة إلى `pending`"
+    },
+    "/paths/~1jobs~1{id}~1retry/post/responses/200/description": {
+      "en": "Job.",
+      "ar": "المهمة."
+    },
+    "/paths/~1jobs~1{id}~1retry/post/responses/409/description": {
+      "en": "Job is not in `failed` state.",
+      "ar": "المهمة ليست في الحالة `failed`."
+    },
+    "/paths/~1queue~1stats/get/summary": {
+      "en": "Aggregate queue stats per stage",
+      "ar": "إحصاءات طابور المهام المجمّعة لكل مرحلة"
+    },
+    "/paths/~1queue~1stats/get/responses/200/description": {
+      "en": "Queue stats.",
+      "ar": "إحصاءات طابور المهام."
+    },
+    "/paths/~1collections/get/summary": {
+      "en": "List collections",
+      "ar": "سرد المجموعات"
+    },
+    "/paths/~1collections/get/responses/200/description": {
+      "en": "Page of collections.",
+      "ar": "صفحة من المجموعات."
+    },
+    "/paths/~1collections/post/summary": {
+      "en": "Create a collection (manual or smart)",
+      "ar": "إنشاء مجموعة (يدوية أو ذكية)"
+    },
+    "/paths/~1collections/post/responses/201/description": {
+      "en": "Collection created.",
+      "ar": "تم إنشاء المجموعة."
+    },
+    "/paths/~1collections~1{id}/get/summary": {
+      "en": "Fetch a collection",
+      "ar": "جلب مجموعة"
+    },
+    "/paths/~1collections~1{id}/get/responses/200/description": {
+      "en": "Collection.",
+      "ar": "المجموعة."
+    },
+    "/paths/~1collections~1{id}/patch/summary": {
+      "en": "Update a collection",
+      "ar": "تحديث مجموعة"
+    },
+    "/paths/~1collections~1{id}/patch/responses/200/description": {
+      "en": "Updated collection.",
+      "ar": "المجموعة بعد التحديث."
+    },
+    "/paths/~1collections~1{id}/delete/summary": {
+      "en": "Delete a collection",
+      "ar": "حذف مجموعة"
+    },
+    "/paths/~1collections~1{id}/delete/responses/204/description": {
+      "en": "Deleted.",
+      "ar": "تم الحذف."
+    },
+    "/paths/~1collections~1{id}~1videos/get/summary": {
+      "en": "List videos in a collection",
+      "ar": "سرد الفيديوهات في مجموعة"
+    },
+    "/paths/~1collections~1{id}~1videos/get/responses/200/description": {
+      "en": "Page of videos.",
+      "ar": "صفحة من الفيديوهات."
+    },
+    "/paths/~1collections~1{id}~1videos/post/summary": {
+      "en": "Add a video to a collection",
+      "ar": "إضافة فيديو إلى مجموعة"
+    },
+    "/paths/~1collections~1{id}~1videos/post/responses/201/description": {
+      "en": "Video added.",
+      "ar": "أُضيف الفيديو."
+    },
+    "/paths/~1collections~1{id}~1videos~1{videoId}/delete/summary": {
+      "en": "Remove a video from a collection",
+      "ar": "إزالة فيديو من مجموعة"
+    },
+    "/paths/~1collections~1{id}~1videos~1{videoId}/delete/responses/204/description": {
+      "en": "Removed.",
+      "ar": "تمّت الإزالة."
+    },
+    "/paths/~1tags/get/summary": {
+      "en": "List tags",
+      "ar": "سرد الوسوم"
+    },
+    "/paths/~1tags/get/parameters/2/description": {
+      "en": "Substring filter.",
+      "ar": "تصفية بجزء من النص."
+    },
+    "/paths/~1tags/get/responses/200/description": {
+      "en": "Page of tags.",
+      "ar": "صفحة من الوسوم."
+    },
+    "/paths/~1tags/post/summary": {
+      "en": "Create a tag",
+      "ar": "إنشاء وسم"
+    },
+    "/paths/~1tags/post/responses/201/description": {
+      "en": "Tag.",
+      "ar": "الوسم."
+    },
+    "/paths/~1tags/post/responses/409/description": {
+      "en": "Tag already exists.",
+      "ar": "الوسم موجود مسبقًا."
+    },
+    "/paths/~1sessions/post/summary": {
+      "en": "Mint a streaming session",
+      "ar": "إصدار جلسة بث"
+    },
+    "/paths/~1sessions/post/description": {
+      "en": "Returns a signed manifest URL (HLS / DASH) or direct URL. The client passes\nit to its player; bytes are served by the Streaming Service, not the API.\n",
+      "ar": "يعيد عنوان URL موقّعًا لملف البيان (HLS / DASH) أو عنوان URL مباشرًا. يمرّره العميل\nإلى مشغّله؛ وتقدّم خدمة البث البايتات، لا الواجهة البرمجية.\n"
+    },
+    "/paths/~1sessions/post/responses/200/description": {
+      "en": "Session minted.",
+      "ar": "تم إصدار الجلسة."
+    },
+    "/paths/~1sessions/post/responses/200/headers/Maktaba-Warning/description": {
+      "en": "e.g. `start-sec-clamped`.",
+      "ar": "مثل `start-sec-clamped`."
+    },
+    "/paths/~1sessions/post/responses/403/description": {
+      "en": "User cannot access this video.",
+      "ar": "لا يمكن للمستخدم الوصول إلى هذا الفيديو."
+    },
+    "/paths/~1sessions/post/responses/507/description": {
+      "en": "Too little free on the streaming service's disk to prepare (transcode) the video (code `insufficient_storage`).",
+      "ar": "المساحة الحرة على قرص خدمة البث أقل من أن تكفي لتجهيز الفيديو (تحويل ترميزه) (الرمز `insufficient_storage`)."
+    },
+    "/paths/~1sessions~1{id}/get/summary": {
+      "en": "Fetch a session",
+      "ar": "جلب جلسة"
+    },
+    "/paths/~1sessions~1{id}/get/responses/200/description": {
+      "en": "Session.",
+      "ar": "الجلسة."
+    },
+    "/paths/~1sessions~1{id}/delete/summary": {
+      "en": "Close a streaming session",
+      "ar": "إغلاق جلسة بث"
+    },
+    "/paths/~1sessions~1{id}/delete/description": {
+      "en": "Frees the transcoder slot and revokes the signed URL.",
+      "ar": "يحرّر خانة محوّل الترميز ويلغي عنوان URL الموقّع."
+    },
+    "/paths/~1sessions~1{id}/delete/responses/204/description": {
+      "en": "Closed.",
+      "ar": "أُغلقت."
+    },
+    "/paths/~1sessions~1{id}~1progress/post/summary": {
+      "en": "Heartbeat session progress",
+      "ar": "نبضة تقدّم الجلسة"
+    },
+    "/paths/~1sessions~1{id}~1progress/post/description": {
+      "en": "Server-side debounced (1 Hz). Mirrors the position into `playback_state`.\nExcluded from rate limits.\n",
+      "ar": "يُخمَّد على الخادم (مرة واحدة في الثانية). ينسخ الموضع إلى `playback_state`.\nمستثنى من حدود المعدّل.\n"
+    },
+    "/paths/~1sessions~1{id}~1progress/post/responses/200/description": {
+      "en": "Accepted.",
+      "ar": "مقبول."
+    },
+    "/paths/~1sessions~1capabilities/get/summary": {
+      "en": "Streaming server capabilities",
+      "ar": "إمكانات خادم البث"
+    },
+    "/paths/~1sessions~1capabilities/get/description": {
+      "en": "Cached 60 s; invalidated by the streaming service when the encoder profile changes.",
+      "ar": "مخزّنة مؤقتًا 60 ثانية؛ وتُبطلها خدمة البث عند تغيّر ملف تعريف المرمِّز."
+    },
+    "/paths/~1sessions~1capabilities/get/responses/200/description": {
+      "en": "Capabilities.",
+      "ar": "الإمكانات."
+    },
+    "/paths/~1settings/get/summary": {
+      "en": "Read effective settings",
+      "ar": "قراءة الإعدادات الفعّالة"
+    },
+    "/paths/~1settings/get/description": {
+      "en": "Merges defaults, file, env, and DB. Secrets are never returned.",
+      "ar": "يدمج القيم الافتراضية والملف ومتغيرات البيئة وقاعدة البيانات. لا تُعاد الأسرار أبدًا."
+    },
+    "/paths/~1settings/get/responses/200/description": {
+      "en": "Settings.",
+      "ar": "الإعدادات."
+    },
+    "/paths/~1settings/put/summary": {
+      "en": "Replace the DB-stored settings layer",
+      "ar": "استبدال طبقة الإعدادات المخزّنة في قاعدة البيانات"
+    },
+    "/paths/~1settings/put/responses/200/description": {
+      "en": "Updated settings (re-read after write).",
+      "ar": "الإعدادات بعد التحديث (تُقرأ من جديد بعد الكتابة)."
+    },
+    "/paths/~1settings~1stt-backends/get/summary": {
+      "en": "Enumerate available STT backends",
+      "ar": "تعداد خلفيات تحويل الكلام إلى نص المتاحة"
+    },
+    "/paths/~1settings~1stt-backends/get/responses/200/description": {
+      "en": "List of backends.",
+      "ar": "قائمة الخلفيات."
+    },
+    "/paths/~1settings~1stt-test/post/summary": {
+      "en": "Dry-run a transcribe request against a backend",
+      "ar": "تجربة طلب تفريغ نصي على خلفية دون تنفيذ فعلي"
+    },
+    "/paths/~1settings~1stt-test/post/responses/200/description": {
+      "en": "Probe result.",
+      "ar": "نتيجة الاختبار."
+    },
+    "/paths/~1devices~1register/post/summary": {
+      "en": "Register or rotate a push-notification device",
+      "ar": "تسجيل جهاز للإشعارات الفورية أو تدوير رمزه"
+    },
+    "/paths/~1devices~1register/post/description": {
+      "en": "Idempotent on `(user_id, platform, bundle_id)`. Returns 201 on first\nregistration, 200 on token rotation.\n",
+      "ar": "آمن التكرار على `(user_id, platform, bundle_id)`. يعيد 201 عند أول\nتسجيل، و200 عند تدوير الرمز.\n"
+    },
+    "/paths/~1devices~1register/post/responses/200/description": {
+      "en": "Device updated (token rotated).",
+      "ar": "تم تحديث الجهاز (دُوِّر الرمز)."
+    },
+    "/paths/~1devices~1register/post/responses/201/description": {
+      "en": "Device registered.",
+      "ar": "تم تسجيل الجهاز."
+    },
+    "/paths/~1devices/get/summary": {
+      "en": "List the current user's registered devices",
+      "ar": "سرد الأجهزة المسجّلة للمستخدم الحالي"
+    },
+    "/paths/~1devices/get/description": {
+      "en": "Push tokens are redacted in this view.",
+      "ar": "تُحجب رموز الإشعارات الفورية في هذا العرض."
+    },
+    "/paths/~1devices/get/responses/200/description": {
+      "en": "Devices.",
+      "ar": "الأجهزة."
+    },
+    "/paths/~1devices~1{id}/delete/summary": {
+      "en": "Revoke a registered device",
+      "ar": "إلغاء جهاز مسجّل"
+    },
+    "/paths/~1devices~1{id}/delete/responses/204/description": {
+      "en": "Revoked.",
+      "ar": "أُلغي."
+    },
+    "/paths/~1recommendations/get/summary": {
+      "en": "Personalized video recommendations",
+      "ar": "توصيات فيديو مخصّصة"
+    },
+    "/paths/~1recommendations/get/parameters/1/description": {
+      "en": "When set, returns just one shelf.",
+      "ar": "عند ضبطه، يعيد رفًّا واحدًا فقط."
+    },
+    "/paths/~1recommendations/get/responses/200/description": {
+      "en": "Recommendations grouped by shelf.",
+      "ar": "التوصيات مجمّعة حسب الرف."
+    },
+    "/paths/~1ws/get/summary": {
+      "en": "Upgrade to the realtime event stream",
+      "ar": "الترقية إلى تدفق الأحداث الفوري"
+    },
+    "/paths/~1ws/get/description": {
+      "en": "HTTP/1.1 upgrade to a WebSocket. Documented here for client-generation\ntools that want to know the protocol exists; the message envelope is in\nthe schemas section as `WsMessage`.\n\n### Channels\n- `jobs` — job state and progress.\n- `playback` — `playback.progress`, `playback.completed` events.\n- `library` — `library.updated`, `videos.state_changed` events.\n- `system` — `profiles_changed`, `health_changed`.\n\n### Subscribe\n```json\n{ \"type\": \"subscribe\", \"channels\": [\"jobs\", \"playback\"] }\n```\n\n### Sample event\n```json\n{\n  \"type\": \"jobs.progress\",\n  \"data\": { \"job_id\": 42, \"stage\": \"transcribe\", \"pct\": 0.18, \"eta_sec\": 612 },\n  \"at\": \"2026-05-05T13:21:04Z\"\n}\n```\n",
+      "ar": "ترقية HTTP/1.1 إلى WebSocket. موثّقة هنا لأدوات توليد العملاء\nالتي تريد معرفة وجود البروتوكول؛ وغلاف الرسالة موجود في\nقسم المخططات باسم `WsMessage`.\n\n### القنوات\n- `jobs` — حالة المهام وتقدّمها.\n- `playback` — الأحداث `playback.progress` و`playback.completed`.\n- `library` — الأحداث `library.updated` و`videos.state_changed`.\n- `system` — `profiles_changed` و`health_changed`.\n\n### الاشتراك\n```json\n{ \"type\": \"subscribe\", \"channels\": [\"jobs\", \"playback\"] }\n```\n\n### حدث نموذجي\n```json\n{\n  \"type\": \"jobs.progress\",\n  \"data\": { \"job_id\": 42, \"stage\": \"transcribe\", \"pct\": 0.18, \"eta_sec\": 612 },\n  \"at\": \"2026-05-05T13:21:04Z\"\n}\n```\n"
+    },
+    "/paths/~1ws/get/responses/101/description": {
+      "en": "Switching protocols (WebSocket).",
+      "ar": "تبديل البروتوكولات (WebSocket)."
+    },
+    "/paths/~1system~1health/get/summary": {
+      "en": "Liveness / readiness check",
+      "ar": "فحص الحياة / الجاهزية"
+    },
+    "/paths/~1system~1health/get/description": {
+      "en": "Mounted at both `/health` (off the API root, for monitoring agents) and\n`/api/system/health`. 503 if any required component is `down`.\n",
+      "ar": "مركّبة على كلٍّ من `/health` (خارج جذر الواجهة البرمجية، لوكلاء المراقبة) و\n`/api/system/health`. تعيد 503 إن كان أي مكوّن مطلوب في الحالة `down`.\n"
+    },
+    "/paths/~1system~1health/get/responses/200/description": {
+      "en": "All dependencies healthy or degraded.",
+      "ar": "كل الاعتماديات سليمة أو متراجعة الأداء."
+    },
+    "/paths/~1system~1health/get/responses/503/description": {
+      "en": "At least one required component is down.",
+      "ar": "مكوّن مطلوب واحد على الأقل متوقف."
+    },
+    "/paths/~1system~1version/get/summary": {
+      "en": "Build identification",
+      "ar": "تعريف البناء"
+    },
+    "/paths/~1system~1version/get/description": {
+      "en": "Mounted at both `/version` and `/api/system/version`.",
+      "ar": "مركّبة على كلٍّ من `/version` و`/api/system/version`."
+    },
+    "/paths/~1system~1version/get/responses/200/description": {
+      "en": "Version metadata.",
+      "ar": "البيانات الوصفية للإصدار."
+    },
+    "/paths/~1system~1metrics/get/summary": {
+      "en": "Prometheus exposition (text format)",
+      "ar": "عرض مقاييس Prometheus (بصيغة نصية)"
+    },
+    "/paths/~1system~1metrics/get/description": {
+      "en": "Mounted at `/metrics` on a separate listener (default `127.0.0.1:9090`).\nWhen `metrics_admin_token` is configured, requires `Authorization: Bearer`.\n",
+      "ar": "مركّبة على `/metrics` على مستمع منفصل (الافتراضي `127.0.0.1:9090`).\nعند ضبط `metrics_admin_token`، تتطلب `Authorization: Bearer`.\n"
+    },
+    "/paths/~1system~1metrics/get/responses/200/description": {
+      "en": "Prometheus text format.",
+      "ar": "صيغة Prometheus النصية."
+    },
+    "/paths/~1system~1metrics/get/responses/401/description": {
+      "en": "Missing or invalid metrics token.",
+      "ar": "رمز المقاييس مفقود أو غير صالح."
+    },
+    "/paths/~1speakers/get/summary": {
+      "en": "List speakers",
+      "ar": "سرد المتحدثين"
+    },
+    "/paths/~1speakers/get/responses/200/description": {
+      "en": "Page of speakers.",
+      "ar": "صفحة من المتحدثين."
+    },
+    "/paths/~1speakers~1{id}/patch/summary": {
+      "en": "Rename a speaker",
+      "ar": "إعادة تسمية متحدث"
+    },
+    "/paths/~1speakers~1{id}/patch/responses/200/description": {
+      "en": "Updated speaker.",
+      "ar": "المتحدث بعد التحديث."
+    },
+    "/paths/~1speakers~1merge/post/summary": {
+      "en": "Merge two speaker labels into one",
+      "ar": "دمج تسميتَي متحدثَين في تسمية واحدة"
+    },
+    "/paths/~1speakers~1merge/post/responses/200/description": {
+      "en": "Merge result.",
+      "ar": "نتيجة الدمج."
+    },
+    "/paths/~1queues/get/summary": {
+      "en": "Queue overview snapshot",
+      "ar": "لقطة عامة لطوابير المهام"
+    },
+    "/paths/~1queues/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1graph/get/summary": {
+      "en": "Stage graph and worker pools",
+      "ar": "مخطط المراحل ومجمّعات العمال"
+    },
+    "/paths/~1queues~1graph/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1libraries/get/summary": {
+      "en": "Per-library queue progress (cached 5 s)",
+      "ar": "تقدّم طابور المهام لكل مكتبة (مخزّن مؤقتًا 5 ثوانٍ)"
+    },
+    "/paths/~1queues~1libraries/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1health/get/summary": {
+      "en": "Health metrics over time",
+      "ar": "مقاييس الصحة عبر الزمن"
+    },
+    "/paths/~1queues~1health/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1health/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1pause-all/post/summary": {
+      "en": "Pause every queue",
+      "ar": "إيقاف كل الطوابير مؤقتًا"
+    },
+    "/paths/~1queues~1pause-all/post/responses/204/description": {
+      "en": "Done.",
+      "ar": "تم."
+    },
+    "/paths/~1queues~1pause-all/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queues~1resume-all/post/summary": {
+      "en": "Resume every queue",
+      "ar": "استئناف كل الطوابير"
+    },
+    "/paths/~1queues~1resume-all/post/responses/204/description": {
+      "en": "Done.",
+      "ar": "تم."
+    },
+    "/paths/~1queues~1resume-all/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queues~1{stage}/get/summary": {
+      "en": "One queue: KPIs, running, next up, failures, log",
+      "ar": "طابور واحد: المؤشرات الرئيسية، وما يعمل الآن، والتالي، والإخفاقات، والسجل"
+    },
+    "/paths/~1queues~1{stage}/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}/patch/summary": {
+      "en": "Enable/disable a queue or set its write mode",
+      "ar": "تفعيل طابور أو تعطيله أو ضبط وضع الكتابة فيه"
+    },
+    "/paths/~1queues~1{stage}/patch/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}/patch/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}/patch/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queues~1{stage}/patch/responses/409/description": {
+      "en": "Stage is not configured.",
+      "ar": "المرحلة غير مُعدّة."
+    },
+    "/paths/~1queues~1{stage}~1rate/get/summary": {
+      "en": "Done/failed/skipped per 10 minutes",
+      "ar": "المكتمل/الفاشل/المتخطّى لكل 10 دقائق"
+    },
+    "/paths/~1queues~1{stage}~1rate/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}~1rate/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}~1jobs/get/summary": {
+      "en": "Jobs of a queue (keyset paged, newest first)",
+      "ar": "مهام طابور (ترقيم بالمفاتيح، الأحدث أولًا)"
+    },
+    "/paths/~1queues~1{stage}~1jobs/get/parameters/0/description": {
+      "en": "Comma separated job states.",
+      "ar": "حالات المهام مفصولة بفواصل."
+    },
+    "/paths/~1queues~1{stage}~1jobs/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}~1jobs/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}~1failures/get/summary": {
+      "en": "Open failures grouped by cause",
+      "ar": "الإخفاقات المفتوحة مجمّعة حسب السبب"
+    },
+    "/paths/~1queues~1{stage}~1failures/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}~1pause/post/summary": {
+      "en": "Pause a queue (running jobs finish)",
+      "ar": "إيقاف طابور مؤقتًا (تكتمل المهام الجارية)"
+    },
+    "/paths/~1queues~1{stage}~1pause/post/parameters/0/description": {
+      "en": "Also ask cooperative stages (transcribe) to pause mid-run.",
+      "ar": "اطلب أيضًا من المراحل المتعاونة (transcribe) التوقف مؤقتًا أثناء التشغيل."
+    },
+    "/paths/~1queues~1{stage}~1pause/post/responses/204/description": {
+      "en": "Done.",
+      "ar": "تم."
+    },
+    "/paths/~1queues~1{stage}~1pause/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}~1pause/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queues~1{stage}~1resume/post/summary": {
+      "en": "Resume a queue",
+      "ar": "استئناف طابور"
+    },
+    "/paths/~1queues~1{stage}~1resume/post/responses/204/description": {
+      "en": "Done.",
+      "ar": "تم."
+    },
+    "/paths/~1queues~1{stage}~1resume/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queues~1{stage}~1retry/post/summary": {
+      "en": "Retry failures of a cause or specific jobs",
+      "ar": "إعادة محاولة إخفاقات سبب معيّن أو مهام محددة"
+    },
+    "/paths/~1queues~1{stage}~1retry/post/requestBody/content/application~1json/schema/description": {
+      "en": "One of cause or job_ids is required.",
+      "ar": "يلزم أحد الحقلين cause أو job_ids."
+    },
+    "/paths/~1queues~1{stage}~1retry/post/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}~1retry/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}~1retry/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queues~1{stage}~1apply/post/summary": {
+      "en": "Apply reviewed external writes",
+      "ar": "تطبيق الكتابات الخارجية التي رُوجعت"
+    },
+    "/paths/~1queues~1{stage}~1apply/post/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1{stage}~1apply/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queues~1{stage}~1apply/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1pools/get/summary": {
+      "en": "Worker pools",
+      "ar": "مجمّعات العمال"
+    },
+    "/paths/~1pools/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1pools~1{pool}/put/summary": {
+      "en": "Resize a pool",
+      "ar": "تغيير حجم مجمّع"
+    },
+    "/paths/~1pools~1{pool}/put/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1pools~1{pool}/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1pools~1{pool}/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1queue~1retrigger/post/summary": {
+      "en": "Re-add subjects to their entry queues",
+      "ar": "إعادة إضافة العناصر إلى طوابير دخولها"
+    },
+    "/paths/~1queue~1retrigger/post/description": {
+      "en": "Every item is enqueued through the processing_jobs_enqueue SQL function in one transaction.",
+      "ar": "يُضاف كل عنصر إلى الطابور عبر دالة SQL `processing_jobs_enqueue` في معاملة واحدة."
+    },
+    "/paths/~1queue~1retrigger/post/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queue~1retrigger/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1queue~1retrigger/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1issues/get/summary": {
+      "en": "All open issues (failures, awaiting review, stale graph)",
+      "ar": "كل المشكلات المفتوحة (الإخفاقات، وما ينتظر المراجعة، والمخطط القديم)"
+    },
+    "/paths/~1issues/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1activity/get/summary": {
+      "en": "Activity log (job_events)",
+      "ar": "سجل النشاط (`job_events`)"
+    },
+    "/paths/~1activity/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1activity/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1jobs~1{id}~1events/get/summary": {
+      "en": "Log of one job",
+      "ar": "سجل مهمة واحدة"
+    },
+    "/paths/~1jobs~1{id}~1events/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1jobs~1{id}~1events/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1items~1{kind}~1{id}~1history/get/summary": {
+      "en": "History of one subject across queues",
+      "ar": "تاريخ عنصر واحد عبر الطوابير"
+    },
+    "/paths/~1items~1{kind}~1{id}~1history/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1items~1{kind}~1{id}~1history/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1workers/get/summary": {
+      "en": "Registered workers and whether they are online",
+      "ar": "العمال المسجّلون وهل هم متصلون"
+    },
+    "/paths/~1workers/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions/get/summary": {
+      "en": "Optional extensions (Plex, dizqueTV)",
+      "ar": "الامتدادات الاختيارية (Plex وdizqueTV)"
+    },
+    "/paths/~1extensions/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions~1{name}/put/summary": {
+      "en": "Enable/disable an extension or update its settings (secrets are write-only)",
+      "ar": "تفعيل امتداد أو تعطيله أو تحديث إعداداته (الأسرار للكتابة فقط)"
+    },
+    "/paths/~1extensions~1{name}/put/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions~1{name}/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1extensions~1{name}/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1extensions~1{name}~1test/post/summary": {
+      "en": "Test an extension connection (a list of checks)",
+      "ar": "اختبار اتصال امتداد (قائمة من الفحوص)"
+    },
+    "/paths/~1extensions~1{name}~1test/post/description": {
+      "en": "Admin-only; runs on the home. Each check: key, ok, optional (a warning when not ok), skipped, detail, code, latency_ms. Plex: reachable, token, server, livetv, maktaba_tuner, dizquetv_tuner, path_map. dizqueTV: reachable, channels, plex_servers. Cloudflare Stream: see /tv/remote/test. Every run is audited (audit_log config/extension_test).",
+      "ar": "للمشرف فقط؛ يعمل على الخادم المنزلي. كل فحص يتضمن: `key` و`ok` و`optional` (تحذير عندما لا يكون `ok`) و`skipped` و`detail` و`code` و`latency_ms`. Plex: `reachable` و`token` و`server` و`livetv` و`maktaba_tuner` و`dizquetv_tuner` و`path_map`. dizqueTV: `reachable` و`channels` و`plex_servers`. Cloudflare Stream: راجع `/tv/remote/test`. تُدقَّق كل عملية تشغيل (`audit_log` `config/extension_test`)."
+    },
+    "/paths/~1extensions~1{name}~1test/post/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions~1{name}~1test/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1extensions~1plex~1signin/post/summary": {
+      "en": "Start \"Sign in with Plex\" (creates a plex.tv PIN)",
+      "ar": "بدء \"تسجيل الدخول عبر Plex\" (ينشئ رمز PIN على plex.tv)"
+    },
+    "/paths/~1extensions~1plex~1signin/post/description": {
+      "en": "Admin-only. Open auth_url in a browser window, then poll GET /extensions/plex/signin/{id}.",
+      "ar": "للمشرف فقط. افتح `auth_url` في نافذة متصفح، ثم استعلم دوريًا عبر `GET /extensions/plex/signin/{id}`."
+    },
+    "/paths/~1extensions~1plex~1signin/post/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions~1plex~1signin/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1extensions~1plex~1signin/post/responses/502/description": {
+      "en": "plex.tv could not be reached",
+      "ar": "تعذّر الوصول إلى plex.tv"
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}/get/summary": {
+      "en": "Poll a Plex sign-in; once done, lists the account's Plex servers (no tokens)",
+      "ar": "الاستعلام عن حالة تسجيل دخول Plex؛ وعند اكتماله، يسرد خوادم Plex التابعة للحساب (دون رموز)"
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}/get/responses/502/description": {
+      "en": "plex.tv could not be reached",
+      "ar": "تعذّر الوصول إلى plex.tv"
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}~1use/post/summary": {
+      "en": "Save the chosen Plex server (URL and its token) into the plex extension settings",
+      "ar": "حفظ خادم Plex المختار (عنوان URL ورمزه) في إعدادات امتداد plex"
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}~1use/post/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}~1use/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}~1use/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرف فقط."
+    },
+    "/paths/~1extensions~1plex~1signin~1{id}~1use/post/responses/409/description": {
+      "en": "The sign-in is not finished yet",
+      "ar": "لم يكتمل تسجيل الدخول بعد"
+    },
+    "/paths/~1ws~1queues/get/summary": {
+      "en": "Queue snapshot stream (Server-Sent Events)",
+      "ar": "تدفق لقطات طوابير المهام (Server-Sent Events)"
+    },
+    "/paths/~1ws~1queues/get/description": {
+      "en": "SSE. Sends one `queues.snapshot` immediately, then every 2 s while subscribed. Ephemeral: no `id:` lines, no replay.",
+      "ar": "تدفق SSE. يرسل لقطة `queues.snapshot` واحدة فورًا، ثم كل ثانيتين ما دام الاشتراك قائمًا. عابر: لا أسطر `id:` ولا إعادة تشغيل."
+    },
+    "/paths/~1ws~1queues/get/responses/200/description": {
+      "en": "text/event-stream",
+      "ar": "بثّ أحداث (`text/event-stream`)"
+    },
+    "/components/securitySchemes/bearerAuth/description": {
+      "en": "RS256 access token (15 min). Mobile / desktop / TV clients pass it as\n`Authorization: Bearer <token>`. The Streaming Service validates the same\nJWT offline against the JWKS at `/.well-known/jwks.json`.\n",
+      "ar": "رمز وصول RS256 (صالح 15 دقيقة). يمرّره عملاء الجوال / سطح المكتب / التلفاز بالشكل\n`Authorization: Bearer <token>`. وتتحقق خدمة البث من رمز JWT نفسه\nدون اتصال مقابل JWKS في `/.well-known/jwks.json`.\n"
+    },
+    "/components/securitySchemes/cookieAuth/description": {
+      "en": "`httpOnly`, `secure`, `sameSite=lax` cookie set by `POST /auth/login`.\nState-changing requests must also send the `X-CSRF-Token` header.\n",
+      "ar": "ملف تعريف ارتباط `httpOnly` و`secure` و`sameSite=lax` يضبطه `POST /auth/login`.\nويجب أن ترسل الطلبات المغيّرة للحالة أيضًا الترويسة `X-CSRF-Token`.\n"
+    },
+    "/components/parameters/Limit/description": {
+      "en": "Page size (1–200, default 50).",
+      "ar": "حجم الصفحة (1–200، الافتراضي 50)."
+    },
+    "/components/parameters/Cursor/description": {
+      "en": "Opaque pagination cursor from the previous page's `next` field.",
+      "ar": "مؤشر ترقيم معتم من الحقل `next` في الصفحة السابقة."
+    },
+    "/components/parameters/LibraryId/description": {
+      "en": "Library id.",
+      "ar": "معرّف المكتبة."
+    },
+    "/components/parameters/VideoId/description": {
+      "en": "Video id.",
+      "ar": "معرّف الفيديو."
+    },
+    "/components/parameters/JobId/description": {
+      "en": "Job id (64-bit integer).",
+      "ar": "معرّف المهمة (عدد صحيح بطول 64 بت)."
+    },
+    "/components/headers/X-Request-Id/description": {
+      "en": "UUIDv7 correlation id. Echoed in every response.",
+      "ar": "معرّف ربط من نوع UUIDv7. يُعاد في كل استجابة."
+    },
+    "/components/headers/X-RateLimit-Limit/description": {
+      "en": "Requests allowed in the current window.",
+      "ar": "الطلبات المسموح بها في النافذة الحالية."
+    },
+    "/components/headers/X-RateLimit-Remaining/description": {
+      "en": "Requests remaining in the current window.",
+      "ar": "الطلبات المتبقية في النافذة الحالية."
+    },
+    "/components/headers/X-RateLimit-Reset/description": {
+      "en": "Unix-epoch seconds when the window resets.",
+      "ar": "ثواني توقيت يونكس التي تُعاد عندها ضبط النافذة."
+    },
+    "/components/headers/Retry-After/description": {
+      "en": "Seconds to wait before retrying.",
+      "ar": "عدد الثواني التي يجب انتظارها قبل إعادة المحاولة."
+    },
+    "/components/responses/Unauthorized/description": {
+      "en": "Missing or invalid credentials.",
+      "ar": "بيانات الاعتماد مفقودة أو غير صالحة."
+    },
+    "/components/responses/NotFound/description": {
+      "en": "Resource not found.",
+      "ar": "المورد غير موجود."
+    },
+    "/components/responses/ValidationError/description": {
+      "en": "Request body or parameters failed validation.",
+      "ar": "فشل التحقق من جسم الطلب أو معاملاته."
+    },
+    "/components/responses/RateLimited/description": {
+      "en": "Rate limit exceeded.",
+      "ar": "تم تجاوز حد المعدّل."
+    },
+    "/components/responses/Unavailable/description": {
+      "en": "A downstream dependency (Pipeline or Streaming) is unavailable.",
+      "ar": "اعتمادية تابعة (خط المعالجة أو البث) غير متاحة."
+    },
+    "/components/responses/InternalError/description": {
+      "en": "Unhandled server error.",
+      "ar": "خطأ خادم غير معالَج."
+    },
+    "/components/schemas/ProblemDetails/description": {
+      "en": "RFC 9457 problem document.",
+      "ar": "مستند مشكلة وفق RFC 9457."
+    },
+    "/components/schemas/ProblemDetails/properties/type/description": {
+      "en": "Stable problem identifier (`https://maktaba.tv/problems/<slug>`).",
+      "ar": "معرّف ثابت للمشكلة (`https://maktaba.tv/problems/<slug>`)."
+    },
+    "/components/schemas/ProblemDetails/properties/title/description": {
+      "en": "Short human-readable summary.",
+      "ar": "ملخص قصير مقروء للبشر."
+    },
+    "/components/schemas/ProblemDetails/properties/detail/description": {
+      "en": "Human-readable explanation specific to this occurrence.",
+      "ar": "شرح مقروء للبشر خاص بهذا الحدوث."
+    },
+    "/components/schemas/ProblemDetails/properties/instance/description": {
+      "en": "URI of the resource that produced the problem.",
+      "ar": "معرّف URI للمورد الذي أنتج المشكلة."
+    },
+    "/components/schemas/ProblemDetails/properties/request_id/description": {
+      "en": "UUIDv7 correlation id (matches `X-Request-Id`).",
+      "ar": "معرّف ربط من نوع UUIDv7 (يطابق `X-Request-Id`)."
+    },
+    "/components/schemas/ProblemDetails/properties/errors/description": {
+      "en": "Present on validation failures.",
+      "ar": "موجود عند إخفاقات التحقق."
+    },
+    "/components/schemas/FieldError/properties/field/description": {
+      "en": "Dotted-path to the offending field, e.g. `roots[0]`.",
+      "ar": "مسار منقّط إلى الحقل المخالف، مثل `roots[0]`."
+    },
+    "/components/schemas/Page/properties/next/description": {
+      "en": "Cursor for the next page; `null` on the last page.",
+      "ar": "مؤشر الصفحة التالية؛ `null` في الصفحة الأخيرة."
+    },
+    "/components/schemas/AuthTokenResponse/properties/access_token/description": {
+      "en": "Short-lived (15 min) JWT.",
+      "ar": "رمز JWT قصير العمر (15 دقيقة)."
+    },
+    "/components/schemas/AuthTokenResponse/properties/refresh_token/description": {
+      "en": "Long-lived opaque token. Omitted for web clients (set via cookie).",
+      "ar": "رمز معتم طويل الأمد. يُحذف لعملاء الويب (يُضبط عبر ملف تعريف ارتباط)."
+    },
+    "/components/schemas/AuthTokenResponse/properties/expires_in/description": {
+      "en": "Lifetime of `access_token` in seconds.",
+      "ar": "مدة صلاحية `access_token` بالثواني."
+    },
+    "/components/schemas/Library/properties/roots/description": {
+      "en": "Absolute filesystem paths.",
+      "ar": "مسارات مطلقة في نظام الملفات."
+    },
+    "/components/schemas/VideoSummary/properties/detected_language/description": {
+      "en": "ISO 639-1 code.",
+      "ar": "رمز ISO 639-1."
+    },
+    "/components/schemas/Segment/properties/text/description": {
+      "en": "Bidi-isolated with U+2068 (FSI) and U+2069 (PDI).",
+      "ar": "معزول الاتجاه بالمحرفين U+2068 (FSI) وU+2069 (PDI)."
+    },
+    "/components/schemas/SegmentWindow/properties/partial/description": {
+      "en": "`true` when the window starts past the last segment\\'s end.",
+      "ar": "`true` عندما تبدأ النافذة بعد نهاية آخر مقطع."
+    },
+    "/components/schemas/Subtitle/properties/language/description": {
+      "en": "ISO 639-1.",
+      "ar": "رمز اللغة وفق ISO 639-1."
+    },
+    "/components/schemas/Subtitle/properties/url/description": {
+      "en": "Signed URL on the Streaming origin.",
+      "ar": "عنوان URL موقّع على أصل البث."
+    },
+    "/components/schemas/JobProgress/properties/rate/description": {
+      "en": "Stage-specific units / sec.",
+      "ar": "وحدات خاصة بالمرحلة / ثانية."
+    },
+    "/components/schemas/QueueStats/properties/eta/description": {
+      "en": "Per-stage ETA estimate in seconds.",
+      "ar": "تقدير الوقت المتبقي لكل مرحلة بالثواني."
+    },
+    "/components/schemas/SearchRequest/properties/k/description": {
+      "en": "Fusion candidate-pool size for hybrid mode.",
+      "ar": "حجم مجمّع المرشحين للدمج في الوضع الهجين."
+    },
+    "/components/schemas/SearchResponse/properties/degraded/description": {
+      "en": "`true` when hybrid mode fell back to FTS only.",
+      "ar": "`true` عندما يعود الوضع الهجين إلى البحث النصي الكامل وحده."
+    },
+    "/components/schemas/SessionRequest/properties/client_profile/description": {
+      "en": "Hint for the encoder ladder (e.g. `web`, `ios`, `tv-1080p`).",
+      "ar": "تلميح لسُلّم المرمِّز (مثل `web` و`ios` و`tv-1080p`)."
+    },
+    "/components/schemas/SessionRequest/properties/audio_track/description": {
+      "en": "Language tag or stream id.",
+      "ar": "وسم لغة أو معرّف تدفق."
+    },
+    "/components/schemas/Session/properties/duration_sec/description": {
+      "en": "The video's length in the catalogue (absent when unknown).",
+      "ar": "طول الفيديو في الفهرس (غائب عندما يكون غير معروف)."
+    },
+    "/components/schemas/Session/properties/start_sec/description": {
+      "en": "Where in the video the stream starts, in seconds (a transcode opened at `start_sec` starts there; its times are the video's). Absent at 0.",
+      "ar": "موضع بدء التدفق في الفيديو بالثواني (تحويل الترميز المفتوح عند `start_sec` يبدأ من هناك؛ وأوقاته هي أوقات الفيديو). غائب عند 0."
+    },
+    "/components/schemas/Settings/description": {
+      "en": "Effective settings (defaults ⊕ file ⊕ env ⊕ DB). Secrets redacted.",
+      "ar": "الإعدادات الفعّالة (القيم الافتراضية ⊕ الملف ⊕ متغيرات البيئة ⊕ قاعدة البيانات). الأسرار محجوبة."
+    },
+    "/components/schemas/SettingsInput/description": {
+      "en": "Settings to persist to the DB layer.",
+      "ar": "الإعدادات المراد حفظها في طبقة قاعدة البيانات."
+    },
+    "/components/schemas/Device/properties/push_token/description": {
+      "en": "Redacted in list / get responses; only echoed on register.",
+      "ar": "محجوب في استجابات السرد / الجلب؛ ولا يُعاد إلا عند التسجيل."
+    },
+    "/components/schemas/WsMessage/description": {
+      "en": "Envelope for every server-to-client WebSocket message.\n`type` follows the form `<channel>.<event>` (e.g. `jobs.progress`,\n`playback.completed`, `library.updated`).\n",
+      "ar": "غلاف كل رسالة WebSocket من الخادم إلى العميل.\nيتبع `type` الشكل `<channel>.<event>` (مثل `jobs.progress` و\n`playback.completed` و`library.updated`).\n"
+    },
+    "/components/schemas/WsMessage/properties/data/description": {
+      "en": "Event-specific payload. See per-event schemas below.",
+      "ar": "حمولة خاصة بالحدث. راجع مخططات كل حدث أدناه."
+    },
+    "/components/schemas/QueueJobRef/description": {
+      "en": "A job as shown in queue views (REST and SSE).",
+      "ar": "مهمة كما تظهر في عروض طوابير المهام (REST وSSE)."
+    },
+    "/components/schemas/QueueEdge/description": {
+      "en": "One edge of the stage graph.",
+      "ar": "حافة واحدة من مخطط المراحل."
+    },
+    "/components/schemas/QueueStageInfo/description": {
+      "en": "A row of job_stages plus computed fed_by.",
+      "ar": "صف من `job_stages` مع الحقل المحسوب `fed_by`."
+    },
+    "/components/schemas/WorkerPool/description": {
+      "en": "A worker pool with live usage.",
+      "ar": "مجمّع عمال مع الاستخدام الحي."
+    },
+    "/components/schemas/QueueCounts/description": {
+      "en": "Per-stage counters.",
+      "ar": "عدّادات لكل مرحلة."
+    },
+    "/components/schemas/QueueSummary/description": {
+      "en": "Per-stage card data (gauge, rate, ETA, waiting reason, worker coverage).",
+      "ar": "بيانات بطاقة كل مرحلة (المقياس، والمعدّل، والوقت المتبقي، وسبب الانتظار، وتغطية العمال)."
+    },
+    "/components/schemas/QueueFlow/description": {
+      "en": "Trigger traffic between two stages.",
+      "ar": "حركة الإطلاق بين مرحلتين."
+    },
+    "/components/schemas/QueueHealth/description": {
+      "en": "Health strip.",
+      "ar": "شريط الصحة."
+    },
+    "/components/schemas/QueuesSnapshot/description": {
+      "en": "Everything the overview needs; also the queues.snapshot SSE payload.",
+      "ar": "كل ما تحتاجه النظرة العامة؛ وهو أيضًا حمولة SSE `queues.snapshot`."
+    },
+    "/components/schemas/QueueRatePoint/description": {
+      "en": "One 10-minute bucket.",
+      "ar": "دلو واحد مدته 10 دقائق."
+    },
+    "/components/schemas/QueueDetail/description": {
+      "en": "One queue page.",
+      "ar": "صفحة طابور واحدة."
+    },
+    "/components/schemas/FailureGroup/description": {
+      "en": "Open failures of a stage grouped by normalised cause (plus awaiting_review / stale_graph).",
+      "ar": "الإخفاقات المفتوحة لمرحلة مجمّعة حسب السبب الموحَّد (إضافة إلى `awaiting_review` و`stale_graph`)."
+    },
+    "/components/schemas/QueueLogLine/description": {
+      "en": "One job_events row.",
+      "ar": "صف واحد من `job_events`."
+    },
+    "/components/schemas/QueueItemHistory/description": {
+      "en": "History and re-queue options of one subject.",
+      "ar": "تاريخ عنصر واحد وخيارات إعادته إلى الطابور."
+    },
+    "/components/schemas/LibraryQueueRow/description": {
+      "en": "One row of the libraries table.",
+      "ar": "صف واحد من جدول المكتبات."
+    },
+    "/components/schemas/HealthSeries/description": {
+      "en": "One health metric over time (nas.open_ms_p95, cpu.pct, net.plex_ms, backlog.ready, ...).",
+      "ar": "مقياس صحة واحد عبر الزمن (`nas.open_ms_p95` و`cpu.pct` و`net.plex_ms` و`backlog.ready` و...)."
+    },
+    "/components/schemas/QueueWorker/description": {
+      "en": "A registered worker.",
+      "ar": "عامل مسجّل."
+    },
+    "/components/schemas/ExtensionInfo/description": {
+      "en": "An optional extension (Plex, dizqueTV). Secret settings are never returned.",
+      "ar": "امتداد اختياري (Plex وdizqueTV). لا تُعاد الإعدادات السرية أبدًا."
+    },
+    "/components/requestBodies/WsClientMessage/description": {
+      "en": "JSON envelope sent from client to server over the WebSocket. Use `subscribe` / `unsubscribe`.",
+      "ar": "غلاف JSON يُرسل من العميل إلى الخادم عبر WebSocket. استخدم `subscribe` / `unsubscribe`."
+    },
+    "/tags/0/name": {
+      "en": "Auth",
+      "ar": "المصادقة"
+    },
+    "/tags/1/name": {
+      "en": "Libraries",
+      "ar": "المكتبات"
+    },
+    "/tags/2/name": {
+      "en": "Videos",
+      "ar": "المقاطع"
+    },
+    "/tags/3/name": {
+      "en": "Search",
+      "ar": "البحث"
+    },
+    "/tags/4/name": {
+      "en": "Jobs",
+      "ar": "المهام"
+    },
+    "/tags/5/name": {
+      "en": "Queue",
+      "ar": "طابور المهام"
+    },
+    "/tags/6/name": {
+      "en": "Collections",
+      "ar": "المجموعات"
+    },
+    "/tags/7/name": {
+      "en": "Tags",
+      "ar": "الوسوم"
+    },
+    "/tags/8/name": {
+      "en": "Speakers",
+      "ar": "المتحدثون"
+    },
+    "/tags/9/name": {
+      "en": "Watch progress",
+      "ar": "تقدّم المشاهدة"
+    },
+    "/tags/10/name": {
+      "en": "Sessions",
+      "ar": "الجلسات"
+    },
+    "/tags/11/name": {
+      "en": "Settings",
+      "ar": "الإعدادات"
+    },
+    "/tags/12/name": {
+      "en": "Devices",
+      "ar": "الأجهزة"
+    },
+    "/tags/13/name": {
+      "en": "Recommendations",
+      "ar": "التوصيات"
+    },
+    "/tags/14/name": {
+      "en": "System",
+      "ar": "النظام"
+    },
+    "/tags/15/name": {
+      "en": "WebSocket",
+      "ar": "البث الفوري (WebSocket)"
+    }
+  }
+}

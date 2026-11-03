@@ -43,15 +43,17 @@ export const STRINGS = {
     "card.changelog.body": "Every release and what is waiting for the next one.",
     "card.security.title": "Security",
     "card.security.body": "How to report a vulnerability, and our disclosure policy.",
-    "home.lang.note": "The guides and the reference pages are in their source language, English.",
+    "home.lang.note":
+      "Every page is in English and Arabic: the language switch at the top opens this page in the other one.",
     "footer.text": "Maktaba is built by Hamza Labs.",
     "footer.security": "Report a vulnerability",
 
-    "guides.lang": "This guide is in English.",
     "doc.source": "View the source of this page on GitHub",
     "changelog.title": "Changelog",
     "api.title": "API reference",
     "api.loading": "Loading the API reference…",
+    "api.lang":
+      "The API reference in English. Paths, fields and code are the same in both languages.",
     "api.download": "Download the OpenAPI description (JSON)",
 
     "security.title": "Security policy",
@@ -119,15 +121,17 @@ export const STRINGS = {
     "card.changelog.body": "كل إصدار، وما ينتظر الإصدار التالي.",
     "card.security.title": "الأمان",
     "card.security.body": "كيف تبلّغ عن ثغرة، وسياستنا في الإفصاح.",
-    "home.lang.note": "الأدلة والصفحات المرجعية بلغتها الأصلية، الإنجليزية.",
+    "home.lang.note":
+      "كل صفحة بالعربية والإنجليزية: يفتح مبدّل اللغة في أعلى الصفحة الصفحةَ نفسها باللغة الأخرى.",
     "footer.text": "تبني مكتبةَ Hamza Labs.",
     "footer.security": "بلّغ عن ثغرة",
 
-    "guides.lang": "هذا الدليل بالإنجليزية.",
     "doc.source": "اعرض مصدر هذه الصفحة على GitHub",
     "changelog.title": "سجل التغييرات",
     "api.title": "مرجع الواجهة البرمجية",
     "api.loading": "جارٍ تحميل مرجع الواجهة البرمجية…",
+    "api.lang":
+      "مرجع الواجهة البرمجية بالعربية: الأوصاف مترجمة، أما المسارات والحقول والشيفرة فكما هي في اللغتين.",
     "api.download": "نزّل وصف OpenAPI ‏(JSON)",
 
     "security.title": "سياسة الأمان",

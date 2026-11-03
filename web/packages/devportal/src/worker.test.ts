@@ -7,6 +7,8 @@ import worker, { type Env } from "./worker";
 const FILES: Record<string, [string, string]> = {
   "/": ["<!doctype html>home", "text/html; charset=utf-8"],
   "/404": ["<!doctype html>not found page", "text/html; charset=utf-8"],
+  "/ar/404": ["<!doctype html>الصفحة غير موجودة", "text/html; charset=utf-8"],
+  "/ar/plugins/": ["<!doctype html>الإضافات", "text/html; charset=utf-8"],
   "/plugins/": ["<!doctype html>plugins", "text/html; charset=utf-8"],
   "/api/": ["<!doctype html>api", "text/html; charset=utf-8"],
   "/assets/portal.css": ["body{}", "text/css"],
@@ -156,6 +158,21 @@ describe("404", () => {
     expect(res.headers.get("Content-Type")).toContain("text/html");
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     expect(env.seen).toEqual(["/no/such/page", "/404"]);
+  });
+
+  it("a missing Arabic path gets the Arabic 404 page", async () => {
+    for (const p of ["/ar/no/such/page", "/ar"]) {
+      const env = fakeEnv();
+      const res = await get(`https://maktaba.dev${p}`, env);
+      expect(res.status, p).toBe(404);
+      expect(await res.text(), p).toBe("<!doctype html>الصفحة غير موجودة");
+      expect(env.seen, p).toEqual([p, "/ar/404"]);
+    }
+    // a path that only starts with the letters "ar" is English
+    const env = fakeEnv();
+    await get("https://maktaba.dev/articles/", env);
+    expect(env.seen).toEqual(["/articles/", "/404"]);
+    expect((await get("https://maktaba.dev/ar/plugins/")).status).toBe(200);
   });
 
   it("still 404s in plain text when the 404 page itself is missing", async () => {

@@ -37,8 +37,10 @@ export default {
     let res = await env.ASSETS.fetch(req);
     if (res.status === 404) {
       // the portal's own 404 page, with its 404 status (the assets' 404-page handling
-      // does this too; this keeps it true whatever the assets return)
-      const page = await env.ASSETS.fetch(new Request(new URL("/404", url), { method: "GET" }));
+      // does this too; this keeps it true whatever the assets return), in Arabic under /ar/
+      const notFound =
+        url.pathname === "/ar" || url.pathname.startsWith("/ar/") ? "/ar/404" : "/404";
+      const page = await env.ASSETS.fetch(new Request(new URL(notFound, url), { method: "GET" }));
       const headers = new Headers(page.headers);
       if (!page.ok) headers.set("Content-Type", "text/plain; charset=utf-8");
       res = new Response(page.ok ? page.body : "Not found\n", { status: 404, headers });
