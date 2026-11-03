@@ -37,7 +37,8 @@
 #                    worker then leaves transcribe to them. Default: keep the ones
 #                    installed (none on a first install).
 #   --extras LIST    pipeline extras, comma-separated, or "none" (default: stt on Apple
-#                    Silicon, none elsewhere; remembered for updates)
+#                    Silicon and on Linux x86_64 with an NVIDIA GPU of 4 GiB or more, none
+#                    elsewhere; remembered for updates)
 #   --from-wheel URL|PATH
 #                    install the pipeline from this wheel (maktaba_pipeline-*.whl), a
 #                    file or an http(s) URL (default: the release this script came
@@ -220,6 +221,14 @@ case "$OS" in
     *) die "unsupported OS '$OS': this script is for macOS and Linux (Windows: windows/install-node.ps1)" ;;
 esac
 ARCH="$(uname -m)"
+if [ -n "${MAKTABA_NODE_ARCH:-}" ]; then
+    # Test hook, as MAKTABA_NODE_OS: another architecture's choices. Dry runs only.
+    [ "$DRY_RUN" = 1 ] || die "MAKTABA_NODE_ARCH is only honoured with --dry-run"
+    ARCH="$MAKTABA_NODE_ARCH"
+fi
+if [ -n "${MAKTABA_TEST_NVIDIA_SMI_MIB+x}" ] && [ "$DRY_RUN" != 1 ]; then
+    die "MAKTABA_TEST_NVIDIA_SMI_MIB is only honoured with --dry-run"
+fi
 
 if [ "$SCOPE" = system ] && [ "$OS" != linux ]; then
     die "--system is for Linux; on macOS the worker is a LaunchAgent of the logged-in user (see README.md)"
@@ -323,6 +332,32 @@ PY="$VENV/bin/python"
 CLI="$NODE_DIR/bin/maktaba-pipeline"
 INSTALL_CONF="$NODE_DIR/install.conf"
 
+# whisper_gpu_mib: the memory (MiB) of the first NVIDIA GPU nvidia-smi lists, or nothing
+# (no driver, no GPU). MAKTABA_TEST_NVIDIA_SMI_MIB stands in for it in the dry-run tests.
+whisper_gpu_mib() {
+    if [ -n "${MAKTABA_TEST_NVIDIA_SMI_MIB+x}" ]; then
+        printf '%s' "$MAKTABA_TEST_NVIDIA_SMI_MIB"
+        return 0
+    fi
+    command -v nvidia-smi >/dev/null 2>&1 || return 0
+    nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
+        | head -n 1 | tr -dc '0-9'
+}
+
+# default_extras OS ARCH: the extras an install takes when none were given or remembered:
+# stt on Apple Silicon (MLX), and on Linux x86_64 with an NVIDIA GPU Whisper runs on (4 GiB
+# or more: the supervisor's gpuMinGB; the stt extra brings CTranslate2's CUDA build and
+# cuBLAS 12 from PyPI, the driver is all it needs); none elsewhere.
+default_extras() {
+    if [ "$1" = darwin ] && [ "$2" = arm64 ]; then printf stt; return 0; fi
+    if [ "$1" = linux ] && [ "$2" = x86_64 ]; then
+        local mib
+        mib="$(whisper_gpu_mib)"
+        if [ -n "$mib" ] && [ "$mib" -ge 4096 ]; then printf stt; return 0; fi
+    fi
+    printf none
+}
+
 # read_kv FILE KEY: a KEY=VALUE line's value (never sourced).
 read_kv() {
     [ -f "$1" ] || return 0
@@ -333,9 +368,7 @@ read_kv() {
 if [ -z "$EXTRAS" ]; then EXTRAS="$(read_kv "$INSTALL_CONF" EXTRAS)"; fi
 if [ "$SCOPE" = system ] && [ -z "$RUN_AS" ]; then RUN_AS="$(read_kv "$INSTALL_CONF" RUN_AS)"; fi
 if [ "$SCOPE" = system ]; then RUN_AS="${RUN_AS:-maktaba}"; fi
-if [ -z "$EXTRAS" ]; then
-    if [ "$OS" = darwin ] && [ "$ARCH" = arm64 ]; then EXTRAS=stt; else EXTRAS=none; fi
-fi
+if [ -z "$EXTRAS" ]; then EXTRAS="$(default_extras "$OS" "$ARCH")"; fi
 
 # --- where the pipeline comes from ---------------------------------------------------------
 RELEASE_CONF="$SCRIPT_DIR/release.conf"

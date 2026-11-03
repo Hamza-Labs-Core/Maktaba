@@ -138,3 +138,30 @@ def test_the_windows_installer_reads_the_same() -> None:
     assert int(value("NodeSecondListenMinMiB")) / 1024 == vb.SECOND_LISTEN_MIN_GIB
     assert value("NodeSecondListenMinCompute") == "{}.{}".format(*vb.SECOND_LISTEN_MIN_COMPUTE)
     assert int(value("NodeSecondListenMinDriver")) == vb.SECOND_LISTEN_MIN_DRIVER
+    assert int(value("NodeWhisperMinMiB")) / 1024 == vb.WHISPER_MIN_GIB
+
+
+def test_whispers_gpu_threshold_is_the_supervisors_and_the_updaters() -> None:
+    """Whisper's smallest GPU: the supervisor plans it (gpuMinGB), the updater adds the stt
+    extra on it (whisperMinMiB), the installers default to stt on it."""
+    import re
+
+    root = Path(__file__).parents[2]
+    stt = root / "cmd/maktaba-server/internal/supervisor/stt.go"
+    venv = root / "cmd/maktaba-server/internal/updater/venv.go"
+    if not stt.is_file() or not venv.is_file():
+        pytest.skip("the server is not in this checkout")
+    m = re.search(r"^const gpuMinGB = ([0-9.]+)", stt.read_text(encoding="utf-8"), re.M)
+    assert m is not None and float(m.group(1)) == vb.WHISPER_MIN_GIB
+    m = re.search(
+        r"^const whisperMinMiB = ([0-9]+) \* 1024", venv.read_text(encoding="utf-8"), re.M
+    )
+    assert m is not None and float(m.group(1)) == vb.WHISPER_MIN_GIB
+    sh = (root / "deploy/packaging/node/install-node.sh").read_text(encoding="utf-8")
+    assert f'"$mib" -ge {int(vb.WHISPER_MIN_GIB * 1024)}' in sh
+
+
+def test_whisper_runs_on_a_4_gib_gpu() -> None:
+    assert vb.whisper_gpu(vb.Gpu("NVIDIA GeForce RTX 2080 SUPER", 8.0, (7, 5), "581.57")) is None
+    assert "under 4" in str(vb.whisper_gpu(vb.Gpu("NVIDIA GeForce GT 1030", 2.0, (6, 1), None)))
+    assert vb.whisper_gpu(None) == "no NVIDIA GPU"

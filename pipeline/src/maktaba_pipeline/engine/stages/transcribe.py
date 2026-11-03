@@ -941,16 +941,30 @@ async def chosen_track(db: Any, video_id: Any) -> tuple[int, int] | None:
     return None if row is None else (int(row), picked[0].index)
 
 
-async def _on_share(local: str) -> str:
-    """The video's file as this machine reads it, or why not."""
+#: what a failure adds when the path map left the home's path as it was: on a machine
+#: that reads the share under another path (a Windows drive letter, or a UNC path) the
+#: file is not missing, the map is
+UNMAPPED_HINT = (
+    "this machine's path map has no entry for this path, so it looked for the home's own"
+    " path: map the home's folder to where this machine reads it (Admin > Machines > path"
+    " map)"
+)
+
+
+async def _on_share(local: str, db_path: str | None = None) -> str:
+    """The video's file as this machine reads it, or why not. ``db_path`` is the path the
+    home stored: when the path map left it as it was and it is not here, the failure says
+    that the map has no entry for it (a node whose map misses a library's folder)."""
+    unmapped = db_path is not None and local.replace("\\", "/") == db_path.replace("\\", "/")
+    hint = f" ({UNMAPPED_HINT})" if unmapped else ""
     try:
         found = await asyncio.wait_for(asyncio.to_thread(on_disk, local), READ_TIMEOUT_S)
     except TimeoutError as exc:
         raise StageFailure("nas_timeout", f"{local}: no answer", retryable=False) from exc
     except OSError as exc:
-        raise StageFailure("nas_unavailable", f"{local}: {exc}") from exc
+        raise StageFailure("nas_unavailable", f"{local}: {exc}{hint}") from exc
     if found is None:
-        raise StageFailure("file_missing", f"{local}: not found", retryable=False)
+        raise StageFailure("file_missing", f"{local}: not found{hint}", retryable=False)
     return found
 
 
@@ -988,7 +1002,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
         chosen = await chosen_track(db, v.id)
         if chosen is not None:
             track_id, stream = chosen
-    found = wav if wav is not None else await _on_share(ctx.local_path(v.path))
+    found = wav if wav is not None else await _on_share(ctx.local_path(v.path), v.path)
 
     budget = audio_budget()
     held = await budget.acquire(float(v.duration_s or 3600))

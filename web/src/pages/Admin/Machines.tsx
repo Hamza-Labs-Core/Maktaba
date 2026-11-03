@@ -846,6 +846,103 @@ function useCapabilityChips(node: ClusterNode): string[] {
   return chips;
 }
 
+/** An update run that has not finished (its machine may be building the pipeline's
+ * environment, the transcription engine with it). */
+const RUN_DONE: ReadonlySet<string> = new Set([
+  "done",
+  "succeeded",
+  "failed",
+  "rolled_back",
+  "cancelled",
+  "aborted",
+]);
+
+function runningUpdate(state: Record<string, unknown> | undefined): string | null {
+  const run = state?.run;
+  if (!run || typeof run !== "object") return null;
+  const { state: s, version } = run as { state?: unknown; version?: unknown };
+  if (typeof s !== "string" || RUN_DONE.has(s)) return null;
+  return typeof version === "string" ? version : "";
+}
+
+/** Whether this machine transcribes, on what, or why not: from what its workers claim
+ * (`stages_off.transcribe`, with the pipeline's own reason after "unavailable:") and what
+ * it reports (`capabilities.stt_backend`, `capabilities.gpus`). */
+function transcriptionState(node: ClusterNode): {
+  key: string;
+  vars?: Record<string, string>;
+  detail?: string;
+  tone: "ok" | "warn" | "muted";
+} | null {
+  const workers = node.workers ?? [];
+  const known = workers.some(
+    (w) => (w.stages ?? []).includes("transcribe") || w.stages_off?.transcribe !== undefined
+  );
+  const c = node.capabilities ?? {};
+  const backend = typeof c.stt_backend === "string" ? c.stt_backend : null;
+  if (workers.some((w) => (w.stages ?? []).includes("transcribe"))) {
+    const gpus = Array.isArray(c.gpus) ? c.gpus : [];
+    const first = gpus[0] as { name?: unknown } | string | undefined;
+    const gpu =
+      typeof first === "string" ? first : typeof first?.name === "string" ? first.name : "";
+    if (backend === "ct2-cuda" && gpu)
+      return { key: "machines.stt.readyGpu", vars: { gpu }, tone: "ok" };
+    if (backend === "ct2-cpu") return { key: "machines.stt.readyCpu", tone: "ok" };
+    if (backend === "mlx") return { key: "machines.stt.readyMlx", tone: "ok" };
+    return { key: "machines.stt.ready", tone: "ok" };
+  }
+  const updating = runningUpdate(node.update_state);
+  if (updating !== null && backend === null) {
+    return { key: "machines.stt.installing", vars: { version: updating }, tone: "muted" };
+  }
+  if (!known) return null;
+  const reason = workers
+    .map((w) => w.stages_off?.transcribe)
+    .find((r): r is string => typeof r === "string" && r !== "");
+  if (!reason) return null;
+  const [head, ...rest] = reason.split(":");
+  const detail = rest.join(":").trim();
+  if (head.trim() === "unavailable") {
+    if (detail.includes("second listen does not run here"))
+      return { key: "machines.stt.waitsSecondListen", detail, tone: "warn" };
+    return { key: "machines.stt.cannot", detail: detail || undefined, tone: "warn" };
+  }
+  return { key: "machines.stt.off", vars: { reason }, tone: "muted" };
+}
+
+/** The machine's transcription line (Admin > Machines). */
+function TranscriptionNote({ node }: { node: ClusterNode }) {
+  const { t } = useI18n();
+  const s = transcriptionState(node);
+  if (!s) return null;
+  // the stage table's words for the reason code (useClusterFmt's, without its hook: this
+  // line re-renders with its card only)
+  const code = (s.vars?.reason ?? "").split(":")[0].trim();
+  const word = t(`machines.reason.${code}`);
+  const vars =
+    s.key === "machines.stt.off"
+      ? { reason: word === `machines.reason.${code}` ? code : word }
+      : s.vars;
+  return (
+    <div
+      className={`mkt-mc-note${s.tone === "warn" ? " mkt-mc-note--warn" : ""}`}
+      role="note"
+      aria-label={t("machines.stt.title")}
+      data-testid="machine-transcription"
+    >
+      <p>{t(s.key, vars)}</p>
+      {s.detail && (
+        <details>
+          <summary>{t("machines.stt.why")}</summary>
+          <p className="mkt-mc-muted" dir="ltr">
+            {s.detail}
+          </p>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /** A full machine that cannot reach the home's database: why (in the reader's words), the
  * home re-provisioning its access when it does, the machine's own request for one and the
  * home's answer, what it said, and its own log files around the last try (the admin log
@@ -1022,6 +1119,7 @@ const MachineCard = memo(function MachineCard({
             ))}
           </ul>
         )}
+        {active && <TranscriptionNote node={node} />}
         {active && (
           <>
             <StorageCheck storage={node.storage} />

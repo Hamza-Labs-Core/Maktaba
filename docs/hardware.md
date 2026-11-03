@@ -148,10 +148,53 @@ their vectors). Transcribing the rest of this library (36,871 h in all) would ta
 
 ### The cluster on live
 
-A Windows PC has joined as a full node (`windows-pc`, Windows 11, 20 logical CPUs, 128 GB RAM).
-It reports no NVIDIA GPU and no `stt` extra, so its `transcribe` is **unavailable**; it pulls
-33 of the "any machine" stages. In the last 10 days every finished job was done by the home's
-own workers.
+A Windows PC has joined as a full node (`windows-pc`, Windows 11, 20 logical CPUs, 128 GB RAM,
+an NVIDIA RTX 2080 SUPER with 8 GB). It pulls 33 of the "any machine" stages. In the last 10
+days every finished job, every transcription included, was done by the home's own workers.
+
+On v0.3.62 its capability report said `"gpus": []` and listed no `stt` extra. **That was a
+detection bug, not the PC** (fixed in the release after v0.3.62):
+
+- The GPU was looked for only through the `pynvml` package, which no install ever brings, and
+  every failure was swallowed. The report now asks the NVIDIA driver itself (NVML, through
+  `nvml.dll`), then `nvidia-smi` (on `PATH`, then `System32` and `NVIDIA Corporation\NVSMI`),
+  and reports each GPU's name, memory, compute capability and driver, or why it found none
+  (`gpu_problem`, also in the log).
+- The `stt` extra counted as installed only when MLX-Whisper (the Mac's engine) was there. On
+  Windows and Linux the engine is CTranslate2 (faster-whisper), which the app's environment
+  has always installed: every pin of the release's constraints goes in, the `stt` extra's
+  `faster-whisper`, `ctranslate2` and `nvidia-cublas-cu12` with them. The report now says which
+  engine a machine has (`stt_backend`: `mlx`, `ct2-cuda` or `ct2-cpu`).
+
+The report was only the visible part. The PC still did not transcribe, for a reason the report
+did not show: the **second listen** is on by default, and while it is on only the machines that
+run it transcribe. On Windows the second listen needs a GPU of 9.5 GiB or more (Windows' driver
+keeps ~1 GiB of the card from a process, and the 8 GB card has 5.8 GiB left once Whisper is
+loaded, short of the 6.4 GiB Cohere needs: measured on this PC, `stt/cohere_cuda.py`). So the
+PC leaves transcription to the Mac, and its stage table said only "cannot run here".
+
+How a Windows NVIDIA worker transcribes, from that release on:
+
+- **Admin > Machines** says, per machine: "Transcription: ready on NVIDIA GeForce RTX 2080
+  SUPER", "installing…" while an update builds its environment, or the exact reason it cannot
+  (the pipeline's own words: the second listen it waits for, a missing engine, the share).
+- **With the second listen on** (the default) an 8 GB card on Windows waits for the machines
+  that run it. Turn on Settings > Transcription > *Transcribe without the second listen* and it
+  transcribes with Whisper alone on its GPU; a machine that runs the second listen (the Mac)
+  gives those transcripts theirs later, a few at a time, after new files.
+- **The batch is the GPU's own:** the `gpu` pool is per worker, and its cluster size (2 on live)
+  was set for the Mac. A worker whose supervisor sized a batch from its NVIDIA GPU takes that
+  many files at once instead (`MAKTABA_POOL_GPU`): 8 on the 2080 SUPER, the batch that ran at
+  72×.
+- **The share:** `transcribe` decodes the file off the NAS. A machine whose storage read check
+  fails no longer claims it, and a file whose home path the path map does not cover fails
+  saying so (`path_map: {"/Volumes/Originals/": "O:/"}` on the PC; a library elsewhere needs its
+  own entry).
+- **The install:** the app and every update install the `stt` extra's wheels; the node installers
+  (`install-node.ps1`, `install-node.sh`) now default to `stt` on an x86_64 machine with an NVIDIA
+  GPU of 4 GiB or more (they defaulted to no extras), and an update adds `stt` to such a machine
+  that lacks it. No administrator step: the CUDA libraries Whisper needs come as wheels, and the
+  NVIDIA driver is all the machine needs.
 
 ---
 
@@ -170,7 +213,7 @@ is the same sum for the new videos of a day.
 | Apple Silicon, 20 GPU cores | ~16× | **estimate**, as above |
 | Apple Silicon, 10 GPU cores | ~8× | **estimate**, as above |
 | NVIDIA RTX 2080 SUPER (8 GB), Whisper alone | 72× | **code**: story 38.8 benchmark, batch 8 (`supervisor/stt.go`) |
-| NVIDIA RTX 2080 SUPER, Whisper + second listen | ~27× | **estimate**: the second listen ran 43× on that card at batch 4 (`stt/cohere_cuda.py`); the two share the GPU one after the other, 1 ÷ (1/72 + 1/43) |
+| NVIDIA RTX 2080 SUPER, Whisper + second listen | Linux: ~27×; **Windows: does not run** | **estimate** (Linux): the second listen alone ran 43× on that card at batch 4 (`stt/cohere_cuda.py`); the two share the GPU one after the other, 1 ÷ (1/72 + 1/43). On Windows an 8 GB card does not hold both (9.5 GiB needed, section 4): it transcribes with Whisper alone when the rules let it |
 | CPU only, 10 threads (the story 38.8 PC, 20 logical CPUs) | **2.6×** | **code**: measured with a batch of 4 (`supervisor/stt.go`, `cpuBatch`) |
 | Other NVIDIA cards, other CPUs | **not measured** | — |
 
@@ -189,7 +232,7 @@ lower than its benchmark too, by an amount we have not measured.
 | Apple Silicon 20-core GPU, ~16× (estimate) | ~3 days | ~33 days | ~99 days |
 | Apple Silicon 10-core GPU, ~8× (estimate) | ~7 days | ~66 days | ~200 days |
 | RTX 2080 SUPER, Whisper alone, 72× (benchmark) | <1 day | ~7 days | ~22 days |
-| RTX 2080 SUPER + second listen, ~27× (estimate) | ~2 days | ~19 days | ~57 days |
+| RTX 2080 SUPER + second listen, ~27× (estimate; Linux only) | ~2 days | ~19 days | ~57 days |
 | CPU only, 2.6× (measured) | ~20 days | ~200 days | ~600 days |
 
 **Steady state** is small by comparison: 50 new videos a day of 15 minutes is 12.5 audio-hours,
@@ -365,7 +408,10 @@ What this means for sizing:
 
 Each machine transcribes its own files through its own GPU, so transcription should add up
 roughly in line with the GPUs: the home's 47× plus each machine's own speed. **This is expected,
-not measured:** no machine other than the home has transcribed on the live cluster. The limits
+not measured:** no machine other than the home has transcribed on the live cluster. For the live
+PC with Whisper alone (the rule above on): **~47× + up to ~72× ≈ 100–120× for the cluster, an
+estimate**, the PC's part an engine benchmark that production will not reach in full (section 3),
+and the Mac then also spending part of its GPU on the PC's transcripts' second listen. The limits
 we know of are the home's index (above), the NAS, and the network to the NAS.
 
 ### Windows and Linux workers

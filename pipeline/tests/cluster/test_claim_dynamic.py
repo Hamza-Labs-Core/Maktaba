@@ -8,7 +8,7 @@ import pytest
 
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.enqueue import enqueue_job
-from maktaba_pipeline.pipeline.runner import ClaimLoop, WorkerConfig
+from maktaba_pipeline.pipeline.runner import ClaimLoop, WorkerConfig, local_pool_size
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
 
@@ -75,6 +75,63 @@ async def test_a_pool_whose_jobs_end_at_once_does_not_starve_the_next(db: Databa
         "SELECT COALESCE(size, default_size) FROM worker_pools WHERE pool = 'nas_read'"
     )
     assert claimed.count("probe") <= nas
+
+
+@pytest.mark.asyncio
+async def test_a_gpu_node_takes_its_own_gpu_batch_not_the_cluster_pool(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gpu pool is per worker, and the cluster's size was set for the home's GPU (2 on
+    the live Mac): a Windows worker on an 8 GB RTX 2080 SUPER, whose supervisor sized a
+    batch of 8 from that GPU (MAKTABA_POOL_GPU), takes 8 transcribe jobs at once, the
+    batch its Whisper decodes together; without its own size, the cluster's."""
+    lib = await make_library(db)
+    for _ in range(10):
+        v = await make_video(db, lib)
+        await enqueue_job(db, subject_kind="video", subject_id=v, stage="transcribe")
+    await db.execute("UPDATE worker_pools SET size = 2 WHERE pool = 'gpu'")
+    release = asyncio.Event()
+
+    async def dispatch(job: Job) -> None:
+        await release.wait()  # a file in flight holds its slot
+
+    def loop_for() -> ClaimLoop:
+        cfg = WorkerConfig(
+            supported_stages=("transcribe",), pool_mode=True, stage_pools={"transcribe": "gpu"}
+        )
+        return ClaimLoop(db, cfg, dispatch)
+
+    monkeypatch.setenv("MAKTABA_POOL_GPU", "8")
+    in_flight: set[asyncio.Task[None]] = set()
+    assert await loop_for()._drain(in_flight) == 8
+    release.set()
+    await asyncio.gather(*in_flight)
+    assert local_pool_size("gpu") == 8
+    monkeypatch.setenv("MAKTABA_POOL_GPU", "0")  # not a size: the cluster's
+    assert local_pool_size("gpu") is None
+    monkeypatch.delenv("MAKTABA_POOL_GPU")
+    assert local_pool_size("gpu") is None
+
+
+@pytest.mark.asyncio
+async def test_without_its_own_size_a_worker_takes_the_cluster_pool(db: Database) -> None:
+    lib = await make_library(db)
+    for _ in range(4):
+        v = await make_video(db, lib)
+        await enqueue_job(db, subject_kind="video", subject_id=v, stage="transcribe")
+    await db.execute("UPDATE worker_pools SET size = 2 WHERE pool = 'gpu'")
+    release = asyncio.Event()
+
+    async def dispatch(job: Job) -> None:
+        await release.wait()
+
+    cfg = WorkerConfig(
+        supported_stages=("transcribe",), pool_mode=True, stage_pools={"transcribe": "gpu"}
+    )
+    in_flight: set[asyncio.Task[None]] = set()
+    assert await ClaimLoop(db, cfg, dispatch)._drain(in_flight) == 2
+    release.set()
+    await asyncio.gather(*in_flight)
 
 
 def test_an_empty_static_set_is_still_refused() -> None:
