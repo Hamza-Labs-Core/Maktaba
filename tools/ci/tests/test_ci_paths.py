@@ -461,3 +461,21 @@ def test_coverage_map_skips_a_cancelled_ci_run_in_a_group_of_its_own() -> None:
         cond = wf["jobs"][job]["if"]
         assert ci_paths.evaluate(cond, ctx("success")) is True, job
         assert ci_paths.evaluate(cond, ctx("cancelled")) is False, job
+
+
+def test_loop_start_files_run_the_catalog_check() -> None:
+    # Epic 51 (story 51.05): where the API and streaming declare their loops, and the
+    # runner itself, run the catalog job's loop check
+    filters = ci_paths.job_filters(ci_paths.load_filters())
+    for f in [
+        "api/main.go",
+        "api/cluster_bootstrap.go",
+        "api/internal/router/p33.go",
+        "api/internal/components/loops.go",
+        "streaming/main.go",
+        "streaming/tvcluster_wire.go",
+        "streaming/sharemap.go",
+        "streaming/components.go",
+        "shared/components/runner/runner.go",
+    ]:
+        assert "catalog" in ci_paths.matched(filters, [f]), f

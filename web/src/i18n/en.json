@@ -30,6 +30,7 @@
   "error.back": "Go back",
   "error.goHome": "Go to Home",
   "error.offlineBanner": "You're offline. Maktaba will carry on once your connection is back.",
+  "error.componentOff": "{component} is turned off on this home",
   "notFound.title": "Page not found",
   "notFound.desc": "There's nothing at this address. The link may be wrong, or the page may have moved.",
   "pwa.updateAvailable": "A new version is available.",

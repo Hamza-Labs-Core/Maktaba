@@ -129,7 +129,6 @@
         "streaming:cache_gc",
         "streaming:session_reaper",
         "streaming:vod_purge",
-        "streaming:hwaccel",
         "streaming:share_map"
       ],
       "placement": "any",
@@ -254,7 +253,8 @@
         "api:node_schema_guard",
         "api:nodedb_when_up",
         "api:cluster_copies",
-        "api:clusterauth_node_read"
+        "api:clusterauth_node_read",
+        "streaming:node_tv_checks"
       ],
       "placement": "any",
       "platforms": [
@@ -1118,7 +1118,12 @@
         "api:tvremote_controller",
         "api:tvremote_publisher",
         "api:tvremote_health_sampler",
-        "pipeline:channel-topup"
+        "pipeline:channel-topup",
+        "streaming:tv_heartbeat",
+        "streaming:placement_listen",
+        "streaming:channel_sweeper",
+        "streaming:push_relay",
+        "streaming:viewings"
       ],
       "placement": "home",
       "platforms": [
@@ -1233,10 +1238,7 @@
       "licence": "",
       "loops": [
         "streaming:channel_engine",
-        "streaming:channel_fences",
-        "streaming:channel_sweeper",
-        "streaming:push_relay",
-        "streaming:viewings"
+        "streaming:channel_fences"
       ],
       "placement": "home",
       "platforms": [
@@ -1477,8 +1479,7 @@
       "kind": "loop",
       "licence": "",
       "loops": [
-        "supervisor:mdns",
-        "api:mdns"
+        "supervisor:mdns"
       ],
       "placement": "any",
       "platforms": [

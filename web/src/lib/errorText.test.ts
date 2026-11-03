@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ApiError } from "./api";
-import { errorText, inputDetail, plainDetail, userErrorKind } from "./errorText";
+import { componentOffText, errorText, inputDetail, plainDetail, userErrorKind } from "./errorText";
 import en from "../i18n/en.json";
+import ar from "../i18n/ar.json";
 
 const t = (k: string) => (en as Record<string, string>)[k] ?? k;
 const problem = (status: number, detail?: string, title = "internal error") =>
@@ -81,5 +82,51 @@ describe("every error string is in both languages", () => {
       expect(ar[k], k).toBeTruthy();
       expect(ar[k], k).not.toBe((en as Record<string, string>)[k]);
     }
+  });
+});
+
+describe("component_off (Epic 51)", () => {
+  const words =
+    (dict: Record<string, string>) => (k: string, vars?: Record<string, string | number>) =>
+      (dict[k] ?? k).replace(/\{(\w+)\}/g, (_, n: string) => String(vars?.[n] ?? `{${n}}`));
+  const off = (component?: string) =>
+    new ApiError({
+      type: "about:blank",
+      title: "conflict",
+      status: 409,
+      detail: "livetv is turned off on this home",
+      code: "component_off",
+      ...(component ? { component } : {}),
+    });
+
+  it("says it in Arabic with the Arabic title, never the home's English detail", () => {
+    const t = words(ar as Record<string, string>);
+    const text = errorText(off("livetv"), t);
+    expect(text).toBe(
+      (ar as Record<string, string>)["error.componentOff"].replace(
+        "{component}",
+        (ar as Record<string, string>)["components.livetv.title"]
+      )
+    );
+    expect(text).not.toContain("turned off on this home");
+    expect(inputDetail(off("livetv"))).toBeNull();
+  });
+
+  it("says it in English with the English title", () => {
+    expect(errorText(off("livetv"), words(en as Record<string, string>))).toBe(
+      "Live TV is turned off on this home"
+    );
+  });
+
+  it("names an id it has no title for as it is", () => {
+    expect(componentOffText(off("newer.part"), words(en as Record<string, string>))).toBe(
+      "newer.part is turned off on this home"
+    );
+  });
+
+  it("is nothing for another 409", () => {
+    expect(
+      componentOffText(problem(409, "a playlist with this name already exists"), t)
+    ).toBeNull();
   });
 });
