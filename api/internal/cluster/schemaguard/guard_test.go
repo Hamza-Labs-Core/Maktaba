@@ -73,3 +73,25 @@ func TestGuardKeepsTheVerdict(t *testing.T) {
 		t.Fatal("a nil guard never pauses")
 	}
 }
+
+// Every service ships the same SchemaRev: the API's, the streaming node's and the
+// pipeline's are raised together with each migration (slot 0173: write_channels' seed).
+func TestSchemaRevIsTheSameInEveryService(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..")
+	for file, pattern := range map[string]string{
+		filepath.Join(root, "streaming", "internal", "cluster", "schema.go"):               `const SchemaRev = (\d+)`,
+		filepath.Join(root, "pipeline", "src", "maktaba_pipeline", "cluster", "schema.py"): `(?m)^SCHEMA_REV = (\d+)$`,
+	} {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := regexp.MustCompile(pattern).FindSubmatch(raw)
+		if m == nil {
+			t.Fatalf("%s: no schema revision", file)
+		}
+		if n, _ := strconv.Atoi(string(m[1])); n != SchemaRev {
+			t.Errorf("%s says %04d, this service %04d: raise them together", file, n, SchemaRev)
+		}
+	}
+}
