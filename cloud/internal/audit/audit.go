@@ -23,6 +23,7 @@ const (
 	ActionAdminViewUser   = "admin.account.view"
 	ActionAdminSuspend    = "admin.account.suspend"
 	ActionAdminUnsuspend  = "admin.account.unsuspend"
+	ActionAdminSetPlan    = "admin.account.set_plan"
 	ActionAdminBlock      = "admin.abuse.block"
 	ActionAdminUnblock    = "admin.abuse.unblock"
 	ActionAdminErase      = "admin.privacy.erase"

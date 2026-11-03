@@ -230,7 +230,7 @@ Four sources of truth for the tier-string catalog:
 |--------|--------------|
 | [`architecture.md:2779-2783`](architecture.md) | `Free`, `Pro`, `Family` (no monthly/yearly suffix) |
 | [`epics/16-subscriptions/plan-16-04-license-validation.md:21`](epics/16-subscriptions/plan-16-04-license-validation.md) | `home` (and presumably others; story-16-04 sample uses `tier: "home"`) |
-| plan-25-12:21–28, [plan-25-13:25](epics/25-cloud-relay/plan-25-13-stripe-checkout.md) | `free`, `pro_monthly`, `pro_yearly`, `family_monthly`, `family_yearly`, `suspended` |
+| plan-25-12:21–28, [plan-25-13 §0](epics/25-cloud-relay/plan-25-13-checkout.md) | `free`, `pro_monthly`, `pro_yearly`, `family_monthly`, `family_yearly`, `suspended` |
 | plan-25-26:74 | `Tier` field is `string`; the suspended-detect branch (`p.Tier == "suspended"`) implies the same vocabulary as 25.12 — but no enum is pinned |
 
 [plan-25-26:225](epics/25-cloud-relay/plan-25-26-entitlement-signing.md)
@@ -324,21 +324,21 @@ is the same wrong reference; the publisher lives in 15.1.
 15.2 reads as a v1-time stub that 25.7–25.10 now supersedes; that
 story-level redundancy should be reconciled in Epic 15's README.
 
-### 1.7 [MAJOR] `stripe_customer_id` ownership: declared twice
+### 1.7 [MAJOR] `provider_customer_id` ownership: declared twice
 
-plan-25-02 §1 declares `cloud_users.stripe_customer_id TEXT` and
-indexes it (`cloud_users_stripe_cust_idx`).
+plan-25-02 §1 declares `cloud_users.provider_customer_id TEXT` and
+indexes it (`cloud_users_provider_cust_idx`).
 plan-25-13 §0 explicitly notes the column is "added in 25.2".
 
 This is *not* a re-declaration in plan-25-13's migration; it's
 self-consistent. But plan-25-13's migration body
 (`00040001_billing.sql`) creates `cloud_subscriptions` with its
-own column `stripe_customer_id` (line 24) — a second copy of the
+own column `provider_customer_id` (line 24) — a second copy of the
 same data, denormalized. The plan never addresses how the two are
 kept in sync.
 
-**Recommendation.** Drop `cloud_subscriptions.stripe_customer_id`
-(plan-25-13 §1) and join through `cloud_users.stripe_customer_id`;
+**Recommendation.** Drop `cloud_subscriptions.provider_customer_id`
+(plan-25-13 §1) and join through `cloud_users.provider_customer_id`;
 or keep the denormalization for fast lookup but add an
 `ON UPDATE` trigger / explicit invariant test.
 
@@ -346,7 +346,7 @@ or keep the denormalization for fast lookup but add an
 
 [plan-25-12:88](epics/25-cloud-relay/plan-25-12-tier-enforcement.md)
 references `cloud_family_members(payer_id, member_user_id)`.
-[plan-25-13:50](epics/25-cloud-relay/plan-25-13-stripe-checkout.md)
+[plan-25-13 §1](epics/25-cloud-relay/plan-25-13-checkout.md)
 declares `cloud_family_members(payer_user_id, member_user_id, …)`.
 
 The plan-25-12 prose says the table "lives in 25.13 migration", so
@@ -424,7 +424,7 @@ This is a refactor-style issue, not a hard conflict. Lower urgency.
 ### 1.12 [MAJOR] Webhook secret rotation table mentioned but never declared
 
 plan-25-14:44 says "`s.secrets.Active(ctx)` returns up to 2 keys
-(current + previous) from a `cloud_stripe_secrets` table **or
+(current + previous) from a `cloud_webhook_secrets` table **or
 config**". No migration creates such a table; no plan declares it.
 
 **Recommendation.** plan-25-14 must own the table (or commit to the
@@ -432,7 +432,7 @@ config-only path and remove the table reference). Land a schema
 alongside `cloud_webhook_events` in slot 0004:
 
 ```sql
-CREATE TABLE cloud_stripe_secrets (
+CREATE TABLE cloud_webhook_secrets (
     id SERIAL PRIMARY KEY,
     secret_sealed BYTEA NOT NULL,
     active_from   TIMESTAMPTZ NOT NULL,
@@ -532,7 +532,7 @@ Canonical role names: `api`, `relay`, `worker`.
 - plan-25-09:9 (`--role=relay` adds HTTP/2 on `:443`) matches.
 - plan-25-18:9 (APNs in `--role=worker`) matches.
 - plan-25-19:9 (FCM in `--role=worker`) matches.
-- plan-25-14:10 (Stripe webhook in api role + worker for async) —
+- plan-25-14:10 (payment-provider webhook in api role + worker for async) —
   partial-fit; arch §13.3 says "webhook application" is a worker
   responsibility, so the api-role receipt path is an addition. Not
   a conflict, but document the api-vs-worker split explicitly.
@@ -549,7 +549,7 @@ Canonical role names: `api`, `relay`, `worker`.
 - Open proxy via relay: plan-25-09:117–123 handles
   `errReservedHost`/`errUnknownHost` and plan-25-25:42 has
   `relay_host_abuse`. **PASS.**
-- Stripe webhook replay: plan-25-14 §2 `cloud_webhook_events.stripe_event_id
+- Payment-provider webhook replay: plan-25-14 §2 `cloud_webhook_events.provider_event_id
   PK` with `ON CONFLICT DO NOTHING`. **PASS.**
 
 ### 2.4 Subdomain validation (architecture §13.8)
@@ -608,7 +608,7 @@ dedupe_key, ttl_seconds}` (architecture.md:2758–2762).
 
 The local `users` table uses `username` + `is_admin` + `failed_attempts` +
 `locked_until` (slot 0029). The cloud's `cloud_users` uses `email`
-(citext) + `plan` + `stripe_customer_id` + `display_name` + `locale` +
+(citext) + `plan` + `provider_customer_id` + `display_name` + `locale` +
 `timezone`. Different *databases*, different shapes; consistent with
 architecture §13.6 (cloud is OAuth-2.1, local is bearer/signed-URLs).
 **Not a conflict** — flagged for completeness.
@@ -640,7 +640,7 @@ None collide with local server's existing NOTIFY channels
 | plan-25-08 | `github.com/coder/websocket`, bcrypt, `github.com/hashicorp/golang-lru/v2` (implied) | LRU lib unspecified |
 | plan-25-11 | `github.com/redis/go-redis/v9` (implied) | **never named explicitly**; pin to v9 |
 | plan-25-12 | go-redis | same — pin |
-| plan-25-13 | `github.com/stripe/stripe-go/v76` | OK, pinned |
+| plan-25-13 | no provider SDK (payment provider TBD; `billing.Provider` seam) | OK |
 | plan-25-14 | same | OK |
 | plan-25-17 | go-redis + crypto/AES-GCM | pin go-redis |
 | plan-25-18 | `github.com/sideshow/apns2` | pin version |
@@ -934,39 +934,39 @@ declares the R2 binding library (`aws-sdk-go-v2` with R2 endpoint?
   but plan-25-08 doesn't expose that method explicitly. Cross-link
   required.
 
-### plan-25-13 — Stripe checkout
+### plan-25-13 — Checkout
 
 **Verdict:** NEEDS_REVISION
 
 - `[major]` Tier vocabulary divergence (Pro/Family vs
   pro_monthly/pro_yearly/...); see §1.4.
-- `[major]` `cloud_subscriptions.stripe_customer_id` is a duplicate
-  copy of `cloud_users.stripe_customer_id`; see §1.7.
+- `[major]` `cloud_subscriptions.provider_customer_id` is a duplicate
+  copy of `cloud_users.provider_customer_id`; see §1.7.
 - `[major]` `cloud_family_members` schema drift with plan-25-12;
   see §1.8.
 - `[minor]` §4 iOS UA guard returns 451; user-agent strings are easy
   to spoof — document this as a UX nudge, not a billing gate.
 - `[minor]` §6 `subscription.MainItemID` is read for upgrade preview;
   it's not stored in `cloud_subscriptions` migration. Either store
-  it or call Stripe to refresh.
+  it or call the payment provider to refresh.
 - `[minor]` §11 deps lists "25.12" but should also list "25.14"
   for the inverse direction.
 
-### plan-25-14 — Stripe webhook
+### plan-25-14 — Payment-provider webhook
 
 **Verdict:** NEEDS_REVISION
 
-- `[major]` `cloud_stripe_secrets` table referenced but never
+- `[major]` `cloud_webhook_secrets` table referenced but never
   declared; see §1.12.
 - `[major]` §2.3 `apply*` functions take `tx pgx.Tx` — but the wider
   function uses `s.db.BeginTx(ctx, ...)` so the txn is shared
   correctly. Confirm rollback paths in all branches.
 - `[minor]` §3.1 out-of-order guard via `last_event_at`: in rare
-  cases Stripe delivers events with the same `ev.Created` timestamp.
+  cases the payment provider delivers events with the same `ev.Created` timestamp.
   Tie-break on `id` order? Document.
 - `[minor]` Reconciliation cron (§0) "Nightly: list active subs,
-  compare with Stripe, fix drift. Bounded to 1000 calls/min." Add
-  test for backoff on Stripe 429.
+  compare with the payment provider, fix drift. Bounded to 1000 calls/min." Add
+  test for backoff on provider 429.
 
 ### plan-25-15 — Plan comparison & subscription UI
 
@@ -975,7 +975,7 @@ declares the R2 binding library (`aws-sdk-go-v2` with R2 endpoint?
 - `[minor]` Tier vocabulary divergence cascades into UI strings;
   see §1.4.
 - `[minor]` §3 `Pricing` page uses `staleTime: 5*60*1000` for
-  fetchPlans — but a Stripe price change would land via plan-25-13
+  fetchPlans — but a payment-provider price change would land via plan-25-13
   config + webhook, not via this fetch. Document.
 
 ### plan-25-16 — Server status dashboard
@@ -1068,9 +1068,9 @@ declares the R2 binding library (`aws-sdk-go-v2` with R2 endpoint?
 - `[major]` §3 SnapshotRevenue MRR query divides `priceCents/12` for
   yearly plans, but tier vocabulary (§1.4) is unsettled — if tiers
   become `Pro + interval=yearly`, the query changes shape.
-- `[minor]` §2 StripeSync iterates `subscription.List` with no
-  cursor management; on >1000 subs the API will paginate.
-  `stripe-go` exposes auto-pagination; document explicitly.
+- `[minor]` §2 the daily billing sync iterates subscriptions with no
+  cursor management; on >1000 subs the provider API will paginate.
+  Document pagination explicitly.
 - `[minor]` §5 `costPerUser` exposes per-user cost — confirm RBAC
   allows export of this PII-adjacent dataset.
 
@@ -1273,7 +1273,7 @@ Five PRs in sequence would unblock the epic:
 
 5. **Cross-plan reference tightening** — fixes column drifts (§1.7,
    §1.8), declares the missing helpers (`PurgeBearer`, peers RPC,
-   `cloud_stripe_secrets`, hourly bandwidth keys, `expired_locks`
+   `cloud_webhook_secrets`, hourly bandwidth keys, `expired_locks`
    view, `cloud_servers.update_available` column), and pins
    library versions in `cloud/go.mod` (plan-25-01). Fixes §1.11–§1.16
    + §4.

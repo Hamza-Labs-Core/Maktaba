@@ -29,7 +29,7 @@ The cloud has **five jobs** and one non-job:
    and the registration tokens for each device. Servers POST push events
    to the cloud, the cloud fans out to APNs/FCM. Servers never see the
    raw device tokens, and APNs/FCM keys never leave the cloud.
-5. **Billing.** Stripe-hosted checkout and customer portal; the cloud is
+5. **Billing.** The payment provider's (TBD) hosted checkout and customer portal, behind the `billing.Provider` interface (default provider `none`: paid plans show "Payments coming soon" and service admins set plans by hand); the cloud is
    the system-of-record for entitlements (free / pro / family). Servers
    pull a signed entitlement blob and gate cloud-only features against
    it. Local features (LAN streaming, transcription, library mgmt) are
@@ -48,12 +48,12 @@ defensible.
 | Operator            | The user                                      | HamzaLabs                                          |
 | Hosting             | User's NAS / Mac / Linux box                  | Hetzner (`eu-central`) + Cloudflare edge           |
 | Stores media        | Yes (the whole point)                         | **No.** Relays bytes, never persists payload       |
-| Stores credentials  | Local users + signed URL keys                 | Email/OAuth identities + Stripe customer ID        |
+| Stores credentials  | Local users + signed URL keys                 | Email/OAuth identities + payment-provider customer ID        |
 | Auth model          | Bearer + signed URLs (Epic 10)                | OAuth 2.1 (email + Google + Apple) + sessions      |
 | DB                  | Postgres / SQLite local                       | Postgres on Hetzner (managed, daily snapshots)     |
 | Runtime             | Go API, Go Streaming, Python Pipeline         | Single Go binary (`maktaba-cloud`)                 |
 | Required for use?   | **Yes** (no cloud, no app)                    | **No.** Free tier = LAN only; cloud is opt-in      |
-| What pays for it    | Nothing (user runs it)                        | Stripe subscriptions; free tier subsidized by paid |
+| What pays for it    | Nothing (user runs it)                        | Payment-provider subscriptions; free tier subsidized by paid |
 
 The cloud is **not the API server**. It does not implement library CRUD,
 search, or streaming. It implements identity, relay, push, and billing —
@@ -76,15 +76,15 @@ on the user's box.
 | 25.10 | [Direct-connection probe & LAN fallback](story-25-10-direct-connection-fallback.md) | Clients try LAN first; relay is the fallback path, not the default. |
 | 25.11 | [Bandwidth metering & accounting](story-25-11-bandwidth-metering.md) | Per-server, per-day byte counts; rolled up to invoices. |
 | 25.12 | [Tier enforcement (concurrent streams + caps)](story-25-12-tier-enforcement.md) | Free: 0 relay GB. Pro: 100 GB/mo. Family: 500 GB/mo + 5 streams. |
-| 25.13 | [Stripe checkout session](story-25-13-stripe-checkout.md) | `POST /api/billing/checkout` returns a Stripe-hosted URL. |
-| 25.14 | [Stripe webhook handler](story-25-14-stripe-webhook.md) | Idempotent processing of `customer.subscription.*`; signed entitlements. |
+| 25.13 | [Checkout](story-25-13-checkout.md) | `POST /v1/billing/checkout` returns the provider's hosted checkout URL; `503 payments_not_set_up` under the default `none` provider. |
+| 25.14 | [Payment-provider webhook](story-25-14-payment-webhook.md) | Idempotent processing of provider-neutral `subscription_*` / `payment_*` events; 404 under `none`. |
 | 25.15 | [Plan comparison & subscription UI](story-25-15-plan-comparison-ui.md) | Public marketing page; in-app upgrade CTAs; change-plan flow. |
 | 25.16 | [Server status dashboard](story-25-16-server-status-dashboard.md) | Online/offline, last-seen, version, software updates available. |
 | 25.17 | [Push notification ingest](story-25-17-push-notification-ingest.md) | Server POSTs `{user_id, payload}`; cloud authenticates the server. |
 | 25.18 | [APNs dispatcher](story-25-18-apns-dispatcher.md)       | iOS / iPadOS / tvOS device tokens; team key + JWT; `BadDeviceToken` cleanup. |
 | 25.19 | [FCM dispatcher](story-25-19-fcm-dispatcher.md)         | Android + web push; Firebase Admin SDK; topic-less per-device send. |
 | 25.20 | [Admin: user & server fleet](story-25-20-admin-fleet.md) | HamzaLabs-only console; search users, see linked servers, last-seen. |
-| 25.21 | [Admin: revenue dashboard](story-25-21-admin-revenue.md) | MRR, ARR, churn, LTV, plan mix; pulled from Stripe. |
+| 25.21 | [Admin: revenue dashboard](story-25-21-admin-revenue.md) | MRR, ARR, churn, LTV, plan mix; from the local billing ledger. |
 | 25.22 | [Subdomain provisioning (`username.maktaba.tv`)](story-25-22-subdomain-provisioning.md) | Username uniqueness, DNS via Cloudflare API, name reservations. |
 | 25.23 | [TLS at the edge (wildcard ACME)](story-25-23-tls-edge.md) | `*.maktaba.tv` issued via Let's Encrypt DNS-01; rotation; cert pinning posture. |
 | 25.24 | [Rate limiting & quota](story-25-24-rate-limiting.md)   | Per-IP, per-user, per-server; redis-backed sliding window; 429 with Retry-After. |
@@ -116,7 +116,7 @@ acquisition funnel.
 ## Key technical decisions
 
 - **One Go binary, three roles.** `maktaba-cloud` runs as `--role=api`,
-  `--role=relay`, or `--role=worker` (Stripe webhooks, push fanout). One
+  `--role=relay`, or `--role=worker` (payment-provider webhooks, push fanout). One
   codebase, one Postgres, one Helm/Compose unit. Roles are CPU-scaled
   independently behind a single LB. **Rationale:** the operations team is
   one person; multi-binary microservices are not free in headcount.
@@ -264,9 +264,9 @@ GET    /api/entitlements                        # for the calling user
 GET    /api/servers/{server_id}/entitlement     # signed blob
 
 # Billing
-POST   /api/billing/checkout                    # returns Stripe URL
-POST   /api/billing/portal                      # returns Stripe URL
-POST   /api/billing/webhook                     # Stripe → cloud
+POST   /api/billing/checkout                    # returns the provider's checkout URL
+POST   /api/billing/portal                      # returns the provider's portal URL
+POST   /api/billing/webhook/{provider}          # payment provider → cloud
 GET    /api/billing/plans
 GET    /api/billing/subscription                # current state
 
@@ -303,8 +303,8 @@ table names below match `cloud/migrations/`:
 | `server_endpoints`   | server_id, kind (lan/relay/direct), candidates_sealed, observed_at — direct-connect probe state (25.10 sub-migration) |
 | `push_devices`       | id, user_id, platform (ios/android/web), token (sealed), app_version, last_seen_at — unique on (platform, token_hash) |
 | `push_dispatch_log`  | id, user_id, platform, topic, status, error, sent_at |
-| `subscriptions`      | user_id (PK), plan (free/pro/family), interval (monthly/yearly, nullable for free), stripe_customer_id, stripe_subscription_id, status, current_period_end, cancel_at_period_end, seats |
-| `stripe_events`      | event_id (PK), type, received_at, payload — webhook idempotency ledger |
+| `subscriptions`      | user_id (PK), plan (free/pro/family), interval (monthly/yearly, nullable for free), provider_customer_id, provider_subscription_id, status, current_period_end, cancel_at_period_end, seats |
+| `provider_events`    | (provider, provider_event_id) (PK), type, received_at, payload — webhook idempotency ledger |
 | `family_members`     | (owner_user_id, member_user_id) — family-plan seats; invitations |
 | `bandwidth_samples`  | server_id, bucket_start, bytes_in, bytes_out — 5-min samples, source of truth for billing |
 | `bandwidth_monthly`  | server_id, month (DATE), bytes_in, bytes_out, over_limit_at |
@@ -332,7 +332,7 @@ within that slot. Canonical slot allocation (matches
 | `0003` | 25.5  | `00030001_account.sql`    | `email_change_requests`, `account_deletions` |
 | `0004` | 25.6  | `00040001_servers.sql`    | `servers`, `server_claims`, `server_health` |
 | `0005` | 25.11 | `00050001_bandwidth.sql`  | `bandwidth_samples`, `bandwidth_monthly` |
-| `0006` | 25.13/25.14 | `00060001_billing.sql` | `subscriptions`, `stripe_events`, `family_members` |
+| `0006` | 25.13/25.14 | `00060001_billing.sql` | `subscriptions`, `provider_events`, `family_members` |
 | `0007` | 25.17 | `00070001_push.sql`       | `push_devices`, `push_dispatch_log` |
 | `0008` | 25.22 | `00080001_subdomains.sql` | `subdomains`, `reserved_slugs` |
 | `0009` | 25.25 | `00090001_abuse.sql`      | `abuse_signals`, `blocklist` |
@@ -354,7 +354,7 @@ extends slot 0004 with `server_endpoints`.
 | Account takeover via OAuth email reuse  | Email collision triggers explicit merge prompt; never auto-link |
 | Relay used for arbitrary HTTP proxying  | `Host` header must match `{subdomain}.maktaba.tv`; non-Maktaba paths 404; abuse score |
 | Bandwidth fraud (free user transfers TB)| Free tier hard-cap = 0 GB; Pro/Family caps + circuit breaker at 110% |
-| Stripe webhook replay                   | `stripe_events.event_id` PK = idempotency |
+| Payment-provider webhook replay                   | `provider_events.provider_event_id` PK = idempotency |
 | Push token leak                         | AES-GCM at rest with KMS-managed key; never returned in any response |
 | Subdomain enumeration / squatting       | Reserved-words list, abuse-score signals (10 sign-ups/min from same IP block → CAPTCHA) |
 | GDPR right-to-erasure failure           | Delete job traverses 9 tables, audited, idempotent, 30-day grace before final purge |
@@ -371,7 +371,7 @@ Per active paying user, monthly:
 | Cloudflare bandwidth (free tier)   | $0       | $0          |
 | Hetzner egress @ €1.20/TB          | $0.12 (100GB) | $0.60 (500GB) |
 | APNs/FCM                           | $0       | $0          |
-| Stripe fees (2.9% + 30¢)           | $0.59 ($9.99 plan) | $1.06 ($24.99 plan) |
+| Payment-provider fees (2.9% + 30¢)           | $0.59 ($9.99 plan) | $1.06 ($24.99 plan) |
 | **Total cogs / user / month**      | **$1.16**| **$2.51**   |
 | **List price**                     | **$9.99**| **$24.99**  |
 | **Gross margin**                   | **88%**  | **90%**     |
@@ -389,7 +389,7 @@ numbers monthly.
   cloud relay is the fallback path. (Story 15.2's "global discovery"
   v0 stub is superseded by 25.07–25.10.)
 - **Epic 16** all stories — entitlement-signing pattern reused;
-  Stripe customer portal already chosen; cloud is the *server side* of
+  the provider's customer portal is reused; cloud is the *server side* of
   the existing local-license check.
 - **Epic 21** Story 21.6 (audit log) — cloud writes audit events; admin
   dashboard reads them.
@@ -409,7 +409,7 @@ numbers monthly.
   a separate cloud user; the family plan is a payer-of-record + 5
   invitees, not a household ID).
 - Apple/Google in-app purchases. App Store rules force this for some
-  IAP cases; v1 routes everything through Stripe portal and accepts
+  IAP cases; v1 routes everything through the provider's customer portal and accepts
   the App Store revenue split as a future risk.
 - Self-hosted "private cloud" deployment of the cloud relay (can be
   open-sourced later for users who don't want HamzaLabs in the loop;

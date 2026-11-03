@@ -25,7 +25,7 @@
   "seats":       4,
   "issued_at":   "2026-01-15T00:00:00Z",
   "expires_at":  "2027-01-15T00:00:00Z",
-  "customer":    "stripe_cus_xxx",
+  "customer":    "cus_xxx",
   "kid":         "k1",
   "signature":   "<base64 Ed25519 over JCS(body without 'signature')>"
 }

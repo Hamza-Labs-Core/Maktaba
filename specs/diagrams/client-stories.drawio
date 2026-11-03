@@ -109,7 +109,7 @@
         <mxCell id="g_5" value="Epic 16 — Subscriptions (optional)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#991B1B;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="1420" width="1120" height="290" as="geometry" />
         </mxCell>
-        <mxCell id="s_5_0" value="16.1 Stripe integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
+        <mxCell id="s_5_0" value="16.1 Billing integration" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="1460" width="530" height="50" as="geometry" />
         </mxCell>
         <mxCell id="s_5_1" value="16.2 Paywall &amp;amp; trial logic" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#991B1B;fontSize=10;align=left;verticalAlign=middle;spacingLeft=8;arcSize=6;fontColor=#000000;" vertex="1" parent="1">

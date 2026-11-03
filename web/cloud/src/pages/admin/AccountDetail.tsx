@@ -1,10 +1,12 @@
 // /admin/accounts/:id — one account: subscription, servers, usage, abuse and
-// audit, with Suspend / Unsuspend (a reason is required and audited).
+// audit, with Suspend / Unsuspend and Set plan (a reason is required and
+// audited). Set plan is how plans change while no payment provider is set up.
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
+import { Select } from "@ds/components/Select/Select";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api } from "../../api";
@@ -36,6 +38,9 @@ interface AccountDetailData {
   audit: AuditEntry[];
 }
 
+/** The plans a service admin can set by hand (cloud/internal/billing Tiers). */
+const PLANS = ["free", "pro", "family"];
+
 /** The subscription object's scalar fields, as a key/value list. */
 function scalarEntries(o: Record<string, unknown> | null): [string, string][] {
   if (!o) return [];
@@ -52,6 +57,8 @@ export function AdminAccountDetail() {
   const path = `/v1/admin/accounts/${encodeURIComponent(id)}`;
   const data = useLoad(() => api.get<AccountDetailData>(path), path);
   const [dialog, setDialog] = useState(false);
+  const [planDialog, setPlanDialog] = useState(false);
+  const [plan, setPlan] = useState("free");
 
   if (data.error != null) {
     return (
@@ -80,6 +87,13 @@ export function AdminAccountDetail() {
     data.reload();
   }
 
+  async function applyPlan(reason: string) {
+    await api.post(`${path}/plan`, { plan, reason });
+    setPlanDialog(false);
+    toast.show({ tone: "success", message: t("admin.account.planSet") });
+    data.reload();
+  }
+
   const sub = scalarEntries(d.subscription);
   const limited = d.usage.limit_bytes > 0;
 
@@ -87,9 +101,20 @@ export function AdminAccountDetail() {
     <Page
       title={a.email}
       actions={
-        <Button variant={suspended ? "primary" : "destructive"} onClick={() => setDialog(true)}>
-          {t(`admin.account.${action}`)}
-        </Button>
+        <div className="mkc-row">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setPlan(a.plan);
+              setPlanDialog(true);
+            }}
+          >
+            {t("admin.account.setPlan")}
+          </Button>
+          <Button variant={suspended ? "primary" : "destructive"} onClick={() => setDialog(true)}>
+            {t(`admin.account.${action}`)}
+          </Button>
+        </div>
       }
     >
       <p>
@@ -233,6 +258,22 @@ export function AdminAccountDetail() {
         onClose={() => setDialog(false)}
         onConfirm={apply}
       />
+
+      <ReasonDialog
+        open={planDialog}
+        title={t("admin.account.setPlanTitle", { email: a.email })}
+        body={t("admin.account.setPlanBody")}
+        confirmLabel={t("admin.account.setPlan")}
+        onClose={() => setPlanDialog(false)}
+        onConfirm={applyPlan}
+      >
+        <Select
+          label={t("admin.account.newPlan")}
+          value={plan}
+          onChange={(e) => setPlan(e.target.value)}
+          options={PLANS.map((p) => ({ value: p, label: p }))}
+        />
+      </ReasonDialog>
     </Page>
   );
 }

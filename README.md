@@ -29,7 +29,7 @@ bytes:
 | **Streaming** | Go 1.23 | HLS / DASH origin. FFmpeg-driven transcode/remux, range serving, subtitle muxing, sprites. |
 | **Pipeline** | Python 3.12 | Scanner, audio extractor, Whisper STT (MLX / faster-whisper / OpenAI), embedding, ChromaDB indexer, diarization. Drains the durable job queue. |
 | **Web** | React 18 + TS + Vite | Single PWA wrapped natively into iOS/Android (Capacitor), macOS/Windows/Linux (Tauri), and tvOS / Android TV (Swift / Kotlin). |
-| **Cloud Relay** *(optional)* | Go 1.23 | Hosted SaaS layer for remote access: identity, server linking, WSS-tunneled HTTP relay, push fanout, Stripe billing. Lives in `cloud/`. |
+| **Cloud Relay** *(optional)* | Go 1.23 | Hosted SaaS layer for remote access: identity, server linking, WSS-tunneled HTTP relay, push fanout, billing (payment provider TBD). Lives in `cloud/`. |
 
 See [`specs/architecture.md`](specs/architecture.md) for the canonical design,
 data flow, and rationale behind the language split.
@@ -57,7 +57,8 @@ data flow, and rationale behind the language split.
 - **Cloud relay for remote access** — optional hosted layer that links a
   self-hosted server to a Maktaba Cloud account, tunnels HTTP through WSS, and
   fans out APNs / FCM push without exposing the home box to the internet. Free
-  tier; paid tiers via Stripe.
+  tier; paid tiers through a payment provider (TBD; until then paid
+  plans are "coming soon").
 
 ---
 

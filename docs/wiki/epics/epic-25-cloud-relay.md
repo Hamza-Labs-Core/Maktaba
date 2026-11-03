@@ -15,7 +15,7 @@ unmonetizable.
 The cloud has five jobs: **identity** (sign-up, OAuth, sessions),
 **linking** (claim-token-based server↔account binding), **reachability**
 (WSS-tunneled HTTP relay at `{username}.maktaba.tv`), **push** (server →
-cloud → APNs/FCM fanout), and **billing** (Stripe-hosted checkout, signed
+cloud → APNs/FCM fanout), and **billing** (the payment provider's hosted checkout, signed
 entitlement blobs). It explicitly does **not** store media, transcribe,
 or analyze content. Self-hosted features never depend on the cloud.
 
@@ -41,15 +41,15 @@ download to scanning library.
 | 25.10 | [Direct-connection probe & LAN fallback](../../../specs/epics/25-cloud-relay/story-25-10-direct-connection-fallback.md) | Clients race LAN candidates 1s; pin 5min; relay is fallback. |
 | 25.11 | [Bandwidth metering & accounting](../../../specs/epics/25-cloud-relay/story-25-11-bandwidth-metering.md) | Redis hash counters, 60s flush to Postgres, monthly rollup. |
 | 25.12 | [Tier enforcement (concurrent + caps)](../../../specs/epics/25-cloud-relay/story-25-12-tier-enforcement.md) | Free=0 GB; Pro=100/2 streams; Family=500/5 streams. |
-| 25.13 | [Stripe checkout session](../../../specs/epics/25-cloud-relay/story-25-13-stripe-checkout.md) | Idempotency-keyed, customer-portal-deferred. |
-| 25.14 | [Stripe webhook handler](../../../specs/epics/25-cloud-relay/story-25-14-stripe-webhook.md) | Idempotent processing, NOTIFY tier_changed, daily reconciliation. |
+| 25.13 | [Checkout](../../../specs/epics/25-cloud-relay/story-25-13-checkout.md) | `billing.Provider` seam; default `none` provider: "Payments coming soon", 503 `payments_not_set_up`, admins set plans by hand. |
+| 25.14 | [Payment-provider webhook](../../../specs/epics/25-cloud-relay/story-25-14-payment-webhook.md) | Provider-neutral events, idempotent `provider_events` ledger, NOTIFY tier_changed; 404 under `none`. |
 | 25.15 | [Plan comparison & subscription UI](../../../specs/epics/25-cloud-relay/story-25-15-plan-comparison-ui.md) | Public marketing + in-app upgrade; bilingual EN/AR. |
 | 25.16 | [Server status dashboard](../../../specs/epics/25-cloud-relay/story-25-16-server-status-dashboard.md) | Live online/offline, version, MTD GB, update available. |
 | 25.17 | [Push notification ingest](../../../specs/epics/25-cloud-relay/story-25-17-push-notification-ingest.md) | Fixed-shape envelope, locale templates, dedup + TTL. |
 | 25.18 | [APNs dispatcher](../../../specs/epics/25-cloud-relay/story-25-18-apns-dispatcher.md) | HTTP/2, ES256 JWT, BadDeviceToken auto-revoke. |
 | 25.19 | [FCM dispatcher](../../../specs/epics/25-cloud-relay/story-25-19-fcm-dispatcher.md) | Service-account OAuth, per-device send, web push via FCM. |
 | 25.20 | [Admin: user & server fleet](../../../specs/epics/25-cloud-relay/story-25-20-admin-fleet.md) | Workspace SSO, search, suspend, force-disconnect, audit. |
-| 25.21 | [Admin: revenue dashboard](../../../specs/epics/25-cloud-relay/story-25-21-admin-revenue.md) | MRR, ARR, churn, LTV; Stripe sync; cost-per-user model. |
+| 25.21 | [Admin: revenue dashboard](../../../specs/epics/25-cloud-relay/story-25-21-admin-revenue.md) | MRR, ARR, churn, LTV; payment-provider sync; cost-per-user model. |
 | 25.22 | [Subdomain provisioning](../../../specs/epics/25-cloud-relay/story-25-22-subdomain-provisioning.md) | Wildcard DNS, 200-word reserved list, 30-day grace on release. |
 | 25.23 | [TLS at the edge (wildcard ACME)](../../../specs/epics/25-cloud-relay/story-25-23-tls-edge.md) | Let's Encrypt DNS-01, ZeroSSL backup, monthly rotation. |
 | 25.24 | [Rate limiting & quota](../../../specs/epics/25-cloud-relay/story-25-24-rate-limiting.md) | Redis sliding window, fail-closed; per-IP/user/server. |
@@ -96,7 +96,7 @@ download to scanning library.
 - **Push tokens never leave the cloud.** Sealed AES-GCM at rest;
   servers POST `{user_id, payload}`, the cloud handles fanout.
 - **Apple Sign-In is mandatory** (App Store rules); App Store
-  in-app purchases are explicitly out of v1 (Stripe only).
+  in-app purchases are explicitly out of v1 (the payment provider's hosted checkout only; provider TBD).
 - **GDPR-class delete.** 30-day soft-delete grace, then PII
   hard-purge across 9 tables; audit retained 90 days post-delete
   with PII redacted.
@@ -147,7 +147,7 @@ Per active paying user, monthly:
 | Cloudflare bandwidth        | $0        | $0          |
 | Hetzner egress @ €1.20/TB   | $0.12     | $0.60       |
 | APNs / FCM                  | $0        | $0          |
-| Stripe fees (2.9% + 30¢)    | $0.59     | $1.06       |
+| Payment-provider fees (2.9% + 30¢)    | $0.59     | $1.06       |
 | **Total cost / user / mo**  | **$1.16** | **$2.51**   |
 | **List price**              | **$9.99** | **$24.99**  |
 | **Gross margin**            | **88%**   | **90%**     |
@@ -164,7 +164,7 @@ reports the real numbers.
 - **Epic 15** Story 15.2 (LAN discovery) — clients prefer LAN;
   relay is the fallback path.
 - **Epic 16** all stories — entitlement-signing pattern reused;
-  Stripe customer portal already chosen; the cloud is the
+  the provider's customer portal is reused; the cloud is the
   *server side* of the existing local-license check.
 - **Epic 21** Story 21.6 (audit log) — cloud writes audit events;
   admin dashboard reads them.

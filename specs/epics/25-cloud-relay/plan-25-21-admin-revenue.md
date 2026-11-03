@@ -6,11 +6,11 @@
 
 | Concern | Decision |
 |---|---|
-| Data sources | Stripe API (cached daily), local `subscriptions`, `invoices`, `bandwidth_monthly`, `servers`. |
+| Data sources | Local billing ledger (written by the webhook, 25.14; manual plans excluded), local `subscriptions`, `invoices`, `bandwidth_monthly`, `servers`. |
 | FX | Daily ECB rates pulled by a cron into `fx_rates`. |
-| Snapshot | `revenue_snapshots` daily row preserves history through Stripe retention. |
+| Snapshot | `revenue_snapshots` daily row preserves history through payment-provider retention. |
 | Endpoints | `GET /api/admin/revenue`, `/timeseries`, `/cost-per-user`, `/revenue/export?period=YYYY-MM`. |
-| Caching | Stripe pull cached 1h on `stripe_cache` table; UI page renders from local rollups, never live Stripe per-request. |
+| Caching | Payment-provider pull cached 1h on `provider_cache` table; UI page renders from local rollups, never a live provider call per request. |
 | Out of scope | Cohort retention curves (deferred). Forecast model (BI tool). |
 
 ## 1. Migration `00060002_revenue.sql` (slot 0006 sub-sequence)
@@ -38,14 +38,14 @@ CREATE TABLE fx_rates (
     PRIMARY KEY (date, currency)
 );
 
-CREATE TABLE stripe_cache (
+CREATE TABLE provider_cache (
     key        TEXT PRIMARY KEY,
     fetched_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     payload    JSONB NOT NULL
 );
 
 -- +goose Down
-DROP TABLE IF EXISTS stripe_cache, fx_rates, revenue_snapshots;
+DROP TABLE IF EXISTS provider_cache, fx_rates, revenue_snapshots;
 ```
 
 `plan_mix` keys remain `pro_monthly`/`pro_yearly`/`family_monthly`/
@@ -53,26 +53,23 @@ DROP TABLE IF EXISTS stripe_cache, fx_rates, revenue_snapshots;
 truth canonical form is `(tier, interval)` pairs on `subscriptions`;
 the JSONB shape here is the reporting projection.
 
-## 2. Daily Stripe sync (03:00 UTC)
+## 2. Daily payment-provider sync (03:00 UTC)
 
 ```go
-// cloud/internal/jobs/stripe_sync.go
-func StripeSync(ctx context.Context, db *pgxpool.Pool) error {
+// cloud/internal/jobs/billing_sync.go
+func BillingSync(ctx context.Context, db *pgxpool.Pool) error {
     if !acquireAdvisoryLock(ctx, db, 8472614) { return nil }
     defer releaseAdvisoryLock(ctx, db, 8472614)
 
-    // Pull subscriptions
-    iter := subscription.List(&stripe.SubscriptionListParams{Limit: stripe.Int64(100)})
-    for iter.Next() {
-        sub := iter.Subscription()
-        _, _ = db.Exec(ctx, `INSERT INTO stripe_cache(key, payload) VALUES ($1, $2)
+    // Pull subscriptions through the billing.Provider (TBD); no-op under "none"
+    for _, sub := range provider.ListSubscriptions(ctx) {
+        _, _ = db.Exec(ctx, `INSERT INTO provider_cache(key, payload) VALUES ($1, $2)
             ON CONFLICT(key) DO UPDATE SET fetched_at=now(), payload=EXCLUDED.payload`,
             "sub:"+sub.ID, mustJSON(sub))
         applySubscriptionToLocal(db, sub)
     }
     // Pull invoices last 30 days (incremental)
-    invIter := invoice.List(&stripe.InvoiceListParams{...})
-    for invIter.Next() { applyInvoiceToLocal(db, invIter.Invoice()) }
+    for _, inv := range provider.ListInvoices(ctx, since30d) { applyInvoiceToLocal(db, inv) }
     return nil
 }
 ```
@@ -157,7 +154,7 @@ func costPerUser(s *Service) http.HandlerFunc {
             cost := s.calc.ModelCost(u)
             out = append(out, userCost{
                 UserID: u.ID, Plan: u.Plan, Revenue: u.Revenue,
-                StripeFees: u.StripeFees, Cogs: cost, Margin: u.Revenue - cost,
+                ProviderFees: u.ProviderFees, Cogs: cost, Margin: u.Revenue - cost,
             })
         }
         writeJSON(w, 200, map[string]any{"period": period, "rows": out})
@@ -178,13 +175,13 @@ type CostInputs struct {
     BandwidthBytes int64
     EgressPricePerTBUSD float64    // €1.20 / TB → USD-converted
     BasePerUser float64            // Hetzner CCX23 share + PG share
-    StripeFeeCents int64           // computed from actual revenue
+    ProviderFeeCents int64           // computed from actual revenue
 }
 
 func ModelCost(in CostInputs) float64 {
     base := in.BasePerUser
     egress := float64(in.BandwidthBytes) / 1e12 * in.EgressPricePerTBUSD
-    return base + egress + float64(in.StripeFeeCents)/100
+    return base + egress + float64(in.ProviderFeeCents)/100
 }
 ```
 
@@ -193,7 +190,7 @@ func ModelCost(in CostInputs) float64 {
 - Pro: 0.40 (compute) + 0.05 (PG) = 0.45.
 - Family: 0.80 + 0.05 = 0.85.
 
-Stripe fees = 2.9% × revenue + 0.30 (per charge).
+Payment-provider fees ≈ 2.9% × revenue + 0.30 (per charge).
 
 ## 7. UI charts
 
@@ -236,9 +233,9 @@ func revenueExportCSV(ctx context.Context, w io.Writer, db *pgxpool.Pool, period
 
 | Test | Pins |
 |---|---|
-| `TestStripeSyncIdempotent` | Re-run is a no-op. |
+| `TestBillingSyncIdempotent` | Re-run is a no-op. |
 | `TestSnapshotTakesAdvisoryLock` | Concurrent runs → one wins. |
-| `TestStripe429Cached` | Stripe rate-limited → cache served + stale badge. |
+| `TestProvider429Cached` | Provider rate-limited → cache served + stale badge. |
 | `TestCSVExportSchemaStable` | Header row stable across versions. |
 | `TestAnonymizedRevenueHistory` | GDPR-deleted user's revenue still in totals. |
 | `TestEdgeCountryK5Anonymity` | <5 customers in a country → "other". |
@@ -266,9 +263,9 @@ func revenueExportCSV(ctx context.Context, w io.Writer, db *pgxpool.Pool, period
 ## 12. Acceptance checklist
 
 - [ ] Migration 00060002 applies.
-- [ ] Daily Stripe sync + snapshot crons.
+- [ ] Daily payment-provider sync + snapshot crons.
 - [ ] FX rate fetch.
 - [ ] Endpoints: overview / timeseries / cost-per-user / export.
-- [ ] Reconciles to ±$5 of Stripe.
+- [ ] Reconciles to ±$5 of the payment provider's dashboard.
 - [ ] CSV export schema stable.
 - [ ] Tests in §9 pass.

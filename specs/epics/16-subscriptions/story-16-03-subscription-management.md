@@ -8,11 +8,11 @@ view tier, expiry, payment method, change tier, cancel.
 ## AC
 
 - Read-only by default; "Manage" deep-links to the billing portal
-  (Stripe Customer Portal or equivalent).
+  (the provider's customer portal or equivalent).
 - Cancellation flow: confirm modal with "downgrade takes effect on next
   renewal" copy.
 - Upgrades are immediate; downgrades take effect at renewal.
-- Receipts: list of past invoices with downloadable PDF (Stripe-issued).
+- Receipts: list of past invoices with downloadable PDF (issued by the payment provider).
 - VAT / tax indication where applicable.
 
 ## TC
@@ -25,16 +25,17 @@ view tier, expiry, payment method, change tier, cancel.
 ## EC
 
 - Webhook delivery failure: we retry with backoff; reconcile via daily
-  cron against Stripe's source of truth.
-- A user double-purchases on two devices: server dedupes by Stripe
+  cron against the payment provider's source of truth.
+- A user double-purchases on two devices: server dedupes by the provider's
   customer ID; the second purchase is refunded automatically.
 - Disputed payment: license tier flips to `free` until resolved; no
   data is destroyed.
 
 ## Implementation (2026-10-26)
 
-**Status: done.** The billing itself is Maktaba Cloud's (Epic 25: Stripe
-Checkout, the customer portal for payment method, cancellation, receipts and tax,
+**Status: done.** The billing itself is Maktaba Cloud's (Epic 25: the payment provider's
+hosted checkout (provider TBD; the default `none` provider takes no
+payments and service admins set plans by hand), the customer portal for payment method, cancellation, receipts and tax,
 webhooks with ordering and retries; see
 [`cloud/docs/accounts-billing-admin.md`](../../../cloud/docs/accounts-billing-admin.md)).
 This epic connects it to the home:

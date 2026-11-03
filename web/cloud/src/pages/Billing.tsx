@@ -1,5 +1,7 @@
-// /billing — the plans, the account's subscription, Stripe Checkout / portal,
-// and this month's relay usage.
+// /billing — the plans, the account's subscription, the payment provider's
+// checkout / portal, and this month's relay usage. No payment provider is set
+// up yet: the API answers payments_enabled false and paid plans show a disabled
+// "Payments coming soon" button.
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -55,18 +57,25 @@ export interface Usage {
 
 interface BillingData {
   plans: Plan[];
+  /** False while no payment provider is set up: paid plans are coming soon. */
+  paymentsEnabled: boolean;
   me: BillingMe;
   usage: Usage | null;
 }
 
 async function loadBilling(): Promise<BillingData> {
   const [plans, me, usage] = await Promise.all([
-    api.get<{ plans: Plan[] }>("/v1/billing/plans", { auth: false }),
+    api.get<{ plans: Plan[]; payments_enabled?: boolean }>("/v1/billing/plans", { auth: false }),
     api.get<BillingMe>("/v1/billing/me"),
     // usage is a side panel: the page still works without it
     api.get<Usage>("/v1/billing/usage").catch(() => null),
   ]);
-  return { plans: plans?.plans ?? [], me, usage };
+  return {
+    plans: plans?.plans ?? [],
+    paymentsEnabled: plans?.payments_enabled === true,
+    me,
+    usage,
+  };
 }
 
 export function Billing() {
@@ -102,7 +111,7 @@ function BillingBody({ data }: { data: BillingData }) {
   const message = useErrorMessage();
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
-  const { me, plans, usage } = data;
+  const { me, plans, usage, paymentsEnabled } = data;
   const planName = (id: string) => plans.find((p) => p.id === id)?.name ?? id;
 
   async function upgrade(plan: string) {
@@ -174,6 +183,7 @@ function BillingBody({ data }: { data: BillingData }) {
       </Card>
 
       <h2>{t("billing.plans.title")}</h2>
+      {!paymentsEnabled && <Banner tone="info">{t("billing.payments.comingSoon")}</Banner>}
       <div className="mkc-grid">
         {plans.map((p) => (
           <PlanCard
@@ -217,7 +227,7 @@ function PlanCard({
         </div>
       }
       footer={
-        !current && plan.purchasable ? (
+        current ? undefined : plan.purchasable ? (
           <Button
             loading={busy}
             disabled={disabled}
@@ -225,6 +235,10 @@ function PlanCard({
             aria-label={t("billing.plans.upgradeTo", { plan: plan.name })}
           >
             {t("billing.plans.upgrade")}
+          </Button>
+        ) : plan.price_cents > 0 ? (
+          <Button disabled aria-label={t("billing.plans.comingSoonFor", { plan: plan.name })}>
+            {t("billing.plans.comingSoon")}
           </Button>
         ) : undefined
       }

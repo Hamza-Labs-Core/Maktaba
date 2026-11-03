@@ -76,7 +76,7 @@
         <mxCell id="phase_5" value="Optional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FCE7F3;strokeColor=#9D174D;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="40" y="920" width="1120" height="130" as="geometry" />
         </mxCell>
-        <mxCell id="e16" value="&lt;b&gt;16 · Subscriptions&lt;/b&gt;&#10;Stripe · paywall" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=11;align=center;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
+        <mxCell id="e16" value="&lt;b&gt;16 · Subscriptions&lt;/b&gt;&#10;Billing · paywall" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#9D174D;fontSize=11;align=center;arcSize=8;fontColor=#000000;" vertex="1" parent="1">
           <mxGeometry x="70" y="960" width="180" height="70" as="geometry" />
         </mxCell>
         <mxCell id="phase_6" value="Non-functional" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#475569;fontSize=13;fontStyle=1;verticalAlign=top;align=left;spacingLeft=10;spacingTop=8;arcSize=4;fontColor=#000000;" vertex="1" parent="1">

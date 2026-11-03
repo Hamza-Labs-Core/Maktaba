@@ -5,7 +5,7 @@
 ## Description
 
 The numbers HamzaLabs uses to make business decisions, on one page.
-Pulled from Stripe (source of truth) and joined with cloud-side data
+Pulled from the payment provider (TBD; source of truth) and joined with cloud-side data
 for cost-per-user analysis.
 
 Top-line metrics:
@@ -21,7 +21,7 @@ Top-line metrics:
 - **MTD bandwidth (TB).** Sum of `cloud_bandwidth_daily` this
   month.
 - **Cost per user.** Modeled per the README cost matrix —
-  recomputed from real bandwidth + Stripe fees.
+  recomputed from real bandwidth + payment-provider fees.
 - **Gross margin.** (Revenue − cost) / revenue.
 
 Charts:
@@ -31,12 +31,12 @@ Charts:
 - Top 20 servers by bandwidth (table; useful for spotting
   outliers).
 - Bandwidth distribution (histogram of users by GB used).
-- Geographic distribution (country code from Stripe customer;
+- Geographic distribution (country code from the provider's customer record;
   privacy-conscious — bucketed not per-user).
 
 Data sources:
 
-- Stripe `invoice.list`, `subscription.list` cached daily
+- The payment provider's invoices and subscriptions, cached daily
   (full pull at 03:00 UTC; reactive updates from webhook
   25.14).
 - Cloud-side `cloud_bandwidth_monthly` and
@@ -60,16 +60,18 @@ Data retention:
 - We keep cumulative daily snapshots in
   `cloud_revenue_snapshots(date, mrr_cents, customer_count,
   active_server_count, total_bandwidth_bytes)` so historical
-  trends survive Stripe data-retention windows.
+  trends survive the payment provider's data-retention windows.
+- Plans a service admin set by hand (provider `manual`) are not
+  revenue and are excluded from MRR and the export.
 
 ## Acceptance criteria
 
 - **Given** an operator opens the revenue page,
   **when** the page loads,
   **then** MRR, ARR, customer count, churn rate are
-  displayed and reconcile to ±$5 of Stripe's own dashboard
+  displayed and reconcile to ±$5 of the payment provider's own dashboard
   for the same period.
-- **Given** the daily Stripe sync runs at 03:00 UTC,
+- **Given** the daily payment-provider sync runs at 03:00 UTC,
   **when** it completes,
   **then** `cloud_revenue_snapshots` has a row for the
   prior day and metrics for the prior day are stable.
@@ -80,7 +82,7 @@ Data retention:
   **when** generated,
   **then** the file contains one row per `(user_id,
   plan, gb_relayed, gross, fees, gross_after_fees)`.
-- **Given** Stripe is rate-limiting,
+- **Given** the payment provider is rate-limiting,
   **when** a chart query fires,
   **then** the cached value is served and a "stale" badge
   is shown.
@@ -99,8 +101,8 @@ Data retention:
 | ID  | Type        | Setup | Action | Expected |
 |-----|-------------|-------|--------|----------|
 | T01 | unit        | known fixtures | compute MRR | matches expected |
-| T02 | integration | run Stripe sync | observe DB | snapshots written |
-| T03 | regression  | Stripe API 429 | request | cached value, "stale" |
+| T02 | integration | run provider sync | observe DB | snapshots written |
+| T03 | regression  | provider API 429 | request | cached value, "stale" |
 | T04 | unit        | churn calc on a small cohort | verify | matches manual |
 | T05 | integration | CSV export | parse | schema valid, no PII leakage beyond what admin already has |
 | T06 | regression  | yearly plan amortization | compute MRR | yearly counted at 1/12 |
@@ -111,15 +113,15 @@ Data retention:
 
 ## Edge cases
 
-- **FX conversion.** Stripe charges in user-local currency;
+- **FX conversion.** The payment provider charges in user-local currency;
   for MRR we normalize to USD using the daily ECB reference
   rate cached in `cloud_fx_rates`. Document.
 - **Refunds.** Subtract refunded amounts from the period
   in which the refund occurred (not the original charge);
-  this matches how Stripe reports refunds.
+  this matches how payment providers typically report refunds.
 - **Multiple subscriptions per user (legacy).** Sum to one
   per-user row; flag for cleanup.
-- **Stripe object types we don't sync.** `payment_method`
+- **Provider object types we don't sync.** `payment_method`
   details (PCI scope) are explicitly excluded.
 - **Snapshots vs. live numbers.** Today-MRR is "live" —
   computed from current `cloud_subscriptions.status='active'`.
@@ -137,7 +139,7 @@ Data retention:
 ## Files / packages
 
 - `cloud/internal/admin/revenue.go`.
-- `cloud/internal/jobs/stripe_sync.go` — daily.
+- `cloud/internal/jobs/billing_sync.go` — daily.
 - `cloud/internal/jobs/snapshot_revenue.go` — daily.
 - `cloud/internal/admin/cost_model.go`.
 - `cloud/migrations/00060006_audit_revenue_snapshots.sql`.

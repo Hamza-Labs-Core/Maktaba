@@ -48,7 +48,7 @@ Translation:
   PRs.
 - Currency display follows the user's locale; formatted via
   `Intl.NumberFormat`.
-- Stripe checkout is in user's accept-language preference; we
+- The provider's hosted checkout is in user's accept-language preference; we
   don't override.
 
 Accessibility:
@@ -74,12 +74,12 @@ Accessibility:
   badge appears on yearly.
 - **Given** a user clicks "Upgrade to Pro",
   **when** the API call succeeds,
-  **then** the browser navigates to the Stripe URL.
+  **then** the browser navigates to the provider's hosted checkout URL.
 - **Given** a Pro user clicks "Switch to Family",
   **when** the proration preview loads,
   **then** the dialog shows "You'll be charged $X today,
   prorated for the remainder of the period" and a confirm
-  button that completes the change in Stripe Portal.
+  button that completes the change in the provider's customer portal.
 - **Given** an iOS app user opens `/upgrade`,
   **when** the page loads,
   **then** the upgrade CTA is replaced with a "Manage on
@@ -101,7 +101,7 @@ Accessibility:
 | T06 | i18n        | render in `ar` | snapshot | RTL layout, Arabic numerals optional |
 | T07 | unit        | yearly savings calc | $9.99 × 12 vs $99 | "Save $20.88 / year" |
 | T08 | regression  | iOS UA | render upgrade | no in-app CTA |
-| T09 | integration | click Upgrade | follow redirect | lands on Stripe checkout |
+| T09 | integration | click Upgrade | follow redirect | lands on the provider's hosted checkout |
 | T10 | integration | apply promo code in dialog | preview | discount line visible |
 
 ## Edge cases
@@ -109,7 +109,7 @@ Accessibility:
 - **Currency confusion.** When user's locale is `de-DE`
   but card was last charged in USD, show USD with hint
   "billed in USD"; we don't convert client-side.
-- **Mid-cycle plan change.** Stripe handles proration; we
+- **Mid-cycle plan change.** The payment provider handles proration; we
   show the upcoming invoice line items.
 - **Trial.** Out for v1.
 - **Expired free tier.** Free tier never expires; no
@@ -119,7 +119,7 @@ Accessibility:
   to avoid stampede.
 - **PI exposure.** No PII in `/pricing`; in `/upgrade` we
   show usage (servers, GB) but never billing card data
-  (Stripe does that).
+  (the payment provider does that).
 - **Server-rendered prices.** Prices come from a static
   JSON `https://api.maktaba.tv/api/billing/plans` that
   the marketing page fetches at build time and at request

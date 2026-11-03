@@ -13,7 +13,7 @@
 | Translation | `react-i18next`-driven; bilingual EN + AR; RTL via `<html dir="rtl">` when locale=ar. |
 | iOS / Android in-app | Suppressed CTAs when UA is iOS (App Store rule); deep-link to web. |
 | Accessibility | WCAG AA contrast; keyboard navigation; pattern + color for "Recommended" badge. |
-| Out of scope | Trial periods (deferred). Promo-code UI (Stripe handles in Checkout). |
+| Out of scope | Trial periods (deferred). Promo-code UI (the provider's hosted checkout handles it). |
 
 ## 1. Files
 
@@ -192,10 +192,10 @@ Pricing page is server-side rendered (or pre-rendered at build) and the resultin
 | Test | Pins |
 |---|---|
 | `TestToggleMonthlyYearlyUpdatesPrices` | Yearly toggle changes price + savings line. |
-| `TestUpgradeRedirectToStripe` | Click → `checkout()` → `window.location.href` set. |
+| `TestUpgradeRedirectToCheckout` | Click → `checkout()` → `window.location.href` set. |
 | `TestUpgradePreviewDialog` | Switch Pro→Family shows prorated charge. |
 | `TestPollUntilWebhookFires` | `/billing/success` polls 1Hz, lands at dashboard when status=active. |
-| `TestApplyPromoCode` | Discount line visible (Stripe-side; UI shows code accepted). |
+| `TestApplyPromoCode` | Discount line visible (provider-side; UI shows code accepted). |
 
 ### 9.3 Accessibility / i18n
 
@@ -211,7 +211,7 @@ Pricing page is server-side rendered (or pre-rendered at build) and the resultin
 | Case | Behaviour | Pinned |
 |---|---|---|
 | Currency confusion | Display billed-in-USD hint when locale ≠ en-US. | UX note. |
-| Mid-cycle plan change | Stripe handles proration; we show upcoming-invoice diff. | `TestUpgradePreviewDialog`. |
+| Mid-cycle plan change | The payment provider handles proration; we show upcoming-invoice diff. | `TestUpgradePreviewDialog`. |
 | Trial | Out for v1. | Spec. |
 | Expired free tier | Free never expires. | Spec. |
 | /pricing CF cache | 5min TTL; pre-warm on deploy. | Doc. |

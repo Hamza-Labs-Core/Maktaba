@@ -218,8 +218,8 @@
       "type": "epic",
       "title": "Subscriptions & Monetization (Optional)",
       "epic": 16,
-      "content": "Optional premium tier (home / pro) gated by Ed25519-signed license key; free tier remains fully functional. Stripe Customer Portal for billing; opt-in telemetry; per-tier feature flags with cohorts.",
-      "tags": ["subscriptions", "license", "ed25519", "stripe", "feature-flags", "telemetry", "tier"],
+      "content": "Optional premium tier (home / pro) gated by Ed25519-signed license key; free tier remains fully functional. the payment provider's (TBD) customer portal for billing; opt-in telemetry; per-tier feature flags with cohorts.",
+      "tags": ["subscriptions", "license", "ed25519", "billing", "feature-flags", "telemetry", "tier"],
       "related": ["epic-10", "epic-15", "epic-21", "epic-23"],
       "file_paths": [
         "docs/wiki/epics/epic-16-subscriptions.md",

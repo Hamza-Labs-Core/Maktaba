@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -85,30 +86,56 @@ func TestValidate_RoleAPI(t *testing.T) {
 	}
 }
 
-// The api role runs against Stripe test mode unless live mode is turned
-// on explicitly; a live key without it is refused at startup.
-func TestValidate_StripeTestModeOnly(t *testing.T) {
+// The payment provider is not chosen yet: [billing].provider defaults
+// to "none", and the api role refuses any provider it does not ship.
+func TestValidate_BillingProvider(t *testing.T) {
 	c := Config{}
 	c.Database.URL = "postgres://x"
 	c.Server.ListenAddr = ":8080"
 	c.Mail.Driver = "log"
 	for _, tc := range []struct {
-		key  string
-		live bool
-		ok   bool
+		provider string
+		ok       bool
 	}{
-		{"sk_test_abc", false, true},
-		{"", false, true},
-		{"sk_live_abc", false, false},
-		{"rk_live_abc", false, false},
-		{"sk_live_abc", true, true},
-		{"sk_test_abc", true, false},
+		{"", true},
+		{"none", true},
+		{"None", false},
+		{"manual", false},
+		{"some-provider", false},
 	} {
-		c.Stripe.SecretKey, c.Stripe.LiveMode = tc.key, tc.live
+		c.Billing.Provider = tc.provider
 		err := Validate(c, RoleAPI)
 		if (err == nil) != tc.ok {
-			t.Errorf("key=%q live=%v: err=%v, want ok=%v", tc.key, tc.live, err, tc.ok)
+			t.Errorf("provider=%q: err=%v, want ok=%v", tc.provider, err, tc.ok)
 		}
+		if !tc.ok && !errors.Is(err, ErrUnknownBillingProvider) {
+			t.Errorf("provider=%q: err=%v, want ErrUnknownBillingProvider", tc.provider, err)
+		}
+	}
+}
+
+func TestLoad_BillingProvider(t *testing.T) {
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Billing.Provider != "none" {
+		t.Errorf("default provider = %q, want none", c.Billing.Provider)
+	}
+	p := filepath.Join(t.TempDir(), "cloud.toml")
+	if err := os.WriteFile(p, []byte("[billing]\nprovider = \"none\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c, err = Load(p); err != nil || c.Billing.Provider != "none" {
+		t.Errorf("toml provider: %q %v", c.Billing.Provider, err)
+	}
+	t.Setenv("MAKTABA_CLOUD_BILLING_PROVIDER", "elsewhere")
+	if c, err = Load(p); err != nil || c.Billing.Provider != "elsewhere" {
+		t.Errorf("env provider: %q %v", c.Billing.Provider, err)
+	}
+	c.Database.URL = "postgres://x"
+	if err := Validate(c, RoleAPI); !errors.Is(err, ErrUnknownBillingProvider) {
+		t.Errorf("an unknown provider from env: %v", err)
 	}
 }
 

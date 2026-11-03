@@ -66,7 +66,7 @@ Surfaces:
   but a `bandwidth_counter_dropped_total` metric increments and an
   audit row records the drop.
 - **Given** a server is suspended mid-stream,
-  **when** Stripe pushes `subscription.canceled`,
+  **when** the payment provider sends `subscription_cancelled`,
   **then** the relay refuses new streams with `402
   payment_required` but already-open streams complete
   (bandwidth still counted; final invoice includes them).
@@ -120,7 +120,7 @@ Surfaces:
   bandwidth — we count what we relay. The server's own
   observability (Epic 21) reports its perspective; the
   cloud's accounting is authoritative for billing.
-- **Refunds.** Stripe refunds are handled by the
+- **Refunds.** Payment-provider refunds are handled by the
   refunder action in 25.14 / 25.21; we never auto-refund
   on bandwidth dispute.
 - **Suspended user, ongoing streams.** Final-billing

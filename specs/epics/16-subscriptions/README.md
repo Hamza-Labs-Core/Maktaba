@@ -65,6 +65,6 @@ side: [`cloud/docs/accounts-billing-admin.md`](../../../cloud/docs/accounts-bill
 ## Out of scope
 
 - In-app purchases through Apple / Google billing (they take 15-30%);
-  v1 routes through Stripe Customer Portal.
+  v1 routes through the provider's customer portal.
 - Per-feature usage-based billing (e.g., "$X per transcribed hour");
   v1 is flat-tier only.

@@ -145,6 +145,55 @@ describe("admin console", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("sets a plan by hand with a reason", async () => {
+    let plan = "free";
+    const f = stubFetch({
+      "POST /v1/auth/refresh": session(user({ role: "service_admin" })),
+      "GET /v1/admin/accounts/u4": () =>
+        new Response(
+          JSON.stringify({
+            account: {
+              id: "u4",
+              email: "early@example.com",
+              plan,
+              status: "active",
+              role: "user",
+              created_at: "2026-01-01T00:00:00Z",
+              servers: 0,
+            },
+            subscription: null,
+            servers: [],
+            usage: { month: "2026-10", used_bytes: 0, limit_bytes: 5e9 },
+            sessions_active: 0,
+            abuse: [],
+            audit: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        ),
+      "POST /v1/admin/accounts/u4/plan": () => {
+        plan = "pro";
+        return new Response(null, { status: 204 });
+      },
+    });
+    renderAt("/admin/accounts/u4");
+    const u = userEvent.setup();
+    await u.click(await screen.findByRole("button", { name: "Set plan" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("Set the plan for early@example.com")).toBeInTheDocument();
+    const confirm = within(dialog).getByRole("button", { name: "Set plan" });
+    await u.selectOptions(within(dialog).getByLabelText("New plan"), "pro");
+    expect(confirm).toBeDisabled();
+    await u.type(within(dialog).getByLabelText(/Reason/), "early supporter");
+    await u.click(confirm);
+    await waitFor(() => expect(f.find("POST", "/v1/admin/accounts/u4/plan")).toHaveLength(1));
+    expect(f.find("POST", "/v1/admin/accounts/u4/plan")[0].body).toEqual({
+      plan: "pro",
+      reason: "early supporter",
+    });
+    expect(await screen.findByText("Plan updated.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
   it("keeps the dialog open with the error when suspending is refused", async () => {
     stubFetch({
       "POST /v1/auth/refresh": session(user({ role: "service_admin" })),

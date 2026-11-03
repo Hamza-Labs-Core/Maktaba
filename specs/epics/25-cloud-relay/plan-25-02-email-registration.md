@@ -105,9 +105,9 @@ CREATE TABLE jwt_keys (
 DROP TABLE IF EXISTS jwt_keys, email_verifications, sessions, oauth_links, users CASCADE;
 ```
 
-`stripe_customer_id` is intentionally **not** stored on `users`; it
+`provider_customer_id` is intentionally **not** stored on `users`; it
 lives on `subscriptions` (slot 0006, plan-25-13) as the single source
-of truth. Lookups by Stripe customer id join through that table.
+of truth. Lookups by provider customer id join through that table.
 
 ## 2. Endpoints
 

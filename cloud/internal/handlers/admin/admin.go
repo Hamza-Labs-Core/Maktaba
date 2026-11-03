@@ -77,6 +77,7 @@ func Mount(r chi.Router, d *Deps) {
 		g.Get("/v1/admin/accounts/{id}", d.AccountDetail)
 		g.Post("/v1/admin/accounts/{id}/suspend", d.Suspend)
 		g.Post("/v1/admin/accounts/{id}/unsuspend", d.Unsuspend)
+		g.Post("/v1/admin/accounts/{id}/plan", d.SetPlan)
 		g.Get("/v1/admin/fleet", d.Fleet)
 		g.Get("/v1/admin/servers", d.Servers)
 		g.Get("/v1/admin/revenue", d.Revenue)
@@ -133,12 +134,13 @@ type accountView struct {
 }
 
 type subscriptionView struct {
-	Plan              string     `json:"plan"`
-	Status            string     `json:"status"`
-	Interval          string     `json:"interval,omitempty"`
-	CurrentPeriodEnd  *time.Time `json:"current_period_end,omitempty"`
-	CancelAtPeriodEnd bool       `json:"cancel_at_period_end"`
-	StripeCustomerID  string     `json:"stripe_customer_id,omitempty"`
+	Plan               string     `json:"plan"`
+	Status             string     `json:"status"`
+	Interval           string     `json:"interval,omitempty"`
+	CurrentPeriodEnd   *time.Time `json:"current_period_end,omitempty"`
+	CancelAtPeriodEnd  bool       `json:"cancel_at_period_end"`
+	Provider           string     `json:"provider,omitempty"`
+	ProviderCustomerID string     `json:"provider_customer_id,omitempty"`
 }
 
 type serverView struct {
@@ -265,18 +267,18 @@ func looksLikeUUID(s string) bool {
 
 func (d *Deps) subscription(ctx context.Context, uid string) (*subscriptionView, error) {
 	var s subscriptionView
-	var interval, cust sql.NullString
+	var interval, provider, cust sql.NullString
 	var end sql.NullTime
 	err := d.DB.QueryRowContext(ctx, `
-        SELECT plan, status, interval, current_period_end, cancel_at_period_end, stripe_customer_id
-        FROM subscriptions WHERE user_id = $1`, uid).Scan(&s.Plan, &s.Status, &interval, &end, &s.CancelAtPeriodEnd, &cust)
+        SELECT plan, status, interval, current_period_end, cancel_at_period_end, provider, provider_customer_id
+        FROM subscriptions WHERE user_id = $1`, uid).Scan(&s.Plan, &s.Status, &interval, &end, &s.CancelAtPeriodEnd, &provider, &cust)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	s.Interval, s.StripeCustomerID = interval.String, cust.String
+	s.Interval, s.Provider, s.ProviderCustomerID = interval.String, provider.String, cust.String
 	if end.Valid {
 		t := end.Time
 		s.CurrentPeriodEnd = &t
@@ -307,7 +309,7 @@ func readReason(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 
 // Suspend blocks an account from signing in and signs every device out.
-// Billing is left alone (Stripe cancels separately). An operator cannot
+// Billing is left alone (the payment provider cancels separately). An operator cannot
 // suspend themselves or another service admin — demote first, from the
 // CLI.
 func (d *Deps) Suspend(w http.ResponseWriter, r *http.Request) {
@@ -360,6 +362,102 @@ func (d *Deps) setStatus(w http.ResponseWriter, r *http.Request, status string) 
 		}
 	}
 	if err := audit.WriteTx(ctx, tx, d.entry(r, action, id, map[string]any{"reason": reason, "previous_status": target.Status})); err != nil {
+		d.fail(w, r, "audit", err)
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		d.fail(w, r, "commit", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type planReq struct {
+	Plan   string `json:"plan"`
+	Reason string `json:"reason"`
+}
+
+// liveStatuses keep a provider's paid plan in force.
+var liveStatuses = map[string]bool{"active": true, "trialing": true, "past_due": true}
+
+// SetPlan sets an account's plan by hand (POST /v1/admin/accounts/{id}/plan,
+// {"plan", "reason"}). It is how plans change while no payment provider
+// is set up: the subscription row is marked provider "manual", the plan
+// is mirrored onto the account and its servers, and the change is
+// audited with its reason. A plan a payment provider is still billing
+// for is refused (409 provider_managed): change it with the provider.
+func (d *Deps) SetPlan(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+	var req planReq
+	r.Body = http.MaxBytesReader(w, r.Body, 16<<10)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
+		return
+	}
+	reason := strings.TrimSpace(req.Reason)
+	if reason == "" {
+		writeErr(w, http.StatusBadRequest, "reason_required", "give a reason; it goes in the audit log")
+		return
+	}
+	if len(reason) > 1000 {
+		reason = reason[:1000]
+	}
+	if _, ok := billingpkg.Tiers[req.Plan]; !ok {
+		writeErr(w, http.StatusUnprocessableEntity, "bad_plan", "plan must be free, pro or family")
+		return
+	}
+	target, err := d.lookup(ctx, id)
+	if errors.Is(err, stores.ErrUserNotFound) {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
+	if err != nil {
+		d.fail(w, r, "load account", err)
+		return
+	}
+	tx, err := d.DB.BeginTx(ctx, nil)
+	if err != nil {
+		d.fail(w, r, "begin", err)
+		return
+	}
+	defer func() { _ = tx.Rollback() }()
+	var provider sql.NullString
+	var status string
+	err = tx.QueryRowContext(ctx, `SELECT provider, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`, id).Scan(&provider, &status)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		d.fail(w, r, "load subscription", err)
+		return
+	}
+	if err == nil && provider.Valid && provider.String != billingpkg.ProviderManual && liveStatuses[status] {
+		writeErr(w, http.StatusConflict, "provider_managed", "a payment provider is billing this plan; change it there")
+		return
+	}
+	newStatus := "active"
+	if req.Plan == billingpkg.PlanFree {
+		newStatus = "inactive"
+	}
+	if _, err := tx.ExecContext(ctx, `
+        INSERT INTO subscriptions (user_id, provider, plan, status, updated_at)
+        VALUES ($1, $2, $3, $4, now())
+        ON CONFLICT (user_id) DO UPDATE SET
+            provider = EXCLUDED.provider,
+            plan = EXCLUDED.plan,
+            status = EXCLUDED.status,
+            interval = NULL,
+            current_period_end = NULL,
+            cancel_at_period_end = FALSE,
+            updated_at = now()
+    `, id, billingpkg.ProviderManual, req.Plan, newStatus); err != nil {
+		d.fail(w, r, "set subscription", err)
+		return
+	}
+	if err := billingh.SetEffectivePlan(ctx, tx, id, req.Plan); err != nil {
+		d.fail(w, r, "set plan", err)
+		return
+	}
+	if err := audit.WriteTx(ctx, tx, d.entry(r, audit.ActionAdminSetPlan, id,
+		map[string]any{"reason": reason, "plan": req.Plan, "previous_plan": target.Plan})); err != nil {
 		d.fail(w, r, "audit", err)
 		return
 	}
@@ -466,8 +564,9 @@ func (d *Deps) servers(ctx context.Context, cond string, args []any, limit, offs
 
 // Revenue is MRR from the subscriptions table priced with the plan
 // catalog. A subscription counts while it is active, trialing or
-// past_due (Stripe is still collecting); yearly plans count at their
-// monthly catalog price.
+// past_due (the payment provider is still collecting); yearly plans
+// count at their monthly catalog price. Plans a service admin set by
+// hand (provider "manual") are not revenue and do not count.
 func (d *Deps) Revenue(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	type planRow struct {
@@ -478,7 +577,7 @@ func (d *Deps) Revenue(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := d.DB.QueryContext(ctx, `
         SELECT u.plan, count(*),
-               count(*) FILTER (WHERE s.status IN ('active','trialing','past_due'))
+               count(*) FILTER (WHERE s.status IN ('active','trialing','past_due') AND COALESCE(s.provider,'') <> 'manual')
         FROM users u LEFT JOIN subscriptions s ON s.user_id = u.id
         GROUP BY u.plan ORDER BY u.plan`)
 	if err != nil {

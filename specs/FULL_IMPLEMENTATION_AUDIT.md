@@ -389,7 +389,7 @@ exists but no daemon, route, or caller will execute it.
 | 22 DevOps & Delivery | 8 | 7 | 0 | 1 — story 22.8 (`make dev`, pre-commit, dev overlay) is partial per [`P0_CERTIFICATION.md`](P0_CERTIFICATION.md) |
 | 23 Security | 8 | 8 — auth, ACL, TLS terms, secrets, validation, rate limit, SBOM tool, disclosure doc | 0 | 0 |
 | 24 Data Integrity | 9 | 9 — atomic.py, idempotency.py, constraints, locking, backup script, integrity checks | 0 | 0 |
-| 25 Cloud Relay | 36 | 30 — auth, identity, billing, relay tunnel, push, admin, installers | 0 | 6 — DNS provisioning, real binaries, integration tests against real Stripe/APNs/FCM, server-side cloudlink client (see PLAN_REVIEW_25 §1.3), TLS for arbitrary subdomain, federation w/ on-prem |
+| 25 Cloud Relay | 36 | 30 — auth, identity, billing, relay tunnel, push, admin, installers | 0 | 6 — DNS provisioning, real binaries, integration tests against a real payment provider/APNs/FCM, server-side cloudlink client (see PLAN_REVIEW_25 §1.3), TLS for arbitrary subdomain, federation w/ on-prem |
 
 Totals: ~172/272 structurally complete on the running binary, ~12 with
 code present but unmounted/unwired, ~40 not implemented, ~48 in
@@ -540,7 +540,7 @@ code, migrations, and at least one test on `main`.
   brute-force, rate limiting, ACLs, secret loading, transport
   security, security audit (write side), pairing tickets table**:
   all of Epic 10.
-- **Cloud-side**: auth + Google/Apple OAuth + Stripe billing + WSS
+- **Cloud-side**: auth + Google/Apple OAuth + provider-neutral billing (payment provider TBD) + WSS
   tunnel + HTTP proxy + APNs + FCM + admin fleet + subdomain +
   TLS/ACME + rate limit + abuse + entitlement signing + installer
   scripts (macOS/Windows/Linux/Docker/NAS/RPi/cloud VPS) +

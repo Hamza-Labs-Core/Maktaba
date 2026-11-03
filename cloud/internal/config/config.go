@@ -22,7 +22,7 @@ type Config struct {
 	Redis       RedisConfig
 	OAuthGoogle GoogleOAuth
 	OAuthApple  AppleOAuth
-	Stripe      StripeConfig
+	Billing     BillingConfig
 	APNs        APNsConfig
 	FCM         FCMConfig
 	Mail        MailConfig
@@ -78,18 +78,12 @@ type AppleOAuth struct {
 	KeyPath  string
 }
 
-type StripeConfig struct {
-	SecretKey      string // env
-	WebhookSecret  string // env
-	PublishableKey string
-	// Price ids of the monthly plans (env MAKTABA_CLOUD_PRICE_PRO /
-	// MAKTABA_CLOUD_PRICE_FAMILY override).
-	PriceProMonthly    string
-	PriceFamilyMonthly string
-	// LiveMode must be set explicitly before an sk_live_ key is
-	// accepted; without it the api role runs against Stripe test mode
-	// only.
-	LiveMode bool
+// BillingConfig picks the payment provider. The provider is not chosen
+// yet: "none" (the default and, today, the only provider) takes no
+// payments — paid plans show as coming soon and service admins set
+// plans by hand. Validate refuses any other value.
+type BillingConfig struct {
+	Provider string
 }
 
 type APNsConfig struct {
@@ -144,7 +138,8 @@ func defaultConfig() Config {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: 30 * time.Minute,
 		},
-		Mail: MailConfig{Driver: "log"},
+		Mail:    MailConfig{Driver: "log"},
+		Billing: BillingConfig{Provider: "none"},
 		Telemetry: TelemetryConfig{
 			LogFormat:          "json",
 			LogLevel:           "info",
@@ -192,20 +187,11 @@ func applyEnvOverrides(c *Config) {
 	if v := os.Getenv("MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET"); v != "" {
 		c.OAuthGoogle.ClientSecret = v
 	}
-	if v := os.Getenv("MAKTABA_CLOUD_STRIPE_SECRET"); v != "" {
-		c.Stripe.SecretKey = v
-	}
-	if v := os.Getenv("MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET"); v != "" {
-		c.Stripe.WebhookSecret = v
+	if v := os.Getenv("MAKTABA_CLOUD_BILLING_PROVIDER"); v != "" {
+		c.Billing.Provider = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_WEB_URL"); v != "" {
 		c.Server.WebURL = v
-	}
-	if v := os.Getenv("MAKTABA_CLOUD_PRICE_PRO"); v != "" {
-		c.Stripe.PriceProMonthly = v
-	}
-	if v := os.Getenv("MAKTABA_CLOUD_PRICE_FAMILY"); v != "" {
-		c.Stripe.PriceFamilyMonthly = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
@@ -293,8 +279,6 @@ func assign(c *Config, section, key, val string) error {
 		c.OAuthApple.ClientID = val
 	case "oauth.apple.key_path":
 		c.OAuthApple.KeyPath = val
-	case "stripe.publishable_key":
-		c.Stripe.PublishableKey = val
 	case "apns.team_id":
 		c.APNs.TeamID = val
 	case "apns.key_id":
@@ -311,12 +295,8 @@ func assign(c *Config, section, key, val string) error {
 		c.Server.WebURL = val
 	case "server.trust_proxy_headers":
 		return setBool(&c.Server.TrustProxyHeaders, val)
-	case "stripe.price_pro_monthly":
-		c.Stripe.PriceProMonthly = val
-	case "stripe.price_family_monthly":
-		c.Stripe.PriceFamilyMonthly = val
-	case "stripe.live_mode":
-		return setBool(&c.Stripe.LiveMode, val)
+	case "billing.provider":
+		c.Billing.Provider = val
 	case "mail.driver":
 		c.Mail.Driver = val
 	case "entitlement.private_key_path":

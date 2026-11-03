@@ -19,7 +19,7 @@ but for the *cloud-side* binary. By the end of this story:
   hostname) and `api.maktaba.tv` (the public API host) at the
   Hetzner LB; TLS is terminated at Cloudflare for these two hosts.
 - The binary takes a single `--config /etc/maktaba/cloud.toml`
-  pointing at `[database]`, `[oauth]`, `[stripe]`, `[apns]`, `[fcm]`,
+  pointing at `[database]`, `[oauth]`, `[billing]`, `[apns]`, `[fcm]`,
   `[admin]` sections — secrets read from environment overrides
   (`MAKTABA_CLOUD_DB_URL`, etc.) for 12-factor compliance.
 - Structured `slog` JSON logs include `request_id`, `user_id`,

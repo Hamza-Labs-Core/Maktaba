@@ -96,9 +96,8 @@ key_id  = ""
 client_id = ""
 key_path  = ""
 
-[stripe]
-secret_key      = ""   # env MAKTABA_CLOUD_STRIPE_SECRET
-webhook_secret  = ""   # env MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET
+[billing]
+provider        = "none" # env MAKTABA_CLOUD_BILLING_PROVIDER; payment provider TBD
 
 [apns]
 team_id  = ""
@@ -119,7 +118,7 @@ sample_2xx_after_days = 7
 sample_2xx_rate = 0.10
 ```
 
-Validator enforces presence of `[server]`, `[database]`, and either `[oauth.google]` or `[oauth.apple]` blocks on `api` role; `relay` role waives oauth/stripe checks; `worker` waives `[server.listen_addr]`.
+Validator enforces presence of `[server]`, `[database]`, and either `[oauth.google]` or `[oauth.apple]` blocks on `api` role; `relay` role waives oauth/billing checks; an unknown `[billing] provider` is rejected; `worker` waives `[server.listen_addr]`.
 
 ## 3. Endpoints (this story only)
 

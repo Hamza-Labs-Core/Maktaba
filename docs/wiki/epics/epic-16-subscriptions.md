@@ -13,7 +13,7 @@ Maktaba is fully usable for free as a self-hosted single-user product. Optional 
 |---|-------|------|---------|
 | 16.1 | [Free tier](../../../specs/epics/16-subscriptions/story-16-01-free-tier.md) | [plan-16-01](../../../specs/epics/16-subscriptions/plan-16-01-free-tier.md) | Canonical product: full features for single user, no nag screens, no license required. |
 | 16.2 | [Premium features](../../../specs/epics/16-subscriptions/story-16-02-premium-features.md) | [plan-16-02](../../../specs/epics/16-subscriptions/plan-16-02-premium-features.md) | Tier matrix: free (1 seat) / home (4 seats, 200 GB relay, daily backup) / pro (unlimited seats, 1 TB relay, hourly backup, federation). |
-| 16.3 | [Subscription management](../../../specs/epics/16-subscriptions/story-16-03-subscription-management.md) | [plan-16-03](../../../specs/epics/16-subscriptions/plan-16-03-subscription-management.md) | Settings UI deep-links to Stripe Customer Portal; webhook handler tracks state; daily reconciliation cron. |
+| 16.3 | [Subscription management](../../../specs/epics/16-subscriptions/story-16-03-subscription-management.md) | [plan-16-03](../../../specs/epics/16-subscriptions/plan-16-03-subscription-management.md) | Settings UI deep-links to the provider's customer portal; webhook handler tracks state; daily reconciliation cron. |
 | 16.4 | [License key validation](../../../specs/epics/16-subscriptions/story-16-04-license-validation.md) | [plan-16-04](../../../specs/epics/16-subscriptions/plan-16-04-license-validation.md) | Ed25519-signed license JSON; local signature check + daily server refresh; 30-day offline grace; revocation list fetch. |
 | 16.5 | [Usage analytics (opt-in)](../../../specs/epics/16-subscriptions/story-16-05-telemetry-opt-in.md) | [plan-16-05](../../../specs/epics/16-subscriptions/plan-16-05-telemetry-opt-in.md) | First-launch consent dialog; client-side queue (cap 1000); device pseudonym; server kill-switch. |
 | 16.6 | [Feature flags per tier](../../../specs/epics/16-subscriptions/story-16-06-feature-flags.md) | [plan-16-06](../../../specs/epics/16-subscriptions/plan-16-06-feature-flags.md) | Client-side resolution + 60 s TTL cache; Ed25519 signature verification. |
@@ -66,7 +66,7 @@ Maktaba is fully usable for free as a self-hosted single-user product. Optional 
 
 ## Out of scope
 
-- In-app purchases through Apple/Google billing (15-30 % cut); v1 routes through Stripe Customer Portal.
+- In-app purchases through Apple/Google billing (15-30 % cut); v1 routes through the provider's customer portal.
 - Per-feature usage-based billing (e.g., "$X per transcribed hour"); v1 is flat-tier only.
 
 ## See also

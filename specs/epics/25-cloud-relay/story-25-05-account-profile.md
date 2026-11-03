@@ -106,7 +106,7 @@ Avatar handling:
   cooldown timer in `GET /api/me`.
 - **Pending billing.** Cannot delete if there's an unpaid
   invoice; surface "settle the invoice or contact support".
-  Stripe `customer` reference is anonymized but kept for
+  payment-provider customer reference is anonymized but kept for
   accounting.
 - **Active subscription on delete.** Cancel the subscription
   immediately (no proration); user keeps cloud features

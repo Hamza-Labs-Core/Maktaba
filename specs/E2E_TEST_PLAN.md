@@ -333,7 +333,7 @@ pass / fail. Flow IDs are stable (referenced by §5 acceptance mapping).
 - `cloud-api` — `--role=api` stub backed by Postgres `cloud_test`.
 - A local CCNS proxy so `{user}.maktaba.tv` resolves to the relay container.
 
-These flows mock external dependencies (Stripe, APNs/FCM, Postmark) via
+These flows mock external dependencies (payment provider, APNs/FCM, Postmark) via
 local fakes; see `tests/e2e/cloud/fakes/` (created by Epic 25 plans).
 
 #### F-C-01 — Claim server through cloud
@@ -493,7 +493,7 @@ local fakes; see `tests/e2e/cloud/fakes/` (created by Epic 25 plans).
 | `web` | `build web/Dockerfile.test` | Serves the static React bundle + Vite preview. |
 | `relay` *(cloud overlay)* | `build cloud/Dockerfile` w/ `--role=relay` | WSS tunnel endpoint (architecture §13.4). |
 | `cloud-api` *(cloud overlay)* | `build cloud/Dockerfile` w/ `--role=api` | Identity, claim, entitlement. |
-| `fake-apns`, `fake-fcm`, `fake-stripe`, `fake-postmark` *(cloud overlay)* | Local fakes from `tests/e2e/cloud/fakes/` | External-dep test doubles. |
+| `fake-apns`, `fake-fcm`, `fake-payments`, `fake-postmark` *(cloud overlay)* | Local fakes from `tests/e2e/cloud/fakes/` | External-dep test doubles. |
 
 **Healthcheck contract.** Each service exposes `/healthz` (liveness) and
 `/readyz` (readiness — depends on DB connection + migrations applied) per
@@ -1043,7 +1043,7 @@ be authored:
 | Item | Blocker | Where to fix |
 |---|---|---|
 | **Story 10.18** Ed25519 identity keys missing | F-C-01, F-C-07 blocked | author story + plan in `epics/10-auth-security/` per IMPLEMENTATION_ORDER §4.1 |
-| **Cloud-fake images** for APNs/FCM/Stripe/Postmark | F-C-05, F-C-06 blocked | Epic 25 plans (35 stories still without plans per IMPLEMENTATION_ORDER §5) |
+| **Cloud-fake images** for APNs/FCM/payment-provider/Postmark | F-C-05, F-C-06 blocked | Epic 25 plans (35 stories still without plans per IMPLEMENTATION_ORDER §5) |
 | **TV e2e surface** (XCUITest + Compose-test) | TV coverage in matrix | extend Story 20.1 or add a new story to Epic 20 |
 | **`Pipeline.Enqueue*` gRPC** undefined | F-AD-04 implementation ambiguous | architectural decision per IMPLEMENTATION_ORDER §4.5 |
 | **Endpoint canonicalization** (`/api/me/playback-state` vs `/api/stream/sessions/{id}/progress`) | F-T-08 endpoint choice | architectural decision per IMPLEMENTATION_ORDER §4.5 |

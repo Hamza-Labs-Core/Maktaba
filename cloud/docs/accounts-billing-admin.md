@@ -81,29 +81,40 @@ Signing in during the 30-day hold is allowed and the account page offers
 
 | Method & path | Auth | Success |
 |---|---|---|
-| `GET /v1/billing/plans` | public | `{plans:[{id, name, price_cents, bandwidth_bytes_per_month, max_servers, max_concurrent_streams, relay_qos, includes_transcoding, family_seats, purchasable, home_tier}]}` (`home_tier`: the plan the license gives the account's homes, see Licenses) |
+| `GET /v1/billing/plans` | public | `{payments_enabled, plans:[{id, name, price_cents, bandwidth_bytes_per_month, max_servers, max_concurrent_streams, relay_qos, includes_transcoding, family_seats, purchasable, home_tier}]}` (`home_tier`: the plan the license gives the account's homes, see Licenses) |
 | `GET /v1/billing/me` | bearer | `{plan, status, interval?, current_period_end?, cancel_at_period_end, has_customer}` |
-| `POST /v1/billing/checkout` | bearer | body `{plan:"pro"\|"family"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 billing_disabled` |
-| `POST /v1/billing/portal` | bearer | `{portal_url}`; `409 no_customer` |
+| `POST /v1/billing/checkout` | bearer | body `{plan:"pro"\|"family"}` → `{checkout_url, session_id}`; `422 bad_plan`, `409 already_subscribed` (use the portal), `503 payments_not_set_up` |
+| `POST /v1/billing/portal` | bearer | `{portal_url}`; `409 no_customer`, `503 payments_not_set_up` |
 | `GET /v1/billing/usage` | bearer | `{month, plan, limit_bytes, used_bytes, servers:[{id, name, bytes_in, bytes_out}]}` |
 | `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519): the license-signing key, whose public half release builds of the home embed |
-| `POST /v1/billing/webhook` | Stripe signature | `200`; `400 invalid_signature` |
+| `POST /v1/billing/webhook/{provider}` | the provider's signature | `200`; `400 invalid_signature`; `404` unless `{provider}` is the configured provider and it takes payments |
 
-Stripe runs in test mode only unless `stripe.live_mode = true` is set
-explicitly: the api role refuses an `sk_live_` key otherwise. Prices come
-from `[stripe] price_pro_monthly` / `price_family_monthly` (or
-`MAKTABA_CLOUD_PRICE_PRO` / `MAKTABA_CLOUD_PRICE_FAMILY`).
+**Payment provider: TBD.** Payments go through the
+`billing.Provider` interface (`internal/billing/provider.go`): open a
+checkout, open the customer portal, verify and translate a webhook into a
+provider-neutral event. `[billing] provider` (env
+`MAKTABA_CLOUD_BILLING_PROVIDER`) picks it, and config validation refuses
+any provider the cloud does not ship. The only one shipped is `none`, the
+default: `payments_enabled` is false, no plan is `purchasable`, checkout and
+the portal answer `503 payments_not_set_up` (the web app shows paid plans
+with a disabled "Payments coming soon" button), every webhook route is a
+404, and a service admin sets plans by hand (`POST /v1/admin/accounts/{id}/plan`,
+below).
 
-Webhook handling: the signature is verified (5-minute tolerance), the event
-is recorded in `stripe_events` and applied in the same transaction, so a
-retried event id is a no-op and a failed apply is retried by Stripe. Events
-older than the subscription's last applied event are ignored (Stripe does
-not guarantee order). Handled: `checkout.session.completed` (links the
-Stripe customer), `customer.subscription.{created,updated,deleted}` (plan,
-status, period end; `canceled`/`unpaid`/`incomplete_expired` fall back to
-free), `invoice.paid` / `invoice.payment_failed` (invoice ledger; failure
-marks the subscription `past_due`), `charge.dispute.created` (suspends the
-account, records an abuse signal). The effective plan is mirrored onto
+Webhook handling (once a provider ships): the provider verifies the
+delivery, the event is recorded in `provider_events` (keyed by provider and
+event id) and applied in the same transaction, so a retried event id is a
+no-op and a failed apply is retried by the provider. Events older than the
+subscription's last applied event are ignored (delivery order is not
+guaranteed). Neutral events: `checkout_completed` (links the provider's
+customer), `subscription_started` / `subscription_changed` /
+`subscription_cancelled` (plan, status, period end; `canceled`/`unpaid`/
+`incomplete_expired` fall back to free), `payment_succeeded` /
+`payment_failed` (invoice ledger; failure marks the subscription
+`past_due` and mails the payer), `payment_disputed` (suspends the account,
+records an abuse signal). A delivery that fails verification records a
+`billing_webhook_forgery` abuse signal. Billing rows carry the `provider`
+that wrote them (`manual` for a plan set by hand). The effective plan is mirrored onto
 `users.plan` and onto the plan of every server the account owns, which is
 what the relay's bandwidth gate reads.
 
@@ -133,7 +144,7 @@ user-scoped entitlement token (`GET /v1/billing/entitlement`) is gone.
 The home's relay agent asks for its license every minute on loopback
 (`GET 127.0.0.1:8765/admin/cloud-link/license`, passed through with the
 server secret only the agent holds), so an upgrade reaches the home within a
-minute of Stripe's webhook, a cancelled plan returns it to Free, and a
+minute of the payment provider's webhook (or of a plan set by hand), a cancelled plan returns it to Free, and a
 revocation locks it at once. A home cut off from the cloud keeps its license
 until it expires (31 days, then 72 hours of clock-skew grace): the 30-day
 offline grace.
@@ -159,6 +170,7 @@ maktaba-cloud license unrevoke --id lic_… --reason "…" --config cloud.toml
 | `GET /v1/admin/accounts/{id}` | — | `{account, subscription, servers:[{id,name,slug,plan,version,online,last_seen_at}], usage:{month, used_bytes, limit_bytes}, sessions_active, abuse:[…], audit:[…]}` |
 | `POST /v1/admin/accounts/{id}/suspend` | `{reason}` | `204` — status `suspended`, sessions revoked; `400 reason_required`, `409 cannot_suspend_admin` (self or another service admin) |
 | `POST /v1/admin/accounts/{id}/unsuspend` | `{reason}` | `204` |
+| `POST /v1/admin/accounts/{id}/plan` | `{plan, reason}` | `204`; sets the plan by hand (subscription provider `manual`, mirrored onto the account and its servers, audited `admin.account.set_plan`, not counted as revenue); `422 bad_plan`, `409 provider_managed` when a payment provider is billing the plan |
 | `GET /v1/admin/fleet` | — | `{users_total, users_suspended, servers_total, servers_online, servers_stale, tunnels_live?}` |
 | `GET /v1/admin/servers?status=online\|offline&limit=&offset=` | — | `{servers:[{id, name, slug, owner_email, plan, version, online, last_seen_at, last_heartbeat?, relay_latency_ms?}], total}` |
 | `GET /v1/admin/revenue` | — | `{currency:"usd", mrr_cents, arr_cents, active_paid, past_due, cancelling, breakdown:[{plan, users, active, mrr_cents}]}` |
@@ -228,15 +240,19 @@ Email verification and resend (25.2), password reset (25.2), per-account
 login lockout with `Retry-After` (25.2), refresh-token replay detection
 (25.2), timing-equalised unknown-email login (25.2), profile validation
 (25.5), sessions/devices list and revoke (25.5), data export (25.5),
-deletion with password confirm and cancel (25.5), Stripe customer portal
-(25.13/25.15), invoice ledger and payment-failed notice (25.14), dispute
+deletion with password confirm and cancel (25.5), customer portal through
+the payment provider (25.13/25.15), invoice ledger and payment-failed notice (25.14), dispute
 suspension (25.14), usage endpoint (25.11), entitlement issuing and
 public key (25.26), the whole operator console API and UI (25.20/25.21),
 audit log, blocklist management (25.25), sign-up flood check (25.25), a
-test-mode-only Stripe guard, and the cloud web app.
+manual plan change for service admins while no payment provider is set up,
+and the cloud web app.
 
 ### Still open (not in this change)
 
+- **Payment provider.** Not chosen yet (TBD). It plugs in behind
+  `billing.Provider`; until then `[billing] provider = "none"` and plans are
+  set by hand.
 - **Mail provider.** Mails go to the log (`mail.driver = "log"`). A real
   provider needs an account and a decision; until then verification links
   must be read from the log.

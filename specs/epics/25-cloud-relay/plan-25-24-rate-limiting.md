@@ -10,7 +10,7 @@
 | Storage | Redis (Sentinel HA in prod). Failure mode: **fail-closed** (`503 dependency_down`). |
 | Middleware | `cloud/internal/ratelimit/middleware.go`; policies in `policies.go` map route → limit. |
 | Overrides | DB-backed `rate_overrides(scope, actor, limit_per_window, window_secs, expires_at)`. |
-| Stripe webhook | Bypass; signature-only auth. |
+| Payment-provider webhook | Bypass; signature-only auth. |
 | Headers | `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`. |
 | Out of scope | CAPTCHA (deferred). |
 
@@ -176,7 +176,7 @@ Relay path (25.9) uses `Limit(relayPerSubdomainPolicy, rl)` middleware.
 | `TestFreeUserDailyQuota` | 101st → 429 with retry-after to midnight UTC. |
 | `TestPushServerCap1000Hour` | 1001st → 429 + abuse. |
 | `TestAdmin600PerMin` | 601st → 429. |
-| `TestStripeWebhookBypass` | Signature path skips middleware. |
+| `TestBillingWebhookBypass` | Signature path skips middleware. |
 | `TestHeadersSetEvenOnAllow` | Limit/Remaining/Reset headers. |
 | `TestCloudflareIPHonorsHeader` | When source IP in CF range, header trusted. |
 | `TestNonCFRejectsHeader` | When not, header ignored. |
@@ -188,7 +188,7 @@ Relay path (25.9) uses `Limit(relayPerSubdomainPolicy, rl)` middleware.
 | CGNAT /24 sharing | Limits sized for legitimate carrier traffic. | Spec. |
 | Behind CF | `Cf-Connecting-Ip` trusted only from CF IPs. | `TestCloudflareIPHonorsHeader`. |
 | Bots learn limits | Documented in API docs; abuse signals beyond limits. | Doc. |
-| Stripe webhook | Signature; no rate limit. | `TestStripeWebhookBypass`. |
+| Payment-provider webhook | Signature; no rate limit. | `TestBillingWebhookBypass`. |
 | Sliding-window boundary variance | Up to ±20% per spec. | `TestSlidingWindowSmoothBoundary`. |
 | Refund of client-errors | Not refunded; documented. | Spec. |
 | Header/body symmetry | Same numbers in both. | `TestHeadersSetEvenOnAllow`. |

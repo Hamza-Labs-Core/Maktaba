@@ -17,7 +17,7 @@ a part like any other, and is the **single source** of those for Epic 50 (README
 `maktaba-cloud` and `maktaba-cloudlink` use `shared/log/go` (53.01): `service` = `cloud.api`,
 `cloud.relay`, `cloud.worker`, `cloudlink`; `node` = `A`, `B`, `W` (or the host name off the HA
 setup); `home_h` instead of server ids and slugs; `request_id` passed through the relay (53.08).
-Never logged: account emails, Stripe ids beyond their prefix, resume tickets (50.03 says so),
+Never logged: account emails, payment-provider ids beyond their prefix, resume tickets (50.03 says so),
 tokens.
 
 ### 2. Logs on each node, and off it

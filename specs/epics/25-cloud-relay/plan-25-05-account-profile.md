@@ -143,7 +143,7 @@ func ValidateDisplayName(s string) error {
    - `UPDATE users SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL`.
    - Revoke all sessions.
    - For each linked server: emit `0x20 REVOKE` frame on its tunnel (best-effort; tunnel may be down — purge job retries on reconnect).
-   - Cancel active Stripe subscription (no proration; user keeps access until `current_period_end`).
+   - Cancel the active payment-provider subscription (no proration; user keeps access until `current_period_end`).
    - Insert `account_deletions(user_id, scheduled_at = now()+30d)`.
 2. Audit `account.delete_requested`.
 
@@ -179,7 +179,7 @@ Per-table purge map:
 | `servers` | DELETE → cascade tunnels closed + bearer tokens (handled in 25.6 migration with `ON DELETE CASCADE`). |
 | `audit_events` | UPDATE: `actor_user_id = NULL`; `payload = jsonb_strip_path(payload, ['email','name'])`; keep `actor_pseudonym = sha256(user_id || salt)`. Retain 90d post-delete. |
 | `bandwidth_samples` | KEEP for billing reconciliation; set `user_id = NULL` 90d after purge (already cascaded from `server_id`-only rows; bandwidth carries `server_id` not user). |
-| `invoices` | KEEP with anonymized customer ref (Stripe still has it). |
+| `invoices` | KEEP with anonymized customer ref (the payment provider still has it). |
 | `subscriptions` | KEEP `current_period_end`, status; anonymize user. |
 
 Mark `account_deletions.purged_at`.
@@ -221,7 +221,7 @@ func RunExport(ctx context.Context, db *pgxpool.Pool, r2 *R2, userID, jobID uuid
     //   - sessions.json   (history)
     //   - servers.json    (servers + subdomain history)
     //   - bandwidth.csv   (bandwidth_samples, last 24 months)
-    //   - subscriptions.json + invoices.json (joined with Stripe references)
+    //   - subscriptions.json + invoices.json (joined with payment-provider references)
     //   - audit.json      (audit_events where actor_user_id = ?, last 24 months)
     //   - devices.json    (platform + last_used; token_sealed NOT included)
     // 2. Build ZIP in-memory or to a temp file (≤ 100 MB practical cap).
@@ -312,7 +312,7 @@ libvips is bound via `davidbyttow/govips/v2` (cgo); CI builds with libvips insta
 - 25.3/25.4 (`oauth_links` for join).
 - 25.6 (servers — `servers` exists; emit revoke).
 - 25.7 (tunnel revoke frame).
-- 25.13/25.14 (Stripe customer for subscription cancel).
+- 25.13/25.14 (provider customer for subscription cancel).
 - 25.17 (push outbox for export-ready notification).
 - 25.18 (R2 client / object store; same data-key seal).
 
