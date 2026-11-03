@@ -57,6 +57,7 @@ type systemPacks struct {
 	m        packImporter
 	log      io.Writer
 	now      func() time.Time
+	off      bool // [components] reconcile = off: report only, act on nothing
 }
 
 func (s systemPacks) markerDir() string {
@@ -97,6 +98,10 @@ func (s systemPacks) run(ctx context.Context) []string {
 	if len(names) == 0 {
 		return nil
 	}
+	if s.off {
+		fmt.Fprintf(s.log, "[packs] [components] reconcile is off: the packs in %s are not imported\n", s.dir)
+		return nil
+	}
 	if !s.wanted() {
 		fmt.Fprintf(s.log, "[packs] this home's bundle has no runtime.ml: the packs in %s are not imported\n", s.dir)
 		return nil
@@ -124,7 +129,7 @@ func (s systemPacks) run(ctx context.Context) []string {
 }
 
 // importSystemPacks is serve's first-start import of the maktaba-full package's packs.
-func importSystemPacks(ctx context.Context, m *packs.Manager, stateDir string, log io.Writer) {
+func importSystemPacks(ctx context.Context, m *packs.Manager, stateDir string, off bool, log io.Writer) {
 	systemPacks{dir: systemPacksDir(), stateDir: stateDir, version: m.Version, platform: m.Platform,
-		m: m, log: log, now: time.Now}.run(ctx)
+		m: m, log: log, now: time.Now, off: off}.run(ctx)
 }

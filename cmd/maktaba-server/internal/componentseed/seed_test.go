@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
@@ -81,7 +82,12 @@ func TestPlanRules(t *testing.T) {
 		{"analytics always", func(*Facts) {}, "analytics", "enabled"},
 		{"updates always", func(*Facts) {}, "updates.auto", "enabled"},
 		{"asset on disk", func(f *Facts) { f.Assets["model.whisper-turbo"] = true }, "model.whisper-turbo", "installed"},
-		{"asset not on disk", func(*Facts) {}, "model.whisper-turbo", "absent"},
+		{"asset not on disk, an enabled stage needs it", func(*Facts) {}, "model.whisper-turbo", "installed"},
+		{"asset not on disk, another of the group taken", func(*Facts) {}, "model.whisper-large-v3", "absent"},
+		{"asset not on disk, its stages off", func(f *Facts) {
+			f.OperatorOff = map[string]bool{"index": true, "chapter_infer": true, "topic_assign": true, "topic_recluster": true}
+		}, "model.embedder", "absent"},
+		{"another of the group on disk", func(f *Facts) { f.Assets["model.whisper-medium"] = true }, "model.whisper-turbo", "absent"},
 		{"runtime on disk", func(f *Facts) { f.Assets["runtime.ml"] = true }, "runtime.ml", "installed"},
 	}
 	for _, c := range cases {
@@ -491,5 +497,27 @@ func TestNodeRunOnce(t *testing.T) {
 	_ = db.QueryRow(`SELECT COUNT(*) FROM component_overrides`).Scan(&k)
 	if k != 0 {
 		t.Fatalf("%d overrides seeded again", k)
+	}
+}
+
+// A home with nothing fetched yet (a fresh install, one that never transcribed) runs its
+// stages today and fetches the runtime and models on first use: the seed keeps them wanted,
+// so no stage that runs today waits on an asset (phase 1 changes nothing).
+func TestPlanNothingFetchedKeepsTheStagesOn(t *testing.T) {
+	cat := components.Default()
+	plan := Plan(cat, today())
+	d := map[string]store.Desired{}
+	for id, w := range plan {
+		d[id] = store.Desired{ID: id, Want: w}
+	}
+	g := runner.Gates(cat, d, false)
+	for _, id := range []string{"transcription", "subtitles", "search.semantic", "youtube"} {
+		c, _ := cat.Get(id)
+		if !c.RunsOn(Platform()) {
+			continue
+		}
+		if x := g[id]; !x.On {
+			t.Errorf("%s off on a home with nothing fetched: %+v", id, x)
+		}
 	}
 }

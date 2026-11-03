@@ -122,7 +122,42 @@ func Plan(cat *components.Catalog, f Facts) map[string]string {
 		out[c.ID] = w
 	}
 	keepRequirementsOn(cat, out)
+	keepAssetsWanted(cat, out)
 	return out
+}
+
+// keepAssetsWanted seeds installed (wanted on this home) the asset an enabled component
+// needs when none of its requirement is on disk yet: today the stage runs and fetches its
+// runtime or model on first use (a fresh home, one that never transcribed), so seeding it
+// absent would turn the stage off. The first of an "any:" group that runs here is taken.
+func keepAssetsWanted(cat *components.Catalog, out map[string]string) {
+	platform := Platform()
+	for _, c := range cat.Components() {
+		if out[c.ID] != components.WantEnabled {
+			continue
+		}
+		for _, r := range cat.Requires(c.ID) {
+			pick := ""
+			met := false
+			for _, id := range r.AnyOf {
+				dep, ok := cat.Get(id)
+				if !ok || dep.Kind != components.KindAsset {
+					met = true // not an asset: keepRequirementsOn's rule
+					break
+				}
+				if out[id] != components.WantAbsent {
+					met = true
+					break
+				}
+				if pick == "" && dep.RunsOn(platform) {
+					pick = id
+				}
+			}
+			if !met && pick != "" {
+				out[pick] = components.WantInstalled
+			}
+		}
+	}
 }
 
 // keepRequirementsOn enables what an enabled component requires, so nothing that runs

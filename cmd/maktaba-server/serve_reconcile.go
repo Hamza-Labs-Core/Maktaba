@@ -110,7 +110,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	go run.Run(ctx)
 	go rec.Run(ctx)
 	// story 51.17: the Linux maktaba-full package's packs, at the first start of its version
-	go importSystemPacks(ctx, m, cfg.StateDir(), log)
+	go importSystemPacks(ctx, m, cfg.StateDir(), rec.Off, log)
 	pa := &packsAdmin{ctx: ctx, m: m, r: run}
 	if st, ok := rec.Source.(*store.Store); ok {
 		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}

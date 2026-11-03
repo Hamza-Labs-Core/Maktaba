@@ -32,7 +32,7 @@ and proves in the update rehearsal that nothing changed.
 ### 2. The rules, component by component
 
 `want` is `enabled` unless the table says otherwise. No component is seeded `absent` except
-an asset that is not on disk. All `updated_by = 'seed'`.
+an asset that is not on disk and that nothing enabled needs. All `updated_by = 'seed'`.
 
 | Component | Seeded `enabled` when | Else |
 |---|---|---|
@@ -49,7 +49,7 @@ an asset that is not on disk. All `updated_by = 'seed'`.
 | `backups` | `[backups] nightly` is not `off` | `installed` |
 | `telemetry` | `[telemetry] enabled` is on (the admin's consent `telemetry.share_server_data` keeps deciding what is sent, unchanged) | `installed` |
 | `cluster`, `queue_health`, `analytics`, `updates.auto` | always (their loops always run today) | — |
-| assets (`runtime.ml`, `runtime.ollama`, `tool.yt-dlp`, `model.*`) | on disk now (`installed`), never `enabled` (assets have no run) | `absent` |
+| assets (`runtime.ml`, `runtime.ollama`, `tool.yt-dlp`, `model.*`) | on disk now (`installed`), never `enabled` (assets have no run); also `installed` when an enabled component needs it and none of that requirement is on disk yet (today the stage fetches it on first use: a fresh home, one that never transcribed), the first of an `any:` group that runs on the platform | `absent` |
 
 Stage groups and the Queues page: a component seeded `enabled` leaves every `job_stages` row
 as it is, including stages an operator turned off. 51.06 never overwrites
