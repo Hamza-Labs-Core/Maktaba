@@ -6,6 +6,7 @@
 // reads as a sentence and names no path.
 import { ApiError } from "./api";
 import { classifyError, type AppErrorKind } from "./errorKind";
+import { featureOffText } from "./featureWords";
 
 /** A kind, plus "offline": the browser itself has no network. */
 export type UserErrorKind = AppErrorKind | "offline";
@@ -73,7 +74,7 @@ function word(t: T, key: string): string {
  * off) in the app's words, with the part's name: never the home's English detail.
  * The name is the feature's (story 51.09: `components.feature.<feature>`), else the
  * component's title, else its id. An admin is told where to turn it on
- * (`error.kind.offAdmin`); with no name at all it is `error.kind.off`.
+ * (`error.kind.offAdmin` after the sentence); with no name at all it is `error.kind.off`.
  * null for any other error.
  */
 export function componentOffText(e: unknown, t: T, opts: { admin?: boolean } = {}): string | null {
@@ -81,13 +82,15 @@ export function componentOffText(e: unknown, t: T, opts: { admin?: boolean } = {
     return null;
   const id = typeof e.problem.component === "string" ? e.problem.component : "";
   const feature = typeof e.problem.feature === "string" ? e.problem.feature : "";
-  const name =
-    (feature && word(t, `components.feature.${feature}`)) ||
-    (id && word(t, `components.${id}.title`)) ||
-    id;
-  if (!name) return t("error.kind.off");
-  if (opts.admin) return t("error.kind.offAdmin", { feature: name });
-  return t("error.componentOff", { component: name });
+  // a feature reads as its own sentence (lib/featureWords); a component through
+  // the frame whose head noun agrees ("The {component} component is off")
+  let off = "";
+  if (feature && word(t, `components.feature.${feature}`)) off = featureOffText(feature, t);
+  else if (id)
+    off = t("error.componentOff", { component: word(t, `components.${id}.title`) || id });
+  if (!off) return t("error.kind.off");
+  if (opts.admin) return t("error.kind.offAdmin", { off });
+  return off;
 }
 
 /** The sentence a screen shows for a failed call (admin: component_off says where to turn it on). */

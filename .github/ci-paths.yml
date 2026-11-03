@@ -146,6 +146,10 @@ catalog:
   - 'api/internal/components/loops*.go'
   - 'web/src/i18n/en.json'
   - 'web/src/i18n/ar.json'
+  # story 51.11: the apps' "is off" sentences are the web's (catalog_words.mjs checkApps)
+  - 'apps/android/core/src/main/res/values/strings.xml'
+  - 'apps/android/core/src/main/res/values-ar/strings.xml'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Localizable.xcstrings'
   - 'tools/ci/catalog_words.mjs'
   - 'tools/ci/catalog_words.test.mjs'
 

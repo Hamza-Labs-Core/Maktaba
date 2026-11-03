@@ -30,14 +30,16 @@ describe("reasonWords", () => {
   it("names the component in English", () => {
     const t = tFor("en");
     expect(reasonWords("component_off:media.thumbnails", t)).toBe(
-      `${t("components.media.thumbnails.title")} is off`
+      `The ${t("components.media.thumbnails.title")} component is off`
     );
   });
 
   it("keeps an unknown component's id and the other reasons as before", () => {
     const t = tFor("en");
     expect(componentTitle("from.the.future", t)).toBe("from.the.future");
-    expect(reasonWords("component_off:from.the.future", t)).toBe("from.the.future is off");
+    expect(reasonWords("component_off:from.the.future", t)).toBe(
+      "The from.the.future component is off"
+    );
     expect(reasonWords("unavailable: no GPU", t)).toBe("cannot run here: no GPU");
     expect(reasonWords("something_new", t)).toBe("something_new");
   });

@@ -76,6 +76,40 @@ fun featureName(feature: String): Int? = when (feature) {
     else -> null
 }
 
+/**
+ * The whole "is off on this home." sentence of a feature (the web's `capabilities.off.<id>`), so
+ * the verb agrees with its name ("Transcripts are off", «البث المباشر متوقف»); null for one this app
+ * does not know, which reads through [R.string.feature_off_admin] instead.
+ */
+@StringRes
+fun featureOff(feature: String): Int? = when (feature) {
+    "live_tv" -> R.string.feature_off_live_tv
+    "transcripts" -> R.string.feature_off_transcripts
+    "subtitles" -> R.string.feature_off_subtitles
+    "semantic_search" -> R.string.feature_off_semantic_search
+    "chapters" -> R.string.feature_off_chapters
+    "youtube" -> R.string.feature_off_youtube
+    "plex" -> R.string.feature_off_plex
+    "remote_access" -> R.string.feature_off_remote_access
+    "recommendations" -> R.string.feature_off_recommendations
+    else -> null
+}
+
+/** The "isn't available on this home." sentence of a feature (`capabilities.unavailable.<id>`). */
+@StringRes
+fun featureUnavailable(feature: String): Int? = when (feature) {
+    "live_tv" -> R.string.feature_unavailable_live_tv
+    "transcripts" -> R.string.feature_unavailable_transcripts
+    "subtitles" -> R.string.feature_unavailable_subtitles
+    "semantic_search" -> R.string.feature_unavailable_semantic_search
+    "chapters" -> R.string.feature_unavailable_chapters
+    "youtube" -> R.string.feature_unavailable_youtube
+    "plex" -> R.string.feature_unavailable_plex
+    "remote_access" -> R.string.feature_unavailable_remote_access
+    "recommendations" -> R.string.feature_unavailable_recommendations
+    else -> null
+}
+
 /** The picture beside the sentence. */
 val ErrorKind.icon: ImageVector
     get() = when (this) {

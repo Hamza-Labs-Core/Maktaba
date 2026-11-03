@@ -9,7 +9,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -17,11 +16,11 @@ import com.hamzalabs.maktaba.core.api.Capabilities
 import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.ui.FeatureOffNote
 import com.hamzalabs.maktaba.core.ui.Message
+import com.hamzalabs.maktaba.core.ui.featureUnavailableSentence
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerHome
 import com.hamzalabs.maktaba.player.shell.features
 import com.hamzalabs.maktaba.player.shell.PlayerSection
-import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
  * FR-5: [enabled] with Live TV only when the user can see a channel ([hasChannels] true). Until
@@ -75,7 +74,7 @@ fun LiveGate(content: @Composable () -> Unit) {
             FeatureOffNote(Feature.LIVE_TV, home.webUrl, centered = true)
         }
         atOpen.hides(Feature.LIVE_TV) -> Message(
-            stringResource(CoreR.string.feature_unavailable, stringResource(CoreR.string.feature_live_tv)),
+            featureUnavailableSentence(Feature.LIVE_TV),
             Modifier.testTag("live-unavailable"),
         )
         else -> content()

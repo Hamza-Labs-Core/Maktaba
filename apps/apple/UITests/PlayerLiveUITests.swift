@@ -102,9 +102,38 @@ final class PlayerLiveUITests: PlayerUITestCase {
         launchSignedIn("ar", section: "live")
         let note = element("feature.off.live_tv")
         XCTAssertTrue(note.waitForExistence(timeout: 25), "the admin note; the home saw \(home.seen)")
-        XCTAssertTrue(note.label.contains("متوقفة على الجهاز الرئيسي"), note.label)
-        XCTAssertEqual(app.buttons["feature.turnOn"].label, "شغّلها من صفحة المكوّنات")
+        XCTAssertEqual(note.label, "البث المباشر متوقف على الجهاز الرئيسي.")
+        XCTAssertEqual(app.buttons["feature.turnOn"].label, "شغّل من صفحة المكوّنات")
         shot("live-off-admin")
+    }
+
+    /// Live TV goes off while a viewer watches a channel (story 51.11): the open screen is not
+    /// torn down and the Live TV stack is not reset (the channel stays in view); the tab goes
+    /// once another section is chosen.
+    func testLiveTVGoingOffKeepsTheOpenScreen() {
+        launchSignedIn(section: "live")
+        let first = element("live.channel.ch-1")
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "the Now list; the home saw \(home.seen)")
+        first.tap()
+        XCTAssertTrue(element("screen.channel").waitForExistence(timeout: 10), "the live player")
+
+        // the home turns Live TV off; the app asks again when it comes to the front
+        home.capabilities(off: ["live_tv"], admin: false)
+        let asked = home.seen.filter { $0 == "GET /api/capabilities" }.count
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(XCUIApplication(bundleIdentifier: "com.apple.springboard").wait(for: .runningForeground, timeout: 10))
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        XCTAssertTrue(wait(timeout: 20) { self.home.seen.filter { $0 == "GET /api/capabilities" }.count > asked },
+                      "asked again in front; the home saw \(home.seen)")
+
+        XCTAssertTrue(element("screen.channel").waitForExistence(timeout: 5), "the open channel stays")
+        shot("live-off-open")
+
+        sectionButton("Home").tap()
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10))
+        XCTAssertTrue(wait(timeout: 10) { !self.app.tabBars.buttons["Live TV"].exists && !self.app.buttons["Live TV"].exists },
+                      "the Live TV tab is gone on the next navigation")
     }
 
     // MARK: Guide

@@ -58,9 +58,17 @@ struct PlayerShell: View {
         _unavailable = State(initialValue: blocked)
     }
 
+    /// The tabs in view: `sections`, and the one chosen when a feature that went off took it
+    /// away (story 51.11). The shell is never rebuilt for a change of sections: each tab keeps
+    /// its stack, the open screen stays (it says the feature is off when its next call fails)
+    /// and goes with the next choice of another tab.
+    private var shown: [PlayerSection] {
+        ShellTabs.shown(offered: sections, selected: selection, order: PlayerSection.allCases)
+    }
+
     var body: some View {
         Group {
-            if sections.count == 1, let only = sections.first {
+            if shown.count == 1, let only = shown.first {
                 // its stack (and the routes) without a tab bar; Libraries stays its split view
                 stack(only)
             } else {
@@ -93,7 +101,7 @@ struct PlayerShell: View {
             }
         }
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
-        .playerMenuTarget(sections: sections, selection: chosen)
+        .playerMenuTarget(sections: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
         #if os(macOS)
@@ -114,7 +122,7 @@ struct PlayerShell: View {
 
     private var tabs: some View {
         TabView(selection: chosen) {
-            ForEach(sections) { section in
+            ForEach(shown) { section in
                 Tab(value: section, role: section == .search ? .search : nil) {
                     stack(section)
                 } label: {

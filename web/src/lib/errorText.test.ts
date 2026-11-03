@@ -74,6 +74,22 @@ describe("errorText", () => {
 });
 
 describe("every error string is in both languages", () => {
+  it("has each feature's off sentences in en and ar, not copies of the English", async () => {
+    const ar = (await import("../i18n/ar.json")).default as Record<string, string>;
+    const e = en as Record<string, string>;
+    const features = Object.keys(e)
+      .filter((k) => k.startsWith("components.feature."))
+      .map((k) => k.slice("components.feature.".length));
+    expect(features.length).toBeGreaterThan(0);
+    for (const f of features) {
+      for (const k of [`capabilities.off.${f}`, `capabilities.unavailable.${f}`]) {
+        expect(e[k], k).toBeTruthy();
+        expect(ar[k], k).toBeTruthy();
+        expect(ar[k], k).not.toBe(e[k]);
+      }
+    }
+  });
+
   it("has the error.kind keys in en and ar", async () => {
     const ar = (await import("../i18n/ar.json")).default as Record<string, string>;
     for (const k of Object.keys(en).filter(
@@ -114,13 +130,13 @@ describe("component_off (Epic 51)", () => {
 
   it("says it in English with the English title", () => {
     expect(errorText(off("livetv"), words(en as Record<string, string>))).toBe(
-      "Live TV is turned off on this home"
+      "The Live TV component is off on this home."
     );
   });
 
   it("names an id it has no title for as it is", () => {
     expect(componentOffText(off("newer.part"), words(en as Record<string, string>))).toBe(
-      "newer.part is turned off on this home"
+      "The newer.part component is off on this home."
     );
   });
 
@@ -139,13 +155,20 @@ describe("component_off (Epic 51)", () => {
     const enT = words(en as Record<string, string>);
     const arT = words(ar as Record<string, string>);
     expect(errorText(offFeature("semantic_search", "search.semantic"), enT)).toBe(
-      "Search by meaning is turned off on this home"
+      "Search by meaning is off on this home."
     );
     expect(errorText(offFeature("live_tv"), enT, { admin: true })).toBe(
       "Live TV is off on this home. Turn it on in Components."
     );
     expect(errorText(offFeature("live_tv"), arT, { admin: true })).toBe(
-      "البث المباشر متوقفة على الجهاز الرئيسي. شغّلها من صفحة المكوّنات."
+      "البث المباشر متوقف على الجهاز الرئيسي. شغّل من صفحة المكوّنات."
+    );
+    // a plural name agrees with its verb in both languages
+    expect(errorText(offFeature("transcripts", "transcription"), enT)).toBe(
+      "Transcripts are off on this home."
+    );
+    expect(errorText(offFeature("transcripts", "transcription"), arT)).toBe(
+      "نصوص الفيديو متوقفة على الجهاز الرئيسي."
     );
     expect(userErrorKind(offFeature("live_tv"))).toBe("off");
   });

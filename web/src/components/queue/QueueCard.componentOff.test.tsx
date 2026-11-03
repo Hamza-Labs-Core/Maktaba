@@ -53,7 +53,9 @@ describe("a stage its component holds back", () => {
     expect(container.querySelector('[data-state="off"]')).toBeTruthy();
     expect(container.querySelector('[data-state="failing"], [data-state="waiting"]')).toBeNull();
     const flag = screen.getByTestId("queue-card-component");
-    expect(flag.textContent).toContain("Waiting: Transcription is off · 1,840 queued");
+    expect(flag.textContent).toContain(
+      "Waiting: the Transcription component is off · 1,840 queued"
+    );
     expect(flag.className).toContain("mkt-q-card__flag--off");
     const link = screen.getByRole("link", { name: "Components" });
     expect(link.getAttribute("href")).toBe("/settings/components");
@@ -64,7 +66,7 @@ describe("a stage its component holds back", () => {
     const held = { ...off, waiting: [{ ...off.waiting[0], phase: "stopped" }] };
     renderAt(<QueueCard info={info} summary={summary(held)} />, "/queue");
     expect(screen.getByTestId("queue-card-component").textContent).toContain(
-      "Waiting: Transcription is stopped until you turn it on · 1,840 queued"
+      "Waiting: the Transcription component is stopped until you turn it on · 1,840 queued"
     );
   });
 

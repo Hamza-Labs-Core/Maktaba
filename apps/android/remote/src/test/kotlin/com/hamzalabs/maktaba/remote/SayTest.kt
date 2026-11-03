@@ -140,6 +140,25 @@ class SayTest {
     }
 
     @Test
+    fun aStageItsComponentHoldsBackSaysWhichAndWhy() {
+        // Epic 51 (stories 51.14, 51.11): the web's words, the component named by its title
+        assertEquals("The Transcription component is off", en.queueWaiting("component_off", null, "Transcribe", "transcription"))
+        assertEquals("The Transcription component is stopped", en.queueWaiting("component_held", null, "Transcribe", "transcription"))
+        assertEquals("المكوّن التفريغ النصي مُطفأ", ar.queueWaiting("component_off", null, "Transcribe", "transcription"))
+        assertEquals("The from.the.future component is off", en.queueWaiting("component_off", null, "x", "from.the.future"))
+        val off = StageHealth(
+            state = "off",
+            waiting = listOf(HealthWaiting(on = "component:transcription", count = 1840, component = "transcription", phase = "off")),
+        )
+        assertEquals(listOf("Waiting: the Transcription component is off · 1840 queued"), en.health(off, 0))
+        assertEquals(listOf("في الانتظار: المكوّن التفريغ النصي متوقف · ١٨٤٠ في الطابور"), ar.health(off, 0))
+        val held = off.copy(waiting = listOf(off.waiting[0].copy(phase = "stopped")))
+        assertEquals(listOf("Waiting: the Transcription component is stopped until you turn it on · 1840 queued"), en.health(held, 0))
+        assertEquals("Transcription", en.waitingOn("component:transcription"))
+        assertEquals("Smart search", en.waitingOn("component:search.semantic"))
+    }
+
+    @Test
     fun aTimeThatIsNotOneIsShownAsSent() {
         assertEquals("soon", en.whenText("soon"))
         assertEquals("soon", ar.whenText("soon"))
@@ -207,11 +226,11 @@ class SayTest {
         val maps = listOf(
             WebWords.updateState, WebWords.updateStep, WebWords.updateCode, WebWords.updateWaiting, WebWords.blockedReason,
             WebWords.blocker, WebWords.processState, WebWords.processRole, WebWords.queueState, WebWords.jobState, WebWords.machineStatus,
-            WebWords.tvCheck, WebWords.tvResult, WebWords.trigger,
+            WebWords.tvCheck, WebWords.tvResult, WebWords.trigger, WebWords.componentTitle,
         )
         for (lookup in listOf(XmlLookup.english, XmlLookup.arabic)) {
             maps.flatMap { it.values }.forEach { assert(lookup.text(it).isNotBlank()) }
-            (WebWords.planWaiting + WebWords.queueWaiting + WebWords.processDetail + WebWords.tvValue).values.forEach { t ->
+            (WebWords.planWaiting + WebWords.queueWaiting + WebWords.processDetail + WebWords.tvValue).values.plus(WebWords.queueHealthComponent.values).forEach { t ->
                 assert(lookup.text(t.id, *t.args.map { "x" }.toTypedArray()).isNotBlank())
             }
         }

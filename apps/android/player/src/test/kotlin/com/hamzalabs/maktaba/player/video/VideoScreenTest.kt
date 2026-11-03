@@ -134,7 +134,7 @@ class VideoScreenTest {
         fake.adminWithOff(Feature.TRANSCRIPTS)
         open("v1")
         waitForTag("feature-off-transcripts")
-        compose.onNodeWithText("Transcripts is off on this home.").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Transcripts are off on this home.").performScrollTo().assertIsDisplayed()
         assertTrue(compose.onAllNodes(hasText("It was a night like no other.")).fetchSemanticsNodes().isEmpty())
     }
 

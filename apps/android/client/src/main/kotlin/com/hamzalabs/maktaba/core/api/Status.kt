@@ -384,7 +384,7 @@ data class JobProgress(
     val fraction: Float? get() = if (totalUnits > 0) (doneUnits / totalUnits).coerceIn(0.0, 1.0).toFloat() else null
 }
 
-/** A stage's health (`queues[].health`): ok, waiting (parked on something) or failing. */
+/** A stage's health (`queues[].health`): ok, waiting (parked on something), failing, or off (its component holds it back, Epic 51). */
 @Serializable
 data class StageHealth(
     val state: String = "",
@@ -405,6 +405,9 @@ data class HealthWaiting(
     val healthy: Boolean? = null,
     val message: String? = null,
     val since: String? = null,
+    /** Epic 51 (story 51.14): the component the jobs wait on ("transcription") and its phase: off, or stopped while held. */
+    val component: String = "",
+    val phase: String = "",
 )
 
 @Serializable

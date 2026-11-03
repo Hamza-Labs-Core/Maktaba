@@ -80,12 +80,27 @@ enum CapabilityFixtures {
             #expect(en.featureName(f.rawValue) != nil && ar.featureName(f.rawValue) != nil, "\(f) has a name")
         }
         let english = Locale(identifier: "en"), arabic = Locale(identifier: "ar")
-        #expect(kit("\("Live TV") is off on this home.", english) == "Live TV is off on this home.")
-        // the name is isolated (U+2068 … U+2069), so a Latin name stays whole in an Arabic line
-        #expect(kit("\("البث المباشر") is off on this home.", arabic) == "\u{2068}البث المباشر\u{2069} متوقفة على الجهاز الرئيسي.")
-        #expect(kit("Turn it on in Components", arabic) == "شغّلها من صفحة المكوّنات")
+        // each feature's own sentence, in both languages, so the verb agrees with its name
+        for f in Capabilities.Feature.allCases {
+            #expect(kitWord("capabilities.off.\(f.rawValue)", english) != nil, "\(f) off in en")
+            #expect(kitWord("capabilities.off.\(f.rawValue)", arabic) != nil, "\(f) off in ar")
+            #expect(kitWord("capabilities.unavailable.\(f.rawValue)", english) != nil, "\(f) unavailable in en")
+            #expect(kitWord("capabilities.unavailable.\(f.rawValue)", arabic) != nil, "\(f) unavailable in ar")
+            #expect(FeatureWords.offOnThisHome(f, english) != FeatureWords.offOnThisHome(f, arabic))
+        }
+        #expect(FeatureWords.offOnThisHome(.liveTV, english) == "Live TV is off on this home.")
+        #expect(FeatureWords.offOnThisHome(.transcripts, english) == "Transcripts are off on this home.")
+        #expect(FeatureWords.offOnThisHome(.liveTV, arabic) == "البث المباشر متوقف على الجهاز الرئيسي.")
+        #expect(FeatureWords.offOnThisHome(.transcripts, arabic) == "نصوص الفيديو متوقفة على الجهاز الرئيسي.")
+        #expect(FeatureWords.unavailable(.liveTV, english) == "Live TV isn't available on this home.")
+        #expect(FeatureWords.unavailable(.chapters, english) == "Chapters aren't available on this home.")
+        #expect(FeatureWords.unavailable(.liveTV, arabic) == "البث المباشر غير متاح على الجهاز الرئيسي.")
+        // a feature with no sentence here reads through the frame whose head noun agrees; the
+        // name is isolated (U+2068 … U+2069), so a Latin name stays whole in an Arabic line
+        #expect(FeatureWords.offSentence("holograms", english) == "The holograms feature is off on this home.")
+        #expect(FeatureWords.offSentence("holograms", arabic) == "ميزة \u{2068}holograms\u{2069} متوقفة على الجهاز الرئيسي.")
+        #expect(kit("Turn it on in Components", arabic) == "شغّل من صفحة المكوّنات")
         #expect(kit("Searching by words only. Search by meaning is off.", arabic) == "البحث بالكلمات فقط. البحث بالمعنى متوقف.")
-        #expect(kit("\("Live TV") isn't available on this home.", english) == "Live TV isn't available on this home.")
         #expect(kit("\(3) parts are off", english) == "3 parts are off")
         #expect(kit("\(1) parts are off", english) == "1 part is off")
         #expect(kit("\(3) parts are off", arabic).contains("أجزاء متوقفة"))
