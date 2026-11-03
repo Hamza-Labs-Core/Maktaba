@@ -1960,6 +1960,12 @@ GET        /api/system/metrics           → Prometheus exposition
 > and actual state: `GET/PUT /api/components[/{id}]`, `POST /api/components/{id}/start|stop|install|remove`
 > (admin only), and `GET /api/capabilities` (every signed-in user) so apps can hide what is off.
 > A route whose component is off answers `409 component_off`.
+>
+> **Plugins (spec, 2026-11-03):** [Epic 54](epics/54-plugins/README.md) adds third-party
+> plugins as WebAssembly components run by `maktaba-plugind` with no network. Admin routes
+> `GET/POST/PUT/DELETE /api/plugins[/{id}[/grants|settings|enable|disable|update|rollback|writes]]`
+> (admin only), `POST /internal/plugins/invocations` (machines only), and the plugin API
+> `/plugin-api/v1/*`, served **only** on the unix socket `<data>/run/plugin-api.sock`.
 
 ### 9.7.1 Per-user (`/api/me`)
 
