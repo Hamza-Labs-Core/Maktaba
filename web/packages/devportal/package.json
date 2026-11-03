@@ -1,0 +1,26 @@
+{
+  "name": "maktaba-devportal",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "maktaba.dev, the Maktaba developer portal: a Cloudflare Worker with static assets (landing page, wiki, API reference, plugin docs, changelog, security.txt).",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "scan": "node scripts/scan.mjs dist",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "dev": "wrangler dev --var CANONICAL_REDIRECTS:off",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "marked": "18.1.1",
+    "redoc": "2.5.4",
+    "typescript": "5.7.3",
+    "vitest": "4.1.12",
+    "wrangler": "4.151.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
