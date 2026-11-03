@@ -1,7 +1,7 @@
 # Story 52.02 — Evaluation set, metrics and calibration
 
 > Epic 52 · Phase 1 · Depends on: — (uses 52.1's output for confidence curves once it lands) ·
-> Needed by: 52.6, 52.7
+> Needed by: 52.6, 52.15 (52.7, the LLM judge, is removed)
 
 ## Why
 
@@ -134,7 +134,8 @@ It fails when precision or recall for any language drops by more than 0.02 again
   «مسئول»): the pack's `key()` folds them, so they score as `ok`.
 - A reference sentence with no hypothesis words (Whisper skipped it): all its words are
   deletions, reported apart.
-- Quran: labels inside verse runs are reported apart, since 52.4 protects them by default.
+- Quran: labels inside verse runs are reported apart, as the Quran check's own precision and
+  recall (52.15), since `quran_mismatch` replaces the ordinary signals there.
 - A gold clip whose file is later replaced: its fixture keeps the evidence it was made from, so
   the set stays stable.
 

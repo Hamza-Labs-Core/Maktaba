@@ -33,7 +33,8 @@ enough for the whole library, so `word_check` (52.6) can decide later without th
 
 - bit 0 `heard_differently`: Cohere's word replaced Whisper's here;
 - bit 1 `inserted`: Cohere heard a word Whisper missed (no Whisper probability, `prob = None`);
-- bit 2 `quran`: inside a verse run (`classify/quran.verse_runs`), never replaced.
+- bit 2 `quran`: inside a verse run (`classify/quran.verse_runs`), never replaced. 52.15's Quran
+  check uses it as a hint for its anchors, but finds runs from the text too.
 
 For each replaced span it returns `{i, n, whisper, cohere}`: the word index in the sentence, the
 number of words, what Whisper heard and what Cohere heard. These go to

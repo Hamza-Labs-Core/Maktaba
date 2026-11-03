@@ -17,7 +17,7 @@ state, and the cloud's secrets sign every home's entitlement.
 | Setting | Value |
 |---|---|
 | repo1 | Hetzner Object Storage, bucket `maktaba-prod-pg` in **HEL1** (not FSN1/NBG1, where the nodes are) |
-| repo2 | Cloudflare R2 bucket, if the owner says yes (README §13 question 2) |
+| repo2 | **Cloudflare R2** bucket `maktaba-prod-pg-r2`, the copy off Hetzner (owner decision, 2026-11-03; README §13 decision 2). Same backups and WAL as repo1 (`archive-push` writes both; pgBackRest's multi-repo mode), its own passphrase. R2 charges no egress, so a restore from it costs nothing extra. |
 | Encryption | `repo-cipher-type=aes-256-cbc`, a passphrase per repo, encrypted before upload |
 | WAL archive | `archive_command = pgbackrest --stanza=cloud archive-push %p`; `archive_timeout = 60` (RPO ≤ 60 s if both nodes are lost) |
 | Full backup | weekly, Sunday 03:00 UTC |
@@ -34,7 +34,8 @@ not a consistent backup; pgBackRest is).
 ### 3. Secrets kept apart
 
 These are not in any backup bucket in plain form. They are in the owner's password manager,
-and an encrypted copy (age, the owner's key) sits in repo1 under `secrets/`:
+and an encrypted copy (age, the owner's key) sits in repo1 **and repo2** under `secrets/`, so a
+Hetzner-wide loss still leaves one:
 
 | Secret | What losing it means |
 |---|---|
@@ -61,15 +62,15 @@ Every Monday 04:00 UTC on the witness W:
 ### 5. Disaster runbook (the whole zone or Hetzner is gone)
 
 In `docs/runbooks/cloud-disaster-restore.md` (50.12 owns the runbook set): rebuild two nodes in
-another location or provider with `deploy/cloud-ha/setup.sh`, restore from repo1 (or repo2 if
-Hetzner is down), put the secrets back from the password manager, point the DNS names at the
+another location or provider with `deploy/cloud-ha/setup.sh`, restore from repo1 (or from repo2 on
+R2 when Hetzner is down or its Object Storage is lost), put the secrets back from the password manager, point the DNS names at the
 new address through Cloudflare. Target **RTO 4 h**, **RPO ≤ 60 s** (README §4.2).
 
 ## Acceptance criteria
 
 - **Given** the cluster is running,
   **when** 60 s pass with writes,
-  **then** the WAL for them is in repo1 (and repo2 if set).
+  **then** the WAL for them is in repo1 and in repo2 (R2).
 - **Given** a full backup and WAL in repo1,
   **when** the drill restores to 5 minutes ago,
   **then** the restored database starts and the row-count and freshness checks pass.
@@ -82,6 +83,10 @@ new address through Cloudflare. Target **RTO 4 h**, **RPO ≤ 60 s** (README §4
 - **Given** someone reads the bucket without the passphrase,
   **when** they download a backup file,
   **then** they get ciphertext.
+- **Given** repo1 is unreachable,
+  **when** the drill or the runbook restores from repo2 (R2),
+  **then** the restore passes the same checks; the drill restores from repo2 on the first
+  Monday of each month and from repo1 on the others.
 - **Given** a fresh machine, the runbook, the password-manager secrets and repo1,
   **when** the owner follows the runbook,
   **then** the cloud serves again within 4 h (timed once before launch, README §11).
@@ -95,11 +100,13 @@ new address through Cloudflare. Target **RTO 4 h**, **RPO ≤ 60 s** (README §4
 | T03 | rehearsal (CI) | 50.06 `restore-pitr`: A/B/W containers, MinIO as the bucket | write rows, note time T, write more, restore to T | exactly the rows up to T |
 | T04 | rehearsal (CI) | `restore-pitr` variant | kill A mid-archive, fail over, restore latest | no WAL gap; RPO ≤ 60 s |
 | T05 | rehearsal (CI) | bucket without passphrase | `pgbackrest info` with wrong key | refuses |
+| T06 | rehearsal (CI) | `restore-pitr` with two MinIO buckets standing in for Object Storage and R2 | stop repo1's bucket, restore from repo2 | exactly the rows up to T; WAL kept arriving in repo2 while repo1 was down |
 
 ## Edge cases
 
-- **Object Storage down.** WAL piles up on the leader's disk; the alert fires; Postgres keeps
-  running. Disk alert at 80 % gives hours of room.
+- **Object Storage down.** WAL keeps going to repo2 (R2); the repo1 push alert fires; nothing
+  piles up unless both repos fail, and then the disk alert at 80 % gives hours of room.
+- **R2 down.** The same the other way round; repo1 carries on.
 - **A bad migration.** Restore to just before it into a scratch database, copy the lost data
   back by hand (runbook). Never restore over production while it runs.
 - **GDPR deletion.** A deleted account is gone from live data at once but stays in backups up
@@ -122,11 +129,11 @@ new address through Cloudflare. Target **RTO 4 h**, **RPO ≤ 60 s** (README §4
 ### Tests
 
 - `bats` for the scripts in `relay.yml`.
-- **CI only:** `restore-pitr` (MinIO stands in for Object Storage; no live bucket is touched).
+- **CI only:** `restore-pitr` (MinIO stands in for Object Storage and for R2; no live bucket is touched).
 
 ### Rollout
 
-1. The owner creates the bucket and keys (README §12) and, if chosen, the R2 bucket.
+1. The owner creates the Hetzner bucket, the R2 bucket and their scoped keys (README §12).
 2. `setup.sh` creates the stanza and takes the first full backup.
 3. The first drill runs by hand on W; then the timer takes over.
 4. The timed full restore before launch (README §11).

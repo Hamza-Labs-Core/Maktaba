@@ -66,14 +66,14 @@ issue links, and the cloud log searches and error groups (Epic 53.17) that show 
 Blameless. A summary goes on the incident's status page entry, and the Claude
 trail gets a line (in a trail-only PR).
 
-### 5. Credits (proposed; README §13 question 1)
+### 5. No downtime credits (owner decision, 2026-11-03)
 
-If a month's measured uptime of Remote access (50.10) falls below **99.9 %**, every paying
-account gets an automatic credit on its next invoice: **10 %** of that month's fee below
-99.9 %, **25 %** below 99.5 %, **50 %** below 99 %. Applied as a Stripe customer balance
-credit by the worker on the 2nd of the month, shown on the status page and in Billing. Waits
-on the owner's yes; until then the code ships switched off (`billing.sla_credits.enabled =
-false`).
+The **99.9 % uptime target stays** (README §4.2): it drives alerts, error budgets and
+postmortems, and the status page shows the measured figure. But it is a **target, not a
+promise**: Maktaba Cloud gives **no credit, refund or discount** for downtime (README §13,
+decision 1). No credit job, no Stripe balance entries, no credit setting. The status page
+(50.11) and the Billing page state the target and say plainly that there is no credit (the
+`uptime.policy` string below); no page, email or template may offer one.
 
 ## Acceptance criteria
 
@@ -90,9 +90,10 @@ false`).
 - **Given** an incident file built from a template,
   **when** it is committed,
   **then** the status page shows it in English and Arabic within 5 minutes.
-- **Given** a month at 99.7 % measured uptime and credits switched on,
-  **when** the worker runs on the 2nd,
-  **then** each paying account gets 10 % of its fee as a credit, once (idempotent per month).
+- **Given** a month at 99.7 % measured uptime,
+  **when** the month ends,
+  **then** the status page shows 99.7 % against the 99.9 % target, a postmortem is due, and
+  no credit, refund or balance entry is made for any account.
 - **Given** a SEV1 resolved,
   **when** 5 days pass without a postmortem file,
   **then** a SEV3 reminder is sent.
@@ -107,8 +108,7 @@ false`).
 | T04 | rehearsal (CI, 50.06 `runbook-switchover`) | rehearsal pair | run the switchover workflow | leader moves; canary pause ≤ 15 s |
 | T05 | rehearsal (CI, 50.06 `runbook-dns-swap`) | fake Hetzner API returning 503, fake Cloudflare | run DNS swap | records point at the standby; canary recovers |
 | T06 | rehearsal (CI, 50.06 `runbook-forced-failover`) | rehearsal pair | run forced failover | old leader fenced, standby serves |
-| T07 | unit | credit calculator | 99.95 / 99.7 / 99.2 / 98 % | 0 / 10 / 25 / 50 % |
-| T08 | integration | Stripe test mode mock | worker twice for one month | one credit per account |
+| T07 | lint (CI) | templates, status page strings, `web/cloud` i18n | search for credit / refund wording | none offers a credit; `uptime.policy` exists in English and Arabic |
 
 ## Edge cases
 
@@ -117,8 +117,11 @@ false`).
   probe. A second responder is a later decision.
 - **Alerts from a broken witness.** The outside probes (50.10) page directly, not through the
   witness, so losing the witness doesn't silence alerts.
-- **Credits during planned maintenance.** Counted like any downtime (the README counts planned
-  work against the SLO).
+- **A user asks for a credit after an outage.** The answer is the published policy
+  (`uptime.policy`): a target, no credit. Support may still help case by case outside the
+  product; the product never automates one.
+- **Planned maintenance.** Counted against the uptime target like any downtime (the README
+  counts planned work against the SLO).
 - **Postmortem leaks.** Status page summaries never name a user, home or IP.
 
 ## User-facing strings
@@ -131,8 +134,7 @@ false`).
 | `incident.resolved` | {component} is working again. It was affected from {start} to {end}. We'll post what happened within 5 days. | عاد {component} إلى العمل. تأثر من {start} إلى {end}. سننشر ما حدث خلال 5 أيام. |
 | `incident.maintenance` | Planned maintenance on {date}, {start}–{end}. Remote play may pause for a few seconds. Playback at home is not affected. | صيانة مجدولة في {date}، من {start} إلى {end}. قد يتوقف التشغيل عن بُعد بضع ثوانٍ. التشغيل داخل المنزل لا يتأثر. |
 | `incident.email.subject` | Maktaba Cloud: remote access problem | سحابة مكتبة: مشكلة في الوصول عن بُعد |
-| `credit.notice` | Remote access was available {percent} of last month, below our 99.9% target. We've credited {amount} to your account. | كان الوصول عن بُعد متاحًا بنسبة {percent} من الشهر الماضي، أقل من هدفنا البالغ 99.9%. أضفنا {amount} رصيدًا إلى حسابك. |
-| `credit.policy` | If remote access is available less than 99.9% of a month, paying accounts get an automatic credit: 10% below 99.9%, 25% below 99.5%, 50% below 99%. | إذا كان الوصول عن بُعد متاحًا أقل من 99.9% من الشهر، تحصل الحسابات المدفوعة على رصيد تلقائي: 10% تحت 99.9%، و25% تحت 99.5%، و50% تحت 99%. |
+| `uptime.policy` | We aim to keep remote access available 99.9% of every month, and we publish how we did. This is a target, not a guarantee: we don't give credits or refunds for downtime. | نسعى لإبقاء الوصول عن بُعد متاحًا 99.9% من كل شهر، وننشر ما حققناه. هذا هدف وليس ضمانًا: لا نقدّم رصيدًا أو استردادًا عن فترات التوقف. |
 
 ## Build plan
 
@@ -144,12 +146,11 @@ false`).
 | `.github/workflows/cloud-switchover.yml`, `cloud-failover.yml`, `cloud-dns-swap.yml` (new) | One-click actions, `production` environment, required reviewer = owner. |
 | `deploy/cloud-ha/alerts/*.yml` (from 50.10) | `severity` and `runbook` labels on every rule. |
 | `tools/runbooks/lint.py` (new) | T01–T03; runs in CI on changes to `docs/runbooks/**` or the alert rules. |
-| `cloud/internal/billing/credits.go` (new), `cloud/cmd/maktaba-cloud/role_worker.go` | Monthly credit job, off by default. |
-| `web/cloud/src/pages/` (Billing page), `web/cloud/src/i18n/en.json`, `ar.json` | Show a credit and the policy. |
+| `web/cloud/src/pages/` (Billing page), `web/cloud/src/i18n/en.json`, `ar.json` | Show the uptime target and `uptime.policy` (no credit). |
 
 ### Tests
 
-- T01–T03 lint in CI; T07–T08 in `relay.yml`'s `test` job.
+- T01–T03 and T07 lint in CI.
 - **CI only:** rehearsal scenarios `runbook-switchover`, `runbook-dns-swap`,
   `runbook-forced-failover` (50.06), using fake Hetzner and Cloudflare APIs.
 
@@ -158,13 +159,10 @@ false`).
 1. Runbooks and templates first (docs only), then the one-click workflows once 50.07 exists.
 2. A game day before launch: the owner runs `switchover.md` and `forced-failover.md` on the
    production pair (launch gate item 2).
-3. Credits stay off until the owner answers README §13 question 1.
 
 ### Rollback
 
 - Workflows are additive; delete or disable one to remove it.
-- Credits: `billing.sla_credits.enabled = false`; credits already given stay (they are Stripe
-  balance entries).
 
 ### Dependencies
 

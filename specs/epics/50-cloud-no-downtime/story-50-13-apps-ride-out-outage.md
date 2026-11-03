@@ -26,12 +26,17 @@ After every successful `GET /v1/homes` the app saves, per cloud account, on disk
 { "saved_at": "2026-11-03T10:15:00Z",
   "homes": [ { "server_id": "...", "name": "...", "slug": "...",
                "connections": [
-                 { "url": "https://192-168-1-20.<home-id>.direct.maktaba.tv:8443", "kind": "local" },
-                 { "url": "https://81-2-3-4.<home-id>.direct.maktaba.tv:32443",  "kind": "direct" },
+                 { "url": "https://192-168-1-20.<home-id>.direct-b.example:8443", "kind": "local" },
+                 { "url": "https://81-2-3-4.<home-id>.direct-b.example:32443",  "kind": "direct" },
                  { "url": "https://<slug>.r3.relay.maktaba.tv",                  "kind": "relay_hint" },
                  { "url": "https://<slug>.relay.maktaba.tv",                     "kind": "relay" } ] } ] }
 ```
 
+- Direct names sit on the home's assigned direct-name domain (`direct-b.example` above stands
+  for one of the separate domains of 50.15 §4; never `maktaba.tv`).
+- A **Free** home has **no `relay` or `relay_hint` entries**: the relay is paid, direct remote is
+  free (README §13 decisions 4 and 6; 50.19). Its list is local and direct only, and when
+  neither works the app shows `relay.needsPlan` (50.19) instead of a connection error.
 - The API grows a `connections` array (keeping `direct_url` and `relay_url` for older apps).
   Until 50.15 and 50.16 ship, it holds only what exists today: `direct_url` (plain HTTP) and
   `relay_url`.
@@ -74,6 +79,9 @@ looking at the "can't reach Maktaba Cloud" message also sees it is a known outag
 
 ## Acceptance criteria
 
+- **Given** a Free home whose direct check passes,
+  **when** the app lists and connects to it from outside,
+  **then** its connection list has local and direct entries only, and it plays over direct.
 - **Given** an app that listed its homes once,
   **when** `api.maktaba.tv` is unreachable and the app starts,
   **then** it shows the saved homes with "Showing your homes from {time}" and connects to a home
@@ -112,6 +120,7 @@ looking at the "can't reach Maktaba Cloud" message also sees it is a known outag
 | T09 | rehearsal (CI, 50.06 `apps-cloud-down`) | rehearsal pair stopped, home running | client library run as T08 | as T08 |
 | T10 | Arabic | new keys | strings check | Arabic present in web, cloud web, Android `values-ar`, Apple catalog |
 | T11 | UI (CI only) | Player shards, mocked cloud down | launch | saved homes visible, banner shown |
+| T12 | unit (cloud) | `GET /v1/homes` for a Free and a Basic home | list | Free: no `relay` / `relay_hint`; Basic: all four kinds |
 
 ## Edge cases
 

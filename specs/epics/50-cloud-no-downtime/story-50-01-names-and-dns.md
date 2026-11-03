@@ -30,8 +30,6 @@ back.
 | `r<N>.relay.maktaba.tv` | relay N's own primary IPv4 | DNS only | 60 s | homes' tunnel to an assigned relay | 2 |
 | `*.r<N>.relay.maktaba.tv` | relay N's own primary IPv4 | DNS only | 60 s | relay hints for apps (50.16) | 2 |
 | `relay.maktaba.tv`, `*.relay.maktaba.tv` | round robin over healthy relays | DNS only | **60 s** | stable names in Phase 2 | 2 |
-| `direct.maktaba.tv` (NS) | delegated to the cloud's own DNS responder (`--role=dns`, UDP/TCP 53) on nodes A and B (50.15) | DNS only | 3600 s | answers the IP-encoded names below | 1b |
-| `*.<home-id>.direct.maktaba.tv` | IP-encoded: `1-2-3-4.<home-id>.direct.maktaba.tv` → `1.2.3.4` | DNS only | 300 s | direct HTTPS to a home (50.15) | 1b |
 | `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev` | the owner's staging pair (50.14) | DNS only | 60 s | load tests, never users | 1 |
 
 Rules:
@@ -44,6 +42,14 @@ Rules:
 - Phase 2 relay names use **60 s** because the witness removes a dead relay's record.
 - Slugs `canary`, `status`, `api`, `app`, `www`, `r1`…`r99`, `direct`, `staging` are added to
   the reserved list (story 25.22) so no home can take them.
+- **Direct names are never under `maktaba.tv`** (owner decision, 2026-11-03; README §13
+  decision 5). They live on **several separate registered domains used only for direct names**
+  (3–4 to start), each delegated by `NS` at its registrar to the cloud's own DNS responder
+  (`--role=dns`, UDP/TCP 53, on nodes A and B), with names like
+  `1-2-3-4.<home-id>.<direct-domain>` → `1.2.3.4`. The spec writes them as `direct-a.example`,
+  `direct-b.example`, … until the owner buys them; the list is configuration
+  (`direct.domains`), and the table for them is in 50.15 §4. `maktaba.tv` gets no direct
+  record, so no direct certificate ever counts against `maktaba.tv`'s Let's Encrypt limit.
 
 ### 2. Fix the stale names
 

@@ -82,7 +82,7 @@ pass that changed something:
 { "revision": 1842, "written_at": "2026-11-03T10:00:00Z", "machine": "home",
   "bundle": "full",
   "desired": { "llm": {"want":"enabled","generation":3},
-               "transcription": {"want":"enabled","hold":{"by":"ana","until":null},"generation":9} } }
+               "transcription": {"want":"enabled","hold":{"by":"ana","at":"2026-11-02T21:40:00Z"},"generation":9} } }
 ```
 
 At boot, before Postgres answers, the supervisor sets gates from this file, so a held
@@ -147,7 +147,7 @@ Pre-update dumps are `core.updates` and never gated.
   **when** `llm` is set to `enabled`,
   **then** ollama starts without a server restart and is Running within 15 s plus its own
   warm-up, reported apart (N3).
-- **Given** `transcription` held until started,
+- **Given** `transcription` held (a hold has no end time; it lasts until Start),
   **when** the server restarts for an update,
   **then** no `stt` worker starts at any time during the boot (the cache says held).
 - **Given** `[components] reconcile = off`,
@@ -188,7 +188,8 @@ Pre-update dumps are `core.updates` and never gated.
   probe answers; one with none is Running after `healthy_after`.
 - **ollama pulling a model** at start is warm-up: Running is reported once `/api/version`
   answers; the pull's progress goes to `detail.progress`.
-- **Holds that expire** (`hold_until` passed) count as no hold at the next pass (≤ 30 s late).
+- **Holds never expire** (README §13, decision 2): the reconciler never clears a hold on its own;
+  only Start does, through the API.
 - **The relay on a frozen home** stays not wanted by today's rule even when allowed.
 - **A node** reads `component_desired_for(node)` with its worker login and reports through
   `component_status_report` (51.02).

@@ -15,7 +15,7 @@ apps and the desktop window.
 
 - **Search bar:** words, phrases, `-word`; a reference (8 characters) or a full request id jumps
   to "Follow a request".
-- **Filters:** component (multi), level (≥), machine, time (last 15 min, 1 h, 24 h, 7 d, 14 d,
+- **Filters:** component (multi), level (≥), machine, time (last 15 min, 1 h, 24 h, 7 d (the default retention),
   custom). All filters go in the address, as today (`?services=&level=&since=&until=&node=`), so
   other pages keep linking here (`update-attempts.md` does).
 - **Live:** a toggle that switches the list to the SSE tail (53.09); pauses when the admin
@@ -42,7 +42,9 @@ apps and the desktop window.
 
 ### 3. Settings (`/admin/logs/settings`)
 
-Retention, disk caps, debug level per component for 1 h (the missing `POST /admin/log/level` of
+**Retention** (owner's decision, 2026-11-03: defaults logs 7 days, errors 30, reports 90, at most
+1 GB in all; an admin changes each value and the total here, within 53.02's ranges, and the page
+shows what each kind uses now), debug level per component for 1 h (the missing `POST /admin/log/level` of
 Epic 21.1, done through the supervisor so it reaches every child, returning to `info` after the
 hour).
 
@@ -70,9 +72,20 @@ these only if granted manage, as today.
 | `logs.filesOnly` | Log search is restarting; showing recent lines from the files. | البحث في السجلات يُعاد تشغيله؛ تُعرض الأسطر الأخيرة من الملفات. |
 | `logs.unknownUser` | Unknown user | مستخدم غير معروف |
 | `logs.settings.debug` | Detailed logs for one hour | سجلات مفصّلة لمدة ساعة |
+| `logs.settings.retention` | Keep diagnostics | الاحتفاظ ببيانات التشخيص |
+| `logs.settings.keepLogs` | Keep logs for {days} days | الاحتفاظ بالسجلات لمدة {days} يومًا |
+| `logs.settings.keepErrors` | Keep errors for {days} days | الاحتفاظ بالأخطاء لمدة {days} يومًا |
+| `logs.settings.keepReports` | Keep problem reports for {days} days | الاحتفاظ ببلاغات المشكلات لمدة {days} يومًا |
+| `logs.settings.total` | Use at most {size} of disk in all | استخدام {size} من القرص كحدّ أقصى للمجموع |
+| `logs.settings.used` | Using {used} of {size} | المستخدم {used} من {size} |
+| `logs.settings.capNote` | When the limit is reached, the oldest are deleted first, even if they are newer than the days above. | عند بلوغ الحد، يُحذف الأقدم أولًا، حتى لو كان أحدث من الأيام المحددة أعلاه. |
 | `nav.admin.errors` | Errors | الأخطاء |
 
 ## Acceptance criteria
+
+- **Given** a fresh home,
+  **when** the admin opens Retention,
+  **then** it shows logs 7 days, errors 30, reports 90 and 1 GB in all, with what each uses now; a viewer gets 403 from its API.
 
 - **Given** the admin types a reference from a user's error screen,
   **then** "Follow a request" opens with every line of that request across components.
@@ -101,6 +114,7 @@ these only if granted manage, as today.
 | T05 | role test (API) | debug-level route | nobody, viewer, admin | 401, 403, 200 |
 | T06 | unit (Swift, Kotlin) | Remote Errors screens with mock | list, resolve | right calls; en/ar |
 | T07 | UI (**CI only**) | web Playwright, dark theme | Logs and Errors in en and ar | screenshots, RTL |
+| T08 | role test (API) + unit | retention routes (`GET/PUT /api/admin/logs/retention`) | nobody, viewer, admin; values outside 53.02's ranges | 401, 403, 200; 400 out of range; defaults 7/30/90 d, 1 GB |
 
 ## Build plan
 

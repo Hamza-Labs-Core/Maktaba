@@ -49,9 +49,10 @@ Always on
   (`components.reason.<code>`), never the raw code. A phase that differs per machine shows
   "2 of 3 machines" with a link to §5.
 - **Enable switch** writes `want = enabled` / `installed`. `core.*` rows have no switch.
-- **Stop ▾** opens three choices: *Until I start it*, *For 1 hour*, *Until tomorrow 06:00* (home's
-  local time; the API reports the home's time zone with the list, see Edge cases). A held
-  row shows **Start** and "Stopped until 06:00" instead.
+- **Stop** holds the component until an admin starts it again ("Stop until I turn it on" /
+  «أوقفه حتى أشغّله»). There are no timed holds (README §13, decision 2): no "1 hour", no
+  "tonight", no "tomorrow". A held row shows **Start** and "Stopped until you turn it on" /
+  «متوقف حتى تشغّله» instead. The hold survives restarts and updates.
 - **Restart** for `process` and `loop` kinds only.
 - **Settings** links to the component's form: a `rules.*` section opens
   `/settings/rules#<section>`; a `server.toml` key shows the key and says
@@ -96,7 +97,7 @@ themselves are 51.12; this page shows the home-wide wish and the per-machine sta
 ### 6. Words
 
 Every string ships in `en.json` and `ar.json` together: the page title (المكوّنات), the group
-names, the three hold choices (حتى أشغّله، لمدة ساعة، حتى الساعة 6 صباحًا غدًا), the dialog
+names, the Stop button and the held-row label (أوقفه حتى أشغّله، متوقف حتى تشغّله), the dialog
 sentences with plural forms (the existing `i18n.tsx` plural rules), and the drawer labels.
 The component titles and descriptions (`components.<id>.title` / `.desc`), the phases
 (`components.phase.*`: يعمل، متوقف، في الانتظار…) and the reasons (`components.reason.*`) are
@@ -123,9 +124,10 @@ waiting, and that nothing queued is lost. The page title row links it (`TitleRow
   **when** the change is applied,
   **then** the row moves through Draining to Off within 30 s on screen, and `classify.llm` shows
   Waiting with "needs LLM".
-- **Given** the admin picks *Until tomorrow 06:00* on Transcription,
+- **Given** the admin presses *Stop* on Transcription,
   **when** the hold is set,
-  **then** the row shows "Stopped until 06:00" and a Start button.
+  **then** the row shows "Stopped until you turn it on" and a Start button, and it still shows
+  that after the server restarts.
 - **Given** two admins with the page open,
   **when** both change the same row,
   **then** the second gets "Someone else changed this" and the row's real state.
@@ -148,7 +150,7 @@ waiting, and that nothing queued is lost. The page title row links it (`TitleRow
 | T03 | vitest | preview returns nothing to stop | toggle `analytics` off | PUT sent at once; undo toast |
 | T04 | vitest | preview returns `component_required_by` | remove runtime | refusal text, links, no confirm button |
 | T05 | vitest | conflicts | enable `livetv.inprocess` | dialog names TV slots; PUT has `with_conflicts` |
-| T06 | vitest | hold menu, fake clock 22:00 home time | pick "Until tomorrow 06:00" | stop body `until` = next day 06:00 home offset |
+| T06 | vitest | held row | press Stop, then reload | stop sent with no body; row shows "Stopped until you turn it on" / «متوقف حتى تشغّله» and Start; no time picker exists |
 | T07 | vitest | 409 `stale_generation` | toggle | reload message; row updated |
 | T08 | vitest | locale `ar` | render | `dir=rtl`; no English left (key-coverage check) |
 | T09 | vitest | axe | render en and ar | no violations (`web/src/test/axe.ts`) |
@@ -164,8 +166,6 @@ waiting, and that nothing queued is lost. The page title row links it (`TitleRow
   existing "can't reach your home" line. No switch works until it answers.
 - **A component in Installing** shows a progress bar and no switch until it finishes (51.16).
 - **Hundreds of model rows** (`model.llm.*`) are folded under "LLM models (12)".
-- **Time zones.** "Until tomorrow 06:00" is the home's 06:00, not the browser's; the dialog says
-  which when they differ.
 - **Player and Remote web editions** (`VITE_MAKTABA_EDITION`) have no server pages; the tab is
   not built into them (Epic 42).
 

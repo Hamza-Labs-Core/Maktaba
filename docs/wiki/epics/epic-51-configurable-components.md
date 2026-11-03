@@ -21,7 +21,7 @@ Existing homes keep running exactly what they run today.
 | | Values |
 |---|---|
 | Kinds | `process` (supervised OS process) · `stages` (pipeline stage group) · `loop` (goroutine / task) · `extension` · `asset` (model, runtime, tool) |
-| Desired (admin) | `want` = absent / installed / enabled · `hold` = stopped until a time or until started |
+| Desired (admin) | `want` = absent / installed / enabled · `hold` = stopped until an admin starts it (no timed holds) |
 | Actual (each machine) | phase: Not installed · Installing · Off · Stopped · Waiting · Starting · Running · Degraded · Draining · Failed, plus conditions with reason codes |
 | Dependencies | `requires` (hard; dependents wait, keep their wish) · `wants` (soft; degraded) · `conflicts` |
 | Stopping | stop claiming ≤ 2 s → drain (30 s; transcription 120 s) → force-pause what is left → keep the queue, don't feed; enable = resume + catch-up |
@@ -69,3 +69,13 @@ separate, and a Stop survives restarts. Dependents wait, they don't get disabled
 held and caught up, never cancelled. Packs move with the server version and are signed by
 the release identity. Settings stay where they are and gain versions. Payload flavours only
 where payloads differ (two Mac dmgs, two Linux packages, one Windows installer). No new paywalls.
+
+## Decisions (2026-11-03)
+
+1. **Core leaves transcription out.** Core stays as specced; transcription is added later as a pack.
+2. **Stop means "until I turn it on".** No timed holds (1 hour, tonight, tomorrow): no
+   `hold_until` column, `stop` takes no time, one Stop button («أوقفه حتى أشغّله»). A hold still
+   survives restarts.
+3. **No new paid gating.** Existing licence flags only.
+4. **Plugins are Epic 54** (being specced): third-party plugins with no internet access and a
+   store, built on this component model. This epic specs none.

@@ -18,7 +18,8 @@ to fix a bug, and nothing a person chose to send.
 | **Anonymous error groups** (fingerprint, title, counts, versions) | the home's usage-data opt-in is on (existing, unchanged) | none (random install id) | as today |
 | **Problem reports** (the 53.15 report, the home's part, crash reports inside it) | the home's admin turned on **"Let people send problem reports to Maktaba"** **and** the report was sent with the Maktaba box ticked (by the sender, or by the admin with their own preview) | the linked home (`home_h` and the cloud account that linked it, so Maktaba can answer); **never** the sender's name, email or user id | **90 days**, then deleted |
 
-The admin setting lives in Settings → Privacy, off by default, and needs the home to be linked to
+Nothing here is automatic: anything that leaves the home stays opt-in (owner's decision,
+2026-11-03, README §12). The admin setting lives in Settings → Privacy, off by default, and needs the home to be linked to
 Maktaba Cloud (Epic 25). Turning it off stops new sends at once; already-sent reports stay until
 their 90 days or until the admin asks to delete them ("Delete what Maktaba has").
 
@@ -27,7 +28,8 @@ their 90 days or until the admin asks to delete them ("Delete what Maktaba has")
 The 53.01 export-only rules on every file of the report: media paths under a library root →
 `<library>/…`, titles removed, `user_h` replaced by `user-1`, `user-2` per report, names and
 emails removed from the text field (the sender sees this in the preview), the screenshot kept only
-if the sender included it. A test fixture of a full report checks no title, path, name or IP is
+if the sender ticked it (off by default) and saw it in the preview (53.15); an admin forwarding
+a report sees the screenshot in their own preview and can drop it. A test fixture of a full report checks no title, path, name or IP is
 left.
 
 ### 3. Transport

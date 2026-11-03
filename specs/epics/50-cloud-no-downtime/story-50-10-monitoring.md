@@ -19,8 +19,9 @@ On the witness W runs a **real cloudlink** (the same code homes run) linked to a
 - `GET /api/health` → `200 {"ok":true,"t":<unix ms>}`
 - `GET /canary/10mb.bin` → 10 MB of fixed bytes (checks throughput, not just reachability)
 
-The canary home is an ordinary home to the cloud (it has a Family plan granted by the admin,
-excluded from revenue reports). Its bandwidth is small: the 10 MB file is fetched every 10
+The canary home is an ordinary home to the cloud (it has a Pro plan granted by the admin,
+which replaced its Family plan when 50.19 dropped Family, and is excluded from revenue
+reports). Its bandwidth is small: the 10 MB file is fetched every 10
 minutes from one network (≈ 43 GB a month).
 
 ### 2. Outside probes
