@@ -18,6 +18,13 @@ generation BIGINT, granted_by, granted_at)`. `generation` increments on every ch
 `NOTIFY plugin_grants_changed` invalidates the API's cache (54.04 §6). `all_libraries = true`
 includes libraries added later; otherwise only the listed ones.
 
+**Library checkboxes start empty** (owner decision 2026-11-03). The permission dialog shows
+every library unticked, and "All libraries, including new ones" unticked; the admin ticks each
+library the plugin may use. A plugin installed with no library ticked installs and runs, but
+every library-scoped call answers `403 plugin_scope`, and the dialog warns "This plugin can't
+see any library yet". The API never fills in a default: `libraries` missing in the install
+request means none, and `all_libraries` defaults to false.
+
 Rules:
 
 - Grants ⊆ the installed version's `required ∪ optional`. An install or enable with a required
@@ -89,6 +96,10 @@ Components page lists plugins under "Plugins".
 - **Given** a plugin with `media.read` and `transcript.read` and no store review,
   **when** its rating is computed,
   **then** it is 3 in the API and in the store.
+- **Given** an install request that names no libraries,
+  **when** the plugin is installed,
+  **then** it has no library in scope and every library-scoped call answers `403 plugin_scope`
+  until an admin ticks a library.
 - **Given** `all_libraries = false` with libraries A and B,
   **when** library C is created,
   **then** the plugin cannot read C until an admin adds it.
@@ -105,6 +116,7 @@ Components page lists plugins under "Plugins".
 | T06 | integration (PG, go) | `PUT /api/components/plugin.x` vs `/api/plugins/x/disable` | both | same rows |
 | T07 | integration (PG, go) | revert writes | POST | reverted where unchanged since |
 | T08 | unit (go) | idempotency key replay | POST install twice | one install |
+| T09 | integration (PG, go) | install with no `libraries` field | install, then a library read | `libraries = []`, `all_libraries = false`; read → 403 `plugin_scope` |
 
 ## Edge cases
 

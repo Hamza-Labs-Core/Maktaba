@@ -16,6 +16,12 @@ its own data. It can never reach the internet or see the disk. Maktaba runs a st
 maktaba.tv (docs on maktaba.dev) that checks, reviews, signs and sells plugins, and can switch a
 bad one off in every home.
 
+The owner added on the same day: **all of Maktaba's own stages become first-party plugins** on
+the same interface (README §15). They run as native Python in supervised runners, not as
+WebAssembly, with a trusted capability set that only Maktaba's release signature unlocks, and
+move stage by stage with a switch per stage and a CI proof that each writes exactly what it
+wrote before.
+
 ## The design in one table
 
 | | Choice |
@@ -29,7 +35,12 @@ bad one off in every home.
 | Lifecycle | each plugin is an Epic 51 component (kind `plugin`): install, enable, disable, hold, side-by-side update, data-aware rollback, uninstall, purge |
 | Store | developer accounts with 2FA, automated checks (import and capability audit, sandbox run, malware scan), human review, developer + Maktaba signatures, signed expiring catalog and revocation list |
 | Offline | files install offline; store-signed files as from the store; others only with "Allow unreviewed plugins" and a red Unreviewed badge |
-| Paid | Stripe Connect, 85/15 proposed, signed entitlement checked offline |
+| Admin's switch | an admin's disable is a "keep off" that sticks through updates, restores and reinstalls; the store's malware switch-off is separate and can't be undone |
+| Permissions dialog | library checkboxes start empty; the admin ticks each |
+| Panels | read-only, data-only, shown to everyone in the home (viewers included) once installed; no separate viewer approval |
+| Store listings | English and Arabic required (machine translation allowed, labelled); every version's source goes to reviewers, kept private |
+| Maktaba's own stages | 15 first-party plugins (one per Epic 51 component) covering all 56 stages; native Python runners; named SQL statements under per-plugin Postgres roles; exact stage names; lock-step with the server; nine migration waves |
+| Paid | 85 % developer / 15 % Maktaba; $25 one-time fee to sell; payment provider and seller of record decided at Phase 3 (never Stripe); signed entitlement checked offline |
 
 ## Stories
 
@@ -56,6 +67,21 @@ bad one off in every home.
 | 54.19 | [Paid plugins](../../../specs/epics/54-plugins/story-54-19-paid-plugins.md) | 3 |
 | 54.20 | [Panels declared as data, in every app](../../../specs/epics/54-plugins/story-54-20-panels.md) | 3 |
 | 54.21 | [Local compute: embeddings and the language model](../../../specs/epics/54-plugins/story-54-21-local-compute.md) | 3 |
+| 54.22 | [First-party plugins: the trusted manifest and release signing](../../../specs/epics/54-plugins/story-54-22-trusted-manifest.md) | 4 |
+| 54.23 | [The native plugin runner](../../../specs/epics/54-plugins/story-54-23-native-runner.md) | 4 |
+| 54.24 | [Named statements and per-plugin database roles](../../../specs/epics/54-plugins/story-54-24-statement-registry.md) | 4 |
+| 54.25 | [The graph from manifests and the per-stage switch](../../../specs/epics/54-plugins/story-54-25-graph-and-switch.md) | 4 |
+| 54.26 | [The parity proof](../../../specs/epics/54-plugins/story-54-26-parity.md) | 4 |
+| 54.27 | [Repo layout, packaging, components and ownership](../../../specs/epics/54-plugins/story-54-27-layout-packaging.md) | 4 |
+| 54.28 | [Wave 1: classify's leaf stages](../../../specs/epics/54-plugins/story-54-28-wave1-leaf-classify.md) | 4 |
+| 54.29 | [Wave 2: thumbnails and subtitles](../../../specs/epics/54-plugins/story-54-29-wave2-thumbnails-subtitles.md) | 4 |
+| 54.30 | [Wave 3: transcription and semantic search](../../../specs/epics/54-plugins/story-54-30-wave3-transcription-search.md) | 4 |
+| 54.31 | [Wave 4: classify with the language model, and enrich](../../../specs/epics/54-plugins/story-54-31-wave4-classify-enrich.md) | 4 |
+| 54.32 | [Wave 5: convert, duplicates and the file trash](../../../specs/epics/54-plugins/story-54-32-wave5-file-actions.md) | 4 |
+| 54.33 | [Wave 6: YouTube and repair](../../../specs/epics/54-plugins/story-54-33-wave6-youtube-repair.md) | 4 |
+| 54.34 | [Wave 7: live TV](../../../specs/epics/54-plugins/story-54-34-wave7-livetv.md) | 4 |
+| 54.35 | [Wave 8: Plex and dizqueTV through the service door](../../../specs/epics/54-plugins/story-54-35-wave8-plex-dizquetv.md) | 4 |
+| 54.36 | [Wave 9: the core stages, and removing the in-process path](../../../specs/epics/54-plugins/story-54-36-wave9-core.md) | 4 |
 
 ## Key numbers
 
@@ -69,6 +95,8 @@ bad one off in every home.
 | Revocation reaches a linked home | ≤ 5 min (≤ 65 min unlinked) |
 | Store checks / human review | ≤ 30 min / ≤ 5 business days (new), ≤ 2 (update) |
 | A home with no plugins | 0 extra processes |
+| First-party stage vs in-process | p50 ≤ 1.10×, p95 ≤ 1.15×; rows, files and fingerprints identical |
+| Stage flip | 0 lost jobs, 0 reruns over 100 flips |
 
 ## Hard calls (details in the README §11)
 
@@ -76,6 +104,9 @@ Wasm components, not native code or in-process Python. One Rust host with Wasmti
 wasmtime-go (cgo) or wazero (no component model). Two layers: nothing networked is linked, and
 an OS sandbox on the host. The pipeline keeps the queue; the API makes every decision. Stable
 events, not internal stage names. No secrets in plugin settings. Store keys of its own (offline
-root), not the release Sigstore identity. A `disable` revocation can't be overridden; an expired
-list warns but never stops plugins. Unreviewed installs allowed behind an opt-in. Home-only
+root), not the release Sigstore identity. A `disable` revocation can't be undone, and an admin's
+keep-off sticks until the admin turns it on; an expired list warns but never stops plugins. No
+Stripe, ever: 85/15, and the payment provider is chosen at Phase 3. First-party plugins are
+native and trusted behind the same interface, reach the database through named statements, move
+with the server version, keep their stage names and prove identity, not similarity. Unreviewed installs allowed behind an opt-in. Home-only
 placement for now. Heavy compute stays a host service.

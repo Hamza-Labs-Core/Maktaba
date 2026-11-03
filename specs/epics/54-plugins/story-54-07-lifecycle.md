@@ -28,7 +28,24 @@ component:
   checkpoint), force-pause the rest, keep the queue, don't feed; enable resumes and catches up;
 - has its own reason codes: `incompatible` (server or plugin API out of range),
   `grants_needed`, `revoked`, `unreviewed_disallowed`, `plugin_crash_loop`, `sandbox_partial`
-  (inherited from the host), each with English and Arabic words.
+  (inherited from the host), `kept_off`, each with English and Arabic words.
+
+**Keep off (owner decision 2026-11-03).** An admin's disable is sticky. It writes
+`plugin_keep_off (plugin_id PK, set_by, set_at)`, a table keyed by plugin id and kept apart
+from `plugin_installs`, and the desired state `want = disabled` with reason `kept_off`. While
+the row exists, nothing but an admin's enable turns the plugin on:
+
+- a plugin update (54.17 auto-update included) installs the new version disabled;
+- a server update or rollback, and update-rehearsal scenario 15, keep it disabled;
+- a backup restore keeps it disabled (the table is in the backup, and the restore path
+  re-applies it before the reconciler's first pass);
+- uninstalling and reinstalling the same plugin id installs it disabled; the install dialog
+  says "You turned this plugin off on {date}. It stays off until you turn it on."
+- only `POST /api/plugins/{id}/enable` by an admin deletes the row (audited).
+
+Keep-off is the admin's switch; the store's `disable` revocation (54.17) is separate. Turning
+keep-off off never lifts a revocation, and a revoked plugin stays held whatever keep-off
+says.
 
 `plugins.host` itself is enabled automatically while any plugin component is `want = enabled`
 and disabled when none is (a derived desired state, written by the plugin store in the same
@@ -128,6 +145,14 @@ plugin built with a range that excludes the target goes *Waiting* `incompatible`
 - **Given** a plugin that wrote tags to 10 videos, 2 of which an admin edited afterwards,
   **when** it is uninstalled with purge,
   **then** its tags are removed from the 8 untouched videos and kept on the 2 edited ones.
+- **Given** an admin disabled plugin P (keep off),
+  **when** P is updated to a new version, the server is updated and rolled back, a backup is
+  restored, and P is uninstalled and installed again,
+  **then** after each step P is disabled with reason `kept_off`, and only an admin's enable
+  turns it on.
+- **Given** P is kept off and also store-revoked with `disable`,
+  **when** the admin turns keep-off off,
+  **then** P stays held with `revoked` (`409 plugin_revoked`).
 - **Given** no plugin enabled,
   **when** the last plugin is disabled,
   **then** `plugins.host` stops and no `maktaba-plugind` process runs (N14).
@@ -147,6 +172,9 @@ plugin built with a range that excludes the target goes *Waiting* `incompatible`
 | T09 | CI | `components-chaos` with plugin stages | 100 flips | 0 lost or failed jobs (N9) |
 | T10 | CI | update-rehearsal scenario 15 | update + rollback | Running / Waiting `incompatible` as expected |
 | T11 | unit | reason codes | words | en + ar for every new code |
+| T12 | integration (PG, go) | keep-off set | update, reinstall, restore from a `pg_dump` | disabled `kept_off` after each; enable by admin clears it, audited |
+| T13 | integration (PG, go) | keep-off + `disable` revocation | admin enable | `409 plugin_revoked`; keep-off row deleted, hold kept |
+| T14 | CI | update-rehearsal scenario 15 with a kept-off plugin | update + rollback | still disabled `kept_off` |
 
 ## Edge cases
 
@@ -170,7 +198,8 @@ plugin built with a range that excludes the target goes *Waiting* `incompatible`
 | `pipeline/src/maktaba_pipeline/components/runner.py` (Epic 51) | Treat `plugin` kind as a stage group; send `Cancel` at drain deadline. |
 | `pipeline/src/maktaba_pipeline/plugins/migrate.py` (new) | The migrate job. |
 | `cmd/maktaba-server/internal/updater/` | Pre-update incompatibility list. |
-| `shared/db/migrations/NNNN_plugin_installs.sql` + `.sqlite.sql` | `plugin_installs`. |
+| `shared/db/migrations/NNNN_plugin_installs.sql` + `.sqlite.sql` | `plugin_installs`, `plugin_keep_off`. |
+| `api/internal/plugins/keepoff.go` (new) | Keep-off rules for install, update, restore and enable. |
 | `tests/update_rehearsal/scenario_15_plugins.*` | T10. |
 | `web/src/i18n/{en,ar}.json` | Reason codes. |
 

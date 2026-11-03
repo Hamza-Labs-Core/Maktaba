@@ -65,7 +65,7 @@ Redis stays a cache only (README §6, 50.05): no limit depends on it.
 
 Caches added in 50.05 (home lookup, tier) and the existing per-node LRUs need to drop entries
 when another node changes them. The writer sends `NOTIFY cloud_cache, '<kind>:<id>'` in the
-same transaction as the change (tier change from the Stripe webhook, server revoke, suspend,
+same transaction as the change (tier change from the billing webhook, server revoke, suspend,
 slug change). Each node keeps one dedicated `LISTEN cloud_cache` connection (a direct
 connection, not through PgBouncer's transaction pool, see 50.18) and drops the entry. If the
 LISTEN connection drops, the node clears the whole cache on reconnect. TTLs stay as the backstop

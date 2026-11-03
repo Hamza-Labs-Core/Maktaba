@@ -27,7 +27,7 @@ story makes it use that, and writes down what Redis is for (very little).
   outage it uses the last total it read plus the delta: a home near its cap can go slightly
   over, never more than the bytes of the outage. The Pro cap is 100 GB a month; a few minutes of
   one stream is a few hundred MB.
-- **Invalidation.** The Stripe webhook handler (story 25.14) already plans `NOTIFY
+- **Invalidation.** The billing webhook handler (story 25.14; payment provider TBD, not Stripe) already plans `NOTIFY
   tier_changed`; nothing listens yet. The relay `LISTEN`s on `tier_changed` and `server_changed`
   (suspension, revocation, slug change) and drops the affected entries at once. Suspension and
   revocation therefore apply within a second while the database is up.
@@ -96,7 +96,7 @@ never as a source of truth. The stale comment in `00050001_bandwidth.sql` is fix
 - **Given** a home never seen by this relay process,
   **when** a request arrives during the outage,
   **then** the relay answers `503 server_offline`.
-- **Given** the Stripe webhook changes H's plan,
+- **Given** the billing webhook changes H's plan,
   **when** `NOTIFY tier_changed` fires,
   **then** the relay applies H's new plan to the next request (within 1 s).
 - **Given** Postgres has been unreachable for 2 minutes,

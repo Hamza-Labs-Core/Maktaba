@@ -41,9 +41,9 @@ either a one-click GitHub Actions workflow or one command), **Done when**, **Tel
 | `restore.md` | both nodes lost, or the zone | Order a node in another zone (or provider), run `restore.sh` from 50.09, DNS swap, tell users. Target: 4 h. |
 | `deploy-rollback.md` | a deploy is bad after it passed health checks | Actions → **Relay deploy** with the previous tag (blue-green, 50.08). Never roll the schema back: migrations are expand-only (50.08). |
 | `cert-expiry.md` | certificate < 14 days | Check DNS-01 renewal logs on both nodes; renew by hand with the same command; switch to the ZeroSSL issuer if Let's Encrypt is down. |
-| `stripe-backlog.md` | webhook failures or lag | Stripe retries for 3 days: fix the cause, then replay from the Stripe dashboard; run the daily reconciliation (25.14) at once. |
+| `payments-backlog.md` | webhook failures or lag | The payment provider (TBD, not Stripe) retries its webhooks: fix the cause, then replay from the provider's dashboard; run the daily reconciliation (25.14) at once. |
 | `abuse-ddos.md` | traffic spike, abuse score alerts | Suspend the home (25.20); turn on Cloudflare "Under attack" for `api.maktaba.tv`; for the relay, Hetzner Cloud Firewall rules by source. |
-| `secrets-rotation.md` | a secret leaked or might have | Order: Hetzner token, Cloudflare token, Stripe keys, token secret (homes fall back to bearer; tickets die), entitlement key last (needs a coordinated release; 25.26). |
+| `secrets-rotation.md` | a secret leaked or might have | Order: Hetzner token, Cloudflare token, payment provider keys, token secret (homes fall back to bearer; tickets die), entitlement key last (needs a coordinated release; 25.26). |
 | `status-page.md` | posting an incident or maintenance | Add a file under `status/data/incidents/` from the templates below; commit. |
 
 The forced-failover, switchover, DNS-swap and deploy workflows are proven in the cloud
@@ -71,7 +71,7 @@ trail gets a line (in a trail-only PR).
 The **99.9 % uptime target stays** (README §4.2): it drives alerts, error budgets and
 postmortems, and the status page shows the measured figure. But it is a **target, not a
 promise**: Maktaba Cloud gives **no credit, refund or discount** for downtime (README §13,
-decision 1). No credit job, no Stripe balance entries, no credit setting. The status page
+decision 1). No credit job, no payment provider balance entries, no credit setting. The status page
 (50.11) and the Billing page state the target and say plainly that there is no credit (the
 `uptime.policy` string below); no page, email or template may offer one.
 
