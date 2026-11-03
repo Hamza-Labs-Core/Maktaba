@@ -102,4 +102,3 @@ func (s *Store) BeginMachineWrite(ctx context.Context, node string) (*MachineWri
 	}
 	return w, nil
 }
-

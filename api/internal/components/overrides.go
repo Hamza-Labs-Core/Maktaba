@@ -243,7 +243,7 @@ func cloneOverrides(ov map[string]store.Override) map[string]store.Override {
 // makeMachinePlan is makePlan for machine node: each change is checked against that
 // machine's graph (the home's rows merged with its overrides, as the earlier changes
 // leave them).
-func makeMachinePlan(cat *components.Catalog, licensed func(string) bool, now time.Time, home map[string]store.Desired,
+func makeMachinePlan(cat *components.Catalog, licensed func(string) bool, tier string, now time.Time, home map[string]store.Desired,
 	ov map[string]store.Override, st stageState, rev int64, node string, req Request, actor Actor, collect bool) (*machinePlan, error) {
 	if licensed == nil {
 		licensed = func(string) bool { return true }
@@ -324,8 +324,7 @@ func makeMachinePlan(cat *components.Catalog, licensed func(string) bool, now ti
 		was, will := wantOf(before, ch.ID), wantOf(store.Merge(home, trial), ch.ID)
 		turningOn := will == components.WantEnabled && was != components.WantEnabled
 		if turningOn && c.Licence != "" && !licensed(c.Licence) {
-			r := refuse(http.StatusForbidden, ch.ID, CodeLicence, ch.ID+" needs the "+c.Licence+" licence")
-			r.Licence = c.Licence
+			r := licenceRefusal(c, tier)
 			if err := fail(r); err != nil {
 				return nil, err
 			}
@@ -370,7 +369,7 @@ func makeMachinePlan(cat *components.Catalog, licensed func(string) bool, now ti
 		}
 		write(c, next)
 	}
-	before, after := gates(cat, store.Merge(home, ov)), gates(cat, store.Merge(home, p.ov))
+	before, after := gatesLicensed(cat, store.Merge(home, ov), licensed), gatesLicensed(cat, store.Merge(home, p.ov), licensed)
 	p.preview.Effects = effects(cat, before, after)
 	for _, id := range cat.Order() {
 		if before[id].on && !after[id].on {
@@ -407,7 +406,7 @@ func (s *Service) previewMachine(ctx context.Context, node string, req Request) 
 	if err != nil {
 		return Preview{}, err
 	}
-	p, err := makeMachinePlan(s.cat(), s.licensed, s.now(), home, ov, st, rev, node, req, Actor{By: "preview"}, true)
+	p, err := makeMachinePlan(s.cat(), s.licensed, s.tier(), s.now(), home, ov, st, rev, node, req, Actor{By: "preview"}, true)
 	if err != nil {
 		return Preview{}, err
 	}
@@ -420,7 +419,7 @@ func (s *Service) applyMachine(ctx context.Context, node string, req Request, ac
 	var p *machinePlan
 	err := s.machineWrite(ctx, node, func(w *store.MachineWrite, st stageState) ([]overrideWrite, error) {
 		var err error
-		p, err = makeMachinePlan(s.cat(), s.licensed, s.now(), w.Home, w.Overrides, st, w.Revision, node, req, actor, false)
+		p, err = makeMachinePlan(s.cat(), s.licensed, s.tier(), s.now(), w.Home, w.Overrides, st, w.Revision, node, req, actor, false)
 		if err != nil {
 			return nil, err
 		}
@@ -679,7 +678,7 @@ func (s *Service) ListMachine(ctx context.Context, node string) (MachineList, er
 		return MachineList{}, err
 	}
 	merged := store.Merge(snap.rows, ov)
-	mg := gates(s.cat(), merged)
+	mg := gatesLicensed(s.cat(), merged, s.licensed)
 	for _, rows := range snap.statuses {
 		for _, r := range rows {
 			if r.Machine == node && !r.UpdatedAt.IsZero() && (m.HeardAt == nil || r.UpdatedAt.After(*m.HeardAt)) {
