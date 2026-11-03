@@ -3,7 +3,9 @@
 # above the newest release on main passes (and is the latest); one on main that does not
 # contain the newest release's commit is refused; a re-run of a published tag passes as
 # published; a maintenance release passes from a release/* branch only, never the latest;
-# a pre-release of a version already out is refused. Needs git, go and bash; touches
+# a pre-release of a version already out is refused; CI is judged by its jobs (only the
+# iPhone/iPad Player UI shards and ci-success may fail; a cancelled run or job blocks; a run
+# in progress is waited for). Needs git, go and bash; touches
 # nothing outside its temporary directory.
 set -euo pipefail
 
@@ -21,14 +23,27 @@ fails=0
 ok()  { printf '  ok    %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 
-# the stubbed gh: the published releases (PUBLISHED, one tag per line), a passed CI run and
-# an update rehearsal run (REHEARSAL: its status and conclusion, default passed)
-mkdir -p "${work}/stubs"
+# the stubbed gh: the published releases (PUBLISHED, one tag per line), the CI runs (CI_RUNS:
+# "status conclusion id" per line, default one passed run; CI_RUNS_LATER, when set, is what
+# every call after the first returns: a run that finishes while the guard waits), a CI run's
+# jobs (the file ${JOBS_DIR}/<id>: "conclusion<TAB>name" per line) and an update rehearsal
+# run (REHEARSAL: its status and conclusion, default passed)
+mkdir -p "${work}/stubs" "${work}/jobs"
 cat >"${work}/stubs/gh" <<'EOF'
 #!/usr/bin/env bash
 case "$1 $2" in
     "release list") printf '%s\n' "${PUBLISHED}" ;;
-    "run list") if [[ "$*" == *update-rehearsal* ]]; then echo "${REHEARSAL-completed success}"; else echo "completed success"; fi ;;
+    "run list")
+        if [[ "$*" == *update-rehearsal* ]]; then
+            r="${REHEARSAL-completed success}"; [ -z "${r}" ] || sed 's/$/ 900/' <<<"${r}"
+        else
+            n="$(cat "${JOBS_DIR}/.calls" 2>/dev/null || echo 0)"; echo $((n + 1)) >"${JOBS_DIR}/.calls"
+            if [ "${n}" -gt 0 ] && [ -n "${CI_RUNS_LATER:-}" ]; then echo "${CI_RUNS_LATER}"; else echo "${CI_RUNS-completed success 1}"; fi
+        fi ;;
+    api*)
+        [[ "$2" =~ ^repos/owner/repo/actions/runs/([0-9]+)/jobs ]] || { echo "gh stub: $*" >&2; exit 1; }
+        [[ "$*" == *--paginate* ]] || { echo "gh stub: jobs without --paginate" >&2; exit 1; }
+        cat "${JOBS_DIR}/${BASH_REMATCH[1]}" ;;
     *) echo "gh stub: $*" >&2; exit 1 ;;
 esac
 EOF
@@ -63,8 +78,10 @@ git push -q origin main release/0.2 --tags 2>/dev/null
 # guard TAG SHA [ALLOW]: runs the guard; its outputs in ${work}/out, its log in ${work}/log
 guard() {
     : >"${work}/out"
+    rm -f "${work}/jobs/.calls"
     PATH="${work}/stubs:${PATH}" TAG="$1" SHA="$2" ALLOW_TAG="${3:-}" GITHUB_OUTPUT="${work}/out" \
-        PUBLISHED=$'v0.2.0\nv0.3.0\nv0.3.1' CI_WAIT_SECONDS=5 \
+        PUBLISHED=$'v0.2.0\nv0.3.0\nv0.3.1' CI_WAIT_SECONDS=5 CI_POLL_SECONDS=1 \
+        GITHUB_REPOSITORY=owner/repo JOBS_DIR="${work}/jobs" \
         bash "${here}/tag-guard.sh" >"${work}/log" 2>&1
 }
 out() { sed -n "s/^$1=//p" "${work}/out"; }
@@ -100,6 +117,43 @@ REHEARSAL="completed failure" expect_refused "a commit the update rehearsal fail
 REHEARSAL="" expect_refused "a commit the update rehearsal never ran on" v0.3.2 "${c3}" "" \
     "no finished run of the update rehearsal"
 REHEARSAL=$'completed failure\ncompleted success' expect_pass "a commit the update rehearsal passed on at its re-run" \
+    v0.3.2 "${c3}" "" false true false
+
+# CI judged by its jobs: a failed run passes when its only failed jobs are the iPhone/iPad
+# Player UI shards (the owner, 2026-11-02: "Tag without them") and the ci-success rollup
+jobs() { # jobs ID LINES...: run ID's jobs, "conclusion name" (the first word is the conclusion)
+    local id="$1"; shift
+    : >"${work}/jobs/${id}"
+    for l in "$@"; do printf '%s\t%s\n' "${l%% *}" "${l#* }" >>"${work}/jobs/${id}"; done
+}
+base=("success changes" "success unit" "skipped integration" "success apple-apps / Player UI tests (mac)"
+    "success apple-apps / Player UI tests build (iphone)" "success apple-apps / Apple apps (Remote, Player, TV)"
+    "success apple-apps / Player UI tests (iphone 1/6)" "success apple-apps / Player UI tests (ipad 6/6)")
+jobs 7 "${base[@]}" "failure apple-apps / Player UI tests (iphone 2/6)" \
+    "failure apple-apps / Player UI tests (ipad 5/6)" "cancelled apple-apps / Player UI tests (ipad 1/6)" "failure ci-success"
+CI_RUNS="completed failure 7" expect_pass "a CI run failed only on iPhone/iPad UI shards and ci-success" \
+    v0.3.2 "${c3}" "" false true false
+grep -q 'ignored failures.*Player UI tests (iphone 2/6) (failure).*(ipad 5/6) (failure)' "${work}/log" \
+    || fail "the ignored shard failures are not printed: $(cat "${work}/log")"
+jobs 8 "${base[@]}" "failure apple-apps / Player UI tests (iphone 2/6)" "failure ci-success" \
+    "failure apple-apps / Player UI tests (mac)"
+CI_RUNS="completed failure 8" expect_refused "a CI run the Mac UI tests failed on" v0.3.2 "${c3}" "" "CI did not pass"
+grep -q 'required jobs: apple-apps / Player UI tests (mac) (failure)' "${work}/log" \
+    || fail "the Mac UI failure is not named: $(cat "${work}/log")"
+jobs 9 "${base[@]}" "failure apple-apps / Player UI tests build (ipad)" "failure ci-success"
+CI_RUNS="completed failure 9" expect_refused "a CI run a UI test build failed on" v0.3.2 "${c3}" "" "CI did not pass"
+jobs 10 "${base[@]}" "failure unit-go" "failure ci-success"
+CI_RUNS="completed failure 10" expect_refused "a CI run a unit job failed on" v0.3.2 "${c3}" "" "CI did not pass"
+jobs 11 "${base[@]}" "cancelled lint" "failure ci-success"
+CI_RUNS="completed failure 11" expect_refused "a CI run with a cancelled job" v0.3.2 "${c3}" "" "CI did not pass"
+jobs 12 "${base[@]}" "failure apple-apps / Player UI tests (iphone 2/6)"
+CI_RUNS="completed cancelled 12" expect_refused "a cancelled CI run" v0.3.2 "${c3}" "" "CI did not pass"
+CI_RUNS="in_progress  13" CI_RUNS_LATER="completed failure 7" expect_pass \
+    "a CI run in progress is waited for, then judged" v0.3.2 "${c3}" "" false true false
+grep -q 'waiting for CI' "${work}/log" || fail "did not wait for the CI run: $(cat "${work}/log")"
+CI_RUNS="in_progress  13" expect_refused "a CI run still going at the deadline" v0.3.2 "${c3}" "" \
+    "no finished run of CI"
+CI_RUNS=$'completed failure 10\ncompleted success 14' expect_pass "a commit CI passed on in another run" \
     v0.3.2 "${c3}" "" false true false
 
 if [ "${fails}" -gt 0 ]; then
