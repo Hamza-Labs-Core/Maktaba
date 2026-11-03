@@ -279,7 +279,8 @@ final class TVLiveUITests: XCTestCase {
         shot("tv-live-buffering-en")
 
         home.release()
-        XCTAssertTrue(buffering.waitForNonExistence(timeout: 30), "buffering goes when the picture moves again")
+        XCTAssertTrue(buffering.waitForNonExistence(timeout: 30),
+                      "buffering goes when the picture moves again; segments asked: \(home.seen.filter { $0.hasSuffix(".ts") }.suffix(20))")
         XCTAssertTrue(element("live.player").exists, "on the same channel")
         XCTAssertTrue(banner.waitForNonExistence(timeout: 15), "and the banner after its time")
     }
@@ -293,6 +294,9 @@ final class TVLiveUITests: XCTestCase {
         let moved = fixture.replacingOccurrences(of: logo, with: logo + #", "watermark_position": "bottom-right""#)
         XCTAssertNotEqual(moved, fixture, "ch-1's logo corner set")
         home.stub("GET", "/api/channels/now", body: moved)
+        // the channel kept starting (a latch), so the banner stays for the checks: a playing
+        // channel's banner goes after 6 s, which a loaded runner's checks outlasted
+        home.hold("GET", "/stream/channel/ch-1/index.m3u8")
         signIn("en")
         openLiveTab("Live TV")
         let first = app.buttons["live.channel.ch-1"]

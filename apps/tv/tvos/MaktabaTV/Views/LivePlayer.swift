@@ -52,7 +52,7 @@ final class LivePlayback {
         self.client = client
         self.channels = channels
         index = channels.firstIndex { $0.id == start } ?? 0
-        statusObservation = Self.observeStatus(player) { [weak self] status in self?.timeControl(status) }
+        statusObservation = Self.observeStatus(player) { [weak self] in self?.timeControl() }
         stallObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.playbackStalledNotification, object: nil, queue: .main
         ) { [weak self] note in
@@ -61,23 +61,31 @@ final class LivePlayback {
             MainActor.assumeIsolated {
                 guard let self, let stalled, let item = self.player.currentItem,
                       ObjectIdentifier(item) == stalled else { return }
-                self.waiting = true
+                // a notice can come after the picture moved again (it is queued, the status
+                // is not): it counts only while the player still waits
+                Log.ui.info("live picture: stall notice")
+                self.timeControl()
             }
         }
     }
 
     /// KVO may call back on any thread: the handler is made outside the main actor and hops on.
     nonisolated private static func observeStatus(
-        _ player: AVPlayer, _ changed: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
+        _ player: AVPlayer, _ changed: @escaping @MainActor @Sendable () -> Void
     ) -> NSKeyValueObservation {
-        player.observe(\.timeControlStatus, options: [.initial, .new]) { p, _ in
-            let status = p.timeControlStatus
-            Task { @MainActor in changed(status) }
+        player.observe(\.timeControlStatus, options: [.initial, .new]) { _, _ in
+            Task { @MainActor in changed() }
         }
     }
 
-    /// The picture moved, waits, or was paused.
-    private func timeControl(_ status: AVPlayer.TimeControlStatus) {
+    /// The picture moved, waits, or was paused: read as the player is now, on the main actor
+    /// (a change that hopped on late, or a stall notice queued behind a resume, never wins
+    /// over the player's own state).
+    private func timeControl() {
+        let status = player.timeControlStatus
+        let reason = player.reasonForWaitingToPlay?.rawValue ?? "-"
+        let item = player.currentItem
+        Log.ui.info("live picture: \(status.rawValue, privacy: .public) waiting for \(reason, privacy: .public), moved \(self.moved, privacy: .public), keep up \(item?.isPlaybackLikelyToKeepUp ?? false, privacy: .public), buffer empty \(item?.isPlaybackBufferEmpty ?? false, privacy: .public)")
         switch status {
         case .playing:
             moved = true
