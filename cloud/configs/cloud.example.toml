@@ -41,14 +41,13 @@ key_path  = ""
 #   MAKTABA_CLOUD_TOKEN_SECRET  (>= 32 bytes; e.g. `openssl rand -base64 48`)
 # Required by the `api` role; ignored by `relay` and `worker`.
 
-[stripe]
-# Both come from env: MAKTABA_CLOUD_STRIPE_SECRET, MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET.
-publishable_key = ""
-# Monthly price ids (env MAKTABA_CLOUD_PRICE_PRO / MAKTABA_CLOUD_PRICE_FAMILY).
-price_pro_monthly    = ""
-price_family_monthly = ""
-# An sk_live_ key is refused unless this is true. Leave false: test mode.
-live_mode = false
+[billing]
+# The payment provider. It is not chosen yet: "none" (the default and the
+# only value accepted) takes no payments. Paid plans show as coming soon,
+# checkout answers 503 payments_not_set_up, /v1/billing/webhook/{provider}
+# is a 404, and service admins set plans by hand
+# (POST /v1/admin/accounts/{id}/plan). Env: MAKTABA_CLOUD_BILLING_PROVIDER.
+provider = "none"
 
 [apns]
 team_id  = ""

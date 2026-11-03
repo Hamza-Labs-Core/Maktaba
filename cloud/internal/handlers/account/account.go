@@ -271,8 +271,8 @@ func (d *Deps) Export(w http.ResponseWriter, r *http.Request) {
 	}
 	queries := map[string]string{
 		"servers":      `SELECT id, name, slug, plan, version, created_at, last_seen_at FROM servers WHERE owner_user_id = $1`,
-		"subscription": `SELECT plan, interval, status, current_period_end, cancel_at_period_end, updated_at FROM subscriptions WHERE user_id = $1`,
-		"invoices":     `SELECT stripe_invoice_id, status, amount_due_cents, currency, updated_at FROM invoices WHERE user_id = $1`,
+		"subscription": `SELECT plan, provider, interval, status, current_period_end, cancel_at_period_end, updated_at FROM subscriptions WHERE user_id = $1`,
+		"invoices":     `SELECT provider, provider_invoice_id, status, amount_due_cents, currency, updated_at FROM invoices WHERE user_id = $1`,
 		"push_devices": `SELECT platform, app_version, created_at, last_seen_at FROM push_devices WHERE user_id = $1`,
 		"bandwidth":    `SELECT b.server_id, b.month, b.bytes_in, b.bytes_out FROM bandwidth_monthly b JOIN servers s ON s.id = b.server_id WHERE s.owner_user_id = $1`,
 		"audit":        `SELECT action, created_at, detail FROM audit_log WHERE target_kind = 'user' AND target_id = $1::text ORDER BY created_at`,

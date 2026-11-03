@@ -1,5 +1,5 @@
 // Package billing owns the plan catalog, bandwidth metering, and the
-// Stripe integration glue. The catalog is hard-coded here (not in the
+// payment-provider seam (Provider; no provider is chosen yet). The catalog is hard-coded here (not in the
 // DB) so the source of truth lives in version control and tier changes
 // require a deploy — appropriate for the small number of public tiers.
 package billing

@@ -70,8 +70,7 @@ services:
       MAKTABA_CLOUD_TOKEN_SECRET: ${MAKTABA_CLOUD_TOKEN_SECRET}
       # --- api-role secrets that have env overrides (ignored by relay,
       #     wired here so the same stack can run --role api unchanged) ---
-      MAKTABA_CLOUD_STRIPE_SECRET: ${STRIPE_SECRET_KEY:-}
-      MAKTABA_CLOUD_STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      MAKTABA_CLOUD_BILLING_PROVIDER: ${BILLING_PROVIDER:-none}
       MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       # Probe target (also baked into the image; set explicitly so it
       # tracks MAKTABA_CLOUD_LISTEN_ADDR if that changes).

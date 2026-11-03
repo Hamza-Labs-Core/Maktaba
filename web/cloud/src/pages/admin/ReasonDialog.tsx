@@ -1,6 +1,6 @@
 // A confirm dialog that will not submit without a reason: suspend, unsuspend,
-// unblock. The reason goes into the audit log.
-import { useEffect, useState } from "react";
+// unblock, set plan. The reason goes into the audit log.
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Textarea } from "@ds/components/Textarea/Textarea";
@@ -13,6 +13,7 @@ export function ReasonDialog({
   body,
   confirmLabel,
   destructive,
+  children,
   onClose,
   onConfirm,
 }: {
@@ -21,6 +22,8 @@ export function ReasonDialog({
   body?: string;
   confirmLabel: string;
   destructive?: boolean;
+  /** Extra fields shown above the reason (the plan picker). */
+  children?: ReactNode;
   onClose: () => void;
   /** Resolves when done; a rejection is shown in the dialog. */
   onConfirm: (reason: string) => Promise<void>;
@@ -80,6 +83,7 @@ export function ReasonDialog({
     >
       {body && <p>{body}</p>}
       {error != null && <Banner tone="error">{message(error)}</Banner>}
+      {children}
       <Textarea
         label={t("admin.reason")}
         required

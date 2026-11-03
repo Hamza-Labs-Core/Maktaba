@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/abuse"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
@@ -18,47 +18,46 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
-// webhookTolerance is how old a signed event may be (replay window).
-const webhookTolerance = 5 * time.Minute
-
-type stripeEvent struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Created int64  `json:"created"`
-	Data    struct {
-		Object json.RawMessage `json:"object"`
-	} `json:"data"`
-}
-
-// Webhook handles Stripe events. The signature is verified first; the
-// event is then recorded in stripe_events and applied in one
-// transaction, so:
+// Webhook handles a payment provider's events at
+// /v1/billing/webhook/{provider}. Only the configured provider's route
+// answers, and only when it takes payments: with the default "none"
+// provider every webhook route is a 404.
+//
+// The provider verifies the delivery and translates it into a neutral
+// billingpkg.Event. The event is then recorded in provider_events and
+// applied in one transaction, so:
 //   - a retried event id finds its row and is answered 200 with no work;
-//   - a failed apply rolls the row back and answers 500, and Stripe's
-//     retry gets a clean second attempt.
+//   - a failed apply rolls the row back and answers 500, and the
+//     provider's retry gets a clean second attempt.
 func (d *Deps) Webhook(w http.ResponseWriter, r *http.Request) {
+	p := d.provider()
+	if !p.Enabled() || chi.URLParam(r, "provider") != p.Name() {
+		writeErr(w, http.StatusNotFound, "not_found", "")
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, "read_failed", "")
 		return
 	}
-	if d.WebhookSecret == "" {
-		writeErr(w, http.StatusServiceUnavailable, "billing_disabled", "")
-		return
-	}
-	if _, err := billingpkg.VerifyWebhookSignature(body, r.Header.Get("Stripe-Signature"), d.WebhookSecret, d.now(), webhookTolerance); err != nil {
+	ev, err := p.ParseWebhook(r.Context(), body, r.Header)
+	if errors.Is(err, billingpkg.ErrBadSignature) {
 		if d.Abuse != nil {
 			if ip := middleware.GetClientIP(r.Context()); ip != "" {
-				_ = d.Abuse.Record(r.Context(), abuse.Subject{Kind: "ip", ID: ip}, abuse.KindStripeForgery, 2, map[string]any{"reason": err.Error()})
+				_ = d.Abuse.Record(r.Context(), abuse.Subject{Kind: "ip", ID: ip}, abuse.KindWebhookForgery, 2,
+					map[string]any{"provider": p.Name(), "reason": err.Error()})
 			}
 		}
 		writeErr(w, http.StatusBadRequest, "invalid_signature", "")
 		return
 	}
-	var ev stripeEvent
-	if err := json.Unmarshal(body, &ev); err != nil || ev.ID == "" {
-		writeErr(w, http.StatusBadRequest, "bad_json", "")
+	if err != nil || ev.ID == "" {
+		writeErr(w, http.StatusBadRequest, "bad_event", "")
 		return
+	}
+	payload := ev.Payload
+	if !json.Valid(payload) {
+		payload = []byte("{}")
 	}
 	tx, err := d.DB.BeginTx(r.Context(), nil)
 	if err != nil {
@@ -69,9 +68,9 @@ func (d *Deps) Webhook(w http.ResponseWriter, r *http.Request) {
 	// A concurrent delivery of the same id blocks here on the primary
 	// key until the first commits, then sees the conflict.
 	res, err := tx.ExecContext(r.Context(), `
-        INSERT INTO stripe_events (event_id, type, payload, applied_at) VALUES ($1,$2,$3, now())
-        ON CONFLICT (event_id) DO NOTHING
-    `, ev.ID, ev.Type, []byte(ev.Data.Object))
+        INSERT INTO provider_events (provider, provider_event_id, type, payload, applied_at) VALUES ($1,$2,$3,$4, now())
+        ON CONFLICT (provider, provider_event_id) DO NOTHING
+    `, p.Name(), ev.ID, firstNonEmpty(ev.Type, string(ev.Kind), "unknown"), payload)
 	if err != nil {
 		d.fail(w, r, "webhook record", err)
 		return
@@ -80,9 +79,9 @@ func (d *Deps) Webhook(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK) // duplicate delivery
 		return
 	}
-	notices, err := d.applyEvent(r.Context(), tx, ev)
+	notices, err := d.applyEvent(r.Context(), tx, p.Name(), ev)
 	if err != nil {
-		d.Logger.Error("billing: apply webhook", "event", ev.ID, "type", ev.Type, "err", err)
+		d.Logger.Error("billing: apply webhook", "provider", p.Name(), "event", ev.ID, "kind", ev.Kind, "err", err)
 		writeErr(w, http.StatusInternalServerError, "apply_failed", "")
 		return
 	}
@@ -101,63 +100,29 @@ func (d *Deps) Webhook(w http.ResponseWriter, r *http.Request) {
 // notice is a post-commit side effect (mail, session revocation).
 type notice func(ctx context.Context)
 
-type subscriptionObject struct {
-	ID                string            `json:"id"`
-	Customer          string            `json:"customer"`
-	Status            string            `json:"status"`
-	CancelAtPeriodEnd bool              `json:"cancel_at_period_end"`
-	CurrentPeriodEnd  int64             `json:"current_period_end"`
-	Metadata          map[string]string `json:"metadata"`
-	Items             struct {
-		Data []struct {
-			CurrentPeriodEnd int64 `json:"current_period_end"`
-			Price            struct {
-				ID        string `json:"id"`
-				LookupKey string `json:"lookup_key"`
-				Nickname  string `json:"nickname"`
-				Recurring struct {
-					Interval string `json:"interval"`
-				} `json:"recurring"`
-			} `json:"price"`
-		} `json:"data"`
-	} `json:"items"`
-}
-
-func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, ev stripeEvent) ([]notice, error) {
-	at := time.Unix(ev.Created, 0).UTC()
-	switch ev.Type {
-	case "checkout.session.completed":
-		var o struct {
-			Customer          string            `json:"customer"`
-			Subscription      string            `json:"subscription"`
-			ClientReferenceID string            `json:"client_reference_id"`
-			Metadata          map[string]string `json:"metadata"`
-		}
-		if err := json.Unmarshal(ev.Data.Object, &o); err != nil {
-			return nil, err
-		}
-		uid := firstNonEmpty(o.ClientReferenceID, o.Metadata["user_id"])
-		if ok, err := userExists(ctx, tx, uid); err != nil || !ok || o.Customer == "" {
+func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev billingpkg.Event) ([]notice, error) {
+	at := ev.At.UTC()
+	switch ev.Kind {
+	case billingpkg.EventCheckoutCompleted:
+		uid := ev.UserID
+		if ok, err := userExists(ctx, tx, uid); err != nil || !ok || ev.CustomerID == "" {
 			return nil, err
 		}
 		// Link the payer; plan and status arrive with the subscription
 		// events, which may come before or after this one.
 		_, err := tx.ExecContext(ctx, `
-            INSERT INTO subscriptions (user_id, stripe_customer_id, stripe_subscription_id, status, updated_at)
-            VALUES ($1, $2, NULLIF($3,''), 'incomplete', now())
+            INSERT INTO subscriptions (user_id, provider, provider_customer_id, provider_subscription_id, status, updated_at)
+            VALUES ($1, $2, $3, NULLIF($4,''), 'incomplete', now())
             ON CONFLICT (user_id) DO UPDATE SET
-                stripe_customer_id = EXCLUDED.stripe_customer_id,
-                stripe_subscription_id = COALESCE(EXCLUDED.stripe_subscription_id, subscriptions.stripe_subscription_id),
+                provider = EXCLUDED.provider,
+                provider_customer_id = EXCLUDED.provider_customer_id,
+                provider_subscription_id = COALESCE(EXCLUDED.provider_subscription_id, subscriptions.provider_subscription_id),
                 updated_at = now()
-        `, uid, o.Customer, o.Subscription)
+        `, uid, provider, ev.CustomerID, ev.SubscriptionID)
 		return nil, err
 
-	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
-		var o subscriptionObject
-		if err := json.Unmarshal(ev.Data.Object, &o); err != nil {
-			return nil, err
-		}
-		uid, err := d.resolveUser(ctx, tx, o.Metadata["user_id"], o.Customer)
+	case billingpkg.EventSubscriptionStarted, billingpkg.EventSubscriptionChanged, billingpkg.EventSubscriptionCancelled:
+		uid, err := d.resolveUser(ctx, tx, ev.UserID, ev.CustomerID)
 		if err != nil || uid == "" {
 			return nil, err
 		}
@@ -165,48 +130,48 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, ev stripeEvent) ([]no
 			subID  sql.NullString
 			status sql.NullString
 		}
-		err = tx.QueryRowContext(ctx, `SELECT stripe_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`, uid).Scan(&cur.subID, &cur.status)
+		err = tx.QueryRowContext(ctx, `SELECT provider_subscription_id, status FROM subscriptions WHERE user_id = $1 FOR UPDATE`, uid).Scan(&cur.subID, &cur.status)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
-		status := o.Status
-		if ev.Type == "customer.subscription.deleted" {
+		status := ev.Status
+		if ev.Kind == billingpkg.EventSubscriptionCancelled {
 			status = "canceled"
 		}
 		// A second subscription (two checkouts paid) must not move the
 		// account while the current one is live: only a live
 		// subscription may take over from another.
-		if cur.subID.Valid && cur.subID.String != o.ID && liveStatuses[cur.status.String] && !liveStatuses[status] {
+		if cur.subID.Valid && cur.subID.String != ev.SubscriptionID && liveStatuses[cur.status.String] && !liveStatuses[status] {
 			return nil, nil
 		}
-		tier, priceID, interval := d.planOf(o)
+		tier := ev.Plan
+		if _, ok := billingpkg.Tiers[tier]; !ok {
+			tier = billingpkg.PlanFree
+		}
 		effective := billingpkg.PlanFree
 		if liveStatuses[status] {
 			effective = tier
 		}
-		periodEnd := o.CurrentPeriodEnd
-		if periodEnd == 0 && len(o.Items.Data) > 0 {
-			periodEnd = o.Items.Data[0].CurrentPeriodEnd // newer API versions
-		}
 		var end any
-		if periodEnd > 0 {
-			end = time.Unix(periodEnd, 0).UTC()
+		if !ev.PeriodEnd.IsZero() {
+			end = ev.PeriodEnd.UTC()
 		}
 		// The ordering guard lives in the upsert itself, so two concurrent
-		// deliveries for an account with no row yet cannot both win. Stripe
-		// timestamps are whole seconds; on a tie, an "incomplete" event
-		// never overwrites a live status (created → active usually share
-		// a second and may arrive in either order).
+		// deliveries for an account with no row yet cannot both win. On a
+		// timestamp tie, an "incomplete" event never overwrites a live
+		// status (started → active often share a second and may arrive in
+		// either order).
 		res, err := tx.ExecContext(ctx, `
-            INSERT INTO subscriptions (user_id, plan, interval, stripe_customer_id, stripe_subscription_id, stripe_price_id,
+            INSERT INTO subscriptions (user_id, provider, plan, interval, provider_customer_id, provider_subscription_id, provider_price_id,
                                        status, current_period_end, cancel_at_period_end, last_event_at, updated_at)
-            VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,NULLIF($6,''),$7,$8,$9,$10,now())
+            VALUES ($1,$2,$3,NULLIF($4,''),NULLIF($5,''),$6,NULLIF($7,''),$8,$9,$10,$11,now())
             ON CONFLICT (user_id) DO UPDATE SET
+                provider = EXCLUDED.provider,
                 plan = EXCLUDED.plan,
                 interval = EXCLUDED.interval,
-                stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, subscriptions.stripe_customer_id),
-                stripe_subscription_id = EXCLUDED.stripe_subscription_id,
-                stripe_price_id = EXCLUDED.stripe_price_id,
+                provider_customer_id = COALESCE(EXCLUDED.provider_customer_id, subscriptions.provider_customer_id),
+                provider_subscription_id = EXCLUDED.provider_subscription_id,
+                provider_price_id = EXCLUDED.provider_price_id,
                 status = EXCLUDED.status,
                 current_period_end = EXCLUDED.current_period_end,
                 cancel_at_period_end = EXCLUDED.cancel_at_period_end,
@@ -217,80 +182,55 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, ev stripeEvent) ([]no
                OR (subscriptions.last_event_at = EXCLUDED.last_event_at
                    AND NOT (EXCLUDED.status IN ('incomplete','incomplete_expired')
                             AND subscriptions.status IN ('active','trialing','past_due')))
-        `, uid, effective, interval, o.Customer, o.ID, priceID, status, end, o.CancelAtPeriodEnd, at)
+        `, uid, provider, effective, ev.Interval, ev.CustomerID, ev.SubscriptionID, ev.PriceID, status, end, ev.CancelAtPeriodEnd, at)
 		if err != nil {
 			return nil, err
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return nil, nil // an older event delivered late
 		}
-		return nil, setEffectivePlan(ctx, tx, uid, effective)
+		return nil, SetEffectivePlan(ctx, tx, uid, effective)
 
-	case "invoice.paid", "invoice.payment_failed":
-		var o struct {
-			ID        string `json:"id"`
-			Customer  string `json:"customer"`
-			AmountDue int64  `json:"amount_due"`
-			Currency  string `json:"currency"`
-		}
-		if err := json.Unmarshal(ev.Data.Object, &o); err != nil {
-			return nil, err
-		}
-		uid, err := d.resolveUser(ctx, tx, "", o.Customer)
-		if err != nil || uid == "" {
+	case billingpkg.EventPaymentSucceeded, billingpkg.EventPaymentFailed:
+		uid, err := d.resolveUser(ctx, tx, ev.UserID, ev.CustomerID)
+		if err != nil || uid == "" || ev.InvoiceID == "" {
 			return nil, err
 		}
 		status := "paid"
-		if ev.Type == "invoice.payment_failed" {
+		if ev.Kind == billingpkg.EventPaymentFailed {
 			status = "failed"
 		}
 		if _, err := tx.ExecContext(ctx, `
-            INSERT INTO invoices (stripe_invoice_id, user_id, status, amount_due_cents, currency, updated_at)
-            VALUES ($1,$2,$3,$4,COALESCE(NULLIF($5,''),'usd'),now())
-            ON CONFLICT (stripe_invoice_id) DO UPDATE SET status = EXCLUDED.status, updated_at = now()
-        `, o.ID, uid, status, o.AmountDue, o.Currency); err != nil {
+            INSERT INTO invoices (provider, provider_invoice_id, user_id, status, amount_due_cents, currency, updated_at)
+            VALUES ($1,$2,$3,$4,$5,COALESCE(NULLIF($6,''),'usd'),now())
+            ON CONFLICT (provider_invoice_id) DO UPDATE SET status = EXCLUDED.status, updated_at = now()
+        `, provider, ev.InvoiceID, uid, status, ev.AmountCents, ev.Currency); err != nil {
 			return nil, err
 		}
 		if status != "failed" {
 			return nil, nil
 		}
-		// Stripe keeps retrying; the subscription stays in force as
-		// past_due until it gives up (customer.subscription.updated).
+		// The provider keeps retrying; the subscription stays in force as
+		// past_due until it gives up (a subscription event follows).
 		if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET status = 'past_due', updated_at = now() WHERE user_id = $1 AND status = 'active'`, uid); err != nil {
 			return nil, err
 		}
 		return []notice{d.mailUser(uid, "payment_failed", "Your Maktaba Cloud payment failed",
-			"We could not charge your card for Maktaba Cloud. Update your payment method from the billing page: "+d.WebURL+"/billing")}, nil
+			"We could not take your payment for Maktaba Cloud. Update your payment method from the billing page: "+d.WebURL+"/billing")}, nil
 
-	case "charge.dispute.created":
-		var o struct {
-			ID       string `json:"id"`
-			Charge   string `json:"charge"`
-			Customer string `json:"customer"`
-		}
-		if err := json.Unmarshal(ev.Data.Object, &o); err != nil {
-			return nil, err
-		}
-		customer := o.Customer
-		if customer == "" && o.Charge != "" && d.Stripe.Configured() {
-			c, err := d.Stripe.ChargeCustomer(ctx, o.Charge)
-			if err != nil {
-				return nil, fmt.Errorf("resolve disputed charge: %w", err)
-			}
-			customer = c
-		}
-		uid, err := d.resolveUser(ctx, tx, "", customer)
+	case billingpkg.EventPaymentDisputed:
+		uid, err := d.resolveUser(ctx, tx, ev.UserID, ev.CustomerID)
 		if err != nil || uid == "" {
 			return nil, err
 		}
-		return d.suspendForDispute(ctx, tx, uid, o.ID)
+		return d.suspendForDispute(ctx, tx, provider, uid, ev.DisputeID)
 	}
 	return nil, nil
 }
 
-// suspendForDispute suspends the payer of a disputed charge (story
-// 25.14): billing is left to Stripe, sessions go after the commit.
-func (d *Deps) suspendForDispute(ctx context.Context, tx *sql.Tx, uid, disputeID string) ([]notice, error) {
+// suspendForDispute suspends the payer of a disputed payment (story
+// 25.14): billing is left to the provider, sessions go after the commit.
+func (d *Deps) suspendForDispute(ctx context.Context, tx *sql.Tx, provider, uid, disputeID string) ([]notice, error) {
 	reason := "payment dispute " + disputeID
 	if err := d.Users.SetStatus(ctx, tx, uid, stores.StatusSuspended, reason); err != nil {
 		return nil, err
@@ -302,8 +242,8 @@ func (d *Deps) suspendForDispute(ctx context.Context, tx *sql.Tx, uid, disputeID
 		return nil, err
 	}
 	if err := audit.WriteTx(ctx, tx, audit.Entry{
-		ActorEmail: "stripe", Action: audit.ActionDisputeSuspend, TargetKind: "user", TargetID: uid,
-		Detail: map[string]any{"dispute": disputeID},
+		ActorEmail: "billing:" + provider, Action: audit.ActionDisputeSuspend, TargetKind: "user", TargetID: uid,
+		Detail: map[string]any{"dispute": disputeID, "provider": provider},
 	}); err != nil {
 		return nil, err
 	}
@@ -332,10 +272,10 @@ func (d *Deps) mailUser(uid, kind, subject, body string) notice {
 	}
 }
 
-// resolveUser finds the account an event is about: the user id we
-// stamped on the subscription's metadata, else the account whose
-// Stripe customer it is. "" (no error) means none — the event is about
-// something we did not create, and is acknowledged without work.
+// resolveUser finds the account an event is about: the user id the
+// provider carried back, else the account whose provider customer it
+// is. "" (no error) means none — the event is about something we did
+// not create, and is acknowledged without work.
 func (d *Deps) resolveUser(ctx context.Context, tx *sql.Tx, metaUID, customer string) (string, error) {
 	if ok, err := userExists(ctx, tx, metaUID); err != nil {
 		return "", err
@@ -346,9 +286,9 @@ func (d *Deps) resolveUser(ctx context.Context, tx *sql.Tx, metaUID, customer st
 		return "", nil
 	}
 	var uid string
-	err := tx.QueryRowContext(ctx, `SELECT user_id FROM subscriptions WHERE stripe_customer_id = $1`, customer).Scan(&uid)
+	err := tx.QueryRowContext(ctx, `SELECT user_id FROM subscriptions WHERE provider_customer_id = $1`, customer).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
-		d.Logger.Warn("billing: webhook for an unknown Stripe customer", "customer", customer)
+		d.Logger.Warn("billing: webhook for an unknown provider customer", "customer", customer)
 		return "", nil
 	}
 	return uid, err
@@ -363,40 +303,11 @@ func userExists(ctx context.Context, tx *sql.Tx, uid string) (bool, error) {
 	return ok, err
 }
 
-// planOf maps a subscription's price to a tier: the configured price
-// ids first, then the price's lookup_key or nickname
-// (pro/pro_monthly/…). It also returns the price id and interval.
-func (d *Deps) planOf(o subscriptionObject) (tier, priceID, interval string) {
-	tier = billingpkg.PlanFree
-	for _, it := range o.Items.Data {
-		p := it.Price
-		priceID = p.ID
-		switch p.Recurring.Interval {
-		case "month":
-			interval = "monthly"
-		case "year":
-			interval = "yearly"
-		}
-		switch {
-		case p.ID != "" && p.ID == d.PriceIDProMonth:
-			return billingpkg.PlanPro, priceID, interval
-		case p.ID != "" && p.ID == d.PriceIDFamilyMonth:
-			return billingpkg.PlanFamily, priceID, interval
-		}
-		switch firstNonEmpty(p.LookupKey, p.Nickname) {
-		case "pro", "pro_monthly", "pro_yearly":
-			return billingpkg.PlanPro, priceID, interval
-		case "family", "family_monthly", "family_yearly":
-			return billingpkg.PlanFamily, priceID, interval
-		}
-	}
-	return tier, priceID, interval
-}
-
-// setEffectivePlan mirrors the plan onto the account (the access
+// SetEffectivePlan mirrors the plan onto the account (the access
 // token's plan claim) and onto every server it owns, which is what the
-// relay's bandwidth gate reads.
-func setEffectivePlan(ctx context.Context, tx *sql.Tx, uid, plan string) error {
+// relay's bandwidth gate reads. The admin console's manual plan change
+// uses it too.
+func SetEffectivePlan(ctx context.Context, tx *sql.Tx, uid, plan string) error {
 	if _, err := tx.ExecContext(ctx, `UPDATE users SET plan = $2, updated_at = now() WHERE id = $1`, uid, plan); err != nil {
 		return err
 	}

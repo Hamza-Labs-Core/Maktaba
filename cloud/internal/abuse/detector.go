@@ -101,7 +101,7 @@ const (
 	KindLoginFailed      = "login_failed"
 	KindRefreshReplay    = "refresh_token_replay"
 	KindSignup           = "signup"
-	KindStripeForgery    = "stripe_signature_forgery"
+	KindWebhookForgery   = "billing_webhook_forgery"
 	KindDispute          = "charge_dispute"
 	KindOAuthState       = "oauth_state"
 	KindPasswordResetReq = "password_reset_request"

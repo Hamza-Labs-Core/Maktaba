@@ -31,6 +31,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/audit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/oauth"
+	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
@@ -41,15 +42,14 @@ import (
 
 // The account-side integration suite drives the api role's real router
 // (newAPI) against a scratch Postgres database, with fakes for every
-// external party: a recording mailer, a fake Stripe API, and a fake
-// OpenID provider standing in for Google and Apple. Only test values
-// are used — nothing reaches a real provider.
+// external party: a recording mailer, a fake OpenID provider standing in
+// for Google and Apple, and (newPaidEnv) a fake payment provider. Only
+// test values are used — nothing reaches a real provider. newEnv runs
+// the production default payment provider, "none".
 
 const (
 	testTokenSecret   = "integration-test-secret-at-least-32-bytes!"
-	testWebhookSecret = "whsec_test_integration"
-	testPricePro      = "price_test_pro"
-	testPriceFamily   = "price_test_family"
+	testWebhookSecret = "test-webhook-secret"
 	testWebURL        = "https://app.example.test"
 )
 
@@ -59,7 +59,7 @@ type env struct {
 	router  *chi.Mux
 	pool    *db.Pool
 	mail    *mail.Recorder
-	stripe  *fakeStripe
+	pay     *fakeProvider // nil: the "none" provider
 	idp     *fakeIDP
 	entPath string
 	ipSeq   int
@@ -85,7 +85,21 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
+// newEnv runs the api with the production default payment provider,
+// "none": no payments, plans set by hand.
 func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvWith(t, nil)
+}
+
+// newPaidEnv runs the api with a fake payment provider, so the
+// provider-neutral checkout, portal and webhook paths are exercised.
+func newPaidEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvWith(t, &fakeProvider{})
+}
+
+func newEnvWith(t *testing.T, pay *fakeProvider) *env {
 	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
@@ -98,7 +112,7 @@ func newEnv(t *testing.T) *env {
 	if err := mig.Up(ctx); err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, pool: pool, mail: &mail.Recorder{}, stripe: newFakeStripe(t), idp: newFakeIDP(t)}
+	e := &env{t: t, pool: pool, mail: &mail.Recorder{}, pay: pay, idp: newFakeIDP(t)}
 
 	// A throwaway Ed25519 seed for entitlement signing.
 	seed := make([]byte, 32)
@@ -115,10 +129,7 @@ func newEnv(t *testing.T) *env {
 	cfg.Server.WebURL = testWebURL
 	cfg.Auth.TokenSecret = testTokenSecret
 	cfg.Mail.Driver = "log"
-	cfg.Stripe.SecretKey = "sk_test_integration"
-	cfg.Stripe.WebhookSecret = testWebhookSecret
-	cfg.Stripe.PriceProMonthly = testPricePro
-	cfg.Stripe.PriceFamilyMonthly = testPriceFamily
+	cfg.Billing.Provider = "none"
 	cfg.OAuthGoogle.ClientID = "google-test-client"
 	cfg.OAuthGoogle.ClientSecret = "google-test-secret"
 	cfg.Entitlement.PrivateKeyPath = e.entPath
@@ -127,15 +138,18 @@ func newEnv(t *testing.T) *env {
 	}
 	e.logs = &syncBuffer{}
 	logger := slog.New(slog.NewTextHandler(e.logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	r, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, apiOverrides{
-		Mailer:        e.mail,
-		StripeAPIBase: e.stripe.srv.URL,
+	o := apiOverrides{
+		Mailer: e.mail,
 		Google: &oauth.GoogleConfig{
 			AuthEndpoint:  e.idp.srv.URL + "/authorize",
 			TokenEndpoint: e.idp.srv.URL + "/token",
 			JWKSURL:       e.idp.srv.URL + "/jwks",
 		},
-	})
+	}
+	if pay != nil {
+		o.BillingProvider = pay
+	}
+	r, stop, err := newAPI(logger, cfg, pool, mig, server.BuildInfo{Role: "api"}, o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,70 +344,110 @@ func (e *env) serviceAdmin(email string) *client {
 	return c
 }
 
-// ---- fake Stripe ---------------------------------------------------------
+// ---- fake payment provider ----------------------------------------------
 
-type fakeStripe struct {
-	srv  *httptest.Server
-	mu   sync.Mutex
-	reqs []stripeReq
+// fakeProvider is a payment provider for tests ("testpay"). Its webhook
+// body is a provider-neutral event as JSON, signed with an HMAC-SHA256 of
+// the body in X-Test-Signature.
+type fakeProvider struct {
+	mu        sync.Mutex
+	checkouts []billingpkg.CheckoutParams
+	portals   []string
+	seq       int
 }
 
-type stripeReq struct {
-	Path string
-	Form neturl.Values
-	Auth string
+func (*fakeProvider) Name() string  { return "testpay" }
+func (*fakeProvider) Enabled() bool { return true }
+func (*fakeProvider) Sells(plan string) bool {
+	return plan == billingpkg.PlanPro || plan == billingpkg.PlanFamily
 }
 
-func newFakeStripe(t *testing.T) *fakeStripe {
-	f := &fakeStripe{}
-	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = r.ParseForm()
-		f.mu.Lock()
-		f.reqs = append(f.reqs, stripeReq{Path: r.URL.Path, Form: r.PostForm, Auth: r.Header.Get("Authorization")})
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.URL.Path == "/v1/checkout/sessions":
-			_, _ = w.Write([]byte(`{"id":"cs_test_1","url":"https://checkout.stripe.test/c/cs_test_1"}`))
-		case r.URL.Path == "/v1/billing_portal/sessions":
-			_, _ = w.Write([]byte(`{"id":"bps_test_1","url":"https://billing.stripe.test/p/bps_test_1"}`))
-		case strings.HasPrefix(r.URL.Path, "/v1/charges/"):
-			_, _ = w.Write([]byte(`{"id":"` + strings.TrimPrefix(r.URL.Path, "/v1/charges/") + `","customer":"cus_test_1"}`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = w.Write([]byte(`{"error":{"message":"no such route"}}`))
-		}
-	}))
-	t.Cleanup(f.srv.Close)
-	return f
-}
-
-func (f *fakeStripe) last(path string) (stripeReq, bool) {
+func (f *fakeProvider) CreateCheckout(_ context.Context, p billingpkg.CheckoutParams) (billingpkg.CheckoutSession, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for i := len(f.reqs) - 1; i >= 0; i-- {
-		if f.reqs[i].Path == path {
-			return f.reqs[i], true
-		}
+	f.seq++
+	f.checkouts = append(f.checkouts, p)
+	id := fmt.Sprintf("cs_%d", f.seq)
+	return billingpkg.CheckoutSession{ID: id, URL: "https://pay.example.test/checkout/" + id}, nil
+}
+
+func (f *fakeProvider) CreatePortal(_ context.Context, customer, _ string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.portals = append(f.portals, customer)
+	return "https://pay.example.test/portal/" + customer, nil
+}
+
+func (f *fakeProvider) lastCheckout() billingpkg.CheckoutParams {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.checkouts) == 0 {
+		return billingpkg.CheckoutParams{}
 	}
-	return stripeReq{}, false
+	return f.checkouts[len(f.checkouts)-1]
 }
 
-// signedEvent builds a Stripe event and its Stripe-Signature header.
-func signedEvent(id, typ string, created time.Time, object any) ([]byte, string) {
-	obj, _ := json.Marshal(object)
-	body := []byte(fmt.Sprintf(`{"id":%q,"type":%q,"created":%d,"data":{"object":%s}}`, id, typ, created.Unix(), obj))
-	ts := time.Now().Unix()
+func (f *fakeProvider) lastPortal() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.portals) == 0 {
+		return ""
+	}
+	return f.portals[len(f.portals)-1]
+}
+
+// testEvent is the fake provider's wire format.
+type testEvent struct {
+	ID             string    `json:"id"`
+	Kind           string    `json:"kind"`
+	At             time.Time `json:"at"`
+	UserID         string    `json:"user_id,omitempty"`
+	CustomerID     string    `json:"customer_id,omitempty"`
+	SubscriptionID string    `json:"subscription_id,omitempty"`
+	Plan           string    `json:"plan,omitempty"`
+	Status         string    `json:"status,omitempty"`
+	Interval       string    `json:"interval,omitempty"`
+	PeriodEnd      time.Time `json:"period_end,omitempty"`
+	InvoiceID      string    `json:"invoice_id,omitempty"`
+	AmountCents    int64     `json:"amount_cents,omitempty"`
+	Currency       string    `json:"currency,omitempty"`
+	DisputeID      string    `json:"dispute_id,omitempty"`
+}
+
+func (*fakeProvider) ParseWebhook(_ context.Context, payload []byte, h http.Header) (billingpkg.Event, error) {
+	if !hmac.Equal([]byte(h.Get("X-Test-Signature")), []byte(sign(payload))) {
+		return billingpkg.Event{}, billingpkg.ErrBadSignature
+	}
+	var te testEvent
+	if err := json.Unmarshal(payload, &te); err != nil {
+		return billingpkg.Event{}, err
+	}
+	return billingpkg.Event{
+		ID: te.ID, Type: te.Kind, Kind: billingpkg.EventKind(te.Kind), At: te.At,
+		UserID: te.UserID, CustomerID: te.CustomerID, SubscriptionID: te.SubscriptionID,
+		Plan: te.Plan, PriceID: "price_" + te.Plan, Interval: te.Interval, Status: te.Status, PeriodEnd: te.PeriodEnd,
+		InvoiceID: te.InvoiceID, AmountCents: te.AmountCents, Currency: te.Currency, DisputeID: te.DisputeID,
+		Payload: payload,
+	}, nil
+}
+
+func sign(body []byte) string {
 	mac := hmac.New(sha256.New, []byte(testWebhookSecret))
-	fmt.Fprintf(mac, "%d.", ts)
 	mac.Write(body)
-	return body, fmt.Sprintf("t=%d,v1=%s", ts, hex.EncodeToString(mac.Sum(nil)))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func (c *client) webhook(body []byte, sig string) resp {
-	req := httptest.NewRequest("POST", "/v1/billing/webhook", bytes.NewReader(body))
+// signedEvent builds a fake-provider event and its signature.
+func signedEvent(ev testEvent) ([]byte, string) {
+	body, _ := json.Marshal(ev)
+	return body, sign(body)
+}
+
+// webhook posts a delivery to /v1/billing/webhook/{provider}.
+func (c *client) webhook(provider string, body []byte, sig string) resp {
+	req := httptest.NewRequest("POST", "/v1/billing/webhook/"+provider, bytes.NewReader(body))
 	req.RemoteAddr = c.ip + ":40000"
-	req.Header.Set("Stripe-Signature", sig)
+	req.Header.Set("X-Test-Signature", sig)
 	rec := httptest.NewRecorder()
 	c.e.h.ServeHTTP(rec, req)
 	b, _ := io.ReadAll(rec.Result().Body)

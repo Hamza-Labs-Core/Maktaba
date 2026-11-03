@@ -29,7 +29,7 @@ first runs, the second observes `current = head` and exits cleanly.
 | 0003 | 25.5 account | profile fields, email change tokens, deletes |
 | 0004 | 25.6 server linking | servers, server_claims, server_health |
 | 0005 | 25.11 bandwidth | bandwidth_samples, monthly_buckets |
-| 0006 | 25.13 billing | plans, subscriptions, stripe_events |
+| 0006 | 25.13 billing | plans, subscriptions, the webhook event ledger (renamed provider-neutral in 0016) |
 | 0007 | 25.17 push | push_devices, push_dispatch_log |
 | 0008 | 25.22 subdomains | subdomains, reserved_slugs |
 | 0009 | 25.25 abuse | abuse_signals, blocklist |
@@ -39,3 +39,4 @@ first runs, the second observes `current = head` and exits cleanly.
 | 0013 | 42.7 home links | home_links (linked home accounts) |
 | 0014 | 16.4 licenses | licenses_issued, license_revocations (the signed revocation list) |
 | 0015 | 16.7 usage data | telemetry_server_reports, telemetry_app_installs, telemetry_app_events, telemetry_error_groups/occurrences, telemetry_web_vitals (anonymous; docs/usage-data.md) |
+| 0016 | billing provider-neutral | renames the provider-named billing columns and event ledger (`provider_customer_id`, `provider_subscription_id`, `provider_price_id`, `provider_invoice_id`, `provider_events`) and adds a `provider` column; the payment provider is TBD |

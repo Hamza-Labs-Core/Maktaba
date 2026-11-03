@@ -2,8 +2,8 @@
 
 The cloud-side companion to the on-prem `api/` server. Implements
 Epic 25 (stories 25.1 → 25.36): hosted identity, a WebSocket relay for
-NAT-traversal HTTPS to home servers, bandwidth metering and Stripe
-billing, push notification fanout, an operator admin surface, and
+NAT-traversal HTTPS to home servers, bandwidth metering and billing
+(the payment provider is TBD), push notification fanout, an operator admin surface, and
 installer/distribution scaffolding for the on-prem agent.
 
 ## Layout
@@ -15,7 +15,7 @@ cloud/
     abuse/                # signal capture, blocklist, login lockout
     audit/                # audit log (admin actions, account events)
     auth/                 # argon2id, password policy, sessions, JWT, OAuth (Google/Apple)
-    billing/              # plan catalog, bandwidth meter, Stripe client
+    billing/              # plan catalog, bandwidth meter, payment-provider seam
     clock/                # injectable time source
     config/               # cloud.toml loader + role-specific validator
     db/                   # *sql.DB pool + goose migrator
@@ -67,10 +67,10 @@ pnpm -C ../web dev:cloud
 go run ./cmd/maktaba-cloud admin grant --email you@example.com
 ```
 
-Stripe stays in test mode: set `MAKTABA_CLOUD_STRIPE_SECRET` to an
-`sk_test_` key and the price ids (`MAKTABA_CLOUD_PRICE_PRO`,
-`MAKTABA_CLOUD_PRICE_FAMILY`); an `sk_live_` key is refused unless
-`[stripe] live_mode = true`. Accounts, billing and the console are
+No payment provider is chosen yet: `[billing] provider = "none"` (the
+default and the only accepted value) takes no payments. Paid plans show as
+coming soon and a service admin sets plans by hand
+(`POST /v1/admin/accounts/{id}/plan`, or Set plan in the console). Accounts, billing and the console are
 described in [docs/accounts-billing-admin.md](docs/accounts-billing-admin.md);
 the anonymous usage data homes share in [docs/usage-data.md](docs/usage-data.md).
 
@@ -152,8 +152,8 @@ automatically.
 | 25.10 | direct-connection probe | servers.direct_ip/port + dashboard payload |
 | 25.11 | bandwidth meter | billing/meter.go |
 | 25.12 | tier enforcement | billing/{plans,meter}.go + handlers/relay/proxy.go |
-| 25.13 | Stripe checkout + portal | billing/stripe.go + handlers/billing |
-| 25.14 | Stripe webhook | handlers/billing/webhook.go |
+| 25.13 | checkout + portal (payment provider TBD) | billing/provider.go + handlers/billing |
+| 25.14 | payment-provider webhook | handlers/billing/webhook.go |
 | 25.15 | plan comparison | handlers/billing/plans |
 | 25.16 | dashboard | handlers/health |
 | 25.17 | push ingest | handlers/push |
@@ -244,7 +244,7 @@ Unit tests live next to their packages and exercise:
 - password policy (length, whitespace, leaked-corpus check).
 - access token sign/verify, expiry, signature mismatch.
 - billing tier ordering + month-start truncation.
-- Stripe webhook signature (HMAC-SHA256, replay protection).
+- the `none` payment provider (nothing sold, every payment call refused).
 - relay frame round-trip, oversize rejection.
 - HTTP slug extraction from Host header.
 - ratelimit burst + refill semantics.

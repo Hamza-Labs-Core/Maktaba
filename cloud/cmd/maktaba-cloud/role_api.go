@@ -59,13 +59,13 @@ func runAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 }
 
 // apiOverrides swaps external collaborators for fakes in tests: a
-// recording mailer, a fake Stripe API, a fake OAuth provider. The zero
-// value is production.
+// recording mailer, a fake payment provider, a fake OAuth provider. The
+// zero value is production.
 type apiOverrides struct {
-	Mailer        mailpkg.Mailer
-	StripeAPIBase string
-	Google        *oauth.GoogleConfig // endpoints only; ids come from cfg
-	Apple         *oauth.AppleConfig
+	Mailer          mailpkg.Mailer
+	BillingProvider billingpkg.Provider // replaces cfg.Billing.Provider
+	Google          *oauth.GoogleConfig // endpoints only; ids come from cfg
+	Apple           *oauth.AppleConfig
 }
 
 // newAPI builds the api role's router. stop releases its background
@@ -79,6 +79,15 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		return nil, nil, err
 	}
 	signer := token.NewSigner(secret)
+
+	// The payment provider is not chosen yet; "none" takes no payments.
+	payments, err := billingpkg.New(cfg.Billing.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+	if o.BillingProvider != nil {
+		payments = o.BillingProvider
+	}
 
 	users := stores.NewUsers(pool.DB)
 	servers := stores.NewServers(pool.DB)
@@ -178,11 +187,6 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		appleFlow = oauth.NewAppleFlow(ac)
 	}
 
-	stripe := billingpkg.NewStripeClient(cfg.Stripe.SecretKey)
-	if o.StripeAPIBase != "" {
-		stripe.APIBase = o.StripeAPIBase
-	}
-
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
@@ -233,15 +237,12 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 
 		billing := &billingh.Deps{
-			DB: pool.DB, Stripe: stripe, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
+			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 			Mailer: mailer, Logger: logger, Entitlements: entSigner,
-			WebhookSecret:      cfg.Stripe.WebhookSecret,
-			WebURL:             cfg.Server.WebURL,
-			PriceIDProMonth:    cfg.Stripe.PriceProMonthly,
-			PriceIDFamilyMonth: cfg.Stripe.PriceFamilyMonthly,
+			WebURL: cfg.Server.WebURL,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
-		// Stripe webhook (authenticated by its signature, not our token).
+		// payment-provider webhook (verified by the provider, not our token).
 		billingh.MountPublic(app, billing)
 
 		adminGate := middleware.RequireServiceAdmin(users, auditLog, logger)

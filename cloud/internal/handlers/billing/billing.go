@@ -3,10 +3,15 @@
 //
 //	GET  /v1/billing/plans        — plan comparison (public)
 //	GET  /v1/billing/me           — current subscription state
-//	POST /v1/billing/checkout     — start a Stripe checkout
-//	POST /v1/billing/portal       — open the Stripe customer portal
+//	POST /v1/billing/checkout     — start a checkout with the payment provider
+//	POST /v1/billing/portal       — open the payment provider's customer portal
 //	GET  /v1/billing/usage        — this month's relay bandwidth
-//	POST /v1/billing/webhook      — Stripe webhooks (webhook.go)
+//	POST /v1/billing/webhook/{provider} — payment-provider webhooks (webhook.go)
+//
+// The payment provider sits behind billingpkg.Provider and is not chosen
+// yet. With the default "none" provider paid plans are not purchasable,
+// checkout and the portal answer 503 payments_not_set_up, the webhook
+// route is a 404, and service admins set plans by hand (admin handlers).
 package billing
 
 import (
@@ -33,20 +38,24 @@ import (
 )
 
 type Deps struct {
-	DB                 *sql.DB
-	Stripe             *billingpkg.StripeClient
-	Users              *stores.Users
-	Sessions           *sessions.Store
-	Abuse              *abuse.Detector
-	Audit              *audit.Log
-	Mailer             mailpkg.Mailer
-	Logger             *slog.Logger
-	Entitlements       *entitlement.Signer // nil: entitlement endpoints answer 503
-	WebhookSecret      string
-	WebURL             string
-	PriceIDProMonth    string
-	PriceIDFamilyMonth string
-	Now                func() time.Time
+	DB           *sql.DB
+	Provider     billingpkg.Provider // nil means billingpkg.None
+	Users        *stores.Users
+	Sessions     *sessions.Store
+	Abuse        *abuse.Detector
+	Audit        *audit.Log
+	Mailer       mailpkg.Mailer
+	Logger       *slog.Logger
+	Entitlements *entitlement.Signer // nil: entitlement endpoints answer 503
+	WebURL       string
+	Now          func() time.Time
+}
+
+func (d *Deps) provider() billingpkg.Provider {
+	if d.Provider == nil {
+		return billingpkg.None{}
+	}
+	return d.Provider
 }
 
 func (d *Deps) now() time.Time {
@@ -57,12 +66,13 @@ func (d *Deps) now() time.Time {
 }
 
 // MountPublic registers the routes that need no bearer token: the plan
-// catalog, the entitlement verification key, and the Stripe webhook
-// (Stripe does not carry our token; it is authenticated by signature).
+// catalog, the entitlement verification key, and the payment-provider
+// webhook (a provider does not carry our token; the provider verifies
+// each delivery's signature).
 func MountPublic(r chi.Router, d *Deps) {
 	r.Get("/v1/billing/plans", d.Plans)
 	r.Get("/.well-known/maktaba-entitlement-key", d.EntitlementKey)
-	r.Post("/v1/billing/webhook", d.Webhook)
+	r.Post("/v1/billing/webhook/{provider}", d.Webhook)
 }
 
 // Mount registers the account routes inside the bearer-token group.
@@ -90,6 +100,7 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 		// (Epic 16: home or pro; "" for free).
 		HomeTier string `json:"home_tier"`
 	}
+	p := d.provider()
 	out := []viewTier{}
 	for _, id := range []string{billingpkg.PlanFree, billingpkg.PlanPro, billingpkg.PlanFamily} {
 		t := billingpkg.Tiers[id]
@@ -98,11 +109,12 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 			Bandwidth: t.BandwidthBytesPerMo, MaxServers: t.MaxServers,
 			MaxStreams: t.MaxConcurrentStreams, RelayQoS: t.RelayQoS,
 			Transcoding: t.IncludesTranscoding, FamilySeats: t.FamilySeats,
-			Purchasable: d.Stripe.Configured() && d.priceFor(id) != "",
+			Purchasable: p.Enabled() && p.Sells(id),
 			HomeTier:    license.TierForPlan(id),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"plans": out})
+	// payments_enabled false: paid plans are "coming soon".
+	writeJSON(w, http.StatusOK, map[string]any{"plans": out, "payments_enabled": p.Enabled()})
 }
 
 type subRow struct {
@@ -118,7 +130,7 @@ type subRow struct {
 func (d *Deps) subscription(r *http.Request, uid string) (subRow, bool, error) {
 	var s subRow
 	err := d.DB.QueryRowContext(r.Context(), `
-        SELECT plan, interval, status, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end
+        SELECT plan, interval, status, provider_customer_id, provider_subscription_id, current_period_end, cancel_at_period_end
         FROM subscriptions WHERE user_id = $1
     `, uid).Scan(&s.Plan, &s.Interval, &s.Status, &s.CustomerID, &s.SubscriptionID, &s.CurrentPeriodEnd, &s.CancelAtPeriodEnd)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -168,11 +180,18 @@ type checkoutReq struct {
 // where an existing payer changes plan.
 var liveStatuses = map[string]bool{"active": true, "trialing": true, "past_due": true}
 
-// Checkout creates a Stripe Checkout session for the requested plan
-// and returns the redirect URL.
+// paymentsNotSetUp answers a payment call when no provider takes
+// payments: paid plans are coming soon.
+func paymentsNotSetUp(w http.ResponseWriter) {
+	writeErr(w, http.StatusServiceUnavailable, "payments_not_set_up", "payments are not set up yet; paid plans are coming soon")
+}
+
+// Checkout opens a checkout with the payment provider for the requested
+// plan and returns the redirect URL.
 func (d *Deps) Checkout(w http.ResponseWriter, r *http.Request) {
-	if !d.Stripe.Configured() {
-		writeErr(w, http.StatusServiceUnavailable, "billing_disabled", "billing is not configured")
+	p := d.provider()
+	if !p.Enabled() {
+		paymentsNotSetUp(w)
 		return
 	}
 	uid := middleware.GetUserID(r.Context())
@@ -182,8 +201,7 @@ func (d *Deps) Checkout(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid_body", "request body is not valid JSON")
 		return
 	}
-	priceID := d.priceFor(req.Plan)
-	if priceID == "" {
+	if req.Plan == billingpkg.PlanFree || !p.Sells(req.Plan) {
 		writeErr(w, http.StatusUnprocessableEntity, "bad_plan", "")
 		return
 	}
@@ -202,29 +220,35 @@ func (d *Deps) Checkout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	params := billingpkg.CheckoutParams{
-		PriceID:    priceID,
-		SuccessURL: d.WebURL + "/billing?billing=ok&session_id={CHECKOUT_SESSION_ID}",
+		Plan:       req.Plan,
+		SuccessURL: d.WebURL + "/billing?billing=ok",
 		CancelURL:  d.WebURL + "/billing?billing=cancel",
 		UserID:     uid,
 	}
 	if s.CustomerID.Valid {
-		params.Customer = s.CustomerID.String
+		params.CustomerID = s.CustomerID.String
 	} else {
 		params.CustomerEmail = u.Email
 	}
-	sess, err := d.Stripe.CreateCheckoutSession(r.Context(), params)
+	sess, err := p.CreateCheckout(r.Context(), params)
+	if errors.Is(err, billingpkg.ErrNotConfigured) {
+		paymentsNotSetUp(w)
+		return
+	}
 	if err != nil {
-		d.Logger.Error("billing: create checkout", "err", err)
-		writeErr(w, http.StatusBadGateway, "stripe_failed", "the payment provider is unavailable; try again")
+		d.Logger.Error("billing: create checkout", "provider", p.Name(), "err", err)
+		writeErr(w, http.StatusBadGateway, "provider_failed", "the payment provider is unavailable; try again")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"checkout_url": sess.URL, "session_id": sess.ID})
 }
 
-// Portal opens the Stripe customer portal for a returning payer.
+// Portal opens the payment provider's customer portal for a returning
+// payer.
 func (d *Deps) Portal(w http.ResponseWriter, r *http.Request) {
-	if !d.Stripe.Configured() {
-		writeErr(w, http.StatusServiceUnavailable, "billing_disabled", "billing is not configured")
+	p := d.provider()
+	if !p.Enabled() {
+		paymentsNotSetUp(w)
 		return
 	}
 	s, _, err := d.subscription(r, middleware.GetUserID(r.Context()))
@@ -236,24 +260,17 @@ func (d *Deps) Portal(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "no_customer", "there is no billing account yet; choose a plan first")
 		return
 	}
-	u, err := d.Stripe.CreatePortalSession(r.Context(), s.CustomerID.String, d.WebURL+"/billing")
+	u, err := p.CreatePortal(r.Context(), s.CustomerID.String, d.WebURL+"/billing")
+	if errors.Is(err, billingpkg.ErrNotConfigured) {
+		paymentsNotSetUp(w)
+		return
+	}
 	if err != nil {
-		d.Logger.Error("billing: create portal", "err", err)
-		writeErr(w, http.StatusBadGateway, "stripe_failed", "the payment provider is unavailable; try again")
+		d.Logger.Error("billing: create portal", "provider", p.Name(), "err", err)
+		writeErr(w, http.StatusBadGateway, "provider_failed", "the payment provider is unavailable; try again")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"portal_url": u})
-}
-
-func (d *Deps) priceFor(plan string) string {
-	switch plan {
-	case billingpkg.PlanPro:
-		return d.PriceIDProMonth
-	case billingpkg.PlanFamily:
-		return d.PriceIDFamilyMonth
-	default:
-		return ""
-	}
 }
 
 // ServerUsage is one server's relayed bytes for a month.
