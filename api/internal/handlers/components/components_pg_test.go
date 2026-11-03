@@ -110,3 +110,37 @@ func TestPGApplyAllOrNone(t *testing.T) {
 		t.Fatalf("audit %+v", v.Audit)
 	}
 }
+
+// Story 51.13 T11 on Postgres: a reset deletes both jsonb keys in one transaction with
+// its audit row (append-only audit_log, the jsonb payload).
+func TestPGResetSettings(t *testing.T) {
+	f, _ := pgFixture(t)
+	for k, v := range map[string]string{"rules.transcription": `{"relisten_tries":9}`,
+		"rules_version.transcription": `{"major":1,"minor":0}`} {
+		if _, err := f.db.Exec(`INSERT INTO app_settings (key, value) VALUES ($1, $2::jsonb)`, k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var res svc.SettingsReset
+	decode(t, f.do("POST", "/api/components/transcription/settings/reset", "", admin()), 200, &res)
+	if res.Changed != 1 {
+		t.Fatalf("answer %+v", res)
+	}
+	var n int
+	if err := f.db.QueryRow(`SELECT count(*) FROM app_settings WHERE key LIKE 'rules%transcription'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("%d keys left (%v)", n, err)
+	}
+	var payload string
+	if err := f.db.QueryRow(`SELECT payload::text FROM audit_log WHERE action = $1 AND target_id = 'transcription'`,
+		svc.AuditSettingsReset).Scan(&payload); err != nil {
+		t.Fatal(err)
+	}
+	var p struct {
+		Before struct {
+			Value map[string]any `json:"value"`
+		} `json:"before"`
+	}
+	if err := json.Unmarshal([]byte(payload), &p); err != nil || p.Before.Value["relisten_tries"] != float64(9) {
+		t.Fatalf("audit payload %s (%v)", payload, err)
+	}
+}

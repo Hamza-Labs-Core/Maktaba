@@ -5,6 +5,11 @@ Each section is a frozen config dataclass whose defaults are the built-in rules;
 user changed is stored as ``{setting: value}`` (Maktaba: ``app_settings`` key
 ``rules.<section>``; mediaintel: ``settings.json`` beside the cache).
 
+Each section has a schema version (``settings.schema_version``, Epic 51 story 51.13); the
+version a stored value was written at sits in its own key, ``rules_version.<section>``
+(``{"major", "minor"}``, missing = 1.0, ``"failed"`` when the home could not move it to
+this release's shape: see ``components.settings_migrate``).
+
 ``python -m maktaba_pipeline.rules --schema [FILE]`` writes the schema (every setting's
 kind, default, help and limits) the Go API serves; a test keeps the checked-in copy
 current.
@@ -56,7 +61,77 @@ from .system_health_settings import SystemHealthConfig
 from .tvrelease.config import MaktabaTvStagingConfig
 from .updates_settings import UpdatesConfig
 
-__all__ = ["SECTIONS", "config", "read", "schema"]
+__all__ = [
+    "KEY_PREFIX",
+    "SECTIONS",
+    "VERSION_PREFIX",
+    "SettingsInvalid",
+    "StoredVersion",
+    "config",
+    "parse_version",
+    "read",
+    "schema",
+]
+
+#: app_settings key of a section's stored changes, and of the version they were written at
+KEY_PREFIX = "rules."
+VERSION_PREFIX = "rules_version."
+
+
+class SettingsInvalid(RuntimeError):
+    """A section whose stored value is not in this release's shape and could not be moved
+    to it: its component reports Failed with ``settings_invalid`` and never runs on the
+    defaults instead."""
+
+    def __init__(self, section: str, error: str) -> None:
+        super().__init__(f"rules.{section}: {error}")
+        self.section = section
+        self.error = error
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class StoredVersion:
+    """``rules_version.<section>`` as stored: a missing key is 1.0."""
+
+    major: int = 1
+    minor: int = 0
+    failed: str = ""
+    previous: dict[str, Any] | None = None
+
+    def to_json(self) -> dict[str, Any]:
+        out: dict[str, Any] = {"major": self.major, "minor": self.minor}
+        if self.previous is not None:
+            out["previous"] = self.previous
+        if self.failed:
+            out["failed"] = self.failed
+        return out
+
+
+def parse_version(raw: Any) -> StoredVersion:
+    """A stored ``rules_version.<section>`` value (JSON text or decoded); anything
+    unreadable is 1.0, as an older release would have left it."""
+    from .engine.sql import loads
+
+    try:
+        v = loads(raw) if raw is not None else None
+    except ValueError:
+        v = None
+    if not isinstance(v, dict):
+        return StoredVersion()
+    major, minor = v.get("major", 1), v.get("minor", 0)
+    if not isinstance(major, int) or isinstance(major, bool) or major < 1:
+        major = 1
+    if not isinstance(minor, int) or isinstance(minor, bool) or minor < 0:
+        minor = 0
+    failed = v.get("failed")
+    previous = v.get("previous")
+    return StoredVersion(
+        major=major,
+        minor=minor,
+        failed=failed if isinstance(failed, str) else "",
+        previous=previous if isinstance(previous, dict) else None,
+    )
+
 
 _G = "Grouping"
 settings.register(GroupConfig, {
@@ -185,11 +260,19 @@ def config(
 async def read(db: Any, section: str) -> tuple[Any, dict[str, Any], dict[str, str]]:
     """The section's config from Maktaba's settings (``app_settings`` key
     ``rules.<section>``): (config, the stored changes, the ones skipped and why). A
-    database without the table gives the defaults."""
+    database without the table gives the defaults.
+
+    A value stored at an older major than the code's is moved through the section's
+    migrations first (on a machine that reads it before the home has written it moved);
+    one the home marked ``failed``, or one that cannot be moved, raises
+    :class:`SettingsInvalid`: the stage never runs on the defaults instead. A value
+    stored at a newer major (after a rollback) is read field by field, as before."""
     from .engine.sql import loads
 
+    sql = "SELECT value FROM app_settings WHERE key = $1"
     try:
-        row = await db.fetchrow("SELECT value FROM app_settings WHERE key = $1", f"rules.{section}")
+        row = await db.fetchrow(sql, KEY_PREFIX + section)
+        vrow = await db.fetchrow(sql, VERSION_PREFIX + section)
     except Exception as exc:
         # an old or bare database has no app_settings table: the defaults. Any other
         # error (a dropped connection, a timeout) is raised: running a stage, or
@@ -197,9 +280,18 @@ async def read(db: Any, section: str) -> tuple[Any, dict[str, Any], dict[str, st
         # would quietly write a different plan.
         if not _missing_table(exc):
             raise
-        row = None
+        row = vrow = None
     stored = loads(row["value"]) if row is not None else None
     changes = stored if isinstance(stored, dict) else {}
+    version = parse_version(vrow["value"] if vrow is not None else None)
+    if version.failed:
+        raise SettingsInvalid(section, version.failed)
+    cls = SECTIONS[section][0]
+    if changes and version.major < settings.schema_version(cls)[0]:
+        try:
+            changes = settings.migrate(cls, changes, version.major)
+        except settings.MigrationError as e:
+            raise SettingsInvalid(section, str(e)) from e
     cfg, bad = config(section, changes)
     return cfg, changes, bad
 
@@ -230,7 +322,15 @@ def schema() -> dict[str, Any]:
                 optional = _column_optional(hints[f["name"]])
                 if any(optional):
                     f["column_optional"] = optional
-        out.append({"key": key, "title": title, "what": what, "fields": fields})
+        out.append(
+            {
+                "key": key,
+                "title": title,
+                "what": what,
+                "version": list(settings.schema_version(cls)),
+                "fields": fields,
+            }
+        )
     return {"sections": out}
 
 
