@@ -66,6 +66,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/settings/models", { topic: "settings", anchor: "models-tab" }],
   ["/settings/about", { topic: "settings", anchor: "about-tab" }],
   ["/settings/storage", { topic: "storage" }],
+  ["/settings/components", { topic: "components" }],
   ["/settings/*", { topic: "settings" }],
   ["/account", { topic: "account", anchor: "profile" }],
   ["/account/devices", { topic: "account", anchor: "devices" }],

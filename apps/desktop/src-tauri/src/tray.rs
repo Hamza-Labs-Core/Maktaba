@@ -290,6 +290,10 @@ pub fn entries_with_order(
             _ => out.push(item("server-pause", w.pause)),
         }
         out.push(item("open-logs", w.open_logs));
+        // the Components page of this machine's home, in the browser (story 51.10)
+        if *status != ServerStatus::SetupNeeded {
+            out.push(item("open-components", w.open_components));
+        }
     }
     out.push(Entry::Separator);
     out.push(item("media-play", w.play));
@@ -403,6 +407,7 @@ pub const WINDOW_ITEMS: &[Option<&str>] = &[
     Some("server-pause"),
     Some("server-resume"),
     Some("open-logs"),
+    Some("open-components"),
     None,
     Some("stop-and-quit"),
 ];
@@ -423,6 +428,7 @@ pub fn window_label(lang: Lang, id: &str) -> Option<&'static str> {
         "server-pause" => w.pause,
         "server-resume" => w.resume,
         "open-logs" => w.open_logs,
+        "open-components" => w.open_components,
         "stop-and-quit" => w.stop_and_quit,
         _ => return None,
     })
@@ -584,6 +590,7 @@ mod tests {
                 "show",
                 "server-pause",
                 "open-logs",
+                "open-components",
                 "media-play",
                 "media-pause",
                 "tray-settings",
@@ -830,6 +837,14 @@ mod tests {
             Some("استئناف الخادم")
         );
         assert_eq!(window_label(Lang::En, "show"), None);
+        assert_eq!(
+            window_label(Lang::Ar, "open-components"),
+            Some("فتح المكوّنات")
+        );
+        assert_eq!(
+            window_label(Lang::En, "open-components"),
+            Some("Open Components")
+        );
         // the status line lists the roles with Arabic's comma
         assert!(status_line(
             Lang::Ar,
@@ -1133,6 +1148,7 @@ mod tests {
                 "فتح مكتبة",
                 "إيقاف الخادم مؤقتًا",
                 "فتح السجلات",
+                "فتح المكوّنات",
                 "تشغيل",
                 "إيقاف التشغيل مؤقتًا",
                 "الإعدادات",
@@ -1234,6 +1250,7 @@ mod tests {
                 "server-pause",
                 "server-resume",
                 "open-logs",
+                "open-components",
                 "stop-and-quit"
             ]
         );
