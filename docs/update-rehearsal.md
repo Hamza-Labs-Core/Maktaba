@@ -90,6 +90,7 @@ start to its end.
 | 10a | A home and a joined full machine (a Mac app too): the home rolls back during its watch; then a run that gives up on its home mid-watch (`journal_lost`); then an update that passes | the machine is never ordered before the home commits, stays on its release, not paused, serving; in the passing run it is ordered only after the commit | 4 min, then 2 min |
 | 10b | The joined machine's own updater, a newer release published while the home stays on its release | the machine does not install it; it stays on its release, not paused, serving | — |
 | 11 | The home updates while its TV slots run (the live TV on the previous release's streaming; roles live blue, standby amber, so green, started with every server, is the free instance a staging takes); then the update's TV change is staged (the pipeline's `tv_stage` job played by the test: the stand-in runs no job) | the slot the staging takes was running before its bind; it is started again on the change's release (a new process, answering that release, no mismatch); the change moves to verifying on this commit's streaming, never back to a draft with `slot.health` (`release_mismatch`: change #58, 2026-10-31). Not covered: the change's soak and swap (no channel here airs real media) | 2 min |
+| 12 | No behaviour change: the first release with the component model (Epic 51, story 51.03) seeds desired state from what the home runs. The small seed's home on the previous release with the TV slots on, the relay off, Plex enabled, `youtube_backfill` turned off by an operator and the HDHomeRun device off; after the update the server is restarted once more | the supervisor's processes (role, instance, wanted, running), `job_stages` (enabled, disabled_reason, paused), `extensions` and `hdhr_device.enabled` equal before and after; `component_meta.seeded_at` set, bundle `full`; every catalog component has a row written by the seed, with the want §2 gives this home; each loop of `tools/rehearsal/loops-full-home.txt` has its component `running` in `component_status` (part `api` or `streaming`), and no other switchable loop of those hosts does; the restart moves neither `seeded_at` nor any `generation`, one seed in the audit log, no `toml_key_superseded`. The pipeline's loops and stage claiming are not here (the stand-in runs no job) | 2 min |
 
 ### Expected failures
 
@@ -152,6 +153,7 @@ A missing seed is made on the fly in `MAKTABA_REHEARSAL_SEEDS` (default
 | Scenarios 01–09, the database's fingerprint | `api/rehearsal_scenarios_e2e_test.go` |
 | Scenario 10 | `api/rehearsal_machines_e2e_test.go` |
 | Scenario 11 | `api/rehearsal_tv_e2e_test.go` |
+| Scenario 12, the loops the previous release runs on the rehearsal's home | `api/rehearsal_components_e2e_test.go`, `tools/rehearsal/loops-full-home.txt` |
 | Expected failures | `tools/rehearsal/expected-failures.txt` |
 | The release gate | `tools/release/tag-guard.sh` (`passed_on`), `tools/release/tag-guard-test.sh` |
 

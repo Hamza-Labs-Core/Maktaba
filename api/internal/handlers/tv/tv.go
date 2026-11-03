@@ -41,9 +41,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
@@ -444,8 +447,7 @@ func (h *Handler) PatchHDHR(w http.ResponseWriter, r *http.Request) {
 		add("tuner_count", *req.TunerCount)
 	}
 	if len(sets) > 0 {
-		q := "UPDATE hdhr_device SET " + strings.Join(sets, ", ") + " WHERE id = 1"
-		if _, err := h.DB.ExecContext(r.Context(), q, args...); err != nil {
+		if err := h.writeDevice(r, sets, args, req.Enabled); err != nil {
 			httperror.Write(w, r, httperror.Internal("update hdhr device").Wrap(err))
 			return
 		}
@@ -460,6 +462,41 @@ func (h *Handler) PatchHDHR(w http.ResponseWriter, r *http.Request) {
 	}
 	common.WriteJSON(w, r, http.StatusOK, d)
 }
+
+// writeDevice updates the tuner row. A change of enabled also turns the
+// livetv.hdhomerun component on or off (Epic 51 story 51.05), with its audit row, in the
+// same transaction: the two switches never disagree.
+func (h *Handler) writeDevice(r *http.Request, sets []string, args []any, enabled *bool) error {
+	ctx := r.Context()
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	q := "UPDATE hdhr_device SET " + strings.Join(sets, ", ") + " WHERE id = 1"
+	if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+		return err
+	}
+	if enabled != nil {
+		d := store.Desired{ID: hdhrComponent, Want: comps.WantInstalled}
+		action := "component.disable"
+		if *enabled {
+			d.Want, action = comps.WantEnabled, "component.enable"
+		}
+		by, user := "admin", ""
+		if p := principal.FromContext(ctx); p != nil && p.UserID != "" {
+			by, user = p.UserID, p.UserID
+		}
+		if _, err := components.New(h.DB).SetDesiredTx(ctx, tx, d,
+			store.Audit{By: by, ActorUserID: user, ActorSource: "admin", Action: action}); err != nil {
+			return fmt.Errorf("the HDHomeRun component: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+// hdhrComponent is the catalog component the tuner's enabled switch is.
+const hdhrComponent = "livetv.hdhomerun"
 
 // device loads the singleton, provisioning the same disabled row the
 // streaming service would (stable 8-hex device id, Plex binds to it).

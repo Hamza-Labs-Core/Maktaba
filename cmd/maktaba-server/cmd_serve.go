@@ -131,6 +131,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if p, owner := config.LocalForeignNodeConfig(); p != "" {
 		fmt.Fprintln(os.Stderr, "[serve]", config.ForeignNodeLine(p, owner))
 	}
+	// Epic 51 story 51.04: what is built follows the desired state the reconciler last saw
+	// (the database wins over server.toml); the seed compares with the file's own values
+	fileCfg := cfg
+	if opts.role == "" || opts.role == "all" {
+		cfg = bootConfig(cfg, os.Stderr)
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	// Under maktaba-launcher (Epic 35, story 35.2): every role starts from the
@@ -209,9 +215,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	}
 
 	// Epic 35 story 35.11: the supervisor is the machine's one mDNS advertiser
-	// (home or node), re-publishing when what it says changes.
-	if !opts.noMDNS && cfg.Server.MDNSOn() && (serveWeb || containsRole(roles, supervisor.RoleAPI)) {
-		go advertiseMachine(ctx, cfg, node)
+	// (home or node), re-publishing when what it says changes. Epic 51 story 51.04: the
+	// discovery.mdns component's loop, run by the reconciler (startComponents).
+	var compLoops []*supervisor.SupervisorLoop
+	if serveWeb || containsRole(roles, supervisor.RoleAPI) {
+		mcfg := cfg
+		compLoops = append(compLoops, mdnsLoop(cfg, opts.noMDNS, func(ctx context.Context) { advertiseMachine(ctx, mcfg, node) }))
 	}
 
 	// Epic 36 story 36.1: the bundled Postgres (Maktaba.app) runs as the first
@@ -263,7 +272,11 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			return err
 		}
 		procs = append(procs, p)
-		go pg.RunBackups(ctx, backupCheckInterval, os.Stderr)
+		// the backups component's loop (story 51.04): turned off, a dump under way ends
+		// first (it runs with serve's context)
+		bundle := *pg
+		compLoops = append(compLoops, &supervisor.SupervisorLoop{Name: "supervisor:backups", ConfigOn: true,
+			Run: func(loop context.Context) { bundle.RunBackupsLoop(loop, ctx, backupCheckInterval, os.Stderr) }})
 	}
 	if cp != nil {
 		p, err := supervisor.BuildCopy(cp.copy)
@@ -344,6 +357,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		if webSrv == nil {
 			return fmt.Errorf("nothing to run: --role web with --no-web leaves no services")
 		}
+		startComponents(ctx, cfg, nil, false, compLoops, os.Stderr)
 		<-ctx.Done()
 		return shutdownWeb(webSrv)
 	}
@@ -365,6 +379,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			procs = layoutHomeGates(cfg, filepath.Base(filepath.Clean(releaseDir)), pg, ext, procs,
 				updatesDirOf(cfg, releaseDir), os.Stderr)
 		}
+	}
+
+	// Epic 51 story 51.03: the components' desired state, seeded once from what this
+	// home runs today, before the roles start (serve_components.go)
+	if wholeMachine && containsRole(roles, supervisor.RoleAPI) {
+		procs = componentsAtBoot(ctx, supervisor.FileKeys(cfg, fileCfg), opts, releaseDir, llmProc, node, procs, os.Stderr)
 	}
 
 	// Run children. Each one is restarted on its own when it crashes or
@@ -404,6 +424,9 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
 		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe)) }, ffmpeg.WatchInterval, os.Stderr)))
 	sup := supervisor.New(procs, policy, supOpts...)
+	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
+	// desired state seen, cached), then reconciled while serve runs
+	startComponents(ctx, cfg, sup, wholeMachine, compLoops, os.Stderr)
 	if pg != nil {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)

@@ -7,6 +7,7 @@ go 1.25.0
 godebug multipathtcp=0
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/health/go v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/log/go v0.0.0
 	github.com/go-chi/chi/v5 v5.4.0
@@ -19,6 +20,8 @@ require (
 	google.golang.org/grpc v1.83.2
 )
 
+require github.com/BurntSushi/toml v1.6.0 // indirect
+
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -27,6 +30,8 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../shared/components
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/health/go => ../shared/health/go
 

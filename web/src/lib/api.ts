@@ -33,6 +33,8 @@ export interface Problem {
   requestId?: string;
   /** a node's machine-readable reason (`paused`, `home_unreachable`, ...) */
   code?: string;
+  /** with code `component_off`: the catalog id of the part that is off (Epic 51) */
+  component?: string;
 }
 
 export class ApiError extends Error {

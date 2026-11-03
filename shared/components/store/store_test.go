@@ -511,3 +511,50 @@ func TestWatcherRetriesAfterAFailedLoad(t *testing.T) {
 		t.Fatalf("%d errors heard", errs)
 	}
 }
+
+// SetDesiredTx writes inside the caller's transaction: a rollback leaves no row and no
+// audit, a commit leaves both.
+func TestSetDesiredTxFollowsTheCallersTransaction(t *testing.T) {
+	db := sqliteDB(t)
+	s := New(db)
+	count := func(q string) int {
+		var n int
+		if err := db.QueryRow(q).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, commit := range []bool{false, true} {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.SetDesiredTx(ctx, tx, Desired{ID: "livetv.hdhomerun", Want: components.WantInstalled},
+			audit("component.disable")); err != nil {
+			t.Fatal(err)
+		}
+		if commit {
+			err = tx.Commit()
+		} else {
+			err = tx.Rollback()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := 0
+		if commit {
+			want = 1
+		}
+		if n := count(`SELECT COUNT(*) FROM components WHERE id = 'livetv.hdhomerun'`); n != want {
+			t.Fatalf("commit=%v: %d rows, want %d", commit, n, want)
+		}
+		if n := count(`SELECT COUNT(*) FROM audit_log WHERE target_id = 'livetv.hdhomerun'`); n != want {
+			t.Fatalf("commit=%v: %d audit rows, want %d", commit, n, want)
+		}
+	}
+	tx, _ := db.BeginTx(ctx, nil)
+	defer func() { _ = tx.Rollback() }()
+	if _, err := s.SetDesiredTx(ctx, tx, Desired{ID: "x", Want: "on"}, audit("component.enable")); err == nil {
+		t.Fatal("a bad want was written")
+	}
+}

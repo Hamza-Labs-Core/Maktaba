@@ -30,6 +30,7 @@
   "error.back": "Go back",
   "error.goHome": "Go to Home",
   "error.offlineBanner": "You're offline. Maktaba will carry on once your connection is back.",
+  "error.componentOff": "{component} is turned off on this home",
   "notFound.title": "Page not found",
   "notFound.desc": "There's nothing at this address. The link may be wrong, or the page may have moved.",
   "pwa.updateAvailable": "A new version is available.",
@@ -6046,5 +6047,6 @@
   "components.reason.not_in_payload": "It is not part of this installation and must be downloaded.",
   "components.reason.component_off": "{component} is off.",
   "components.reason.component_held": "{component} was stopped by an admin.",
+  "components.reason.toml_superseded": "server.toml says {value}; the setting here wins.",
   "components.reason.required_by": "Other components need it: {components}."
 }

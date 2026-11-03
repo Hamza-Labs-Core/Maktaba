@@ -44,6 +44,7 @@ type Config struct {
 	LLM           LLMSection           `toml:"llm"`
 	Telemetry     TelemetrySection     `toml:"telemetry"`
 	Backups       BackupsSection       `toml:"backups"`
+	Components    ComponentsSection    `toml:"components,omitempty"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -194,6 +195,24 @@ type TelemetrySection struct {
 // On reports whether usage data may leave the server (anything but off/false/no/0).
 func (t TelemetrySection) On() bool {
 	switch strings.ToLower(strings.TrimSpace(t.Enabled)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
+}
+
+// ComponentsSection is the [components] table (Epic 51 story 51.04).
+type ComponentsSection struct {
+	// Reconcile: "on" (default) lets the supervisor and the roles' runners start and
+	// stop components as their desired state says; "off" is the kill switch: every
+	// runner reports, none acts (the processes are the ones server.toml builds).
+	Reconcile string `toml:"reconcile,omitempty"`
+}
+
+// ReconcileOn reports whether the runners act on desired state (anything but
+// off/false/no/0).
+func (c ComponentsSection) ReconcileOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.Reconcile)) {
 	case "off", "false", "no", "0":
 		return false
 	}

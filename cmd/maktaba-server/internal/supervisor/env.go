@@ -49,6 +49,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// the whole stack regardless of which service consumes it.
 	add("DATABASE_URL", cfg.Database.URL)
 	add("MAKTABA_DATABASE_URL", cfg.Database.URL)
+	// Epic 51 story 51.04: [components] reconcile = "off" is every runner's kill switch
+	// (the api's, streaming's and the pipeline's report status and act on nothing)
+	if !cfg.Components.ReconcileOn() {
+		add(EnvComponentsReconcile, "off")
+	}
 
 	// The data volume (data_dir): the api keeps the Sigstore root it refreshes
 	// (<data_dir>/sigstore) and uploaded channel art there, and the streaming

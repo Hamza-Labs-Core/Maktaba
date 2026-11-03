@@ -43,7 +43,7 @@ phases = ["not_installed", "installing", "removing", "off", "stopped", "waiting"
 reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_enough_memory",
            "verify_failed", "crash_loop", "held", "stop_timeout", "settings_invalid",
            "env_override", "boot_flag", "reconcile_off", "not_in_payload", "component_off",
-           "component_held", "required_by"]
+           "component_held", "required_by", "toml_superseded"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
@@ -90,7 +90,7 @@ title_key  = "components.core.streaming.title"
 desc_key   = "components.core.streaming.desc"
 processes  = ["streaming/"]
 loops      = ["streaming:watchdog", "streaming:cache_gc", "streaming:session_reaper",
-              "streaming:vod_purge", "streaming:hwaccel", "streaming:share_map"]
+              "streaming:vod_purge", "streaming:share_map"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 since      = "0.3.66"
@@ -124,7 +124,8 @@ processes  = ["copy/"]
 loops      = ["api:node_agent_feed", "api:node_check_role", "api:node_db_watch",
               "api:node_keep_home_seen", "api:node_link_client", "api:node_report",
               "api:node_report_loop", "api:node_resolver_watch", "api:node_schema_guard",
-              "api:nodedb_when_up", "api:cluster_copies", "api:clusterauth_node_read"]
+              "api:nodedb_when_up", "api:cluster_copies", "api:clusterauth_node_read",
+              "streaming:node_tv_checks"]
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full", "core", "worker"]
 since      = "0.3.66"
@@ -362,8 +363,11 @@ group     = "livetv"
 title_key = "components.livetv.title"
 desc_key  = "components.livetv.desc"
 stages    = ["plan_channels", "write_channels"]
+# streaming's TV loops that run with the slots and without them (51.05)
 loops     = ["api:tvchange_controller", "api:tvremote_controller", "api:tvremote_publisher",
-             "api:tvremote_health_sampler", "pipeline:channel-topup"]
+             "api:tvremote_health_sampler", "pipeline:channel-topup", "streaming:tv_heartbeat",
+             "streaming:placement_listen", "streaming:channel_sweeper", "streaming:push_relay",
+             "streaming:viewings"]
 settings  = ["rules.planner", "rules.tv", "rules.tv_output", "rules.tv_strip",
              "rules.tv_simulcast", "rules.tv_remote", "rules.tv_cluster"]
 placement = "home"
@@ -395,8 +399,7 @@ kind      = "loop"
 group     = "livetv"
 title_key = "components.livetv.inprocess.title"
 desc_key  = "components.livetv.inprocess.desc"
-loops     = ["streaming:channel_engine", "streaming:channel_fences", "streaming:channel_sweeper",
-             "streaming:push_relay", "streaming:viewings"]
+loops     = ["streaming:channel_engine", "streaming:channel_fences"]
 requires  = ["livetv"]
 conflicts = ["livetv.slots"]
 placement = "home"
@@ -469,7 +472,8 @@ kind      = "loop"
 group     = "cluster"
 title_key = "components.discovery.mdns.title"
 desc_key  = "components.discovery.mdns.desc"
-loops     = ["supervisor:mdns", "api:mdns"]
+# the API's own announcement (unsupervised only) is part of cluster_housekeeping
+loops     = ["supervisor:mdns"]
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full", "core", "worker"]
 since     = "0.3.66"

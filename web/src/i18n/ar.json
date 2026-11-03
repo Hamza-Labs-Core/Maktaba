@@ -30,6 +30,7 @@
   "error.back": "رجوع",
   "error.goHome": "الانتقال إلى الرئيسية",
   "error.offlineBanner": "أنت غير متصل بالإنترنت. ستتابع مكتبة عملها حين يعود اتصالك.",
+  "error.componentOff": "{component} متوقف على الجهاز الرئيسي",
   "notFound.title": "الصفحة غير موجودة",
   "notFound.desc": "لا يوجد شيء على هذا العنوان. ربما يكون الرابط خاطئًا أو نُقلت الصفحة.",
   "pwa.updateAvailable": "يتوفر إصدار جديد.",
@@ -6059,5 +6060,6 @@
   "components.reason.not_in_payload": "ليس جزءًا من هذا التثبيت ويجب تنزيله.",
   "components.reason.component_off": "{component} متوقف عن العمل.",
   "components.reason.component_held": "أوقف أحد المسؤولين {component}.",
+  "components.reason.toml_superseded": "ملف server.toml يقول {value}؛ الإعداد هنا هو المعتمد.",
   "components.reason.required_by": "تحتاجه مكونات أخرى: {components}."
 }
