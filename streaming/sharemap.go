@@ -54,5 +54,5 @@ func startShareMap(bg *background, pool *pgxpool.Pool, logger *slog.Logger) {
 		pathmap.SetDefault(env.Merge(pathmap.FromEntries(entries)))
 	}
 	load()
-	bg.Go(func(ctx context.Context) { tick(ctx, shareMapEvery, load) })
+	bg.Loop("share_map", func(ctx context.Context) { tick(ctx, shareMapEvery, load) })
 }

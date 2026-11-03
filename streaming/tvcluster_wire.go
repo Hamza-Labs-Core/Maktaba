@@ -27,6 +27,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
@@ -202,8 +203,9 @@ func (b *tvBase) newEngine(repo *channel.PGRepo, start channel.StartFunc, ident 
 // runEngineLoops: reap idle stations, keep channel_runtime current, re-check fences.
 // At shutdown the engine's stations stop (their ffmpeg children with them).
 func runEngineLoops(bg *background, engine *channel.Engine) {
-	bg.OnStop(engine.StopAll)
-	bg.Go(func(ctx context.Context) {
+	bg.Loop("channel_engine", func(ctx context.Context) {
+		// stopped (its component off, or shutdown): its stations stop with it
+		defer engine.StopAll()
 		engine.SyncRuntime(ctx)
 		i := 0
 		tick(ctx, channel.HeartbeatInterval, func() {
@@ -214,7 +216,7 @@ func runEngineLoops(bg *background, engine *channel.Engine) {
 		})
 	})
 	if engine.Fence != nil {
-		bg.Go(func(ctx context.Context) {
+		bg.Loop("channel_fences", func(ctx context.Context) {
 			tick(ctx, 5*time.Second, func() { engine.CheckFences(ctx) })
 		})
 	}
@@ -292,14 +294,15 @@ func buildHomeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 	hdhrHandler := hdhr.New(hdhrRepo, streamer)
 	hdhrHandler.PublicBase = publicBase
 	hdhrHandler.Viewings = viewings
-	b.bg.Go(viewings.Run)
+	hdhrHandler.Gate = httpx.RequireComponent(b.bg.On, "livetv.hdhomerun")
+	b.bg.Loop("viewings", viewings.Run)
 	mounts = append(mounts, hdhrHandler.Mount)
 	mounts = append(mounts, guideHandler.Mount)
 	// Only the home advertises the tuner (the front door); a node never runs this.
 	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
 		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
-	bg.Go(ssdp.Run)
+	bg.Loop("hdhr_ssdp", ssdp.Run)
 	return mounts, nil
 }
 
@@ -354,12 +357,14 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 	// the first beat creates the home's row before the first decision
 	_ = b.loop.BeatOnce(ctx)
 	hosts.Refresh(ctx)
-	b.bg.Go(b.loop.Run)
+	b.bg.Loop("tv_heartbeat", b.loop.Run)
 
 	engine.Fence = placement.HomeFence{Svc: svc}
 	engine.HostStatusOff = true
-	svc.OnChange(func(ch uuid.UUID) { b.bg.Go(func(ctx context.Context) { engine.CheckFences(ctx, ch) }) })
-	b.bg.Go(func(ctx context.Context) {
+	svc.OnChange(func(ch uuid.UUID) {
+		b.bg.Go(func(ctx context.Context) { engine.CheckFences(ctx, ch) }) // not a loop: one check per placement change
+	})
+	b.bg.Loop("placement_listen", func(ctx context.Context) {
 		placement.Listen(ctx, b.pool, logger, func(ch uuid.UUID) {
 			svc.Invalidate(ch)
 			engine.CheckFences(ctx, ch)
@@ -370,11 +375,11 @@ func (b *tvBase) wireHomeCluster(ctx context.Context, engine *channel.Engine, lo
 			logger.Info("tv: cleaned stale on-air rows", "rows", n, "event", "tv_runtime_cleaned")
 		}
 	}}
-	b.bg.Go(sweeper.Run)
+	b.bg.Loop("channel_sweeper", sweeper.Run)
 
 	// Epic 32.7 / 33.8: the push relay to Cloudflare Stream runs here, in the
 	// home's front door (never on a node), once slot 0125 exists.
-	b.bg.Go(func(ctx context.Context) { b.runPushRelay(ctx, fd, nil) })
+	b.bg.Loop("push_relay", func(ctx context.Context) { b.runPushRelay(ctx, fd, nil) })
 
 	// channel art for the stations on nodes
 	assets := &cluster.AssetHandler{Looks: chRepo, PathMap: pathmap.FromEnv(), Keyring: keyring}
@@ -414,7 +419,7 @@ func buildNodeTV(bg *background, logger *slog.Logger, cfg config.Config, pool *p
 		return buildNodeTVReady(bg, logger, cfg, pool, layout, ns, guard)
 	}
 	sw := newSwapHandler(pausedNodeHandler())
-	bg.Go(func(ctx context.Context) {
+	bg.Go(func(ctx context.Context) { // not a loop: waits once for the schema, then builds the channels
 		if guard.Wait(ctx) == nil {
 			sw.set(buildNodeTVReady(bg, logger, cfg, pool, layout, ns, guard))
 		}
@@ -544,15 +549,15 @@ func buildNodeTVReady(bg *background, logger *slog.Logger, cfg config.Config, po
 			return b.beatInfo(ctx, channel.RoleNode, engine.ActiveIDs, ident.StreamBaseURL, u)
 		}}
 	_ = b.loop.BeatOnce(ctx)
-	bg.Go(b.loop.Run)
-	bg.Go(func(ctx context.Context) {
+	bg.Loop("tv_heartbeat", b.loop.Run)
+	bg.Loop("node_tv_checks", func(ctx context.Context) {
 		tick(ctx, 5*time.Minute, func() {
 			checkSchema()
 			refreshHome()
 			checkStorage()
 		})
 	})
-	bg.Go(func(ctx context.Context) {
+	bg.Loop("placement_listen", func(ctx context.Context) {
 		placement.Listen(ctx, pool, logger, func(ch uuid.UUID) { engine.CheckFences(ctx, ch) })
 	})
 	runEngineLoops(bg, engine)

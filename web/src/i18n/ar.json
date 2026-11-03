@@ -30,6 +30,7 @@
   "error.back": "رجوع",
   "error.goHome": "الانتقال إلى الرئيسية",
   "error.offlineBanner": "أنت غير متصل بالإنترنت. ستتابع مكتبة عملها حين يعود اتصالك.",
+  "error.componentOff": "{component} متوقف على الجهاز الرئيسي",
   "notFound.title": "الصفحة غير موجودة",
   "notFound.desc": "لا يوجد شيء على هذا العنوان. ربما يكون الرابط خاطئًا أو نُقلت الصفحة.",
   "pwa.updateAvailable": "يتوفر إصدار جديد.",

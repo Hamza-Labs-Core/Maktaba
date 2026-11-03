@@ -220,6 +220,10 @@ func runServe() error {
 			"event", "shutdown_loops_stopped")
 		closeStores()
 	}()
+	if !nodeMode {
+		// Epic 51 story 51.05: the home's loops start and stop with their component
+		startComponents(bg, pool, logger)
+	}
 	if nodeMode {
 		// story 31.3: a node's share map is its own cluster map (buildNodeTV)
 		pathmap.SetDefault(pathmap.FromEnv())
@@ -260,7 +264,7 @@ func runServe() error {
 		if watch != nil && watch.Down() {
 			// the channels need the home's database: they start once it answers
 			sw := newSwapHandler(homeDBDownHandler())
-			bg.Go(func(ctx context.Context) {
+			bg.Go(func(ctx context.Context) { // not a loop: waits once for the home's database, then builds the channels
 				if watch.wait(ctx) == nil {
 					sw.set(buildNodeTV(bg, logger, cfg, pool, layout, node))
 				}
@@ -291,7 +295,7 @@ func runServe() error {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	bg.Go(procWatchdog.Run)
+	bg.Loop("watchdog", procWatchdog.Run)
 
 	// Both sockets are bound here, before anything serves: a client may connect
 	// the moment onListening runs (the kernel queues it until Serve accepts),
@@ -554,7 +558,7 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 	gc := cache.NewGC(layout, cache.GCConfig{
 		MaxBytes: cfg.CacheMaxBytes(), Interval: cfg.GCInterval(),
 	})
-	bg.Go(func(ctx context.Context) {
+	bg.Loop("cache_gc", func(ctx context.Context) {
 		tick(ctx, cfg.GCInterval(), func() {
 			if _, _, err := gc.Sweep(); err != nil {
 				logger.Warn("gc sweep failed", "err", err.Error(), "event", "cache_gc_failed")
@@ -564,10 +568,10 @@ func buildPublicHandler(bg *background, logger *slog.Logger, backend probe.Backe
 
 	reaper := session.NewReaper(store, session.ReaperConfig{IdleAfter: vodSessionIdle, ActiveIdleAfter: vodActiveIdle,
 		Interval: vodSessionSweep, Logger: logger})
-	bg.Go(reaper.Run)
+	bg.Loop("session_reaper", reaper.Run)
 	// the closed sessions' folders, and a previous run's (at start, then with
 	// the reaper)
-	bg.Go(func(ctx context.Context) {
+	bg.Loop("vod_purge", func(ctx context.Context) {
 		disk := vodDisk{root: layout.Root, minFreeGiB: cfg.Transcode.MinFreeGiB}
 		purge := func() { purgeVODSessions(ctx, layout, store, disk, time.Now(), logger) }
 		purge()

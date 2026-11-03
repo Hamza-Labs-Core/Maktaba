@@ -267,6 +267,30 @@ func (s *Store) SetDesired(ctx context.Context, d Desired, audit Audit) (Desired
 		return Desired{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	after, err := s.setDesired(ctx, tx, d, audit)
+	if err != nil {
+		return Desired{}, err
+	}
+	return after, tx.Commit()
+}
+
+// SetDesiredTx is SetDesired inside the caller's transaction tx (on s.DB): a change
+// that also writes another table (the TV settings' hdhr_device.enabled) commits or
+// rolls back with it. The caller commits.
+func (s *Store) SetDesiredTx(ctx context.Context, tx *sql.Tx, d Desired, audit Audit) (Desired, error) {
+	if !validWant(d.Want) {
+		return Desired{}, fmt.Errorf("components: bad want %q", d.Want)
+	}
+	if d.ID == "" {
+		return Desired{}, errors.New("components: a desired row needs an id")
+	}
+	if err := validAudit(audit); err != nil {
+		return Desired{}, err
+	}
+	return s.setDesired(ctx, tx, d, audit)
+}
+
+func (s *Store) setDesired(ctx context.Context, tx *sql.Tx, d Desired, audit Audit) (Desired, error) {
 	var before any
 	if b, err := s.desiredOf(ctx, tx, d.ID); err == nil {
 		before = b
@@ -288,7 +312,7 @@ func (s *Store) SetDesired(ctx context.Context, d Desired, audit Audit) (Desired
 	if err := s.audit(ctx, tx, audit, d.ID, before, after); err != nil {
 		return Desired{}, err
 	}
-	return after, tx.Commit()
+	return after, nil
 }
 
 // SetOverride writes machine node's exception for o.ID (an empty Want and a nil Hold

@@ -11,6 +11,13 @@ api:tvchange_controller
 api:tvremote_controller
 api:tvremote_publisher
 api:tvremote_health_sampler
+streaming:tv_heartbeat
+streaming:placement_listen
+streaming:channel_sweeper
+streaming:push_relay
+streaming:viewings
+# (livetv.hdhomerun's streaming:hdhr_ssdp: the device is off, so seeded installed and
+# stopped; the previous release ran it idle)
 # livetv.slots
 streaming:slots_frontdoor
 streaming:slots_ops

@@ -49,6 +49,8 @@ export function plainDetail(detail: unknown): detail is string {
  * (pairing: "a sign-in through Maktaba Cloud cannot sign in a device").
  */
 export function inputDetail(e: unknown, opts: { refusals?: boolean } = {}): string | null {
+  // the home's sentence for it is English: componentOffText has the words
+  if (e instanceof ApiError && e.problem.code === "component_off") return null;
   if (
     e instanceof ApiError &&
     (INPUT_STATUSES.has(e.status) || (opts.refusals === true && e.status === 403)) &&
@@ -60,7 +62,21 @@ export function inputDetail(e: unknown, opts: { refusals?: boolean } = {}): stri
   return null;
 }
 
+/**
+ * A 409 `component_off` (Epic 51: the part of the home that route needs is turned
+ * off) in the app's words, with the part's name: never the home's English detail.
+ * null for any other error.
+ */
+export function componentOffText(e: unknown, t: T): string | null {
+  if (!(e instanceof ApiError) || e.status !== 409 || e.problem.code !== "component_off")
+    return null;
+  const id = typeof e.problem.component === "string" ? e.problem.component : "";
+  const key = `components.${id}.title`;
+  const title = id ? t(key) : "";
+  return t("error.componentOff", { component: title && title !== key ? title : id });
+}
+
 /** The sentence a screen shows for a failed call. */
 export function errorText(e: unknown, t: T): string {
-  return inputDetail(e) ?? t(`error.kind.${userErrorKind(e)}`);
+  return componentOffText(e, t) ?? inputDetail(e) ?? t(`error.kind.${userErrorKind(e)}`);
 }

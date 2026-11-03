@@ -46,15 +46,18 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
 // required field; gRPC clients are optional (a nil client is a no-op).
 type P6Deps struct {
 	DB *sql.DB
+	// Loops is the API's component runner (Epic 51): the loops below start and stop
+	// with their component. nil: they just run (tests).
+	Loops *runner.Runner
 	// Settings is the runtime settings reader (PATCH /api/settings drops its
 	// cache). Nil ⇒ one of its own; main.go shares one with the auth surface,
 	// so a renamed home reads at once in GET /api/auth/me.
@@ -179,9 +182,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	browseHandler := &browse.Handler{DB: d.DB}
 	if d.BusCtx != nil && d.BusDSN != "" {
 		browseHandler.Rows = browse.NewRowCache(d.BusCtx)
-		safego.Go(nil, "browse_rowcache_listen", func() {
-			browseHandler.Rows.Listen(d.BusCtx, d.BusDSN, d.BusResettle, slog.Default())
-		})
+		d.Loops.Declare("browse_rowcache_listen", runner.Bound(d.BusCtx, runner.Func(func(ctx context.Context) {
+			browseHandler.Rows.Listen(ctx, d.BusDSN, d.BusResettle, slog.Default())
+		})))
 	}
 	browseHandler.Mount(r)
 
@@ -297,9 +300,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	enrichHandler.Mount(r)
 	if d.EnrichAutoAcceptCtx != nil && d.DB != nil {
-		safego.Go(nil, "enrichment_auto_accept", func() {
-			enrichHandler.RunAutoAccept(d.EnrichAutoAcceptCtx, enrichment.DefaultAutoAcceptInterval, nil)
-		})
+		d.Loops.Declare("enrichment_auto_accept", runner.Bound(d.EnrichAutoAcceptCtx, runner.Func(func(ctx context.Context) {
+			enrichHandler.RunAutoAccept(ctx, enrichment.DefaultAutoAcceptInterval, nil)
+		})))
 	}
 
 	contextHandler := &contextcard.Handler{DB: d.DB}
@@ -355,7 +358,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	queuesHandler.Mount(r)
 	wsHandler.Initial = queuesHandler.InitialFrame
 	if d.BusCtx != nil {
-		safego.Go(nil, "queues_snapshots", func() { queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval) })
+		d.Loops.Declare("queues_snapshots", runner.Bound(d.BusCtx, runner.Func(func(ctx context.Context) {
+			queuesHandler.PublishSnapshots(ctx, queues.DefaultSnapshotInterval)
+		})))
 	}
 	wsHandler.Mount(r)
 
