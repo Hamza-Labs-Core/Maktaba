@@ -491,10 +491,15 @@ final class Playback {
             // cancelled: the item was left, and unobserveItem cleared soundTask already
             guard let self, !Task.isCancelled else { return }
             self.soundTask = nil
-            guard self.player === p, p.currentItem === item else { return }
-            let s = Sound(codec: loaded.codec, audible: loaded.audible)
-            if s != self.sound { self.sound = s }
+            self.soundLoaded(Sound(codec: loaded.codec, audible: loaded.audible), of: p, item)
         }
+    }
+
+    /// The sound read once the formats loaded: kept only while that item still plays here
+    /// (a load that ends after the video changed says nothing about the new one).
+    func soundLoaded(_ s: Sound, of p: AVPlayer, _ item: AVPlayerItem) {
+        guard player === p, p.currentItem === item else { return }
+        if s != sound { sound = s }
     }
 
     func playedToEnd() {

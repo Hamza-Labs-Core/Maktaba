@@ -63,6 +63,18 @@ import MaktabaKit
         playback.cancelUpNext()
     }
 
+    /// The sound read after an audio track's formats loaded (they are not read yet after an
+    /// audio switch; PR #595's iPad run said "audio" for 30 s) counts only for the item that
+    /// still plays: a load that ends after the video changed is dropped. Shared Player code.
+    @Test func aLoadedSoundCountsOnlyForTheItemStillPlaying() throws {
+        let home = URL(string: "http://127.0.0.1:9")!
+        let playback = Playback(client: APIClient(home: home, tokens: TokenStore(app: "test.mac.sound", home: home)))
+        let item = AVPlayerItem(url: try #require(URL(string: "http://127.0.0.1:9/stream/s/manifest.m3u8")))
+        let gone = AVPlayer(playerItem: item)
+        playback.soundLoaded(Playback.Sound(codec: "aac", audible: true), of: gone, item)
+        #expect(playback.sound == Playback.Sound(codec: nil, audible: true), "a player it no longer plays says nothing")
+    }
+
     /// A UI test's `-maktaba-settings-reset` puts autoplay back on as the app starts (PlayerApp
     /// applies it, not only the Profile), so a test that turned it off never leaves the next
     /// test's player without Up next.
