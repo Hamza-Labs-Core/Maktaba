@@ -4,6 +4,9 @@ import androidx.compose.ui.test.IdlingResource
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.MemoryTokens
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.Capabilities
+import com.hamzalabs.maktaba.core.api.FeatureOff
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.session.AppSession
@@ -57,6 +60,22 @@ class FakeHome : ExternalResource() {
         private set
 
     /**
+     * What the home has on (story 51.11), as the signed-in home reads it: every feature on, as
+     * before the first answer; a test sets what is off with [features] ([viewerWithOff], [adminWithOff]).
+     */
+    val features = MutableStateFlow(Capabilities.AllOn)
+
+    /** [features] turned off for a viewer (no admin block). */
+    fun viewerWithOff(vararg off: String) {
+        features.value = Capabilities(off = off.toSet())
+    }
+
+    /** [features] turned off for an admin, each by one component of its own name. */
+    fun adminWithOff(vararg off: String) {
+        features.value = Capabilities(off = off.toSet(), admin = true, adminOff = off.associateWith { FeatureOff(listOf(it), "switched_off") })
+    }
+
+    /**
      * The client's calls, on a dispatcher of their own so they can be counted, and over a
      * connection pool of their own: a kept-alive connection from an earlier test's home is never
      * offered to this one (the OS can give the new server the old one's port).
@@ -99,7 +118,7 @@ class FakeHome : ExternalResource() {
         val tokens = MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh")
         val client = ApiClient(server.url("/"), tokens, ApiClient.defaultHttp.newBuilder().dispatcher(calls).connectionPool(ConnectionPool()).build())
         val session = AppSession(MapStore(), scope, { MemoryTokens() })
-        home = PlayerHome(session, user, client, ThemeStore(MapStore()))
+        home = PlayerHome(session, user, client, ThemeStore(MapStore()), capabilities = features)
     }
 
     override fun after() {

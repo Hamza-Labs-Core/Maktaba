@@ -53,6 +53,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Capabilities
+import kotlinx.coroutines.flow.StateFlow
 import com.hamzalabs.maktaba.core.api.Failure
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.api.User
@@ -88,7 +90,12 @@ enum class Place(@StringRes val label: Int, val icon: ImageVector, @StringRes va
  * A screen's loads and its actions fail apart: the next poll that works clears a load's
  * failure, never an action's (that stays until another action, a refresh or another place).
  */
-class Remote(val client: ApiClient, private val session: AppSession) {
+class Remote(
+    val client: ApiClient,
+    private val session: AppSession,
+    /** What the home has on (story 51.11): Machines says how many parts are off. */
+    val capabilities: StateFlow<Capabilities> = session.capabilities,
+) {
     private val kept = mutableMapOf<String, MutableState<*>>()
 
     /**

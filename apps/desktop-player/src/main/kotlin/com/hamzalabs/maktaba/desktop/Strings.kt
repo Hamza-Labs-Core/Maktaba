@@ -163,6 +163,7 @@ object Strings {
         "error.unreachable" to "Couldn't reach your home. Check that it is on and on the network.",
         "error.busy" to "Your home is busy right now. Try again in a moment.",
         "error.server" to "Something went wrong on your home. Try again in a moment.",
+        "error.off" to "This feature is turned off on this home.",
     )
 
     val AR: Map<String, String> = mapOf(
@@ -295,5 +296,6 @@ object Strings {
         "error.unreachable" to "تعذّر الوصول إلى منزلك. تأكد من أنه يعمل ومتصل بالشبكة.",
         "error.busy" to "منزلك مشغول الآن. حاول مجددًا بعد قليل.",
         "error.server" to "حدث خطأ في منزلك. حاول مجددًا بعد قليل.",
+        "error.off" to "هذه الميزة متوقفة على الجهاز الرئيسي.",
     )
 }

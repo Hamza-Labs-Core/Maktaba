@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.tv.ui
 
+import com.hamzalabs.maktaba.core.ui.FollowCapabilities
 import com.hamzalabs.maktaba.core.ui.KeepDiscovering
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -24,7 +25,11 @@ fun Root(app: MaktabaTVApp) {
     when (val p = phase) {
         AppSession.Phase.ChoosingHome -> HomePickerScreen(app)
         AppSession.Phase.SigningIn -> home?.let { SignInScreen(app, it) } ?: HomePickerScreen(app)
-        is AppSession.Phase.SignedIn -> SignedInApp(app, p.user, p.client)
+        is AppSession.Phase.SignedIn -> {
+            // what the home has on, asked again each time the TV app comes to the front (51.11)
+            FollowCapabilities(session)
+            SignedInApp(app, p.user, p.client)
+        }
     }
     // a maktaba://connect link the app was opened with: asked about first, wherever the TV is
     link?.let { ConnectLinkDialog(session, it) }

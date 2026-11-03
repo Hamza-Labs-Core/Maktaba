@@ -55,6 +55,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.Featured
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.NowEntry
@@ -98,7 +99,8 @@ fun HomeScreen(nav: PlayerNavigator) {
         HomeState(
             home.client,
             HomeCache.of(context.cacheDir, home.client.home, home.user.id),
-            liveNow = { live.now() },
+            // no channel row while Live TV is off on the home (story 51.11): nothing is asked
+            liveNow = { if (home.capabilities.value.isOn(Feature.LIVE_TV)) live.now() else null },
             signedOut = home.session::signedOut,
         )
     }

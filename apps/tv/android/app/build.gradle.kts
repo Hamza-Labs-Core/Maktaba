@@ -65,8 +65,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // The tab bar's Compose test (story 51.11) runs on the JVM (Robolectric): it needs the app's resources.
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -88,6 +90,13 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Compose UI tests on the JVM (Robolectric), as the phone apps' (the tab bar, story 51.11)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.espresso.core)
+    testImplementation(libs.robolectric)
 
     // The permissions walkthrough's Compose UI tests on a TV or emulator (connectedDebugAndroidTest).
     androidTestImplementation(platform(libs.compose.bom))

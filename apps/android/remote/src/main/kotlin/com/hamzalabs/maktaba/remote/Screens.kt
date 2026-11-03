@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ToggleOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
@@ -27,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -50,6 +53,10 @@ import com.hamzalabs.maktaba.core.api.Machine
 import com.hamzalabs.maktaba.core.api.QueueSnapshot
 import com.hamzalabs.maktaba.core.api.StageRow
 import com.hamzalabs.maktaba.core.ui.Message
+import com.hamzalabs.maktaba.core.ui.openComponents
+import com.hamzalabs.maktaba.core.api.Capabilities
+import androidx.compose.foundation.lazy.LazyListScope
+import com.hamzalabs.maktaba.core.R as CoreR
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -493,6 +500,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
     val machine = overview?.nodes?.firstOrNull { it.id == chosen }
     val process = processes?.processes?.firstOrNull { "proc:${it.id}" == chosen }
     val say = rememberSay()
+    val features by remote.capabilities.collectAsState()
     AdminScreen(
         title = stringResource(R.string.place_machines),
         remote = remote,
@@ -531,6 +539,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
                     )
                     HorizontalDivider()
                 }
+                partsOffRow(features, remote.client.home.toString())
                 processRows(processes, chosen, say) { chosen = it }
                 item { Header(stringResource(R.string.other_machines)) }
                 if (o.nodes.isEmpty()) item { Message(stringResource(R.string.no_other_machines), detail = stringResource(R.string.no_other_machines_hint)) }
@@ -546,6 +555,26 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
                 }
             }
         }
+    }
+}
+
+/**
+ * Story 51.11: "3 parts are off" under the home, when the home's admin answer says components
+ * are off (counted once each across the features they turn off), with the way to the home's
+ * Components page in the browser. Nothing when every part is on.
+ */
+internal fun LazyListScope.partsOffRow(features: Capabilities, homeUrl: String) {
+    val parts = features.componentsOff
+    if (!features.admin || parts == 0) return
+    item(key = "parts-off") {
+        val context = LocalContext.current
+        ListItem(
+            headlineContent = { Text(pluralStringResource(CoreR.plurals.parts_off, parts, parts)) },
+            supportingContent = { Text(stringResource(CoreR.string.feature_turn_on), color = MaterialTheme.colorScheme.primary) },
+            leadingContent = { Icon(Icons.Outlined.ToggleOff, null, tint = MaterialTheme.colorScheme.tertiary) },
+            modifier = Modifier.clickable { openComponents(context, homeUrl) }.testTag("parts-off"),
+        )
+        HorizontalDivider()
     }
 }
 

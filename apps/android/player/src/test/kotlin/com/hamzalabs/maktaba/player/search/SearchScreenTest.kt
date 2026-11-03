@@ -21,6 +21,7 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
 import com.hamzalabs.maktaba.player.harness.setShell
@@ -151,6 +152,49 @@ class SearchScreenTest {
         assertEquals(l.query, searchBodies().single()["q"]!!.jsonPrimitive.content)
         compose.onNodeWithText("العناوين").assertIsDisplayed()
         compose.onNode(hasContentDescription("في الصبر", substring = true)).assertIsDisplayed()
+    }
+
+    // ---------- story 51.11: search by meaning off on the home (T13) ----------
+
+    @Test
+    fun meaningOffAnAdminReadsTheWordsOnlyLineAndKeywordResultsShowWithoutAnError() {
+        home.adminWithOff(Feature.SEMANTIC_SEARCH)
+        // the home skipped the meaning half because it is off: not a failure, whatever degraded says
+        SearchFixtures.install(home) { SearchFixtures.results(SearchFixtures.EN, degraded = true).replace("\"degraded\":true", "\"degraded\":true,\"semantic\":\"off\"") }
+        compose.setShell(home, sections = PlayerSection.enabled, screens = screens)
+        compose.onNodeWithTag("section-Search").performClick()
+        waitForTag("search-words-only")
+        compose.onNodeWithText("Searching by words only. Search by meaning is off.").assertIsDisplayed()
+        search("patience")
+        compose.onNode(hasTestTag("title-v1")).assertIsDisplayed()
+        assertTrue("nothing says the results are degraded", compose.onAllNodes(hasText("text matches", substring = true, ignoreCase = true)).fetchSemanticsNodes().isEmpty())
+        assertEquals("keyword only", "fts", searchBodies().single()["mode"]!!.jsonPrimitive.content)
+        compose.onNodeWithTag("search-words-only").assertIsDisplayed()
+    }
+
+    @Test
+    @Config(qualifiers = "ar-w411dp-h891dp")
+    fun theWordsOnlyLineIsInArabic() {
+        home.adminWithOff(Feature.SEMANTIC_SEARCH)
+        open(SearchFixtures.AR)
+        waitForTag("search-words-only")
+        compose.onNodeWithText("البحث بالكلمات فقط. البحث بالمعنى متوقف.").assertIsDisplayed()
+    }
+
+    @Test
+    fun meaningOffAViewerSearchesByWordsWithNoLine() {
+        home.viewerWithOff(Feature.SEMANTIC_SEARCH)
+        open()
+        search("patience")
+        compose.onNode(hasTestTag("title-v1")).assertIsDisplayed()
+        assertTrue(compose.onAllNodesWithTag("search-words-only").fetchSemanticsNodes().isEmpty())
+        assertEquals("fts", searchBodies().single()["mode"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun meaningOnShowsNoLine() {
+        open()
+        assertTrue(compose.onAllNodesWithTag("search-words-only").fetchSemanticsNodes().isEmpty())
     }
 
     @Test
