@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import io
+import json
 import sys
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -43,6 +45,26 @@ class BudgetTest(unittest.TestCase):
         cs = bundle_size.checks(BASE, 50_000_000, idle_rss_mb=701, processes=5)
         self.assertEqual([c.ok for c in cs], [True, True, False, False])
         self.assertEqual(len(bundle_size.checks(BASE, 50_000_000)), 2)
+
+    def test_exactly_four_processes(self) -> None:
+        # N9: exactly postgres, api, streaming and pipeline; fewer is a part missing
+        for n, ok in ((3, False), (4, True), (5, False)):
+            cs = bundle_size.checks(BASE, 50_000_000, processes=n)
+            self.assertEqual(cs[-1].ok, ok, n)
+
+    def test_home_measures_from_core_home_json(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            home = Path(d) / "core-home.json"
+            home.write_text(json.dumps({"idle_rss_mb": 512.5, "processes": 4, "roles": []}), encoding="utf-8")
+            with redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(bundle_size.main(["--core-bytes", "60000000", "--home", str(home)]), 0)
+            self.assertIn("ok   idle memory: 512.5 MB", out.getvalue())
+            self.assertIn("ok   processes: 4.0 processes (budget exactly 4.0 processes)", out.getvalue())
+            home.write_text(json.dumps({"idle_rss_mb": 900, "processes": 6}), encoding="utf-8")
+            with redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(bundle_size.main(["--core-bytes", "60000000", "--home", str(home)]), 1)
+            self.assertIn("FAIL idle memory", out.getvalue())
+            self.assertIn("FAIL processes", out.getvalue())
 
     def test_zero_is_refused(self) -> None:
         with self.assertRaises(ValueError):

@@ -1,6 +1,9 @@
 package updaterfeed
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // T08: a release with both Mac apps: the Core keys name the Core app, the Full keys are
 // unchanged.
@@ -25,5 +28,24 @@ func TestBuildCoreKeys(t *testing.T) {
 		if p := f.Platforms[k]; p.Signature != w[0] || p.URL != base+w[1] {
 			t.Errorf("%s = %+v, want %s %s", k, p, w[0], w[1])
 		}
+	}
+}
+
+// A release whose Core leg failed is complete: no required list names a Core key (a Core
+// app takes the Full key then), so the Core leg never holds back the latest release.
+func TestCoreKeysAreNotRequired(t *testing.T) {
+	for _, list := range []string{"desktop", "server-apps"} {
+		for _, k := range Wanted(list) {
+			if strings.Contains(k, "-core") {
+				t.Errorf("--require %s names %s", list, k)
+			}
+		}
+	}
+	f, err := Build(stage(t, release), "o/r", "v0.3.0", "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if miss := Missing(f, Wanted("desktop")); len(miss) > 0 {
+		t.Errorf("a release without the Core app misses %v", miss)
 	}
 }
