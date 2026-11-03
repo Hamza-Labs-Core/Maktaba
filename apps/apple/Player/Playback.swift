@@ -356,10 +356,24 @@ final class Playback {
     /// where it is before the URL ends, or when the item failed (not again within 30 s of
     /// opening: then it shows why).
     private func watch() async {
+        var waitingSince: Date?
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled, let p = player, session != nil else { return }
             if p.rate > 0 { report() }
+            // still waiting at the next look: after an audio switch on a loaded CI simulator
+            // the player stopped at 1257 s for good, its rate 1 (PR #614's iPhone run)
+            if p.timeControlStatus == .waitingToPlayAtSpecifiedRate {
+                waitingSince = waitingSince ?? .now
+            } else {
+                waitingSince = nil
+            }
+            if WatchLogic.stuck(waitingSince: waitingSince, now: .now) {
+                waitingSince = nil
+                let at = p.currentTime().seconds
+                await open(from: at.isFinite ? at : position)
+                continue
+            }
             let failed = p.currentItem?.status == .failed
             if failed, Date.now.timeIntervalSince(openedAt) < 30 {
                 p.pause()

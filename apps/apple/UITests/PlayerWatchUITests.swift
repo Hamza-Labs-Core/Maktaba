@@ -108,8 +108,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
         XCTAssertTrue(en.isSelected, "an audio track is selected")
         XCTAssertEqual(ar.label, "Arabic")
         ar.tap()
-        // a track switch re-buffers the stream: on a loaded simulator that is more than 15 s
-        waitFor("the Arabic audio, with sound", timeout: 30) {
+        // a track switch re-buffers the stream: on a loaded simulator that is more than 15 s,
+        // and a player that stays waiting is opened again 20 to 30 s in (`WatchLogic.stuck`:
+        // PR #614's iPhone run stopped at 1257 s for good after the switch, its rate 1)
+        waitFor("the Arabic audio, with sound", timeout: 60) {
             state["audio"] == "ar" && state["sound"] == "aac" && state["audible"] == "true"
         }
     }
