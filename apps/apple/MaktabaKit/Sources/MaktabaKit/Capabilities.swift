@@ -178,8 +178,8 @@ public final class CapabilitiesStore {
     /// The ETag of `current` (sent as If-None-Match).
     @ObservationIgnored public private(set) var etag: String?
     /// The home answered once (a 304, a 404 or a failure count): until then `current` is a
-    /// guess, every feature on. A shell built on the guess is built again once, at the first
-    /// answer; a later change keeps the screens open (story 51.11).
+    /// guess, every feature on. A shell built on the guess settles at the first answer (a
+    /// launch into Live TV, its screen); a later change keeps the screens open (story 51.11).
     public private(set) var answered = false
 
     @ObservationIgnored private var source: (any CapabilitiesSource)?

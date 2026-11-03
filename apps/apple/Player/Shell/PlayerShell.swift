@@ -23,6 +23,8 @@ struct PlayerShell: View {
     let context: PlayerContext
     @Binding var playing: Bool
     let sections: [PlayerSection]
+    /// Live TV is left out of `sections` because it is off on the home (`LiveSectionGate`).
+    let liveTVHidden: Bool
     /// A deep link's page (`maktaba://video/{id}`, `PlayerApp`), opened on the section in view
     /// and then cleared.
     @Binding var link: PlayerRoute?
@@ -41,9 +43,11 @@ struct PlayerShell: View {
     /// A link into Live TV while it is off for this viewer (story 51.11): Home, and a short
     /// line saying Live TV isn't available on this home.
     @State private var unavailable: Bool
-    /// The launch went to Live TV (its section, or a channel's link): decided again at the
-    /// home's first answer of what is on when the shell came before it.
-    private let launchedToLive: Bool
+    /// A launch into Live TV the shell could not settle when it was built: the home had not
+    /// said yet what is on, or whether this person has a channel (a slow home: CI's loaded
+    /// simulators answered after `LiveSectionGate.patience`). Settled once both are known
+    /// (`settleLaunch`), unless the person chose a section first.
+    @State private var liveUnsettled: Bool
 
     init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
          sections: [PlayerSection] = PlayerSection.visible(),
@@ -55,8 +59,10 @@ struct PlayerShell: View {
         self.sections = sections
         let toLive: Bool = if start == .liveTV { true } else if case .channel = route { true } else { false }
         let blocked = liveTVHidden && toLive
-        launchedToLive = toLive
+        self.liveTVHidden = liveTVHidden
         let first = start.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first ?? .libraries
+        _liveUnsettled = State(initialValue: toLive && !blocked
+            && (first != .liveTV || !context.session.capabilities.answered))
         _selection = State(initialValue: first)
         _paths = State(initialValue: (blocked ? nil : route).map { [first: [$0]] } ?? [:])
         _unavailable = State(initialValue: blocked)
@@ -79,14 +85,8 @@ struct PlayerShell: View {
                 tabs
             }
         }
-        // the shell came before the home first said what is on (a slow home): a launch into
-        // Live TV, off for this viewer, lands on Home and says so, as at a launch after it
-        .onChange(of: context.session.capabilities.answered) { _, answered in
-            guard answered, launchedToLive, !sections.contains(.liveTV), selection == .liveTV else { return }
-            paths[.liveTV] = nil
-            selection = sections.first ?? .libraries
-            unavailable = true
-        }
+        .onChange(of: context.session.capabilities.answered) { settleLaunch() }
+        .onChange(of: sections) { settleLaunch() }
         .onChange(of: link, initial: true) { _, route in
             guard let route else { return }
             link = nil
@@ -155,7 +155,25 @@ struct PlayerShell: View {
         } set: { new in
             if new == selection { paths[new] = [] }
             selection = new
+            liveUnsettled = false
         }
+    }
+
+    /// The shell came before the home said what is on, or whether this person has a channel:
+    /// a launch into Live TV lands there once its section shows (an admin's screen says it is
+    /// off), or, off for this viewer, lands on Home and says so, as at a launch after it.
+    private func settleLaunch() {
+        guard liveUnsettled, context.session.capabilities.answered else { return }
+        if sections.contains(.liveTV) {
+            selection = .liveTV
+            liveUnsettled = false
+        } else if liveTVHidden {
+            paths[.liveTV] = nil
+            if selection == .liveTV { selection = sections.first ?? .libraries }
+            unavailable = true
+            liveUnsettled = false
+        }
+        // else the home has not said yet whether this person has a channel: its answer settles
     }
 
     /// A deep link's page: pushed on the chosen section's stack, or in a sheet over a section
