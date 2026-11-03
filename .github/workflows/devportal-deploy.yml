@@ -124,9 +124,11 @@ jobs:
             head -c 600 body.txt || true
             return 1
           }
-          check https://maktaba.dev/ 'data-i18n="home.title"'
+          # every page is in English and Arabic: / links its /ar/ twin, which is right to left
+          check https://maktaba.dev/ 'id="lang-switch" class="lang" href="/ar/"'
           grep -qi '^strict-transport-security:' headers.txt || { echo "::error::no HSTS header on /"; exit 1; }
           grep -qi "^content-security-policy:.*frame-ancestors 'none'" headers.txt || { echo "::error::no CSP on /"; exit 1; }
+          check https://maktaba.dev/ar/ '<html lang="ar" dir="rtl">'
           check https://maktaba.dev/.well-known/security.txt 'Contact: mailto:security@maktaba.dev'
           grep -q '^Expires: ' body.txt || { echo "::error::security.txt has no Expires"; exit 1; }
           code=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' https://www.maktaba.dev/ || true)

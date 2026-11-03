@@ -30,6 +30,10 @@ func seedFiles(t *testing.T, dir string) {
 	writeJSONL(t, filepath.Join(ip, "processes", "w1.json"), `{"worker_id":"w1","pid":1,"role":"node"}`)
 	writeJSONL(t, filepath.Join(ip, "processes", "w2.json"), `{"worker_id":"w2","pid":2,"role":"node"}`)
 	writeJSONL(t, filepath.Join(ip, "processes", "broken.json"), `{not json`)
+	// gone processes are not listed: one that said it stopped (an older release), one
+	// that stopped refreshing its last_seen long ago (a crash)
+	writeJSONL(t, filepath.Join(ip, "processes", "w3.json"), `{"worker_id":"w3","pid":3,"stopped_at":"2026-10-19T09:00:00Z"}`)
+	writeJSONL(t, filepath.Join(ip, "processes", "w4.json"), `{"worker_id":"w4","pid":4,"last_seen":"2020-01-01T00:00:00Z"}`)
 	writeJSONL(t, filepath.Join(ip, "logs", day, "w1.jsonl"),
 		`{"ts":"2026-10-19T10:00:00Z","level":"info","event":"start"}`,
 		`{"ts":"2026-10-19T10:00:02Z","level":"error","event":"boom","fields":{"file":"a.mp4"}}`,
@@ -260,6 +264,24 @@ func TestHistoryRejectsBadInput(t *testing.T) {
 	}
 	if r := f.do("GET", "/api/cluster/files/192.168.50.31/logs?date="+day, "", "viewer"); r.StatusCode != 403 {
 		t.Fatalf("viewer: %d", r.StatusCode)
+	}
+}
+
+func TestProcessGone(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	for raw, want := range map[string]bool{
+		`{"pid":1}`: false, // nothing to tell by
+		`{"pid":1,"last_seen":"2026-11-03T11:59:00Z"}`:                 false, // seen a minute ago
+		`{"pid":1,"last_seen":"2026-11-03T11:49:00Z"}`:                 true,  // silent for 11 minutes
+		`{"pid":1,"last_seen":"soon"}`:                                 false,
+		`{"pid":1,"stopped_at":null,"last_seen":null}`:                 false,
+		`{"pid":1,"stopped_at":"2026-11-03T11:59:00Z"}`:                true, // it said it stopped
+		`{"pid":1,"stopped_at":"","last_seen":"2026-11-03T11:59:30Z"}`: false,
+		`[1]`: false,
+	} {
+		if got := processGone([]byte(raw), now); got != want {
+			t.Errorf("processGone(%s) = %v, want %v", raw, got, want)
+		}
 	}
 }
 
