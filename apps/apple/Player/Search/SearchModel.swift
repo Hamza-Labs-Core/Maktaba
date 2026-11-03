@@ -66,12 +66,19 @@ final class SearchModel {
 
     private let client: APIClient
     private let signedOut: @MainActor () -> Void
+    /// Search by meaning is on on the home (51.11); off, a search asks for words only.
+    private let byMeaning: @MainActor () -> Bool
     private var generation = 0
 
-    init(client: APIClient, signedOut: @escaping @MainActor () -> Void) {
+    init(client: APIClient, byMeaning: @escaping @MainActor () -> Bool = { true },
+         signedOut: @escaping @MainActor () -> Void) {
         self.client = client
+        self.byMeaning = byMeaning
         self.signedOut = signedOut
     }
+
+    /// How a search is sent: hybrid, or words only (`fts`) while search by meaning is off.
+    static func mode(byMeaning: Bool) -> SearchMode { byMeaning ? .hybrid : .fts }
 
     /// The query as it is sent: only the spaces around it go. Nothing else changes (no
     /// normalising, no removing an Arabic word's diacritics): the home ranks it.
@@ -96,7 +103,8 @@ final class SearchModel {
         await quietly("search recent") { recent = try await client.recentSearches() }
     }
 
-    /// Runs `q` in hybrid mode. A newer submit wins over an older one still on its way.
+    /// Runs `q` in hybrid mode (words only while search by meaning is off). A newer submit
+    /// wins over an older one still on its way.
     func submit(_ q: String) async {
         let sent = Self.sendable(q)
         guard !sent.isEmpty else { return }
@@ -111,7 +119,7 @@ final class SearchModel {
         problem = nil
         defer { if mine == generation { searching = false } }
         do {
-            let answer = try await client.search(sent, mode: .hybrid)
+            let answer = try await client.search(sent, mode: Self.mode(byMeaning: byMeaning()))
             guard mine == generation else { return }
             results = Results(answer, sent: sent)
         } catch {

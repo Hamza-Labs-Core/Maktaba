@@ -180,6 +180,18 @@
     <string name="feature_plex">Plex</string>
     <string name="feature_remote_access">الوصول من خارج المنزل</string>
     <string name="feature_recommendations">الاقتراحات</string>
+    <string name="feature_off_admin">%1$s متوقفة على الجهاز الرئيسي.</string>
+    <string name="feature_turn_on">شغّلها من صفحة المكوّنات</string>
+    <string name="feature_unavailable">%1$s غير متاحة على الجهاز الرئيسي.</string>
+    <string name="search_words_only">البحث بالكلمات فقط. البحث بالمعنى متوقف.</string>
+    <plurals name="parts_off">
+        <item quantity="zero">لا أجزاء متوقفة</item>
+        <item quantity="one">جزء واحد متوقف</item>
+        <item quantity="two">جزءان متوقفان</item>
+        <item quantity="few">%d أجزاء متوقفة</item>
+        <item quantity="many">%d جزءًا متوقفًا</item>
+        <item quantity="other">%d جزء متوقف</item>
+    </plurals>
     <string name="error_back">رجوع</string>
     <string name="error_sign_in_again">سجّل الدخول مجددًا</string>
     <string name="error_details">التفاصيل</string>

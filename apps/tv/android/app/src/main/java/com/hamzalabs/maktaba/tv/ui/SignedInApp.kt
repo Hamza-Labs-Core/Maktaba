@@ -16,6 +16,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.Capabilities
+import com.hamzalabs.maktaba.core.api.Feature
+import kotlinx.coroutines.flow.StateFlow
+import androidx.compose.runtime.collectAsState
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
@@ -27,6 +31,7 @@ import com.hamzalabs.maktaba.tv.ui.screens.HomeScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibrariesScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LibraryScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LivePlayerScreen
+import com.hamzalabs.maktaba.tv.ui.screens.LiveOffNote
 import com.hamzalabs.maktaba.tv.ui.screens.LiveScreen
 import com.hamzalabs.maktaba.tv.ui.screens.LiveState
 import com.hamzalabs.maktaba.tv.ui.screens.LocalChooseHome
@@ -47,21 +52,46 @@ sealed interface Place {
 /** The tab bar's sections, in order. */
 enum class TvTab { Home, Libraries, Search, Live, Account }
 
-/** The tabs shown: Live TV only when this user may watch a channel ([hasLive]). */
-fun tvTabs(hasLive: Boolean): List<TvTab> = TvTab.entries.filter { it != TvTab.Live || hasLive }
+/**
+ * The tabs shown: Live TV only when this user may watch a channel ([hasLive]). With Live TV off
+ * on the home ([features], story 51.11) a viewer has no Live TV tab, and an admin keeps it: its
+ * screen says Live TV is off and how to turn it on.
+ */
+fun tvTabs(hasLive: Boolean, features: Capabilities = Capabilities.AllOn): List<TvTab> {
+    val live = when {
+        features.explains(Feature.LIVE_TV) -> true
+        features.hides(Feature.LIVE_TV) -> false
+        else -> hasLive
+    }
+    return TvTab.entries.filter { it != TvTab.Live || live }
+}
 
-/** Signed in at a home: the tab bar (Home, Libraries, Search, Live TV, Account) and what opens from it. */
+/**
+ * Signed in at a home: the tab bar (Home, Libraries, Search, Live TV, Account) and what opens
+ * from it. [capabilities] are what the home has on (the session's).
+ */
 @Composable
-fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
+fun SignedInApp(
+    app: MaktabaTVApp,
+    user: User,
+    client: ApiClient,
+    capabilities: StateFlow<Capabilities> = app.session.capabilities,
+) {
     val api = remember(client) { TvApi(client) }
     val stack = remember(client) { mutableStateListOf<Place>(Place.Tabs) }
     val search = remember(client) { SearchState() }
     val live = remember(client) { LiveState() }
-    // Live TV shows once the home says this user has a channel to watch
+    val features by capabilities.collectAsState()
+    val liveOn = features.isOn(Feature.LIVE_TV)
+    // Live TV shows once the home says this user has a channel to watch (nothing asked while it is off)
     var hasLive by remember(client) { mutableStateOf(false) }
-    LaunchedEffect(api) { hasLive = api.hasChannels() }
-    val shown = tvTabs(hasLive)
+    LaunchedEffect(api, liveOn) { if (liveOn) hasLive = api.hasChannels() }
+    val offered = tvTabs(hasLive, features)
     var chosen by rememberSaveable { mutableStateOf(TvTab.Home) }
+    // a tab that goes while it is shown stays until another is chosen: an open screen is not torn down
+    val offeredBefore = remember(client) { mutableSetOf<TvTab>() }
+    offeredBefore += offered
+    val shown = if (chosen !in offered && chosen in offeredBefore) (offered + chosen).sortedBy { it.ordinal } else offered
     val tab = if (chosen in shown) chosen else TvTab.Home
     // a tab's first item takes focus at launch and back from a screen; not while the tab bar has it
     var focusContent by remember(client) { mutableStateOf(true) }
@@ -101,7 +131,11 @@ fun SignedInApp(app: MaktabaTVApp, user: User, client: ApiClient) {
                         TvTab.Home -> HomeScreen(api, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
                         TvTab.Libraries -> LibrariesScreen(api, focusFirst = focusContent, onOpen = { id, name -> open(Place.Library(id, name)) }, signedOut = signedOut)
                         TvTab.Search -> SearchScreen(api, search, focusFirst = focusContent, onOpen = { open(Place.Video(it)) }, signedOut = signedOut)
-                        TvTab.Live -> LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+                        TvTab.Live -> if (features.explains(Feature.LIVE_TV)) {
+                            LiveOffNote(client.home.toString(), focusFirst = focusContent)
+                        } else {
+                            LiveScreen(api, live, focusFirst = focusContent, onTune = { open(Place.LivePlayer(it)) }, signedOut = signedOut)
+                        }
                         TvTab.Account -> AccountScreen(app, user)
                     }
                 }

@@ -31,6 +31,26 @@
         }
       }
     },
+    "%@ is off on this home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ متوقفة على الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "%@ isn't available on this home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ غير متاحة على الجهاز الرئيسي."
+          }
+        }
+      }
+    },
     "%lld days" : {
       "localizations" : {
         "en" : {
@@ -198,6 +218,70 @@
                 "stringUnit" : {
                   "state" : "translated",
                   "value" : "%lld دقيقة"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld parts are off" : {
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld part is off"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld parts are off"
+                }
+              }
+            }
+          }
+        },
+        "ar" : {
+          "variations" : {
+            "plural" : {
+              "zero" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "لا أجزاء متوقفة"
+                }
+              },
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "جزء واحد متوقف"
+                }
+              },
+              "two" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "جزءان متوقفان"
+                }
+              },
+              "few" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld أجزاء متوقفة"
+                }
+              },
+              "many" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld جزءًا متوقفًا"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld جزء متوقف"
                 }
               }
             }
@@ -625,6 +709,16 @@
         }
       }
     },
+    "Searching by words only. Search by meaning is off." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث بالكلمات فقط. البحث بالمعنى متوقف."
+          }
+        }
+      }
+    },
     "Signing in to %@…" : {
       "localizations" : {
         "ar" : {
@@ -865,6 +959,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "تجربة %1$@ — %2$lld من %3$lld"
+          }
+        }
+      }
+    },
+    "Turn it on in Components" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شغّلها من صفحة المكوّنات"
           }
         }
       }

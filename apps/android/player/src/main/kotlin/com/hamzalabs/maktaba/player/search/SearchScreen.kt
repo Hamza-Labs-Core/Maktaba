@@ -66,6 +66,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.Passage
 import com.hamzalabs.maktaba.core.api.RecentSearch
 import com.hamzalabs.maktaba.core.api.TitleHit
@@ -82,6 +83,8 @@ import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.OnReselect
 import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 import com.hamzalabs.maktaba.player.shell.Route
+import com.hamzalabs.maktaba.player.shell.features
+import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.player.ui.components.HomePicture
 import com.hamzalabs.maktaba.player.ui.components.MissingPosterMark
 import com.hamzalabs.maktaba.player.ui.components.POSTER_ASPECT
@@ -107,13 +110,15 @@ private val ThumbWidth = 128.dp
 @Composable
 fun SearchScreen(nav: PlayerNavigator) {
     val home = LocalPlayerHome.current
-    val model = home.keep("search") { SearchModel(home.client, home.session::signedOut) }
-    SearchContent(model, home.client, nav)
+    val model = home.keep("search") {
+        SearchModel(home.client, home.session::signedOut).apply { meaningOn = { home.capabilities.value.isOn(Feature.SEMANTIC_SEARCH) } }
+    }
+    SearchContent(model, home.client, nav, wordsOnly = home.features().explains(Feature.SEMANTIC_SEARCH))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNavigator) {
+internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNavigator, wordsOnly: Boolean = false) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     OnReselect(nav) { expanded = false }
@@ -141,12 +146,12 @@ internal fun SearchContent(model: SearchModel, client: ApiClient, nav: PlayerNav
         HingeSplit(
             panes,
             first = {
-                SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { model.chosen = it }, play = play, selected = shown)
+                SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { model.chosen = it }, play = play, selected = shown, wordsOnly = wordsOnly)
             },
             second = { Box(Modifier.fillMaxSize().testTag("search-preview")) { Preview(shown, nav) } },
         )
     } else {
-        SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { nav.open(Route.Video(it)) }, play = play, selected = null)
+        SearchPane(model, client, expanded, { expanded = it }, submit, scope, openVideo = { nav.open(Route.Video(it)) }, play = play, selected = null, wordsOnly = wordsOnly)
     }
 }
 
@@ -173,6 +178,7 @@ private fun SearchPane(
     openVideo: (String) -> Unit,
     play: (String, Passage) -> Unit,
     selected: String?,
+    wordsOnly: Boolean = false,
 ) {
     Column(Modifier.fillMaxSize().testTag("search"), horizontalAlignment = Alignment.CenterHorizontally) {
         SearchBar(
@@ -214,6 +220,15 @@ private fun SearchPane(
                     recentItems(model, submit, onForget = { scope.launch { model.forget(it) } }, onClear = { scope.launch { model.clearRecent() } })
                 }
             }
+        }
+        // search by meaning off on the home (story 51.11): an admin reads why under the box
+        if (wordsOnly && !expanded) {
+            Text(
+                stringResource(CoreR.string.search_words_only),
+                Modifier.widthIn(max = ResultsMaxWidth).fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).testTag("search-words-only"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         if (!expanded) {
             Box(Modifier.widthIn(max = ResultsMaxWidth).fillMaxSize()) {

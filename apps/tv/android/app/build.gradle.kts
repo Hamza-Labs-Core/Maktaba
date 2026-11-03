@@ -68,7 +68,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // The code screen's tests run on the JVM (Robolectric): they need the app's resources, and
+    // The code screen's and the tab bar's (story 51.11) tests run on the JVM (Robolectric): they need
+    // the app's resources, and
     // Robolectric's native graphics for the screenshots.
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -110,6 +111,7 @@ dependencies {
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.espresso.core)
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)

@@ -5,6 +5,8 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hamzalabs.maktaba.core.api.Capabilities
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.ListScreens
 import com.hamzalabs.maktaba.player.harness.Window
@@ -37,6 +39,16 @@ class LiveSectionsTest {
         assertEquals(listOf(Libraries, Search), liveSections(three, hasChannels = false))
         assertEquals("until the home has said", listOf(Libraries, Search), liveSections(three, hasChannels = null))
         assertEquals("never an empty shell", listOf(LiveTv), liveSections(listOf(LiveTv), hasChannels = false))
+    }
+
+    @Test
+    fun liveTvOffIsHiddenFromAViewerAndKeptForAnAdmin() {
+        // story 51.11: whatever the channels say
+        val viewer = Capabilities(off = setOf(Feature.LIVE_TV))
+        val admin = Capabilities(off = setOf(Feature.LIVE_TV), admin = true)
+        assertEquals(listOf(Libraries, Search), liveSections(three, hasChannels = true, viewer))
+        assertEquals("the admin note shows there", three, liveSections(three, hasChannels = null, admin))
+        assertEquals("another feature off changes nothing", three, liveSections(three, hasChannels = true, Capabilities(off = setOf(Feature.YOUTUBE))))
     }
 
     @Test

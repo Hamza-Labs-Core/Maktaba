@@ -38,16 +38,24 @@ struct PlayerShell: View {
     @State private var windowPlayer = WindowPlayer()
     #endif
 
+    /// A link into Live TV while it is off for this viewer (story 51.11): Home, and a short
+    /// line saying Live TV isn't available on this home.
+    @State private var unavailable: Bool
+
     init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
          sections: [PlayerSection] = PlayerSection.visible(),
-         start: PlayerSection? = ShellLaunch.section(), route: PlayerRoute? = ShellLaunch.route()) {
+         start: PlayerSection? = ShellLaunch.section(), route: PlayerRoute? = ShellLaunch.route(),
+         liveTVHidden: Bool = false) {
         self.context = context
         _playing = playing
         _link = link
         self.sections = sections
+        let toLive: Bool = if start == .liveTV { true } else if case .channel = route { true } else { false }
+        let blocked = liveTVHidden && toLive
         let first = start.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first ?? .libraries
         _selection = State(initialValue: first)
-        _paths = State(initialValue: route.map { [first: [$0]] } ?? [:])
+        _paths = State(initialValue: (blocked ? nil : route).map { [first: [$0]] } ?? [:])
+        _unavailable = State(initialValue: blocked)
     }
 
     var body: some View {
@@ -66,6 +74,23 @@ struct PlayerShell: View {
         }
         .sheet(isPresented: Binding { linked != nil } set: { if !$0 { linked = nil } }) {
             if let linked { LinkedRouteSheet(context: context, route: linked) }
+        }
+        .overlay(alignment: .bottom) {
+            if unavailable {
+                Text(verbatim: FeatureWords.unavailable(.liveTV))
+                    .font(.maktabaBody(15, weight: .medium, relativeTo: .subheadline))
+                    .foregroundStyle(Color.mktText)
+                    .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    .padding(.vertical, MaktabaTokens.Spacing.s3)
+                    .background(Color.mktSurface, in: .capsule)
+                    .padding(.bottom, 88)
+                    .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    .accessibilityIdentifier("shell.unavailable")
+                    .task {
+                        try? await Task.sleep(for: .seconds(5))
+                        unavailable = false
+                    }
+            }
         }
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
         .playerMenuTarget(sections: sections, selection: chosen)

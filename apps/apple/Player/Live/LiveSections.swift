@@ -9,10 +9,15 @@ import SwiftUI
 ///
 /// At launch the shell waits for that answer a moment (up to `patience`), so a launch into
 /// Live TV lands there; a later change rebuilds the shell with the new sections.
+///
+/// With Live TV off on the home (`capabilities`, story 51.11) a viewer has no section and an
+/// admin keeps it (its screen explains); `content`'s second value says Live TV is left out
+/// because it is off, so a link into it can say so.
 struct LiveSectionGate<Content: View>: View {
     let client: APIClient
+    let capabilities: CapabilitiesStore
     var sections: [PlayerSection] = PlayerSection.visible()
-    @ViewBuilder let content: ([PlayerSection]) -> Content
+    @ViewBuilder let content: ([PlayerSection], Bool) -> Content
 
     @State private var hasChannels: Bool?
     @State private var waited = false
@@ -22,23 +27,33 @@ struct LiveSectionGate<Content: View>: View {
 
     var body: some View {
         Group {
-            if sections.contains(.liveTV), hasChannels == nil, !waited {
+            if sections.contains(.liveTV), hasChannels == nil, !waited, !liveTVOff {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.mktBackground)
             } else {
-                let shown = PlayerSection.shown(sections, hasChannels: hasChannels)
-                content(shown).id(shown)
+                let shown = PlayerSection.shown(sections, hasChannels: hasChannels, liveTVOff: liveTVOff,
+                                                admin: capabilities.current.isAdmin)
+                let hidden = liveTVOff && !shown.contains(.liveTV)
+                content(shown, hidden).id("\(shown)|\(hidden)")
             }
         }
-        .task(id: scenePhase) {
-            guard sections.contains(.liveTV), scenePhase == .active else { return }
+        // asked again when Live TV comes back on (51.11): the channels show without a relaunch
+        .task(id: LiveCheck(phase: scenePhase, off: liveTVOff)) {
+            guard sections.contains(.liveTV), scenePhase == .active, !liveTVOff else { return }
             await check()
         }
         .task {
             try? await Task.sleep(for: Self.patience)
             waited = true
         }
+    }
+
+    private var liveTVOff: Bool { !capabilities.current.isOn(.liveTV) }
+
+    private struct LiveCheck: Equatable {
+        let phase: ScenePhase
+        let off: Bool
     }
 
     private func check() async {

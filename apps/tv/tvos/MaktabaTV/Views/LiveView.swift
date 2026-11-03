@@ -71,6 +71,7 @@ struct LiveView: View {
     enum Mode: Hashable { case now, guide }
 
     @Environment(\.client) private var client
+    @Environment(\.appSession) private var session
     @State private var model = LiveModel()
     @State private var mode = Mode.now
     @State private var tuned: Tuned?
@@ -98,7 +99,16 @@ struct LiveView: View {
                 .padding(.top, 140)
 
                 Group {
-                    if model.loading && model.now.isEmpty {
+                    if let session, !session.capabilities.current.isOn(.liveTV) {
+                        // off on the home (51.11): an admin reads so and where to turn it on
+                        if session.capabilities.current.isAdmin, let client {
+                            FeatureOffNote(.liveTV, home: client.home)
+                                .frame(maxWidth: .infinity)
+                                .readingPanel(padding: 28)
+                        } else {
+                            ContentUnavailableView(ErrorStrings.forPreferredLanguages().text(.off), systemImage: "poweroff")
+                        }
+                    } else if model.loading && model.now.isEmpty {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 80)
                     } else if let problem = model.problem, model.now.isEmpty {
                         ErrorBanner(failure: problem) { Task { if let client { await model.load(client) } } }
@@ -120,8 +130,9 @@ struct LiveView: View {
             .padding(.bottom, 40)
         }
         .ignoresSafeArea(edges: .top)
-        .task {
-            guard let client else { return }
+        // not asked while Live TV is off on the home; asked again when it comes back on
+        .task(id: session?.capabilities.current.isOn(.liveTV) ?? true) {
+            guard let client, session?.capabilities.current.isOn(.liveTV) ?? true else { return }
             await model.keepFresh(client)
         }
         .fullScreenCover(item: $tuned) { t in

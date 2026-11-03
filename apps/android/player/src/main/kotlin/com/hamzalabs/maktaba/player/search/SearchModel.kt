@@ -79,6 +79,12 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
      */
     var chosen by mutableStateOf<String?>(null)
 
+    /**
+     * Whether search by meaning is on at the home (story 51.11): off, a search asks for keyword
+     * results only (`fts`). Until the home says, it is on.
+     */
+    var meaningOn: () -> Boolean = { true }
+
     private var generation = 0
 
     /** Asks for the suggestions for [q]; blank asks nothing. A failure keeps the list empty. */
@@ -94,7 +100,8 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
 
     /**
      * Runs [q] as typed (the client trims it; nothing else changes, so Arabic is sent as is) in
-     * hybrid mode. A newer submit wins over an older one still on its way.
+     * hybrid mode, or keyword only while search by meaning is off ([meaningOn]). A newer submit
+     * wins over an older one still on its way.
      */
     suspend fun submit(q: String = query) {
         if (q.isBlank()) return
@@ -106,7 +113,7 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
         searching = true
         problem = null
         try {
-            val r = client.search(q)
+            val r = client.search(q, mode = if (meaningOn()) "hybrid" else "fts")
             if (mine != generation) return
             answer = SearchAnswer(
                 q = r.q.ifEmpty { q.trim() },
@@ -115,7 +122,8 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
                 titlesTotal = maxOf(r.videosTotal, r.videos.size),
                 transcripts = r.transcriptVideos,
                 transcriptsTotal = maxOf(r.transcriptTotal, r.transcriptVideos.size),
-                degraded = r.degraded,
+                // meaning switched off is not a failure: nothing says the results are degraded
+                degraded = r.degraded && r.semantic != "off",
             )
         } catch (e: ApiException.SignedOut) {
             signedOut()

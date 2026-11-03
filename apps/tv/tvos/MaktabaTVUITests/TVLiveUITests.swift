@@ -143,6 +143,33 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(element("live.player").waitForNonExistence(timeout: 10))
     }
 
+    // MARK: Live TV off on the home (story 51.11)
+
+    /// T09: Live TV off and a viewer: no Live TV tab, the other tabs as always.
+    func testLiveTVOffHidesTheTabFromAViewer() throws {
+        home.capabilities(off: ["live_tv"], admin: false)
+        signIn("en")
+        XCTAssertTrue(app.tabBars.buttons["Home"].waitForExistence(timeout: 20), "the tabs")
+        XCTAssertTrue(wait(timeout: 15) { self.home.seen.contains("GET /api/capabilities") }, "the TV asked what is on")
+        XCTAssertTrue(wait(timeout: 10) { !self.app.tabBars.buttons["Live TV"].exists }, "no Live TV tab")
+        XCTAssertTrue(app.tabBars.buttons["Libraries"].exists)
+        XCTAssertTrue(app.tabBars.buttons["Search"].exists)
+        shot("tv-live-off-viewer")
+    }
+
+    /// Live TV off and an admin: the tab stays and says Live TV is off, and where to turn it on.
+    func testLiveTVOffExplainsItToAnAdmin() throws {
+        home.capabilities(off: ["live_tv"], admin: true)
+        signIn("en")
+        openLiveTab("Live TV")
+        let note = element("feature.off.live_tv")
+        XCTAssertTrue(note.waitForExistence(timeout: 20), "the admin note; the home saw \(home.seen)")
+        XCTAssertEqual(note.label, "Live TV is off on this home.")
+        XCTAssertTrue(element("feature.turnOn").label.contains("/settings/components"), "where to turn it on")
+        XCTAssertFalse(app.buttons["live.channel.ch-1"].exists, "no channels")
+        shot("tv-live-off-admin")
+    }
+
     // MARK: helpers
 
     /// A JWT (unsigned) whose `exp` is in 2100: MaktabaKit reads only its expiry.

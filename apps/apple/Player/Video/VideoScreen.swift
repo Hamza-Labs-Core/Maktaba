@@ -174,7 +174,8 @@ struct VideoScreen: View {
         } else if let problem = page.problem {
             HomeErrorView(problem, video: false) { _ in Task { await page.load() } }
         } else if let video = page.video {
-            VideoDetails(page: page, video: video, client: context.client, area: area)
+            VideoDetails(page: page, video: video, client: context.client, area: area,
+                         caps: context.session.capabilities.current)
                 .refreshable { await page.load() }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -188,6 +189,8 @@ private struct VideoDetails: View {
     let video: VideoInfo
     let client: APIClient
     let area: CGSize
+    /// What the home has on (51.11).
+    var caps: Capabilities = .allOn
 
     @Environment(\.dynamicTypeSize) private var typeSize
     private let gutter = MaktabaTokens.Spacing.s4
@@ -211,7 +214,12 @@ private struct VideoDetails: View {
                         .padding(.horizontal, gutter)
                         .accessibilityIdentifier("video.description")
                 }
-                if !page.chapters.isEmpty {
+                // chapters and the transcript: left out while off on the home, and explained
+                // to an admin (51.11)
+                if caps.shown(.chapters) == .explain {
+                    section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
+                    FeatureOffNote(.chapters, home: client.home, compact: true).padding(.horizontal, gutter)
+                } else if caps.isOn(.chapters), !page.chapters.isEmpty {
                     section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.chapters) { c in
@@ -221,7 +229,10 @@ private struct VideoDetails: View {
                         }
                     }
                 }
-                if !page.transcript.isEmpty {
+                if caps.shown(.transcripts) == .explain {
+                    section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
+                    FeatureOffNote(.transcripts, home: client.home, compact: true).padding(.horizontal, gutter)
+                } else if caps.isOn(.transcripts), !page.transcript.isEmpty {
                     section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.transcript) { s in

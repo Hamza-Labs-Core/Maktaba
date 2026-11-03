@@ -53,7 +53,12 @@ import androidx.tv.material3.Card
 import androidx.tv.material3.CardDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import androidx.compose.ui.platform.LocalContext
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.GuideAnswer
+import com.hamzalabs.maktaba.core.ui.featureOffSentence
+import com.hamzalabs.maktaba.core.ui.openComponents
+import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.core.api.NowAnswer
 import com.hamzalabs.maktaba.core.api.NowEntry
@@ -419,6 +424,29 @@ private fun ProgrammeSheet(channel: LiveChannel, p: Programme, onWatch: () -> Un
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * The Live TV tab for an admin while Live TV is off on the home (story 51.11): that it is off,
+ * and a button that opens the home's Components page in the browser, where it is turned on.
+ */
+@Composable
+fun LiveOffNote(homeUrl: String, focusFirst: Boolean) {
+    val context = LocalContext.current
+    val button = remember { FocusRequester() }
+    LaunchedEffect(focusFirst) { if (focusFirst) runCatching { button.requestFocus() } }
+    Centered {
+        Text(
+            featureOffSentence(Feature.LIVE_TV),
+            style = MaterialTheme.typography.titleLarge,
+            color = MaktabaPalette.Text,
+            modifier = Modifier.testTag("feature-off-${Feature.LIVE_TV}"),
+        )
+        Spacer(Modifier.height(20.dp))
+        MaktabaButton(onClick = { openComponents(context, homeUrl) }, modifier = Modifier.focusRequester(button).testTag("feature-turn-on")) {
+            Text(stringResource(CoreR.string.feature_turn_on))
         }
     }
 }

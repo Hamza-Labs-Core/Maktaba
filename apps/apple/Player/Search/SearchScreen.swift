@@ -15,12 +15,28 @@ struct SearchScreen: View {
     init(context: PlayerContext) {
         self.context = context
         let session = context.session
-        _model = State(initialValue: SearchModel(client: context.client) { session.signedOut() })
+        _model = State(initialValue: SearchModel(client: context.client,
+                                                 byMeaning: { session.capabilities.current.isOn(.semanticSearch) }) { session.signedOut() })
     }
+
+    private var caps: Capabilities { context.session.capabilities.current }
 
     var body: some View {
         @Bindable var model = model
         content
+            // search by meaning off: words only, and an admin reads so under the field (51.11)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if caps.shown(.semanticSearch) == .explain {
+                    Text(verbatim: FeatureWords.wordsOnly)
+                        .font(.maktabaBody(13, relativeTo: .footnote))
+                        .foregroundStyle(Color.mktMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                        .padding(.vertical, MaktabaTokens.Spacing.s2)
+                        .background(Color.mktBackground)
+                        .accessibilityIdentifier("search.wordsOnly")
+                }
+            }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("screen.search")
             .maktabaSurface()
@@ -75,7 +91,7 @@ struct SearchScreen: View {
                 }
                 .accessibilityIdentifier("search.none")
             } else {
-                ResultsList(results: results, home: context.client.home, paging: model.paging,
+                ResultsList(results: results, home: context.client.home, byMeaning: caps.isOn(.semanticSearch), paging: model.paging,
                             moreTitles: { Task { await model.moreTitles() } },
                             moreTranscripts: { Task { await model.moreTranscripts() } })
             }
@@ -176,13 +192,15 @@ private struct SearchHeading: View {
 private struct ResultsList: View {
     let results: SearchModel.Results
     let home: URL
+    /// Search by meaning is on: words-only results while it is off are no failure to report.
+    let byMeaning: Bool
     let paging: Bool
     let moreTitles: () -> Void
     let moreTranscripts: () -> Void
 
     var body: some View {
         List {
-            if results.degraded {
+            if results.degraded, byMeaning {
                 Text("Text matches only: the meaning search did not answer.", tableName: "Search",
                      comment: "The home answered a search with its text half only")
                     .font(.maktabaBody(13, relativeTo: .footnote))
