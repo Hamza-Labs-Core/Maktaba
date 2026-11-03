@@ -42,7 +42,12 @@ calls the Remote makes (`Admin.swift`).
   cloud and the cloud itself gives that address for the home (an address the home announced
   is never handed an assertion), else on the sign-in screen. Signing in: a username and password, or **with a code** the app
   shows (large, with a QR code) until a signed-in device approves it. Every account menu has
-  **Approve a sign-in**: type or scan another device's code, see what asks, approve it.
+  **Approve a TV or device** (it was "Approve a sign-in"): type or scan another device's code,
+  see what asks, approve it. The Remote also has it as a button on every screen's toolbar, and
+  a banner at the top while a TV waits (`GET /api/pairing/pending`, read every 12 s while the
+  app is in front; Enter code opens it, Dismiss hides it until another device asks). The
+  device showing the code says where that button is, that a phone found it (`looked_up`), how
+  long the code lasts, and offers Get a new code.
   English and Arabic (right to left) after the person's first language.
 - **Player** (iPhone, iPad, Mac): libraries → videos → a video's page → play. Playback goes
   through `StreamProxy` (every `/stream/` request carries a fresh Bearer token). The layout is
