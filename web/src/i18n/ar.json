@@ -4478,6 +4478,8 @@
   "rules.tv.loudnorm_mode.help": "speechnorm: يُسوّى الكلام أثناء التشغيل دون أي تأخير، فتُفتح القناة بسرعة (كما يفعل dizqueTV). loudnorm: معيار EBU R128 حتى الهدف أدناه، مع نحو 3 ثوانٍ من الاستباق. dynaudnorm: مُسوٍّ ديناميكي ألطف، وفيه استباق أيضًا. يُسوّى صوت البرامج والفواصل فقط، ولا يُمسّ صمت الشاشة الانتظارية أبدًا.",
   "rules.tv.speechnorm_expansion.label": "حدّ رفع الكلام",
   "rules.tv.speechnorm_expansion.help": "يرفع مرشّح speechnorm المقطع الهادئ بهذا العدد من المرات على الأكثر (dizqueTV: 6.25).",
+  "rules.tv.watermark_skip_filler.label": "بلا شعار الزاوية في الحشو",
+  "rules.tv.watermark_skip_filler.help": "مُطفأ (الافتراضي): الشعار على كل فقرة. مُشغَّل: تُبثّ مقاطع الحشو والفواصل دونه، كما في dizqueTV.",
   "tvchanges.progress.draftFailed": "فشلت الفحوص: أصلحه أو اعتمده من جديد",
   "tvchanges.event.append": "أُضيف تحديث",
   "tvchanges.update.joined": "انضم إليه التغيير #{n}",

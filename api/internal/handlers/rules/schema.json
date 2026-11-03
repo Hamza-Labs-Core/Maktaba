@@ -3443,8 +3443,8 @@
      "kind": "bool",
      "group": "Maktaba TV",
      "label": "No corner logo on filler",
-     "help": "Filler clips and bumpers air without the channel's corner logo, as dizqueTV; programmes and live broadcasts always carry it. Off: the logo on every block.",
-     "default": true
+     "help": "Off (default): the logo on every block. On: filler clips and bumpers air without it, as dizqueTV.",
+     "default": false
     },
     {
      "name": "horizon_days",

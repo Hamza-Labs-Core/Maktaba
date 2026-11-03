@@ -84,7 +84,10 @@ TOPIC_VERSION = 1
 PROMO_VERSION = 1
 CLIP_GROUPS_VERSION = 1
 YT_SYNC_VERSION = 1
-CH_WRITE_VERSION = 4  # 3: look.watermark_skip_filler; 4: look.loudnorm filter, expansion
+#: 3: look.watermark_skip_filler; 4: look.loudnorm filter, expansion; 5: the corner logo on
+#: filler by default (rules tv.watermark_skip_filler off): the version sweep runs the stage
+#: again, which re-stages every channel whose stored look differs from the effective one
+CH_WRITE_VERSION = 5
 #: exact_dates / repair_broken (plan 06-11, mediaintel parity)
 EXACT_DATES_VERSION = 1
 REPAIR_VERSION = 1
