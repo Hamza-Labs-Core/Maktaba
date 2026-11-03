@@ -171,6 +171,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri -> target
+          # pull requests and tags restore main's build; only a push to main saves
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v6.0.8
@@ -182,8 +184,15 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       # Build the shared web bundle that the Tauri shell wraps. Cross-OS
       # safe (no `make`, which is absent on the Windows runner): install,
@@ -199,11 +208,15 @@ jobs:
         if: matrix.payload || matrix.linux_payload
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cmd/maktaba-server/go.sum
-            cmd/maktaba-launcher/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        if: matrix.payload || matrix.linux_payload
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       - uses: astral-sh/setup-uv@v8.1.0
         if: matrix.payload || matrix.linux_payload
@@ -213,18 +226,25 @@ jobs:
           version: "0.13.4"
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
-      - uses: actions/cache@v4
+      # restore only: the entries main's CI saved (_mac-app.yml, _win-app.yml, _linux-app.yml)
+      - id: downloads-cache
+        uses: actions/cache/restore@v4
         if: matrix.payload
         with:
           path: build/${{ matrix.payload }}/downloads
           key: ${{ matrix.payload }}-downloads-${{ hashFiles(format('tools/release/{0}/pins.env', matrix.payload)) }}
 
-      - uses: actions/cache@v4
+      - id: linux-downloads-cache
+        uses: actions/cache/restore@v4
         if: matrix.linux_payload
         with:
           path: build/linux-app/downloads
-          key: linux-app-downloads-${{ runner.arch }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          key: linux-app-downloads-${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}-${{ hashFiles('tools/release/linux-app/pins.env') }}
+          # an earlier pins.env's too: payload.sh checks every file and downloads what changed
+          restore-keys: linux-app-downloads-${{ runner.arch == 'ARM64' && 'aarch64' || 'x86_64' }}-
 
       # The Developer ID certificate in a throwaway keychain; its identity is
       # what payload.sh and tauri sign with. Imported after the
@@ -605,6 +625,20 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      # Gradle's own cache action, read-only: a tag's entries are seen by that tag alone, and
+      # each would push main's out of the repository's 10 GB cache. It restores the Gradle User
+      # Home main's Desktop Player job saved (_desktop-player.yml; the job key names that job)
+      # for this OS, with its dependency, wrapper and compiled-script entries.
+      - name: Gradle caches
+        uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          GRADLE_BUILD_ACTION_CACHE_KEY_JOB: desktop-player
+        with:
+          cache-read-only: true
+          add-job-summary: on-failure
+          # the step above checks the wrapper jar
+          validate-wrappers: false
+
       - name: Packaging tools (rpm)
         if: runner.os == 'Linux'
         run: sudo apt-get update -qq && sudo apt-get install -y -qq rpm fakeroot
@@ -722,7 +756,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: tools/release/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
       - name: Download the checked bundles
         uses: actions/download-artifact@v8.0.1

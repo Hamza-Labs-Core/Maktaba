@@ -77,8 +77,16 @@ jobs:
         if: steps.secrets.outputs.ok == 'true'
         with:
           node-version-file: web/packages/devportal/.nvmrc
-          cache: npm
-          cache-dependency-path: web/packages/devportal/package-lock.json
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: npm cache
+        id: npm-cache
+        if: steps.secrets.outputs.ok == 'true'
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: npm
+          lock-hash: ${{ hashFiles('web/packages/devportal/package-lock.json') }}
 
       # wrangler at the version package-lock.json pins
       - name: Install
@@ -134,3 +142,11 @@ jobs:
           code=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' https://www.maktaba.dev/ || true)
           echo "www: $code"
           case "$code" in "301 https://maktaba.dev/") ;; *) echo "::error::www.maktaba.dev does not redirect to https://maktaba.dev/"; exit 1 ;; esac
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the npm cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.npm-cache.outputs.key != '' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.npm-cache.outputs.path }}
+          key: ${{ steps.npm-cache.outputs.key }}

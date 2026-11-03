@@ -29,8 +29,15 @@ jobs:
       - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/packages/devportal/.nvmrc
-          cache: npm
-          cache-dependency-path: web/packages/devportal/package-lock.json
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: npm cache
+        id: npm-cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: npm
+          lock-hash: ${{ hashFiles('web/packages/devportal/package-lock.json') }}
 
       - name: Install
         run: npm ci --no-audit --no-fund
@@ -57,3 +64,11 @@ jobs:
           include-hidden-files: true # dist/.well-known/security.txt
           if-no-files-found: error
           retention-days: 7
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the npm cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.npm-cache.outputs.key != '' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.npm-cache.outputs.path }}
+          key: ${{ steps.npm-cache.outputs.key }}

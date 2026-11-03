@@ -20,6 +20,8 @@
 
 _ci: &ci
   - '.github/workflows/ci.yml'
+  # the composite actions the jobs share (the Go and Node caches): a change can change any job
+  - '.github/actions/**'
 
 _make: &make
   - 'Makefile'
