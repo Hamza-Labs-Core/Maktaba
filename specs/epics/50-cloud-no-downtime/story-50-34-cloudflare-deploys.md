@@ -61,7 +61,9 @@ and the two zones (README §15.6 repeats the table for the owner):
 | Broadcast edge (50.21, later) | Workers Scripts: Edit, Workers R2 Storage: Edit | `maktaba.tv`: Workers Routes: Edit, DNS: Edit |
 
 - **Not in the CI token:** the nodes' DNS-01 token (50.02, DNS Edit on `maktaba.tv` only, kept
-  on the nodes) and the Tunnel's own token (50.31, lets one `cloudflared` connect, nothing else).
+  on the nodes), the Tunnel's own token (50.31, lets one `cloudflared` connect, nothing else),
+  and the plugin store's deploy token (Epic 54: the store deploys itself with its own token,
+  separate from the cloud's DNS-edit token).
 - **Splitting later.** If the owner prefers one token per piece, each workflow reads its own
   secret name (`CLOUDFLARE_API_TOKEN_ZONE`, `…_WORKERS`) falling back to `CLOUDFLARE_API_TOKEN`;
   the code supports both from the start.

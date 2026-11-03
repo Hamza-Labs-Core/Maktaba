@@ -1110,9 +1110,11 @@ Until then `broadcast.enabled = false`, except for test publishers an admin gran
 > - The operator console signs staff in with **Maktaba's own auth**, made stronger for staff
 >   (mandatory MFA, short sessions, re-authentication, lockout, audit). No Cloudflare Access or
 >   Zero Trust identity layer is used.
-> - The **plugin store** is a separate service with its own accounts, auth, payments and
->   hostname (Epic 54). It sits behind the same Cloudflare proxy, but none of its routes, roles
->   or accounts live in the cloud API or in this console.
+>
+> The **plugin store** is a separate service on Cloudflare, at `plugins.maktaba.tv` with signed
+> files on `plugins-cdn.maktaba.tv`, with its own accounts, auth, payments and admin pages
+> (`plugins.maktaba.tv/admin`, Epic 54). It sits behind the same Cloudflare proxy, but none of
+> its routes, roles or accounts live in the cloud API or in this console.
 
 ### 15.1 What it is, and what changes
 
@@ -1129,7 +1131,7 @@ After this section:
 
 | | Before | After |
 |---|---|---|
-| User names (`app.maktaba.tv`, `api.maktaba.tv`, `maktaba.tv/developers`) | proxied; origin open on the Floating IP | proxied; **WAF managed rules, rate limits, Turnstile on the auth pages**; origin only through the **Tunnel** (50.30, 50.31) |
+| User names (`app.maktaba.tv`, `api.maktaba.tv`) | proxied; origin open on the Floating IP | proxied; **WAF managed rules, rate limits, Turnstile on the auth pages**; origin only through the **Tunnel** (50.30, 50.31) |
 | Operator console | `/admin` inside the user web app; `/v1/admin/*` on every API name | **`admin.maktaba.tv` only**, with its own bundle, listener, cookies and CSP; `/v1/admin/*` is **404 on every user name** (50.32) |
 | Who can operate | a customer account with `role = service_admin`, password only | a **staff account**, separate from customer accounts, **MFA required** (passkey or TOTP), 15-minute idle timeout, 8-hour cap, re-authentication for sensitive actions, lockout, an audit row for every sign-in and action, an optional IP allow-list (50.33) |
 | Client IP | `CF-Connecting-IP` when `trust_proxy_headers` is on, from any peer | `CF-Connecting-IP` **only from a trusted peer** (the local `cloudflared`, or the fallback's checked proxy); otherwise the TCP peer (50.31) |
@@ -1142,7 +1144,7 @@ After this section:
         │                                                        │
         ▼                                                        ▼
  ┌──────────────────────────── Cloudflare (maktaba.tv zone) ───────────────────────────────┐
- │ app.maktaba.tv, maktaba.tv/developers      api.maktaba.tv         admin.maktaba.tv        │
+ │ app.maktaba.tv                             api.maktaba.tv         admin.maktaba.tv        │
  │   TLS · WAF managed rules · custom rules · rate limits · Turnstile on the auth pages      │
  │ Worker maktaba-cloud-web (user bundle)     (no Worker)            Worker maktaba-admin-web│
  │   /v1/* passed to the origin ──┐               │                  (admin bundle)          │
@@ -1168,10 +1170,10 @@ After this section:
 - **The relay's Caddy is the only public web listener** on the node (443, and 80 for the
   redirect), next to UDP/TCP 53 for the direct-name responder (50.15). It serves relay names
   only: any other `Host` gets no certificate and no answer.
-- **The plugin store** (Epic 54) is its own service on its own hostname, behind the same proxy
-  and its own Tunnel route or origin. Its WAF and rate-limit rules live in the same zone file
-  (50.30) because they share the zone's rule budget; its accounts, auth and review roles are
-  not part of this section.
+- **The plugin store** (Epic 54) is its own service on Cloudflare (`plugins.maktaba.tv`,
+  `plugins-cdn.maktaba.tv`), not on the Hetzner nodes and not behind this Tunnel. Its WAF and
+  rate-limit rules share the zone's rule budget, so the zone file (50.30) counts them; its
+  accounts, auth, review and admin pages are not part of this section.
 
 ### 15.3 Requirements
 
@@ -1253,6 +1255,7 @@ deploy job says so and skips, and main stays green (50.34).
 | Per-hostname Authenticated Origin Pulls certificate (50.31's fallback only) | `cloudflare-zone.yml` | Zone `maktaba.tv`: SSL and Certificates Edit. |
 | Broadcast edge (50.21, later) | `broadcast-edge.yml` | Account: Workers Scripts Edit, Workers R2 Storage Edit. Zone `maktaba.tv`: Workers Routes Edit, DNS Edit (custom domains). |
 | DNS-01 certificates on the nodes (50.02) | none: a **separate** token kept on the nodes | Zone `maktaba.tv`: DNS Edit only. Never the CI token. |
+| The plugin store (Epic 54) | the store's own workflows | **its own deploy token**, set up with Epic 54; separate from the nodes' DNS-edit token and not one of the cloud's rows here. |
 
 One token holds the CI rows (their union, limited to this account and the two zones). The
 Tunnel's own credential (`CLOUDFLARE_TUNNEL_TOKEN`) is not an API token: it only lets a

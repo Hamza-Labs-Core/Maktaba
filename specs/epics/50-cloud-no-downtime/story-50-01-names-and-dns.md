@@ -22,8 +22,10 @@ back.
 |---|---|---|---|---|---|
 | `maktaba.tv`, `www.maktaba.tv` | marketing site (as today) | proxied | auto | people | — |
 | `api.maktaba.tv` | the Cloudflare Tunnel (`<tunnel-id>.cfargotunnel.com`, 50.31) | **proxied** | auto | apps, homes (claim, entitlements, home list) | 1 |
-| `app.maktaba.tv`, route `maktaba.tv/developers*` | the user web Worker, `/v1/*` passed through the Tunnel (50.32) | proxied | auto | cloud web app | 1 |
+| `app.maktaba.tv` | the user web Worker, `/v1/*` passed through the Tunnel (50.32) | proxied | auto | cloud web app | 1 |
 | `admin.maktaba.tv` | the admin web Worker, `/v1/*` passed through the Tunnel (50.32) | proxied | auto | the operator console (staff only, 50.33) | 1 |
+| `plugins.maktaba.tv` | the plugin store's Workers (Epic 54), **on Cloudflare, not on Hetzner** | proxied | auto | the store: catalog API, developer console (`/developers`), review and store admin (`/admin`), with its own accounts and auth | 54 |
+| `plugins-cdn.maktaba.tv` | the store's signed files on Cloudflare (Epic 54), **not on Hetzner** | proxied | auto | homes downloading signed plugin files | 54 |
 | `relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | homes' tunnel (`/v1/relay/ws`) | 1 |
 | `*.relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | apps reaching a home: `<slug>.relay.maktaba.tv` | 1 |
 | `canary.relay.maktaba.tv` | covered by the wildcard | DNS only | — | the canary home (50.10); a reserved slug | 1 |
@@ -44,8 +46,16 @@ Rules:
   never needs a DNS change. The 300 s TTL matters only for the manual zone-disaster path
   (50.09), where it caps how long the DNS change takes to spread.
 - Phase 2 relay names use **60 s** because the witness removes a dead relay's record.
-- Slugs `canary`, `status`, `api`, `app`, `admin`, `www`, `r1`…`r99`, `direct`, `staging` are added to
-  the reserved list (story 25.22) so no home can take them.
+- Slugs `canary`, `status`, `api`, `app`, `admin`, `www`, `plugins`, `plugins-cdn`,
+  `r1`…`r99`, `direct`, `staging` are added to the reserved list (story 25.22) so no home can
+  take them.
+- **The plugin store is not on Hetzner.** `plugins` and `plugins-cdn` are Cloudflare-hosted
+  (Epic 54); a Hetzner outage doesn't touch them, and nothing in this epic's failover moves
+  them. The store's Cloudflare deploy token is its own, separate from the nodes' DNS-edit
+  token (50.02) and from the cloud's CI token (50.34).
+- **Cookies are host-only.** No cloud cookie is ever set with `Domain=.maktaba.tv`, so a cloud
+  session never reaches a home on `*.relay.maktaba.tv`, the store on `plugins.maktaba.tv`, or the
+  operator console (50.32 §4).
 - **Direct names are never under `maktaba.tv`** (owner decision, 2026-11-03; README §13
   decision 5). They live on **several separate registered domains used only for direct names**
   (3–4 to start), each delegated by `NS` at its registrar to the cloud's own DNS responder
@@ -105,7 +115,7 @@ reason.
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
 | T01 | unit (shell) | `tools/lint/no-foreign-domains-test.sh` | hostname, bundle ID, `io.` ID, URL in a comment | fail, pass, pass, fail |
-| T02 | unit | reserved list | claim `canary`, `r12`, `direct` | `409 subdomain_reserved` |
+| T02 | unit | reserved list | claim `canary`, `r12`, `direct`, `plugins` | `409 subdomain_reserved` |
 | T03 | CI | `ci.yml` lint job on a PR | add a `maktaba.app` URL | job fails |
 
 ## Edge cases

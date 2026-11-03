@@ -201,7 +201,7 @@ broadcasting gate is in §14.11.
 
 ## Cloudflare in front (README §15)
 
-The user portal (`app.maktaba.tv`, `maktaba.tv/developers`, `api.maktaba.tv`) and the operator
+The user portal (`app.maktaba.tv`, `api.maktaba.tv`) and the operator
 console (`admin.maktaba.tv`, its own hostname) sit behind the Cloudflare proxy: TLS, WAF
 managed rules, rate limits on sign-in, sign-up and the API, and Turnstile on the auth pages.
 The origin is reached only through a Cloudflare Tunnel from the database leader, and the API

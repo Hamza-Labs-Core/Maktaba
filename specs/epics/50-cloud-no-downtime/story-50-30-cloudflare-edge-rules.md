@@ -5,7 +5,7 @@
 
 ## Why
 
-The user portal (`app.maktaba.tv`, `maktaba.tv/developers`, `api.maktaba.tv`) and the operator
+The user portal (`app.maktaba.tv`, `api.maktaba.tv`) and the operator
 console (`admin.maktaba.tv`) sit behind the Cloudflare proxy (README §15). The proxy only helps
 if its settings are right and stay right: TLS on, the WAF's managed rules on, rate limits on the
 routes attackers hammer (sign-in, sign-up, password reset, the API), and a bot check on the auth
@@ -60,7 +60,7 @@ settings. It names the plan it is written for (`"plan": "pro"`, README §15.7) a
 Rules 1 and 2 repeat at the edge what the origin already enforces (50.32), so a mistake in one
 place is caught by the other.
 
-The plugin store's rules (Epic 54, its own hostname) go in the same file when the store is
+The plugin store's rules (Epic 54, `plugins.maktaba.tv` and `plugins-cdn.maktaba.tv`) go in the same file when the store is
 built, because they share the zone's rule counts; this story leaves room for them (Pro: 15 of
 20 custom rules free after the rows above).
 

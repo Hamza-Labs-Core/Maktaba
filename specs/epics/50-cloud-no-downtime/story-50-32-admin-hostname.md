@@ -65,7 +65,7 @@ assets, deployed by CI (50.34):
 
 | Worker | Routes | Assets | Passed to the origin (`fetch(request)`, through the Tunnel) | Everything else |
 |---|---|---|---|---|
-| `maktaba-cloud-web` (`web/packages/cloud-web/`, new) | `app.maktaba.tv/*`, `maktaba.tv/developers*` | `dist-cloud/` | `/v1/*` except `/v1/admin/*` and `/v1/staff/*` (those are 404 here); `/.well-known/*` | assets, SPA fallback |
+| `maktaba-cloud-web` (`web/packages/cloud-web/`, new) | `app.maktaba.tv/*` | `dist-cloud/` | `/v1/*` except `/v1/admin/*` and `/v1/staff/*` (those are 404 here); `/.well-known/*` | assets, SPA fallback |
 | `maktaba-admin-web` (`web/packages/admin-web/`, new) | `admin.maktaba.tv/*` | `dist-admin/` | `/v1/staff/*`, `/v1/admin/*`, `/healthz` | assets, SPA fallback; any other `/v1/*` is 404 |
 
 - They are **routes on proxied names, not custom domains**: the hostnames' DNS records point at
@@ -85,7 +85,8 @@ assets, deployed by CI (50.34):
 
 - The `__Host-` prefix makes the browser refuse either cookie if anything tries to give it a
   `Domain`, so neither can be widened to `.maktaba.tv` and reach a home on `*.relay.maktaba.tv`
-  (the account-takeover bug the cloud docs list as fixed).
+  (the account-takeover bug the cloud docs list as fixed) or the plugin store on
+  `plugins.maktaba.tv`. No cloud cookie ever carries `Domain=.maktaba.tv`.
 - Different names and different hosts: the staff cookie is never sent to a user name, and a
   user's cookie is never sent to `admin.maktaba.tv`.
 - **CSRF on the admin host:** a state-changing request must carry
@@ -97,7 +98,7 @@ Set by each Worker on assets and passed-through responses, and by the API on its
 
 | Host | `Content-Security-Policy` |
 |---|---|
-| `app.maktaba.tv`, `maktaba.tv/developers` | `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self' data: https:; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` |
+| `app.maktaba.tv` | `default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self' data: https:; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` |
 | `admin.maktaba.tv` | `default-src 'none'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self' data:; style-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'` |
 | `api.maktaba.tv` (JSON) | `default-src 'none'; frame-ancestors 'none'` |
 
@@ -166,9 +167,10 @@ The console's existing strings move unchanged. New ones:
   "This page doesn't exist", not a redirect: the user app doesn't know the console's address.
 - **One person is both a customer and staff.** They are two accounts (50.33); each host has its
   own cookie, so being signed in on one says nothing on the other.
-- **The developer console at `maktaba.tv/developers`** (Epic 54) is a user page in the user
-  bundle. The plugin store's review pages are the store's own (its own hostname and auth), not
-  this console's.
+- **The plugin store** (Epic 54) is not in either bundle: its developer console
+  (`plugins.maktaba.tv/developers`) and its review and admin pages (`plugins.maktaba.tv/admin`)
+  are the store's own, on its own hostname with its own accounts and auth. `admin.maktaba.tv`
+  hosts no store review.
 - **The admin Worker is down** (a bad deploy). The console is unreachable; the API keeps
   serving users. `wrangler rollback` restores the previous version (50.34).
 
