@@ -75,8 +75,8 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
    (Epic 53).
 5. **A Maktaba store.** Developer accounts, submission, automated checks and human review,
    signing by the developer and by Maktaba, a revocation list homes honour, free and paid
-   plugins (the payment provider is chosen at Phase 3, §6.5), ratings and reports. Users browse on maktaba.tv and in the web app;
-   developers read docs on maktaba.dev.
+   plugins (the payment provider is chosen at Phase 3, §6.5), ratings and reports. Users
+   browse on maktaba.tv and in the web app; developers read docs on maktaba.dev.
 6. **Offline still works.** A plugin installs from a file. A store-signed file installs like
    one from the store. An unsigned or developer-only file needs the admin's opt-in and is
    marked "Unreviewed" everywhere. The sandbox is the same either way.
@@ -242,8 +242,7 @@ useless off the box.
 - The manifest marks each capability `required` or `optional`. At install the admin sees them
   in plain words (English and Arabic, from Maktaba's strings, not the plugin's), picks the
   libraries (**none ticked**: the admin ticks each one; owner decision 2026-11-03), and can
-  untick optional ones. The plugin is told which it
-  has (`job.grants()`).
+  untick optional ones. The plugin is told which it has (`job.grants()`).
 - **A plugin's rating** is shown like Home Assistant's add-on rating: from the capabilities it
   asks for and whether the store reviewed it (story 54.08).
 - **An update that asks for more** installs but waits (Epic 51 *Waiting*, reason
@@ -556,7 +555,7 @@ sale and the developer gets **85 %**; publishing free plugins is free, selling n
   2. **Maktaba as seller** with a marketplace payment provider such as **Adyen for
      Platforms**, and Maktaba files the VAT and sales tax;
   3. **Developers sell directly** on their own checkout, and Maktaba verifies their licence
-     keys offline (no money passes through Maktaba).
+     keys offline (the buyer pays the developer; Maktaba invoices its 15 %).
 
   Story 54.19 is written against a `PaymentProvider` interface so any of the three fits.
 - **Split:** developer 85 %, Maktaba 15 % of the price.
