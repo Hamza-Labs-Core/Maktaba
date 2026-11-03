@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 138,
+    "endpoint": 139,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -6532,6 +6532,27 @@
         "path": "/queues/libraries",
         "tag": "Queue",
         "operationId": "getQueueLibraries"
+      }
+    },
+    {
+      "id": "ep-get-queues-libraries-activity",
+      "type": "endpoint",
+      "title": "GET /queues/libraries/activity",
+      "content": "Each library's finished jobs per day (cached 1 min)",
+      "tags": [
+        "api",
+        "Queue",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/queues/libraries/activity",
+        "tag": "Queue",
+        "operationId": "getQueueLibraryActivity"
       }
     },
     {

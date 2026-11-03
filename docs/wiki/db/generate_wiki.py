@@ -14,13 +14,28 @@ Reads (all repo-relative, found from this file's own path, so it runs from any d
   docs/wiki/db/curated.json the hand-kept data the specs do not carry (epic names, phases
                             and engines, hand-written summaries, the implementation
                             phases, the cross-reference inventory). Edit it, not the output.
+  docs/wiki/db/ar/*.json    the Arabic of every entry's text (the translation store, see
+                            "Arabic" below)
+  shared/api/openapi.ar.json the Arabic of the endpoints' summaries, where it has them
 
 Writes:
   web/wiki-app/public/db/wiki.json              meta, its parts, and every entry that is not
                                                 a story or a plan
   web/wiki-app/public/db/wiki-epics-NN-MM.json  the stories and plans of epics NN to MM
   web/wiki-app/public/db/wiki-cross-refs.json   the cross-reference inventory
+  web/wiki-app/public/db/ar/*.json              the same files in Arabic (maktaba.dev/ar/wiki/)
   docs/wiki/db/wiki-schema.json                 the JSON schema
+
+Arabic: every entry's title and content (and an epic's engine) has its Modern Standard Arabic
+in the translation store, docs/wiki/db/ar/: epic-NN.json for Epic NN, its stories and plans,
+and common.json for the rest. Each text is keyed by entry id and field, and records `hash`,
+the first 16 hex digits of the SHA-256 of the English it translates. --check fails when an
+English text has no Arabic, when its English changed since it was translated, when the
+Arabic dropped a piece of code, or when it is mostly Latin prose; each finding names the
+file, the entry and the field. To see what needs translating, with the English and the hash
+to record:
+
+    python3 docs/wiki/db/generate_wiki.py --ar-todo [--epic NN]
 
 The output is deterministic (no timestamps), so --check compares bytes. CI runs --check
 (.github/workflows/ci.yml, the wiki job) whenever a spec, a mockup, the OpenAPI description or
@@ -39,11 +54,18 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import wiki_ar  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[3]
 SPECS = REPO / "specs"
 CURATED = REPO / "docs" / "wiki" / "db" / "curated.json"
 OUT_DB = REPO / "web" / "wiki-app" / "public" / "db"
 SCHEMA_OUT = REPO / "docs" / "wiki" / "db" / "wiki-schema.json"
+AR_STORE = REPO / "docs" / "wiki" / "db" / "ar"
+OUT_DB_AR = OUT_DB / "ar"
+OPENAPI_AR = REPO / "shared" / "api" / "openapi.ar.json"
 
 # Epics per wiki-epics-NN-MM.json part file.
 PART_SIZE = 9
@@ -286,8 +308,22 @@ def scrub(v):
 # Build
 # ---------------------------------------------------------------------------
 
+DESCRIPTION = ("Self-hosted media intelligence platform: full Plex alternative + "
+               "every-word-searchable transcripts. See specs/architecture.md.")
 
-def build() -> dict[Path, str]:
+
+class Built:
+    """The files to write (path -> text), and the Arabic drift check's findings and to-do."""
+
+    def __init__(self, files: dict[Path, str], ar: wiki_ar.Translated) -> None:
+        self.files = files
+        self.findings = ar.findings
+        self.todo = ar.todo
+        self.translated = ar.translated
+        self.total = len(ar.entries)
+
+
+def build_all() -> Built:
     curated = json.loads(read(CURATED) or "{}")
     cur_epics: dict = curated.get("epics", {})
     overlays: dict = curated.get("overlays", {})
@@ -663,7 +699,25 @@ def build() -> dict[Path, str]:
             xref[k] = xref_cur[k]
     out[OUT_DB / "wiki-cross-refs.json"] = dump(scrub(xref))
     out[SCHEMA_OUT] = json.dumps(SCHEMA, indent=2) + "\n"
-    return out
+
+    # ---- 9. the Arabic database ------------------------------------------------------------
+    # the same files in Arabic, from the translation store (wiki_ar.py)
+    openapi_ar = json.loads(read(OPENAPI_AR) or "{}").get("strings", {})
+    ar = wiki_ar.translate(entries, wiki_ar.load_store(AR_STORE), openapi_ar, scrub_text)
+    ar_by_id = {e["id"]: e for e in ar.entries}
+    ar_wiki = {**wiki, "lang": "ar", "description": wiki_ar.DESCRIPTION_AR,
+               "entries": [ar_by_id[e["id"]] for e in main_entries]}
+    out[OUT_DB_AR / "wiki.json"] = dump(ar_wiki)
+    for name, ents in parts.items():
+        out[OUT_DB_AR / name] = dump({"version": "2.0", "part": name, "lang": "ar",
+                                      "entries": [ar_by_id[e["id"]] for e in ents]})
+    out[OUT_DB_AR / "wiki-cross-refs.json"] = dump(scrub(wiki_ar.cross_refs(xref, ar_by_id)))
+    return Built(out, ar)
+
+
+def build() -> dict[Path, str]:
+    """The files the generator writes: path -> text."""
+    return build_all().files
 
 
 SCHEMA = {
@@ -685,6 +739,8 @@ SCHEMA = {
                    "description": "Entries per type, across wiki.json and its parts."},
         "parts": {"type": "array", "items": {"type": "string"},
                   "description": "The part files (beside wiki.json) holding the stories and plans."},
+        "lang": {"type": "string", "enum": ["ar"],
+                 "description": "The Arabic database (db/ar/): its text in Arabic. Absent in English."},
         "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
     },
     "$defs": {
@@ -715,6 +771,15 @@ SCHEMA = {
                 "db_tables": {"type": "array", "items": {"type": "string"},
                               "description": "DB tables mentioned by this entry."},
                 "metadata": {"type": "object"},
+                "i18n": {
+                    "type": "object",
+                    "description": ("In the Arabic database: the language, and for each field shown "
+                                    "in Arabic the hash of the English it translates (the drift check)."),
+                    "properties": {
+                        "lang": {"type": "string", "enum": ["ar"]},
+                        "source": {"type": "object", "additionalProperties": {"type": "string"}},
+                    },
+                },
             },
         }
     },
@@ -723,10 +788,22 @@ SCHEMA = {
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--check", action="store_true", help="fail if the committed database is stale")
+    ap.add_argument("--check", action="store_true",
+                    help="fail if the committed database is stale or an entry lacks its Arabic")
+    ap.add_argument("--ar-todo", action="store_true",
+                    help="print, as JSON, every text with no Arabic or whose English changed: "
+                         "store file -> entry id -> field -> the hash to record and the English")
+    ap.add_argument("--epic", type=int, help="with --ar-todo: only Epic N's store file")
     args = ap.parse_args(argv)
-    out = build()
-    stale_parts = [p for p in OUT_DB.glob("wiki-epics-*.json") if p not in out]
+    built = build_all()
+    out = built.files
+    if args.ar_todo:
+        todo = {k: v for k, v in sorted(built.todo.items())
+                if args.epic is None or k == f"epic-{args.epic:02d}.json"}
+        print(json.dumps({wiki_ar.store_path(k): v for k, v in todo.items()},
+                         indent=2, ensure_ascii=False))
+        return 0
+    stale_parts = [p for d in (OUT_DB, OUT_DB_AR) for p in d.glob("wiki-epics-*.json") if p not in out]
     if args.check:
         bad = [rel(p) for p, text in out.items() if read(p) != text] + [rel(p) for p in stale_parts]
         if bad:
@@ -734,10 +811,14 @@ def main(argv: list[str] | None = None) -> int:
             for b in bad:
                 print(f"  {b}", file=sys.stderr)
             print("run: python3 docs/wiki/db/generate_wiki.py  (and commit the result)", file=sys.stderr)
+        if built.findings:
+            print_findings(built.findings)
+        if bad or built.findings:
             return 1
-        print(f"wiki database matches the specs ({len(out)} files)")
+        print(f"wiki database matches the specs ({len(out)} files), every entry in English and "
+              f"Arabic ({built.translated} of {built.total})")
         return 0
-    OUT_DB.mkdir(parents=True, exist_ok=True)
+    OUT_DB_AR.mkdir(parents=True, exist_ok=True)
     for p, text in out.items():
         if read(p) != text:
             p.write_text(text, encoding="utf-8")
@@ -745,7 +826,21 @@ def main(argv: list[str] | None = None) -> int:
     for p in stale_parts:
         p.unlink()
         print(f"removed {rel(p)}")
+    if built.findings:
+        print_findings(built.findings)
+        print("(the Arabic database shows those texts in English until they are translated)",
+              file=sys.stderr)
     return 0
+
+
+def print_findings(findings: list[str]) -> None:
+    print(f"the Arabic wiki is missing or behind the English ({len(findings)}):", file=sys.stderr)
+    for f in findings[:200]:
+        print(f"  {f}", file=sys.stderr)
+    if len(findings) > 200:
+        print(f"  … and {len(findings) - 200} more", file=sys.stderr)
+    print("every spec change needs its Arabic: edit the file and field named above "
+          f"({wiki_ar.TODO_HINT})", file=sys.stderr)
 
 
 if __name__ == "__main__":

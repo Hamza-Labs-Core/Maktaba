@@ -142,6 +142,35 @@ final class PlayerHomeUITests: PlayerUITestCase {
         XCTAssertTrue(row("continue").waitForNonExistence(timeout: 15), "then the home's answer")
     }
 
+    /// A row the home could not send stays, as a tile in its place (the Apple TV's rows,
+    /// `HomeShelves`); Try again reads Home again and the row comes.
+    func testAFailedRowIsARetryTile() {
+        home.stub("GET", "/api/recommendations", status: 500, body: #"{"title":"down","status":500}"#)
+        openHome()
+        let tile = row("rec").descendants(matching: .any)["home.row.retry"].firstMatch
+        scrollTo(tile)
+        XCTAssertTrue(tile.label.contains("This row could not be loaded."), "the tile says so: \(tile.label)")
+        XCTAssertFalse(row("rec-for_you").exists, "no For You cards to show")
+        XCTAssertTrue(row("continue").exists || row("watched").exists, "Home's own rows stay")
+        shot("home-retry")
+
+        home.reset()
+        tile.tap()
+        XCTAssertTrue(row("rec").waitForNonExistence(timeout: 15), "read again: the tile goes")
+        scrollTo(row("rec-for_you"))
+        XCTAssertTrue(row("rec-for_you").descendants(matching: .any)["home.card.v6"].exists, "For You's cards")
+    }
+
+    /// The retry tile in Arabic (a dark screenshot to look at).
+    func testAFailedRowIsARetryTileInArabic() {
+        home.stub("GET", "/api/channels/now", status: 500, body: #"{"title":"down","status":500}"#)
+        openHome("ar")
+        let tile = row("live").descendants(matching: .any)["home.row.retry"].firstMatch
+        scrollTo(tile)
+        XCTAssertTrue(tile.label.contains("تعذّر تحميل هذا الصف.") && tile.label.contains("أعد المحاولة"), "the tile in Arabic: \(tile.label)")
+        shot("home-retry")
+    }
+
     /// FR-13: no library the person may see: Home says so, with Switch home and Sign out.
     func testEmptyHome() {
         home.stub("GET", "/api/home", body: "{}")

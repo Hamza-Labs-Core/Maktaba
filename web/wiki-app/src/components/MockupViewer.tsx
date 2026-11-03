@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Maximize2 } from 'lucide-react';
 import { mockupUrl } from '@/lib/asset-paths';
 import { githubUrlFor } from '@/lib/labels';
+import { t } from '@/lib/i18n';
 
 interface Props {
   /** Repo-rooted path, e.g. `web/mockups/admin/login.html`. */
@@ -23,17 +24,17 @@ export function MockupViewer({ path, defaultOpen = true }: Props) {
   if (NO_MOCKUPS) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 px-3 py-2 text-[12.5px] text-slate-700 dark:text-slate-200">
-        <span className="font-medium">{filename}</span>
+        <span dir="ltr" className="font-medium min-w-0 break-words">{filename}</span>
         <div className="flex-1" />
         <a
           href={githubUrlFor(path)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="View the mockup's source on GitHub"
+          title={t('viewer.source.title')}
         >
           <ExternalLink className="h-3 w-3" />
-          Source
+          {t('viewer.source')}
         </a>
       </div>
     );
@@ -42,7 +43,7 @@ export function MockupViewer({ path, defaultOpen = true }: Props) {
   if (!url) {
     return (
       <div className="text-sm text-slate-500 dark:text-slate-400">
-        Cannot resolve mockup path:{' '}
+        {t('viewer.badPath')}{' '}
         <code className="font-mono">{path}</code>
       </div>
     );
@@ -59,7 +60,7 @@ export function MockupViewer({ path, defaultOpen = true }: Props) {
           {open ? (
             <ChevronDown className="h-3.5 w-3.5" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-3.5 w-3.5 rtl:rotate-180" />
           )}
           {filename}
         </button>
@@ -69,20 +70,20 @@ export function MockupViewer({ path, defaultOpen = true }: Props) {
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="Open mockup in new tab"
+          title={t('viewer.open.title')}
         >
           <Maximize2 className="h-3 w-3" />
-          Open
+          {t('viewer.open')}
         </a>
         <a
           href={githubUrlFor(path)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="View source on GitHub"
+          title={t('viewer.source.title')}
         >
           <ExternalLink className="h-3 w-3" />
-          Source
+          {t('viewer.source')}
         </a>
       </div>
       {open && (

@@ -1,5 +1,4 @@
-// Epic 47 on the Queues page: the libraries' menu and columns, the action
-// dialog, the YouTube sources dialog and the per-item panel, per state and
+// Epic 47 on the Queues page: the action dialog, the YouTube sources dialog and the per-item panel, per state and
 // action, admin-only rendering, and axe.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -16,93 +15,18 @@ vi.mock("../../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post, patch, delete: del } };
 });
 
-import { LibrariesTable } from "./LibrariesTable";
 import { OfflineActionDialog } from "./OfflineActionDialog";
 import { YouTubeSourcesDialog } from "./YouTubeSourcesDialog";
 import { OfflineItemsPanel } from "./OfflineItemsPanel";
 import { renderAt, routeGet } from "../../test/queueHarness";
 import { axeViolations } from "../../test/axe";
-import { librariesFixture, snapshotFixture } from "../../test/fixtures/queues";
-import { LIB, offlineItem, source, summary } from "../../test/fixtures/offline";
-
-const row = { ...librariesFixture[0], library_id: LIB, name: "Islamic lectures" };
+import { LIB, offlineItem, source } from "../../test/fixtures/offline";
 
 beforeEach(() => {
   get.mockReset();
   post.mockReset();
   patch.mockReset();
   del.mockReset();
-});
-
-describe("LibrariesTable (Epic 47)", () => {
-  it("shows the YouTube, Not MP4 and Duplicates columns and a menu in pipeline order", async () => {
-    const onOffline = vi.fn();
-    const onSources = vi.fn();
-    const { container } = renderAt(
-      <LibrariesTable
-        rows={[row]}
-        stages={snapshotFixture.stages}
-        onRequeue={() => {}}
-        offline={{ [LIB]: summary() }}
-        onOffline={onOffline}
-        onSources={onSources}
-      />,
-      "/queue"
-    );
-    for (const h of ["YouTube", "Not MP4", "Duplicates"]) {
-      expect(screen.getByRole("columnheader", { name: h })).toBeInTheDocument();
-    }
-    expect(screen.getByText(/2 of 3 sources on/)).toBeInTheDocument();
-    expect(screen.getByText(/120 in the back catalogue/)).toBeInTheDocument();
-    expect(screen.getByText("37")).toBeInTheDocument();
-    expect(screen.getByText("3 converting")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "2 duplicate groups in Islamic lectures" })
-    ).toHaveAttribute("href", `/queue/duplicates?library=${LIB}`);
-    await userEvent.click(screen.getByRole("button", { name: "Actions for Islamic lectures" }));
-    const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
-    expect(items).toEqual([
-      "Refresh from YouTube",
-      "Convert to MP4",
-      "Find duplicates",
-      "YouTube sources…",
-    ]);
-    await userEvent.click(screen.getByRole("menuitem", { name: "Convert to MP4" }));
-    expect(onOffline).toHaveBeenCalledWith("convert", [row]);
-    await userEvent.click(screen.getByRole("button", { name: "Actions for Islamic lectures" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "YouTube sources…" }));
-    expect(onSources).toHaveBeenCalledWith(row);
-    expect(await axeViolations(container)).toEqual([]);
-  });
-
-  it("offers the bulk actions for the selected rows", async () => {
-    const onOffline = vi.fn();
-    const other = { ...row, library_id: "lib-2", name: "Kids" };
-    renderAt(
-      <LibrariesTable
-        rows={[row, other]}
-        stages={snapshotFixture.stages}
-        onRequeue={() => {}}
-        offline={{}}
-        onOffline={onOffline}
-      />,
-      "/queue"
-    );
-    expect(screen.queryByRole("button", { name: /With selected/ })).toBeNull();
-    await userEvent.click(screen.getByRole("checkbox", { name: "Select all libraries" }));
-    await userEvent.click(screen.getByRole("button", { name: "With selected (2)" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Refresh from YouTube" }));
-    expect(onOffline).toHaveBeenCalledWith("youtube_refresh", [row, other]);
-  });
-
-  it("without the admin props shows neither the columns nor the menus", () => {
-    renderAt(
-      <LibrariesTable rows={[row]} stages={snapshotFixture.stages} onRequeue={() => {}} />,
-      "/queue"
-    );
-    expect(screen.queryByRole("columnheader", { name: "YouTube" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Actions for/ })).toBeNull();
-  });
 });
 
 describe("OfflineActionDialog", () => {

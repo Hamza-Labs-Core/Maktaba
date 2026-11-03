@@ -21,19 +21,25 @@ public struct LiveChannel: Decodable, Hashable, Sendable, Identifiable {
     public let logo: String?
     /// The home's own logo route (`/api/channels/{id}/logo`), present when the channel has a logo.
     public let logoPath: String?
+    /// The corner the home burns the channel's logo into the picture (its watermark); nil when
+    /// it burns none, or the home is older than `watermark_position`.
+    public let watermark: WatermarkCorner?
 
-    public init(id: String, number: Int, name: String, slug: String = "", logo: String? = nil, logoPath: String? = nil) {
+    public init(id: String, number: Int, name: String, slug: String = "", logo: String? = nil, logoPath: String? = nil,
+                watermark: WatermarkCorner? = nil) {
         self.id = id
         self.number = number
         self.name = name
         self.slug = slug
         self.logo = logo
         self.logoPath = logoPath
+        self.watermark = watermark
     }
 
     enum CodingKeys: String, CodingKey {
         case id, number, name, slug, logo
         case logoPath = "logo_url"
+        case watermark = "watermark_position"
     }
 
     public init(from decoder: Decoder) throws {
@@ -44,10 +50,19 @@ public struct LiveChannel: Decodable, Hashable, Sendable, Identifiable {
         slug = c.lenient(.slug) ?? ""
         logo = c.lenient(.logo)
         logoPath = c.lenient(.logoPath)
+        watermark = c.lenient(.watermark)
     }
 
     /// Whether the home has a logo for this channel.
     public var hasLogo: Bool { !(logoPath ?? "").isEmpty || !(logo ?? "").isEmpty }
+}
+
+/// A corner of the picture, where the home burns a channel's logo (`look.watermark.position`,
+/// `streaming/internal/channel/look.go`).
+public enum WatermarkCorner: String, Codable, Hashable, Sendable {
+    case topRight = "top-right", topLeft = "top-left", bottomRight = "bottom-right", bottomLeft = "bottom-left"
+
+    public var isBottom: Bool { self == .bottomRight || self == .bottomLeft }
 }
 
 /// One programme (or a block of filler) on a channel.

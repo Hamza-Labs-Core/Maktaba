@@ -36,6 +36,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
+  logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
+  data, or its stall notice) did not change the playback phase, so the channel banner did not
+  come back. A wait of more than a second now shows the banner and a Buffering line; both go
+  when the picture moves again (the banner 6 s later). `GET /api/channels/now` and the guide
+  give each channel's `watermark_position`, the corner the home burns its logo into; with a
+  bottom corner the banner and the mini-guide sit at the top. The iPhone, iPad and Mac Player's
+  Home now uses MaktabaKit's `HomeShelves`, as the Apple TV: a row that cannot be read keeps
+  what it showed, or shows a tile that reads Home again, in English and Arabic.
+
 - **Android: Favorite or Mark watched tapped while a video's page is read again stays as
   tapped.** Coming back to a video's page reads it again behind the page shown; a tap on
   Favorite or Mark watched before that read came back was saved, but the read then put the old
@@ -87,6 +97,21 @@ build fails when the two differ.
   a smaller download; Worker, for a joined machine), the bundle can be changed later, and a
   component added later downloads as a signed pack, or from an offline file for a home without
   internet. `[components] reconcile = off` in `server.toml` leaves everything as it is.
+- **A library dashboard and a page for each library.** Processing > Library dashboard
+  (`/queue/libraries`, admins) shows one tile per library: overall progress as a gauge, done,
+  running, waiting and failed as a bar, the last two weeks' finished jobs as a small chart, and
+  badges for failures, YouTube on or off (one click opens its sources), files left to convert and
+  duplicates to review. The tiles filter by needs attention, failing, to convert and YouTube off
+  (each with its count), sort by attention, name, failures, size or last change, and can be
+  selected for Re-queue, Refresh from YouTube, Convert to MP4 and Find duplicates. A library's
+  name opens its own admin page (`/admin/libraries/:id`, also from Manage libraries and the
+  Queues page) with its overview (videos, series, hours, storage, folders, health), queue
+  status (gauge, work per day, failing items, every queue and the actions), YouTube sources
+  with their modes, conversion (files left and the re-encode and convert-after-scan settings),
+  duplicates, trash, settings and access. The Queues page's long libraries table gives way to a
+  short list of the libraries needing attention. The new `GET /api/queues/libraries/activity`
+  (admins only, cached a minute) gives each library's finished and failed jobs per day. In
+  English and Arabic, right to left, and at phone width without sideways scrolling.
 - **maktaba.dev, the developer portal.** The plugin guides, the contributing guides, security
   (the policy, `security.txt` and the rules plugins and contributors follow), the API reference
   and the changelog on one site; the epics and specs stay on GitHub. Every page is in English

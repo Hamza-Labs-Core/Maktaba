@@ -949,6 +949,26 @@
       "en": "OK",
       "ar": "تم"
     },
+    "/paths/~1queues~1libraries~1activity/get/summary": {
+      "en": "Each library's finished jobs per day (cached 1 min)",
+      "ar": "المهام المنتهية لكل مكتبة في كل يوم (مخزّنة مؤقتًا دقيقة واحدة)"
+    },
+    "/paths/~1queues~1libraries~1activity/get/description": {
+      "en": "The jobs of each library that finished done or failed on each UTC day of the window, oldest first. `done` and `failed` are aligned with `days`; a library with no finished job in the window is left out. Home admins only.",
+      "ar": "مهام كل مكتبة التي انتهت بنجاح أو بإخفاق في كل يوم من أيام النافذة بتوقيت UTC، من الأقدم إلى الأحدث. تتوافق `done` و`failed` مع `days`، وتُستبعد المكتبة التي لم تنتهِ لها أي مهمة في النافذة. للمشرفين على المنزل فقط."
+    },
+    "/paths/~1queues~1libraries~1activity/get/parameters/0/description": {
+      "en": "Days in the window, ending today (UTC).",
+      "ar": "عدد أيام النافذة، وآخرها اليوم (بتوقيت UTC)."
+    },
+    "/paths/~1queues~1libraries~1activity/get/responses/200/description": {
+      "en": "OK",
+      "ar": "تم"
+    },
+    "/paths/~1queues~1libraries~1activity/get/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
     "/paths/~1queues~1health/get/summary": {
       "en": "Health metrics over time",
       "ar": "مقاييس الصحة عبر الزمن"

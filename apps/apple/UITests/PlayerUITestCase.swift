@@ -154,9 +154,30 @@ class PlayerUITestCase: XCTestCase {
         if fresh {
             let walkthrough = element("permissions.walkthrough")
             if walkthrough.waitForExistence(timeout: 10) {
-                app.buttons["permissions.continue"].tap()
-                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5))
+                // the sheet is in the tree as it starts to slide up, and UIKit takes no touch
+                // while a presentation runs: a tap 0.5 s after it appeared was dropped and the
+                // walkthrough stayed (an iPhone run on #618). Continue is tapped once it stands
+                // still, the presentation over.
+                let go = app.buttons["permissions.continue"]
+                waitUntilStill(go, timeout: 5)
+                go.tap()
+                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5), "the permissions walkthrough closes")
             }
+        }
+    }
+
+    /// Waits (at most `timeout`) until `e` can be tapped and its frame is the same on two looks
+    /// a quarter second apart: a sheet or a page that is still moving has settled.
+    func waitUntilStill(_ e: XCUIElement, timeout: TimeInterval) {
+        let end = Date().addingTimeInterval(timeout)
+        var last = CGRect.null
+        while Date() < end {
+            if e.exists, e.isHittable {
+                let now = e.frame
+                if now == last { return }
+                last = now
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
     }
 
@@ -255,6 +276,7 @@ class PlayerUITestCase: XCTestCase {
     /// (`AuditIssues`), each with the element it is on.
     func accessibilityAudit(for types: XCUIAccessibilityAuditType = .all,
                             _ handler: @escaping (XCUIAccessibilityAuditIssue) throws -> Bool) throws {
+        loadPicturesAtEveryTextSize()
         // the page as it is before the audit, for the handler to read
         shown = settledPage()
         defer { shown = nil }
@@ -262,6 +284,7 @@ class PlayerUITestCase: XCTestCase {
         let start = Date()
         // in the test log on a pass too: an audit near its 15 s shows before it times one out
         defer { print(String(format: "accessibility audit: %.1f s", Date().timeIntervalSince(start))) }
+        auditFrom = home.requests.count
         try app.performAccessibilityAudit(for: types.subtracting(.dynamicType)) { issue in
             issues.append(issue)
             return true
@@ -269,6 +292,35 @@ class PlayerUITestCase: XCTestCase {
         var failed: [String] = []
         for issue in issues where try !handler(issue) { failed.append(described(issue)) }
         if !failed.isEmpty { throw AuditIssues(issues: failed) }
+    }
+
+    /// How many requests the home had when the last audit began (after its warm-up): what
+    /// the app asked for during the audit is what came after.
+    private(set) var auditFrom = 0
+
+    /// Before an audit: the page shown at the smallest text size and at AX3, then the default,
+    /// each until the app asks the home for no more pictures. The audit lays the page out at
+    /// each text size, and the smallest shows cards the default does not; their posters were
+    /// first asked for during the audit, drawn as moving placeholders until they came, and on
+    /// a loaded runner the audit never saw the page still (PR #614: "Audit failed to complete
+    /// in time" on Libraries' lib-docs, `GET /api/videos/v1/poster` and two more during it, and
+    /// on Search's Arabic results). Each picture is in the app's cache once asked for.
+    private func loadPicturesAtEveryTextSize() {
+        let pictures = {
+            self.home.requests.filter { r in
+                r.method == "GET" && ["/poster", "/backdrop", "/logo", "/art"].contains { r.path.hasSuffix($0) }
+            }.count
+        }
+        for size in [TextSize.smallest, .ax3, .standard] {
+            setTextSize(size)
+            var asked = pictures()
+            for _ in 0 ..< 5 {
+                _ = settledPage()
+                let now = pictures()
+                if now == asked { break }
+                asked = now
+            }
+        }
     }
 
     /// The issues of an audit its handler did not excuse.

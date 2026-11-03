@@ -5,8 +5,10 @@ import XCTest
 /// `apps/apple/UITests/Fixtures`). No real home, no real account. With MAKTABA_SHOTS set,
 /// each step's screenshot is also written there.
 ///
-/// The channel playlists are stubbed (a master and its media playlist, no segment), so a
-/// tune reaches the home's web port as the real one would; the picture itself stays black.
+/// The channel playlists are stubbed (a master and its media playlist), so a tune reaches the
+/// home's web port as the real one would. The media playlist is ten minutes of the mock
+/// home's two-second segment (`Fixtures/live-segment.ts`, served for any `/stream/…/*.ts`), so
+/// the picture really plays and never runs dry in a test unless one holds a segment (a stall).
 @MainActor
 final class TVLiveUITests: XCTestCase {
     let remote = XCUIRemote.shared
@@ -23,8 +25,7 @@ final class TVLiveUITests: XCTestCase {
         for ch in ["ch-1", "ch-2", "ch-3"] {
             home.stub("GET", "/stream/channel/\(ch)/index.m3u8",
                       body: "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1280x720\nlive.m3u8\n")
-            home.stub("GET", "/stream/channel/\(ch)/live.m3u8",
-                      body: "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MEDIA-SEQUENCE:1\n#EXTINF:6.0,\nseg1.ts\n")
+            home.stub("GET", "/stream/channel/\(ch)/live.m3u8", body: Self.playlist)
         }
         app = XCUIApplication()
     }
@@ -195,10 +196,9 @@ final class TVLiveUITests: XCTestCase {
         sleep(7)
         XCTAssertTrue(banner.exists, "it stays while the channel starts")
         XCTAssertTrue(element("live.player.starting").exists, "still starting after the banner's time")
-        home.release()
-        XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
 
-        // the whole picture, nothing cropped; the watermark's corner kept clear
+        // the whole picture, nothing cropped; the watermark's corner kept clear (checked while
+        // the start is held, so the banner's 6 s never race these queries on a loaded runner)
         let screen = app.windows.firstMatch.frame
         let video = element("live.player.video")
         XCTAssertTrue(video.waitForExistence(timeout: 5), "the picture")
@@ -207,9 +207,12 @@ final class TVLiveUITests: XCTestCase {
                             width: screen.width * 0.16, height: screen.height * 0.2)
         XCTAssertTrue(banner.exists)
         XCTAssertFalse(banner.frame.intersects(corner), "the banner sits clear of the top-right corner: \(banner.frame)")
+
+        home.release()
+        XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
         shot("tv-live-slow-start-playing")
 
-        XCTAssertTrue(banner.waitForNonExistence(timeout: 10), "the banner goes after a slow start")
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 15), "the banner goes after a slow start")
         XCTAssertTrue(player.exists, "and the channel keeps playing")
         shot("tv-live-slow-start-clear")
 
@@ -280,7 +283,87 @@ final class TVLiveUITests: XCTestCase {
         shot("tv-libraries-en")
     }
 
+    /// The bug: a buffering stall did not change the playback phase, so the banner
+    /// did not come back. Segment 6 is held (a latch): the picture plays twelve seconds, the
+    /// banner goes, then the picture waits for data. The buffering state and the banner show;
+    /// when the segment comes, buffering goes at once and the banner after its time. (AVPlayer
+    /// on CI gave up on the held segment after three tries and waited for good; the player
+    /// then opens the channel again after `LivePlayback.stuck`, which this covers too.)
+    func testABufferingStallShowsTheBanner() throws {
+        home.hold("GET", "/stream/channel/ch-1/seg6.ts")
+        signIn("en")
+        openLiveTab("Live TV")
+        let first = app.buttons["live.channel.ch-1"]
+        moveFocus(to: first, with: .down)
+        remote.press(.select)
+
+        let banner = element("live.player.banner")
+        XCTAssertTrue(banner.waitForExistence(timeout: 10), "the banner on the tune")
+        XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 15), "the banner goes while the picture plays")
+
+        let buffering = element("live.player.buffering")
+        XCTAssertTrue(buffering.waitForExistence(timeout: 40),
+                      "the picture waits for the held segment: buffering; the home saw \(home.seen.suffix(12))")
+        XCTAssertTrue(banner.exists, "the banner comes back with it")
+        XCTAssertTrue(home.seen.contains("GET /stream/channel/ch-1/seg6.ts"), "the player asked for the held segment")
+        shot("tv-live-buffering-en")
+
+        home.release()
+        XCTAssertTrue(buffering.waitForNonExistence(timeout: 30),
+                      "buffering goes when the picture moves again; segments asked: \(home.seen.filter { $0.hasSuffix(".ts") }.suffix(20))")
+        XCTAssertTrue(element("live.player").exists, "on the same channel")
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 15), "and the banner after its time")
+    }
+
+    /// The bug: the banner could cover a channel logo the home burns into a bottom
+    /// corner. With ch-1's logo bottom right (`watermark_position`), the banner and the
+    /// mini-guide sit at the top, clear of that corner.
+    func testTheBannerKeepsABottomCornerLogoClear() throws {
+        let fixture = try XCTUnwrap(home.fixture(named: "channels-now"))
+        let logo = #""logo_url": "/api/channels/ch-1/logo""#
+        let moved = fixture.replacingOccurrences(of: logo, with: logo + #", "watermark_position": "bottom-right""#)
+        XCTAssertNotEqual(moved, fixture, "ch-1's logo corner set")
+        home.stub("GET", "/api/channels/now", body: moved)
+        // the channel kept starting (a latch), so the banner stays for the checks: a playing
+        // channel's banner goes after 6 s, which a loaded runner's checks outlasted
+        home.hold("GET", "/stream/channel/ch-1/index.m3u8")
+        signIn("en")
+        openLiveTab("Live TV")
+        let first = app.buttons["live.channel.ch-1"]
+        moveFocus(to: first, with: .down)
+        remote.press(.select)
+
+        let banner = element("live.player.banner")
+        XCTAssertTrue(banner.waitForExistence(timeout: 10), "the banner on the tune")
+        XCTAssertTrue(channelLabel(contains: "Lectures TV"))
+        let screen = app.windows.firstMatch.frame
+        let corner = CGRect(x: screen.maxX - screen.width * 0.16, y: screen.maxY - screen.height * 0.2,
+                            width: screen.width * 0.16, height: screen.height * 0.2)
+        XCTAssertFalse(banner.frame.intersects(corner), "the banner sits clear of the bottom-right corner: \(banner.frame)")
+        XCTAssertLessThan(banner.frame.midY, screen.midY, "at the top of the picture")
+        shot("tv-live-banner-top-en")
+
+        remote.press(.select)
+        let mini = element("live.miniguide")
+        XCTAssertTrue(mini.waitForExistence(timeout: 10), "the mini-guide")
+        XCTAssertFalse(mini.frame.intersects(corner), "the mini-guide too: \(mini.frame)")
+        XCTAssertLessThan(mini.frame.minY, screen.midY, "from the top")
+        shot("tv-live-miniguide-top-en")
+    }
+
     // MARK: helpers
+
+    /// Ten minutes of two-second segments, each after a discontinuity (the one segment's
+    /// timestamps start again), ended: the picture plays from the start and never runs dry.
+    static let playlist: String = {
+        var out = "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:0\n#EXT-X-PLAYLIST-TYPE:VOD\n"
+        for i in 0..<300 {
+            if i > 0 { out += "#EXT-X-DISCONTINUITY\n" }
+            out += "#EXTINF:2.000,\nseg\(i).ts\n"
+        }
+        return out + "#EXT-X-ENDLIST\n"
+    }()
 
     /// A JWT (unsigned) whose `exp` is in 2100: MaktabaKit reads only its expiry.
     static var jwt: String {

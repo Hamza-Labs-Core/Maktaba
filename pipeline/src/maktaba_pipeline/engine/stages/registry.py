@@ -80,8 +80,9 @@ CORE_MODULES: dict[str, str] = {
     "access_check": "maktaba_pipeline.engine.stages.access_check",
     "storage_canonicalize": "maktaba_pipeline.engine.stages.storage_canonicalize",
     "enrich": "maktaba_pipeline.engine.stages.enrich",
-    # Epic 47 (offline, MP4, no duplicates); all but trash_purge are stubs until their
-    # stories ship (the graph keeps them off: StageDef.unreleased)
+    # Epic 47 (offline, MP4, no duplicates): shipped. A stage added before its story
+    # ships is kept off by the graph (StageDef.unreleased); the web help test reads
+    # this table and that flag
     "convert_mp4": "maktaba_pipeline.engine.stages.convert_mp4",
     "dedup_scan": "maktaba_pipeline.engine.stages.dedup_scan",
     "dedup_apply": "maktaba_pipeline.engine.stages.dedup_apply",

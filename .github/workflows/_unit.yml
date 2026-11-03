@@ -31,10 +31,15 @@ jobs:
         if: inputs.go
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cloud/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        if: inputs.go
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
       - uses: actions/setup-python@v6.2.0
         if: inputs.pipeline
@@ -46,6 +51,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - uses: pnpm/action-setup@v6.0.8
         if: inputs.web || inputs.tokens
@@ -57,8 +64,16 @@ jobs:
         if: inputs.web || inputs.tokens
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        if: inputs.web || inputs.tokens
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps
         if: inputs.web
@@ -105,6 +120,21 @@ jobs:
         working-directory: cloud
         run: go test -short -count=1 ./...
 
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
+      - name: Save the pnpm store
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.key != '' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.key }}
+
   # Epic 31: a joined machine may be Windows. The cluster tests (config paths, path-map
   # inference with drive letters and UNC, crypto vectors, stage selection, the join
   # client) run there too; Linux runs the whole suite above.
@@ -123,6 +153,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       # --durations: a test near the soft cap here shows by how much (file work costs a
       # Windows runner several times what it costs Linux).
@@ -144,9 +176,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            cmd/maktaba-server/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       - name: Test the announcement (api)
         working-directory: api
@@ -155,6 +192,14 @@ jobs:
       - name: Test the announcement (maktaba-server)
         working-directory: cmd/maktaba-server
         run: go test -count=1 -v ./internal/mdns/
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
 
   # The mDNS announcement on Linux through systemd-resolved, for real: resolved answers mDNS
   # here (MulticastDNS=yes, Avahi masked), and both copies announce, are found by an mDNS
@@ -176,9 +221,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            cmd/maktaba-server/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       - name: Turn on resolved's mDNS, build the tests
         run: tools/ci/mdns-linux.sh setup
@@ -204,6 +254,14 @@ jobs:
           path: ${{ runner.temp }}/mdns-linux-logs
           if-no-files-found: warn
 
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
   # Epic 36: the Mac app shell (apps/desktop, Tauri 2): menu-bar status,
   # login item, setup-step runner. macOS only (SMAppService, launchd).
   desktop-shell:
@@ -220,6 +278,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+          # pull requests and tags restore main's build; only a push to main saves
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       # tauri::generate_context! reads build.frontendDist; the tests never load it
       - name: Stub the web bundle
@@ -248,6 +308,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+          # pull requests and tags restore main's build; only a push to main saves
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       # tauri::generate_context! reads build.frontendDist; the tests never load it
       - name: Stub the web bundle
@@ -291,6 +353,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/desktop/src-tauri
+          # pull requests and tags restore main's build; only a push to main saves
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       # tauri::generate_context! reads build.frontendDist; the tests never load it
       - name: Stub the web bundle

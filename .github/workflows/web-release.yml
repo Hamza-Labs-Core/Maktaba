@@ -50,8 +50,15 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps
         working-directory: web

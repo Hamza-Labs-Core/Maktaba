@@ -141,10 +141,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cloud/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
       - name: Set up pnpm
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -158,8 +162,16 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -257,9 +269,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            cmd/maktaba-server/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
 
       - name: Download web bundle
         uses: actions/download-artifact@v8.0.1
@@ -548,7 +565,7 @@ jobs:
       # Keep the version in step with them.
       - name: nfpm from the cache
         id: nfpm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/go/bin/nfpm
           key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
@@ -633,6 +650,8 @@ jobs:
           # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
           # (build-release.sh checks), and one uv version writes them the same every run
           version: "0.13.4"
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build the wheel, constraints and installer archives
         env:
@@ -733,11 +752,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cmd/maktaba-server/go.sum
-            cmd/maktaba-launcher/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -745,6 +767,8 @@ jobs:
           # version wrote other constraints, so the Linux payload tarball and the app's
           # own payload of one release differed (v0.3.0: 0.13.5 here, 0.13.4 there)
           version: "0.13.4"
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - uses: pnpm/action-setup@v6.0.8
         with:
@@ -754,8 +778,15 @@ jobs:
       - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps and the build tools
         run: |
@@ -973,11 +1004,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: |
-            tools/release/go.sum
-            shared/go/releaseverify/go.sum
-            shared/go/componentpack/go.sum
-            shared/components/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum', 'shared/go/componentpack/go.sum', 'shared/components/go.sum') }}
 
       - name: Go modules (from the cache, verified)
         run: |

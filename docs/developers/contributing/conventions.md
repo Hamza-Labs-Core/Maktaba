@@ -15,6 +15,7 @@ only is an unfinished change.
 | Android | `res/values/strings.xml` and `res/values-ar/strings.xml` in each module |
 | Apple | the `.xcstrings` catalogs (for example `apps/apple/Player/Localizable.xcstrings`), with both `en` and `ar` |
 | User guide | the help pages in `web/src/help/`, in both languages |
+| Wiki | a spec change (`specs/epics/`) ships its Arabic in `docs/wiki/db/ar/`; `python3 docs/wiki/db/generate_wiki.py --check` fails CI on missing or stale Arabic |
 
 RTL must work:
 

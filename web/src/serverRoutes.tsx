@@ -21,6 +21,14 @@ const Reports = /* @__PURE__ */ page(() => import("./pages/queue/Reports"), "Rep
 const Failures = /* @__PURE__ */ page(() => import("./pages/queue/Failures"), "Failures");
 const Duplicates = /* @__PURE__ */ page(() => import("./pages/queue/Duplicates"), "Duplicates");
 const FileActions = /* @__PURE__ */ page(() => import("./pages/queue/FileActions"), "FileActions");
+const LibraryDashboard = /* @__PURE__ */ page(
+  () => import("./pages/queue/LibraryDashboard"),
+  "LibraryDashboard"
+);
+const LibraryAdmin = /* @__PURE__ */ page(
+  () => import("./pages/Admin/LibraryAdmin"),
+  "LibraryAdmin"
+);
 const Transcription = /* @__PURE__ */ page(
   () => import("./pages/transcription/Transcription"),
   "Transcription"
@@ -79,12 +87,14 @@ export function serverRoutes() {
       <Route path="/queue/failures" element={<Failures />} />
       <Route path="/queue/duplicates" element={<Duplicates />} />
       <Route path="/queue/file-actions" element={<FileActions />} />
+      <Route path="/queue/libraries" element={<LibraryDashboard />} />
       <Route path="/queue/:stage" element={<QueueDetail />} />
       <Route path="/transcription" element={<Transcription />} />
       <Route path="/settings/*" element={<Settings />} />
       <Route path="/billing" element={<Navigate to="/settings/subscription" replace />} />
       <Route path="/cloud/status" element={<ServerStatus />} />
       <Route path="/admin/libraries" element={<AdminLibraries />} />
+      <Route path="/admin/libraries/:id" element={<LibraryAdmin />} />
       <Route path="/admin/users" element={<AdminUsers />} />
       <Route path="/admin/library-acl" element={<LibraryACL />} />
       <Route path="/admin/extensions" element={<AdminExtensions />} />

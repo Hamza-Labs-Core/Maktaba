@@ -1,30 +1,27 @@
 import type { EntryType } from '@/types/wiki';
+import { LANG, t } from './i18n';
 
-export const TYPE_LABEL: Record<EntryType, string> = {
-  epic: 'Epic',
-  story: 'Story',
-  plan: 'Plan',
-  diagram: 'Diagram',
-  review: 'Review',
-  mockup: 'Mockup',
-  endpoint: 'Endpoint',
-  entity: 'Entity',
-  feature: 'Feature',
-  phase: 'Phase',
-};
+const TYPES: EntryType[] = [
+  'epic',
+  'story',
+  'plan',
+  'diagram',
+  'review',
+  'mockup',
+  'endpoint',
+  'entity',
+  'feature',
+  'phase',
+];
 
-export const TYPE_LABEL_PLURAL: Record<EntryType, string> = {
-  epic: 'Epics',
-  story: 'Stories',
-  plan: 'Plans',
-  diagram: 'Diagrams',
-  review: 'Reviews',
-  mockup: 'Mockups',
-  endpoint: 'API Endpoints',
-  entity: 'Entities',
-  feature: 'Features',
-  phase: 'Phases',
-};
+// in the page's language (lib/i18n.ts)
+export const TYPE_LABEL = Object.fromEntries(
+  TYPES.map((x) => [x, t(`type.${x}`)]),
+) as Record<EntryType, string>;
+
+export const TYPE_LABEL_PLURAL = Object.fromEntries(
+  TYPES.map((x) => [x, t(`types.${x}`)]),
+) as Record<EntryType, string>;
 
 export const TYPE_CHIP_CLASS: Record<EntryType, string> = {
   epic: 'bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-200',
@@ -101,6 +98,14 @@ export const PHASE_INFO: Record<number, PhaseInfo> = {
   },
 };
 
+/** A phase's title, line and range in the page's language. */
+export function phaseText(ph: number): { title: string; sub: string; range: string } {
+  const p = PHASE_INFO[ph];
+  return LANG === 'ar'
+    ? { title: p.titleAr, sub: p.subAr, range: p.rangeAr }
+    : { title: p.title, sub: p.sub, range: p.range };
+}
+
 export const PHASES: number[] = Object.keys(PHASE_INFO)
   .map(Number)
   .sort((a, b) => a - b);
@@ -109,7 +114,6 @@ export const GITHUB_REPO = 'https://github.com/Hamza-Labs-Core/Maktaba';
 export const GITHUB_BRANCH = 'main';
 // the project's public tracker: GitHub issues
 export const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
-export const PENPOT_LINK = '#'; // placeholder — fill in when Penpot project URL is known
 
 export function githubUrlFor(path: string): string {
   if (!path) return '#';

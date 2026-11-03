@@ -109,6 +109,9 @@ func TestPlacementExamples(t *testing.T) {
 		{"GET", "/api/components", placement.Home},
 		{"GET", "/api/components/{id}", placement.Home},
 		{"POST", "/api/components/apply", placement.Home},
+		// the library dashboard's reads: the jobs table, through the node's role
+		{"GET", "/api/queues/libraries", placement.Any},
+		{"GET", "/api/queues/libraries/activity", placement.Any},
 	}
 	for _, c := range cases {
 		got, ok := Placement.Classify(c.method, c.pattern)

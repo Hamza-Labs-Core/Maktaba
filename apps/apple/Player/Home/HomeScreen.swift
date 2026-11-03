@@ -6,7 +6,9 @@ import SwiftUI
 /// a secondary click on the Mac) has Resume on a Continue Watching card (the player at the
 /// person's position) and Not interested on a recommendation. Pull to refresh (⌘R on the
 /// Mac) reads Home again; what was read last shows at once, on a new launch too (FR-12). A
-/// home with nothing the person may watch says so, with Switch home and Sign out (FR-13).
+/// home with nothing the person may watch says so, with Switch home and Sign out (FR-13). The
+/// rows are MaktabaKit's `HomeShelves`, built as on the Apple TV: a row that could not be read
+/// shows as a tile whose Try again reads Home again.
 struct HomeScreen: View {
     let context: PlayerContext
 
@@ -64,7 +66,7 @@ struct HomeScreen: View {
     }
 
     @ViewBuilder private var content: some View {
-        if let problem = model.problem, model.content == nil {
+        if let problem = model.problem, !model.loaded {
             HomeErrorView(problem, video: false, actions: [.tryAgain, .chooseAnotherHome]) { action in
                 switch action {
                 case .chooseAnotherHome: context.session.switchHome()
@@ -74,19 +76,19 @@ struct HomeScreen: View {
             }
             .padding(MaktabaTokens.Spacing.s5)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let content = model.content {
+        } else if model.loaded {
             if model.isEmpty {
                 EmptyHome(admin: context.user.isAdmin, switchHome: context.session.switchHome,
                           signOut: context.session.signOut)
             } else {
-                rows(content)
+                rows
             }
         } else {
             loading
         }
     }
 
-    private func rows(_ content: HomeContent) -> some View {
+    private var rows: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s6) {
                 if model.stale {
@@ -98,13 +100,14 @@ struct HomeScreen: View {
                         .padding(.top, MaktabaTokens.Spacing.s4)
                         .accessibilityIdentifier("home.stale")
                 }
-                if let hero = content.hero { heroView(hero) }
+                if let hero = model.hero { heroView(hero) }
                 ForEach(model.sections) { section in
                     switch section {
                     case let .cards(row): cardsRow(row)
                     case let .live(channels):
                         // no channel row while Live TV is off on the home (51.11)
                         if context.session.capabilities.current.isOn(.liveTV) { liveRow(channels) }
+                    case let .failed(key, kind, failure): retryRow(key, kind, failure)
                     }
                 }
             }
@@ -167,22 +170,24 @@ struct HomeScreen: View {
     private var cardWidth: CGFloat { sizeClass == .regular ? 224 : 168 }
 
     private func cardsRow(_ row: HomeRow) -> some View {
-        Rail(rowTitle(row.title), items: row.cards, seeAll: row.seeAll.map { route in { pushed = route } }) { card in
+        Rail(rowTitle(row.kind), items: row.cards, seeAll: row.seeAll.map { route in { pushed = route } }) { card in
             cardView(card)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("home.row.\(row.key)")
     }
 
-    private func rowTitle(_ title: HomeRowTitle) -> Text {
-        switch title {
-        case let .named(name): Text(verbatim: name)
+    private func rowTitle(_ kind: HomeShelf.Kind) -> Text {
+        switch kind {
+        case let .library(_, name): Text(verbatim: name)
+        case .liveNow: liveTitle
+        case .home: Text(PlayerSection.home.title)
         case .continueWatching: Text("Continue Watching", tableName: "Home", comment: "Home's row of videos the person stopped part way")
-        case .onDeck: Text("On Deck", tableName: "Home", comment: "Home's row of each series' next lesson")
+        case .upNext: Text("On Deck", tableName: "Home", comment: "Home's row of each series' next lesson")
         case .favorites: Text("Favorites", tableName: "Home", comment: "Home's row of the person's favorite videos")
         case .recentlyAdded: Text("Recently Added", tableName: "Home", comment: "Home's row of the newest videos")
         case .recentlyWatched: Text("Recently Watched", tableName: "Home", comment: "Home's row of the videos watched last")
-        case .forYou: Text("For You", tableName: "Home", comment: "Home's row of recommendations")
+        case .forYou, .recommendations: Text("For You", tableName: "Home", comment: "Home's row of recommendations")
         case .fromLibrary: Text("From your library", tableName: "Home", comment: "Home's row of recommendations from the person's libraries")
         }
     }
@@ -238,8 +243,7 @@ struct HomeScreen: View {
     /// Live TV on now: each channel's programme, how far through it is, and the channel; a tap
     /// opens the channel.
     private func liveRow(_ channels: [ChannelNow]) -> some View {
-        Rail(Text("What's On Now", tableName: "Home", comment: "Home's row of what each Live TV channel shows now"),
-             items: channels) { entry in
+        Rail(liveTitle, items: channels) { entry in
             let current = entry.current.flatMap { $0.kind == "filler" ? nil : $0 }
             let title = current.flatMap { $0.title.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0.title }
                 ?? String(localized: "No content right now", table: "Home", comment: "A channel with nothing scheduled now")
@@ -252,7 +256,52 @@ struct HomeScreen: View {
             .accessibilityIdentifier("home.channel.\(entry.channel.id)")
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("home.row.\(HomeRow.live)")
+        .accessibilityIdentifier("home.row.\(HomeShelf.liveNow)")
+    }
+
+    private var liveTitle: Text {
+        Text("What's On Now", tableName: "Home", comment: "Home's row of what each Live TV channel shows now")
+    }
+
+    /// A row that could not be read: its title, then one card-sized tile that says so; a tap
+    /// reads Home again (the same tile as the Apple TV's).
+    private func retryRow(_ key: String, _ kind: HomeShelf.Kind, _ failure: HomeFailure) -> some View {
+        Rail(rowTitle(kind), items: [RetryItem()]) { _ in
+            Button {
+                Task { await model.load() }
+            } label: {
+                VStack(spacing: MaktabaTokens.Spacing.s2) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.mktBrassText)
+                        .accessibilityHidden(true)
+                    Text("This row could not be loaded.", tableName: "Home",
+                         comment: "A Home row the home did not send: the tile in its place")
+                        .font(.maktabaBody(15, weight: .semibold, relativeTo: .subheadline))
+                        .foregroundStyle(Color.mktText)
+                    Text(verbatim: failure.message(video: false))
+                        .font(.maktabaBody(13, relativeTo: .footnote))
+                        .foregroundStyle(Color.mktMuted)
+                        .lineLimit(2)
+                    Text("Try again", tableName: "Home", comment: "The tile of a Home row that did not load: read it again")
+                        .font(.maktabaBody(14, weight: .medium, relativeTo: .footnote))
+                        .foregroundStyle(Color.mktBrassText)
+                }
+                .multilineTextAlignment(.center)
+                .padding(MaktabaTokens.Spacing.s3)
+                .frame(width: cardWidth)
+                .frame(minHeight: cardWidth * 9 / 16)
+                .background(RoundedRectangle(cornerRadius: MaktabaTokens.Radius.md, style: .continuous).fill(Color.mktRaised))
+                .overlay(RoundedRectangle(cornerRadius: MaktabaTokens.Radius.md, style: .continuous)
+                    .strokeBorder(Color.mktBorder, lineWidth: 0.5))
+                .contentShape(RoundedRectangle(cornerRadius: MaktabaTokens.Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("home.row.retry")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("home.row.\(key)")
     }
 
     // MARK: pictures
@@ -377,4 +426,9 @@ private struct EmptyHome: View {
         .buttonStyle(.plain)
         .accessibilityIdentifier("home.signOut")
     }
+}
+
+/// The one item of a retry row.
+private struct RetryItem: Identifiable {
+    var id: String { "retry" }
 }

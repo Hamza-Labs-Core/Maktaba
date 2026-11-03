@@ -1,6 +1,6 @@
 # Deploys maktaba.dev, the developer portal (web/packages/devportal), to Cloudflare Workers.
 #
-# On a push to main that changes the portal or a doc it publishes, by hand (Actions →
+# On a push to main that changes the portal, the wiki or a doc it publishes, by hand (Actions →
 # Deploy maktaba.dev → Run workflow), and monthly: each build renders security.txt with an
 # Expires 11 months after the build day (api/internal/security/disclosure.go,
 # ExpiryMonths), so the monthly deploy keeps it always 10 to 11 months ahead. Pull requests never deploy: ci.yml's
@@ -10,7 +10,7 @@
 # Needs the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets (org or repo). Without
 # them the deploy job says so and skips, and the run stays green. The token's permissions
 # are in web/packages/devportal/README.md. After a deploy, a smoke check fetches the live
-# home page and security.txt.
+# home page, the wiki in both languages and security.txt.
 
 name: Deploy maktaba.dev
 
@@ -20,6 +20,8 @@ on:
     # the devportal filter of .github/ci-paths.yml: what the site is built from
     paths:
       - 'web/packages/devportal/**'
+      - 'web/wiki-app/**'
+      - 'specs/diagrams/**'
       - 'docs/developers/**'
       - 'CHANGELOG.md'
       - 'CHANGELOG.ar.md'
@@ -77,8 +79,16 @@ jobs:
         if: steps.secrets.outputs.ok == 'true'
         with:
           node-version-file: web/packages/devportal/.nvmrc
-          cache: npm
-          cache-dependency-path: web/packages/devportal/package-lock.json
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: npm cache
+        id: npm-cache
+        if: steps.secrets.outputs.ok == 'true'
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: npm
+          lock-hash: ${{ hashFiles('web/packages/devportal/package-lock.json') }}
 
       # wrangler at the version package-lock.json pins
       - name: Install
@@ -129,8 +139,24 @@ jobs:
           grep -qi '^strict-transport-security:' headers.txt || { echo "::error::no HSTS header on /"; exit 1; }
           grep -qi "^content-security-policy:.*frame-ancestors 'none'" headers.txt || { echo "::error::no CSP on /"; exit 1; }
           check https://maktaba.dev/ar/ '<html lang="ar" dir="rtl">'
+          # the wiki in both languages: the English and Arabic pages, and the Arabic database
+          check https://maktaba.dev/wiki/ '<html lang="en" dir="ltr">'
+          check https://maktaba.dev/ar/wiki/ '<html lang="ar" dir="rtl">'
+          check https://maktaba.dev/ar/wiki/db/wiki.json '"lang": "ar"'
+          check https://maktaba.dev/wiki/db/wiki.json '"entries"'
+          for u in https://maktaba.dev/wiki/db/wiki.json https://maktaba.dev/ar/wiki/db/wiki.json; do
+            if curl -sS "$u" | grep -qF 'linear.app'; then echo "::error::$u links linear.app"; exit 1; fi
+          done
           check https://maktaba.dev/.well-known/security.txt 'Contact: mailto:security@maktaba.dev'
           grep -q '^Expires: ' body.txt || { echo "::error::security.txt has no Expires"; exit 1; }
           code=$(curl -sS -o /dev/null -w '%{http_code} %{redirect_url}' https://www.maktaba.dev/ || true)
           echo "www: $code"
           case "$code" in "301 https://maktaba.dev/") ;; *) echo "::error::www.maktaba.dev does not redirect to https://maktaba.dev/"; exit 1 ;; esac
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the npm cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.npm-cache.outputs.key != '' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.npm-cache.outputs.path }}
+          key: ${{ steps.npm-cache.outputs.key }}

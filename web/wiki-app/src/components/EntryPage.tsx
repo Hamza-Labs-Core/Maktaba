@@ -8,6 +8,7 @@ import {
   githubUrlFor,
 } from '@/lib/labels';
 import { TagChip } from './TagChip';
+import { fileRole, t } from '@/lib/i18n';
 import { Breadcrumb, type Crumb } from './Breadcrumb';
 import { RelatedCard } from './RelatedCard';
 import { MockupViewer } from './MockupViewer';
@@ -31,23 +32,23 @@ export function EntryPage({ bundle, id }: Props) {
     return (
       <div className="text-center py-12">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-          Not found
+          {t('entry.notFound')}
         </h1>
-        <p className="text-slate-600 dark:text-slate-400">
-          No entry with id <code className="font-mono">{id}</code>.
+        <p className="text-slate-600 dark:text-slate-400 break-words">
+          {t('entry.notFound.body')} <code className="font-mono">{id}</code>
         </p>
         <Link
           to="/"
           className="mt-4 inline-block text-brand-600 hover:underline"
         >
-          ← Back to overview
+          {t('entry.back')}
         </Link>
       </div>
     );
   }
 
   // Breadcrumbs
-  const crumbs: Crumb[] = [{ label: 'Home', to: '/' }];
+  const crumbs: Crumb[] = [{ label: t('home'), to: '/' }];
   crumbs.push({ label: TYPE_LABEL[entry.type], to: `/type/${entry.type}` });
   if (entry.epic && entry.type !== 'epic') {
     const ep = bundle.byId.get(`epic-${entry.epic}`);
@@ -57,9 +58,9 @@ export function EntryPage({ bundle, id }: Props) {
 
   // Subtitle bits
   const subParts: React.ReactNode[] = [];
-  if (entry.phase) subParts.push(`Phase ${entry.phase}`);
+  if (entry.phase) subParts.push(t('entry.phase', { n: entry.phase }));
   if (entry.engine) subParts.push(entry.engine);
-  if (entry.epic && entry.type === 'epic') subParts.push(`Epic ${entry.epic}`);
+  if (entry.epic && entry.type === 'epic') subParts.push(t('entry.epic', { n: entry.epic }));
 
   const stories = entry.type === 'epic' ? bundle.epicStories.get(entry.id) || [] : [];
   const plans = entry.type === 'epic' ? bundle.epicPlans.get(entry.id) || [] : [];
@@ -80,7 +81,7 @@ export function EntryPage({ bundle, id }: Props) {
     <article>
       <Breadcrumb items={crumbs} />
 
-      <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight">
+      <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight break-words">
         {entry.title || entry.id}
       </h1>
 
@@ -90,12 +91,12 @@ export function EntryPage({ bundle, id }: Props) {
           <TagChip method={String(entry.metadata.method)} />
         )}
         {entry.metadata?.path && (
-          <span className="font-mono text-[12px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded px-2 py-0.5">
+          <span dir="ltr" className="font-mono text-[12px] text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded px-2 py-0.5 break-words max-w-full">
             {String(entry.metadata.path)}
           </span>
         )}
-        {(entry.tags || []).map((t) => (
-          <TagChip key={t}>{t}</TagChip>
+        {(entry.tags || []).map((tag) => (
+          <TagChip key={tag}>{tag}</TagChip>
         ))}
       </div>
 
@@ -108,7 +109,7 @@ export function EntryPage({ bundle, id }: Props) {
             </span>
           ))}
           {subParts.length > 0 && <span className="opacity-50">·</span>}
-          <code className="font-mono">{entry.id}</code>
+          <code dir="ltr" className="font-mono break-words">{entry.id}</code>
         </div>
       )}
 
@@ -119,7 +120,7 @@ export function EntryPage({ bundle, id }: Props) {
       />
 
       {mockupPaths.length > 0 && (
-        <Panel title={mockupPaths.length === 1 ? 'View mockup' : `Mockups (${mockupPaths.length})`}>
+        <Panel title={mockupPaths.length === 1 ? t('entry.mockup') : t('entry.mockups', { n: mockupPaths.length })}>
           <div className="flex flex-col gap-3">
             {mockupPaths.map((p, i) => (
               <MockupViewer key={p} path={p} defaultOpen={i === 0} />
@@ -129,7 +130,7 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {diagramPaths.length > 0 && (
-        <Panel title={diagramPaths.length === 1 ? 'Diagram' : `Diagrams (${diagramPaths.length})`}>
+        <Panel title={diagramPaths.length === 1 ? t('entry.diagram') : t('entry.diagrams', { n: diagramPaths.length })}>
           <div className="flex flex-col gap-3">
             {diagramPaths.map((p, i) => (
               <DiagramViewer key={p} path={p} defaultOpen={i === 0} />
@@ -139,7 +140,7 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {entry.files && Object.keys(entry.files).length > 0 && (
-        <Panel title="Files">
+        <Panel title={t('entry.files')}>
           <div className="flex flex-col gap-1">
             {Object.entries(entry.files).flatMap(([role, val]) => {
               const items = Array.isArray(val) ? val : val ? [val] : [];
@@ -151,12 +152,12 @@ export function EntryPage({ bundle, id }: Props) {
                     href={githubUrlFor(path)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-baseline gap-3 px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800/60 text-[12.5px]"
+                    className="flex flex-wrap items-baseline gap-x-3 px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800/60 text-[12.5px] min-w-0"
                   >
-                    <span className="text-slate-500 dark:text-slate-400 font-medium min-w-[70px] shrink-0 lowercase">
-                      {role}
+                    <span className="text-slate-500 dark:text-slate-400 font-medium min-w-[70px] shrink-0">
+                      {fileRole(role)}
                     </span>
-                    <span className="font-mono text-[12px] text-brand-600 dark:text-brand-300 break-all">
+                    <span dir="ltr" className="font-mono text-[12px] text-brand-600 dark:text-brand-300 break-words min-w-0">
                       {path}
                     </span>
                   </a>
@@ -167,7 +168,7 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {(entry.api_endpoints || []).length > 0 && (
-        <Panel title="API endpoints">
+        <Panel title={t('entry.endpoints')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {entry.api_endpoints!.map((ep) => {
               const epId = endpointIdFor(ep);
@@ -177,7 +178,7 @@ export function EntryPage({ bundle, id }: Props) {
               const inner = (
                 <>
                   <TagChip method={method} />
-                  <span className="font-mono text-[12px] text-slate-700 dark:text-slate-300 mt-1.5 truncate">
+                  <span dir="ltr" className="font-mono text-[12px] text-slate-700 dark:text-slate-300 mt-1.5 truncate text-start">
                     {path}
                   </span>
                 </>
@@ -204,28 +205,28 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {(entry.db_tables || []).length > 0 && (
-        <Panel title="Database tables">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-            {entry.db_tables!.map((t) => {
-              const target = `entity-${t}`;
+        <Panel title={t('entry.tables')}>
+          <div className="grid grid-cols-1 min-[400px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {entry.db_tables!.map((table) => {
+              const target = `entity-${table}`;
               return bundle.byId.has(target) ? (
                 <Link
-                  key={t}
+                  key={table}
                   to="/entry/$id"
                   params={{ id: target }}
                   className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2 hover:border-brand-500 transition-colors"
                 >
-                  <div className="font-mono text-[12.5px] text-slate-900 dark:text-slate-100">
-                    {t}
+                  <div className="font-mono text-[12.5px] text-slate-900 dark:text-slate-100 break-words">
+                    {table}
                   </div>
-                  <div className="text-[10.5px] text-slate-500 mt-0.5">DB table</div>
+                  <div className="text-[10.5px] text-slate-500 mt-0.5">{t('entry.dbTable')}</div>
                 </Link>
               ) : (
                 <div
-                  key={t}
+                  key={table}
                   className="rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2"
                 >
-                  <div className="font-mono text-[12.5px]">{t}</div>
+                  <div className="font-mono text-[12.5px]">{table}</div>
                 </div>
               );
             })}
@@ -234,7 +235,7 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {entry.type === 'epic' && stories.length > 0 && (
-        <Panel title={`Stories (${stories.length})`}>
+        <Panel title={t('entry.stories', { n: stories.length })}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {stories.map((s) => (
               <RelatedCard key={s.id} entry={s} />
@@ -244,7 +245,7 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {entry.type === 'epic' && plans.length > 0 && (
-        <Panel title={`Plans (${plans.length})`}>
+        <Panel title={t('entry.plans', { n: plans.length })}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {plans.map((p) => (
               <RelatedCard key={p.id} entry={p} />
@@ -254,7 +255,7 @@ export function EntryPage({ bundle, id }: Props) {
       )}
 
       {related.length > 0 && (
-        <Panel title="Related">
+        <Panel title={t('entry.related')}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {related.map((r: WikiEntry) => (
               <RelatedCard key={r.id} entry={r} />
@@ -275,7 +276,7 @@ function Panel({
 }) {
   return (
     <section className="mt-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/40 px-4 py-3.5">
-      <div className="text-[10.5px] uppercase tracking-wider font-semibold text-slate-500 dark:text-slate-400 mb-2.5">
+      <div className="text-[10.5px] uppercase tracking-wider rtl:normal-case rtl:tracking-normal rtl:text-[12px] font-semibold text-slate-500 dark:text-slate-400 mb-2.5">
         {title}
       </div>
       {children}

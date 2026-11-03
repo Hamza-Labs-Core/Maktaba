@@ -30,7 +30,7 @@ export default {
     }
     // RFC 9116 §3: the file lives under /.well-known/; the old root path points there
     if (url.pathname === "/security.txt") return redirect("/.well-known/security.txt");
-    // the epics wiki and the Epic 54 story pages: gone from this site (headers.ts MOVED)
+    // the Epic 54 story pages: gone from this site (headers.ts MOVED)
     const moved = movedTo(url.pathname);
     if (moved) return redirect(moved);
 

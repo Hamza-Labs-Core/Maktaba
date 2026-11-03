@@ -33,6 +33,16 @@ final class PlayerWatchTests: XCTestCase {
         XCTAssertEqual(WatchLogic.start(asked: 0, resume: 1240, completed: false), 0)
     }
 
+    /// A player still waiting 15 s after it was first seen waiting is opened again where it
+    /// is; one not waiting, or waiting less, is left alone.
+    func testAPlayerWaitingFifteenSecondsIsStuck() {
+        let now = Date()
+        XCTAssertFalse(WatchLogic.stuck(waitingSince: nil, now: now), "not waiting")
+        XCTAssertFalse(WatchLogic.stuck(waitingSince: now.addingTimeInterval(-10), now: now), "waiting 10 s: a slow segment")
+        XCTAssertTrue(WatchLogic.stuck(waitingSince: now.addingTimeInterval(-15), now: now))
+        XCTAssertTrue(WatchLogic.stuck(waitingSince: now.addingTimeInterval(-40), now: now))
+    }
+
     func testADoubleTapGoesBackOnTheStartSideAndForwardOnTheEndSide() {
         XCTAssertEqual(WatchLogic.doubleTapSeek(onStartSide: true), -10)
         XCTAssertEqual(WatchLogic.doubleTapSeek(onStartSide: false), 10)
