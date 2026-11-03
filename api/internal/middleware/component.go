@@ -31,8 +31,17 @@ func RequireComponent(r *runner.Runner, id string) func(http.Handler) http.Handl
 	}
 }
 
-// ComponentOff is the 409 a route of an off component answers.
+// TypeComponentOff is the problem type of component_off (story 51.09).
+const TypeComponentOff = "https://maktaba.tv/problems/component-off"
+
+// ComponentOff is the 409 a route of an off component answers: its id, and the feature
+// it serves when it serves one (story 51.09), so every app has words for it.
 func ComponentOff(id string) *httperror.Error {
-	return httperror.Conflict("", id+" is turned off on this home").
+	e := (&httperror.Error{Type: TypeComponentOff, Title: "This feature is off", Status: http.StatusConflict,
+		Detail: id + " is turned off on this home"}).
 		With("code", CodeComponentOff).With("component", id)
+	if c, ok := components.Default().Get(id); ok && len(c.Features) > 0 {
+		e = e.With("feature", c.Features[0])
+	}
+	return e
 }

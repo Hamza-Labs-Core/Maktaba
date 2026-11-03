@@ -372,47 +372,18 @@ func (r *Runner) notify() {
 	}
 }
 
-// computeGates sets every component's gate from the desired state (r.mu held).
-// Requirements come first in the catalog's order, so each sees its requirements' gates.
+// computeGates sets every component's gate from the desired state (r.mu held), and
+// wakes the runner when a licence's grace ends.
 func (r *Runner) computeGates() {
 	out := map[string]gate{}
 	now := r.clock.Now()
 	var wake time.Time
-	for _, id := range r.cat.Order() {
-		c, _ := r.cat.Get(id)
-		d, has := r.desired[id]
-		g := gate{on: true, generation: d.Generation, licence: c.Licence, licensed: true}
-		if c.Licence != "" && has {
-			g.licensed = d.LicensedAt(now)
-			if l := d.Licence; l != nil {
-				g.published = true
-				if l.Until != nil {
-					g.until = *l.Until
-				}
-				if g.licensed && l.Until != nil && (wake.IsZero() || l.Until.Before(wake)) {
-					wake = *l.Until
-				}
-			}
+	for id, g := range GatesAt(r.cat, r.desired, r.noReconcile, now) {
+		out[id] = gate{on: g.On, phase: g.Phase, reason: g.Reason, missing: g.Missing, generation: g.Generation,
+			licence: g.Licence, licensed: g.Licensed, published: g.Published, until: g.Until}
+		if g.Licensed && !g.Until.IsZero() && (wake.IsZero() || g.Until.Before(wake)) {
+			wake = g.Until
 		}
-		switch {
-		case !c.Switchable || r.noReconcile || !has:
-		case d.Want != components.WantEnabled:
-			g.on, g.phase = false, components.PhaseOff
-		case d.Hold != nil:
-			g.on, g.phase, g.reason = false, components.PhaseStopped, "held"
-		case !g.licensed:
-			g.on, g.phase, g.reason = false, components.PhaseWaiting, ReasonLicenceMissing
-		default:
-			for _, req := range r.cat.Requires(id) {
-				if !slices.ContainsFunc(req.AnyOf, func(x string) bool { return out[x].on }) {
-					g.missing = append(g.missing, req.AnyOf...)
-				}
-			}
-			if len(g.missing) > 0 {
-				g.on, g.phase, g.reason = false, components.PhaseWaiting, "dependency_off"
-			}
-		}
-		out[id] = g
 	}
 	r.gates.Store(&out)
 	if !r.noReconcile && !wake.Equal(r.licWake) {
@@ -457,6 +428,71 @@ func (r *Runner) Licensed(id string) (licensed, known bool) {
 		return true, false
 	}
 	return g.licensed && (g.until.IsZero() || r.clock.Now().Before(g.until)), true
+}
+
+// Gate is one component's switch as the desired state alone decides it: the rule every
+// Go runner applies, and the API's capabilities and component_off answer (story 51.09).
+type Gate struct {
+	On         bool
+	Phase      string   // when off: off, stopped or waiting
+	Reason     string   // held, dependency_off, licence_missing
+	Missing    []string // dependency_off: the ids of the unmet groups
+	Generation int64
+	// Licence is the component's licence flag ("" for a free one); Licensed whether the
+	// published licence grants it at the time asked (true while nothing is published).
+	Licence  string
+	Licensed bool
+	// Published: the API published a licence on the row; Until is its end (zero: none)
+	Published bool
+	Until     time.Time
+}
+
+// Gates is GatesAt now.
+func Gates(cat *components.Catalog, desired map[string]store.Desired, noReconcile bool) map[string]Gate {
+	return GatesAt(cat, desired, noReconcile, time.Now())
+}
+
+// GatesAt is every catalog component's gate for desired at now (nil desired: nothing read
+// yet, all on). A core component, a component with no row, and every component under the
+// kill switch (noReconcile) are on. Off: want is not enabled, a hold, a licence the home
+// lacks (story 51.19), or a requirement is off. Requirements come first in the catalog's
+// order, so each sees its requirements' gates.
+func GatesAt(cat *components.Catalog, desired map[string]store.Desired, noReconcile bool, now time.Time) map[string]Gate {
+	out := make(map[string]Gate, len(cat.Order()))
+	for _, id := range cat.Order() {
+		c, _ := cat.Get(id)
+		d, has := desired[id]
+		g := Gate{On: true, Generation: d.Generation, Licence: c.Licence, Licensed: true}
+		if c.Licence != "" && has {
+			g.Licensed = d.LicensedAt(now)
+			if l := d.Licence; l != nil {
+				g.Published = true
+				if l.Until != nil {
+					g.Until = *l.Until
+				}
+			}
+		}
+		switch {
+		case !c.Switchable || noReconcile || !has:
+		case d.Want != components.WantEnabled:
+			g.On, g.Phase = false, components.PhaseOff
+		case d.Hold != nil:
+			g.On, g.Phase, g.Reason = false, components.PhaseStopped, "held"
+		case !g.Licensed:
+			g.On, g.Phase, g.Reason = false, components.PhaseWaiting, ReasonLicenceMissing
+		default:
+			for _, req := range cat.Requires(id) {
+				if !slices.ContainsFunc(req.AnyOf, func(x string) bool { return out[x].On }) {
+					g.Missing = append(g.Missing, req.AnyOf...)
+				}
+			}
+			if len(g.Missing) > 0 {
+				g.On, g.Phase, g.Reason = false, components.PhaseWaiting, "dependency_off"
+			}
+		}
+		out[id] = g
+	}
+	return out
 }
 
 // apply starts what should run and stops what should not (r.mu held).

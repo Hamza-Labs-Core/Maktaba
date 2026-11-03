@@ -160,6 +160,18 @@
     <string name="error_unreachable">Your home can\'t be reached. Check that it\'s on and connected to the network.</string>
     <string name="error_busy">Your home is busy right now. Try again in a moment.</string>
     <string name="error_server">Something went wrong on your home. Try again in a moment.</string>
+    <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
+    <string name="error_off">This feature is turned off on this home.</string>
+    <string name="error_off_admin">%1$s is off on this home. Turn it on in Components.</string>
+    <string name="feature_live_tv">Live TV</string>
+    <string name="feature_transcripts">Transcripts</string>
+    <string name="feature_subtitles">Subtitles</string>
+    <string name="feature_semantic_search">Search by meaning</string>
+    <string name="feature_chapters">Chapters</string>
+    <string name="feature_youtube">YouTube</string>
+    <string name="feature_plex">Plex</string>
+    <string name="feature_remote_access">Access away from home</string>
+    <string name="feature_recommendations">Recommendations</string>
     <string name="error_back">Back</string>
     <string name="error_sign_in_again">Sign in again</string>
     <string name="error_details">Details</string>

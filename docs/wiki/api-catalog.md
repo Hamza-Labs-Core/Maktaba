@@ -119,3 +119,14 @@ Admin only (no sign-in 401; a viewer, a cloud play sign-in, a token without the 
 | `POST` | `/api/components/{id}/start` | Components | Clear the hold | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
 | `POST` | `/api/components/preview` | Components | The effect of a batch (or a bundle), changing nothing | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
 | `POST` | `/api/components/apply` | Components | A batch of changes (or a bundle) in one transaction, or none | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+
+### Capabilities and `component_off` (story 51.09)
+
+Every signed-in user (no sign-in 401). A viewer and a cloud play sign-in get the features only; an admin and an admin's cloud manage link also get `admin.manage_components` and, for each feature that is off, the components and the reason (`switched_off`, `held`, `dependency_off`, `licence_missing`). Answered from memory (no query): `ETag: "c-<revision>-<licence>"`, `If-None-Match` 304, `Cache-Control: private, no-cache`.
+
+| Method | Path | Tag | Summary | Owning stories |
+|--------|------|-----|---------|----------------|
+| `GET` | `/api/capabilities` | Components | Which of the nine features (`live_tv`, `transcripts`, `subtitles`, `semantic_search`, `chapters`, `youtube`, `plex`, `remote_access`, `recommendations`) are on | [51.09](../../specs/epics/51-configurable-components/story-51-09-capabilities.md) |
+| `GET` | `/ws/home` | Components | SSE, every signed-in user: `capabilities_changed {etag}` after a desired-state or licence change (at most once a second, through the cross-replica bus) | [51.09](../../specs/epics/51-configurable-components/story-51-09-capabilities.md) |
+
+A route whose component is off (`api/internal/router/components_routes.go`: the guide and what is on now, the channel playlist and XMLTV, `/api/tv/onair`, tuning, the YouTube search, the Plex sign-in; `/api/tv/changes…` after its admin check) answers `409` `{"type":"https://maktaba.tv/problems/component-off","code":"component_off","component":"livetv","feature":"live_tv"}`. Settings routes stay on. With `search.semantic` off, `POST /api/search` skips the semantic leg and answers keyword results with `"semantic":"off"`. `[components] capabilities_gate = "off"` answers every feature on and turns the check into a no-op.

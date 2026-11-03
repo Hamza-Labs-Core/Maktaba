@@ -102,6 +102,22 @@ describe("classifyError", () => {
     expect(kindOfStatus(0)).toBe("unreachable");
     expect(kindOfStatus(502)).toBe("server");
   });
+
+  // story 51.09 T12
+  it("a 409 component_off is off; another 409 is not", () => {
+    const off = new ApiError({
+      type: "https://maktaba.tv/problems/component-off",
+      title: "This feature is off",
+      status: 409,
+      code: "component_off",
+      component: "livetv",
+      feature: "live_tv",
+    });
+    expect(classifyError(off).kind).toBe("off");
+    expect(kindOfStatus(409, "", "component_off")).toBe("off");
+    expect(kindOfStatus(409, "", "stale_generation")).toBe("server");
+    expect(errorStateKind("off")).toBe("server");
+  });
 });
 
 describe("classifyPlayback", () => {
