@@ -335,6 +335,27 @@ def test_the_agents_status_file_says_the_worker_is_paused(tmp_path: Path) -> Non
     assert json.loads(path.read_text(encoding="utf-8"))["paused"] is None
 
 
+@pytest.mark.asyncio
+async def test_the_agents_status_file_goes_at_a_clean_stop(tmp_path: Path) -> None:
+    """A stopped agent leaves no status file behind (nor the temp file of a write cut
+    short), and a late pause change does not write it again."""
+    path = tmp_path / "status" / "w1.json"
+    agent = ChannelAgent(_identity(), shipper=LogShipper("info"), status_path=path)
+    run = asyncio.create_task(agent.run())
+    for _ in range(100):
+        if path.exists():
+            break
+        await asyncio.sleep(0.01)
+    assert json.loads(path.read_text(encoding="utf-8"))["state"] == "no_channel"
+    path.with_suffix(".tmp").write_text("{", encoding="utf-8")  # a write cut short
+    agent.stop()
+    await asyncio.wait_for(run, 5)
+    assert agent.state == "stopped"
+    assert sorted(p.name for p in path.parent.iterdir()) == []
+    agent.write_status()  # a pause listener after the stop
+    assert not path.exists()
+
+
 def test_the_jobs_stop_with_a_margin_under_the_lease() -> None:
     # the default lease (90 s, job heartbeats every 5 s): 70 s after the last answered beat
     assert stop_jobs_after(90.0, 5.0) == STOP_JOBS_AFTER_SEC == 70.0

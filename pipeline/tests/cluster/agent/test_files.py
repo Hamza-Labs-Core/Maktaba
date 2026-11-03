@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from pathlib import Path
 
 import pytest
 
 from maktaba_pipeline.cluster import safefs
-from maktaba_pipeline.cluster.agent.files import ClusterFiles, safe_name
+from maktaba_pipeline.cluster.agent.files import (
+    SAFE_AGE_SEC,
+    ClusterFiles,
+    process_alive,
+    prune_stale,
+    safe_name,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -57,8 +64,8 @@ def test_layout_one_writer_per_file(tmp_path: Path) -> None:
         "reason": None,
         "dropped": 0,
     }
-    ident = json.loads((m / "processes" / "node-ab12cd34-4242.json").read_text())
-    assert ident["started_at"] and ident["last_seen"] and ident["stopped_at"]  # a clean stop
+    # a clean stop: the process is not listed any more
+    assert not (m / "processes" / "node-ab12cd34-4242.json").exists()
 
 
 def test_file_cap_counts_what_it_does_not_write(tmp_path: Path) -> None:
@@ -238,3 +245,151 @@ def test_macos_sidecars_are_not_records_and_expire_with_their_files(tmp_path: Pa
     f.prune(today="2026-10-19")
     assert not old.exists()  # the day folder goes, its sidecars with it
     assert sorted(p.name for p in procs.iterdir()) == ["node-ab12cd34-4242.json"]
+
+
+# -- stale files of gone processes ------------------------------------------------------
+
+#: pids no test machine runs (the fake pids of earlier processes)
+GONE_PID = 2_000_000_001
+GONE_PID_2 = 2_000_000_002
+LIVE_PID = 2_000_000_003  #: a fake pid the fake process table says runs
+
+
+def _old(p: Path, text: str, *, age: float = SAFE_AGE_SEC + 60) -> Path:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(text)
+    t = p.stat().st_mtime - age
+    os.utime(p, (t, t))
+    return p
+
+
+def test_process_alive_tells_a_gone_or_reused_pid() -> None:
+    assert process_alive(os.getpid())
+    assert not process_alive(GONE_PID)
+    assert not process_alive(None) and not process_alive("12") and not process_alive(True)
+    # this process was created long after a file written in 1970: a reused pid
+    assert not process_alive(os.getpid(), written=0.0)
+    assert process_alive(os.getpid(), written=9e9)
+
+
+def test_prune_stale_removes_only_files_of_gone_processes(tmp_path: Path) -> None:
+    d = tmp_path / "status"
+    gone = _old(d / "gone.json", json.dumps({"pid": GONE_PID, "state": "stopped"}))
+    _old(d / "._gone.json", "sidecar")
+    live = _old(d / "live.json", json.dumps({"pid": LIVE_PID, "state": "connected"}))
+    fresh = _old(d / "fresh.json", json.dumps({"pid": GONE_PID_2}), age=60)  # not old enough
+    own = _old(d / "mine.json", json.dumps({"pid": GONE_PID}))
+    nopid = _old(d / "nopid.json", json.dumps({"state": "stopped"}))
+    broken = _old(d / "broken.json", "{")
+    tmp = _old(d / "w_1_ab.tmp", "{")  # a write cut short
+    fresh_tmp = _old(d / "w_2_cd.tmp", "{", age=5)  # a write in progress
+    other = _old(d / "notes.txt", "kept")
+    assert prune_stale(d, keep="mine", alive=lambda pid, _w: pid == LIVE_PID) == 2
+    assert not gone.exists() and not (d / "._gone.json").exists() and not tmp.exists()
+    for p in (live, fresh, own, nopid, broken, fresh_tmp, other):
+        assert p.exists(), p.name
+
+
+def test_prune_stale_sees_through_a_reused_pid(tmp_path: Path) -> None:
+    """The file's pid runs again, but as a process created after the file was written."""
+    p = _old(
+        tmp_path / "w.json",
+        json.dumps({"pid": os.getpid(), "updated_at": "2020-10-19T03:49:54Z"}),
+    )
+    assert prune_stale(tmp_path) == 1 and not p.exists()
+
+
+def test_prune_stale_leaves_another_machines_processes(tmp_path: Path) -> None:
+    seen: list[object] = []
+
+    def alive(pid: object, written: float | None) -> bool:
+        seen.append(pid)
+        return False
+
+    mine = _old(tmp_path / "a.json", json.dumps({"pid": 11, "host": "studio"}))
+    theirs = _old(tmp_path / "b.json", json.dumps({"pid": 12, "host": "win-box"}))
+    n = prune_stale(tmp_path, mine=lambda d: d.get("host") == "studio", alive=alive)
+    assert n == 1 and not mine.exists() and theirs.exists() and seen == [11]
+
+
+def test_which_share_files_are_this_machines() -> None:
+    same = ClusterFiles._same_machine
+    node = {"kind": "node", "node_id": "ab12", "host": "win-box"}
+    assert same(node, {"kind": "node", "node_id": "ab12", "host": "renamed"})
+    assert not same(node, {"kind": "node", "node_id": "cd34", "host": "win-box"})
+    assert not same(node, {"kind": "home", "node_id": None, "host": "win-box"})
+    # the home: every home process, whatever the Mac was called then
+    home = {"kind": "home", "node_id": None, "host": "Studio-3"}
+    assert same(home, {"kind": "home", "node_id": None, "host": "Studio"})
+    assert not same(home, {"kind": "node", "node_id": "ab12", "host": "Studio-3"})
+    # neither: by host
+    other = {"host": "box"}
+    assert same(other, {"host": "box"}) and not same(other, {"host": "elsewhere"})
+    assert not same({}, {"host": None})
+
+
+def test_prune_stale_never_follows_a_link(tmp_path: Path) -> None:
+    target = _old(tmp_path / "elsewhere" / "w.json", json.dumps({"pid": GONE_PID}))
+    d = tmp_path / "status"
+    d.mkdir()
+    try:
+        (d / "w.json").symlink_to(target)
+    except OSError:
+        pytest.skip("no symlinks here")  # Windows without developer mode
+    assert prune_stale(d) == 0 and target.exists() and (d / "w.json").is_symlink()
+    assert prune_stale(tmp_path / "missing") == 0
+
+
+def test_a_clean_stop_removes_the_process_file_everywhere(tmp_path: Path) -> None:
+    f = _files(tmp_path)
+    f.set_identity({"worker_id": "node-ab12cd34-4242", "pid": 4242, "host": "studio"})
+    local = tmp_path / "local/192.168.50.31/processes"
+    local.mkdir(parents=True)
+    (local / "node-ab12cd34-4242.json").write_text("{}")  # written while the share was away
+    f.stop()
+    share = tmp_path / "share/maktaba/cluster/192.168.50.31/processes"
+    assert list(share.glob("*.json")) == [] and list(local.glob("*.json")) == []
+    f.set_ip("10.0.0.9")  # nothing is written again after the stop
+    assert list((tmp_path / "share/maktaba/cluster").glob("*/processes/*.json")) == []
+
+
+def test_the_stale_pass_sweeps_status_share_and_local_folders(tmp_path: Path) -> None:
+    status = tmp_path / "local" / "status"
+    f = _files(tmp_path, status_dir=status)
+    me = {"kind": "node", "node_id": "ab12cd34", "host": "studio"}
+    f.set_identity({"worker_id": "node-ab12cd34-4242", "pid": os.getpid(), **me})
+    share = tmp_path / "share/maktaba/cluster/192.168.50.31/processes"
+    gone = {"pid": GONE_PID, **me, "host": "old-name", "started_at": "2026-10-19T00:00:00Z"}
+    s_gone = _old(status / "node-ab12cd34-1111.json", json.dumps({"pid": GONE_PID}))
+    # this process, written after it started: alive an hour from now
+    s_live = _old(status / "node-ab12cd34-2222.json", json.dumps({"pid": os.getpid()}), age=0)
+    s_own = _old(status / "node-ab12cd34-4242.json", json.dumps({"pid": GONE_PID}))
+    s_tmp = _old(status / "node-ab12cd34-3333.tmp", "{")
+    p_gone = _old(share / "node-ab12cd34-1111.json", json.dumps(gone))
+    p_tmp = _old(share / ".node-ab12cd34-1111.json.1111.tmp", "{")
+    p_other = _old(share / "node-ff-1.json", json.dumps({**gone, "node_id": "ff"}))
+    # the local fallback is this machine's alone: every gone process there goes
+    other_id = json.dumps({**gone, "node_id": "ff"})
+    l_gone = _old(tmp_path / "local/10.0.0.2/processes/node-ff-5555.json", other_id)
+    assert f.sweep_stale(now=time.time() + SAFE_AGE_SEC + 120) == 5
+    for p in (s_gone, s_tmp, p_gone, p_tmp, l_gone):
+        assert not p.exists(), p.name
+    for p in (s_live, s_own, p_other, share / "node-ab12cd34-4242.json"):
+        assert p.exists(), p.name
+    f.stop()
+
+
+def test_the_stale_pass_runs_at_start_then_hourly(tmp_path: Path) -> None:
+    status = tmp_path / "local" / "status"
+    now = [1000.0]
+    f = _files(tmp_path, status_dir=status, clock=lambda: now[0])
+    first = _old(status / "node-ab12cd34-6666.json", json.dumps({"pid": GONE_PID}))
+    f.tick()
+    assert not first.exists()
+    later = _old(status / "node-ab12cd34-7777.json", json.dumps({"pid": GONE_PID}))
+    now[0] += 60
+    f.tick()
+    assert later.exists()
+    now[0] += 3600
+    f.tick()
+    assert not later.exists()

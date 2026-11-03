@@ -1,11 +1,12 @@
 // The API reference: Redoc (vendored at build time, served from this site) over the
-// OpenAPI description the build copied from shared/api/openapi.json.
+// OpenAPI description the page names (data-spec): /api/openapi.json, or on the Arabic page
+// /ar/api/openapi.json, the same description with its prose in Arabic.
 (function () {
   function start() {
     var el = document.getElementById("redoc");
     if (!el || !window.Redoc) return;
     window.Redoc.init(
-      "/api/openapi.json",
+      el.getAttribute("data-spec") || "/api/openapi.json",
       {
         hideDownloadButton: false,
         disableSearch: false,

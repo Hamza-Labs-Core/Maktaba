@@ -622,15 +622,25 @@ struct CodeSignInSection: View {
     }
 }
 
-/// A picture the home serves behind sign-in (a video's poster): loaded with the token.
+/// A picture the home serves behind sign-in (a video's poster): loaded with the token (an
+/// `AsyncImage` cannot send it). `small`: the card size (`?size=small`). While it loads, or
+/// when there is none, the `placeholder` symbol. `loaded` is told whether the picture shows
+/// (a card's accessibility says so).
 public struct AuthorizedImage: View {
     let client: APIClient
-    let video: String
+    let video: String?
+    let small: Bool
+    let placeholder: String
+    let loaded: (@MainActor (Bool) -> Void)?
     @State private var image: Image?
 
-    public init(client: APIClient, video: String) {
+    public init(client: APIClient, video: String?, small: Bool = false, placeholder: String = "film",
+                loaded: (@MainActor (Bool) -> Void)? = nil) {
         self.client = client
         self.video = video
+        self.small = small
+        self.placeholder = placeholder
+        self.loaded = loaded
     }
 
     public var body: some View {
@@ -642,7 +652,7 @@ public struct AuthorizedImage: View {
                 image.resizable().scaledToFit()
             } else {
                 Rectangle().fill(.quaternary)
-                Image(systemName: "film").foregroundStyle(.secondary)
+                Image(systemName: placeholder).font(.largeTitle).foregroundStyle(.secondary)
             }
         }
         .aspectRatio(16 / 9, contentMode: .fit)
@@ -650,12 +660,15 @@ public struct AuthorizedImage: View {
         .task(id: video) {
             // another video's picture must not stay up while (or when) this one does not load
             image = nil
-            guard let data = try? await client.poster(video: video) else { return }
+            loaded?(false)
+            guard let video, !video.isEmpty,
+                  let data = try? await client.poster(video: video, small: small) else { return }
             #if canImport(UIKit)
             if let ui = UIImage(data: data) { image = Image(uiImage: ui) }
             #elseif canImport(AppKit)
             if let ns = NSImage(data: data) { image = Image(nsImage: ns) }
             #endif
+            loaded?(image != nil)
         }
     }
 }

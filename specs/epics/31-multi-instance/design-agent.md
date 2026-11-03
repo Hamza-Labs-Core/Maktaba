@@ -614,8 +614,11 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
 - Writes are buffered and flushed at least every 2 s, from a background task with a bounded
   buffer: the worker never waits for the share. Records that do not fit are counted
   (`files.dropped`), not written.
-- `processes/<worker_id>.json` is written at start, refreshed every 60 s (`last_seen`) and
-  at a clean stop (`stopped_at`), each time to a temporary file renamed over the old one.
+- `processes/<worker_id>.json` is written at start and refreshed every 60 s (`last_seen`),
+  each time to a temporary file renamed over the old one, and removed at a clean stop (as is
+  the process's local status file, `~/.maktaba/cluster/status/<worker_id>.json`). Releases
+  before 2026-11 wrote `stopped_at` instead; readers leave such a file out, and one whose
+  `last_seen` is more than 10 minutes old.
 - Progress events go to the jobs file at most once every 10 s per job (every other job
   event is written).
 - A metrics line goes to the metrics file at most every 10 s
@@ -650,6 +653,15 @@ own `<worker_id>` files, and the hub only its `hub.jsonl` files. Writing rules:
   expired day
   folders in every IP folder and `processes/*.json` whose `last_seen` is older than the
   retention (processes that will not come back: worker ids are new at every start).
+- Gone processes (2026-11): every process, at start and every hour, removes the status files
+  of this machine's processes that no longer run, the `processes/*.json` of this machine's
+  gone processes (its folder on the share and every local fallback folder; a file naming
+  another host stays) and orphaned temp files, once a file is an hour old. "No longer runs":
+  no process has the file's `pid`, or the one that has it started after the file was
+  written (a reused pid). A file whose process runs is never removed. The hub, at its start
+  and every hour, also removes `processes/*.json` that said `stopped_at` over an hour ago,
+  orphaned temp files over an hour old, and the home's own local fallback and status files
+  whose `pid` no longer runs.
 - Each file is capped at `MAKTABA_CLUSTER_FILE_MB` MB (default 256); past it, records are
   counted (`files.dropped`), not written, until the next day.
 - The hub sends both values in `welcome.settings`; a machine's own environment overrides

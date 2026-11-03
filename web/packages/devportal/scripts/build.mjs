@@ -9,6 +9,12 @@
 // plugin guides, the contributing guides, security, the API reference and the changelog.
 // The epics and specs live on GitHub, and the site links there.
 //
+// Every page is in English and Arabic: /x/ in English, /ar/x/ in Arabic (right to left), each
+// linking the other. A guide's Arabic is its twin file (name.ar.md), the changelog's is
+// CHANGELOG.ar.md, the API reference's prose is shared/api/openapi.ar.json, and the portal's
+// own pages are scripts/strings.mjs. The parity checks (scripts/parity.mjs) fail the build
+// when the two languages drift.
+//
 //   npm run build
 
 import fs from "node:fs";
@@ -19,6 +25,15 @@ import { Marked } from "marked";
 import { STRINGS } from "./strings.mjs";
 import { scanDir } from "./scan.mjs";
 import { ORIGIN, isSafeUrl } from "./urls.mjs";
+import {
+  applyOverlay,
+  arabicOf,
+  checkArabicMarkdown,
+  checkChangelog,
+  checkGuides,
+  checkOverlay,
+  checkPages,
+} from "./parity.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
@@ -31,7 +46,8 @@ export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
 // ---- the allow-lists --------------------------------------------------------------------
 
 // Markdown published as pages: repo path -> site path (a folder, served as its index.html).
-// The guides are in docs/developers/ (English); each group's README is its index page.
+// The guides are in docs/developers/, each with its Arabic twin (name.ar.md); each group's
+// README is its index page.
 const GUIDES = {
   plugins: [
     "README.md",
@@ -57,16 +73,31 @@ export const DOCS = [
   ...Object.entries(GUIDES).flatMap(([group, files]) =>
     files.map((file) => ({
       src: `docs/developers/${group}/${file}`,
+      ar: arabicOf(`docs/developers/${group}/${file}`),
       out: file === "README.md" ? `${group}/` : `${group}/${file.replace(/\.md$/, "")}/`,
       group,
     }))
   ),
-  { src: "CHANGELOG.md", out: "changelog/", title: "Changelog", group: "changelog" },
+  {
+    src: "CHANGELOG.md",
+    ar: "CHANGELOG.ar.md",
+    out: "changelog/",
+    titleKey: "changelog.title",
+    group: "changelog",
+  },
 ];
+
+// The languages, and the path prefix each one's pages live under.
+export const LANGS = ["en", "ar"];
+const PREFIX = { en: "", ar: "/ar" };
+const DIR = { en: "ltr", ar: "rtl" };
+/** A page's path in a language: "/plugins/" -> "/ar/plugins/". */
+export const localPath = (lang, p) => PREFIX[lang] + p;
 
 // Repo files copied as they are: repo path -> site path.
 const FILES = [
   ["shared/api/openapi.json", "api/openapi.json"],
+  // ar/api/openapi.json is written by the build: openapi.json with openapi.ar.json's prose
   [
     "web/packages/devportal/node_modules/redoc/bundles/redoc.standalone.js",
     "api/redoc.standalone.js",
@@ -117,9 +148,9 @@ export function scrubMarkdown(md) {
 
 // ---- pages ------------------------------------------------------------------------------
 
-const t = (k) => {
-  const v = STRINGS.en[k];
-  if (v === undefined) throw new Error(`no string ${k}`);
+const tr = (lang, k) => {
+  const v = STRINGS[lang][k];
+  if (v === undefined) throw new Error(`no ${lang} string ${k}`);
   return v;
 };
 const esc = (s) =>
@@ -127,7 +158,6 @@ const esc = (s) =>
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
-const s = (k, tag = "span", attrs = "") => `<${tag}${attrs} data-i18n="${k}">${esc(t(k))}</${tag}>`;
 
 // `/assets/x.js?v=<hash of its content>`: the files cache for an hour, so a page names the
 // exact version it was built with and a deploy is seen at once. The file is in dist/ already.
@@ -148,46 +178,54 @@ const NAV = [
   ["nav.source", GITHUB],
 ];
 
-export function page({ path: sitePath, titleKey, title, body, head = "" }) {
+/**
+ * A page in one language. `sitePath` is the page's English path ("/plugins/"); the Arabic page
+ * is the same under /ar/, right to left, and each links the other (the language switch, and
+ * rel=alternate for crawlers).
+ */
+export function page({ lang, path: sitePath, titleKey, title, body, head = "" }) {
+  const t = (k) => tr(lang, k);
+  const other = lang === "ar" ? "en" : "ar";
+  const here = localPath(lang, sitePath);
   const current = (href) =>
     href === "/" ? sitePath === "/" : href.startsWith("/") && sitePath.startsWith(href);
-  const nav = NAV.map(
-    ([k, href]) =>
-      `<a href="${href}"${current(href) ? ' aria-current="page"' : ""} data-i18n="${k}">${esc(t(k))}</a>`
-  ).join("\n        ");
+  const nav = NAV.map(([k, href]) => {
+    const to = href.startsWith("/") ? localPath(lang, href) : href;
+    return `<a href="${to}"${current(href) ? ' aria-current="page"' : ""}>${esc(t(k))}</a>`;
+  }).join("\n        ");
   const docTitle = titleKey ? t(titleKey) : title;
+  const alt = (l) =>
+    `\n  <link rel="alternate" hreflang="${l}" href="${ORIGIN}${localPath(l, sitePath)}">`;
   return `<!doctype html>
-<html lang="en" dir="ltr">
+<html lang="${lang}" dir="${DIR[lang]}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${esc(docTitle)} · maktaba.dev</title>
   <meta name="description" content="${esc(t("home.lead"))}">
-  <link rel="canonical" href="${ORIGIN}${sitePath}">
+  <link rel="canonical" href="${ORIGIN}${here}">${alt("en")}${alt("ar")}
   <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
   <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
-  <link rel="stylesheet" href="${v("/assets/portal.css")}">
-  <script src="${v("/assets/i18n.js")}"></script>
-  <script src="${v("/assets/lang.js")}"></script>${head}
+  <link rel="stylesheet" href="${v("/assets/portal.css")}">${head}
 </head>
 <body>
-  <a class="skip" href="#content" data-i18n="skip">${esc(t("skip"))}</a>
+  <a class="skip" href="#content">${esc(t("skip"))}</a>
   <header class="top">
     <div class="wrap">
-      <a class="brand" href="/"><img src="/assets/favicon-32.png" alt=""><span data-i18n="site.name">${esc(t("site.name"))}</span></a>
+      <a class="brand" href="${localPath(lang, "/")}"><img src="/assets/favicon-32.png" alt=""><span>${esc(t("site.name"))}</span></a>
       <nav class="main" aria-label="maktaba.dev">
         ${nav}
       </nav>
-      <button id="lang-toggle" type="button" lang="ar" data-i18n="lang.toggle" data-i18n-label="lang.toggle.label" aria-label="${esc(t("lang.toggle.label"))}">${esc(t("lang.toggle"))}</button>
+      <a id="lang-switch" class="lang" href="${localPath(other, sitePath)}" hreflang="${other}" lang="${other}" aria-label="${esc(t("lang.toggle.label"))}">${esc(t("lang.toggle"))}</a>
     </div>
   </header>
-  <main id="content" class="wrap"${titleKey ? ` data-i18n-title="${titleKey}"` : ""}>
+  <main id="content" class="wrap">
 ${body}
   </main>
   <footer>
     <div class="wrap">
-      ${s("footer.text")}
-      <a href="/security/policy/" data-i18n="footer.security">${esc(t("footer.security"))}</a>
+      <span>${esc(t("footer.text"))}</span>
+      <a href="${localPath(lang, "/security/policy/")}">${esc(t("footer.security"))}</a>
       <a href="${GITHUB}">github.com/Hamza-Labs-Core/Maktaba</a>
     </div>
   </footer>
@@ -196,12 +234,21 @@ ${body}
 `;
 }
 
-const card = (key, href) =>
-  `      <li><a href="${href}"><strong data-i18n="card.${key}.title">${esc(t(`card.${key}.title`))}</strong>` +
-  `<span data-i18n="card.${key}.body">${esc(t(`card.${key}.body`))}</span></a></li>`;
+/** The helpers a page body is written with, in one language. */
+function inLang(lang) {
+  const t = (k) => tr(lang, k);
+  const s = (k, tag = "span", attrs = "") => `<${tag}${attrs}>${esc(t(k))}</${tag}>`;
+  const href = (p) => (p.startsWith("/") ? localPath(lang, p) : p);
+  const card = (key, to) =>
+    `      <li><a href="${href(to)}"><strong>${esc(t(`card.${key}.title`))}</strong>` +
+    `<span>${esc(t(`card.${key}.body`))}</span></a></li>`;
+  return { t, s, href, card };
+}
 
-function landing() {
+function landing(lang) {
+  const { t, s, href, card } = inLang(lang);
   return page({
+    lang,
     path: "/",
     titleKey: "home.title",
     body: `    <section class="hero">
@@ -209,9 +256,9 @@ function landing() {
       ${s("home.lead", "p")}
       ${s("home.lead2", "p")}
       <div class="ctas">
-        <a class="btn primary" href="${GITHUB}" data-i18n="home.cta.source">${esc(t("home.cta.source"))}</a>
-        <a class="btn" href="/plugins/" data-i18n="home.cta.plugins">${esc(t("home.cta.plugins"))}</a>
-        <a class="btn" href="/contributing/" data-i18n="home.cta.contributing">${esc(t("home.cta.contributing"))}</a>
+        <a class="btn primary" href="${GITHUB}">${esc(t("home.cta.source"))}</a>
+        <a class="btn" href="${href("/plugins/")}">${esc(t("home.cta.plugins"))}</a>
+        <a class="btn" href="${href("/contributing/")}">${esc(t("home.cta.contributing"))}</a>
       </div>
     </section>
     ${s("home.cards", "h2")}
@@ -228,19 +275,23 @@ ${card("specs", `${GITHUB}/tree/main/specs/epics`)}
   });
 }
 
-function notFound() {
+function notFound(lang) {
+  const { t, s, href } = inLang(lang);
   return page({
+    lang,
     path: "/404",
     titleKey: "404.title",
     body: `    ${s("404.title", "h1")}
     ${s("404.body", "p")}
-    <p><a class="btn primary" href="/" data-i18n="404.home">${esc(t("404.home"))}</a></p>`,
+    <p><a class="btn primary" href="${href("/")}">${esc(t("404.home"))}</a></p>`,
   });
 }
 
-function securityPolicy() {
+function securityPolicy(lang) {
+  const { t, s, href } = inLang(lang);
   const sec = (k) => `    ${s(`security.${k}.title`, "h2")}\n    ${s(`security.${k}.body`, "p")}`;
   return page({
+    lang,
     path: "/security/policy/",
     titleKey: "security.title",
     body: `    ${s("security.title", "h1")}
@@ -250,13 +301,15 @@ ${sec("after")}
 ${sec("rules")}
     ${s("security.conform.title", "h2")}
     ${s("security.conform.body", "p")}
-    <p><a href="/security/conformance/" data-i18n="security.conform.link">${esc(t("security.conform.link"))}</a></p>
-    <p class="note"><a href="/.well-known/security.txt" data-i18n="security.txt">${esc(t("security.txt"))}</a></p>`,
+    <p><a href="${href("/security/conformance/")}">${esc(t("security.conform.link"))}</a></p>
+    <p class="note"><a href="/.well-known/security.txt">${esc(t("security.txt"))}</a></p>`,
   });
 }
 
-function hallOfFame() {
+function hallOfFame(lang) {
+  const { s } = inLang(lang);
   return page({
+    lang,
     path: "/security/hall-of-fame/",
     titleKey: "hof.title",
     body: `    ${s("hof.title", "h1")}
@@ -265,21 +318,29 @@ function hallOfFame() {
   });
 }
 
-function apiPage() {
+// The API reference: Redoc over the OpenAPI description; the Arabic page reads
+// ar/api/openapi.json, the same description with its prose in Arabic (openapi.ar.json).
+// Redoc's three panels stay left to right (its layout does not mirror); on the Arabic page
+// its rendered prose reads right to left (portal.css, #redoc[lang="ar"]).
+function apiPage(lang) {
+  const { t, s } = inLang(lang);
+  const spec = `${localPath(lang, "/api/")}openapi.json`;
   return page({
+    lang,
     path: "/api/",
     titleKey: "api.title",
     head: `\n  <script src="${v("/api/redoc.standalone.js")}" defer></script>\n  <script src="${v("/api/init.js")}" defer></script>`,
     body: `    ${s("api.title", "h1")}
-    <p><a href="/api/openapi.json" data-i18n="api.download">${esc(t("api.download"))}</a></p>
-    <div id="redoc" dir="ltr" lang="en">${s("api.loading", "p")}</div>`,
+    ${s("api.lang", "p", ' class="note"')}
+    <p><a href="${spec}">${esc(t("api.download"))}</a></p>
+    <div id="redoc" data-spec="${spec}" dir="ltr" lang="${lang}">${s("api.loading", "p")}</div>`,
   });
 }
 
 // ---- markdown docs ----------------------------------------------------------------------
 
-function siteUrl(out) {
-  return "/" + out;
+function siteUrl(out, lang = "en") {
+  return localPath(lang, "/" + out);
 }
 
 /**
@@ -302,7 +363,10 @@ export function rewriteHref(href, fromSrc, published) {
   const target = path.posix.normalize(path.posix.join(path.posix.dirname(fromSrc), p));
   if (target.startsWith("..")) return null;
   if (NEVER.some((re) => re.test(target))) return null;
-  if (published.has(target)) return siteUrl(published.get(target)) + (hash ? `#${hash}` : "");
+  if (published.has(target)) {
+    const to = published.get(target);
+    return (to.startsWith("/") ? to : siteUrl(to)) + (hash ? `#${hash}` : "");
+  }
   const kind = p.endsWith("/") || !path.posix.extname(p) ? "tree" : "blob";
   return `${GITHUB}/${kind}/main/${target}` + (hash ? `#${hash}` : "");
 }
@@ -336,12 +400,19 @@ export function markdownToHtml(md, fromSrc, published) {
   return /** @type {string} */ (marked.parse(md, { async: false }));
 }
 
-function renderDoc(doc, published, groups) {
-  const md = scrubMarkdown(fs.readFileSync(path.join(REPO, doc.src), "utf8"));
-  const html = markdownToHtml(md, doc.src, published);
-  const title = doc.title ?? (md.match(/^# (.+)$/m)?.[1] ?? doc.src).replace(/[*`]/g, "");
-  const src = `${GITHUB}/blob/main/${doc.src}`;
-  const article = `<article class="doc" dir="ltr" lang="en">\n${html}\n<p class="note"><a href="${src}" data-i18n="doc.source">${esc(t("doc.source"))}</a></p>\n</article>`;
+/** The markdown a doc is in, in one language. */
+const docSrc = (doc, lang) => (lang === "ar" ? doc.ar : doc.src);
+
+function renderDoc(doc, lang, published, groups) {
+  const t = (k) => tr(lang, k);
+  const srcPath = docSrc(doc, lang);
+  const md = scrubMarkdown(fs.readFileSync(path.join(REPO, srcPath), "utf8"));
+  const html = markdownToHtml(md, srcPath, published);
+  const title = doc.titleKey
+    ? t(doc.titleKey)
+    : (md.match(/^# (.+)$/m)?.[1] ?? srcPath).replace(/[*`]/g, "");
+  const src = `${GITHUB}/blob/main/${srcPath}`;
+  const article = `<article class="doc">\n${html}\n<p class="note"><a href="${src}">${esc(t("doc.source"))}</a></p>\n</article>`;
   const group = groups.get(doc.group) ?? [];
   let body = article;
   if (group.length > 1) {
@@ -349,13 +420,12 @@ function renderDoc(doc, published, groups) {
     const toc = group
       .map(
         (d) =>
-          `<li><a href="${siteUrl(d.out)}"${d === doc ? ' aria-current="page"' : ""}>${esc(d.navTitle)}</a></li>`
+          `<li><a href="${siteUrl(d.out, lang)}"${d === doc ? ' aria-current="page"' : ""}>${esc(d.navTitle[lang])}</a></li>`
       )
       .join("\n");
-    const note = s("guides.lang", "p", ' class="note"');
-    body = `<div class="layout">\n<nav class="toc" aria-label="${esc(t(`nav.${doc.group}`))}" data-i18n-label="nav.${doc.group}"><ul>\n${toc}\n</ul></nav>\n<div>\n${note}\n${article}\n</div>\n</div>`;
+    body = `<div class="layout">\n<nav class="toc" aria-label="${esc(t(`nav.${doc.group}`))}"><ul>\n${toc}\n</ul></nav>\n<div>\n${article}\n</div>\n</div>`;
   }
-  return page({ path: siteUrl(doc.out), title, body });
+  return page({ lang, path: "/" + doc.out, title, body });
 }
 
 // ---- security.txt, robots.txt, sitemap --------------------------------------------------
@@ -437,37 +507,83 @@ export function sitemap(paths) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
 }
 
+/** The checks that the two languages' sources agree (scripts/parity.mjs). */
+export function checkSources() {
+  const read = (f) => fs.readFileSync(path.join(REPO, f), "utf8");
+  const guides = DOCS.filter((d) => d.src.startsWith("docs/developers/")).map((d) => d.src);
+  const findings = checkGuides(REPO, "docs/developers", guides);
+  for (const d of DOCS) {
+    if (fs.existsSync(path.join(REPO, d.ar)))
+      findings.push(...checkArabicMarkdown(d.ar, read(d.ar)));
+  }
+  findings.push(...checkChangelog(read("CHANGELOG.md"), read("CHANGELOG.ar.md")));
+  findings.push(
+    ...checkOverlay(
+      JSON.parse(read("shared/api/openapi.json")),
+      JSON.parse(read("shared/api/openapi.ar.json"))
+    )
+  );
+  return findings;
+}
+
+const fail = (what, findings) => {
+  for (const f of findings) console.error(f);
+  throw new Error(`build: ${what} found ${findings.length} problem(s)`);
+};
+
 export function build() {
-  for (const d of [...DOCS.map((d) => d.src), ...FILES.map((f) => f[0])]) {
+  for (const d of [...DOCS.flatMap((d) => [d.src, d.ar]), ...FILES.map((f) => f[0])]) {
     if (NEVER.some((re) => re.test(d))) throw new Error(`build: ${d} is never published`);
   }
+  const drift = checkSources();
+  if (drift.length) fail("the English/Arabic parity check", drift);
+
   fs.rmSync(DIST, { recursive: true, force: true });
   fs.mkdirSync(DIST, { recursive: true });
 
   // the portal's own static files (authored in this package)
   for (const rel of walk(path.join(PKG, "static"))) copy(path.join(PKG, "static", rel), rel);
-  write("assets/i18n.js", `window.MAKTABA_STRINGS = ${JSON.stringify(STRINGS)};\n`);
   for (const [src, out] of FILES) copy(path.join(REPO, src), out);
+  const openapi = JSON.parse(fs.readFileSync(path.join(REPO, "shared/api/openapi.json"), "utf8"));
+  const overlay = JSON.parse(
+    fs.readFileSync(path.join(REPO, "shared/api/openapi.ar.json"), "utf8")
+  );
+  write("ar/api/openapi.json", JSON.stringify(applyOverlay(openapi, overlay), null, 2) + "\n");
 
-  const pages = ["/"];
-  write("index.html", landing());
-  write("404.html", notFound());
-  write("api/index.html", apiPage());
-  write("security/policy/index.html", securityPolicy());
-  write("security/hall-of-fame/index.html", hallOfFame());
-  pages.push("/api/", "/security/policy/", "/security/hall-of-fame/");
-
-  const published = new Map(DOCS.map((d) => [d.src, d.out]));
+  // the site path each published source is at: an English source its page, an Arabic one
+  // its /ar/ page (so a guide's links stay in its language)
+  const published = new Map([
+    ...DOCS.map((d) => [d.src, d.out]),
+    ...DOCS.map((d) => [d.ar, siteUrl(d.out, "ar")]),
+  ]);
   const groups = new Map();
   for (const d of DOCS) {
-    const md = fs.readFileSync(path.join(REPO, d.src), "utf8");
-    const h1 = (md.match(/^# (.+)$/m)?.[1] ?? d.src).replace(/[*`]/g, "");
-    d.navTitle = d.title ?? h1;
+    const h1 = (lang) => {
+      if (d.titleKey) return tr(lang, d.titleKey);
+      const md = fs.readFileSync(path.join(REPO, docSrc(d, lang)), "utf8");
+      return (md.match(/^# (.+)$/m)?.[1] ?? d.src).replace(/[*`]/g, "");
+    };
+    d.navTitle = { en: h1("en"), ar: h1("ar") };
     groups.set(d.group, [...(groups.get(d.group) ?? []), d]);
   }
-  for (const doc of DOCS) {
-    write(`${doc.out}index.html`, renderDoc(doc, published, groups));
-    pages.push(siteUrl(doc.out));
+
+  const pages = [];
+  for (const lang of LANGS) {
+    const pre = lang === "en" ? "" : "ar/";
+    write(`${pre}index.html`, landing(lang));
+    write(`${pre}404.html`, notFound(lang));
+    write(`${pre}api/index.html`, apiPage(lang));
+    write(`${pre}security/policy/index.html`, securityPolicy(lang));
+    write(`${pre}security/hall-of-fame/index.html`, hallOfFame(lang));
+    pages.push(
+      ...["/", "/api/", "/security/policy/", "/security/hall-of-fame/"].map((p) =>
+        localPath(lang, p)
+      )
+    );
+    for (const doc of DOCS) {
+      write(`${pre}${doc.out}index.html`, renderDoc(doc, lang, published, groups));
+      pages.push(siteUrl(doc.out, lang));
+    }
   }
 
   // Expires rolls with each build, and devportal-deploy.yml deploys monthly, so the live
@@ -479,12 +595,15 @@ export function build() {
   write("robots.txt", `User-agent: *\nAllow: /\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
   write("sitemap.xml", sitemap(pages));
 
+  const built = walk(DIST);
+  const unpaired = checkPages(built, (f) => fs.readFileSync(path.join(DIST, f), "utf8"));
+  if (unpaired.length) fail("the English/Arabic page check", unpaired);
   const findings = scanDir(DIST);
   if (findings.length) {
     for (const f of findings) console.error(`${f.file}: ${f.rule}: ${f.match}`);
     throw new Error(`build: the public-safety scan found ${findings.length} problem(s)`);
   }
-  console.log(`build: ${walk(DIST).length} files in dist/, scan clean`);
+  console.log(`build: ${walk(DIST).length} files in dist/, English and Arabic paired, scan clean`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

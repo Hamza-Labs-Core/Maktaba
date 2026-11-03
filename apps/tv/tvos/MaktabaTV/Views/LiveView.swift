@@ -57,6 +57,13 @@ final class LiveModel {
         loading = false
     }
 
+    /// What is on now as another screen read it (Home's On now shelf): the player surfs these.
+    func show(_ channels: [ChannelNow]) {
+        now = channels
+        problem = nil
+        loading = false
+    }
+
     /// The half hour at or before `date`: the guide's first column.
     static func windowStart(_ date: Date) -> Date {
         let t = date.timeIntervalSince1970

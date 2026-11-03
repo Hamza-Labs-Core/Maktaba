@@ -4474,6 +4474,8 @@
   "rules.tv.loudnorm_mode.help": "speechnorm: speech levelled as it plays, nothing delayed, so a channel tunes fast (what dizqueTV does). loudnorm: EBU R128 to the target below, about 3 s of look-ahead. dynaudnorm: a gentler dynamic normaliser, also with look-ahead. Only programme and filler sound is levelled, never the slate's silence.",
   "rules.tv.speechnorm_expansion.label": "Speech boost limit",
   "rules.tv.speechnorm_expansion.help": "The speechnorm filter raises a quiet passage at most this many times (dizqueTV: 6.25).",
+  "rules.tv.watermark_skip_filler.label": "No corner logo on filler",
+  "rules.tv.watermark_skip_filler.help": "Off (default): the logo on every block. On: filler clips and bumpers air without it, as dizqueTV.",
   "tvchanges.progress.draftFailed": "checks failed: fix it, or approve it again",
   "tvchanges.event.append": "Update added",
   "tvchanges.update.joined": "change #{n} joined it",

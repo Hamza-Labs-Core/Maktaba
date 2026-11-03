@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -182,6 +183,109 @@ func TestSweeperRetention(t *testing.T) {
 	}
 }
 
+// goneTestPID is a fake pid no test machine runs (above every OS's pid limit).
+const goneTestPID = 2_000_000_001
+
+func writeAged(t *testing.T, p, body string, mod time.Time) string {
+	t.Helper()
+	writeJSONL(t, p, body)
+	if err := os.Chtimes(p, mod, mod); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestSweeperRemovesStoppedProcessesAndTempFiles(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC().Add(3 * time.Hour)
+	old, recent := now.Add(-2*time.Hour), now.Add(-10*time.Minute)
+	procs := filepath.Join(dir, "192.168.50.7", "processes")
+	stopped := writeAged(t, filepath.Join(procs, "stopped.json"),
+		`{"worker_id":"a","last_seen":"`+old.Format(time.RFC3339)+`","stopped_at":"`+old.Format(time.RFC3339)+`"}`, old)
+	justStopped := writeAged(t, filepath.Join(procs, "just.json"),
+		`{"worker_id":"b","last_seen":"`+recent.Format(time.RFC3339)+`","stopped_at":"`+recent.Format(time.RFC3339)+`"}`, recent)
+	running := writeAged(t, filepath.Join(procs, "running.json"),
+		`{"worker_id":"c","last_seen":"`+old.Format(time.RFC3339)+`","stopped_at":null}`, old) // inside the retention
+	orphan := writeAged(t, filepath.Join(procs, ".w.json.123.tmp"), `{`, old)
+	probe := writeAged(t, filepath.Join(procs, ".w.probe"), `ok`, old)
+	writing := writeAged(t, filepath.Join(procs, ".x.json.456.tmp"), `{`, recent) // a write in progress
+	s := &Sweeper{Days: 14, Now: func() time.Time { return now }}
+	n, err := s.Sweep(dir)
+	if err != nil || n != 3 {
+		t.Fatalf("removed = %d, %v; want 3", n, err)
+	}
+	for p, want := range map[string]bool{stopped: false, orphan: false, probe: false, justStopped: true, running: true, writing: true} {
+		if exists(p) != want {
+			t.Errorf("%s exists = %v, want %v", filepath.Base(p), !want, want)
+		}
+	}
+}
+
+func TestSweepStatusRemovesOnlyGoneProcesses(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "status")
+	now := time.Now().UTC().Add(3 * time.Hour)
+	old, recent := now.Add(-2*time.Hour), now.Add(-10*time.Minute)
+	gone := writeAged(t, filepath.Join(dir, "gone_1_ab.json"), `{"pid":`+strconv.Itoa(goneTestPID)+`,"state":"stopped"}`, old)
+	live := writeAged(t, filepath.Join(dir, "live_2_cd.json"), `{"pid":`+strconv.Itoa(os.Getpid())+`,"state":"connected"}`, old)
+	fresh := writeAged(t, filepath.Join(dir, "fresh_3_ef.json"), `{"pid":`+strconv.Itoa(goneTestPID)+`}`, recent)
+	nopid := writeAged(t, filepath.Join(dir, "nopid.json"), `{"state":"stopped"}`, old)
+	broken := writeAged(t, filepath.Join(dir, "broken.json"), `{`, old)
+	orphan := writeAged(t, filepath.Join(dir, "gone_1_ab.tmp"), `{`, old)
+	writing := writeAged(t, filepath.Join(dir, "live_2_cd.tmp"), `{`, recent)
+	other := writeAged(t, filepath.Join(dir, "notes.txt"), `kept`, old)
+	s := &Sweeper{Days: 14, Now: func() time.Time { return now }}
+	n, err := s.SweepStatus(dir)
+	if err != nil || n != 2 {
+		t.Fatalf("removed = %d, %v; want 2", n, err)
+	}
+	for p, want := range map[string]bool{gone: false, orphan: false, live: true, fresh: true, nopid: true, broken: true, writing: true, other: true} {
+		if exists(p) != want {
+			t.Errorf("%s exists = %v, want %v", filepath.Base(p), !want, want)
+		}
+	}
+	if n, err := s.SweepStatus(filepath.Join(dir, "missing")); n != 0 || err != nil {
+		t.Fatalf("missing folder: %d, %v", n, err)
+	}
+	if pidGone(os.Getpid()) || !pidGone(goneTestPID) || pidGone(0) {
+		t.Fatal("pidGone")
+	}
+}
+
+func TestSweepStatusNeverFollowsALink(t *testing.T) {
+	base := t.TempDir()
+	old := time.Now().Add(-2 * time.Hour)
+	target := writeAged(t, filepath.Join(base, "elsewhere", "w.json"), `{"pid":`+strconv.Itoa(goneTestPID)+`}`, old)
+	dir := filepath.Join(base, "status")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, filepath.Join(dir, "w.json")); err != nil {
+		t.Skip("no symlinks here:", err)
+	}
+	s := &Sweeper{Days: 14, Now: time.Now}
+	if n, _ := s.SweepStatus(dir); n != 0 || !exists(target) {
+		t.Fatalf("removed %d through a link", n)
+	}
+}
+
+func TestHubSweepsItsLocalFolder(t *testing.T) {
+	share, local := t.TempDir(), t.TempDir()
+	now := time.Now().UTC().Add(3 * time.Hour)
+	old := now.Add(-2 * time.Hour)
+	status := writeAged(t, filepath.Join(local, "status", "gone.json"), `{"pid":`+strconv.Itoa(goneTestPID)+`}`, old)
+	stopped := writeAged(t, filepath.Join(local, "192.168.50.7", "processes", "w.json"),
+		`{"stopped_at":"`+old.Format(time.RFC3339)+`"}`, old)
+	h := New(Config{Locator: &Locator{Override: share}, LocalDir: local, Now: func() time.Time { return now }, Logger: quiet()})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	h.Locate(ctx)
+	done := make(chan struct{})
+	go func() { h.sweepLoop(ctx); close(done) }()
+	waitFor(t, "local folder swept", func() bool { return !exists(status) && !exists(stopped) })
+	cancel()
+	<-done
+}
+
 func TestPathMap(t *testing.T) {
 	m, err := ParsePathMap(`Y:/=/Volumes/Y;O:\=/Volumes/O/;\\nas\share=/mnt/share`)
 	if err != nil {
@@ -341,6 +445,9 @@ func TestFromEnv(t *testing.T) {
 		cfg.LLMQueueTimeout != 30*time.Second || cfg.LLMMaxParallel != DefaultMaxParallel ||
 		cfg.Locator.Override != "/tmp/c" || cfg.Locator.PathMap.Len() != 1 {
 		t.Fatalf("cfg = %+v", cfg)
+	}
+	if cfg.LocalDir != FallbackDir() { // the home's own folder is swept too
+		t.Fatalf("LocalDir = %q", cfg.LocalDir)
 	}
 	if len(warn) != 1 || !strings.Contains(warn[0], "MAKTABA_LLM_MAX_PARALLEL") {
 		t.Fatalf("warnings = %v", warn)

@@ -79,6 +79,10 @@ def add_parser(subparsers: Any) -> None:
 
 
 def _status_files() -> list[dict[str, Any]]:
+    """The local status files of the processes that still run (a gone process's file,
+    left by a crash or an older release, is not listed; the agent's hourly pass removes
+    it)."""
+    from .agent.files import process_alive, written_at
     from .agent.service import status_dir
 
     out: list[dict[str, Any]] = []
@@ -91,9 +95,16 @@ def _status_files() -> list[dict[str, Any]]:
             data = json.loads(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(data, dict):
-            data["_path"] = str(p)
-            out.append(data)
+        if not isinstance(data, dict):
+            continue
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        if not process_alive(data.get("pid"), written_at(data, mtime)):
+            continue
+        data["_path"] = str(p)
+        out.append(data)
     return out
 
 
@@ -200,7 +211,9 @@ def ls(root: Path, out: TextIO | None = None, *, archive: bool = False) -> int:
                     ident = json.load(fh)
             except (OSError, ValueError):
                 ident = {}
-            state = "stopped" if ident.get("stopped_at") else f"last seen {ident.get('last_seen')}"
+            if isinstance(ident, dict) and ident.get("stopped_at"):
+                continue  # an older release's process that stopped: it is gone
+            state = f"last seen {ident.get('last_seen')}"
             out.write(
                 f"    process {p.stem}: {ident.get('kind', '?')} pid {ident.get('pid', '?')}"
                 f" on {ident.get('host', '?')} ({state})\n"

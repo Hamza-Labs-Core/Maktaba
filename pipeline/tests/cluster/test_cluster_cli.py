@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -127,7 +128,7 @@ def test_status_reads_local_status_files(tmp_path: Path, monkeypatch: pytest.Mon
         json.dumps(
             {
                 "worker_id": "w1",
-                "pid": 1,
+                "pid": os.getpid(),  # a process that runs (pid 1 is none on Windows)
                 "kind": "node",
                 "state": "connected",
                 "url": "ws://h/api/cluster/agent",
@@ -139,4 +140,35 @@ def test_status_reads_local_status_files(tmp_path: Path, monkeypatch: pytest.Mon
     )
     out = io.StringIO()
     assert cli.status(out) == 0
-    assert "w1 pid 1 node: connected" in out.getvalue() and "session s1" in out.getvalue()
+    assert (
+        f"w1 pid {os.getpid()} node: connected" in out.getvalue() and "session s1" in out.getvalue()
+    )
+
+
+def test_status_and_ls_leave_out_processes_that_are_gone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A status file whose process is gone (a crash, or an older release that kept it
+    at its stop) is not shown, nor a process file an older release marked stopped."""
+    monkeypatch.setattr("maktaba_pipeline.cluster.share.local_dir", lambda: tmp_path)
+    status = tmp_path / "status"
+    status.mkdir()
+    gone_pid = 2_000_000_001  # a fake pid nothing runs
+    for wid, pid in (("gone", gone_pid), ("live", os.getpid())):
+        (status / f"{wid}.json").write_text(
+            json.dumps({"worker_id": wid, "pid": pid, "kind": "home", "state": "connected"})
+        )
+    out = io.StringIO()
+    assert cli.status(out) == 0
+    assert "live pid" in out.getvalue() and "gone" not in out.getvalue()
+    (status / "live.json").unlink()
+    out = io.StringIO()
+    assert cli.status(out) == 1  # only a gone process's file: as if none had run
+
+    procs = tmp_path / "share" / "10.0.0.5" / "processes"
+    procs.mkdir(parents=True)
+    (procs / "old.json").write_text(json.dumps({"pid": 7, "stopped_at": "2026-10-19T00:00:00Z"}))
+    (procs / "now.json").write_text(json.dumps({"pid": 8, "last_seen": "2026-10-19T00:00:00Z"}))
+    out = io.StringIO()
+    assert cli.ls(tmp_path / "share", out) == 0
+    assert "process now:" in out.getvalue() and "process old" not in out.getvalue()

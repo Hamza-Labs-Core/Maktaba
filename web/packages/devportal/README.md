@@ -32,10 +32,30 @@ has no backend, no KV and no secrets. Every request goes through the Worker, whi
 | `/.well-known/security.txt`                    | RFC 9116                                        | `api/internal/security/disclosure.go` (the API's own policy) |
 | `/robots.txt`, `/sitemap.xml`                  | for crawlers                                    | the build                                                    |
 
-Every string the portal's own pages show is in English and Arabic (`scripts/strings.mjs`).
-The EN/AR button swaps them and sets `dir="rtl"` for Arabic. The first visit follows the
-browser's language, and the choice is kept in the browser. The guides, the changelog and
-the API reference stay in their source language, English.
+Every page is in English and Arabic: `/x/` in English, `/ar/x/` in Arabic, right to left
+(`<html lang="ar" dir="rtl">`), each with a link to the other (the language switch, and
+`rel="alternate" hreflang` for crawlers). Where each language comes from:
+
+| What                    | English                        | Arabic                                           |
+| ----------------------- | ------------------------------ | ------------------------------------------------ |
+| the portal's own pages  | `scripts/strings.mjs` (`en`)   | `scripts/strings.mjs` (`ar`)                     |
+| a guide                 | `docs/developers/<group>/x.md` | its twin, `docs/developers/<group>/x.ar.md`      |
+| the changelog           | `CHANGELOG.md`                 | `CHANGELOG.ar.md`                                |
+| the API reference prose | `shared/api/openapi.json`      | `shared/api/openapi.ar.json`, an overlay (below) |
+
+The API reference's Arabic is an overlay: `shared/api/openapi.ar.json` maps the JSON pointer
+of every `summary` and `description` (and the info title, and each tag's name) to the English
+it translates and its Arabic. The build writes `/ar/api/openapi.json`, the description with
+that prose in Arabic (a tag keeps its `name`, which operations refer to, and gets an
+`x-displayName`), and the Arabic page points Redoc at it. Redoc's three panels stay left to
+right; its rendered prose reads right to left. Redoc's own few labels (search, download) are
+in English: Redoc has no way to translate them.
+
+**The parity checks** (`scripts/parity.mjs`) fail the build when the languages drift: a guide
+without its `.ar.md` (or the other way round); a release, section or entry in one changelog
+and not the other; an OpenAPI string with no Arabic, or whose English changed since it was
+translated; an English page with no `/ar/` page (or the other way round); and an Arabic page
+that is mostly English (over 20% of its prose letters, outside code, in Latin script).
 
 ### The public-safety filter
 
@@ -126,8 +146,10 @@ The Worker has no `workers.dev` URL (`workers_dev = false`).
 
 ## Changing the site
 
-- **A new guide:** write it in `docs/developers/<group>/` and add it to `GUIDES` in
-  `scripts/build.mjs`. **A new page:** add it to the build, and its
+- **A new guide:** write it in `docs/developers/<group>/` with its Arabic twin (`x.ar.md`)
+  and add it to `GUIDES` in `scripts/build.mjs`. **A changelog entry:** in `CHANGELOG.md` and,
+  in Arabic, in `CHANGELOG.ar.md`. **An API description:** its Arabic in
+  `shared/api/openapi.ar.json`. **A new page:** add it to the build, and its
   strings to both languages in `scripts/strings.mjs`. The tests fail on a key that is missing
   in one language.
 - **The security contact:** change `DefaultPolicy()` in

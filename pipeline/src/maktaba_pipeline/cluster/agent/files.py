@@ -2,7 +2,7 @@
 
 ``<cluster dir>/<ip>/``::
 
-    processes/<worker_id>.json             identity, rewritten at start
+    processes/<worker_id>.json             identity, rewritten at start, removed at a clean stop
     logs/<YYYY-MM-DD>/<worker_id>.jsonl    {ts, level, event, logger, fields}
     metrics/<YYYY-MM-DD>/<worker_id>.jsonl a metrics frame every 10 s, and the final one
     llm/<YYYY-MM-DD>/<worker_id>.jsonl     requests this process ran (usage, never text)
@@ -20,6 +20,11 @@ reconnected leaves every open handle dead). When the share cannot be written the
 to ``~/.maktaba/cluster`` (the records of the failed write too) and
 :meth:`ClusterFiles.status` says so (the metrics ``files`` key); the share is tried again
 every 5 minutes, 15 s after a share in use failed a write.
+
+Stale files (:func:`prune_stale`, at start and every hour): the ``processes/*.json`` of this
+machine's processes that are gone, the local status files (``~/.maktaba/cluster/status``)
+of processes that are gone, and orphaned temp files, once older than an hour. A file whose
+process still runs is never removed.
 
 Where the share is comes from ``locate`` (:class:`~..share.ShareLocator`), asked again at
 every retry, so a machine whose path map was not built yet (a node that started paused)
@@ -43,6 +48,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO, Any
 
+import psutil
+
 from ...log import get_logger
 from .. import safefs
 from .logship import AGENT_LOGGER
@@ -50,7 +57,10 @@ from .logship import AGENT_LOGGER
 __all__ = [
     "STREAMS",
     "ClusterFiles",
+    "process_alive",
+    "prune_stale",
     "safe_name",
+    "written_at",
 ]
 
 STREAMS = ("logs", "metrics", "llm", "jobs")
@@ -61,6 +71,14 @@ RETRY_AFTER_WRITE_SEC = 15.0  #: after a share that was in use failed a write
 PRUNE_SEC = 86_400.0  #: retention runs at start and once a day
 IDENTITY_SEC = 60.0
 ERROR_LOG_SEC = 60.0
+STALE_SEC = 3_600.0  #: the stale-file pass runs at start and every hour
+#: a gone process's file, or an orphaned temp file, is removed once this old (seconds): a
+#: temp file lives for one write, and a gone process's file is no use to anyone after it
+SAFE_AGE_SEC = 3_600.0
+#: a process created this long after the file's newest time is not the file's writer
+_PID_REUSE_SLACK_SEC = 2.0
+_TEMP_SUFFIXES = (".tmp", ".probe")
+_MAX_STALE_BYTES = 256 * 1024
 
 _log = get_logger(logger=AGENT_LOGGER)
 
@@ -96,6 +114,100 @@ def _last_seen(path: Path) -> datetime | None:
         return datetime.fromtimestamp(os.lstat(path).st_mtime, tz=UTC)
     except OSError:
         return None
+
+
+def _times(data: Mapping[str, Any]) -> list[float]:
+    """The times a status or process file names (epoch seconds)."""
+    out: list[float] = []
+    for key in ("started_at", "last_seen", "updated_at", "stopped_at"):
+        text = data.get(key)
+        if not isinstance(text, str) or not text:
+            continue
+        try:
+            t = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        out.append((t if t.tzinfo else t.replace(tzinfo=UTC)).timestamp())
+    return out
+
+
+def written_at(data: Mapping[str, Any], mtime: float) -> float:
+    """The earliest time a status or process file says it was written (its writer ran
+    then): the earliest of its own times and its modification time."""
+    return min([mtime, *_times(data)])
+
+
+def process_alive(pid: object, written: float | None = None) -> bool:
+    """Whether ``pid`` runs and could be the process that wrote a file at ``written``
+    (epoch seconds): a process created after that is a reused pid, not the writer. When
+    it cannot be told (no permission), the process counts as alive."""
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        proc = psutil.Process(pid)
+        if written is not None and proc.create_time() > written + _PID_REUSE_SLACK_SEC:
+            return False
+        return bool(proc.status() != psutil.STATUS_ZOMBIE)
+    except psutil.NoSuchProcess:
+        return False
+    except (psutil.Error, OSError):
+        return True
+
+
+def prune_stale(
+    directory: Path,
+    *,
+    keep: str | None = None,
+    mine: Callable[[Mapping[str, Any]], bool] | None = None,
+    max_age: float = SAFE_AGE_SEC,
+    now: float | None = None,
+    alive: Callable[[object, float | None], bool] = process_alive,
+) -> int:
+    """Remove the stale files of one status or ``processes`` folder; the number removed.
+
+    A ``<name>.json`` goes when it is older than ``max_age``, names a ``pid`` and that
+    process is gone (:func:`process_alive`, against the file's earliest time, so a reused
+    pid does not keep it). ``keep`` (this process's own name) always stays; with ``mine``,
+    a file it says another machine wrote stays (its pids are not this machine's), as does
+    one that names no pid. A temp file (``*.tmp``, ``*.probe``) older than ``max_age`` is
+    an orphan: its write was cut short. A macOS ``._<name>`` sidecar goes with its file.
+    Regular files only: a link is never followed or removed."""
+    if not safefs.real_dir(directory):
+        return 0
+    now = time.time() if now is None else now
+    removed = 0
+    for p in safefs.list_real_files(directory, "", hidden=True):
+        name = p.name
+        if name.startswith("._"):
+            continue  # with its file, below
+        try:
+            mtime = os.lstat(p).st_mtime
+        except OSError:
+            continue
+        if now - mtime < max_age:
+            continue
+        if not name.endswith(_TEMP_SUFFIXES):
+            if not name.endswith(".json") or name.startswith(".") or p.stem == keep:
+                continue
+            try:
+                with safefs.open_read(p) as fh:
+                    data = json.loads(fh.read(_MAX_STALE_BYTES + 1))
+            except (OSError, ValueError):
+                continue
+            if not isinstance(data, dict) or "pid" not in data:
+                continue
+            if mine is not None and not mine(data):
+                continue
+            if alive(data.get("pid"), written_at(data, mtime)):
+                continue
+        try:
+            if safefs.remove_real_file(p):
+                removed += 1
+                with contextlib.suppress(OSError):
+                    safefs.remove_real_file(p.with_name("._" + name))
+        except OSError:
+            continue
+    return removed
 
 
 def _ends_with_newline(path: Path) -> bool:
@@ -163,6 +275,7 @@ class ClusterFiles:
         file_cap_bytes: int | None = None,
         flush_sec: float = FLUSH_SEC,
         clock: Callable[[], float] = time.monotonic,
+        status_dir: Path | None = None,
     ) -> None:
         from ..share import local_dir
 
@@ -200,6 +313,10 @@ class ClusterFiles:
         self._identity: dict[str, Any] | None = None
         self._last_share_try = float("-inf")
         self._last_prune = float("-inf")
+        self._last_stale = float("-inf")
+        #: the local status files' folder (``~/.maktaba/cluster/status``), swept for
+        #: the files of gone processes
+        self.status_dir = status_dir
         self._last_seen = clock()
         #: one thread at a time moves, writes or closes the files
         self._io = threading.RLock()
@@ -339,7 +456,7 @@ class ClusterFiles:
 
     def set_identity(self, identity: Mapping[str, Any]) -> None:
         """``processes/<worker_id>.json``: written now, its ``last_seen`` every 60 s,
-        ``stopped_at`` at a clean stop."""
+        removed at a clean stop (:meth:`stop`)."""
         now = _iso_now()
         self._identity = {"started_at": now, **dict(identity), "last_seen": now}
         self._identity.setdefault("stopped_at", None)
@@ -374,9 +491,26 @@ class ClusterFiles:
         with self._io:
             self._close_files()
             if self._identity is not None:
-                now = _iso_now()
-                self._identity.update(last_seen=now, stopped_at=now)
-                self._write_identity()
+                self._identity = None
+                self._remove_identity()
+
+    def _remove_identity(self) -> None:
+        """This process's ``processes/<worker_id>.json``, wherever it wrote one (the share,
+        the local folder): a process that has stopped is not listed any more."""
+        bases = {self.dir, self.fallback_dir} | (
+            {self.share_dir} if self.share_dir is not None else set()
+        )
+        for base in bases:
+            pdir = base / self.ip / "processes"
+            if not (safefs.real_dir(base / self.ip) and safefs.real_dir(pdir)):
+                continue
+            for name in (f"{self.name}.json", f"._{self.name}.json"):
+                try:
+                    safefs.remove_real_file(pdir / name)
+                except FileNotFoundError:
+                    pass
+                except OSError as exc:
+                    self._error("cluster_files_identity_remove_failed", exc)
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -406,6 +540,9 @@ class ClusterFiles:
         if now - self._last_prune >= PRUNE_SEC:
             self._last_prune = now
             self.prune()
+        if now - self._last_stale >= STALE_SEC:
+            self._last_stale = now
+            self.sweep_stale()
 
     def flush(self) -> int:
         with self._io:
@@ -551,6 +688,51 @@ class ClusterFiles:
                         ddir.rmdir()  # only when empty (a link or a stray file stays)
         removed += self._prune_processes(self.fallback_dir, cutoff_day)
         return removed
+
+    def sweep_stale(self, *, now: float | None = None) -> int:
+        """:func:`prune_stale` over the status folder, every ``processes`` folder of the
+        local fallback (only this machine writes there) and this machine's ``processes``
+        folder on the share, where only the files of this machine's processes are judged
+        (:meth:`_same_machine`); this process's own files stay. Returns the number of
+        files removed."""
+        removed = 0
+        ident = self._identity
+        try:
+            if self.status_dir is not None:
+                removed += prune_stale(self.status_dir, keep=self.name, now=now)
+            if ident is None:
+                return removed  # whose pids a process file names is not known yet
+            for ipdir in safefs.list_real_dirs(self.fallback_dir):
+                removed += prune_stale(ipdir / "processes", keep=self.name, now=now)
+            shared: set[Path] = set()
+            for base in {self.dir} | ({self.share_dir} if self.share_dir is not None else set()):
+                if base != self.fallback_dir and safefs.real_dir(base / self.ip):
+                    shared.add(base / self.ip / "processes")
+            for pdir in sorted(shared):
+                removed += prune_stale(
+                    pdir,
+                    keep=self.name,
+                    mine=lambda data: self._same_machine(ident, data),
+                    now=now,
+                )
+        except OSError as exc:
+            self._error("cluster_files_prune_failed", exc)
+        if removed:
+            _log.info("cluster_files_stale_removed", count=removed)
+        return removed
+
+    @staticmethod
+    def _same_machine(ident: Mapping[str, Any], data: Mapping[str, Any]) -> bool:
+        """Whether a process file on the share was written on this machine: the same
+        joined machine (``node_id``); for the home, any home process (one home per
+        cluster; its host name may change, as macOS renames a Mac on a name clash);
+        else the same host."""
+        if ident.get("node_id"):
+            return bool(data.get("node_id") == ident.get("node_id"))
+        if ident.get("kind") == "home":
+            return data.get("kind") == "home" and not data.get("node_id")
+        host = ident.get("host")
+        return bool(host) and data.get("host") == host
 
     def _prune_processes(self, base: Path, cutoff: datetime) -> int:
         """``processes/*.json`` last seen before ``cutoff`` (this process's own stays)."""

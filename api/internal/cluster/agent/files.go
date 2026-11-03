@@ -11,9 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -428,15 +430,33 @@ func readDirIn(root *os.Root, rel string) ([]os.DirEntry, error) {
 
 // ---------- retention ----------
 
-// Sweeper removes what is past retention (design-agent.md §7.7), once a
-// day: expired day folders in every IP folder (a day folder is a UTC date,
-// so an expired one is never being written), and processes/*.json whose
-// last_seen is older than the retention (processes that will not come
-// back: worker ids are new at every start). Each process also removes its
-// own expired files.
+// Sweeper removes what is past retention (design-agent.md §7.7), at the
+// hub's start and every hour: expired day folders in every IP folder (a day
+// folder is a UTC date, so an expired one is never being written), and
+// processes/*.json whose last_seen is older than the retention (processes
+// that will not come back: worker ids are new at every start). Sooner, once
+// GoneAge old: a process file that says its process stopped (stopped_at,
+// written by releases before a process removed its own file at its stop),
+// and an orphaned temp file (a write cut short). Each process also removes
+// its own expired files, and the files of its machine's gone processes.
 type Sweeper struct {
 	Days int
 	Now  func() time.Time
+}
+
+// GoneAge is how old a gone process's file, or an orphaned temp file, is
+// before a sweep removes it: a temp file lives for one write, and a process
+// that said it stopped is not coming back.
+const GoneAge = time.Hour
+
+// StaleSeen is how long a process goes without refreshing its last_seen
+// (every 60 s) before readers stop listing it: it no longer runs.
+const StaleSeen = 10 * time.Minute
+
+// tempFile: a writer's temp file (".<name>.<pid>.tmp", "<name>.tmp") or a
+// probe (".<name>.probe"), renamed or removed within one write.
+func tempFile(name string) bool {
+	return strings.HasSuffix(name, ".tmp") || strings.HasSuffix(name, ".probe")
 }
 
 // Sweep runs once over dir and returns the number of day folders and
@@ -470,14 +490,15 @@ func (s *Sweeper) Sweep(dir string) (int, error) {
 		for _, kind := range DayKinds {
 			removed += removeOldDays(root, filepath.Join(e.Name(), kind), cutoff)
 		}
-		removed += removeOldProcesses(root, filepath.Join(e.Name(), "processes"), horizon)
+		removed += removeOldProcesses(root, filepath.Join(e.Name(), "processes"), horizon, now.Add(-GoneAge))
 	}
 	return removed, nil
 }
 
 // removeOldProcesses removes processes/*.json last seen before horizon
-// (last_seen, else stopped_at, else the file's time).
-func removeOldProcesses(root *os.Root, rel string, horizon time.Time) int {
+// (last_seen, else stopped_at, else the file's time), those that stopped
+// (stopped_at) before gone, and temp files last written before gone.
+func removeOldProcesses(root *os.Root, rel string, horizon, gone time.Time) int {
 	entries, err := readDirIn(root, rel)
 	if err != nil {
 		return 0
@@ -485,14 +506,22 @@ func removeOldProcesses(root *os.Root, rel string, horizon time.Time) int {
 	n := 0
 	for _, e := range entries {
 		p := filepath.Join(rel, e.Name())
-		if !strings.HasSuffix(e.Name(), ".json") || !plainFile(root, p) {
+		temp := tempFile(e.Name())
+		if (!temp && !strings.HasSuffix(e.Name(), ".json")) || !plainFile(root, p) {
 			continue
 		}
 		st, err := root.Lstat(p)
 		if err != nil {
 			continue
 		}
+		if temp {
+			if st.ModTime().Before(gone) && root.Remove(p) == nil {
+				n++
+			}
+			continue
+		}
 		seen := st.ModTime()
+		stopped := false
 		if b, err := root.ReadFile(p); err == nil && len(b) <= 256<<10 {
 			var f struct {
 				LastSeen  string `json:"last_seen"`
@@ -505,13 +534,90 @@ func removeOldProcesses(root *os.Root, rel string, horizon time.Time) int {
 						break
 					}
 				}
+				if t, err := time.Parse(time.RFC3339Nano, f.StoppedAt); err == nil && t.Before(gone) {
+					stopped = true
+				}
 			}
 		}
-		if seen.Before(horizon) && root.Remove(p) == nil {
+		if (seen.Before(horizon) || stopped) && root.Remove(p) == nil {
 			n++
 		}
 	}
 	return n
+}
+
+// SweepStatus removes, from a machine's local status folder
+// (~/.maktaba/cluster/status: each local process's agent status), the
+// files at least GoneAge old whose process no longer runs (its pid is
+// gone), and temp files at least GoneAge old. A file whose pid still runs
+// stays, however old: a live process rewrites its file only when its state
+// changes. Links are never followed or removed.
+func (s *Sweeper) SweepStatus(dir string) (int, error) {
+	if dir == "" {
+		return 0, nil
+	}
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	defer func() { _ = root.Close() }()
+	entries, err := readDirIn(root, ".")
+	if err != nil {
+		return 0, err
+	}
+	gone := s.Now().Add(-GoneAge)
+	n := 0
+	for _, e := range entries {
+		name := e.Name()
+		temp := tempFile(name)
+		if (!temp && (!strings.HasSuffix(name, ".json") || strings.HasPrefix(name, "."))) || !plainFile(root, name) {
+			continue
+		}
+		st, err := root.Lstat(name)
+		if err != nil || !st.ModTime().Before(gone) {
+			continue
+		}
+		if !temp {
+			b, err := readCapped(root, name, maxProcessBytes)
+			if err != nil {
+				continue
+			}
+			var f struct {
+				PID int `json:"pid"`
+			}
+			if json.Unmarshal(b, &f) != nil || !pidGone(f.PID) {
+				continue
+			}
+		}
+		if root.Remove(name) == nil {
+			n++
+		}
+	}
+	return n, nil
+}
+
+// pidGone reports whether no process runs with pid on this machine. When
+// it cannot be told (no permission), the process counts as running.
+func pidGone(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	p, err := os.FindProcess(pid)
+	if runtime.GOOS == "windows" {
+		if err != nil {
+			// OpenProcess fails for a pid nothing runs; access denied is a live one
+			return !errors.Is(err, os.ErrPermission)
+		}
+		_ = p.Release()
+		return false
+	}
+	if err != nil {
+		return false
+	}
+	return errors.Is(p.Signal(syscall.Signal(0)), os.ErrProcessDone)
 }
 
 func removeOldDays(root *os.Root, kindRel, cutoff string) int {

@@ -99,6 +99,18 @@ nav.main a {
   color: var(--muted);
   text-decoration: none;
   padding: 4px 0;
+  white-space: nowrap;
+}
+/* a phone: the brand and the language switch on one row, the navigation on its own below */
+@media (max-width: 640px) {
+  header.top .wrap {
+    justify-content: space-between;
+    padding-block: 8px;
+  }
+  nav.main {
+    order: 3;
+    flex-basis: 100%;
+  }
 }
 nav.main a:hover,
 nav.main a[aria-current="page"] {
@@ -107,14 +119,16 @@ nav.main a[aria-current="page"] {
 nav.main a[aria-current="page"] {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
-#lang-toggle {
-  font: inherit;
+/* the language switch: a link to this page in the other language */
+#lang-switch {
   color: var(--fg);
-  background: transparent;
+  text-decoration: none;
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 4px 14px;
-  cursor: pointer;
+}
+#lang-switch:hover {
+  border-color: var(--accent);
 }
 main {
   padding: 32px 0 48px;
@@ -212,6 +226,16 @@ footer .wrap {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em;
 }
+/* code reads left to right on an Arabic page too: a block as a whole, inline code isolated
+   from the Arabic around it */
+.doc pre {
+  direction: ltr;
+  text-align: left;
+}
+.doc code {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
 .doc table {
   border-collapse: collapse;
   display: block;
@@ -231,8 +255,12 @@ footer .wrap {
 }
 .layout {
   display: grid;
-  grid-template-columns: 240px 1fr;
+  /* minmax(0, …): a wide code block scrolls inside its column, never widens the page */
+  grid-template-columns: 240px minmax(0, 1fr);
   gap: 32px;
+}
+.layout > * {
+  min-width: 0;
 }
 .layout nav.toc ul {
   list-style: none;
@@ -253,7 +281,7 @@ footer .wrap {
 }
 @media (max-width: 760px) {
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 /* Redoc draws its own light theme: give it a light panel in both schemes */
@@ -263,4 +291,15 @@ footer .wrap {
   color: #1c1810;
   border-radius: 10px;
   overflow: hidden;
+}
+
+/* the Arabic API reference: Redoc's panels stay left to right, its prose reads right to left */
+#redoc[lang="ar"] .redoc-markdown {
+  direction: rtl;
+  text-align: start;
+}
+#redoc[lang="ar"] .redoc-markdown code,
+#redoc[lang="ar"] .redoc-markdown pre {
+  direction: ltr;
+  unicode-bidi: isolate;
 }
