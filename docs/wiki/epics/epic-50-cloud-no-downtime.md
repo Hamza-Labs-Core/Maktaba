@@ -198,3 +198,23 @@ kill switch through a signed revocation list (the Epic 54 pattern). There is no 
 
 The owner's open questions, each with a recommended default, are in README §14.10. The
 broadcasting gate is in §14.11.
+
+## Cloudflare in front (README §15)
+
+The user portal (`app.maktaba.tv`, `maktaba.tv/developers`, `api.maktaba.tv`) and the operator
+console (`admin.maktaba.tv`, its own hostname) sit behind the Cloudflare proxy: TLS, WAF
+managed rules, rate limits on sign-in, sign-up and the API, and Turnstile on the auth pages.
+The origin is reached only through a Cloudflare Tunnel from the database leader, and the API
+trusts `CF-Connecting-IP` only from it. Relay names stay DNS only (video). The console uses
+Maktaba's own staff accounts with mandatory MFA (passkey or TOTP), 15-minute idle timeout,
+8-hour cap, re-authentication for sensitive actions, lockout and full audit; admin routes are
+404 on every user name. Cloudflare pieces deploy from CI only. Estimated cost: about $25–30 a
+month on the Pro plan (about $5 on Free).
+
+| # | Story | Phase |
+|---|---|---|
+| 50.30 | [Cloudflare in front: TLS, WAF, rate limits and bot protection](../../../specs/epics/50-cloud-no-downtime/story-50-30-cloudflare-edge-rules.md) | 1 |
+| 50.31 | [The origin only through Cloudflare](../../../specs/epics/50-cloud-no-downtime/story-50-31-origin-through-cloudflare.md) | 1 |
+| 50.32 | [The operator console on admin.maktaba.tv](../../../specs/epics/50-cloud-no-downtime/story-50-32-admin-hostname.md) | 1 |
+| 50.33 | [Staff sign-in for the operator console](../../../specs/epics/50-cloud-no-downtime/story-50-33-staff-auth.md) | 1 |
+| 50.34 | [Cloudflare deploys from CI](../../../specs/epics/50-cloud-no-downtime/story-50-34-cloudflare-deploys.md) | 1 |

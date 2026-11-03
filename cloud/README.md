@@ -104,6 +104,25 @@ The image is built from [`cloud/Dockerfile`](Dockerfile) and published
 to `ghcr.io/hamza-labs-core/maktaba-cloud` (cosign-signed) by the
 [release workflow](../.github/workflows/release.yml).
 
+### Behind Cloudflare (specced, not built)
+
+[Epic 50 §15](../specs/epics/50-cloud-no-downtime/README.md#15-cloudflare-in-front-the-user-portal-and-the-operator-console)
+(stories 50.30–50.34) puts the cloud behind Cloudflare. What changes here when it is built:
+
+| | Today | After Epic 50 §15 |
+|---|---|---|
+| Names | the api role answers on every name it is given | user names (`api.maktaba.tv`, `app.maktaba.tv`, `maktaba.tv/developers`) and the operator console on **`admin.maktaba.tv`** only, all through the Cloudflare proxy (TLS, WAF managed rules, rate limits, Turnstile on the auth pages; 50.30) |
+| How requests arrive | `0.0.0.0:8080` | **only through a Cloudflare Tunnel**: `cloudflared` on the database leader dials out, and the api role's two listeners bind loopback (`127.0.0.1:8090` users, `127.0.0.1:8091` admin); no inbound port serves the API (50.31) |
+| Relay | Caddy, any name | Caddy serves `relay.maktaba.tv` and `*.relay.maktaba.tv` only, **DNS only** (relayed video never goes through Cloudflare's proxy or the Tunnel) |
+| Client IP | `CF-Connecting-IP` from any peer when `server.trust_proxy_headers` is on | `CF-Connecting-IP` only from a peer in `server.trusted_proxies` (the local `cloudflared`); the relay never reads it (50.31) |
+| `/v1/admin/*` | on every name, inside the user web bundle (`web/cloud`) | **404 on every user name**; served only by the admin listener for `admin.maktaba.tv`, from its own bundle (`web/admin`), cookie (`__Host-maktaba_staff`) and CSP (50.32) |
+| Operators | a cloud account with `users.role = 'service_admin'` (`admin grant`), password only | **staff accounts**, separate from cloud accounts (`maktaba-cloud staff add`), with **mandatory MFA** (passkey or TOTP), 15-minute idle timeout, 8-hour cap, re-authentication for sensitive actions, lockout, an audit row for every sign-in and admin request, an optional IP allow-list (50.33) |
+| Cloudflare deploys | — | from CI only, with the org secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (50.34) |
+
+The plugin store is a separate service with its own accounts and hostname (Epic 54); it sits
+behind the same Cloudflare proxy, and none of its routes or roles are in this binary's admin
+surface.
+
 ### Secrets
 
 Two runtime secrets are injected via the environment (never the TOML

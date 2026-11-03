@@ -488,6 +488,19 @@ The next epics are specs, not built yet:
 
 No other Maktaba domain is ours.
 
+On maktaba.tv (planned in [Epic 50 §15](specs/epics/50-cloud-no-downtime/README.md#15-cloudflare-in-front-the-user-portal-and-the-operator-console)):
+
+| Name | What | How it is reached |
+|---|---|---|
+| `app.maktaba.tv`, `maktaba.tv/developers`, `api.maktaba.tv` | the user portal: account, billing, the cloud web app, the developer console and the API | the Cloudflare proxy (WAF, rate limits, bot checks on sign-in), then a Cloudflare Tunnel to the cloud; no open port |
+| `admin.maktaba.tv` | the operator console, for Maktaba staff only | the same proxy and Tunnel; staff accounts with required two-step sign-in; never served on a user name |
+| `relay.maktaba.tv`, `<home>.relay.maktaba.tv` | remote play through the relay | DNS only, straight to the relay (video never goes through Cloudflare's proxy) |
+| `watch.`, `live.`, `ingest.maktaba.tv` | home broadcasting | Cloudflare Workers ([Epic 50 §14](specs/epics/50-cloud-no-downtime/README.md#14-home-broadcasting)) |
+| `status.maktaba.tv` | the status page | hosted off the cloud's own machines |
+
+The plugin store has its own hostname and accounts ([Epic 54](specs/epics/54-plugins/README.md)),
+behind the same Cloudflare proxy.
+
 ---
 
 ## License

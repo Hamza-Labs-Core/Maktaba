@@ -21,8 +21,9 @@ back.
 | Name | Points at | Cloudflare | TTL | Used by | Phase |
 |---|---|---|---|---|---|
 | `maktaba.tv`, `www.maktaba.tv` | marketing site (as today) | proxied | auto | people | — |
-| `api.maktaba.tv` | Floating IP (origin) | **proxied** | auto | apps, homes (claim, entitlements, home list) | 1 |
-| `app.maktaba.tv` | Floating IP (origin) | proxied | auto | cloud web app | 1 |
+| `api.maktaba.tv` | the Cloudflare Tunnel (`<tunnel-id>.cfargotunnel.com`, 50.31) | **proxied** | auto | apps, homes (claim, entitlements, home list) | 1 |
+| `app.maktaba.tv`, route `maktaba.tv/developers*` | the user web Worker, `/v1/*` passed through the Tunnel (50.32) | proxied | auto | cloud web app | 1 |
+| `admin.maktaba.tv` | the admin web Worker, `/v1/*` passed through the Tunnel (50.32) | proxied | auto | the operator console (staff only, 50.33) | 1 |
 | `relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | homes' tunnel (`/v1/relay/ws`) | 1 |
 | `*.relay.maktaba.tv` | Floating IP | **DNS only** | 300 s | apps reaching a home: `<slug>.relay.maktaba.tv` | 1 |
 | `canary.relay.maktaba.tv` | covered by the wildcard | DNS only | — | the canary home (50.10); a reserved slug | 1 |
@@ -36,11 +37,14 @@ Rules:
 
 - **Relayed video never goes through the Cloudflare proxy** (Cloudflare's terms forbid video on
   non-Enterprise plans, research §3). So every relay name is DNS only.
+- **The API, the web app and the operator console never point at an address** (README §15,
+  50.31): they reach the origin only through the Cloudflare Tunnel, so no inbound port serves
+  them. The Tunnel's DNS records are written by CI (50.34).
 - **No name points at a node's own address in Phase 1**, only at the Floating IP. Failover
   never needs a DNS change. The 300 s TTL matters only for the manual zone-disaster path
   (50.09), where it caps how long the DNS change takes to spread.
 - Phase 2 relay names use **60 s** because the witness removes a dead relay's record.
-- Slugs `canary`, `status`, `api`, `app`, `www`, `r1`…`r99`, `direct`, `staging` are added to
+- Slugs `canary`, `status`, `api`, `app`, `admin`, `www`, `r1`…`r99`, `direct`, `staging` are added to
   the reserved list (story 25.22) so no home can take them.
 - **Direct names are never under `maktaba.tv`** (owner decision, 2026-11-03; README §13
   decision 5). They live on **several separate registered domains used only for direct names**
