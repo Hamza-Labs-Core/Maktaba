@@ -261,7 +261,10 @@ and the cloud web app.
 - **Avatar upload** (25.5 `413 avatar_too_large`): only an https URL can be
   set.
 - **Admin step-up re-auth** (25.20 `acr` freshness) and **admin SSO**: the
-  console uses the normal session plus the role.
+  console uses the normal session plus the role. Specced in Epic 50 stories
+  50.32–50.33: the console moves to `admin.maktaba.tv` with separate staff
+  accounts, mandatory MFA, short sessions and re-authentication for
+  sensitive actions.
 - **Force-disconnect a server / tunnel revoke frames** (25.20, 25.5): owned
   by the relay work.
 - ~~**Server-scoped entitlements** and the home pulling them~~: done as
