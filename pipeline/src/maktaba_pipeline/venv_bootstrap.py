@@ -109,6 +109,10 @@ DEFAULT_EXTRAS = "stt,search"
 SECOND_LISTEN_MIN_GIB = 9.5
 SECOND_LISTEN_MIN_COMPUTE = (7, 5)
 SECOND_LISTEN_MIN_DRIVER = 580
+#: the smallest NVIDIA GPU (GiB) Whisper runs on with CUDA, Whisper alone (the supervisor's
+#: gpuMinGB in cmd/maktaba-server/internal/supervisor/stt.go; a test keeps them equal):
+#: there the stt extra's CTranslate2 and cuBLAS wheels transcribe on the GPU
+WHISPER_MIN_GIB = 4.0
 TORCH_CHOICES = ("auto", "cpu", "cuda")
 #: nvidia-smi's answer, all it is asked (before R510 it knows no compute_cap)
 _SMI_QUERIES = ("name,memory.total,compute_cap,driver_version", "name,memory.total,driver_version")
@@ -243,9 +247,11 @@ def _nvidia_smi() -> str | None:
 
 def parse_gpu(line: str) -> Gpu | None:
     """One line of :data:`_SMI_QUERIES`' answer ("NVIDIA GeForce RTX 3080 Ti, 12288, 8.6,
-    591.44", or the fallback's "name, MiB, driver"), or None."""
-    f = [x.strip() for x in line.split(",")]
-    if len(f) < 2 or not f[1].isdigit():
+    591.44", or the fallback's "name, MiB, driver"), or None. Windows' nvidia-smi ends its
+    lines with CRLF, and without ``nounits`` says "8192 MiB": both are read."""
+    f = [x.strip() for x in line.strip().split(",")]
+    mib = f[1].removesuffix("MiB").strip() if len(f) >= 2 else ""
+    if not mib.isdigit() or int(mib) <= 0:
         return None
     compute = None
     driver = f[-1] if len(f) >= 3 and f[-1] not in ("", "[N/A]") else None
@@ -253,15 +259,22 @@ def parse_gpu(line: str) -> Gpu | None:
         major, _, minor = f[2].partition(".")
         if major.isdigit() and minor.isdigit():
             compute = (int(major), int(minor))
-    return Gpu(f[0], int(f[1]) / 1024, compute, driver)
+    return Gpu(f[0], int(mib) / 1024, compute, driver)
 
 
-def nvidia_gpu() -> Gpu | None:
-    """The first NVIDIA GPU (CUDA device 0), or None without one or its driver."""
+def parse_gpus(text: str) -> list[Gpu]:
+    """Every GPU of nvidia-smi's answer, one line each (lines it cannot read skipped)."""
+    return [g for g in (parse_gpu(line) for line in text.splitlines()) if g is not None]
+
+
+def nvidia_gpus() -> tuple[list[Gpu], str | None]:
+    """``(the NVIDIA GPUs nvidia-smi lists, why none)``: in CUDA's order (device 0 first);
+    the reason is None when it listed one or more."""
     exe = _nvidia_smi()
     if exe is None:
-        return None
+        return [], "nvidia-smi was not found (no NVIDIA driver, or it is not on PATH)"
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    why = "nvidia-smi answered nothing"
     for query in _SMI_QUERIES:
         try:
             out = subprocess.run(
@@ -272,11 +285,32 @@ def nvidia_gpu() -> Gpu | None:
                 check=False,
                 creationflags=flags,
             )
-        except (OSError, subprocess.SubprocessError):
-            return None
+        except (OSError, subprocess.SubprocessError) as exc:
+            return [], f"{exe}: {type(exc).__name__}: {exc}"
         if out.returncode == 0:
-            lines = out.stdout.strip().splitlines()
-            return parse_gpu(lines[0]) if lines else None
+            gpus = parse_gpus(out.stdout or "")
+            if gpus:
+                return gpus, None
+            said = (out.stdout or "").strip().splitlines()
+            return [], f"{exe} lists no GPU" + (f" ({said[0].strip()})" if said else "")
+        err = ((getattr(out, "stderr", "") or "") + (out.stdout or "")).strip().splitlines()
+        why = f"{exe} exited {out.returncode}" + (f": {err[0].strip()}" if err else "")
+    return [], why
+
+
+def nvidia_gpu() -> Gpu | None:
+    """The first NVIDIA GPU (CUDA device 0), or None without one or its driver."""
+    gpus, _ = nvidia_gpus()
+    return gpus[0] if gpus else None
+
+
+def whisper_gpu(gpu: Gpu | None) -> str | None:
+    """Why Whisper (CTranslate2 with CUDA, the ``stt`` extra) does not run on this GPU, or
+    None: its memory (:data:`WHISPER_MIN_GIB`, the supervisor's ``gpuMinGB``)."""
+    if gpu is None:
+        return "no NVIDIA GPU"
+    if gpu.memory_gib < WHISPER_MIN_GIB:
+        return f"{gpu.name} has {gpu.memory_gib:.1f} GiB, under {WHISPER_MIN_GIB:g}"
     return None
 
 

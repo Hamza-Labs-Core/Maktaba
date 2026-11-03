@@ -14,6 +14,22 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
+  transcribe.** Its capability report looked for the GPU only through `pynvml`, which no
+  install brings (an RTX 2080 SUPER reported `"gpus": []`), and counted the `stt` extra only by
+  the Mac's MLX-Whisper. It now asks the driver (NVML), then `nvidia-smi` (PATH, `System32`,
+  `NVSMI`), reports each GPU's name, memory, compute capability and driver or why it found none
+  (`gpu_problem`, logged), and names the Whisper engine (`stt_backend`: `mlx`, `ct2-cuda`,
+  `ct2-cpu`). A stage a machine cannot run keeps the pipeline's reason in `workers.stages_off`
+  (`unavailable: <why>`), and Admin > Machines shows a transcription line in English and
+  Arabic: ready on the GPU, installing with an update, or the reason (on Windows an 8 GB card
+  waits for the second listen, with how to let it transcribe with Whisper alone). The `gpu`
+  pool is per machine: a worker whose supervisor sized a batch from its NVIDIA GPU takes that
+  many files at once (`MAKTABA_POOL_GPU`, 8 on an 8 GB card), not the cluster's size set for the
+  home's GPU. `transcribe` is no longer claimed where the share's read check fails, and a file
+  whose home path the path map does not cover fails saying so. The node installers default to
+  the `stt` extra on an x86_64 machine with an NVIDIA GPU of 4 GiB or more, and an update adds
+  it to such a machine that lacks it.
 - **"Needs attention" says each problem in your language on the web and in Maktaba Remote for
   iPhone and iPad**, as the Android app does: a group's title comes from its cause, in English or
   Arabic, and a problem's message shows its real line breaks, an Arabic file name in it kept in

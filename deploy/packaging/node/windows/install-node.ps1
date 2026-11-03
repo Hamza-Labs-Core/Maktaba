@@ -55,11 +55,13 @@
 .PARAMETER Instances
     Number of extra transcription workers (maktaba-node@1..N, MAKTABA_STT_SLOT=stt-<i>,
     only the transcribe stage; the main worker then leaves transcribe to them). Default:
-    keep the installed ones. Transcription runs on Apple Silicon only today, so on
-    Windows these claim nothing unless node@<N>.env gives them other stages.
+    keep the installed ones. On Windows they transcribe on the NVIDIA GPU (the stt
+    extra), where the second listen runs too or the home's rules let a machine without it
+    transcribe.
 
 .PARAMETER Extras
-    Pipeline extras, comma-separated, or "none" (default: none; remembered).
+    Pipeline extras, comma-separated, or "none" (default: stt on an x86_64 PC with an
+    NVIDIA GPU of 4 GiB or more, none otherwise; remembered).
 
 .PARAMETER FromWheel
     Install the pipeline from this wheel (maktaba_pipeline-*.whl), a file or an http(s)
@@ -166,7 +168,11 @@ function Assert-ExitCode {
 # --- choices (remembered from the last install) ---------------------------------------
 if ($Instances -gt 16) { throw '-Instances: at most 16' }
 if (-not $Extras) { $Extras = Read-NodeKeyValue $script:NodeInstallConf 'EXTRAS' }
-if (-not $Extras) { $Extras = 'none' }
+if (-not $Extras) {
+    # stt where the NVIDIA GPU transcribes (Get-NodeDefaultExtras), else none
+    $Extras = Get-NodeDefaultExtras (Get-NodeNvidiaGpu)
+    if ($Extras -eq 'stt') { Write-NodeStep 'extras: stt (this NVIDIA GPU transcribes with CUDA)' }
+}
 # torch's build (the stt and search extras bring torch): the CUDA one only where the GPU
 # runs the second listen
 $torchExtras = @($Extras.Split(',') | ForEach-Object { $_.Trim() }) | Where-Object { $_ -eq 'stt' -or $_ -eq 'search' }
