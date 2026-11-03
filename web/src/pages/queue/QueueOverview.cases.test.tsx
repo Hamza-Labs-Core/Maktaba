@@ -417,7 +417,8 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
 
   it("QOV-13: render crash shows the route error fallback; Back works", async () => {
     quietCrash();
-    const bad = [{ ...failureGroupsFixture[0], label: { not: "a string" } }];
+    // a cause the page has no words for shows the home's label, here not a string
+    const bad = [{ ...failureGroupsFixture[0], cause: "a_new_cause", label: { not: "a string" } }];
     routeGet(get, table({ "/api/issues": { groups: bad } }));
     renderPage(<QueueOverview />, { path: "/queue" });
     const fallback = await screen.findByRole("alert");

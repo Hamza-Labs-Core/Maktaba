@@ -12,6 +12,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Fixed
 
+- **"Needs attention" says each problem in your language on the web and in Maktaba Remote for
+  iPhone and iPad**, as the Android app does: a group's title comes from its cause, in English or
+  Arabic, and a problem's message shows its real line breaks, an Arabic file name in it kept in
+  order.
 - **A Mac running Maktaba no longer gets renamed on the network** ("Mahmouds-Mac-Studio-2.local").
   Each Maktaba process answered for the Mac's own Bonjour name alongside macOS, which macOS treats
   as another device using it. On a Mac, Maktaba now announces itself through macOS's own responder

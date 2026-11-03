@@ -545,6 +545,7 @@ summary.mkt-q-lane__title {
 }
 .mkt-q-issue__msg {
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 .mkt-q-linkbtn {
   display: inline-flex;

@@ -48,7 +48,7 @@ struct GroupRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(group.count, format: .number).font(.headline.monospacedDigit())
-                Text(group.label).font(.headline)
+                Text(group.title()).font(.headline)
                 Spacer()
                 if group.action == "retry" {
                     Button {
@@ -65,7 +65,7 @@ struct GroupRow: View {
             if showsStage {
                 Text(group.stage).font(.caption).foregroundStyle(.secondary)
             }
-            if let m = group.sampleMessage, !m.isEmpty {
+            if let m = group.readableSample {
                 Text(m).font(.caption).foregroundStyle(.secondary).lineLimit(3)
             }
         }
