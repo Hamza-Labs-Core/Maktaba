@@ -342,8 +342,8 @@ jobs:
           print(sorted(t)[-1])")
           udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-tv" "$devtype" "$runtime")
           echo "UDID=$udid" >> "$GITHUB_ENV"
+          # (no `simctl ui appearance` here: the tvOS runtime does not support it)
           xcrun simctl bootstatus "$udid" -b > /dev/null
-          xcrun simctl ui "$udid" appearance dark
           xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.tv --mode "level:debug,persist:debug"
           python3 tools/apple/sim-settle.py "$udid" "$RESULTS/tv-settle.log" --max 480
 
