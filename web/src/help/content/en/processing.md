@@ -137,6 +137,14 @@ The queue is off: you left it out in **Start a run**, or its extension is switch
 
 The queue belongs to an extension (Plex or dizqueTV) that is not set up yet. Open [Extensions](/admin/extensions), fill in its settings and press **Test connection**.
 
+### Its component is off {#waiting-component-off}
+
+The queue belongs to a component (for example Transcription) that an admin switched off. No new jobs are made while it is off, and the jobs already queued stay queued. When the component is on again, Maktaba queues the work it missed and the queue carries on.
+
+### Its component is stopped {#waiting-component-held}
+
+An admin stopped the component this queue belongs to for a while. New jobs still queue and wait; none starts until the component is started again.
+
 ### Everything is paused {#waiting-paused-all}
 
 Someone pressed **Pause all**. Nothing new starts in any queue. Press **Resume all**.

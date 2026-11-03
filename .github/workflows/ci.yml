@@ -79,6 +79,8 @@ jobs:
       integration: ${{ github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ github.event_name != 'pull_request' || steps.filter.outputs.compat_prev == 'true' }}
       replica: ${{ github.event_name != 'pull_request' || steps.filter.outputs.replica == 'true' }}
+      components: ${{ github.event_name != 'pull_request' || steps.filter.outputs.components == 'true' }}
+      components_chaos: ${{ github.event_name != 'pull_request' || steps.filter.outputs.components_chaos == 'true' }}
       e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.e2e == 'true' }}
       media_e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.media_e2e == 'true' }}
       perf_ci: ${{ github.event_name != 'pull_request' || steps.filter.outputs.perf_ci == 'true' }}
@@ -176,6 +178,16 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.replica == 'true'
     uses: ./.github/workflows/_replica.yml
+
+  components:
+    # Epic 51: components-live (N1-N5) and, on runner changes, components-chaos (N6),
+    # real sleepy workers on Postgres (see _components.yml)
+    needs: [changes]
+    if: needs.changes.outputs.components == 'true' || needs.changes.outputs.components_chaos == 'true'
+    uses: ./.github/workflows/_components.yml
+    with:
+      live: ${{ needs.changes.outputs.components == 'true' }}
+      chaos: ${{ needs.changes.outputs.components_chaos == 'true' }}
 
   e2e:
     needs: [changes, integration]
@@ -395,6 +407,7 @@ jobs:
       - unit
       - integration
       - replica
+      - components
       - e2e
       - media-e2e
       - perf-ci

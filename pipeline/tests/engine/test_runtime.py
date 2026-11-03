@@ -135,13 +135,17 @@ def test_the_transcribe_stage_imports_without_numpy() -> None:
 
 
 async def _boot_tasks(db: Database, **kw: Any) -> list[str]:
-    """The background tasks a worker starts with (their names)."""
+    """The background tasks a worker starts with (their names), and the loops its
+    component runner starts (Epic 51: a switchable component's loops are declared there;
+    one an environment variable keeps off is not counted)."""
     cfg = RuntimeConfig(database_url="x", stages=(), host="PC", **kw)
     stop = asyncio.Event()
     overrides: dict[Stage | str, StageHandler] = dict.fromkeys(LEGACY_HANDLERS, _noop_handler)
     started = await _start_engine(db, cfg, "pc/1", "PC", stop, overrides)
     stop.set()
     names = [t.get_name() for t in started.tasks]
+    assert started.components is not None
+    names += [n for n, lp in started.components.loops.items() if not lp.env_off]
     for t in started.tasks:
         t.cancel()
     for t in started.tasks:

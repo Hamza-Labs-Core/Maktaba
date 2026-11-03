@@ -161,6 +161,8 @@ export function causeHelp(cause: string | null | undefined): HelpRef {
 export const WAITING_REASONS = [
   "disabled",
   "not_configured",
+  "component_off",
+  "component_held",
   "paused_all",
   "paused",
   "awaiting_review",

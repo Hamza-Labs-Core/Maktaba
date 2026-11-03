@@ -781,11 +781,12 @@ class FakeAudioDB:
 
         # --- the SQLite twin of processing_jobs_enqueue() (engine/enqueue.py,
         # _enqueue_sqlite): the same rules, statement by statement ---------
-        if s.startswith("SELECT subject_kinds, enabled, debounce_sec, debounce_max_sec"):
+        if s.startswith("SELECT subject_kinds, enabled, disabled_reason, debounce_sec"):
             return _Row(
                 {
                     "subject_kinds": '["video", "library"]',
                     "enabled": True,
+                    "disabled_reason": None,
                     "debounce_sec": 0,
                     "debounce_max_sec": 0,
                     "max_attempts": 3,

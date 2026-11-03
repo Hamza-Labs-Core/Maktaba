@@ -1,0 +1,112 @@
+# Epic 51 (story 51.06): the components jobs, against real Postgres 16 with real sleepy
+# pipeline workers (tests/components/sleepy/worker.py).
+#
+# - components-live: a component switched off, held and on again; N1-N5 of the epic's
+#   README section 11 measured (components-live.json), on PRs touching the components.
+# - components-chaos: 100 random flips of four stage groups while 2,000 jobs run (N6);
+#   on PRs touching the runners, and nightly (components-nightly.yml).
+#
+# Every run keeps the workers' logs and the measurements as an artifact; a failure keeps
+# the whole job history too.
+
+name: Components
+
+on:
+  workflow_call:
+    inputs:
+      live: { type: boolean, default: true }
+      chaos: { type: boolean, default: false }
+
+permissions:
+  contents: read
+
+jobs:
+  components-live:
+    if: inputs.live
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+      MAKTABA_COMPONENTS_LOGS: ${{ github.workspace }}/components-logs
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --extra dev
+      - name: components-live
+        working-directory: pipeline
+        run: uv run --extra dev pytest ../tests/components/test_live.py -q -p no:cacheprovider -rs
+      - name: Keep the logs
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: components-live-logs
+          path: ${{ github.workspace }}/components-logs
+          if-no-files-found: ignore
+
+  components-chaos:
+    if: inputs.chaos
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.7-pg16
+        env:
+          POSTGRES_USER: maktaba
+          POSTGRES_PASSWORD: maktaba
+          POSTGRES_DB: maktaba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U maktaba"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
+      MAKTABA_COMPONENTS_LOGS: ${{ github.workspace }}/components-logs
+      # the run's schedule is printed in components-chaos.json; set it to repeat a run
+      MAKTABA_CHAOS_SEED: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: uv sync --frozen --extra dev
+      - name: components-chaos
+        working-directory: pipeline
+        run: uv run --extra dev pytest ../tests/components/test_chaos.py -q -p no:cacheprovider -rs
+      - name: Keep the logs and the job history
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: components-chaos-logs
+          path: ${{ github.workspace }}/components-logs
+          if-no-files-found: ignore

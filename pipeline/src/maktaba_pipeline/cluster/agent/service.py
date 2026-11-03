@@ -201,10 +201,14 @@ async def run_agent(
     paused: Callable[[], str | None] | None = None,
     pause_listeners: list[Callable[[], None]] | None = None,
     on_share: bool = True,
+    refused: asyncio.Event | None = None,
 ) -> None:
-    """The agent; ``on_share=False`` (a worker run with ``--no-share``, the index worker)
-    keeps its files on this machine (``~/.maktaba/cluster``) and never looks for the
-    share: a stalled share must not reach it."""
+    """The agent until ``shutdown``; ``refused`` (default ``shutdown``) is set when the
+    home revokes this machine (the worker's own stop, when ``shutdown`` is the loop's:
+    Epic 51's runner stops the agent with its component); ``on_share=False`` (a worker
+    run with ``--no-share``, the index worker) keeps its files on this machine
+    (``~/.maktaba/cluster``) and never looks for the share: a stalled share must not
+    reach it."""
     files: ClusterFiles | None = None
     shipper: LogShipper | None = None
     agent: ChannelAgent | None = None
@@ -271,7 +275,7 @@ async def run_agent(
             commands=Commands(
                 drain=drain,
                 reload_stages=reload_stages,
-                revoked=_refused(shutdown),
+                revoked=_refused(refused or shutdown),
                 check_membership=check_membership,
                 # a worker-only machine's next update makes it a full node (story 35.8 AC8)
                 convert=convert_handler(ident.url) if ident.kind == "node" else None,
@@ -327,6 +331,7 @@ async def run_for_worker(
     worker: Any,
     health: Any = None,
     on_share: bool = True,
+    refused: asyncio.Event | None = None,
 ) -> None:
     """The agent of an engine worker: ``worker`` is its stage selection
     (:class:`~..node.WorkerAgent`: ``cmd drain`` holds it, ``cmd reload_stages``
@@ -363,4 +368,5 @@ async def run_for_worker(
         paused=lambda: selector.paused or selector.unreachable,
         pause_listeners=worker.pause_listeners,
         on_share=on_share,
+        refused=refused,
     )

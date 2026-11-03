@@ -106,9 +106,9 @@ switchable = false
 group      = "core"
 title_key  = "components.core.pipeline.title"
 desc_key   = "components.core.pipeline.desc"
-# component_catchup (51.06) joins these when its StageDef lands
 stages     = ["scan", "probe", "content_hash", "thumb_hash", "link", "fingerprint",
-              "style_sample", "fp_gate", "access_check", "storage_canonicalize", "categorize"]
+              "style_sample", "fp_gate", "access_check", "storage_canonicalize", "categorize",
+              "component_catchup"]
 processes  = ["pipeline/", "pipeline/chroma-copy"]
 loops      = ["pipeline:worker-hb", "pipeline:stage-selection", "pipeline:reconciler",
               "pipeline:pruner", "pipeline:audio-cache-sweep", "pipeline:claim-lease",

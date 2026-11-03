@@ -42,6 +42,7 @@ class StageImpl:
 #: exposes ``IMPLS`` (output fingerprints for the stages that predate the engine).
 CORE_MODULES: dict[str, str] = {
     "content_hash": "maktaba_pipeline.engine.stages.content_hash",
+    "component_catchup": "maktaba_pipeline.engine.stages.component_catchup",
     "transcribe": "maktaba_pipeline.engine.stages.transcribe",
     "subtitle_gen": "maktaba_pipeline.engine.stages.subtitle_gen",
     "index": "maktaba_pipeline.engine.stages.index",
