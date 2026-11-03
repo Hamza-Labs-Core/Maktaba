@@ -291,6 +291,25 @@ node_packaging:
   - *ci
   - *node_packaging
 
+# Epic 51 story 51.15: the component packs, the signed index and their verifier (the
+# installer, 51.16, joins it), and what the packs are built from (the pipeline's pins)
+components_packs:
+  - *ci
+  - '.github/workflows/_components-packs.yml'
+  - 'tools/release/packs/**'
+  - 'tools/release/componentsindex/**'
+  - 'tools/release/cmd/build-pack/**'
+  - 'tools/release/cmd/gen-components-index/**'
+  - 'tools/release/go.mod'
+  - 'tools/release/go.sum'
+  - 'shared/go/componentpack/**'
+  - 'shared/go/releaseverify/components*'
+  - 'shared/go/releaseverify/releaseverifytest/**'
+  - 'shared/components/catalog.toml'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/.python-version'
+
 # the release venv built by the server's own code (internal/appvenv) from the wheel
 release_venv:
   - *ci

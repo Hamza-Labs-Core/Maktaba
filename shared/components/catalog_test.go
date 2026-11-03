@@ -233,3 +233,39 @@ func TestPipelineCopyIsCurrent(t *testing.T) {
 		t.Fatal("pipeline/src/maktaba_pipeline/components/catalog.toml differs: run make catalog-sync")
 	}
 }
+
+// Story 51.15 T11: a model's source is pinned to a commit (or an ollama digest) and has
+// its files; a branch, an unpinned source or a file of no source is refused, naming the
+// entry.
+func TestModelSourcesArePinned(t *testing.T) {
+	raw := string(Raw())
+	const medium = `source     = "hf:Systran/faster-whisper-medium@08e178d48790749d25932bbc082711ddcfdfbc4f"`
+	if !strings.Contains(raw, medium) {
+		t.Fatal("the test's anchor is gone from the catalog")
+	}
+	for name, c := range map[string]struct{ old, new, want string }{
+		"branch": {medium, `source     = "hf:Systran/faster-whisper-medium@main"`,
+			`component model.whisper-medium: source "hf:Systran/faster-whisper-medium@main" must be pinned`},
+		"unpinned": {medium, `source     = "hf:Systran/faster-whisper-medium"`, "must be pinned"},
+		"other commit, no files": {`darwin-arm64 = "hf:mlx-community/whisper-large-v3-turbo@a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb" }`,
+			`darwin-arm64 = "hf:mlx-community/whisper-large-v3-turbo@` + strings.Repeat("1", 40) + `" }`, "has no files"},
+		"ollama tag":         {`"ollama:qwen2.5:7b@sha256:`, `"ollama:qwen2.5:7b@latest`, "must be pinned as ollama"},
+		"gated not an asset": {`kind      = "loop"`, "kind      = \"loop\"\ngated     = true", "for assets only"},
+	} {
+		src := strings.Replace(raw, c.old, c.new, 1)
+		if src == raw {
+			t.Fatalf("%s: nothing replaced", name)
+		}
+		_, err := Load([]byte(src))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: %v; want %q", name, err, c.want)
+		}
+	}
+	m, _ := Default().Get("model.whisper-turbo")
+	if len(m.FilesOf(m.SourceFor("darwin-arm64"))) == 0 || len(m.FilesOf(m.Source)) == 0 {
+		t.Fatal("model.whisper-turbo has no files for one of its sources")
+	}
+	if c, _ := Default().Get("model.cohere-arabic"); !c.Gated {
+		t.Fatal("model.cohere-arabic is gated")
+	}
+}

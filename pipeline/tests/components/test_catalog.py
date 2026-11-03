@@ -175,3 +175,44 @@ def test_accessors() -> None:
     tc = cat.get("transcription")
     assert tc is not None and tc.drain.grace_s == 120 and tc.drain.checkpoint
     assert cat.is_reason("held") and not cat.is_reason("nonsense")
+
+
+_TURBO_MLX = "hf:mlx-community/whisper-large-v3-turbo@"
+_MEDIUM = 'source     = "hf:Systran/faster-whisper-medium@08e178d48790749d25932bbc082711ddcfdfbc4f"'
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "want"),
+    [
+        (
+            _MEDIUM,
+            'source     = "hf:Systran/faster-whisper-medium@main"',
+            "component model.whisper-medium: source"
+            " 'hf:Systran/faster-whisper-medium@main' must be pinned",
+        ),
+        (_MEDIUM, 'source     = "hf:Systran/faster-whisper-medium"', "must be pinned"),
+        (
+            f'darwin-arm64 = "{_TURBO_MLX}a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb" }}',
+            f'darwin-arm64 = "{_TURBO_MLX}{"1" * 40}" }}',
+            "has no files",
+        ),
+        ('"ollama:qwen2.5:7b@sha256:', '"ollama:qwen2.5:7b@latest', "must be pinned as ollama"),
+    ],
+)
+def test_model_sources_are_pinned(old: str, new: str, want: str) -> None:
+    """Story 51.15 T11: a model is pinned to a commit (or digest), with its files."""
+    raw = catalog.raw().decode()
+    src = raw.replace(old, new, 1)
+    assert src != raw
+    with pytest.raises(catalog.CatalogError) as e:
+        catalog.load(src)
+    assert want in str(e.value)
+
+
+def test_pinned_models_have_their_files() -> None:
+    cat = catalog.default()
+    turbo = cat.get("model.whisper-turbo")
+    assert turbo is not None
+    assert turbo.files_of(turbo.source) and turbo.files_of(turbo.source_for("darwin-arm64"))
+    cohere = cat.get("model.cohere-arabic")
+    assert cohere is not None and cohere.gated

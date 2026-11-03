@@ -13,6 +13,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.postgres",
       "in_payload": false,
@@ -58,6 +59,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.api",
       "in_payload": false,
@@ -119,6 +121,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.streaming",
       "in_payload": false,
@@ -170,6 +173,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.pipeline",
       "in_payload": false,
@@ -236,6 +240,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.node",
       "in_payload": false,
@@ -295,6 +300,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.updates",
       "in_payload": false,
@@ -341,6 +347,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "core",
       "id": "core.switchover",
       "in_payload": false,
@@ -391,6 +398,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "media",
       "id": "media.thumbnails",
       "in_payload": false,
@@ -438,6 +446,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "library",
       "id": "library.convert",
       "in_payload": false,
@@ -482,6 +491,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "library",
       "id": "library.dedup",
       "in_payload": false,
@@ -528,6 +538,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "library",
       "id": "library.repair",
       "in_payload": false,
@@ -578,6 +589,7 @@
       "features": [
         "transcripts"
       ],
+      "gated": false,
       "group": "processing",
       "id": "transcription",
       "in_payload": false,
@@ -641,6 +653,7 @@
       "features": [
         "subtitles"
       ],
+      "gated": false,
       "group": "processing",
       "id": "subtitles",
       "in_payload": false,
@@ -691,6 +704,7 @@
       "features": [
         "semantic_search"
       ],
+      "gated": false,
       "group": "processing",
       "id": "search.semantic",
       "in_payload": false,
@@ -749,6 +763,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "processing",
       "id": "classify",
       "in_payload": false,
@@ -811,6 +826,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "processing",
       "id": "enrich",
       "in_payload": false,
@@ -858,6 +874,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "processing",
       "id": "llm",
       "in_payload": false,
@@ -914,6 +931,7 @@
       "features": [
         "youtube"
       ],
+      "gated": false,
       "group": "integrations",
       "id": "youtube",
       "in_payload": false,
@@ -966,6 +984,7 @@
       "features": [
         "plex"
       ],
+      "gated": false,
       "group": "integrations",
       "id": "ext.plex",
       "in_payload": false,
@@ -1012,6 +1031,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "integrations",
       "id": "ext.dizquetv",
       "in_payload": false,
@@ -1061,6 +1081,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "integrations",
       "id": "ext.cloudflare_stream",
       "in_payload": false,
@@ -1108,6 +1129,7 @@
       "features": [
         "live_tv"
       ],
+      "gated": false,
       "group": "livetv",
       "id": "livetv",
       "in_payload": false,
@@ -1173,6 +1195,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "livetv",
       "id": "livetv.slots",
       "in_payload": false,
@@ -1231,6 +1254,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "livetv",
       "id": "livetv.inprocess",
       "in_payload": false,
@@ -1279,6 +1303,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "livetv",
       "id": "livetv.hdhomerun",
       "in_payload": false,
@@ -1326,6 +1351,7 @@
       "features": [
         "remote_access"
       ],
+      "gated": false,
       "group": "system",
       "id": "cloud.link",
       "in_payload": false,
@@ -1369,6 +1395,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "system",
       "id": "cloud.relay",
       "in_payload": false,
@@ -1419,6 +1446,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "cluster",
       "id": "cluster",
       "in_payload": false,
@@ -1473,6 +1501,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "cluster",
       "id": "discovery.mdns",
       "in_payload": false,
@@ -1517,6 +1546,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "system",
       "id": "queue_health",
       "in_payload": false,
@@ -1563,6 +1593,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "system",
       "id": "analytics",
       "in_payload": false,
@@ -1605,6 +1636,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "system",
       "id": "telemetry",
       "in_payload": false,
@@ -1649,6 +1681,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "system",
       "id": "backups",
       "in_payload": false,
@@ -1696,6 +1729,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "system",
       "id": "updates.auto",
       "in_payload": false,
@@ -1745,6 +1779,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "runtimes",
       "id": "runtime.ml",
       "in_payload": false,
@@ -1786,6 +1821,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "runtimes",
       "id": "runtime.ollama",
       "in_payload": true,
@@ -1830,6 +1866,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "models",
       "id": "model.whisper-turbo",
       "in_payload": false,
@@ -1858,7 +1895,7 @@
       "since": "0.3.66",
       "source": "hf:dropbox-dash/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
       "sources": {
-        "darwin-arm64": "hf:mlx-community/whisper-large-v3-turbo"
+        "darwin-arm64": "hf:mlx-community/whisper-large-v3-turbo@a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
       },
       "stages": [],
       "stop_grace_s": 0,
@@ -1875,6 +1912,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "models",
       "id": "model.whisper-large-v3",
       "in_payload": false,
@@ -1903,7 +1941,7 @@
       "since": "0.3.66",
       "source": "hf:Systran/faster-whisper-large-v3@edaa852ec7e145841d8ffdb056a99866b5f0a478",
       "sources": {
-        "darwin-arm64": "hf:mlx-community/whisper-large-v3-mlx"
+        "darwin-arm64": "hf:mlx-community/whisper-large-v3-mlx@49e6aa286ad60c14352c404340ded53710378a11"
       },
       "stages": [],
       "stop_grace_s": 0,
@@ -1920,6 +1958,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "models",
       "id": "model.whisper-medium",
       "in_payload": false,
@@ -1946,9 +1985,9 @@
       },
       "settings": [],
       "since": "0.3.66",
-      "source": "hf:Systran/faster-whisper-medium",
+      "source": "hf:Systran/faster-whisper-medium@08e178d48790749d25932bbc082711ddcfdfbc4f",
       "sources": {
-        "darwin-arm64": "hf:mlx-community/whisper-medium-mlx"
+        "darwin-arm64": "hf:mlx-community/whisper-medium-mlx@7fc08c4eac4c316526498f147dfdee6f6303f975"
       },
       "stages": [],
       "stop_grace_s": 0,
@@ -1968,6 +2007,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": true,
       "group": "models",
       "id": "model.cohere-arabic",
       "in_payload": false,
@@ -2014,6 +2054,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "models",
       "id": "model.refine",
       "in_payload": false,
@@ -2060,6 +2101,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "models",
       "id": "model.embedder",
       "in_payload": false,
@@ -2086,7 +2128,7 @@
       },
       "settings": [],
       "since": "0.3.66",
-      "source": "hf:intfloat/multilingual-e5-small",
+      "source": "hf:intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3",
       "sources": {},
       "stages": [],
       "stop_grace_s": 0,
@@ -2105,6 +2147,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "models",
       "id": "model.llm.qwen2_5-7b",
       "in_payload": false,
@@ -2131,7 +2174,7 @@
       },
       "settings": [],
       "since": "0.3.66",
-      "source": "ollama:qwen2.5:7b",
+      "source": "ollama:qwen2.5:7b@sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
       "sources": {},
       "stages": [],
       "stop_grace_s": 0,
@@ -2151,6 +2194,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "tools",
       "id": "tool.yt-dlp",
       "in_payload": false,
@@ -2190,6 +2234,7 @@
         "grace_s": 30
       },
       "features": [],
+      "gated": false,
       "group": "tools",
       "id": "tool.ffmpeg",
       "in_payload": false,

@@ -112,7 +112,7 @@ var topKeys = []string{"schema", "phases", "reasons", "features", "component"}
 var componentKeys = []string{"id", "kind", "switchable", "group", "title_key", "desc_key",
 	"stages", "processes", "loops", "requires", "wants", "conflicts", "settings", "platforms",
 	"placement", "resources", "drain", "stop_grace_s", "licence", "features", "bundles", "since",
-	"source", "sources", "files", "in_payload"}
+	"source", "sources", "files", "in_payload", "gated"}
 
 // Drain is how a component with stages stops (README §4.5).
 type Drain struct {
@@ -127,11 +127,25 @@ type Resources struct {
 	GPU    string `toml:"gpu" json:"gpu"` // "", none, preferred, required
 }
 
-// File is one file of an asset, as the signed index lists it (51.15 fills them).
+// File is one file of an asset, as the signed index lists it (tools/release/cmd/pin-models
+// fills them, story 51.15). Source is the source it comes from when the asset has more
+// than one (a per-platform sources entry); empty, the asset's default source.
 type File struct {
 	Path   string `toml:"path" json:"path"`
 	SHA256 string `toml:"sha256" json:"sha256"`
 	Size   int64  `toml:"size" json:"size"`
+	Source string `toml:"source,omitempty" json:"source,omitempty"`
+}
+
+// FilesOf are the asset's files that come from source.
+func (c *Component) FilesOf(source string) []File {
+	var out []File
+	for _, f := range c.Files {
+		if f.Source == source || (f.Source == "" && source == c.Source) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Component is one catalog entry. Lists are never nil.
@@ -162,6 +176,8 @@ type Component struct {
 	Sources    map[string]string // per platform, over Source
 	Files      []File
 	InPayload  bool
+	// Gated: a model whose download needs the owner's Hugging Face login (Cohere).
+	Gated bool
 }
 
 // HasPart reports whether the kind includes part (stages, process or loop).
@@ -242,6 +258,7 @@ type rawComponent struct {
 	Sources    map[string]string `toml:"sources"`
 	Files      []File            `toml:"files"`
 	InPayload  *bool             `toml:"in_payload"`
+	Gated      bool              `toml:"gated"`
 }
 
 type rawCatalog struct {
@@ -393,7 +410,7 @@ func build(r rawComponent) *Component {
 		Wants: nonNil(r.Wants), Conflicts: nonNil(r.Conflicts), Settings: nonNil(r.Settings),
 		Platforms: nonNil(r.Platforms), Placement: r.Placement, Licence: r.Licence,
 		Features: nonNil(r.Features), Bundles: nonNil(r.Bundles), Since: r.Since, Source: r.Source,
-		Sources: r.Sources, Files: r.Files, Drain: Drain{GraceS: DefaultDrainGraceS}}
+		Sources: r.Sources, Files: r.Files, Gated: r.Gated, Drain: Drain{GraceS: DefaultDrainGraceS}}
 	if r.Switchable != nil {
 		comp.Switchable = *r.Switchable
 	}
@@ -459,8 +476,8 @@ func validate(c *Component, where string, features []string, bad func(string, ..
 			}
 		}
 	}
-	if c.Kind != KindAsset && (c.Source != "" || len(c.Sources) > 0 || len(c.Files) > 0 || c.InPayload) {
-		bad("%s: source, sources, files and in_payload are for assets only", where)
+	if c.Kind != KindAsset && (c.Source != "" || len(c.Sources) > 0 || len(c.Files) > 0 || c.InPayload || c.Gated) {
+		bad("%s: source, sources, files, in_payload and gated are for assets only", where)
 	}
 	if !slices.Contains(Groups, c.Group) {
 		bad("%s: bad group %q", where, c.Group)
@@ -517,6 +534,7 @@ func validate(c *Component, where string, features []string, bad func(string, ..
 			bad("%s: a file needs path, sha256 (64 hex) and size", where)
 		}
 	}
+	validateSources(c, where, bad)
 	if c.Placement != "any" && c.Placement != "home" {
 		bad("%s: bad placement %q", where, c.Placement)
 	}
@@ -540,6 +558,63 @@ func validate(c *Component, where string, features []string, bad func(string, ..
 	if !sinceRe.MatchString(c.Since) {
 		bad("%s: since must be a release number like 0.3.66, got %q", where, c.Since)
 	}
+}
+
+// A model's source is pinned (story 51.15): a Hugging Face repo at a commit sha (never a
+// branch), an ollama model at its manifest digest. The signed index copies them.
+var (
+	hfSourceRe     = regexp.MustCompile(`^hf:[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._-]*@[0-9a-f]{40}$`)
+	ollamaSourceRe = regexp.MustCompile(`^ollama:[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$`)
+)
+
+// IsModelSource reports a source the index lists as a model (hf: or ollama:).
+func IsModelSource(s string) bool {
+	return strings.HasPrefix(s, "hf:") || strings.HasPrefix(s, "ollama:")
+}
+
+// validateSources: every hf: and ollama: source an asset uses is pinned and has its files;
+// every file belongs to one of the asset's model sources, once per path.
+func validateSources(c *Component, where string, bad func(string, ...any)) {
+	used := map[string]bool{}
+	if c.Source != "" {
+		used[c.Source] = true
+	}
+	for _, s := range c.Sources {
+		used[s] = true
+	}
+	for _, s := range sortedKeysOf(used) {
+		switch {
+		case strings.HasPrefix(s, "hf:") && !hfSourceRe.MatchString(s):
+			bad("%s: source %q must be pinned as hf:<owner>/<repo>@<40-hex commit>, never a branch", where, s)
+		case strings.HasPrefix(s, "ollama:") && !ollamaSourceRe.MatchString(s):
+			bad("%s: source %q must be pinned as ollama:<name>:<tag>@sha256:<manifest digest>", where, s)
+		case IsModelSource(s) && len(c.FilesOf(s)) == 0:
+			bad("%s: source %q has no files (tools/release/cmd/pin-models fills them)", where, s)
+		}
+	}
+	paths := map[string]bool{}
+	for _, f := range c.Files {
+		src := f.Source
+		if src == "" {
+			src = c.Source
+		}
+		if !used[src] || !IsModelSource(src) {
+			bad("%s: file %q is from %q, not one of its model sources", where, f.Path, src)
+		}
+		if paths[src+" "+f.Path] {
+			bad("%s: file %q listed twice for %q", where, f.Path, src)
+		}
+		paths[src+" "+f.Path] = true
+	}
+}
+
+func sortedKeysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func validKind(kind string) bool {
@@ -776,7 +851,7 @@ func (c *Catalog) Dump() ([]byte, error) {
 			"licence": comp.Licence, "since": comp.Since, "stop_grace_s": comp.StopGraceS,
 			"drain":     map[string]any{"grace_s": comp.Drain.GraceS, "checkpoint": comp.Drain.Checkpoint},
 			"resources": map[string]any{"ram_mb": comp.Resources.RAMMB, "disk_mb": comp.Resources.DiskMB, "gpu": comp.Resources.GPU},
-			"source":    comp.Source, "sources": comp.Sources, "in_payload": comp.InPayload,
+			"source":    comp.Source, "sources": comp.Sources, "in_payload": comp.InPayload, "gated": comp.Gated,
 		})
 	}
 	doc := map[string]any{"schema": c.Schema, "phases": c.Phases, "reasons": c.Reasons,

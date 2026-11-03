@@ -131,8 +131,13 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "the catalog runs its check, the Go and the pipeline parts": (
         ["shared/components/catalog.toml"],
-        GO_SERVER,
+        GO_SERVER | {"components-packs"},
         {"lint": {"go", "pipeline", "catalog"}, "unit": {"go", "pipeline"}},
+    ),
+    "a pack recipe builds and verifies the packs": (
+        ["tools/release/packs/recipes/runtime.ml.sh"],
+        {"unit", "integration", "node-packaging", "components-packs"},
+        {"lint": {"go"}, "unit": {"go"}},
     ),
     "the language files run the catalog's words check": (
         ["web/src/i18n/ar.json"],

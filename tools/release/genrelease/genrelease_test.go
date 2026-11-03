@@ -10,8 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack"
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/releaseverifytest"
+	"github.com/Hamza-Labs-Core/Maktaba/tools/release/componentsindex"
 )
 
 const repoRoot = "../../.."
@@ -248,5 +251,63 @@ func TestBuildNamesTheMigrations(t *testing.T) {
 	}
 	if _, err := Build(opts); err == nil {
 		t.Fatal("a migrations archive of another version was taken")
+	}
+}
+
+// Story 51.15: release.json names the component index with its digest, and --check fails
+// a release whose index lists a pack that is not in dist (T10).
+func TestBuildNamesTheComponentIndexAndChecksItsPacks(t *testing.T) {
+	repo := fakeRepo(t, 8, 8)
+	ss := releaseverifytest.MustNew()
+	dist := t.TempDir()
+	rel := ss.MustRelease("Hamza-Labs-Core/Maktaba", "v1.5.0", "linux/amd64")
+	if err := os.WriteFile(filepath.Join(dist, rel.Archive), rel.Files[rel.Archive], 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stage := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stage, "constraints.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pub := time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
+	pack, err := componentpack.Build(componentpack.Options{Dir: stage, ID: "runtime.ml", Version: "1.5.0",
+		Platform: "linux-amd64", ModTime: pub, Out: dist})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := strings.Repeat("ab", 20)
+	idx, _, err := componentsindex.Generate(componentsindex.Options{Catalog: components.Default(), Version: "1.5.0",
+		Commit: commit, Published: pub, Dist: dist})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ib, _ := componentsindex.Marshal(idx)
+	if err := os.WriteFile(filepath.Join(dist, "components-1.5.0.json"), ib, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Build(Options{Tag: "v1.5.0", Commit: commit, Dist: dist, Repo: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(ib)
+	if m.Components == nil || m.Components.Index != "components-1.5.0.json" || m.Components.SHA256 != hex.EncodeToString(sum[:]) {
+		t.Fatalf("components = %+v", m.Components)
+	}
+	if err := CheckComponents(m, dist); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dist, pack.Name)); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckComponents(m, dist); err == nil || !strings.Contains(err.Error(), pack.Name) {
+		t.Fatalf("an indexed pack missing from dist passed: %v", err)
+	}
+	if err := CheckComponents(&rv.Manifest{}, dist); err != nil {
+		t.Fatalf("a release without an index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dist, "components-1.4.0.json"), ib, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Build(Options{Tag: "v1.5.0", Commit: commit, Dist: dist, Repo: repo}); err == nil {
+		t.Fatal("another version's index was taken")
 	}
 }

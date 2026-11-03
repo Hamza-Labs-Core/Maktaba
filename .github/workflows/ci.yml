@@ -84,6 +84,7 @@ jobs:
       perf_ci: ${{ github.event_name != 'pull_request' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ github.event_name != 'pull_request' || steps.filter.outputs.build_artifacts == 'true' }}
       node_packaging: ${{ github.event_name != 'pull_request' || steps.filter.outputs.node_packaging == 'true' }}
+      components_packs: ${{ github.event_name != 'pull_request' || steps.filter.outputs.components_packs == 'true' }}
       release_venv: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release_venv == 'true' }}
       launcher: ${{ github.event_name != 'pull_request' || steps.filter.outputs.launcher == 'true' }}
       mac_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mac_app == 'true' }}
@@ -216,6 +217,14 @@ jobs:
     with:
       packaging: ${{ needs.changes.outputs.node_packaging == 'true' }}
       release_venv: ${{ needs.changes.outputs.release_venv == 'true' }}
+
+  components-packs:
+    # Epic 51 story 51.15: this commit's packs built, signed by a fake Sigstore and
+    # verified with the e2e trust root; bad signature, sha256, path traversal and expiry
+    # refused (see _components-packs.yml)
+    needs: [changes]
+    if: needs.changes.outputs.components_packs == 'true'
+    uses: ./.github/workflows/_components-packs.yml
 
   launcher:
     needs: [changes]
@@ -391,6 +400,7 @@ jobs:
       - perf-ci
       - build-artifacts
       - node-packaging
+      - components-packs
       - launcher
       - mac-app
       - win-app
