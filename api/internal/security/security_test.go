@@ -164,6 +164,64 @@ func TestDisclosurePolicyValidateRequiresContact(t *testing.T) {
 	}
 }
 
+func TestDisclosurePolicyValidateExpiry(t *testing.T) {
+	contact := []string{"mailto:security@maktaba.dev"}
+	if err := (DisclosurePolicy{Contact: contact}).Validate(); err == nil {
+		t.Fatal("no Expires and no ExpiryMonths: expected an error")
+	}
+	for _, m := range []int{-1, 12, 24} {
+		if err := (DisclosurePolicy{Contact: contact, ExpiryMonths: m}).Validate(); err == nil {
+			t.Fatalf("ExpiryMonths %d: expected an error (RFC 9116: under a year)", m)
+		}
+	}
+	if err := (DisclosurePolicy{Contact: contact, ExpiryMonths: MaxExpiryMonths}).Validate(); err != nil {
+		t.Fatalf("ExpiryMonths %d: %v", MaxExpiryMonths, err)
+	}
+}
+
+// The shipped expiry rolls: 11 months after the day it is rendered, never a fixed date.
+func TestDefaultPolicyExpiryRolls(t *testing.T) {
+	p := DefaultPolicy()
+	if !p.Expires.IsZero() {
+		t.Fatalf("DefaultPolicy has a fixed Expires %v: it must roll (ExpiryMonths)", p.Expires)
+	}
+	if p.ExpiryMonths < 1 || p.ExpiryMonths > MaxExpiryMonths {
+		t.Fatalf("ExpiryMonths=%d", p.ExpiryMonths)
+	}
+	cases := []struct{ now, want time.Time }{
+		{time.Date(2026, 11, 3, 15, 4, 5, 0, time.UTC), time.Date(2027, 10, 3, 0, 0, 0, 0, time.UTC)},
+		{time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2027, 12, 1, 0, 0, 0, 0, time.UTC)},
+		// past a short month's end it rolls over, as the devportal build's Date.UTC does
+		{time.Date(2026, 3, 31, 12, 0, 0, 0, time.UTC), time.Date(2027, 3, 3, 0, 0, 0, 0, time.UTC)},
+		// the UTC day, whatever the zone of now
+		{time.Date(2026, 11, 3, 23, 30, 0, 0, time.FixedZone("x", -5*3600)), time.Date(2027, 10, 4, 0, 0, 0, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		if got := p.ExpiresAt(c.now); !got.Equal(c.want) {
+			t.Errorf("ExpiresAt(%v) = %v, want %v", c.now, got, c.want)
+		}
+	}
+	now := time.Now()
+	exp := p.ExpiresAt(now)
+	if !exp.After(now) || !exp.Before(now.AddDate(1, 0, 0)) {
+		t.Fatalf("expiry %v is not ahead of now and under a year", exp)
+	}
+}
+
+func TestSecurityTxtAtRendersTheRollingExpiry(t *testing.T) {
+	out := DefaultPolicy().SecurityTxtAt(time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC))
+	if !strings.Contains(out, "Expires: 2027-10-03T00:00:00Z\n") {
+		t.Fatalf("rolling Expires not rendered: %s", out)
+	}
+	fixed := DisclosurePolicy{
+		Contact: []string{"mailto:a@b"},
+		Expires: time.Date(2030, 5, 6, 0, 0, 0, 0, time.UTC), ExpiryMonths: 3,
+	}
+	if out := fixed.SecurityTxtAt(time.Now()); !strings.Contains(out, "Expires: 2030-05-06T00:00:00Z\n") {
+		t.Fatalf("a fixed Expires wins: %s", out)
+	}
+}
+
 func TestSecurityTxtIncludesContactAndExpires(t *testing.T) {
 	out := DefaultPolicy().SecurityTxt()
 	if !strings.Contains(out, "Contact: mailto:security@maktaba.dev") {

@@ -1,13 +1,11 @@
 import { Link } from '@tanstack/react-router';
 import { useMemo } from 'react';
-import { ExternalLink, Zap } from 'lucide-react';
 import type { WikiBundle, WikiEntry } from '@/types/wiki';
 import { renderMarkdown } from '@/lib/markdown';
 import {
   TYPE_LABEL,
   endpointIdFor,
   githubUrlFor,
-  LINEAR_ISSUE_BASE,
 } from '@/lib/labels';
 import { TagChip } from './TagChip';
 import { Breadcrumb, type Crumb } from './Breadcrumb';
@@ -137,21 +135,6 @@ export function EntryPage({ bundle, id }: Props) {
               <DiagramViewer key={p} path={p} defaultOpen={i === 0} />
             ))}
           </div>
-        </Panel>
-      )}
-
-      {entry.linear && (
-        <Panel title="Linear">
-          <a
-            href={LINEAR_ISSUE_BASE + entry.linear}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-2 py-1 rounded text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Zap className="h-3.5 w-3.5" />
-            {entry.linear}
-            <ExternalLink className="h-3 w-3 opacity-50" />
-          </a>
         </Panel>
       )}
 

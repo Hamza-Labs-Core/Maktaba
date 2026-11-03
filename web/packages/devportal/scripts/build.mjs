@@ -1,15 +1,18 @@
 // Assembles maktaba.dev into dist/ (wrangler.toml's [assets] directory).
 //
 // The site is public, so this is an ALLOW-LIST: nothing reaches dist/ unless it is named
-// here. A new doc is published by adding it to DOCS (or the wiki's allow-list), never by
-// being in a folder. After assembling, the public-safety scan (scan.mjs) runs over dist/
-// and the build fails on any finding.
+// here. A new doc is published by adding it to DOCS, never by being in a folder. After
+// assembling, the public-safety scan (scan.mjs) runs over dist/ and the build fails on any
+// finding.
 //
-//   npm run build            (web/wiki-app needs `npm ci` once first)
+// The site carries what outside developers need to extend Maktaba or contribute to it: the
+// plugin guides, the contributing guides, security, the API reference and the changelog.
+// The epics and specs live on GitHub, and the site links there.
+//
+//   npm run build
 
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
@@ -21,8 +24,6 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
 export const REPO = path.resolve(PKG, "../../..");
 const DIST = path.join(PKG, "dist");
-const STAGE = path.join(PKG, ".stage");
-const WIKI_APP = path.join(REPO, "web/wiki-app");
 
 export { ORIGIN };
 export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
@@ -30,43 +31,37 @@ export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
 // ---- the allow-lists --------------------------------------------------------------------
 
 // Markdown published as pages: repo path -> site path (a folder, served as its index.html).
-// The plugin developer docs are Epic 54's developer-facing parts: the model, the manifest,
-// the API, the host, the queue, grants, install, settings, the SDK, signing, review, panels
-// and local compute. Its internal build plan (migration waves, parity, repo layout) is not.
-const PLUGIN_DOCS = [
-  ["README.md", "Epic 54: Plugins"],
-  ["story-54-01-manifest-package.md"],
-  ["story-54-02-plugin-host.md"],
-  ["story-54-04-plugin-api.md"],
-  ["story-54-05-media-handles.md"],
-  ["story-54-06-queue-stages.md"],
-  ["story-54-08-grants-roles.md"],
-  ["story-54-10-file-install.md"],
-  ["story-54-11-settings.md"],
-  ["story-54-12-sdk-harness.md"],
-  ["story-54-14-signing-trust.md"],
-  ["story-54-16-review.md"],
-  ["story-54-20-panels.md"],
-  ["story-54-21-local-compute.md"],
-];
+// The guides are in docs/developers/ (English); each group's README is its index page.
+const GUIDES = {
+  plugins: [
+    "README.md",
+    "manifest.md",
+    "sandbox.md",
+    "queue-and-api.md",
+    "testing-and-packaging.md",
+    "publishing.md",
+  ],
+  contributing: [
+    "README.md",
+    "architecture.md",
+    "repo-layout.md",
+    "local-setup.md",
+    "tests.md",
+    "conventions.md",
+    "ci.md",
+    "pull-requests.md",
+  ],
+  security: ["conformance.md"],
+};
 export const DOCS = [
-  ...PLUGIN_DOCS.map(([file, title]) => ({
-    src: `specs/epics/54-plugins/${file}`,
-    out: file === "README.md" ? "plugins/" : `plugins/${file.replace(/\.md$/, "")}/`,
-    title,
-    group: "plugins",
-  })),
+  ...Object.entries(GUIDES).flatMap(([group, files]) =>
+    files.map((file) => ({
+      src: `docs/developers/${group}/${file}`,
+      out: file === "README.md" ? `${group}/` : `${group}/${file.replace(/\.md$/, "")}/`,
+      group,
+    }))
+  ),
   { src: "CHANGELOG.md", out: "changelog/", title: "Changelog", group: "changelog" },
-];
-
-// The wiki's build output: only these shapes are copied (relative to the wiki's outDir).
-// No mockups: their sample data (home paths, LAN addresses) is not for a public site, so the
-// wiki is built with VITE_WIKI_NO_MOCKUPS=1 and links each mockup's source instead.
-export const WIKI_ALLOW = [
-  /^index\.html$/,
-  /^assets\/[A-Za-z0-9._-]+\.(js|css|woff2?|svg|png)$/,
-  /^db\/(wiki|wiki-cross-refs|wiki-epics-\d\d-\d\d)\.json$/,
-  /^diagrams\/[A-Za-z0-9/_.-]+\.(drawio|svg|png)$/,
 ];
 
 // Repo files copied as they are: repo path -> site path.
@@ -145,9 +140,9 @@ const v = (sitePath) => {
 
 const NAV = [
   ["nav.home", "/"],
-  ["nav.wiki", "/wiki/"],
-  ["nav.api", "/api/"],
   ["nav.plugins", "/plugins/"],
+  ["nav.contributing", "/contributing/"],
+  ["nav.api", "/api/"],
   ["nav.changelog", "/changelog/"],
   ["nav.security", "/security/policy/"],
   ["nav.source", GITHUB],
@@ -215,18 +210,19 @@ function landing() {
       ${s("home.lead2", "p")}
       <div class="ctas">
         <a class="btn primary" href="${GITHUB}" data-i18n="home.cta.source">${esc(t("home.cta.source"))}</a>
-        <a class="btn" href="/wiki/" data-i18n="home.cta.wiki">${esc(t("home.cta.wiki"))}</a>
+        <a class="btn" href="/plugins/" data-i18n="home.cta.plugins">${esc(t("home.cta.plugins"))}</a>
+        <a class="btn" href="/contributing/" data-i18n="home.cta.contributing">${esc(t("home.cta.contributing"))}</a>
       </div>
     </section>
     ${s("home.cards", "h2")}
     <ul class="cards">
-${card("source", GITHUB)}
-${card("wiki", "/wiki/")}
-${card("specs", `${GITHUB}/tree/main/specs/epics`)}
 ${card("plugins", "/plugins/")}
+${card("contributing", "/contributing/")}
 ${card("api", "/api/")}
 ${card("changelog", "/changelog/")}
 ${card("security", "/security/policy/")}
+${card("source", GITHUB)}
+${card("specs", `${GITHUB}/tree/main/specs/epics`)}
     </ul>
     ${s("home.lang.note", "p", ' class="note"')}`,
   });
@@ -252,6 +248,9 @@ function securityPolicy() {
 ${sec("report")}
 ${sec("after")}
 ${sec("rules")}
+    ${s("security.conform.title", "h2")}
+    ${s("security.conform.body", "p")}
+    <p><a href="/security/conformance/" data-i18n="security.conform.link">${esc(t("security.conform.link"))}</a></p>
     <p class="note"><a href="/.well-known/security.txt" data-i18n="security.txt">${esc(t("security.txt"))}</a></p>`,
   });
 }
@@ -337,46 +336,60 @@ export function markdownToHtml(md, fromSrc, published) {
   return /** @type {string} */ (marked.parse(md, { async: false }));
 }
 
-function renderDoc(doc, published, group) {
+function renderDoc(doc, published, groups) {
   const md = scrubMarkdown(fs.readFileSync(path.join(REPO, doc.src), "utf8"));
   const html = markdownToHtml(md, doc.src, published);
   const title = doc.title ?? (md.match(/^# (.+)$/m)?.[1] ?? doc.src).replace(/[*`]/g, "");
   const src = `${GITHUB}/blob/main/${doc.src}`;
   const article = `<article class="doc" dir="ltr" lang="en">\n${html}\n<p class="note"><a href="${src}" data-i18n="doc.source">${esc(t("doc.source"))}</a></p>\n</article>`;
-  let body;
-  if (doc.group === "plugins") {
+  const group = groups.get(doc.group) ?? [];
+  let body = article;
+  if (group.length > 1) {
+    // the group's guides, in order: a table of contents beside the page
     const toc = group
       .map(
         (d) =>
           `<li><a href="${siteUrl(d.out)}"${d === doc ? ' aria-current="page"' : ""}>${esc(d.navTitle)}</a></li>`
       )
       .join("\n");
-    const intro =
-      doc.out === "plugins/"
-        ? `${s("plugins.title", "h1")}\n${s("plugins.lead", "p")}\n${s("plugins.status", "p", ' class="note"')}\n`
-        : "";
-    body = `${intro}<div class="layout">\n<nav class="toc" aria-label="Epic 54"><ul>\n${toc}\n</ul></nav>\n${article}\n</div>`;
-  } else {
-    body = article;
+    const note = s("guides.lang", "p", ' class="note"');
+    body = `<div class="layout">\n<nav class="toc" aria-label="${esc(t(`nav.${doc.group}`))}" data-i18n-label="nav.${doc.group}"><ul>\n${toc}\n</ul></nav>\n<div>\n${note}\n${article}\n</div>\n</div>`;
   }
   return page({ path: siteUrl(doc.out), title, body });
 }
 
 // ---- security.txt, robots.txt, sitemap --------------------------------------------------
 
-/** The disclosure policy's fields from the Go source the API serves (Story 23.8). */
-export function readDisclosurePolicy() {
+// RFC 9116: an Expires less than a year ahead (MaxExpiryMonths in disclosure.go).
+export const MAX_EXPIRY_MONTHS = 11;
+
+/** A rolling expiry: the start of `now`'s UTC day, `months` later. A day past a short
+ * month's end rolls over (Mar 31 + 11 months is Mar 3), as Go's time.Date does, so the site
+ * and the API agree (DisclosurePolicy.ExpiresAt). */
+export function expiresAt(now, months) {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + months, now.getUTCDate()));
+}
+
+/** The disclosure policy's fields from the Go source the API serves (Story 23.8), as it reads
+ * at `now` (the build's time): its Expires rolls, ExpiryMonths after the build day. */
+export function readDisclosurePolicy(now = new Date()) {
   const go = fs.readFileSync(path.join(REPO, "api/internal/security/disclosure.go"), "utf8");
-  const fn = go.slice(go.indexOf("func DefaultPolicy()"));
+  const start = go.indexOf("func DefaultPolicy()");
+  if (start < 0) throw new Error("disclosure.go: no DefaultPolicy");
+  const fn = go.slice(start, go.indexOf("\n}\n", start));
   const list = (field) => {
     const m = fn.match(new RegExp(`${field}:\\s*\\[\\]string\\{([^}]*)\\}`));
     return m ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : [];
   };
-  const e = fn.match(/Expires:\s*time\.Date\((\d+),\s*(\d+),\s*(\d+)/);
-  if (!e) throw new Error("disclosure.go: no Expires in DefaultPolicy");
+  const m = fn.match(/ExpiryMonths:\s*(\d+)/);
+  if (!m) throw new Error("disclosure.go: no ExpiryMonths in DefaultPolicy");
+  const months = +m[1];
+  if (months < 1 || months > MAX_EXPIRY_MONTHS)
+    throw new Error(`disclosure.go: ExpiryMonths ${months} is outside 1..${MAX_EXPIRY_MONTHS}`);
   return {
     contact: list("Contact"),
-    expires: new Date(Date.UTC(+e[1], +e[2] - 1, +e[3])),
+    expiryMonths: months,
+    expires: expiresAt(now, months),
     preferredLang: list("PreferredLang"),
     policy: list("Policy"),
     acknowledgments: list("Acknowledgments"),
@@ -419,31 +432,6 @@ function walk(dir, base = dir, out = []) {
   return out;
 }
 
-function buildWiki() {
-  if (!fs.existsSync(path.join(WIKI_APP, "node_modules"))) {
-    throw new Error("web/wiki-app has no node_modules: run `npm ci` in web/wiki-app first");
-  }
-  const out = path.join(STAGE, "wiki");
-  // base /wiki/: the bundle, its db/ and the diagrams load from under /wiki/ wherever the
-  // page is opened (/wiki or /wiki/)
-  execFileSync(
-    "npm",
-    ["run", "build", "--", "--base", "/wiki/", "--outDir", out, "--emptyOutDir"],
-    {
-      cwd: WIKI_APP,
-      env: { ...process.env, VITE_WIKI_NO_MOCKUPS: "1" },
-      stdio: ["ignore", "inherit", "inherit"],
-    }
-  );
-  const dropped = [];
-  for (const rel of walk(out)) {
-    if (WIKI_ALLOW.some((re) => re.test(rel))) copy(path.join(out, rel), `wiki/${rel}`);
-    else dropped.push(rel);
-  }
-  if (dropped.length)
-    console.log(`build: not published from the wiki build: ${dropped.join(", ")}`);
-}
-
 export function sitemap(paths) {
   const urls = paths.map((p) => `  <url><loc>${ORIGIN}${p}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
@@ -454,7 +442,6 @@ export function build() {
     if (NEVER.some((re) => re.test(d))) throw new Error(`build: ${d} is never published`);
   }
   fs.rmSync(DIST, { recursive: true, force: true });
-  fs.rmSync(STAGE, { recursive: true, force: true });
   fs.mkdirSync(DIST, { recursive: true });
 
   // the portal's own static files (authored in this package)
@@ -471,34 +458,27 @@ export function build() {
   pages.push("/api/", "/security/policy/", "/security/hall-of-fame/");
 
   const published = new Map(DOCS.map((d) => [d.src, d.out]));
-  const group = DOCS.filter((d) => d.group === "plugins").map((d) => {
+  const groups = new Map();
+  for (const d of DOCS) {
     const md = fs.readFileSync(path.join(REPO, d.src), "utf8");
     const h1 = (md.match(/^# (.+)$/m)?.[1] ?? d.src).replace(/[*`]/g, "");
-    return Object.assign(d, { navTitle: d.title ?? h1.replace(/^Story 54\.(\d+) — /, "54.$1 ") });
-  });
+    d.navTitle = d.title ?? h1;
+    groups.set(d.group, [...(groups.get(d.group) ?? []), d]);
+  }
   for (const doc of DOCS) {
-    write(`${doc.out}index.html`, renderDoc(doc, published, group));
+    write(`${doc.out}index.html`, renderDoc(doc, published, groups));
     pages.push(siteUrl(doc.out));
   }
 
-  buildWiki();
-  pages.push("/wiki/");
-
+  // Expires rolls with each build, and devportal-deploy.yml deploys monthly, so the live
+  // file is always 10 to 11 months from expiring. No date to edit by hand.
   const policy = readDisclosurePolicy();
-  const days = (policy.expires.getTime() - Date.now()) / 86400000;
-  if (days < 0)
-    throw new Error(
-      `security.txt: Expires ${policy.expires.toISOString()} has passed (api/internal/security/disclosure.go)`
-    );
-  if (days < 30)
-    console.warn(
-      `build: security.txt expires in ${Math.floor(days)} days: move Expires in api/internal/security/disclosure.go`
-    );
+  if (policy.expires.getTime() <= Date.now())
+    throw new Error(`security.txt: Expires ${policy.expires.toISOString()} is not ahead`);
   write(".well-known/security.txt", securityTxt(policy));
   write("robots.txt", `User-agent: *\nAllow: /\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
   write("sitemap.xml", sitemap(pages));
 
-  fs.rmSync(STAGE, { recursive: true, force: true });
   const findings = scanDir(DIST);
   if (findings.length) {
     for (const f of findings) console.error(`${f.file}: ${f.rule}: ${f.match}`);

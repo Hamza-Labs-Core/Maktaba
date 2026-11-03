@@ -129,7 +129,10 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
         {"unit", "mac-app", "win-app", "linux-app"},
         {"unit": {"desktop_shell"}, "lint": set()},
     ),
-    "docs only": (["docs/claude-trail.md", "README.md", "specs/epics/40-x/story.md"], set(), {"lint": set()}),
+    "docs only": (["docs/claude-trail.md", "README.md", "docs/hardware.md"], set(), {"lint": set()}),
+    # the wiki database is generated from the specs: a spec runs the wiki job's check
+    "a spec: the wiki database's check": (["specs/epics/40-x/story.md"], {"wiki"}, {"lint": set()}),
+    "a developer guide: the portal": (["docs/developers/plugins/manifest.md"], {"devportal"}, {"lint": set()}),
     "a doc the pipeline's tests read": (
         ["docs/updates.md"],
         {"unit", "integration"},
