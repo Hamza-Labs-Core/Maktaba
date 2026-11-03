@@ -477,7 +477,7 @@ The next epics are specs, not built yet:
 | 51 | [Configurable components](specs/epics/51-configurable-components/README.md) | every part of Maktaba can be turned on, off, added later or left out |
 | 52 | [Word review](specs/epics/52-transcript-word-review/README.md) | suspect words in transcripts go to a person, in every language |
 | 53 | [Logs, errors and reports](specs/epics/53-logs-errors-reports/README.md) | one log schema, problem reports from every app, and a UI that never goes dark |
-| 54 | [Plugins](specs/epics/54-plugins/README.md) | new functions in the queue, with no internet, from a Maktaba store |
+| 54 | [Plugins](specs/epics/54-plugins/README.md) | new functions in the queue, with no internet, from a Maktaba store at plugins.maktaba.tv that runs apart from Maktaba Cloud |
 
 ---
 
