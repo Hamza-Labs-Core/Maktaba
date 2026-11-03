@@ -136,6 +136,8 @@ type Audit struct {
 	// BatchID ties the rows of one batch (an apply, a change with its conflicts, a
 	// bundle) together in their payloads; "" for a single change.
 	BatchID string
+	// Node is the machine of an override (51.12): its payload carries node_id.
+	Node string
 }
 
 // ErrNotFound is a component with no desired row.
@@ -434,13 +436,7 @@ func (s *Store) setDesired(ctx context.Context, tx *sql.Tx, d Desired, audit Aud
 // follow the home: the row stays, so the merged generation only goes up) and its audit
 // row, in one transaction.
 func (s *Store) SetOverride(ctx context.Context, o Override, audit Audit) error {
-	if o.Want != "" && !validWant(o.Want) {
-		return fmt.Errorf("components: bad want %q", o.Want)
-	}
-	if o.Node == "" || o.ID == "" {
-		return errors.New("components: an override needs a node and an id")
-	}
-	if err := validAudit(audit); err != nil {
+	if err := validOverride(o, audit); err != nil {
 		return err
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -448,9 +444,36 @@ func (s *Store) SetOverride(ctx context.Context, o Override, audit Audit) error 
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if _, err := s.setOverride(ctx, tx, o, audit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetOverrideTx is SetOverride inside the caller's transaction tx (on s.DB): an override
+// that also writes the machine's stage switches (51.12) commits or rolls back with them.
+// It answers the row as it now is. The caller commits.
+func (s *Store) SetOverrideTx(ctx context.Context, tx *sql.Tx, o Override, audit Audit) (Override, error) {
+	if err := validOverride(o, audit); err != nil {
+		return Override{}, err
+	}
+	return s.setOverride(ctx, tx, o, audit)
+}
+
+func validOverride(o Override, audit Audit) error {
+	if o.Want != "" && !validWant(o.Want) {
+		return fmt.Errorf("components: bad want %q", o.Want)
+	}
+	if o.Node == "" || o.ID == "" {
+		return errors.New("components: an override needs a node and an id")
+	}
+	return validAudit(audit)
+}
+
+func (s *Store) setOverride(ctx context.Context, tx *sql.Tx, o Override, audit Audit) (Override, error) {
 	before, err := s.overrideOf(ctx, tx, o.Node, o.ID)
 	if err != nil {
-		return err
+		return Override{}, err
 	}
 	holdBy, holdAt := holdArgs(s.DB, o.Hold)
 	var want any
@@ -462,16 +485,17 @@ func (s *Store) SetOverride(ctx context.Context, o Override, audit Audit) error 
 		ON CONFLICT (node_id, id) DO UPDATE SET want = excluded.want, hold_by = excluded.hold_by,
 			hold_at = excluded.hold_at, updated_by = excluded.updated_by`,
 		o.Node, o.ID, want, holdBy, holdAt, audit.By); err != nil {
-		return err
+		return Override{}, err
 	}
 	after, err := s.overrideOf(ctx, tx, o.Node, o.ID)
 	if err != nil {
-		return err
+		return Override{}, err
 	}
 	if err := s.audit(ctx, tx, audit, o.ID, before, after); err != nil {
-		return err
+		return Override{}, err
 	}
-	return tx.Commit()
+	out, _ := after.(Override)
+	return out, nil
 }
 
 func (s *Store) overrideOf(ctx context.Context, q queryer, node, id string) (any, error) {
@@ -509,6 +533,9 @@ func (s *Store) audit(ctx context.Context, q queryer, a Audit, id string, before
 	p := map[string]any{"before": before, "after": after, "by": a.By}
 	if a.BatchID != "" {
 		p["batch_id"] = a.BatchID
+	}
+	if a.Node != "" {
+		p["node_id"] = a.Node
 	}
 	payload, err := json.Marshal(p)
 	if err != nil {

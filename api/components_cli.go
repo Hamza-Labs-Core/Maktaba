@@ -46,6 +46,7 @@ const componentsUsage = `Usage:
   maktaba-server components offline [<full|core|worker> | <id>...] [--platform=<os-arch>] [--out=<path>]
                                                             make an offline file on this machine and save it
   maktaba-server components bundle [<full|core|worker>] [--yes]   no name: the bundle this home is based on
+  --machine <name|id> on show, enable, disable, stop and start: that machine only (its override)
 
 Every write shows what it changes first and asks, unless --yes. --dsn overrides $DATABASE_URL.`
 
@@ -150,7 +151,7 @@ func runComponents(argv []string) int {
 }
 
 // componentsValueFlags are the flags that take a value (--name value or --name=value).
-var componentsValueFlags = []string{"dsn", "out", "platform"}
+var componentsValueFlags = []string{"dsn", "out", "platform", "machine"}
 
 // valueFlag reports whether a is a value flag, and whether its value is the next word.
 func valueFlag(a string) (name string, next bool, ok bool) {
@@ -221,6 +222,10 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 	}
 	yes := flags["yes"] || flags["y"]
 	verb, rest := args[0], args[1:]
+	node, code, ok := c.resolveMachine(ctx, verb)
+	if !ok {
+		return code
+	}
 	one := func() (string, bool) {
 		if len(rest) != 1 {
 			return "", false
@@ -238,6 +243,9 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 		if !ok {
 			return c.usage("show <id>")
 		}
+		if node != "" {
+			return c.showMachine(ctx, id, node, flags["json"])
+		}
 		return c.show(ctx, id, flags["json"])
 	case "enable", "disable", "stop", "start", "install", "remove":
 		id, ok := one()
@@ -248,7 +256,7 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 			fmt.Fprintln(c.errOut, "components remove --purge: available from the release with packs")
 			return exitComponentsFailed
 		}
-		ch := components.Change{ID: id}
+		ch := components.Change{ID: id, Machine: node}
 		on, off := true, false
 		switch verb {
 		case "enable":
@@ -494,8 +502,88 @@ func (c *componentsCLI) write(ctx context.Context, req components.Request, yes b
 		}
 		fmt.Fprintf(c.out, "%s: %s (generation %d)\n", d.ID, state, d.Generation)
 	}
+	for _, o := range res.Overrides {
+		state := o.Want
+		if state == "" {
+			state = "follows the home"
+		}
+		if o.Hold != nil {
+			state += ", stopped on this machine until started"
+		}
+		fmt.Fprintf(c.out, "%s on machine %s: %s (generation %d)\n", o.ID, o.Node, state, o.Generation)
+	}
 	fmt.Fprintln(c.out, "Done.")
 	return 0
+}
+
+// machineService is what --machine asks (story 51.12): *components.Service is one.
+type machineService interface {
+	ResolveMachine(ctx context.Context, nameOrID string) (string, error)
+	ListMachine(ctx context.Context, node string) (components.MachineList, error)
+}
+
+// machineVerbs are the commands that take --machine.
+var machineVerbs = map[string]bool{"show": true, "enable": true, "disable": true, "stop": true, "start": true}
+
+// resolveMachine is --machine's id ("" without the flag), or the exit code of a refusal.
+func (c *componentsCLI) resolveMachine(ctx context.Context, verb string) (string, int, bool) {
+	name := strings.TrimSpace(c.values["machine"])
+	if name == "" {
+		return "", 0, true
+	}
+	if !machineVerbs[verb] {
+		return "", c.usage(verb + " does not take --machine (show, enable, disable, stop and start do)"), false
+	}
+	ms, ok := c.svc.(machineService)
+	if !ok {
+		return "", c.usage("--machine is not available here"), false
+	}
+	id, err := ms.ResolveMachine(ctx, name)
+	if err != nil {
+		return "", c.fail(err), false
+	}
+	return id, 0, true
+}
+
+// showMachine is `show <id> --machine <m>`: the component as that machine has it.
+func (c *componentsCLI) showMachine(ctx context.Context, id, node string, asJSON bool) int {
+	l, err := c.svc.(machineService).ListMachine(ctx, node)
+	if err != nil {
+		return c.fail(err)
+	}
+	for _, mc := range l.Components {
+		if mc.ID != id {
+			continue
+		}
+		if asJSON {
+			return c.json(mc)
+		}
+		h := mc.Here
+		fmt.Fprintf(c.out, "%s on %s (%s)\n", id, l.Machine.Name, l.Machine.ID)
+		want := h.Want
+		if h.Override == nil || h.Override.Want == "" {
+			want += " (follows the home: " + mc.Want + ")"
+		} else {
+			want += " (home: " + mc.Want + ")"
+		}
+		fmt.Fprintf(c.out, "  want:       %s\n", want)
+		if h.Hold != nil {
+			fmt.Fprintf(c.out, "  stopped:    by %s at %s, until it is started\n", h.Hold.By, h.Hold.At.Format(time.RFC3339))
+		}
+		phase := strings.TrimSpace(h.Phase + " " + h.Reason)
+		if h.Stale && h.UpdatedAt != nil {
+			phase += fmt.Sprintf(" (not heard from since %s)", h.UpdatedAt.Format(time.RFC3339))
+		}
+		fmt.Fprintf(c.out, "  phase:      %s\n", phase)
+		if len(h.StagesOff) > 0 {
+			fmt.Fprintf(c.out, "  stages off: %s\n", strings.Join(h.StagesOff, ", "))
+		}
+		if h.CannotRun != "" {
+			fmt.Fprintf(c.out, "  cannot run: %s\n", h.CannotRun)
+		}
+		return 0
+	}
+	return c.fail(components.ErrUnknown)
 }
 
 // resetSettings is `components reset-settings <id>` (story 51.13): what a reset loses,
