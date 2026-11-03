@@ -105,7 +105,11 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec.Prime()
 	go run.Run(ctx)
 	go rec.Run(ctx)
-	return &packsAdmin{ctx: ctx, m: m, r: run}
+	pa := &packsAdmin{ctx: ctx, m: m, r: run}
+	if st, ok := rec.Source.(*store.Store); ok {
+		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}
+	}
+	return pa
 }
 
 // mdnsLoop is the supervisor's mDNS advertiser as the discovery.mdns component's loop:
