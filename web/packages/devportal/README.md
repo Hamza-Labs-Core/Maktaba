@@ -17,16 +17,16 @@ has no backend, no KV and no secrets. Every request goes through the Worker, whi
 
 ## What is on the site
 
-| Path | What | From |
-| --- | --- | --- |
-| `/` | the landing page, English and Arabic | `scripts/build.mjs`, `scripts/strings.mjs` |
-| `/wiki/` | the wiki app, without the design mockups | `web/wiki-app` (built with `--base /wiki/`), `public/db/*.json`, `specs/diagrams` |
-| `/api/` | the API reference: Redoc, served from this site | `shared/api/openapi.json`, the `redoc` package |
-| `/plugins/` | Epic 54's developer-facing stories | `specs/epics/54-plugins` (the list in `build.mjs`) |
-| `/changelog/` | the changelog | `CHANGELOG.md` |
-| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy | `scripts/strings.mjs` |
-| `/.well-known/security.txt` | RFC 9116 | `api/internal/security/disclosure.go` (the API's own policy) |
-| `/robots.txt`, `/sitemap.xml` | for crawlers | the build |
+| Path                                           | What                                            | From                                                                              |
+| ---------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
+| `/`                                            | the landing page, English and Arabic            | `scripts/build.mjs`, `scripts/strings.mjs`                                        |
+| `/wiki/`                                       | the wiki app, without the design mockups        | `web/wiki-app` (built with `--base /wiki/`), `public/db/*.json`, `specs/diagrams` |
+| `/api/`                                        | the API reference: Redoc, served from this site | `shared/api/openapi.json`, the `redoc` package                                    |
+| `/plugins/`                                    | Epic 54's developer-facing stories              | `specs/epics/54-plugins` (the list in `build.mjs`)                                |
+| `/changelog/`                                  | the changelog                                   | `CHANGELOG.md`                                                                    |
+| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                           | `scripts/strings.mjs`                                                             |
+| `/.well-known/security.txt`                    | RFC 9116                                        | `api/internal/security/disclosure.go` (the API's own policy)                      |
+| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                    | the build                                                                         |
 
 Every string the portal's own pages show is in English and Arabic (`scripts/strings.mjs`).
 The EN/AR button swaps them and sets `dir="rtl"` for Arabic. The first visit follows the
@@ -74,7 +74,7 @@ dev hands the Worker the route's own URL over http, and the redirects would loop
 `.github/workflows/devportal-deploy.yml` deploys **on every push to main that changes what
 the site is built from** (the portal, the wiki, the Epic 54 docs, the changelog, the OpenAPI
 description, the disclosure policy, the diagrams, the icons), and by hand from Actions →
-*Deploy maktaba.dev* → *Run workflow*. Within one run:
+_Deploy maktaba.dev_ → _Run workflow_. Within one run:
 
 1. **build**: the same `_devportal.yml` as the pull request check. Typecheck, build, the
    public-safety scan and the tests, then the built `dist/` is uploaded.
@@ -101,7 +101,7 @@ The only step is the token and the two secrets. Wrangler creates the rest itself
    Custom token) with:
    - Account → **Workers Scripts: Edit** (this account only);
    - Zone → **Workers Routes: Edit**, **Zone: Read** and **DNS: Edit**, limited to
-     *Specific zone: maktaba.dev*. A custom domain writes its own DNS record and
+     _Specific zone: maktaba.dev_. A custom domain writes its own DNS record and
      certificate, which needs DNS: Edit.
 2. **Add the secrets** to the repository or the organisation (Settings → Secrets and
    variables → Actions):

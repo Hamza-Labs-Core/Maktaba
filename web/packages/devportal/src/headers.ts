@@ -86,4 +86,3 @@ export function withHeaders(res: Response, path: string): Response {
   }
   return out;
 }
-

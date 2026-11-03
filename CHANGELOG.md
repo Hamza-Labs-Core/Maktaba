@@ -30,6 +30,10 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
+- **maktaba.dev, the developer portal.** The wiki, the API reference, the plugin developer docs,
+  the changelog and `security.txt` on one site, with its pages in English and Arabic. It is a
+  Cloudflare Worker built from the repository by an allow-list, deployed from main
+  (`web/packages/devportal`).
 - **AirPlay, Picture in Picture and Now Playing in the Apple Player.** Videos and live TV play
   on an Apple TV from the AirPlay button, float in Picture in Picture (also on going home), and
   show on the lock screen with play, pause, ±10 s and next (Epic 48 story 48.24, [#512]).
