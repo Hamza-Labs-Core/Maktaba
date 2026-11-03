@@ -31,6 +31,7 @@ function elements(node: ParentNode): Element[] {
   if ("content" in node) out.push(...elements((node as DefaultTreeAdapterMap["template"]).content));
   return out;
 }
+const SAFE_SCHEMES = new Set(["https", "http", "mailto"]);
 const attr = (e: Element, name: string) => e.attrs.find((a) => a.name === name)?.value;
 import { STRINGS as RAW } from "../scripts/strings.mjs";
 
@@ -217,7 +218,9 @@ describe("English and Arabic", () => {
         for (const a of e.attrs) {
           expect(a.name.startsWith("on"), `${p}: <${e.tagName} ${a.name}>`).toBe(false);
           if (a.name === "href" || a.name === "src") {
-            expect(a.value.trim().toLowerCase().startsWith("javascript:"), p).toBe(false);
+            // an allow-list of URL schemes: http(s) and mailto, or a relative URL
+            const scheme = /^\s*([a-z][a-z0-9+.-]*):/i.exec(a.value)?.[1].toLowerCase();
+            expect(scheme === undefined || SAFE_SCHEMES.has(scheme), `${p}: ${a.value}`).toBe(true);
           }
         }
       }
