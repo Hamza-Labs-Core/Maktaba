@@ -93,6 +93,7 @@ read by the in-repo wiki app (`web/wiki-app`). A wiki app or build-tooling layer
 - [`../../web/wiki-app/public/db/wiki-cross-refs.json`](../../web/wiki-app/public/db/wiki-cross-refs.json):
   Linear and file cross-references (issues, files, build_order, critical_path, parallel_tracks,
   reviews, epics, stories).
+- `../../web/wiki-app/public/db/ar/`: the same files in Arabic (`"lang": "ar"`), below.
 - [`db/wiki-schema.json`](db/wiki-schema.json): the JSON schema.
 - [`db/curated.json`](db/curated.json): the hand-kept data the specs do not carry (epic names,
   phases and engines, hand-written summaries, Linear ids, the implementation phases, the
@@ -106,6 +107,30 @@ python3 docs/wiki/db/generate_wiki.py
 ```
 
 CI runs `generate_wiki.py --check` and fails when the committed database does not match the specs.
+
+### In Arabic
+
+The wiki is published in English at maktaba.dev/wiki/ and in Arabic, right to left, at
+maktaba.dev/ar/wiki/. The Arabic database (`web/wiki-app/public/db/ar/`, the same files) is
+generated from the translation store, [`db/ar/`](db/ar/): one file per epic (`epic-NN.json`,
+the epic, its stories and its plans) and `common.json` (the phases, features, diagrams,
+reviews, mockups, endpoints and tables). Each text is stored by entry id and field, with the
+hash of the English it translates:
+
+```json
+{"entries": {"story-1.1": {"title": {"hash": "…", "ar": "…"}}}}
+```
+
+Code, identifiers, paths and endpoint names stay as written. An endpoint's summary reuses its
+Arabic in `shared/api/openapi.ar.json`. **A spec change ships its Arabic:** `--check` fails,
+naming the store file, the entry and the field, when a text has no Arabic, when its English
+changed since it was translated, when the Arabic drops code the English has, or when an
+entry's or a file's Arabic prose is mostly Latin script. To see what to translate, with the
+hash to record:
+
+```sh
+python3 docs/wiki/db/generate_wiki.py --ar-todo [--epic N]
+```
 
 ## Quick navigation by intent
 

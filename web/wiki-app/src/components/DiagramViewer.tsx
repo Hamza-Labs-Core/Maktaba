@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, ExternalLink, Maximize2 } from 'lucide-react';
 import { diagramUrl } from '@/lib/asset-paths';
 import { githubUrlFor } from '@/lib/labels';
+import { t } from '@/lib/i18n';
 
 interface Props {
   /** Repo-rooted path, e.g. `specs/diagrams/auth-flow.drawio`. */
@@ -120,7 +121,7 @@ export function DiagramViewer({ path, defaultOpen = true }: Props) {
           {open ? (
             <ChevronDown className="h-3.5 w-3.5" />
           ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight className="h-3.5 w-3.5 rtl:rotate-180" />
           )}
           {filename}
         </button>
@@ -131,10 +132,10 @@ export function DiagramViewer({ path, defaultOpen = true }: Props) {
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-            title="Open raw .drawio file"
+            title={t('viewer.raw.title')}
           >
             <Maximize2 className="h-3 w-3" />
-            Raw
+            {t('viewer.raw')}
           </a>
         )}
         <a
@@ -142,34 +143,33 @@ export function DiagramViewer({ path, defaultOpen = true }: Props) {
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-          title="View source on GitHub"
+          title={t('viewer.source.title')}
         >
           <ExternalLink className="h-3 w-3" />
-          Source
+          {t('viewer.source')}
         </a>
       </div>
       {open && (
         <div className="bg-white dark:bg-slate-950">
           {state.kind === 'loading' && (
             <div className="px-4 py-10 text-center text-sm text-slate-500 dark:text-slate-400">
-              Loading diagram…
+              {t('viewer.loading')}
             </div>
           )}
           {state.kind === 'missing' && (
             <div className="px-4 py-8 text-sm text-slate-600 dark:text-slate-300">
-              <div className="font-medium mb-1">Diagram file not yet committed.</div>
+              <div className="font-medium mb-1">{t('viewer.missing')}</div>
               <div className="text-slate-500 dark:text-slate-400">
-                Expected at{' '}
+                {t('viewer.missing.body')}{' '}
                 <code className="font-mono text-[12px] bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">
                   {path}
                 </code>
-                . Once the .drawio file is added to the repo it will render here automatically.
               </div>
             </div>
           )}
           {state.kind === 'error' && (
             <div className="px-4 py-8 text-sm text-amber-600 dark:text-amber-400">
-              Could not load diagram: {state.message}
+              {t('viewer.error')} {state.message}
             </div>
           )}
           {state.kind === 'ready' && embedSrc && (

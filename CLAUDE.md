@@ -14,3 +14,6 @@
 4. Never write secrets there or anywhere in the repo.
 5. **Never quote the owner's words in repo text** (specs, docs, the trail, comments, tests): state
    each requirement or decision neutrally, with no attribution to the owner.
+6. **A spec change ships its Arabic:** translate each changed epic, story or plan text in
+   `docs/wiki/db/ar/` and regenerate (`python3 docs/wiki/db/generate_wiki.py`); `--check` in CI
+   fails, naming the entry and field, on any missing or stale Arabic.
