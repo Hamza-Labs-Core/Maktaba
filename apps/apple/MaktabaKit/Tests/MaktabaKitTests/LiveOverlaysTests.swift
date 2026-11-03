@@ -118,6 +118,95 @@ struct LiveOverlaysTests {
         #expect(!o.banner(at: at(20)), "the banner's time went by under it")
     }
 
+    /// The bug: a buffering stall did not change the playback phase, so the banner
+    /// did not come back. A stall that lasts shows the banner and the buffering state; when
+    /// the picture moves again buffering goes at once and the banner its full time later.
+    @Test func aBufferingStallShowsTheBannerUntilThePictureMoves() {
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(1))
+        #expect(!o.banner(at: at(10)))
+        o.stalled(at: at(10))
+        #expect(o.playing, "buffering is not a stop")
+        #expect(!o.buffering(at: at(10.9)) && !o.banner(at: at(10.9)), "nothing for the grace")
+        #expect(o.nextChange(after: at(10)) == at(11), "the player wakes when it shows")
+        #expect(o.buffering(at: at(11)) && o.banner(at: at(11)))
+        #expect(o.banner(at: at(60)) && o.buffering(at: at(60)), "it stays while the picture waits")
+        #expect(o.nextChange(after: at(60)) == nil, "nothing goes on its own while it buffers")
+        let back = o.back(at: at(60))
+        #expect(!back, "Menu leaves a channel that does not play")
+        o.resumed(at: at(61))
+        #expect(!o.buffering(at: at(61)), "buffering goes as soon as the picture moves")
+        #expect(o.banner(at: at(66.9)))
+        #expect(!o.banner(at: at(67)), "the banner its full time after the resume")
+        #expect(o.nextChange(after: at(61)) == at(67))
+    }
+
+    @Test func aHiccupShowsNothing() {
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        o.stalled(at: at(20))
+        o.resumed(at: at(20.5))
+        #expect(!o.buffering(at: at(21)) && !o.banner(at: at(21)))
+        #expect(o.nextChange(after: at(20.5)) == nil)
+    }
+
+    @Test func aStallBeforePlayingIsStillStarting() {
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.stalled(at: at(1))
+        #expect(!o.buffering(at: at(5)), "a channel that does not play yet is starting, not buffering")
+        #expect(o.banner(at: at(5)))
+    }
+
+    @Test func aStallAfterDismissingTheBannerShowsItAgain() {
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        _ = o.back(at: at(1))
+        #expect(!o.banner(at: at(2)))
+        o.stalled(at: at(3))
+        #expect(o.banner(at: at(4)), "a stall brings it back")
+        o.resumed(at: at(5))
+        #expect(o.banner(at: at(10.9)) && !o.banner(at: at(11)))
+    }
+
+    @Test func theMiniGuidesTimeStandsStillWhileBuffering() {
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        o.toggleMiniGuide(at: at(1))
+        o.stalled(at: at(5))
+        #expect(o.miniGuide(at: at(30)), "it stays while the channel buffers")
+        #expect(!o.banner(at: at(30)), "the mini-guide names the channel")
+        o.resumed(at: at(31))
+        #expect(o.miniGuide(at: at(40.9)))
+        #expect(!o.miniGuide(at: at(41)), "its full time after the resume")
+    }
+
+    @Test func aMiniGuideThatWentStaysGone() {
+        var o = LiveOverlays()
+        o.tuned(at: at(0))
+        o.playback(playing: true, at: at(0))
+        o.toggleMiniGuide(at: at(1))
+        #expect(!o.miniGuide(at: at(12)))
+        o.tuned(at: at(20))
+        #expect(!o.miniGuide(at: at(20)), "a tune does not bring it back")
+        o.stalled(at: at(21))
+        o.playback(playing: true, at: at(21))
+        o.toggleMiniGuide(at: at(30))
+        #expect(o.miniGuide(at: at(30)), "Select opens it at once")
+    }
+
+    @Test func theOverlaysKeepABottomCornerLogoClear() {
+        #expect(LiveOverlays.edge(clearing: nil) == .bottom)
+        #expect(LiveOverlays.edge(clearing: .topRight) == .bottom)
+        #expect(LiveOverlays.edge(clearing: .topLeft) == .bottom)
+        #expect(LiveOverlays.edge(clearing: .bottomRight) == .top)
+        #expect(LiveOverlays.edge(clearing: .bottomLeft) == .top)
+    }
+
     @Test func backAndSelectCloseTheMiniGuide() {
         var o = LiveOverlays()
         o.tuned(at: at(0))

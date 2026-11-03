@@ -294,3 +294,33 @@ func TestToBlock_PosterFallsBackToTheVideo(t *testing.T) {
 		t.Fatalf("no video, poster %q", b.Poster)
 	}
 }
+
+// The corner the engine burns the channel's logo into reaches the guide's
+// channel header (/api/channels/now, the guide), read as the engine reads the
+// look: no path is no watermark, a missing or unknown position is top-right.
+// The TV apps keep the live banner clear of that corner.
+func TestWatermarkCornerIsTheEngines(t *testing.T) {
+	for raw, want := range map[string]string{
+		``:            "",
+		`{}`:          "",
+		`not json`:    "",
+		`{"look":{}}`: "",
+		`{"look":{"watermark":{"position":"bottom-left"}}}`:                       "",
+		`{"look":{"watermark":{"path":"  ","position":"bottom-left"}}}`:           "",
+		`{"look":{"watermark":{"path":"/art/wm.png"}}}`:                           "top-right",
+		`{"look":{"watermark":{"path":"/art/wm.png","position":"middle"}}}`:       "top-right",
+		`{"look":{"watermark":{"path":"/art/wm.png","position":"bottom-right"}}}`: "bottom-right",
+		`{"look":{"watermark":{"path":"/art/wm.png","position":"bottom-left"}}}`:  "bottom-left",
+		`{"look":{"watermark":{"path":"/art/wm.png","position":"top-left"}}}`:     "top-left",
+	} {
+		if got := watermarkCorner(raw); got != want {
+			t.Errorf("watermarkCorner(%s) = %q, want %q", raw, got, want)
+		}
+	}
+	if h := toHeader(ChannelMeta{ID: "c1", Name: "News", Watermark: "bottom-left"}); h.WatermarkPosition != "bottom-left" {
+		t.Fatalf("header %+v", h)
+	}
+	if h := toHeader(ChannelMeta{ID: "c2"}); h.WatermarkPosition != "" {
+		t.Fatalf("no watermark, header %+v", h)
+	}
+}
