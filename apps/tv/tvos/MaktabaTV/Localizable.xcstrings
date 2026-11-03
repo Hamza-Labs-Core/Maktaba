@@ -31,6 +31,17 @@
         }
       }
     },
+    "Buffering…" : {
+      "comment" : "Live TV: the picture waits for data while the channel plays",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ التخزين المؤقت…"
+          }
+        }
+      }
+    },
     "Channels appear here once this home shares one with you." : {
       "localizations" : {
         "ar" : {

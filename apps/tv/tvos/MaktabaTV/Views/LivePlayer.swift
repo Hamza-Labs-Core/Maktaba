@@ -27,6 +27,15 @@ final class LivePlayback {
     private(set) var phase = Phase.starting
     /// Bumped on every tune: the banner shows again.
     private(set) var tunes = 0
+    /// The picture waits for data while the channel plays (a buffering stall): AVPlayer's
+    /// `timeControlStatus` waiting after the picture moved, or its stall notice. The phase
+    /// stays `.playing`; `LiveOverlays` turns a lasting wait into the buffering state.
+    private(set) var waiting = false
+    /// The current item's picture has moved: a wait from then on is a stall, not the start.
+    private var moved = false
+
+    @ObservationIgnored private var statusObservation: NSKeyValueObservation?
+    @ObservationIgnored private var stallObserver: NSObjectProtocol?
 
     private var running: Task<Void, Never>?
     private var proxy: StreamProxy?
@@ -43,6 +52,50 @@ final class LivePlayback {
         self.client = client
         self.channels = channels
         index = channels.firstIndex { $0.id == start } ?? 0
+        statusObservation = Self.observeStatus(player) { [weak self] status in self?.timeControl(status) }
+        stallObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.playbackStalledNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            // only the item's identity crosses over (a Notification is not Sendable)
+            let stalled = (note.object as? AVPlayerItem).map(ObjectIdentifier.init)
+            MainActor.assumeIsolated {
+                guard let self, let stalled, let item = self.player.currentItem,
+                      ObjectIdentifier(item) == stalled else { return }
+                self.waiting = true
+            }
+        }
+    }
+
+    /// KVO may call back on any thread: the handler is made outside the main actor and hops on.
+    nonisolated private static func observeStatus(
+        _ player: AVPlayer, _ changed: @escaping @MainActor @Sendable (AVPlayer.TimeControlStatus) -> Void
+    ) -> NSKeyValueObservation {
+        player.observe(\.timeControlStatus, options: [.initial, .new]) { p, _ in
+            let status = p.timeControlStatus
+            Task { @MainActor in changed(status) }
+        }
+    }
+
+    /// The picture moved, waits, or was paused.
+    private func timeControl(_ status: AVPlayer.TimeControlStatus) {
+        switch status {
+        case .playing:
+            moved = true
+            waiting = false
+        case .waitingToPlayAtSpecifiedRate:
+            if moved { waiting = true }
+        case .paused:
+            waiting = false
+        @unknown default:
+            break
+        }
+    }
+
+    /// A new item plays (a tune, or one opened again): it starts, it does not stall.
+    private func replaceItem(_ item: AVPlayerItem?) {
+        moved = false
+        waiting = false
+        player.replaceCurrentItem(with: item)
     }
 
     var channel: LiveChannel? { channels.indices.contains(index) ? channels[index] : nil }
@@ -77,9 +130,12 @@ final class LivePlayback {
         await running?.value
         running = nil
         player.pause()
-        player.replaceCurrentItem(with: nil)
+        replaceItem(nil)
         proxy?.stop()
         proxy = nil
+        statusObservation?.invalidate()
+        if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
+        stallObserver = nil
     }
 
     private func retune(settle: Bool) {
@@ -113,7 +169,7 @@ final class LivePlayback {
             try Task.checkCancellation()
             let itemURL = try await playable(url, path: path)
             try Task.checkCancellation()
-            player.replaceCurrentItem(with: AVPlayerItem(url: itemURL))
+            replaceItem(AVPlayerItem(url: itemURL))
             player.play()
             phase = .playing
             await watch(source, path: path, opened: itemURL)
@@ -121,7 +177,7 @@ final class LivePlayback {
             return
         } catch {
             guard !Task.isCancelled else { return }
-            player.replaceCurrentItem(with: nil)
+            replaceItem(nil)
             Log.failure("play live channel", error)
             phase = .failed(HomeFailure.live(error))
         }
@@ -164,18 +220,18 @@ final class LivePlayback {
             if reopened >= 2 {
                 phase = .failed(player.currentItem?.error.map(HomeFailure.init)
                     ?? HomeFailure(kind: .server, detail: String(localized: "The channel stopped playing.")))
-                player.replaceCurrentItem(with: nil)
+                replaceItem(nil)
                 return
             }
             reopened += 1
             let url = path == .relay ? (relayURL ?? opened) : opened
-            player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            replaceItem(AVPlayerItem(url: url))
             player.play()
         }
     }
 
     private func endedByHome() {
-        player.replaceCurrentItem(with: nil)
+        replaceItem(nil)
         phase = .ended
     }
 }
@@ -200,9 +256,15 @@ extension HomeFailure {
 /// tab. When each overlay goes is `LiveOverlays`' (MaktabaKit, unit-tested): the banner
 /// `LiveOverlays.bannerTime` after the channel actually plays, however long it took to start.
 ///
+/// A buffering stall (the picture waits while the channel plays) brings the banner back with
+/// a buffering line; both go when the picture moves again (`LiveOverlays`, a short wait shows
+/// nothing).
+///
 /// The home burns the channel's corner logo (its watermark) into the picture itself, top
 /// right by default: the picture is shown whole (`.resizeAspect`, edge to edge, nothing
-/// cropped) and every overlay sits at the bottom or in the middle, clear of that corner.
+/// cropped) and every overlay sits at the bottom or in the middle, clear of that corner. A
+/// logo in a bottom corner (`watermark_position`) moves the banner and the mini-guide to the
+/// top (`LiveOverlays.edge(clearing:)`).
 struct LivePlayerScreen: View {
     let model: LiveModel
     @State private var playback: LivePlayback
@@ -236,12 +298,12 @@ struct LivePlayerScreen: View {
             Group {
                 status
                 if overlays.miniGuide(at: now) {
-                    LiveMiniGuide(model: model, channels: playback.channels, current: playback.index)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+                    LiveMiniGuide(model: model, channels: playback.channels, current: playback.index, edge: edge)
+                        .frame(maxHeight: .infinity, alignment: edge == .top ? .top : .bottom)
                         .transition(.opacity)
                 } else if overlays.banner(at: now), let channel = playback.channel {
-                    LiveBanner(channel: channel, now: model.onNow(channel.id))
-                        .frame(maxHeight: .infinity, alignment: .bottom)
+                    LiveBanner(channel: channel, now: model.onNow(channel.id), edge: edge)
+                        .frame(maxHeight: .infinity, alignment: edge == .top ? .top : .bottom)
                         .transition(.opacity)
                 }
             }
@@ -271,6 +333,9 @@ struct LivePlayerScreen: View {
         .onChange(of: model.channels.map(\.id)) { _, _ in playback.update(channels: model.channels) }
         .onChange(of: playback.tunes) { _, _ in change { $0.tuned(at: $1) } }
         .onChange(of: playback.phase) { _, phase in change { $0.playback(playing: phase == .playing, at: $1) } }
+        .onChange(of: playback.waiting) { _, waiting in
+            change { waiting ? $0.stalled(at: $1) : $0.resumed(at: $1) }
+        }
         .task(id: Wake(overlays: overlays, now: now)) {
             // asleep until the next overlay goes (none while nothing plays), then redrawn
             guard let next = overlays.nextChange(after: now) else { return }
@@ -279,6 +344,9 @@ struct LivePlayerScreen: View {
             withAnimation { now = .now }
         }
     }
+
+    /// Where the banner and the mini-guide sit: clear of the channel's burned-in logo.
+    private var edge: LiveOverlays.Edge { LiveOverlays.edge(clearing: playback.channel?.watermark) }
 
     /// What the overlays' next redraw depends on.
     private struct Wake: Equatable {
@@ -335,7 +403,14 @@ struct LivePlayerScreen: View {
                         hint: String(localized: "Select to watch again, or ▲ ▼ for another channel."))
                 .accessibilityIdentifier("live.player.ended")
         case .playing:
-            EmptyView()
+            if overlays.buffering(at: now) {
+                VStack(spacing: 24) {
+                    ProgressView().tint(.white)
+                    Text("Buffering…").foregroundStyle(.white.opacity(0.85))
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("live.player.buffering")
+            }
         }
     }
 }
@@ -369,6 +444,7 @@ private struct LiveMessage: View {
 struct LiveBanner: View {
     let channel: LiveChannel
     let now: ChannelNow?
+    var edge: LiveOverlays.Edge = .bottom
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
@@ -406,7 +482,7 @@ struct LiveBanner: View {
             }
             .readingPanel(padding: 36)
             .padding(.horizontal, 80)
-            .padding(.bottom, 60)
+            .padding(edge == .top ? .top : .bottom, 60)
         }
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
@@ -420,6 +496,7 @@ struct LiveMiniGuide: View {
     let model: LiveModel
     let channels: [LiveChannel]
     let current: Int
+    var edge: LiveOverlays.Edge = .bottom
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -435,7 +512,7 @@ struct LiveMiniGuide: View {
         }
         .readingPanel(padding: 32)
         .padding(.horizontal, 80)
-        .padding(.bottom, 60)
+        .padding(edge == .top ? .top : .bottom, 60)
         .environment(\.colorScheme, .dark)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("live.miniguide")

@@ -6,17 +6,20 @@ import Observation
 /// Home's data (FR-10 to FR-13), kept by the Home screen (the tab keeps it while another
 /// section shows) and on disk (`HomeCache`) for the next launch:
 /// - `open` shows what is kept at once and reads Home again behind it (FR-12);
-/// - `GET /api/home` is what Home needs; the recommendations and Live TV on now are extra
-///   rows, and a failure of either leaves its rows out (or as they were) without failing Home;
-/// - a refresh that fails while rows show keeps them and says so (`stale`).
+/// - the rows are MaktabaKit's `HomeShelves`, built from `GET /api/home`, the
+///   recommendations and Live TV on now as the Apple TV builds them: a source that cannot be
+///   read keeps the rows it showed, or becomes a retry tile where they would be;
+/// - Home's own answer failing is the exception: with rows shown it keeps them and says so
+///   (`stale`), with none it is the whole screen's problem (FR-13's look).
 ///
 /// Every route scopes to the person's libraries on the home (NFR-12): nothing here filters by
 /// role.
 @MainActor @Observable
 final class HomeModel {
-    private(set) var content: HomeContent?
-    private(set) var recs: [RecRail] = []
-    private(set) var now: [ChannelNow] = []
+    private(set) var hero: HomeHero?
+    private(set) var shelves: [HomeShelf] = []
+    /// Home answered at least once (here, or kept from an earlier launch).
+    private(set) var loaded = false
     /// Videos read for recommendation cards (`GET /api/videos/{id}`), by id.
     private(set) var known: [String: KnownVideo] = [:]
     /// Why Home could not load, when there is nothing to show instead.
@@ -37,76 +40,71 @@ final class HomeModel {
     }
 
     /// The blocks under the hero, in FR-10's order, empty rows left out.
-    var sections: [HomeSection] {
-        content.map { HomeLayout.sections($0, recs: recs, now: now, known: known) } ?? []
-    }
+    var sections: [HomeSection] { HomeLayout.sections(shelves, known: known) }
 
     /// Home answered and has nothing at all (FR-13).
-    var isEmpty: Bool {
-        content.map { HomeLayout.isEmpty($0, sections: sections) } ?? false
-    }
+    var isEmpty: Bool { loaded && HomeLayout.isEmpty(hero: hero, sections: sections) }
 
     /// Each time Home shows: what is kept first (from disk on a new launch), then a fresh read.
     func open() async {
         if !restored {
             restored = true
-            if content == nil, let kept = await cache?.read() {
-                content = kept.content
-                recs = kept.recs
+            if !loaded, let kept = await cache?.read() {
+                hero = kept.hero
+                shelves = kept.shelves.map(\.shelf)
                 known = kept.known
+                loaded = true
             }
         }
         await load()
     }
 
-    /// Reads Home, its recommendations and Live TV on now together.
+    /// Reads Home, its recommendations and Live TV on now together (a retry tile's Try again
+    /// too), then builds the rows.
     func load() async {
         let client = client
-        async let recsAnswer = Self.attempt { try await client.homeRails(surface: "mobile-home") }
-        async let nowAnswer = Self.attempt { try await client.channelsNow() }
-        let rows: HomeRows
-        do {
-            rows = try await client.home()
-        } catch {
-            _ = await (recsAnswer, nowAnswer)
+        let answers = await HomeShelves.read(
+            home: { try await client.home() },
+            rails: { try await client.homeRails(surface: "mobile-home") },
+            now: { try await client.channelsNow() })
+        if Task.isCancelled { return }
+        let failures: [(StaticString, Error)] = [
+            answers.rails.failure.map { ("player home recommendations", $0) },
+            answers.now.failure.map { ("player home live now", $0) },
+        ].compactMap { $0 }
+        switch answers.home {
+        case let .success(rows):
+            hero = rows.featured.map(HomeHero.init)
+            problem = nil
+            stale = false
+        case let .failure(error):
             if Log.isCancellation(error) { return }
             if Self.isSignedOut(error) { signedOut(); return }
             Log.failure("player home", error)
-            if content == nil { problem = HomeFailure(error) } else { stale = true }
-            return
+            guard loaded else {
+                problem = HomeFailure(error)
+                return
+            }
+            stale = true
         }
-        content = HomeContent(rows)
-        problem = nil
-        stale = false
-        switch await recsAnswer {
-        case let .success(rails): recs = rails.map(RecRail.init)
-        case let .failure(e): extraFailed("player home recommendations", e)
-        }
-        switch await nowAnswer {
-        case let .success(answer): now = answer.channels
-        case let .failure(e):
-            // a person with no Live TV (or a home without it): no row
-            now = []
-            extraFailed("player home live now", e)
-        }
+        if failures.contains(where: { Self.isSignedOut($0.1) }) { signedOut(); return }
+        for (what, e) in failures where !Log.isCancellation(e) { Log.failure(what, e) }
+        shelves = HomeShelves.build(home: answers.home, rails: answers.rails, now: answers.now, keeping: shelves)
+        loaded = true
         await save()
-    }
-
-    private func extraFailed(_ what: StaticString, _ e: Error) {
-        if Self.isSignedOut(e) { signedOut() } else { Log.failure(what, e) }
     }
 
     /// Reads `videoID` for a recommendation's card; a video the person may no longer see
     /// leaves the rows.
     func resolve(_ videoID: String) async {
-        guard known[videoID] == nil, content?.names[videoID] == nil, asking.insert(videoID).inserted else { return }
+        guard known[videoID] == nil, asking.insert(videoID).inserted else { return }
         defer { asking.remove(videoID) }
         do {
             let v = try await client.videoDetail(videoID)
             known[videoID] = KnownVideo(title: v.displayTitle, series: nil)
             await save()
         } catch BrowseError.notAvailable {
-            drop(videoID)
+            shelves = HomeShelves.dropping(videoID, from: shelves)
         } catch {
             if Self.isSignedOut(error) { signedOut() } else { Log.failure("player home video", error) }
         }
@@ -116,30 +114,22 @@ final class HomeModel {
     /// (`DELETE /api/recommendations/items/{id}`); when it cannot be told, the card comes back.
     /// True when the home took it.
     func dismiss(_ videoID: String) async -> Bool {
-        let before = recs
-        drop(videoID)
+        let before = shelves
+        shelves = HomeShelves.dropping(videoID, from: shelves)
         do {
             try await client.dismissRecommendation(video: videoID)
             await save()
             return true
         } catch {
-            recs = before
+            shelves = before
             if Self.isSignedOut(error) { signedOut() } else { Log.failure("player home not interested", error) }
             return false
         }
     }
 
-    private func drop(_ videoID: String) {
-        recs = recs.map { RecRail(kind: $0.kind, items: $0.items.filter { $0.videoID != videoID }) }
-    }
-
     private func save() async {
-        guard let content else { return }
-        await cache?.write(CachedHome(content: content, recs: recs, known: known))
-    }
-
-    private static func attempt<T: Sendable>(_ call: @Sendable () async throws -> T) async -> Result<T, Error> {
-        do { return .success(try await call()) } catch { return .failure(error) }
+        guard loaded else { return }
+        await cache?.write(CachedHome(hero: hero, shelves: shelves.compactMap(KeptShelf.init), known: known))
     }
 
     private static func isSignedOut(_ e: Error) -> Bool {
@@ -147,20 +137,29 @@ final class HomeModel {
     }
 }
 
-/// Home's last answer as kept on the device: its own rows, the recommendations and the videos
-/// read for their cards. Live TV on now is not kept: it is stale within minutes.
+private extension Result {
+    var failure: Failure? {
+        if case let .failure(e) = self { return e }
+        return nil
+    }
+}
+
+/// Home's last answer as kept on the device: the hero, the rows of cards and the videos read
+/// for their cards. Live TV on now is not kept: it is stale within minutes.
 struct CachedHome: Codable, Sendable {
-    var content: HomeContent
-    var recs: [RecRail]
+    var hero: HomeHero?
+    var shelves: [KeptShelf]
     var known: [String: KnownVideo]
 }
+
 
 /// Home's last answer on disk (FR-12: the next launch shows it at once and refreshes behind
 /// it), one file per home and person under the app's Caches folder (the system may clear it;
 /// a file that cannot be read is no cache). An actor, so one save at a time.
 actor HomeCache {
-    /// The folder under Caches.
-    static let folder = "home-rows"
+    /// The folder under Caches (the shelves' shape since the TV's `HomeShelves`; the older
+    /// `home-rows` files are not read).
+    static let folder = "home-shelves"
 
     let file: URL
 

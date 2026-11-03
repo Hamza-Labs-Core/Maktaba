@@ -252,10 +252,14 @@ type ChannelHeader struct {
 	Logo   string `json:"logo,omitempty"`
 	// LogoURL is the servable logo (GET /api/channels/{id}/logo).
 	LogoURL string `json:"logo_url,omitempty"`
+	// WatermarkPosition is the corner the channel's logo is burned into the
+	// picture (top-right, top-left, bottom-right, bottom-left); absent when
+	// the channel airs none. The TV apps keep their banner clear of it.
+	WatermarkPosition string `json:"watermark_position,omitempty"`
 }
 
 func toHeader(c ChannelMeta) ChannelHeader {
-	h := ChannelHeader{ID: c.ID, Number: c.Number, Name: c.Name, Slug: c.Slug}
+	h := ChannelHeader{ID: c.ID, Number: c.Number, Name: c.Name, Slug: c.Slug, WatermarkPosition: c.Watermark}
 	if c.LogoPath != nil && strings.TrimSpace(*c.LogoPath) != "" {
 		// a file logo is only ever named by its URL, never its server path
 		if p := strings.TrimSpace(*c.LogoPath); isURL(p) {

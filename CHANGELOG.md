@@ -14,6 +14,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
+  logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
+  data, or its stall notice) did not change the playback phase, so the channel banner did not
+  come back. A wait of more than a second now shows the banner and a Buffering line; both go
+  when the picture moves again (the banner 6 s later). `GET /api/channels/now` and the guide
+  give each channel's `watermark_position`, the corner the home burns its logo into; with a
+  bottom corner the banner and the mini-guide sit at the top. The iPhone, iPad and Mac Player's
+  Home now uses MaktabaKit's `HomeShelves`, as the Apple TV: a row that cannot be read keeps
+  what it showed, or shows a tile that reads Home again, in English and Arabic.
+
 - **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
   transcribe.** Its capability report looked for the GPU only through `pynvml`, which no
   install brings (an RTX 2080 SUPER reported `"gpus": []`), and counted the `stt` extra only by
