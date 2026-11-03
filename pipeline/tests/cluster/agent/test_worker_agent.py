@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 from pathlib import Path
 from typing import Any
 
@@ -129,12 +128,13 @@ async def test_a_home_worker_runs_its_agent(
     # stopped with the worker: the door is detached, the sinks are gone, files are there
     assert llm_door._TRANSPORT is None
     assert job_events.tracker()._sinks == []
+    # its records stay; its process and status files go with it (it is not listed)
     machine = next((agent_env / "share").iterdir())
-    ident = json.loads((machine / "processes" / "home-w1.json").read_text())
-    assert ident["kind"] == "home" and ident["stopped_at"]
+    assert not (machine / "processes" / "home-w1.json").exists()
     assert list((machine / "metrics").glob("*/home-w1.jsonl"))
-    status = json.loads((agent_env / "home/.maktaba/cluster/status/home-w1.json").read_text())
-    assert status["state"] == "stopped"
+    status_dir = agent_env / "home/.maktaba/cluster/status"
+    assert not (status_dir / "home-w1.json").exists()
+    assert not list(status_dir.glob("*.tmp"))
 
 
 @pytest.mark.integration

@@ -146,7 +146,7 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if !src.archived {
-				m.Processes = readProcesses(src.root, filepath.Join(e.Name(), "processes"))
+				m.Processes = readProcesses(src.root, filepath.Join(e.Name(), "processes"), h.now())
 			}
 		}
 	}
@@ -157,7 +157,11 @@ func (h *Hub) Files(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
-func readProcesses(root *os.Root, dir string) []json.RawMessage {
+// readProcesses lists the processes of one machine folder that still run:
+// a process file that says its process stopped (stopped_at), or whose
+// last_seen is more than StaleSeen before now, is left out (the sweeps and
+// the machine's own processes remove such files).
+func readProcesses(root *os.Root, dir string, now time.Time) []json.RawMessage {
 	out := []json.RawMessage{}
 	entries, err := readDirIn(root, dir)
 	if err != nil {
@@ -172,12 +176,33 @@ func readProcesses(root *os.Root, dir string) []json.RawMessage {
 			continue
 		}
 		b, err := readCapped(root, p, maxProcessBytes)
-		if err != nil || !json.Valid(b) {
+		if err != nil || !json.Valid(b) || processGone(b, now) {
 			continue
 		}
 		out = append(out, json.RawMessage(bytes.TrimSpace(b)))
 	}
 	return out
+}
+
+// processGone: a process file says its process stopped, or it has not
+// refreshed its last_seen for StaleSeen.
+func processGone(b []byte, now time.Time) bool {
+	var f struct {
+		LastSeen  *string `json:"last_seen"`
+		StoppedAt *string `json:"stopped_at"`
+	}
+	if json.Unmarshal(b, &f) != nil {
+		return false
+	}
+	if f.StoppedAt != nil && *f.StoppedAt != "" {
+		return true
+	}
+	if f.LastSeen != nil {
+		if t, err := time.Parse(time.RFC3339Nano, *f.LastSeen); err == nil && now.Sub(t) > StaleSeen {
+			return true
+		}
+	}
+	return false
 }
 
 func readCapped(root *os.Root, p string, n int64) ([]byte, error) {
