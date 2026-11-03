@@ -19,10 +19,13 @@ import { SERVER_PAGES } from "../lib/edition";
 import { LoadError } from "../components/LoadError";
 import { HomePlaceholder, Loading } from "../components/Placeholders";
 import { usePageData } from "../lib/usePageData";
+import { useFeature } from "../lib/capabilities";
 
 export function Home() {
   const { t } = useI18n();
   const { user } = useAuth();
+  // no channel row while Live TV is off on this home (story 51.11)
+  const liveTv = useFeature("live_tv");
   // a return to Home shows the last rows at once and reads them again quietly
   const { data: home, err, loading, reload } = usePageData<HomeResponse>("home", fetchHome, [t]);
 
@@ -95,7 +98,7 @@ export function Home() {
         </>
       )}
 
-      <WhatsOnNow />
+      {liveTv === "on" && <WhatsOnNow />}
 
       {home &&
         pinned.map((p) => (

@@ -76,11 +76,7 @@ function word(t: T, key: string): string {
  * (`error.kind.offAdmin`); with no name at all it is `error.kind.off`.
  * null for any other error.
  */
-export function componentOffText(
-  e: unknown,
-  t: T,
-  opts: { admin?: boolean } = {}
-): string | null {
+export function componentOffText(e: unknown, t: T, opts: { admin?: boolean } = {}): string | null {
   if (!(e instanceof ApiError) || e.status !== 409 || e.problem.code !== "component_off")
     return null;
   const id = typeof e.problem.component === "string" ? e.problem.component : "";
