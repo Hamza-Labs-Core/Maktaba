@@ -149,8 +149,8 @@ def unavailable(device: str | None = None) -> str | None:
     """Why this machine has no second listen at all, or None: its transcripts then keep
     Whisper's words, and ``models download`` fetches neither the model nor the dictionary.
     Apple Silicon always has one; Windows and Linux need torch's CUDA and an NVIDIA GPU that
-    holds the model, beside Whisper or taking turns with it (:func:`.cohere_cuda.problem`). ``device`` is Whisper's
-    (``MAKTABA_STT_DEVICE`` when not given)."""
+    holds the model, beside Whisper or taking turns with it (:func:`.cohere_cuda.problem`).
+    ``device`` is Whisper's (``MAKTABA_STT_DEVICE`` when not given)."""
     if engine.current() == engine.MLX:
         return None
     from . import cohere_cuda

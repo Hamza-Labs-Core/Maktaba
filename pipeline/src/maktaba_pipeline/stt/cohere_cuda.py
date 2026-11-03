@@ -96,9 +96,10 @@ MARGIN_GB = 0.25
 #: loaded. Windows' WDDM budget leaves a process ~1 GiB short of the card (6.95 of 8
 #: measured), and an 8 GB card ~5.8 GiB once Whisper is loaded, short of the 6.4 the model,
 #: a batch and Whisper's room need, so it takes a 10 GB card there (a smaller one takes
-#: turns, :data:`MIN_GPU_GB`); elsewhere an 8 GB one, beside Whisper in int8_float16. The supervisor sizes Whisper to leave the room on such a GPU
-#: (``PlanSTT``, same threshold). Whether a given GPU keeps both loaded is decided from its
-#: measured free memory (:func:`mode`); this is the supervisor's sizing line
+#: turns, :data:`MIN_GPU_GB`); elsewhere an 8 GB one, beside Whisper in int8_float16. The
+#: supervisor sizes Whisper to leave the room on such a GPU (``PlanSTT``, same threshold).
+#: Whether a given GPU keeps both loaded is decided from its measured free memory
+#: (:func:`mode`); this is the supervisor's sizing line
 TOGETHER_GPU_GB = 9.5 if sys.platform == "win32" else 7.5
 #: the smallest GPU (total memory, GiB) the second listen runs on at all: with Whisper off
 #: the GPU while it runs (:mod:`.gpu_turns`), Cohere alone needs 6.1 GiB on Windows
