@@ -644,3 +644,14 @@ func TestLayoutNamesStayInside(t *testing.T) {
 		t.Errorf("PackFolder = %q", f)
 	}
 }
+
+// Import opens only a file or folder named absolutely, with no "..".
+func TestImportRefusesOtherPaths(t *testing.T) {
+	m := &Manager{}
+	for _, p := range []string{"offline.tar", "../offline.tar", "/srv/../etc/offline.tar", filepath.Join("a", "b")} {
+		_, err := m.Import(context.Background(), p)
+		if err == nil || !strings.Contains(err.Error(), "not an absolute path") && !strings.Contains(err.Error(), "a path with a .. element") {
+			t.Errorf("Import(%q) = %v, want refused", p, err)
+		}
+	}
+}

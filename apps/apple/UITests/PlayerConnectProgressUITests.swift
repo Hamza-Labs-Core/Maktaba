@@ -39,6 +39,9 @@ final class PlayerConnectProgressUITests: PlayerUITestCase {
         home.reset()
         type(field, "127.0.0.1:9")
         app.buttons["picker.connect"].tap()
+        // the retry's failure (attempt 2) is still on screen as the tap lands: the new
+        // address's own steps replace it, with no attempt number (attempt 1)
+        XCTAssertTrue(element("connect.progress.attempt").waitForNonExistence(timeout: 30), "a new address starts at attempt 1")
         XCTAssertTrue(element("connect.progress.failed").waitForExistence(timeout: 30))
         XCTAssertFalse(element("connect.progress.attempt").exists, "a new address starts at attempt 1")
         shot("connect-failed-unreachable")

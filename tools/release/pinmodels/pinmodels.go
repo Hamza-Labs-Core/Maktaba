@@ -10,7 +10,6 @@
 package pinmodels
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -584,18 +583,16 @@ func quote(s string) string {
 // Summary is a human line per result.
 func Summary(results []Result) string {
 	var b strings.Builder
-	w := bufio.NewWriter(&b)
 	for _, r := range results {
 		var size int64
 		for _, f := range r.Files {
 			size += f.Size
 		}
-		fmt.Fprintf(w, "%s: %s, %d files, %.1f MB", r.ID, r.Source, len(r.Files), float64(size)/1e6)
+		fmt.Fprintf(&b, "%s: %s, %d files, %.1f MB", r.ID, r.Source, len(r.Files), float64(size)/1e6)
 		if len(r.Skipped) > 0 {
-			fmt.Fprintf(w, " (gated: %d small files left out without HF_TOKEN: %s)", len(r.Skipped), strings.Join(r.Skipped, ", "))
+			fmt.Fprintf(&b, " (gated: %d small files left out without HF_TOKEN: %s)", len(r.Skipped), strings.Join(r.Skipped, ", "))
 		}
-		fmt.Fprintln(w)
+		b.WriteByte('\n')
 	}
-	_ = w.Flush()
 	return b.String()
 }

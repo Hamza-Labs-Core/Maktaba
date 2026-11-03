@@ -27,7 +27,7 @@ async def test_t07_an_override_reaches_a_machine_without_a_component_runner(db: 
     node_id = await _node(db)
     agent, _ = await _agent(db, node_id)
     c = default().get("transcription")
-    assert c is not None and set(c.stages) == {"extract", "transcribe"}
+    assert c is not None and set(c.stages) == {"extract", "transcribe", "second_listen"}
     assert {"extract", "transcribe"} <= set(agent.selector.current())
     # the rows PUT /api/components/transcription/machines/{node} {"want":"installed"} writes
     for stage in c.stages:

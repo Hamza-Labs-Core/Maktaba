@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,6 +123,10 @@ def process_tree(launcher: int, ps_text: str) -> dict:
 
 
 def load_catalog(path: Path = CATALOG) -> dict:
+    # here, not at the top: core-home.sh imports process_tree with the Mac's own python3
+    # (3.9, no tomllib)
+    import tomllib
+
     with path.open("rb") as f:
         return tomllib.load(f)
 

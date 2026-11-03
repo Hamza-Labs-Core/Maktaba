@@ -4,6 +4,7 @@
 package loopcheck
 
 import (
+	"bytes"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -69,6 +70,15 @@ func Check(t *testing.T, s Spec) {
 		}
 	}
 	var declared, plain []site
+	// a file with none of the calls looked for is not parsed (gofmt writes `.Name(`): the
+	// API's tree is too big to parse whole within a unit test's budget
+	var calls [][]byte
+	for _, n := range s.Declare {
+		calls = append(calls, []byte("."+n+"("))
+	}
+	for _, p := range s.Plain {
+		calls = append(calls, []byte("."+p.Func+"("))
+	}
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(s.Root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -91,6 +101,9 @@ func Check(t *testing.T, s Spec) {
 		src, err := os.ReadFile(path)
 		if err != nil {
 			return err
+		}
+		if !slices.ContainsFunc(calls, func(c []byte) bool { return bytes.Contains(src, c) }) {
+			return nil
 		}
 		f, err := parser.ParseFile(fset, path, src, parser.SkipObjectResolution)
 		if err != nil {

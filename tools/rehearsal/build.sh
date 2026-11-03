@@ -93,8 +93,9 @@ build() {
 build "$prev_src" "$out/prev" "$prev_version" 0
 build "$cur_src" "$out/cur" "$cur" $((rev + 1))
 build "$cur_src" "$out/next" "$next" $((rev + 1))
-# story 51.18 (scenario 13): a release after the failing one that passes
-build "$cur_src" "$out/after" "$after" $((rev + 1))
+# story 51.18 (scenario 13): a release after the failing one that passes. It carries the
+# failing release's migration too (rev+2, kept by the rollback: afterSpec), so it knows it
+build "$cur_src" "$out/after" "$after" $((rev + 2))
 
 # story 51.18 (scenarios 13, 14): this commit's tool.yt-dlp pack for this machine's
 # platform, built by the release's own pack build for each of this commit's versions,

@@ -3,6 +3,7 @@ package components
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"testing"
 	"time"
 
@@ -101,12 +102,13 @@ func TestPGMachineOverride(t *testing.T) {
 		}
 	}
 	_ = rows.Close()
-	if len(off) != 2 || off[0] != "extract" || off[1] != "transcribe" {
+	// transcription's three stages (the second listen is a stage of its own since slot 0174)
+	if !slices.Equal(off, []string{"extract", "second_listen", "transcribe"}) {
 		t.Fatalf("switched off %v", off)
 	}
 	// the machine's own stage switches read the same (what a release before Epic 51 obeys)
 	var n2 int
-	if err := n.db.QueryRow(`SELECT count(*) FROM cluster_node_stage_switches($1::uuid) WHERE NOT enabled`, n.id).Scan(&n2); err != nil || n2 != 2 {
+	if err := n.db.QueryRow(`SELECT count(*) FROM cluster_node_stage_switches($1::uuid) WHERE NOT enabled`, n.id).Scan(&n2); err != nil || n2 != 3 {
 		t.Fatalf("the machine's switches: %d %v", n2, err)
 	}
 	// follow the home: the machine reads enabled again, the switches go

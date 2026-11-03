@@ -144,6 +144,27 @@ func diffLists(t *testing.T, what string, before, after []string) {
 	}
 }
 
+// keptStages is after's rows for the stages before had. A stage new with this release (a
+// migration adds it: the second listen since slot 0174) is no change to what runs today,
+// but it must come in on, not off or paused.
+func keptStages(t *testing.T, before, after []string) []string {
+	t.Helper()
+	had := map[string]bool{}
+	for _, row := range before {
+		had[strings.Fields(row)[0]] = true
+	}
+	var out []string
+	for _, row := range after {
+		f := strings.Fields(row)
+		if had[f[0]] {
+			out = append(out, row)
+		} else if row != f[0]+" enabled=true reason=- paused=false" {
+			t.Errorf("job_stages: the new stage %s came in %s", f[0], row)
+		}
+	}
+	return out
+}
+
 // =====================================================================================
 // 12 No behaviour change: existing installs keep running what they run.
 // =====================================================================================
@@ -186,7 +207,7 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 
 	after := home.componentsHome(db)
 	diffLists(t, "the supervisor's processes", before.Processes, after.Processes)
-	diffLists(t, "job_stages", before.Stages, after.Stages)
+	diffLists(t, "job_stages", before.Stages, keptStages(t, before.Stages, after.Stages))
 	diffLists(t, "extensions", before.Extensions, after.Extensions)
 	if before.HDHR != after.HDHR {
 		t.Errorf("hdhr_device.enabled %s -> %s", before.HDHR, after.HDHR)
@@ -317,4 +338,19 @@ func grepLines(s, sub string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// keptStages: a stage new with this release is no change when it comes in on.
+func TestKeptStages(t *testing.T) {
+	before := []string{"extract enabled=true reason=- paused=false", "transcribe enabled=false reason=operator paused=false"}
+	after := []string{"extract enabled=true reason=- paused=false", "second_listen enabled=true reason=- paused=false",
+		"transcribe enabled=false reason=operator paused=false"}
+	if got := keptStages(t, before, after); !reflect.DeepEqual(got, before) {
+		t.Fatalf("kept %v", got)
+	}
+	ft := &testing.T{}
+	keptStages(ft, before, append(after, "zz enabled=false reason=component_off paused=false"))
+	if !ft.Failed() {
+		t.Fatal("a new stage that came in off was not reported")
+	}
 }

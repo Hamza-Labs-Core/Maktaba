@@ -314,8 +314,15 @@ func writeTar(ctx context.Context, w io.Writer, files []offlineFile, at time.Tim
 // Import installs every item of an offline file (a .tar, or a folder holding its
 // contents) as an install from the network is done, from the file. A file for another
 // version or platform is refused before anything else is read. It returns the ids
-// installed.
+// installed. p is named absolutely, with no ".." (the CLI and the package's folder make
+// it so): anything else is refused before it is opened.
 func (m *Manager) Import(ctx context.Context, p string) ([]string, error) {
+	if !filepath.IsAbs(p) {
+		return nil, wrap(ReasonInstallFailed, nil, fmt.Errorf("%q: not an absolute path", p))
+	}
+	if strings.Contains(p, "..") {
+		return nil, wrap(ReasonInstallFailed, nil, fmt.Errorf("%q: a path with a .. element in it", p))
+	}
 	if info, err := os.Stat(p); err == nil && info.IsDir() {
 		return m.importDir(ctx, p)
 	}
