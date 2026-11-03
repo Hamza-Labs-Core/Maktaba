@@ -9,7 +9,7 @@ require (
 
 require github.com/BurntSushi/toml v1.6.0
 
-require github.com/klauspost/compress v1.20.1 // indirect
+require github.com/klauspost/compress v1.20.1
 
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
