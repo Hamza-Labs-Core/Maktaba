@@ -53,6 +53,19 @@ internal suspend fun loading(signedOut: () -> Unit, what: String, onFailure: (Fa
 }
 
 /**
+ * A list's first page read again, merged into the [shown] list in place: an item it has is
+ * replaced where it is, the items new before the first one shown go at the top, and the pages
+ * read after the first stay (the list keeps its length, and its scroll position with it).
+ */
+internal fun <T> mergeFirstPage(shown: MutableList<T>, first: List<T>, id: (T) -> String) {
+    val fresh = first.associateBy(id)
+    for (i in shown.indices) fresh[id(shown[i])]?.let { if (it != shown[i]) shown[i] = it }
+    val have = shown.map(id).toSet()
+    val newOnes = first.takeWhile { id(it) !in have }
+    if (newOnes.isNotEmpty()) shown.addAll(0, newOnes)
+}
+
+/**
  * The pinned first, in their pin order, then the rest in [order] (the ids as the home sent them;
  * by default the list's own order) (FR-14).
  */
@@ -132,9 +145,14 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
         try {
             loading(signedOut, "player series", { seriesProblem = it }) {
                 val r = client.seriesPage(page)
-                val have = if (page == 0) emptySet() else series.map { it.id }.toSet()
-                series = (if (page == 0) emptyList() else series) + r.items.filter { it.id !in have }
-                seriesNext = if (r.more) page + 1 else null
+                if (page == 0 && seriesLoaded && series.isNotEmpty()) {
+                    // shown again: in place, the pages scrolled to kept (as LibraryState.reload)
+                    series = series.toMutableList().also { mergeFirstPage(it, r.items) { s -> s.id } }
+                } else {
+                    val have = if (page == 0) emptySet() else series.map { it.id }.toSet()
+                    series = (if (page == 0) emptyList() else series) + r.items.filter { it.id !in have }
+                    seriesNext = if (r.more) page + 1 else null
+                }
                 seriesProblem = null
                 seriesLoaded = true
             }
@@ -220,12 +238,26 @@ class LibraryState(private val client: ApiClient, val id: String, private val si
         loading(signedOut, "player facets", {}) { facets = client.videoFacets(id) }
     }
 
-    /** The grid's first page, for the chosen facets and sort. */
+    /** The facets and sort [videos] were read for. */
+    private var shownFor: String? = null
+
+    /**
+     * The grid's first page, for the chosen facets and sort. Read again for the same ones (the
+     * page shown again: another section and back, a fold, pull to refresh), it updates the grid in
+     * place: the videos it has where they are, a new one at the top, the pages scrolled to kept
+     * (reading the first page alone cut the grid to it, and its position with it).
+     */
     suspend fun reload() = loading(signedOut, "player library videos", ::failed) {
+        val key = "${sort.name}|$language|$speaker"
         val page = client.videoPage(query())
-        videos.clear()
-        videos.addAll(page.items)
-        next = page.next
+        if (loaded && shownFor == key && videos.isNotEmpty()) {
+            mergeFirstPage(videos, page.items) { it.id }
+        } else {
+            videos.clear()
+            videos.addAll(page.items)
+            next = page.next
+        }
+        shownFor = key
         problem = null
         loaded = true
     }

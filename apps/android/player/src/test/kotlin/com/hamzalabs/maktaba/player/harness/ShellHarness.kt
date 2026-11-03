@@ -15,6 +15,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.junit4.ComposeContentTestRule
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Density
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import kotlin.math.abs
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
 import androidx.window.core.layout.computeWindowSizeClass
@@ -37,6 +49,17 @@ enum class Window(val widthDp: Int, val heightDp: Int, val qualifiers: String) {
     FoldableWide(841, 673, "w841dp-h673dp-xhdpi"),
     /** A large tablet in landscape. */
     Tablet(1280, 800, "w1280dp-h800dp-xhdpi"),
+    /** Galaxy Z Fold 5/6 closed (cover): 904 × 2316 px at 420 dpi. */
+    FoldCover(344, 882, "w344dp-h882dp-420dpi"),
+    /**
+     * Motorola Razr Fold (2026) closed (cover): 1080 × 2520 px, 6.6" (~415 ppi). Its density is
+     * not published: 440 dpi (2.75) is an estimate from the owner's screenshot (the bar's 80 dp
+     * and the list's 20 sp lines measure ~2.7 px per dp). Its inner screen (2232 × 2484 px,
+     * 8.1") opens as an expanded window, as [FoldableWide].
+     */
+    RazrFoldCover(393, 916, "w393dp-h916dp-440dpi"),
+    /** Pixel 9 Pro Fold closed (outer): 1080 × 2424 px at 420 dpi. */
+    PixelFoldCover(411, 923, "w411dp-h923dp-420dpi"),
 }
 
 /**
@@ -77,10 +100,12 @@ fun ComposeContentTestRule.setShell(
     tabletop: Boolean = false,
     immersive: Boolean = false,
     info: WindowAdaptiveInfo = window.info(tabletop),
+    fontScale: Float = 1f,
     screens: PlayerScreens = AppScreens,
 ) {
     setContent {
-        MaktabaTheme(ThemeMode.Dark) {
+        val density = LocalDensity.current
+        CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) { MaktabaTheme(ThemeMode.Dark) {
             Surface {
                 if (home != null) {
                     CompositionLocalProvider(LocalPlayerHome provides home.home) {
@@ -90,8 +115,39 @@ fun ComposeContentTestRule.setShell(
                     PlayerShell(sections = sections, adaptiveInfo = info, immersive = immersive, screens = screens)
                 }
             }
-        }
+        } }
     }
+}
+
+/**
+ * The bottom bar's labels line up: each shown one is one line, whole, inside the screen and
+ * centred under its item, all at the same top and height (the owner's cover screen: a label that
+ * wrapped sat higher than the others and ran into the screen's edge). A bar that shows the
+ * selected label only (a large text size: Material draws the others transparent, off their
+ * place) is checked on the selected one. [selected] is always checked.
+ */
+fun ComposeContentTestRule.assertBarLabelsAligned(labels: Map<String, String>, selected: String = labels.keys.first()) {
+    val width = onRoot().fetchSemanticsNode().size.width
+    val nodes = labels.mapValues { (tag, text) ->
+        onAllNodes(hasText(text) and hasAnyAncestor(hasTestTag(tag)), useUnmergedTree = true).fetchSemanticsNodes().single()
+    }
+    // every label at one top: all shown; else the selected one only
+    val all = nodes.values.map { it.boundsInRoot.top }.let { tops -> tops.all { abs(it - tops[0]) <= 1f } }
+    val checked = if (all) nodes else nodes.filterKeys { it == selected }
+    checked.forEach { (tag, node) ->
+        val text = labels.getValue(tag)
+        val item = onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().single().boundsInRoot
+        val layout = mutableListOf<TextLayoutResult>()
+        node.config[SemanticsActions.GetTextLayoutResult].action!!.invoke(layout)
+        assertEquals("$text: one line", 1, layout.single().lineCount)
+        assertFalse("$text: whole, not cut", layout.single().isLineEllipsized(0))
+        val b = node.boundsInRoot
+        assertTrue("$text inside the screen: $b in 0..$width", b.left >= 0f && b.right <= width.toFloat())
+        assertTrue("$text centred under its item: $b, item $item", abs(b.center.x - item.center.x) <= 2f)
+        assertTrue("$text inside its item: $b, item $item", b.left >= item.left - 1f && b.right <= item.right + 1f)
+    }
+    val heights = checked.values.map { it.boundsInRoot.height }
+    assertTrue("labels of one height: $heights", heights.all { abs(it - heights[0]) <= 1f })
 }
 
 /**

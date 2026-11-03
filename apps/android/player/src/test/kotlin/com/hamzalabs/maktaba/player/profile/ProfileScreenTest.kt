@@ -363,8 +363,61 @@ class ProfileScreenTest {
         assertTrue(problems.distinct().joinToString("\n"), problems.isEmpty())
     }
 
+    // ---------- shown again (the owner: "pages should be cached while waiting updates when switching") ----------
+
+    private val release = java.util.concurrent.CountDownLatch(1)
+
     @After
-    fun noLeak() = Unit
+    fun letGo() = release.countDown()
+
+    @Test
+    fun historyShownAgainIsTheLastOneAtOnceThenItsUpdateInPlace() {
+        var reads = 0
+        home.answer("/api/me/history") {
+            reads++
+            if (reads == 1) return@answer json(ProfileHome.HISTORY)
+            release.await(20, java.util.concurrent.TimeUnit.SECONDS)
+            json(ProfileHome.HISTORY.replace("Omar, Episode 1", "Omar, Episode 1 (new cut)"))
+        }
+        open()
+        row("profile-history").performClick()
+        waitForTag("history-v2")
+
+        compose.onNodeWithTag("section-Home").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("section-Profile").performClick()
+        compose.waitForIdle()
+
+        // at once: the rows read last, a thin bar while they are read again; never the spinner
+        compose.onNodeWithTag("history-v2").assertExists()
+        assertTrue(compose.onAllNodes(hasTestTag("profile-loading")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(hasTestTag("revalidating"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty())
+
+        release.countDown()
+        waitFor("Omar, Episode 1 (new cut)")
+        compose.onNodeWithTag("history-v2").assertExists()
+        gone("revalidating")
+    }
+
+    @Test
+    fun aReadAgainThatFailsKeepsTheRows() {
+        var reads = 0
+        home.answer("/api/me/history") {
+            reads++
+            if (reads == 1) json(ProfileHome.HISTORY) else json("""{"title":"boom","status":500}""", 500)
+        }
+        open()
+        row("profile-history").performClick()
+        waitForTag("history-v2")
+        compose.onNodeWithTag("section-Home").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("section-Profile").performClick()
+        compose.settledUntil(5_000) { reads >= 2 }
+        compose.waitForIdle()
+        // the rows stay; the failure is a snackbar, not the page's error
+        compose.onNodeWithTag("history-v2").assertExists()
+        compose.onNodeWithTag("history-v4").assertExists()
+    }
 }
 
 /** Android 13's per-app locales, in memory. */

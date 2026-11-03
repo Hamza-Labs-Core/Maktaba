@@ -79,9 +79,9 @@ internal fun toneOf(state: String): Color = when (state) {
  */
 @Composable
 fun UpdatesScreen(remote: Remote, account: @Composable () -> Unit) {
-    var ov by remember { mutableStateOf<UpdatesOverview?>(null) }
-    var run by remember { mutableStateOf<UpdateRunView?>(null) }
-    var chosen by remember { mutableStateOf<String?>(null) }
+    var ov by remote.kept<UpdatesOverview?>("updates.overview") { null }
+    var run by remote.kept<UpdateRunView?>("updates.run") { null }
+    var chosen by remote.kept<String?>("updates.chosen") { null }
     var refreshing by remember { mutableStateOf(false) }
     suspend fun load() {
         val o = remote.load { updates() } ?: return
@@ -89,8 +89,8 @@ fun UpdatesScreen(remote: Remote, account: @Composable () -> Unit) {
         val id = (o.activeRun ?: o.lastRun)?.id
         run = if (id.isNullOrEmpty()) null else remote.load { updateRun(id) } ?: run?.takeIf { it.id == id }
     }
-    Polling(15_000) { load() }
-    UpdatesContent(ov, run, chosen, { chosen = it }, remote, account, refreshing) {
+    val revalidating = Polling(15_000) { load() }
+    UpdatesContent(ov, run, chosen, { chosen = it }, remote, account, refreshing, revalidating) {
         refreshing = true; remote.clear(); load(); refreshing = false
     }
 }
@@ -105,6 +105,7 @@ internal fun UpdatesContent(
     remote: Remote,
     account: @Composable () -> Unit,
     refreshing: Boolean,
+    revalidating: Boolean,
     onRefresh: suspend () -> Unit,
 ) {
     val target = run?.targets?.firstOrNull { "target:${it.nodeId}" == chosen }
@@ -117,6 +118,7 @@ internal fun UpdatesContent(
         account = account,
         refreshing = refreshing,
         onRefresh = onRefresh,
+        revalidating = revalidating && ov != null,
         chosenTitle = when {
             showRun -> stringResource(R.string.update_to, run!!.version)
             target != null -> target.name.ifEmpty { target.nodeId.take(8) }
@@ -469,8 +471,8 @@ internal fun StageFailures(groups: List<FailureGroup>?) {
         groups.isEmpty() -> Text(stringResource(R.string.none), color = MaterialTheme.colorScheme.onSurfaceVariant)
         else -> groups.forEach { g ->
             Column {
-                Text(stringResource(R.string.count_label, g.count, g.label), style = MaterialTheme.typography.bodyLarge)
-                g.sampleMessage?.takeIf { it.isNotEmpty() }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3) }
+                Text(stringResource(R.string.count_label, g.count, say.groupTitle(g)), style = MaterialTheme.typography.bodyLarge)
+                g.sampleMessage?.takeIf { it.isNotEmpty() }?.let { Text(readableMessage(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3) }
                 g.lastAt?.let { Text(stringResource(R.string.last_at, say.whenText(it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }

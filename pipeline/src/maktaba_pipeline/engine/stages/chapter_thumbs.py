@@ -22,6 +22,7 @@ from ...thumbnail.generator import (
     generate_chapter_thumbs,
     thumbnail_dir_for,
 )
+from ..causes import brief
 from ..context import StageContext, StageFailure
 from ..graph import CHAPTER_THUMBS_VERSION, StageResult, Subject
 from ..hashing import canonical_hash
@@ -103,7 +104,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
                 runner=_runner,
             )
         except Exception as exc:  # ThumbnailError and I/O: the share can come back
-            raise StageFailure("chapter_frames_failed", str(exc)[-300:]) from exc
+            raise StageFailure("chapter_frames_failed", brief(str(exc))) from exc
         await ctx.progress("frames", len(chapters), len(chapters), force=True)
     removed = _drop_stale(out_dir, {seq for seq, _ in chapters}) if out_dir.is_dir() else 0
     return StageResult(
