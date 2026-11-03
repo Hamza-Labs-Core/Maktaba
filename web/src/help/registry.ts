@@ -370,6 +370,17 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["no_release", "code-download"],
   ["withdrawn", "code-download"],
   ["turned_prerelease", "code-download"],
+  // updates#code-packs (Epic 51 story 51.18: the parts added later, fetched before the switch)
+  ["pack_verify_failed", "code-packs"],
+  ["pack_download_failed", "code-packs"],
+  ["index_missing", "code-packs"],
+  ["index_expired", "code-packs"],
+  ["index_wrong_version", "code-packs"],
+  ["index_replayed", "code-packs"],
+  ["pack_missing", "code-packs"],
+  ["components_busy", "code-packs"],
+  ["packs_disabled", "code-packs"],
+  ["packs_failed", "code-packs"],
   // updates#run-failed
   ["bad_job", "run-failed"],
   ["cancelled", "run-failed"],

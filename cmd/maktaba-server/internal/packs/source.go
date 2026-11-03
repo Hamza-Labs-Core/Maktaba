@@ -61,6 +61,10 @@ type Net struct {
 	HF string
 	// Token is the Hugging Face token for a gated model ("" none).
 	Token func() string
+	// URLs, when set, are the release's files by name (an update's job: the asset URLs
+	// the home's catalog keeps, story 51.18): a name not in it is not found, and Releases
+	// is not used.
+	URLs map[string]string
 }
 
 // NewNet is the network source of repo ("owner/name") with c (nil: a client with no
@@ -75,6 +79,9 @@ func NewNet(repo string, c *http.Client) *Net {
 func (n *Net) Kind() string { return "network" }
 
 func (n *Net) releaseURL(version, name string) string {
+	if n.URLs != nil {
+		return n.URLs[name]
+	}
 	return strings.TrimRight(n.Releases, "/") + "/v" + url.PathEscape(version) + "/" + url.PathEscape(name)
 }
 
@@ -105,6 +112,9 @@ func (n *Net) Signed(ctx context.Context, version string) (Signed, error) {
 }
 
 func (n *Net) small(ctx context.Context, u string) ([]byte, error) {
+	if u == "" {
+		return nil, errNotFound
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
@@ -162,6 +172,9 @@ func (n *Net) resume(ctx context.Context, u, token, dst string, size int64, prog
 	if have == size {
 		progress(have)
 		return nil
+	}
+	if u == "" {
+		return errNotFound
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {

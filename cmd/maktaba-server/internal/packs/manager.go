@@ -295,30 +295,41 @@ func (m *Manager) index(ctx context.Context, id string, s *session) (*rv.Verifie
 		return s.idx, nil
 	}
 	m.step(id, DetailIndex, rv.ComponentsIndexName(m.Version), 0, 0)
-	signed, err := s.src.Signed(ctx, m.Version)
+	v, signed, err := m.VerifyIndex(ctx, m.Version, s.src)
 	if err != nil {
-		return nil, wrap(ReasonDownloadFailed, map[string]any{"name": "release"}, err)
+		return nil, err
+	}
+	s.idx, s.signed = v, signed
+	return v, nil
+}
+
+// VerifyIndex fetches version's signed files and component index from src and verifies
+// them (the running release's for an install, the next release's for an update's packs
+// step: story 51.18). Every failure is an *Error with its reason.
+func (m *Manager) VerifyIndex(ctx context.Context, version string, src Source) (*rv.VerifiedIndex, Signed, error) {
+	signed, err := src.Signed(ctx, version)
+	if err != nil {
+		return nil, signed, wrap(ReasonDownloadFailed, map[string]any{"name": "release"}, err)
 	}
 	if m.Trusted == nil {
-		return nil, fail(ReasonVerifyFailed, nil, "this build cannot verify releases")
+		return nil, signed, fail(ReasonVerifyFailed, nil, "this build cannot verify releases")
 	}
 	tm, err := m.Trusted(ctx)
 	if err != nil {
-		return nil, wrap(ReasonVerifyFailed, nil, err)
+		return nil, signed, wrap(ReasonVerifyFailed, nil, err)
 	}
-	v, err := rv.VerifyComponentsIndex(rv.ComponentsInput{Tag: "v" + m.Version, Identity: m.Identity,
+	v, err := rv.VerifyComponentsIndex(rv.ComponentsInput{Tag: "v" + version, Identity: m.Identity,
 		Checksums: signed.Checksums, Bundle: signed.Bundle, Manifest: signed.Manifest, TrustedMaterial: tm,
-		Index: signed.Index, ServerVersion: m.Version, Now: m.now(), Seen: rv.IndexWatermarkFile{Path: m.Watermark}})
+		Index: signed.Index, ServerVersion: version, Now: m.now(), Seen: rv.IndexWatermarkFile{Path: m.Watermark}})
 	if err != nil {
 		reason := rv.IndexReason(err)
 		if signed.Index == nil && reason == ReasonVerifyFailed {
 			// the release names an index the source did not give
-			return nil, wrap(ReasonDownloadFailed, map[string]any{"name": rv.ComponentsIndexName(m.Version)}, err)
+			return nil, signed, wrap(ReasonDownloadFailed, map[string]any{"name": rv.ComponentsIndexName(version)}, err)
 		}
-		return nil, wrap(reason, map[string]any{"version": m.Version}, err)
+		return nil, signed, wrap(reason, map[string]any{"version": version}, err)
 	}
-	s.idx, s.signed = v, signed
-	return v, nil
+	return v, signed, nil
 }
 
 // room refuses an install that needs more than the disk has: need plus 10 %.
@@ -457,6 +468,7 @@ func (m *Manager) place(ctx context.Context, id, staging, folder string) error {
 	}
 	_ = os.Remove(filepath.Join(m.Layout.Dir(id), removingFile))
 	_ = os.Remove(filepath.Join(m.Layout.Dir(id), removedFile))
+	_ = os.Remove(filepath.Join(m.Layout.Dir(id), missingFile))
 	return nil
 }
 

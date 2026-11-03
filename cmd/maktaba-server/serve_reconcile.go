@@ -88,6 +88,10 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	for _, did := range m.Layout.Recover(m.Version) {
 		fmt.Fprintf(log, "[packs] %s\n", did)
 	}
+	// story 51.18: a model revision an update staged, or the one a rollback came back to
+	for _, did := range m.RecoverModels() {
+		fmt.Fprintf(log, "[packs] %s\n", did)
+	}
 	run := &packs.Runner{M: m, Machine: machine, Off: rec.Off}
 	rec.Assets, rec.OnDesired = m, run.Desired
 	db, err := sql.Open("postgres", dsn)
