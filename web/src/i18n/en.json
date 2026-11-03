@@ -6037,7 +6037,7 @@
   "components.phase.draining": "Finishing work",
   "components.phase.failed": "Failed",
   "components.reason.dependency_off": "Needs {component}, which is off.",
-  "components.reason.licence_missing": "Your licence does not include this.",
+  "components.reason.licence_missing": "Needs the {required_tier} plan. This home is on {tier}.",
   "components.reason.platform_unsupported": "This machine's system cannot run it.",
   "components.reason.not_enough_memory": "This machine does not have enough memory.",
   "components.reason.verify_failed": "The download did not match its signature and was deleted.",
@@ -6196,5 +6196,9 @@
   "components.audit.bundle_apply": "Bundle applied",
   "components.audit.other": "Changed",
   "help.topic.components.title": "Components",
-  "help.topic.components.summary": "Turn parts of your home on and off, stop one until you start it again, and see why a part is waiting."
+  "help.topic.components.summary": "Turn parts of your home on and off, stop one until you start it again, and see why a part is waiting.",
+  "components.licence.refused": "This part is not in this home's plan. Apply a licence in Settings → Subscription.",
+  "components.licence.waiting": "Paused until the plan includes it again. Your choice is kept.",
+  "components.licence.locked": "Needs a plan",
+  "components.licence.openSubscription": "Open Subscription"
 }

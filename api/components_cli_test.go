@@ -129,6 +129,21 @@ func TestComponentsCLIRefusals(t *testing.T) {
 	}
 }
 
+// Story 51.19: `components enable cloud.relay` on a free home is refused with the plan it
+// needs and the plan the home is on; nothing is applied.
+func TestComponentsCLILicenceRefusal(t *testing.T) {
+	f := &fakeComponents{preview: components.Preview{Refused: []components.Refusal{{ID: "cloud.relay",
+		Code: components.CodeLicence, Detail: "cloud.relay needs the cloud_relay licence", Licence: "cloud_relay", Tier: "free"}}}}
+	c, _, errOut := cli(f, false, "")
+	if code := runCLI(c, "enable", "cloud.relay", "--yes"); code != exitComponentsFailed || len(f.applied) != 0 {
+		t.Fatalf("exit %d, applied %v", code, f.applied)
+	}
+	if !strings.Contains(errOut.String(), "Refused (licence_missing)") ||
+		!strings.Contains(errOut.String(), "Needs the Home plan. This home is on Free.") {
+		t.Fatalf("output: %s", errOut)
+	}
+}
+
 // list prints the table and the bundle line; bundle with no name prints the line.
 func TestComponentsCLIList(t *testing.T) {
 	c, out, _ := cli(&fakeComponents{}, false, "")

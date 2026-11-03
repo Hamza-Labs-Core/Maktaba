@@ -190,4 +190,11 @@
     <string name="split_widen_list">Widen the list</string>
     <string name="split_narrow_list">Narrow the list</string>
     <string name="split_list_share">The list is %1$d%% of the width</string>
+    <!-- a component the home's plan does not include (Epic 51 story 51.19); %1$s the plan it
+         needs (Home, Pro), %2$s the plan the home is on -->
+    <string name="components_reason_licence_missing">Needs the %1$s plan. This home is on %2$s.</string>
+    <string name="components_licence_refused">This part is not in this home\'s plan. Apply a licence in Settings → Subscription.</string>
+    <string name="components_licence_waiting">Paused until the plan includes it again. Your choice is kept.</string>
+    <string name="components_licence_locked">Needs a plan</string>
+    <string name="components_licence_open_subscription">Open Subscription</string>
 </resources>

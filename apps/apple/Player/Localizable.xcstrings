@@ -31,6 +31,46 @@
         }
       }
     },
+    "Needs a plan" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتطلب خطة"
+          }
+        }
+      }
+    },
+    "Needs the %1$@ plan. This home is on %2$@." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتطلب خطة %1$@. هذا الجهاز الرئيسي على خطة %2$@."
+          }
+        }
+      }
+    },
+    "Open Subscription" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فتح الاشتراك"
+          }
+        }
+      }
+    },
+    "Paused until the plan includes it again. Your choice is kept." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "متوقف حتى تشمله الخطة مرة أخرى. اختيارك محفوظ."
+          }
+        }
+      }
+    },
     "Play" : {
       "localizations" : {
         "ar" : {
@@ -167,6 +207,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "السمة"
+          }
+        }
+      }
+    },
+    "This part is not in this home's plan. Apply a licence in Settings → Subscription." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هذا الجزء غير مشمول في خطة هذا الجهاز الرئيسي. طبّق ترخيصًا من الإعدادات ← الاشتراك."
           }
         }
       }

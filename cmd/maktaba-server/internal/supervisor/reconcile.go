@@ -48,6 +48,7 @@ const (
 	reasonCrashLoop      = "crash_loop"
 	reasonDependencyOff  = "dependency_off"
 	reasonHeld           = "held"
+	reasonLicence        = "licence_missing"
 	reasonPlatform       = "platform_unsupported"
 	reasonMemory         = "not_enough_memory"
 	reasonReconcileOff   = "reconcile_off"
@@ -425,6 +426,12 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 		dec.conds = append(dec.conds, cond(components.CondReady, condFalse, reasonHeld,
 			map[string]any{"by": d.Hold.By}))
 		return dec
+	case comp.Licence != "" && !d.LicensedAt(r.Now()):
+		// the licence does not grant it (story 51.19): it waits, the want kept
+		dec.phase = components.PhaseWaiting
+		dec.conds = append(dec.conds, cond(components.CondLicensed, condFalse, reasonLicence,
+			map[string]any{"feature": comp.Licence}))
+		return dec
 	}
 	dec.phase = components.PhaseWaiting
 	if len(comp.Platforms) > 0 && !slices.Contains(comp.Platforms, r.Platform) {
@@ -492,7 +499,8 @@ func (r *Reconciler) requirements(id string, procs map[string][]procView, desire
 				groupMet = true
 				break
 			}
-			on := !has || (d.Want == components.WantEnabled && d.Hold == nil)
+			on := !has || (d.Want == components.WantEnabled && d.Hold == nil &&
+				(comp.Licence == "" || d.LicensedAt(r.Now())))
 			if own := procs[alt]; len(own) > 0 {
 				if on && phaseOfProcs(own) == components.PhaseRunning && gateOpen(own) {
 					groupMet = true

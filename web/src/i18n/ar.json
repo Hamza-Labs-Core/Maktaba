@@ -6050,7 +6050,7 @@
   "components.phase.draining": "يُنهي العمل",
   "components.phase.failed": "فشل",
   "components.reason.dependency_off": "يحتاج {component} وهو متوقف.",
-  "components.reason.licence_missing": "ترخيصك لا يشمل هذا.",
+  "components.reason.licence_missing": "يتطلب خطة {required_tier}. هذا الجهاز الرئيسي على خطة {tier}.",
   "components.reason.platform_unsupported": "نظام هذا الجهاز لا يستطيع تشغيله.",
   "components.reason.not_enough_memory": "ذاكرة هذا الجهاز غير كافية.",
   "components.reason.verify_failed": "التنزيل لم يطابق توقيعه فحُذف.",
@@ -6209,5 +6209,9 @@
   "components.audit.bundle_apply": "طُبّقت حزمة",
   "components.audit.other": "تغيّر",
   "help.topic.components.title": "المكوّنات",
-  "help.topic.components.summary": "شغّل أجزاء جهازك الرئيسي وأوقفها، وأوقف جزءًا حتى تشغّله من جديد، واعرف لماذا ينتظر جزء ما."
+  "help.topic.components.summary": "شغّل أجزاء جهازك الرئيسي وأوقفها، وأوقف جزءًا حتى تشغّله من جديد، واعرف لماذا ينتظر جزء ما.",
+  "components.licence.refused": "هذا الجزء غير مشمول في خطة هذا الجهاز الرئيسي. طبّق ترخيصًا من الإعدادات ← الاشتراك.",
+  "components.licence.waiting": "متوقف حتى تشمله الخطة مرة أخرى. اختيارك محفوظ.",
+  "components.licence.locked": "يتطلب خطة",
+  "components.licence.openSubscription": "فتح الاشتراك"
 }

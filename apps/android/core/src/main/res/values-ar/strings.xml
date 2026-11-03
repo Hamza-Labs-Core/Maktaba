@@ -185,4 +185,9 @@
     <string name="split_widen_list">توسيع القائمة</string>
     <string name="split_narrow_list">تضييق القائمة</string>
     <string name="split_list_share">القائمة %1$d٪ من العرض</string>
+    <string name="components_reason_licence_missing">يتطلب خطة %1$s. هذا الجهاز الرئيسي على خطة %2$s.</string>
+    <string name="components_licence_refused">هذا الجزء غير مشمول في خطة هذا الجهاز الرئيسي. طبّق ترخيصًا من الإعدادات ← الاشتراك.</string>
+    <string name="components_licence_waiting">متوقف حتى تشمله الخطة مرة أخرى. اختيارك محفوظ.</string>
+    <string name="components_licence_locked">يتطلب خطة</string>
+    <string name="components_licence_open_subscription">فتح الاشتراك</string>
 </resources>

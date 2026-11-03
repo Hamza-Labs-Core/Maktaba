@@ -133,6 +133,8 @@ catalog:
   - 'api/node_bootstrap.go'
   - 'api/internal/router/**'
   - 'api/internal/flags/declarations.go'
+  - 'api/internal/flags/licence.go'
+  - 'api/internal/flags/catalog_licence_test.go'
   - 'streaming/*_wire.go'
   - 'streaming/main.go'
   - 'streaming/sharemap.go'
