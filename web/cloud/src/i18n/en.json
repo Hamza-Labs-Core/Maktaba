@@ -115,6 +115,7 @@
   "billing.status.unpaid": "Unpaid",
   "billing.status.incomplete": "Incomplete",
   "billing.status.none": "No subscription",
+  "billing.status.inactive": "Inactive",
   "billing.interval.month": "Monthly",
   "billing.interval.year": "Yearly",
   "billing.manage": "Manage billing",

@@ -53,11 +53,13 @@ function routes(me: Record<string, unknown> = {}, paymentsEnabled = true) {
 
 describe("billing", () => {
   it("shows paid plans as coming soon while payments are not set up", async () => {
-    const f = stubFetch(routes({}, false));
+    // a plan an admin set back to free by hand is "inactive"
+    const f = stubFetch(routes({ status: "inactive" }, false));
     renderAt("/billing");
     expect(
       await screen.findByText("Paid plans are coming soon: payments are not set up yet.")
     ).toBeInTheDocument();
+    expect(screen.getByText("Inactive")).toBeInTheDocument();
     const pro = screen.getByRole("button", { name: "Payments for Pro are coming soon" });
     const family = screen.getByRole("button", { name: "Payments for Family are coming soon" });
     expect(pro).toBeDisabled();

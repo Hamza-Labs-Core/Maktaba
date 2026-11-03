@@ -115,6 +115,7 @@
   "billing.status.unpaid": "غير مدفوع",
   "billing.status.incomplete": "غير مكتمل",
   "billing.status.none": "لا اشتراك",
+  "billing.status.inactive": "غير نشط",
   "billing.interval.month": "شهريًا",
   "billing.interval.year": "سنويًا",
   "billing.manage": "إدارة الفوترة",
