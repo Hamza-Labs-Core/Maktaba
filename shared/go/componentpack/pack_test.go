@@ -199,6 +199,14 @@ func TestUnpackRefuses(t *testing.T) {
 		"through a link": craft(t, "l\tsub\td\n"+fileLine("d/x", body),
 			entry{tar.Header{Name: "d", Typeflag: tar.TypeSymlink, Linkname: "sub"}, nil}, reg("d/x", body)),
 		"setuid mode": craft(t, strings.Replace(ok, "0644", "4755", 1), reg("a.txt", body)),
+		// story 51.16 T01: the rest of the unsafe entries
+		"case clash": craft(t, fileLine("A.txt", body)+ok, reg("A.txt", body), reg("a.txt", body)),
+		"case clash in a folder": craft(t, fileLine("D/a.txt", body)+fileLine("d/b.txt", body),
+			reg("D/a.txt", body), reg("d/b.txt", body)),
+		"windows drive": craft(t, ok, reg(`C:\x`, body)),
+		"unc path":      craft(t, ok, reg(`\\host\share\x`, body)),
+		"fifo": craft(t, ok+fileLine("p", nil), reg("a.txt", body),
+			entry{tar.Header{Name: "p", Typeflag: tar.TypeFifo}, nil}),
 	}
 	for name, pack := range cases {
 		t.Run(name, func(t *testing.T) {

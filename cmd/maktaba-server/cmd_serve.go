@@ -357,7 +357,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		if webSrv == nil {
 			return fmt.Errorf("nothing to run: --role web with --no-web leaves no services")
 		}
-		startComponents(ctx, cfg, nil, false, compLoops, os.Stderr)
+		startComponents(ctx, cfg, nil, false, compLoops, releaseDir, os.Stderr)
 		<-ctx.Done()
 		return shutdownWeb(webSrv)
 	}
@@ -426,7 +426,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	sup := supervisor.New(procs, policy, supOpts...)
 	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
 	// desired state seen, cached), then reconciled while serve runs
-	startComponents(ctx, cfg, sup, wholeMachine, compLoops, os.Stderr)
+	packsRoutes := startComponents(ctx, cfg, sup, wholeMachine, compLoops, releaseDir, os.Stderr)
 	if pg != nil {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)
@@ -458,6 +458,9 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	}
 	// the web's Storage & discovery settings (serve_config.go)
 	admin = newConfigAdmin(cfg, token, releaseDir).adminHandler(admin)
+	// Epic 51 story 51.16: install, remove and offline files of asset components (serve_packs.go)
+	packsRoutes.token = token
+	admin = packsRoutes.adminHandler(admin)
 	admin = logFilesAdmin(admin, token, logDirs)
 	admin = metricsAdmin(admin, logDirs.Updates)
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {

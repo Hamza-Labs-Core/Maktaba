@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,34 @@ type Spec struct {
 	// machine needs. Every package is checked against its hash in the constraints whatever
 	// the folder holds.
 	Wheelhouse string
+	// NoExtras builds the venv with no extras at all (runtime.ml removed, story 51.16):
+	// Extras "" is the bootstrap's default, not none.
+	NoExtras bool
+	// Offline installs from the wheelhouses alone and never from PyPI (a component
+	// pack's wheels: story 51.16). Wheelhouses are more folders beside Wheelhouse (each
+	// pack's wheels/); both need not hold the fetch's index.json.
+	Offline     bool
+	Wheelhouses []string
+}
+
+// findLinks is pip's find-links of an offline build: every wheelhouse as a file URL
+// (pip splits the variable at spaces, and a path may hold one).
+func (s Spec) findLinks() string {
+	var out []string
+	for _, d := range append([]string{s.Wheelhouse}, s.Wheelhouses...) {
+		if d == "" {
+			continue
+		}
+		if abs, err := filepath.Abs(d); err == nil {
+			d = abs
+		}
+		p := filepath.ToSlash(d)
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p // a Windows drive
+		}
+		out = append(out, (&url.URL{Scheme: "file", Path: p}).String())
+	}
+	return strings.Join(out, " ")
 }
 
 // wheelhouseIndex is the file a finished wheelhouse fetch writes last (homemirror).
@@ -239,7 +268,12 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 	// the home's wheelhouse alone first: a machine without PyPI builds its environment
 	// from it (a run that fails so is run again with PyPI too, below)
 	local := spec.wheelhouse()
-	if local != "" {
+	switch {
+	case spec.Offline:
+		// the packs' wheels alone: never PyPI (below, no second run with it)
+		local = ""
+		env = append(env[:len(env):len(env)], "PIP_FIND_LINKS="+spec.findLinks(), "PIP_NO_INDEX=1")
+	case local != "":
 		env = append(env[:len(env):len(env)], "PIP_FIND_LINKS="+local, "PIP_NO_INDEX=1")
 	}
 	// When ctx ends the bootstrap is asked to stop (ctrlbreak.Stopper: SIGTERM,
@@ -250,7 +284,10 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 	bootstrap := func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper) {
 		args := append([]string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py,
 			"--payload", spec.pipeline(), "--venv", spec.Venv}, extra...)
-		if spec.Extras != "" {
+		switch {
+		case spec.NoExtras:
+			args = append(args, "--extras", "")
+		case spec.Extras != "":
 			args = append(args, "--extras", spec.Extras)
 		}
 		cmd := exec.CommandContext(ctx, py, args...)

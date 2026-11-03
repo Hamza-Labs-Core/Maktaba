@@ -114,6 +114,7 @@ func hfCached(cfg config.Config, getenv func(string) string, repo string) bool {
 
 // ollamaModel: a model ("qwen2.5:7b") in the bundled server's store (<state>/models/ollama).
 func ollamaModel(state, model string) bool {
+	model, _, _ = strings.Cut(model, "@") // a pinned digest ("@sha256:…") is no part of the tag
 	name, tag, ok := strings.Cut(model, ":")
 	if !ok {
 		tag = "latest"

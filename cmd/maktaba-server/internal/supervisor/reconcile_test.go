@@ -304,6 +304,72 @@ func TestReconcileDependencyOff(t *testing.T) {
 	}
 }
 
+type fakeAssets map[string]bool
+
+func (f fakeAssets) Installed(id string) bool { return f[id] }
+
+// Story 51.16: a pack asset a component requires keeps it waiting until it is installed;
+// a model never does; with no desired row for the asset (before the seed) nothing waits.
+func TestReconcileWaitsForAPackAsset(t *testing.T) {
+	asset := func(id, src string) string {
+		files := ""
+		if strings.HasPrefix(src, "hf:") {
+			files = `files = [{ path = "m.bin", sha256 = "` + strings.Repeat("ab", 32) + `", size = 1 }]`
+		}
+		return fmt.Sprintf(`
+[[component]]
+id = %q
+kind = "asset"
+group = "runtimes"
+title_key = "components.%s.title"
+desc_key = "components.%s.desc"
+source = %q
+%s
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+since = "0.4.0"
+`, id, id, id, src, files)
+	}
+	cat := testCatalog(t, asset("runtime.x", "pack:runtime.x")+
+		asset("model.x", "hf:org/name@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf")+
+		procComp("stt", "fake/stt", `"runtime.x", "model.x"`, ""))
+	tab := &fakeTable{}
+	tab.add("stt", "stt", true)
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	assets := fakeAssets{}
+	r.Assets = assets
+	d := map[string]store.Desired{"stt": want("stt", "enabled", 1), "runtime.x": want("runtime.x", "installed", 1),
+		"model.x": want("model.x", "absent", 1)}
+	passWith(r, d)
+	if got := tab.takeCalls(); len(got) != 0 {
+		t.Fatalf("calls %v: stt opened before its pack was installed", got)
+	}
+	row, _ := st.row("stt")
+	var rm store.Condition
+	for _, c := range row.Conditions {
+		if c.Type == components.CondRequirementsMet {
+			rm = c
+		}
+	}
+	if row.Phase != components.PhaseWaiting || rm.Status != "unknown" || rm.Params["component"] != "runtime.x" {
+		t.Fatalf("stt %+v, want waiting on runtime.x", row)
+	}
+	assets["runtime.x"] = true
+	passWith(r, d)
+	if got := tab.takeCalls(); !slices.Equal(got, []string{"stt=true"}) {
+		t.Fatalf("calls %v: stt opens once the pack is in (the model never blocks)", got)
+	}
+	// no desired row for the pack: today's behaviour
+	tab2 := &fakeTable{}
+	tab2.add("stt", "stt", true)
+	r2, _ := newTestReconciler(cat, tab2, &fakeStore{})
+	r2.Assets = fakeAssets{}
+	passWith(r2, map[string]store.Desired{"stt": want("stt", "enabled", 1)})
+	if got := tab2.takeCalls(); !slices.Equal(got, []string{"stt=true"}) {
+		t.Fatalf("calls %v with no row for the pack", got)
+	}
+}
+
 // A component with no desired row runs as server.toml built it: a built process stays
 // open, a dormant one closed.
 func TestReconcileNoRowIsToday(t *testing.T) {

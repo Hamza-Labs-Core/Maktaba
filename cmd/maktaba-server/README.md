@@ -121,7 +121,19 @@ runner acts on nothing either.
 ```toml
 [components]
 reconcile = "on"         # on (default) | off: report only, act on nothing
+packs = "on"             # on (default) | off: install no pack or model (packs_disabled)
 ```
+
+**Asset components (Epic 51 story 51.16).** The supervisor installs and removes the
+asset components (runtime.ml, tool.yt-dlp, the Hugging Face models) under
+`<state>/components/<id>/`: a pack is downloaded to `.partial/` (resumed with HTTP
+Range), checked against the release's signed component index (size, then sha256),
+unpacked into a staging folder by the safe unpacker, prepared (runtime.ml: the venv
+rebuilt from the pack's wheels, never PyPI), renamed to `<version>_<digest12>/` and
+named by the `current` pointer file. Models go into the Hugging Face cache the
+pipeline reads, with `rev_<revision12>/model.json` as their record. A crash is
+tidied at the next boot (staging deleted, `current` repointed). Status rows are
+part `packs`. `packs = "off"` installs nothing new and reports what is on disk.
 
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve

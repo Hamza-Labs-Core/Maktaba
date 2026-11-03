@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -76,6 +77,11 @@ type SupervisorLoop struct {
 	component    string
 }
 
+// AssetState answers whether an asset component is installed on this machine.
+type AssetState interface {
+	Installed(id string) bool
+}
+
 // gateTable is what the reconciler reads and drives: *Supervisor (tests give a fake).
 type gateTable interface {
 	procViews() []procView
@@ -117,6 +123,13 @@ type Reconciler struct {
 	Platform string
 	FreeMB   func() int64
 	Now      func() time.Time
+	// Assets says which asset components are on this machine (story 51.16): a pack asset
+	// a component requires blocks it until installed (nil: assets are not checked).
+	// Models never block.
+	Assets AssetState
+	// OnDesired gets each desired state read from the database (the asset half acts on
+	// it: packs.Runner).
+	OnDesired func(desired map[string]store.Desired)
 
 	table gateTable
 
@@ -253,6 +266,9 @@ func (r *Reconciler) Run(ctx context.Context) {
 			r.desired, r.rev, r.fromDB = u.desired, u.rev, true
 			r.mu.Unlock()
 			n := r.pass(ctx)
+			if r.OnDesired != nil {
+				r.OnDesired(u.desired)
+			}
 			if changed {
 				if r.CachePath != "" && !r.Off {
 					if err := writeCompCache(r.CachePath, r.Machine, r.Bundle, u.desired, u.rev, r.Now()); err != nil {
@@ -454,19 +470,28 @@ func allDormant(ps []procView) bool {
 // requirements reports whether every requirement of id is met on this machine. When one
 // is not: unknown names a requirement that is on but not running yet, off one that is
 // turned off (dependency_off). A requirement the supervisor runs here must be Running;
-// one another runner runs (a stage group, a loop) must be enabled and not held; an asset
-// is not checked by the supervisor (installing and removing them is stories 51.15-51.16).
+// one another runner runs (a stage group, a loop) must be enabled and not held; a pack
+// asset with a desired row must be installed (Assets, story 51.16: waiting until it is);
+// a model, or any asset when Assets is nil, is not checked.
 func (r *Reconciler) requirements(id string, procs map[string][]procView, desired map[string]store.Desired) (met bool, unknown, off string) {
 	met = true
 	for _, req := range r.Catalog.Requires(id) {
 		groupMet, groupUnknown, groupOff := false, "", ""
 		for _, alt := range req.AnyOf {
 			comp, ok := r.Catalog.Get(alt)
+			d, has := desired[alt]
+			if ok && comp.Kind == components.KindAsset && r.Assets != nil && has &&
+				strings.HasPrefix(comp.SourceFor(r.Platform), "pack:") && !r.Assets.Installed(alt) {
+				// a pack asset not on this machine yet: waiting for its install
+				if groupUnknown == "" {
+					groupUnknown = alt
+				}
+				continue
+			}
 			if !ok || comp.Kind == components.KindAsset {
 				groupMet = true
 				break
 			}
-			d, has := desired[alt]
 			on := !has || (d.Want == components.WantEnabled && d.Hold == nil)
 			if own := procs[alt]; len(own) > 0 {
 				if on && phaseOfProcs(own) == components.PhaseRunning && gateOpen(own) {

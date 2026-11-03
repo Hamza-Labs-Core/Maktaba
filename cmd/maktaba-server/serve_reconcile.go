@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -59,9 +60,14 @@ func bootConfig(cfg config.Config, log io.Writer) config.Config {
 }
 
 // startComponents builds the reconciler for sup, primes its gates (before sup runs
-// anything) and runs it with the loops. With no reconciler the loops run as before.
+// anything) and runs it with the loops, and the asset half (story 51.16: packs) beside
+// it. With no reconciler the loops run as before. It returns the asset routes (their
+// token set by the caller): every route answers 503 when there is no reconciler.
 func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Supervisor, whole bool,
-	loops []*supervisor.SupervisorLoop, log io.Writer) {
+	loops []*supervisor.SupervisorLoop, releaseDir string, log io.Writer) *packsAdmin {
+	if log == nil {
+		log = io.Discard
+	}
 	machine, dsn, ok := componentsTarget(cfg)
 	if !whole || !ok {
 		for _, l := range loops {
@@ -69,7 +75,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 				go l.Run(ctx)
 			}
 		}
-		return
+		return &packsAdmin{ctx: ctx}
 	}
 	rec := supervisor.NewReconciler(sup)
 	rec.Machine = machine
@@ -77,6 +83,13 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec.CachePath = supervisor.CompCachePath(cfg.StateDir())
 	rec.Loops = loops
 	rec.Log = log
+	// the asset half: what a crash left is tidied before anything reads it
+	m := newPacksManager(cfg, releaseDir, log)
+	for _, did := range m.Layout.Recover(m.Version) {
+		fmt.Fprintf(log, "[packs] %s\n", did)
+	}
+	run := &packs.Runner{M: m, Machine: machine, Off: rec.Off}
+	rec.Assets, rec.OnDesired = m, run.Desired
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		fmt.Fprintf(log, "[components] level=warn the desired state cannot be read: %v\n", err)
@@ -85,11 +98,14 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 		st := store.New(db)
 		st.Version = version.Version
 		rec.Source, rec.Status = st, st
+		run.Status = st
 		rec.NewListener = func(onError func(error)) (store.Listener, error) { return pqlisten.New(dsn, onError) }
 		go func() { <-ctx.Done(); _ = db.Close() }()
 	}
 	rec.Prime()
+	go run.Run(ctx)
 	go rec.Run(ctx)
+	return &packsAdmin{ctx: ctx, m: m, r: run}
 }
 
 // mdnsLoop is the supervisor's mDNS advertiser as the discovery.mdns component's loop:
