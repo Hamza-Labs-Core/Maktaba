@@ -105,6 +105,9 @@ lint_pipeline:
   - *make
   - *pipeline
   - '.github/workflows/_lint.yml'
+  # story 51.13: the rules schema's versions against the last release tag
+  - 'api/internal/handlers/rules/schema.json'
+  - 'tools/ci/rules_schema_versions.py'
 
 lint_web:
   - *ci

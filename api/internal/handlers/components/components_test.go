@@ -35,6 +35,8 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 	external_write INTEGER NOT NULL DEFAULT 0, write_mode TEXT NOT NULL DEFAULT 'auto',
 	placement TEXT NOT NULL DEFAULT 'any', enabled INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');
+CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL,
+	updated_at TEXT NOT NULL DEFAULT (datetime('now')), updated_by TEXT);
 `
 
 func upStatements(sqlText string) []string {
@@ -225,6 +227,9 @@ var routes = []struct{ method, path, body string }{
 	{"POST", "/api/components/preview", `{"changes":[{"id":"llm","want":"installed"}]}`},
 	{"POST", "/api/components/apply", `{"changes":[{"id":"llm","want":"installed"}]}`},
 	{"POST", "/api/components/apply", `{"bundle":"core"}`},
+	// story 51.13
+	{"POST", "/api/components/transcription/settings/reset", ""},
+	{"DELETE", "/api/components/youtube?purge=true", ""},
 }
 
 // T07: no sign-in is 401; a viewer, an admin's play sign-in, a token without the admin
@@ -324,7 +329,7 @@ func TestRemoveRequired(t *testing.T) {
 	if f.want(t, "runtime.ml").Want != components.WantEnabled || f.audits(t) != 0 {
 		t.Fatal("a refused remove wrote")
 	}
-	code(t, f.do("DELETE", "/api/components/youtube?purge=true", "", admin()), 409, "purge_not_ready")
+	code(t, f.do("DELETE", "/api/components/runtime.ml?purge=true", "", admin()), 409, svc.CodeRequiredBy)
 	decode(t, f.do("DELETE", "/api/components/youtube", "", admin()), 200, nil)
 	if f.want(t, "youtube").Want != components.WantAbsent {
 		t.Fatal("youtube not removed")

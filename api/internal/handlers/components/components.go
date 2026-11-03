@@ -3,7 +3,8 @@
 //	GET    /api/components                 every component, the revision and the bundle line
 //	GET    /api/components/{id}            one component, its parts per machine and its last 20 audit rows
 //	PUT    /api/components/{id}            {want, generation?, with_conflicts?}
-//	DELETE /api/components/{id}            want absent (?purge=true: not yet, 409 purge_not_ready)
+//	DELETE /api/components/{id}            want absent (?purge=true: and its settings reset)
+//	POST   /api/components/{id}/settings/reset  its rules sections back to the defaults
 //	POST   /api/components/{id}/install    want installed, when it is absent
 //	POST   /api/components/{id}/stop       hold {by, at} until start; a body with until is 400 hold_has_no_until
 //	POST   /api/components/{id}/start      clear the hold
@@ -56,6 +57,7 @@ func (h *Handler) Mount(r chi.Router) {
 		r.Post("/api/components/{id}/install", h.install)
 		r.Post("/api/components/{id}/stop", h.stop)
 		r.Post("/api/components/{id}/start", h.start)
+		r.Post("/api/components/{id}/settings/reset", h.resetSettings)
 	})
 }
 
@@ -231,8 +233,18 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("purge") == "true" {
-		httperror.Write(w, r, problem(http.StatusConflict, "purge_not_ready", "purge not ready",
-			"resetting a component's settings and data comes with the release with packs"))
+		// story 51.13: the settings part of a purge. Removed first (a refusal leaves the
+		// settings as they are), then its settings reset; its data (caches, models) is
+		// story 51.16's.
+		if _, err := h.Service.Apply(r.Context(), svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}}, h.actor(r)); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		if _, err := h.Service.ResetSettings(r.Context(), id, h.actor(r)); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		h.show(w, r)
 		return
 	}
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}})

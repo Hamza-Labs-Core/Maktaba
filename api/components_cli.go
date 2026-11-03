@@ -39,6 +39,7 @@ const componentsUsage = `Usage:
   maktaba-server components start <id>
   maktaba-server components install <id>                    put it on disk, off
   maktaba-server components remove <id> [--yes]             take it off disk
+  maktaba-server components reset-settings <id> [--yes]     its settings back to the defaults
   maktaba-server components import <file>                   (available from the release with packs)
   maktaba-server components bundle [<full|core|worker>] [--yes]   no name: the bundle this home is based on
 
@@ -52,13 +53,20 @@ type componentsService interface {
 	Apply(ctx context.Context, req components.Request, actor components.Actor) (components.Result, error)
 }
 
+// settingsService is what reset-settings asks: *components.Service is one.
+type settingsService interface {
+	SettingsOf(ctx context.Context, id string) (components.SettingsReset, error)
+	ResetSettings(ctx context.Context, id string, actor components.Actor) (components.SettingsReset, error)
+}
+
 type componentsCLI struct {
-	svc    componentsService
-	in     io.Reader
-	out    io.Writer
-	errOut io.Writer
-	tty    bool   // there is a terminal to ask on
-	user   string // the OS user: the audit's actor
+	svc      componentsService
+	settings settingsService
+	in       io.Reader
+	out      io.Writer
+	errOut   io.Writer
+	tty      bool   // there is a terminal to ask on
+	user     string // the OS user: the audit's actor
 }
 
 // runComponents is `maktaba-api components …`: the components' desired state from the
@@ -112,7 +120,7 @@ func runComponents(argv []string) int {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		name = u.Username
 	}
-	c := &componentsCLI{svc: s, in: os.Stdin, out: os.Stdout, errOut: os.Stderr,
+	c := &componentsCLI{svc: s, settings: s, in: os.Stdin, out: os.Stdout, errOut: os.Stderr,
 		tty: term.IsTerminal(int(os.Stdin.Fd())), user: name}
 	return c.run(ctx, flags, args)
 }
@@ -216,6 +224,12 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 		req := components.Request{Changes: []components.Change{ch}, WithConflicts: flags["with-conflicts"]}
 		// start only brings back what was stopped: nothing to ask
 		return c.write(ctx, req, yes || verb == "start" || verb == "install")
+	case "reset-settings":
+		id, ok := one()
+		if !ok {
+			return c.usage("reset-settings <id>")
+		}
+		return c.resetSettings(ctx, id, yes)
 	case "bundle":
 		switch len(rest) {
 		case 0:
@@ -400,6 +414,44 @@ func (c *componentsCLI) write(ctx context.Context, req components.Request, yes b
 			state += ", stopped until started"
 		}
 		fmt.Fprintf(c.out, "%s: %s (generation %d)\n", d.ID, state, d.Generation)
+	}
+	fmt.Fprintln(c.out, "Done.")
+	return 0
+}
+
+// resetSettings is `components reset-settings <id>` (story 51.13): what a reset loses,
+// asked first unless yes, then the component's rules sections back to the defaults.
+func (c *componentsCLI) resetSettings(ctx context.Context, id string, yes bool) int {
+	if c.settings == nil {
+		return c.fail(errors.New("no settings service"))
+	}
+	cur, err := c.settings.SettingsOf(ctx, id)
+	if err != nil {
+		return c.fail(err)
+	}
+	if len(cur.Sections) == 0 {
+		fmt.Fprintf(c.out, "%s has no settings of its own.\n", id)
+		return 0
+	}
+	fmt.Fprintf(c.out, "Reset %s's settings to the defaults? Your changes to %d settings will be lost.\n", id, cur.Changed)
+	if !yes {
+		if !c.tty {
+			fmt.Fprintln(c.errOut, "components: no terminal to ask on: add --yes to make the change")
+			return exitComponentsNeedYes
+		}
+		fmt.Fprint(c.out, "Continue? [y/N] ")
+		line, _ := bufio.NewReader(c.in).ReadString('\n')
+		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+			fmt.Fprintln(c.out, "Nothing changed.")
+			return exitComponentsFailed
+		}
+	}
+	res, err := c.settings.ResetSettings(ctx, id, components.Actor{By: c.user, Source: "cli"})
+	if err != nil {
+		return c.fail(err)
+	}
+	for _, sec := range res.Sections {
+		fmt.Fprintf(c.out, "rules.%s: defaults (%d changed settings deleted)\n", sec.Section, sec.Changed)
 	}
 	fmt.Fprintln(c.out, "Done.")
 	return 0

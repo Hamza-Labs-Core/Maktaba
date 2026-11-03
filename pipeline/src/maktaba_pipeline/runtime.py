@@ -612,6 +612,14 @@ async def _start_engine(
         report = await sync_graph(database, graph, states)
         if report.version_changes:
             _log.info("graph_versions_changed", changes=dict(report.version_changes))
+        # Epic 51 (story 51.13): every rules section moved to this release's shape, once,
+        # before any stage runs; one that cannot be moved keeps its component Failed
+        try:
+            from .components import settings_migrate
+
+            await settings_migrate.run_pass(database)
+        except Exception:  # noqa: BLE001 - the stages refuse a failed section themselves
+            _log.exception("settings_migrate_pass_failed")
     ahead = await stages_ahead(database, graph)
     for name, db_version in ahead.items():
         _log.warning("graph_version_ahead", stage=name, db_version=db_version)
@@ -738,6 +746,11 @@ async def _start_engine(
     if is_node:
         # a node stops its jobs before their claim lease lapses, however its beats hang
         tasks.append(asyncio.create_task(agent.run_lease_watch(), name="claim-lease"))
+    else:
+        # story 51.13: a section saved in full again takes its component out of Failed
+        from .components import settings_migrate
+
+        tasks.append(writer("settings-watch", lambda stop: settings_migrate.watch(database, stop)))
     if not is_node and cfg.share:
         # Epic 40: the dependency watchers release jobs parked on the model, a share or
         # disk space; the home's mounts are the ones that matter (one worker probes)
