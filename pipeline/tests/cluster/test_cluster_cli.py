@@ -128,7 +128,7 @@ def test_status_reads_local_status_files(tmp_path: Path, monkeypatch: pytest.Mon
         json.dumps(
             {
                 "worker_id": "w1",
-                "pid": 1,
+                "pid": os.getpid(),  # a process that runs (pid 1 is none on Windows)
                 "kind": "node",
                 "state": "connected",
                 "url": "ws://h/api/cluster/agent",
@@ -140,7 +140,9 @@ def test_status_reads_local_status_files(tmp_path: Path, monkeypatch: pytest.Mon
     )
     out = io.StringIO()
     assert cli.status(out) == 0
-    assert "w1 pid 1 node: connected" in out.getvalue() and "session s1" in out.getvalue()
+    assert (
+        f"w1 pid {os.getpid()} node: connected" in out.getvalue() and "session s1" in out.getvalue()
+    )
 
 
 def test_status_and_ls_leave_out_processes_that_are_gone(
