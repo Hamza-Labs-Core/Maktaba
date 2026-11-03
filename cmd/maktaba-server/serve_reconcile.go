@@ -88,6 +88,10 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	for _, did := range m.Layout.Recover(m.Version) {
 		fmt.Fprintf(log, "[packs] %s\n", did)
 	}
+	// story 51.18: a model revision an update staged, or the one a rollback came back to
+	for _, did := range m.RecoverModels() {
+		fmt.Fprintf(log, "[packs] %s\n", did)
+	}
 	run := &packs.Runner{M: m, Machine: machine, Off: rec.Off}
 	rec.Assets, rec.OnDesired = m, run.Desired
 	db, err := sql.Open("postgres", dsn)
@@ -105,7 +109,11 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec.Prime()
 	go run.Run(ctx)
 	go rec.Run(ctx)
-	return &packsAdmin{ctx: ctx, m: m, r: run}
+	pa := &packsAdmin{ctx: ctx, m: m, r: run}
+	if st, ok := rec.Source.(*store.Store); ok {
+		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}
+	}
+	return pa
 }
 
 // mdnsLoop is the supervisor's mDNS advertiser as the discovery.mdns component's loop:

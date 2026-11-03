@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
@@ -179,8 +180,53 @@ func orDefault(extras string) string {
 // A12: a converted worker keeps what it was given): those its bootstrap recorded
 // (maktaba-venv.json), else those whose requirements it has installed; "" (the
 // bootstrap's default) with no environment to ask. The release's constraints cover every
-// extra but dev.
+// extra but dev. Plus stt on a machine whose NVIDIA GPU transcribes (whisperGPU): a worker
+// installed without it (install-node's old default, extras none) gets the stt extra's
+// CTranslate2 and CUDA wheels with its next update, and transcribes on its GPU.
 func (li *LayoutInstaller) extras(ctx context.Context) string {
+	have := li.keptExtras(ctx)
+	if have == "" || hasExtra(have, "stt") {
+		return have // "": the bootstrap's default, which has stt
+	}
+	if _, ok := whisperGPU(); ok {
+		names := append(strings.Split(have, ","), "stt")
+		sort.Strings(names)
+		return strings.Join(names, ",")
+	}
+	return have
+}
+
+// hasExtra says a comma-separated extras list names extra.
+func hasExtra(list, extra string) bool {
+	for _, e := range strings.Split(list, ",") {
+		if strings.TrimSpace(e) == extra {
+			return true
+		}
+	}
+	return false
+}
+
+// whisperMinMiB is the smallest NVIDIA GPU Whisper is planned on with CUDA (the
+// supervisor's gpuMinGB, the venv bootstrap's WHISPER_MIN_GIB: a test keeps them equal).
+const whisperMinMiB = 4 * 1024
+
+// whisperGPU is this machine's first NVIDIA GPU when Whisper transcribes on it with the
+// stt extra's CUDA wheels: Windows or Linux on x86_64 (where the extra installs
+// CTranslate2's CUDA build), whisperMinMiB of memory or more. Tests replace it.
+var whisperGPU = func() (hostinfo.GPU, bool) {
+	if runtime.GOARCH != "amd64" || (runtime.GOOS != "windows" && runtime.GOOS != "linux") {
+		return hostinfo.GPU{}, false
+	}
+	for _, g := range hostinfo.NVIDIA() {
+		if g.MemoryMB >= whisperMinMiB {
+			return g, true
+		}
+	}
+	return hostinfo.GPU{}, false
+}
+
+// keptExtras are the extras the environment the release replaces has ("": none to ask).
+func (li *LayoutInstaller) keptExtras(ctx context.Context) string {
 	py := li.currentPython()
 	if py == "" {
 		return ""

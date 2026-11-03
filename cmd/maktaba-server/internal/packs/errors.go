@@ -7,7 +7,7 @@
 //
 //	<root>/
 //	  runtime.ml/
-//	    0.4.2_3f9a1c2b7d10/   the unpacked pack (pack.json, files.sha256, wheels/, ...)
+//	    0.4.2_3f9a1c2b7d10/   the unpacked pack's files (wheels/, constraints.txt, ...)
 //	    current               "0.4.2_3f9a1c2b7d10\n" (a pointer file, never a symlink)
 //	    .lock                 one install or removal at a time, across processes
 //	    .removing             a removal that has not finished (the next boot finishes it)

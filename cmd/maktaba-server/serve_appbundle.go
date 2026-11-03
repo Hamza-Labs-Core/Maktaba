@@ -135,7 +135,7 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 		// pipeline's packages come from it first
 		wheels := updater.WheelhouseDir(filepath.Join(updatesDirOf(cfg, ""), wheelhouseFolder), cur.Version)
 		venv := &venvGate{spec: appvenv.Spec{Payload: dir, Venv: filepath.Join(cfg.StateDir(), "venv"), Wheelhouse: wheels},
-			updates: updatesDirOf(cfg, ""), version: cur.Version}
+			updates: updatesDirOf(cfg, ""), version: cur.Version, packs: packs.Layout{Root: packsDir(cfg)}}
 		// Epic 51 story 51.16: runtime.ml removed through its pack keeps the venv without
 		// its extras (the default would bring them back from PyPI)
 		if pl := (packs.Layout{Root: packsDir(cfg)}); pl.Removed("runtime.ml") {
@@ -144,6 +144,10 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 			} else {
 				venv.spec.NoExtras = true
 			}
+		} else if extras, none, ok := choiceVenv(cfg, pl); ok {
+			// story 51.17: a home set up as Core (or Custom without the ML runtime) keeps
+			// its venv with no ML extras (constraints-core.txt)
+			venv.spec.Extras, venv.spec.NoExtras = extras, none
 		}
 		venvStep = &sharedStep{wait: detail("venv_waiting", "Waiting for the transcription tools"), run: venv.run}
 	} else {
@@ -1231,6 +1235,29 @@ type venvGate struct {
 	// updates and version: the start's attempt (update-attempts.md) a failure is recorded on
 	updates, version string
 	spec             appvenv.Spec
+	// packs is the components folder: this release's packs' wheels, which an update
+	// fetched before its switch, serve when no home's wheelhouse was staged (story 51.18)
+	packs packs.Layout
+}
+
+// packWheels is the wheels of this release's packs that bring the pipeline's packages
+// (runtime.ml first, then tool.yt-dlp), each a finished wheelhouse ("" none).
+func (g *venvGate) packWheels() string {
+	if g.packs.Root == "" {
+		return ""
+	}
+	v := layout.NormalizeVersion(g.version)
+	for _, id := range []string{"runtime.ml", "tool.yt-dlp"} {
+		cur := g.packs.Current(id)
+		if cur == "" || !strings.HasPrefix(cur, v+"_") {
+			continue
+		}
+		w := filepath.Join(g.packs.Dir(id), cur, "wheels")
+		if _, err := os.Stat(filepath.Join(w, "index.json")); err == nil {
+			return w
+		}
+	}
+	return ""
 }
 
 // venvRun is appvenv.Run (tests replace it).
@@ -1243,6 +1270,12 @@ func (g *venvGate) run(ctx context.Context, report func(supervisor.Detail)) erro
 		spec.Log = f
 	}
 	logPath := filepath.Join(config.LogsDir(), "venv.log")
+	if _, err := os.Stat(filepath.Join(spec.Wheelhouse, "index.json")); spec.Wheelhouse == "" || err != nil {
+		if w := g.packWheels(); w != "" {
+			// the pack's wheels are never removed here: they are the pack's
+			spec.Wheelhouse = w
+		}
+	}
 	res, err := venvRun(ctx, spec, func(p appvenv.Progress) {
 		pct := int(p.Fraction * 100)
 		report(detail("venv_building", fmt.Sprintf("Installing the transcription tools: %s (%d%%)", p.Message, pct),

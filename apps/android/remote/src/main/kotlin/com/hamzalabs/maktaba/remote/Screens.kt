@@ -160,7 +160,7 @@ internal fun AttentionContent(
         revalidating = revalidating && groups != null,
         actions = {
             TextButton(onClick = { onRetry(retryable) }, enabled = retryable.isNotEmpty() && busy == null) {
-                if (busy == "all") Busy() else Text(stringResource(R.string.retry_all))
+                if (busy == "all") Busy() else Text(stringResource(R.string.retry_all), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         },
         chosenTitle = group?.let { say.groupTitle(it) },
@@ -300,7 +300,7 @@ internal fun QueueContent(
             val s = snap
             if (s != null) {
                 TextButton(onClick = { act("all") { if (s.pausedAll) resumeAll() else pauseAll() } }, enabled = busy == null) {
-                    if (busy == "all") Busy() else Text(stringResource(if (s.pausedAll) R.string.resume_all else R.string.pause_all))
+                    if (busy == "all") Busy() else Text(stringResource(if (s.pausedAll) R.string.resume_all else R.string.pause_all), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         },

@@ -187,7 +187,42 @@ export const componentsApi = {
   start: (id: string) => api.post<ComponentDetail>(`${path(id)}/start`),
   preview: (req: ChangeRequest) => api.post<Preview>("/api/components/preview", req),
   apply: (req: ChangeRequest) => api.post<ApplyResult>("/api/components/apply", req),
+  /** story 51.17: the bundles and the one the home is based on */
+  bundles: () => api.get<BundlesView>("/api/components/bundles"),
+  /** story 51.17: the difference a bundle makes; without dry_run it is applied in one batch */
+  bundle: (req: BundleRequest) => api.post<BundleDiff>("/api/components/bundle", req),
 };
+
+export type BundleId = "full" | "core" | "worker";
+
+export interface BundlesView {
+  based_on: string;
+  set: string;
+  plus: string[];
+  minus: string[];
+  bundles: { id: BundleId; components: string[]; download_bytes: number }[];
+}
+
+export interface BundleRequest {
+  bundle: BundleId;
+  dry_run?: boolean;
+  remove_unused?: boolean;
+  generation?: number;
+}
+
+export interface BundleDiff {
+  based_on: string;
+  to: string;
+  enable: string[];
+  install: { id: string; bytes: number }[];
+  disable: string[];
+  remove: string[];
+  download_bytes: number;
+  revision: number;
+  dry_run: boolean;
+  effect: Preview;
+  batch_id?: string;
+}
 
 /** The problem's `code` and extras of a components refusal, or null for any other error. */
 export function refusalOf(e: unknown): Refusal | null {

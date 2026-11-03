@@ -60,6 +60,13 @@ func componentsAtBoot(ctx context.Context, cfg config.Config, opts serveOptions,
 		NoMDNS:   opts.noMDNS,
 		Log:      log,
 	}
+	// story 51.17: setup's answer to "Choose what to run" seeds the first desired state
+	// (no answer: Full, today's switches)
+	if ch, ok, err := componentseed.ReadChoice(cfg.StateDir()); err != nil {
+		fmt.Fprintf(log, "[serve] level=warn components: setup's bundle choice cannot be read (%v): the seed is Full\n", err)
+	} else if ok {
+		home.Facts.Choice = &ch
+	}
 	run := func(ctx context.Context) error {
 		db, err := sql.Open(info.Driver, info.DSN)
 		if err != nil {

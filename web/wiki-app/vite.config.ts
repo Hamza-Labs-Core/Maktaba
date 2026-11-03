@@ -88,8 +88,15 @@ function externalAssets(): Plugin {
     fs.createReadStream(result.target).pipe(res);
   };
 
+  // The build's own outDir (`vite build --outDir …`, as the developer portal does), not a
+  // fixed dist/: the mockups and diagrams go next to the bundle that links them.
+  let outDir = path.resolve(__dirname, 'dist');
+
   return {
     name: 'maktaba-external-assets',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
     configureServer(server) {
       server.middlewares.use(handler);
     },
@@ -98,8 +105,8 @@ function externalAssets(): Plugin {
       server.middlewares.use(handler);
     },
     closeBundle() {
-      const out = path.resolve(__dirname, 'dist');
-      if (fs.existsSync(MOCKUPS_SRC)) {
+      const out = outDir;
+      if (fs.existsSync(MOCKUPS_SRC) && process.env.VITE_WIKI_NO_MOCKUPS !== '1') {
         copyDir(MOCKUPS_SRC, path.join(out, 'mockups'));
       }
       if (fs.existsSync(DIAGRAMS_SRC)) {

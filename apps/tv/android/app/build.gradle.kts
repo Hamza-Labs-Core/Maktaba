@@ -2,6 +2,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    // screenshot tests on the JVM (Robolectric): recordRoborazziDebug writes the references,
+    // verifyRoborazziDebug (CI) fails when a screen no longer matches them
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -65,11 +68,22 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // The tab bar's Compose test (story 51.11) runs on the JVM (Robolectric): it needs the app's resources.
+    // The code screen's and the tab bar's (story 51.11) tests run on the JVM (Robolectric): they need
+    // the app's resources, and
+    // Robolectric's native graphics for the screenshots.
     testOptions {
-        unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+        unitTests.all { test ->
+            test.systemProperty("robolectric.graphicsMode", "NATIVE")
+            test.maxHeapSize = "3g"
+        }
     }
+}
+
+// The references live beside the tests and change only in a reviewed PR.
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }
 
 dependencies {
@@ -90,13 +104,18 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
-    // Compose UI tests on the JVM (Robolectric), as the phone apps' (the tab bar, story 51.11)
+    // StringsXml: the tests read the TV's and the phones' English and Arabic as Android does
+    testImplementation(testFixtures(project(":client")))
+    // the code screen on Robolectric, and its screenshots (Roborazzi)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.espresso.core)
     testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
 
     // The permissions walkthrough's Compose UI tests on a TV or emulator (connectedDebugAndroidTest).
     androidTestImplementation(platform(libs.compose.bom))

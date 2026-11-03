@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Self-contained wiki web app for the Maktaba project — renders the JSON wiki database from docs/wiki/db/.",
+  "description": "Self-contained wiki web app for the Maktaba project — renders the JSON wiki database in public/db/, generated from the specs by docs/wiki/db/generate_wiki.py.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

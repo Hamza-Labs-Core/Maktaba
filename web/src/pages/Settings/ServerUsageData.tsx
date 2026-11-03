@@ -92,6 +92,7 @@ export function ServerUsageData() {
         <li>{t("telemetry.server.bullet.apps")}</li>
         <li>{t("telemetry.server.bullet.features")}</li>
         <li>{t("telemetry.server.bullet.errors")}</li>
+        <li>{t("telemetry.server.bullet.components")}</li>
       </ul>
       <p className="mkt-telemetry__label">{t("telemetry.never")}</p>
       <ul>

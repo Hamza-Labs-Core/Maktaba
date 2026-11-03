@@ -32,6 +32,7 @@ func newSetupCmd() *cobra.Command {
 	var answersFD int
 	var lang string
 	var pgTLS bool
+	var bundle string
 	cmd := &cobra.Command{
 		Use:   "setup",
 		Short: "Interactive first-run wizard",
@@ -46,6 +47,12 @@ func newSetupCmd() *cobra.Command {
 					return err
 				}
 				return runSetupPGTLS(c.OutOrStdout(), cfg, config.KeysDir(), pgSANs(cfg), time.Now())
+			}
+			if bundle != "" && !jsonMode {
+				// story 51.17: a headless setup's answer to "Choose what to run"
+				if err := setupBundleFlag(bundle, c.OutOrStdout()); err != nil {
+					return err
+				}
 			}
 			if jsonMode {
 				// Epic 36 story 36.6: the app's setup screens, one step per run
@@ -76,6 +83,7 @@ func newSetupCmd() *cobra.Command {
 	cmd.Flags().StringVar(&step, "step", "", "with --json: the step (status)")
 	cmd.Flags().StringVar(&answersFile, "answers", "", "from a payload: the steps' inputs from this JSON file ({\"admin\": {...}, ...}) instead of prompts")
 	cmd.Flags().IntVar(&answersFD, "answers-fd", 0, "from a payload: the same answers from this open file descriptor (secrets never on disk)")
+	cmd.Flags().StringVar(&bundle, "bundle", "", "what this home runs: full (default), core, worker or custom; Settings > Components changes it later")
 	cmd.Flags().StringVar(&lang, "lang", "", "from a payload: the questions' language, en or ar (default: from LC_ALL, LC_MESSAGES or LANG)")
 	lf.register(cmd)
 	nf.register(cmd)

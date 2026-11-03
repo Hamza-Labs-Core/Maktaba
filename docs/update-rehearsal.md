@@ -39,7 +39,11 @@ The Mac app's install kind runs on Linux through the same code, not a stand-in:
 
 The two releases are real builds (`tools/rehearsal/build.sh`): the **previous** one from its
 tag, and **this commit** as the next release (its version the previous one + 2; the release
-after it, + 3, for the scenarios that need one). The rehearsal adds test-only migrations of
+after it, + 3, for the scenarios that need one; + 4, a release after a rollback, scenario 13). With
+the release's own pack build (`tools/release/packs/build.sh --only tool.yt-dlp`, then
+`gen-components-index`), the kit also holds `packs/<version>/`: this commit's `tool.yt-dlp`
+pack of each of those three releases for the runner's platform, and its components index (the
+harness signs it with the release; scenarios 13 and 14). The rehearsal adds test-only migrations of
 its own on top of this commit's: an additive one (so every update has migrations), and for
 the failure scenarios a second one past what the release's API takes for its own (it
 migrates, then refuses to run on what it migrated: the injected health failure), additive or
@@ -61,7 +65,7 @@ definitions so the schema is the release's exactly:
 |---|---|---|---|
 | full | 150,000 | 2,000,000 | 01 |
 | restore | 150,000 | 300,000 | 02–06 (a restore rebuilds the HNSW index: minutes per million) |
-| small | 5,000 | 20,000 | 07–11 |
+| small | 5,000 | 20,000 | 07–14 |
 
 Every profile also has 2,000 series with 40,000 episodes, 600 collections with their items,
 three approved full machines (logins in `maktaba_worker`), and the first machine's copy
@@ -72,7 +76,9 @@ about a quarter of an hour), restored in a minute after.
 
 ## The scenarios
 
-`api/rehearsal_scenarios_e2e_test.go`, `api/rehearsal_machines_e2e_test.go`. Downtime is the
+`api/rehearsal_scenarios_e2e_test.go`, `api/rehearsal_machines_e2e_test.go`,
+`api/rehearsal_tv_e2e_test.go`, `api/rehearsal_components_e2e_test.go`,
+`api/rehearsal_packs_e2e_test.go`. Downtime is the
 time the home's web did not answer `/api/cluster/self` (polled every 250 ms) from the update's
 start to its end.
 
@@ -90,7 +96,9 @@ start to its end.
 | 10a | A home and a joined full machine (a Mac app too): the home rolls back during its watch; then a run that gives up on its home mid-watch (`journal_lost`); then an update that passes | the machine is never ordered before the home commits, stays on its release, not paused, serving; in the passing run it is ordered only after the commit | 4 min, then 2 min |
 | 10b | The joined machine's own updater, a newer release published while the home stays on its release | the machine does not install it; it stays on its release, not paused, serving | — |
 | 11 | The home updates while its TV slots run (the live TV on the previous release's streaming; roles live blue, standby amber, so green, started with every server, is the free instance a staging takes); then the update's TV change is staged (the pipeline's `tv_stage` job played by the test: the stand-in runs no job) | the slot the staging takes was running before its bind; it is started again on the change's release (a new process, answering that release, no mismatch); the change moves to verifying on this commit's streaming, never back to a draft with `slot.health` (`release_mismatch`: change #58, 2026-10-31). Not covered: the change's soak and swap (no channel here airs real media) | 2 min |
-| 12 | No behaviour change: the first release with the component model (Epic 51, story 51.03) seeds desired state from what the home runs. The small seed's home on the previous release with the TV slots on, the relay off, Plex enabled, `youtube_backfill` turned off by an operator and the HDHomeRun device off; after the update the server is restarted once more | the supervisor's processes (role, instance, wanted, running), `job_stages` (enabled, disabled_reason, paused), `extensions` and `hdhr_device.enabled` equal before and after; `component_meta.seeded_at` set, bundle `full`; every catalog component has a row written by the seed, with the want §2 gives this home; each loop of `tools/rehearsal/loops-full-home.txt` has its component `running` in `component_status` (part `api` or `streaming`), and no other switchable loop of those hosts does; the restart moves neither `seeded_at` nor any `generation`, one seed in the audit log, no `toml_key_superseded`. The pipeline's loops and stage claiming are not here (the stand-in runs no job) | 2 min |
+| 12 | No behaviour change: the first release with the component model (Epic 51, [story 51.03](../specs/epics/51-configurable-components/story-51-03-seed-from-today.md)) seeds desired state from what the home runs. The small seed's home on the previous release with the TV slots on, the relay off, Plex enabled, `youtube_backfill` turned off by an operator and the HDHomeRun device off; after the update the server is restarted once more | the supervisor's processes (role, instance, wanted, running), `job_stages` (enabled, disabled_reason, paused), `extensions` and `hdhr_device.enabled` equal before and after; `component_meta.seeded_at` set, bundle `full`; every catalog component has a row written by the seed, with the want §2 gives this home; each loop of `tools/rehearsal/loops-full-home.txt` has its component `running` in `component_status` (part `api` or `streaming`), and no other switchable loop of those hosts does; the restart moves neither `seeded_at` nor any `generation`, one seed in the audit log, no `toml_key_superseded`. The pipeline's loops and stage claiming are not here (the stand-in runs no job) | 2 min |
+| 13 | An update carries the packs (Epic 51, [story 51.18](../specs/epics/51-configurable-components/story-51-18-update-rehearsal.md)). The small seed's home on this commit (installed by hand, as in 03) with the `tool.yt-dlp` pack of this commit imported (`POST /components/import` on the supervisor's admin, an offline folder of the release's signed files, its index and the pack); an update to the release after it, with its own pack, that fails its watch (03's injected failure); then an update to the release after that, which passes | the import installed the pack and `current` names its folder (`<version>_<sha12>`); the run ends `rolled_back` with no restore; the journal's `packs` step is `done` and ended before the apply's first step (`order`, `backup`, `switch`) started; the journal names the staged folder (the new release's, replacing the running one's); `current` was seen naming the new release's folder while it ran, and names the kept folder again after the rollback, which is still there; the progress route says installed; the seeded counts unchanged; the second update ends `done` within the same budget as an update without packs (N13); `current` names its folder; after its commit every pack folder belongs to a kept release (the app's payload and `updates/payloads/*/.kept`) or the running one, the kept releases' folders are there, and the rolled-back release's is gone unless it is kept | 4 min (the rollback), 2 min (the update after) |
+| 14 | A pack that fails its verification stops the update. The home of 13 (this commit, the pack imported); the release after it is published with its pack's bytes changed by one after signing (its `checksums.txt` and index list the bytes it was built with) | the run is neither `done` nor `rolled_back`; the journal ends `prepare_failed` with `pack_verify_failed` at the `packs` step, said in the run's error; the journal never went `applying`, `restarting` or `watching`; the pack folders and `current` unchanged; the database's record unchanged; the progress route still says installed; the site serves this commit; the seeded counts unchanged | 5 s |
 
 ### Expected failures
 
@@ -154,6 +162,7 @@ A missing seed is made on the fly in `MAKTABA_REHEARSAL_SEEDS` (default
 | Scenario 10 | `api/rehearsal_machines_e2e_test.go` |
 | Scenario 11 | `api/rehearsal_tv_e2e_test.go` |
 | Scenario 12, the loops the previous release runs on the rehearsal's home | `api/rehearsal_components_e2e_test.go`, `tools/rehearsal/loops-full-home.txt` |
+| Scenarios 13 and 14, the releases' packs and their index, the offline import | `api/rehearsal_packs_e2e_test.go`; the packs in the kit: `tools/rehearsal/build.sh`, `tools/release/packs/build.sh` |
 | Expected failures | `tools/rehearsal/expected-failures.txt` |
 | The release gate | `tools/release/tag-guard.sh` (`passed_on`), `tools/release/tag-guard-test.sh` |
 

@@ -57,6 +57,14 @@ build "$tmp/c" --part-size 100000 >"$tmp/c.log" 2>&1 || { cat "$tmp/c.log"; fail
 cat "$tmp/c/$pack".part* | cmp - "$tmp/a/$pack" || fail "the parts joined are not the pack"
 echo "ok: a big pack splits, and its parts join to the pack"
 
+# --only (story 51.18, the update rehearsal's one pack): that pack alone; an id the
+# platform has no pack of fails the build
+build "$tmp/e" --only tool.fake >"$tmp/e.log" 2>&1 || { cat "$tmp/e.log"; fail "--only build"; }
+cmp "$tmp/e/$pack" "$tmp/a/$pack" || fail "--only built other bytes"
+if build "$tmp/f" --only tool.nope >"$tmp/f.log" 2>&1; then fail "--only of no pack built"; fi
+grep -q "tool.nope is not one of linux-amd64's packs" "$tmp/f.log" || { cat "$tmp/f.log"; fail "--only not refused"; }
+echo "ok: --only builds that pack alone, and refuses an id with no pack"
+
 # a recipe whose link leaves the folder fails the build
 cat >"$tmp/recipes/tool.fake.sh" <<'SH'
 #!/usr/bin/env bash

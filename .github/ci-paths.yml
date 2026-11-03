@@ -376,6 +376,7 @@ launcher:
 mac_app:
   - *ci
   - 'tools/release/mac-app/**'
+  - 'tools/release/bundle-size/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'
@@ -476,3 +477,32 @@ apple_player_ui:
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
   - '.github/workflows/_apple-apps.yml'
+
+# ---- the developer portal (_devportal.yml) ----------------------------------------------
+
+# maktaba.dev: the portal, and every file its allow-list publishes (the developer guides
+# in docs/developers, the changelog, the OpenAPI description, the disclosure policy
+# security.txt is built from, the icons). devportal-deploy.yml deploys on the same paths.
+devportal:
+  - *ci
+  - 'web/packages/devportal/**'
+  - 'docs/developers/**'
+  - 'CHANGELOG.md'
+  - 'shared/api/openapi.json'
+  - 'api/internal/security/disclosure.go'
+  - 'web/public/icons/**'
+  - '.github/workflows/_devportal.yml'
+  - '.github/workflows/devportal-deploy.yml'
+
+# ---- the in-repo wiki app and its database (ci.yml's wiki job) ---------------------------
+
+# The database (web/wiki-app/public/db) is generated from the specs, the mockups, the
+# OpenAPI description and the hand-kept curated.json by docs/wiki/db/generate_wiki.py; the
+# job fails when the committed database does not match them.
+wiki:
+  - *ci
+  - 'web/wiki-app/**'
+  - 'docs/wiki/db/**'
+  - 'specs/**'
+  - 'web/mockups/**'
+  - 'shared/api/openapi.yaml'

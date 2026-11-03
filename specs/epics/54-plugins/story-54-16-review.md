@@ -14,9 +14,32 @@ stay (N11, N12).
 
 ### 1. The pipeline of checks
 
-On upload, a check job runs in an isolated worker (a dedicated, network-less VM pool on the
-cloud: the store's check runner, with the same `plugins-sandbox` OS profile as homes), in this
-order; any **block** stops the version:
+On upload, a check job runs in this order; any **block** stops the version. The checks run in
+two places, both inside the store's own Cloudflare account and neither on a VPS (54.15):
+
+- **Static checks (C1–C7 except the ClamAV scan, C9, C11)** run in the `store-checks` Queue
+  consumer Worker: the package is streamed from R2, and the format, signature, manifest,
+  import and capability audits use `mkp-check`, the SDK's Rust checker compiled to Wasm (the
+  same code as `mkp check`, 54.12). YARA rules run through YARA-X compiled to Wasm. Each step
+  stays far under the Worker CPU limit; a package too large for that is refused by C1's size
+  limit first.
+- **The sandbox run (C8), the ClamAV scan (C7) and the reproducible build (C10)** run in an
+  **isolated runner**: a **Cloudflare Container** started per check with outbound internet
+  off (`enableInternet = false`), no Worker secrets and no bindings except a single-use
+  upload URL for its report; the image applies the same `plugins-sandbox` Linux profile
+  (namespaces, seccomp, Landlock) as homes do. Containers' maturity, instance limits and
+  whether that profile can be applied inside one are checked in a spike before this story is
+  built (README §14 item 11).
+- **Fallback, if Containers does not fit:** a GitHub Actions job (`store-check-runner.yml`)
+  started by the store through `repository_dispatch` with only the submission id. Its first
+  step downloads the package and source with single-use URLs; then the runner's egress is
+  firewalled off (as `plugins-sandbox` does, §5.4) before any plugin code runs; it has no
+  repository or org secrets; its report leaves as a job artifact that a separate job, which
+  never runs plugin code, posts back with a single-use URL. The store's dispatch token can
+  only start that one workflow.
+
+Either way the runner can reach nothing but the store's own upload URL, and nothing it does can
+touch the cloud.
 
 | # | Check | Block when |
 |---|---|---|
@@ -47,7 +70,8 @@ Other versions are approved automatically and countersigned with review level `a
 
 ### 3. The review queue
 
-`/store/v1/admin/queue` in the cloud admin console: oldest first, first submissions before
+`plugins.maktaba.tv/admin/queue`, the store's own admin pages (54.15 §7; reviewers sign in
+with a store account, passkey required): oldest first, first submissions before
 updates, flagged ones marked. A reviewer sees the manifest, capabilities and their stated
 reasons, the check report, the call trace (which API calls with which arguments, summarised),
 outputs on the sample set, the diff, and the source (browsable). Decisions: **approve**
@@ -69,8 +93,9 @@ without both English and Arabic is refused (C6).
 
 Published on maktaba.dev: first response ≤ 5 business days for new plugins, ≤ 2 for updates
 needing review (N12); malware and data-misuse reports triaged ≤ 24 h (54.18). A dashboard
-shows queue age; a queue older than the SLA alerts the store on-call (Epic 50.10 alert rule
-`store_review_backlog`).
+shows queue age; a queue older than the SLA alerts the store on-call through the store's own
+alert (a Cron Trigger checks queue age and sends `store_review_backlog` by email to the
+`store_admin`s; no cloud monitoring is used).
 
 ## Acceptance criteria
 
@@ -93,6 +118,13 @@ shows queue age; a queue older than the SLA alerts the store on-call (Epic 50.10
   **when** the decision is saved,
   **then** `store.sig` is made with level `reviewed`, the catalog regenerates, and the audit
   row names the reviewer.
+- **Given** a reviewer whose last passkey check was 6 minutes ago,
+  **when** they approve,
+  **then** `401 reauth_required` («أكّد أنّك أنت»), and nothing is signed.
+- **Given** a plugin whose C8 run tries to open a socket or resolve a name,
+  **when** the isolated runner runs it,
+  **then** the attempt fails inside the sandbox and the report records it; the runner's
+  egress log shows no connection.
 
 ## Test cases
 
@@ -103,14 +135,15 @@ shows queue age; a queue older than the SLA alerts the store on-call (Epic 50.10
 | T03 | unit (go) | string checker | URLs, reserved words in en/ar | warn / block |
 | T04 | integration | C8 with a memory-hungry plugin | run | flagged at 80 % |
 | T05 | integration | C10 reproducible Rust build | build | sha matches → badge |
-| T06 | role test (go) | review routes | developer / reviewer / admin | 403 / 200 / 200 |
+| T06 | role test (ts) | review routes | no one / buyer / developer / reviewer (TOTP only) / reviewer (passkey) / store admin | 401 / 403 / 403 / 403 / 200 / 200 |
+| T08 | integration | isolated runner image (Container or the CI fallback) with an escape-probe plugin | run C8 | every probe fails; zero connections at the canary; no secret in the environment |
 | T07 | CI (`store`) | timing | full pipeline on the corpus | p95 ≤ 30 min (scaled) |
 
 ## Edge cases
 
 - **A plugin whose fixtures are empty**: C8 uses only generated events; the report says so.
-- **The check runner pool is down**: submissions wait in `checking`; the SLA clock starts at
-  report time, not upload.
+- **The isolated runner is unavailable** (Containers capacity, or the CI fallback queued):
+  submissions wait in `checking`; the SLA clock starts at report time, not upload.
 - **A developer resubmits the same version**: refused (`version_exists`); bump the version.
 
 ## Build plan
@@ -119,24 +152,27 @@ shows queue age; a queue older than the SLA alerts the store on-call (Epic 50.10
 
 | File | Change |
 |---|---|
-| `cloud/internal/store/checks/` (new) | C1–C11 orchestration; reuses `shared/go/pluginmanifest`, `pluginsig`, and the `mkp` harness binary. |
-| `cloud/internal/store/review/` (new) | Queue, decisions, countersigning call. |
-| Cloud admin console | Review pages. |
-| `deploy/cloud-relay/` | Check runner pool config (network-less VMs; Epic 50 provisions). |
+| `store/checks/` (new) | C1–C11 orchestration in the `store-checks` Queue consumer; `mkp-check` (Wasm) and YARA-X (Wasm). |
+| `store/check-runner/` (new) | Container image for C7 (ClamAV), C8 and C10, with the `plugins-sandbox` profile. |
+| `.github/workflows/store-check-runner.yml` (new) | The CI fallback runner (no secrets, egress firewalled). |
+| `store/review/` (new) | Queue, decisions, countersigning call. |
+| `store/web/` admin pages | Review pages at `/admin`, en + ar. |
 | `docs/plugins/guidelines.md` (new) | Guidelines, en + ar. |
-| `cloud/internal/store/checks/testdata/` | Bad-package corpus. |
+| `store/checks/testdata/` | Bad-package corpus. |
 
 ### Tests
 
-- Integration T01, T02, T04, T05; unit T03; role T06; CI T07.
+- Integration T01, T02, T04, T05, T08; unit T03; role T06; CI T07.
 
 ### Rollout
 
-With 54.15, dark. Reviewers named by the owner before opening submissions.
+With 54.15, dark. Reviewers named by the owner before opening submissions; the Containers
+spike (or the choice of the CI fallback) done first.
 
 ### Rollback
 
-Disable submissions (store admin switch); existing approved versions stay listed.
+Disable submissions (store admin switch); existing approved versions stay listed. The
+runner can switch between Containers and the CI fallback by configuration.
 
 ### Dependencies
 

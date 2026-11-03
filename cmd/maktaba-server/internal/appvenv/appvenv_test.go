@@ -43,6 +43,8 @@ func fakeBootstrap(args []string) int {
 		switch a {
 		case "--payload":
 			payload = filepath.Dir(args[i+1])
+		case "--constraints": // <payload>/pipeline/constraints-core.txt
+			payload = filepath.Dir(filepath.Dir(args[i+1]))
 		case "--check":
 			check = true
 		}

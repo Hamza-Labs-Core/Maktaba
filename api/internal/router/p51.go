@@ -41,6 +41,9 @@ type P51Deps struct {
 	// RunCapabilities starts the capabilities' watcher and push (main.go; tests mount
 	// the routes only).
 	RunCapabilities bool
+	// Packs is this machine's pack installer (nil: the supervisor named by
+	// MAKTABA_SUPERVISOR_URL and MAKTABA_SUPERVISOR_TOKEN_FILE, if any).
+	Packs *componentsh.Packs
 }
 
 // MountP51 mounts the components' admin routes and GET /api/capabilities (nil DB:
@@ -55,6 +58,7 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 	}
 	s := components.NewService(d.DB)
 	s.Logger = d.Logger
+	s.OnMachineChanged = reloadMachineStages // 51.12: a machine's override rewrote its stage switches
 	ref := d.License
 	s.Licensed = func(flag string) bool { return ref.Store().Allows(subscriptions.Feature(flag)) }
 	s.Tier = func() string { return ref.Store().TierName() }
@@ -66,7 +70,11 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 		ref.Store().OnChange(func() { publish(context.Background()) })
 		publish(context.Background())
 	}
-	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger}
+	pk := d.Packs
+	if pk == nil {
+		pk = componentsh.PacksFromEnv()
+	}
+	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger, Packs: pk}
 	h.Mount(r)
 
 	caps := d.Capabilities

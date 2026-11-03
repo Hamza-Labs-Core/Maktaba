@@ -151,3 +151,100 @@ func TestSnapshotCarriesTheTileHealth(t *testing.T) {
 		t.Error("open failures do not leave the ignored items out")
 	}
 }
+
+// Epic 51 story 51.14 T01: a stage whose only parked jobs wait on a component, or whose
+// component an admin turned off, is off (grey), never waiting.
+func TestStageHealth_ComponentOff(t *testing.T) {
+	cfg := defaultQueueHealthRules()
+	parked := stageHealth(healthInputs{Waiting: []WaitingOn{{On: "component:transcription", Count: 1840}}}, cfg)
+	if parked.State != HealthOff {
+		t.Fatalf("parked on a component: state %q, want off", parked.State)
+	}
+	if w := parked.Waiting[0]; w.Component != "transcription" || w.Phase != "off" {
+		t.Fatalf("waiting = %+v", w)
+	}
+	held := stageHealth(healthInputs{Component: &componentHold{ID: "transcription", Phase: "stopped", Queued: 1840}}, cfg)
+	if held.State != HealthOff || len(held.Waiting) != 1 {
+		t.Fatalf("held: %+v", held)
+	}
+	if w := held.Waiting[0]; w.On != "component:transcription" || w.Count != 1840 || w.Phase != "stopped" {
+		t.Fatalf("held waiting = %+v", w)
+	}
+	// a share parked beside the component still makes it waiting on that share
+	mixed := stageHealth(healthInputs{Waiting: []WaitingOn{{On: "component:transcription", Count: 3},
+		{On: "resource:disk", Count: 2}}}, cfg)
+	if mixed.State != HealthWaiting {
+		t.Fatalf("mixed: state %q, want waiting", mixed.State)
+	}
+}
+
+// T02: a stage can fail and be off; failing wins.
+func TestStageHealth_FailingWinsOverOff(t *testing.T) {
+	got := stageHealth(healthInputs{
+		Failures:  []windowFailure{{Signature: "boom", Class: "unknown", Count: 40}},
+		Component: &componentHold{ID: "transcription", Phase: "off", Queued: 5},
+	}, defaultQueueHealthRules())
+	if got.State != HealthFailing || got.Failing == nil {
+		t.Fatalf("state %q, want failing", got.State)
+	}
+}
+
+// componentHoldOf reads only the component's reasons; an operator's switch is not one.
+func TestComponentHoldOf(t *testing.T) {
+	r := func(s string) *string { return &s }
+	if h := componentHoldOf(StageInfo{Stage: "transcribe", DisabledReason: r("component_off")}, 7); h == nil ||
+		h.ID != "transcription" || h.Phase != "off" || h.Queued != 7 {
+		t.Fatalf("off: %+v", h)
+	}
+	if h := componentHoldOf(StageInfo{Stage: "transcribe", DisabledReason: r("component_held")}, 0); h == nil || h.Phase != "stopped" {
+		t.Fatalf("held: %+v", h)
+	}
+	if h := componentHoldOf(StageInfo{Stage: "transcribe", DisabledReason: r("operator")}, 0); h != nil {
+		t.Fatalf("operator: %+v", h)
+	}
+	if h := componentHoldOf(StageInfo{Stage: "transcribe", Enabled: true, DisabledReason: r("component_off")}, 0); h != nil {
+		t.Fatalf("enabled: %+v", h)
+	}
+}
+
+// T03: the tile of a stage its component holds back is off with the queued count, and
+// the overview lists it in Off, not in Waiting.
+func TestSnapshotAndRollup_ComponentOffStage(t *testing.T) {
+	rules := snapshotRules()
+	rules[0] = stagesRule(
+		stageRow("probe", "episodes", 1, "nas_read", withEdges(`[{"to":"detect","map":"library_of"}]`)),
+		stageRow("detect", "seasons", 1, "cpu", withKinds("{library}")),
+		stageRow("transcribe", "media", 2, "gpu", withDisabled("component_off")),
+	)
+	rules = append(rules, &queuestest.Rule{Match: "left join dependency_health dh",
+		Cols: []string{"stage", "on", "n", "healthy", "msg", "since"},
+		Rows: [][]driver.Value{{"detect", "resource:disk", int64(4), nil, nil, nil}}})
+	f := newFixture(rules...)
+	rec := f.do("GET", "/api/queues", "", admin())
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var snap Snapshot
+	decode(t, rec, &snap)
+	for _, q := range snap.Queues {
+		if q.Stage != "transcribe" {
+			continue
+		}
+		if q.Health == nil || q.Health.State != HealthOff {
+			t.Fatalf("transcribe health = %+v", q.Health)
+		}
+		if w := q.Health.Waiting[0]; w.Component != "transcription" || w.Count != 3 || w.Phase != "off" {
+			t.Fatalf("transcribe waiting = %+v", w)
+		}
+	}
+	r, err := f.h.HealthRollup(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Off) != 1 || r.Off[0] != "transcribe" {
+		t.Fatalf("off = %v", r.Off)
+	}
+	if len(r.Waiting) != 1 || r.Waiting[0] != "detect" {
+		t.Fatalf("waiting = %v (an off stage is not waiting)", r.Waiting)
+	}
+}

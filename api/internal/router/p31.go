@@ -47,6 +47,7 @@ func MountP31(r chi.Router, d P31Deps) *clusterh.Handler {
 		h.Store = &cluster.PGStore{DB: d.DB}
 		h.Roles = &cluster.PGRoles{DB: d.DB}
 		h.Storage = &cluster.PGStorage{DB: d.DB}
+		wireMachineComponents(h, d.DB, d.Logger) // Epic 51 story 51.12
 	default:
 		return nil
 	}

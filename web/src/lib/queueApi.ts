@@ -137,7 +137,9 @@ export interface QueueSummary {
   health?: StageHealth | null;
 }
 
-export type StageHealthState = "ok" | "waiting" | "failing";
+/** Epic 51: "off" is a stage its component holds back (turned off or stopped by an admin):
+ *  grey, never counted with the waiting stages. */
+export type StageHealthState = "ok" | "waiting" | "failing" | "off";
 
 export interface StageHealth {
   state: StageHealthState;
@@ -152,6 +154,9 @@ export interface StageHealth {
     healthy: boolean | null;
     message: string | null;
     since: string | null;
+    /** Epic 51: the component the jobs wait on and its phase (off, or stopped while held). */
+    component?: string;
+    phase?: string;
   }[];
   needs_you: number;
   ignored: number;
