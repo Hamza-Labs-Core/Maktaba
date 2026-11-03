@@ -1,17 +1,21 @@
-"""testflight.yml uploads the iPhone apps and the Apple TV app, each in its own leg.
+"""testflight.yml uploads the iPhone, iPad, Mac and Apple TV apps, each in its own leg.
 
-Every `v*` tag archives, signs and uploads Maktaba Player, Maktaba Remote (iOS) and Maktaba TV
-(tvOS) to App Store Connect. Each is its own matrix leg with fail-fast off, so one app's failed
-upload (its App Store Connect record not made yet, say) leaves the others' alone. Each leg
-archives for its scheme's own platform, from a scheme apps/apple/project.yml archives in
-Release, and every uploaded app declares ITSAppUsesNonExemptEncryption NO (no
-export-compliance question on every build). The Apple TV app has the layered icon, the App
-Store icon and both Top Shelf images App Store Connect requires of a tvOS app.
+Every `v*` tag archives, signs and uploads Maktaba Player (iPhone), Maktaba Player iPad,
+Maktaba Remote (iOS), Maktaba Player Mac (macOS) and Maktaba TV (tvOS) to App Store Connect.
+Each is its own matrix leg with fail-fast off, so one app's failed upload (its App Store
+Connect record not made yet, say) leaves the others' alone. Each leg archives for its scheme's
+own platform, from a scheme apps/apple/project.yml archives in Release, and every uploaded app
+declares ITSAppUsesNonExemptEncryption NO (no export-compliance question on every build).
+The Mac app's entitlements (its sandbox, which the Mac App Store requires) are signed into the
+unsigned archive for the export to keep, it has an App Store category, and its app icon has
+every Mac size. The Apple TV app has the layered icon, the App Store icon and both Top Shelf
+images App Store Connect requires of a tvOS app.
 """
 
 from __future__ import annotations
 
 import json
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -23,9 +27,15 @@ PROJECT = yaml.safe_load((ROOT / "apps/apple/project.yml").read_text(encoding="u
 PBXPROJ = (ROOT / "apps/apple/Maktaba.xcodeproj/project.pbxproj").read_text(encoding="utf-8")
 UPLOAD = WORKFLOW["jobs"]["upload"]
 LEGS: list[dict[str, str]] = UPLOAD["strategy"]["matrix"]["include"]
-DESTINATIONS = {"iOS": "generic/platform=iOS", "tvOS": "generic/platform=tvOS"}
-SDKS = {"iOS": "iphoneos", "tvOS": "appletvos"}
+DESTINATIONS = {
+    "iOS": "generic/platform=iOS",
+    "macOS": "generic/platform=macOS",
+    "tvOS": "generic/platform=tvOS",
+}
+SDKS = {"iOS": "iphoneos", "macOS": "macosx", "tvOS": "appletvos"}
 TV_ASSETS = ROOT / "apps/tv/tvos/MaktabaTV/Resources/Assets.xcassets"
+APPLE = ROOT / "apps/apple"
+STEPS = {s.get("name"): s for s in UPLOAD["steps"]}
 
 
 def _settings(target: dict[str, Any]) -> dict[str, Any]:
@@ -35,6 +45,19 @@ def _settings(target: dict[str, Any]) -> dict[str, Any]:
         merged.update(_settings(PROJECT["targetTemplates"][name]))
     merged.update(target.get("settings", {}).get("base", {}))
     return merged
+
+
+def _target(leg: dict[str, str]) -> dict[str, Any]:
+    (target_name,) = PROJECT["schemes"][leg["scheme"]]["build"]["targets"]
+    target: dict[str, Any] = PROJECT["targets"][target_name]
+    return target
+
+
+def _png_size(path: Path) -> tuple[int, int]:
+    head = path.read_bytes()[:24]
+    assert head[:8] == b"\x89PNG\r\n\x1a\n", path
+    width, height = struct.unpack(">II", head[16:24])
+    return width, height
 
 
 def _platform(target: dict[str, Any]) -> str:
@@ -49,7 +72,13 @@ def _platform(target: dict[str, Any]) -> str:
 
 def test_every_app_is_in_the_matrix_once() -> None:
     schemes = [leg["scheme"] for leg in LEGS]
-    assert sorted(schemes) == ["Maktaba Player", "Maktaba Remote", "Maktaba TV"]
+    assert sorted(schemes) == [
+        "Maktaba Player",
+        "Maktaba Player Mac",
+        "Maktaba Player iPad",
+        "Maktaba Remote",
+        "Maktaba TV",
+    ]
 
 
 def test_one_app_failing_leaves_the_others() -> None:
@@ -100,3 +129,54 @@ def test_the_tv_app_has_its_app_store_icons_and_top_shelf() -> None:
         folder = brand / asset["filename"]
         assert folder.is_dir(), folder
         assert list(folder.rglob("*.png")), f"{folder} has no image"
+
+
+def test_the_mac_apps_entitlements_are_signed_into_the_archive() -> None:
+    # an unsigned archive has no entitlements, and the export signs with the archived app's:
+    # without this the Mac app would ship unsandboxed (the Mac App Store rejects it)
+    for leg in LEGS:
+        target = _target(leg)
+        if _platform(target) == "macOS":
+            path = target["entitlements"]["path"]
+            assert leg.get("entitlements") == f"apps/apple/{path}", leg
+            assert target["entitlements"]["properties"]["com.apple.security.app-sandbox"] is True
+            assert (ROOT / leg["entitlements"]).is_file(), leg
+        else:
+            assert "entitlements" not in leg, leg
+    assert UPLOAD["env"]["ENTITLEMENTS"] == "${{ matrix.entitlements }}"
+    step = STEPS["Entitlements into the archive"]
+    assert step["if"] == "matrix.entitlements != ''"
+    names = list(STEPS)
+    assert names.index("Archive") < names.index("Entitlements into the archive")
+    assert names.index("Entitlements into the archive") < names.index(
+        "Sign and upload to TestFlight"
+    )
+    run = step["run"]
+    assert "$(AppIdentifierPrefix)" in run.replace("\\$", "$")
+    assert "codesign --force --sign - --options runtime --entitlements" in run
+    assert "com.apple.security.app-sandbox" in run
+
+
+def test_the_mac_app_has_an_app_store_category() -> None:
+    # the Mac App Store rejects an upload without LSApplicationCategoryType
+    for leg in LEGS:
+        target = _target(leg)
+        if _platform(target) == "macOS":
+            category = _settings(target).get("INFOPLIST_KEY_LSApplicationCategoryType")
+            assert category == "public.app-category.entertainment", leg
+
+
+def test_the_mac_app_icon_has_every_mac_size() -> None:
+    target = PROJECT["targets"]["Maktaba Player Mac"]
+    icon = {**PROJECT["settings"]["base"], **_settings(target)}["ASSETCATALOG_COMPILER_APPICON_NAME"]
+    folder = APPLE / f"Shared/Assets.xcassets/{icon}.appiconset"
+    images = json.loads((folder / "Contents.json").read_text(encoding="utf-8"))["images"]
+    mac = {(i["size"], i["scale"]): i["filename"] for i in images if i["idiom"] == "mac"}
+    want = {(f"{n}x{n}", scale) for n in (16, 32, 128, 256, 512) for scale in ("1x", "2x")}
+    assert set(mac) == want
+    for (size, scale), filename in mac.items():
+        points = int(size.split("x")[0])
+        pixels = points * int(scale[0])
+        assert _png_size(folder / filename) == (pixels, pixels), filename
+    # the iPhone and iPad keep their single-size icon
+    assert any(i["idiom"] == "universal" and i.get("platform") == "ios" for i in images)

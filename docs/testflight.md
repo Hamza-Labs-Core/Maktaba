@@ -1,13 +1,16 @@
-# TestFlight: the iPhone and Apple TV apps
+# TestFlight: the iPhone, iPad, Mac and Apple TV apps
 
-Every `v*` release tag uploads the native iPhone apps and the Apple TV app from `apps/apple/`
+Every `v*` release tag uploads the native iPhone, iPad and Mac apps and the Apple TV app from
+`apps/apple/`
 to App Store Connect,
 where they appear in TestFlight. The workflow is `.github/workflows/testflight.yml`. It can
 also be run by hand from the Actions tab (*TestFlight* → *Run workflow*).
 
 | App | Scheme | Bundle ID |
 |---|---|---|
-| Maktaba Player | `Maktaba Player` | `com.hamzalabs.maktaba.player` |
+| Maktaba Player (iPhone) | `Maktaba Player` | `com.hamzalabs.maktaba.player` |
+| Maktaba Player for iPad | `Maktaba Player iPad` | `com.hamzalabs.maktaba.player.tablet` |
+| Maktaba Player for Mac (Mac App Store) | `Maktaba Player Mac` | `com.hamzalabs.maktaba.player.mac` |
 | Maktaba Remote | `Maktaba Remote` | `com.hamzalabs.maktaba.remote` |
 | Maktaba TV (Apple TV) | `Maktaba TV` | `com.hamzalabs.maktaba.tv` |
 
@@ -31,7 +34,15 @@ App Store Connect record doesn't exist yet, the other apps still upload.
    already in the repository secrets (`APPLE_API_KEY_P8`, `APPLE_API_KEY_ID`,
    `APPLE_API_ISSUER`) and `APPLE_TEAM_ID`. No certificate or provisioning profile is stored
    as a secret: Apple keeps the cloud-managed distribution certificate, and Xcode creates the
-   App Store profile when it needs one.
+   App Store profile when it needs one. The Mac app's export builds the installer package
+   (`.pkg`) the Mac App Store takes and signs it with the cloud-managed Mac Installer
+   Distribution certificate.
+5. The Mac app is sandboxed (`apps/apple/Player/Player-Mac.entitlements`). An unsigned archive
+   carries no entitlements and the export signs with the archived app's, so before the export
+   the Mac leg signs those entitlements into the archived app ad hoc (no certificate, the
+   team's ID in place of `$(AppIdentifierPrefix)`). The export keeps them and adds the App
+   Store profile's. The Mac app also declares its App Store category
+   (`LSApplicationCategoryType`, Entertainment), which the Mac App Store requires.
 
 The Capacitor wrapper's iOS job in `mobile-release.yml` (`apps/mobile`) is a different app.
 It still archives unsigned and is not uploaded.
@@ -42,16 +53,19 @@ App records can't be created through the API, so the first upload fails until th
 (`Error Downloading App Information`, `missingApp(bundleId: …)` in the log).
 
 1. In [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → **+** → **New App**,
-   create the three apps:
+   create the five apps:
 
    | Platform | Name | Primary language | Bundle ID | SKU |
    |---|---|---|---|---|
    | iOS | Maktaba Player | English | `com.hamzalabs.maktaba.player` | `maktaba-player-ios` |
+   | iOS | Maktaba Player for iPad | English | `com.hamzalabs.maktaba.player.tablet` | `maktaba-player-ipad` |
+   | macOS | Maktaba Player for Mac | English | `com.hamzalabs.maktaba.player.mac` | `maktaba-player-mac` |
    | iOS | Maktaba Remote | English | `com.hamzalabs.maktaba.remote` | `maktaba-remote-ios` |
    | tvOS | Maktaba TV | English | `com.hamzalabs.maktaba.tv` | `maktaba-tv-tvos` |
 
-   For the Apple TV app pick the **tvOS** platform in the New App form. Its bundle ID is its
-   own, so it needs its own record. If the name "Maktaba TV" is taken, pick another that
+   For the Mac app pick the **macOS** platform, and for the Apple TV app **tvOS**, in the
+   New App form. The iPad, Mac and Apple TV apps each have their own bundle ID, so each needs
+   its own record. If the name "Maktaba TV" is taken, pick another that
    starts with Maktaba.
 
    If a bundle ID isn't in the list, register it first: Certificates, Identifiers & Profiles →
@@ -68,12 +82,13 @@ App records can't be created through the API, so the first upload fails until th
 
 Then run the workflow by hand, or push the next tag.
 
-## Installing on the iPhone
+## Installing on the iPhone (iPad, Mac, Apple TV)
 
 1. Install **TestFlight** from the App Store.
 2. Open it with the Apple ID that is an internal tester. Maktaba Player and Maktaba Remote
-   show up there (Maktaba TV in the TestFlight app on the Apple TV) once App Store Connect has processed a build (usually 5–30 minutes after
-   the upload). The apps declare that they use only standard encryption
+   show up there (the iPad app in TestFlight on the iPad, the Mac app in TestFlight for Mac,
+   Maktaba TV in the TestFlight app on the Apple TV) once App Store Connect has processed a
+   build (usually 5–30 minutes after the upload). The apps declare that they use only standard encryption
    (`ITSAppUsesNonExemptEncryption` is `NO`), so App Store Connect doesn't ask the
    export-compliance question.
 3. Tap **Install**. Each new tag's build arrives as an update in TestFlight.
