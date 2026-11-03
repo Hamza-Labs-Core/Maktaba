@@ -17,7 +17,7 @@ struct LiveOverlaysTests {
         #expect(o.nextChange(after: at(2)) == at(7))
     }
 
-    /// The owner's report: a channel that took longer than the banner's time to start kept
+    /// The bug: a channel that took longer than the banner's time to start kept
     /// the banner up for good.
     @Test func aSlowStartStillHidesTheBanner() {
         var o = LiveOverlays()

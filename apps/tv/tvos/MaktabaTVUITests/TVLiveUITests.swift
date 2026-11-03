@@ -147,7 +147,7 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(element("live.player").waitForNonExistence(timeout: 10))
     }
 
-    /// The owner's report: a channel slower to start than the banner's six seconds kept the
+    /// The bug: a channel slower to start than the banner's six seconds kept the
     /// banner up for good. Here the playlist takes 9 s: the banner stays while it starts, then
     /// goes 6 s after the picture plays; Play/Pause brings it back, Menu puts it away. The
     /// picture fills the screen edge to edge, and nothing is drawn over the top-right corner,
@@ -199,7 +199,7 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(player.waitForNonExistence(timeout: 10), "Menu leaves the player")
     }
 
-    /// The owner's report: the TV's home had Continue watching and nothing else. Every row of
+    /// The bug: the TV's home had Continue watching and nothing else. Every row of
     /// the Player's Home is there, with its posters; a row that fails stays as a retry tile.
     func testHomeHasEveryRow() throws {
         home.stub("GET", "/api/channels/now", status: 500, body: #"{"title":"down","status":500}"#)
@@ -232,7 +232,7 @@ final class TVLiveUITests: XCTestCase {
         shot("tv-home-ar")
     }
 
-    /// The owner's report: the libraries had no pictures. Each tile shows its newest video's.
+    /// The bug: the libraries had no pictures. Each tile shows its newest video's.
     func testLibraryTilesHaveArt() throws {
         signIn("en")
         let tab = app.tabBars.buttons["Libraries"]

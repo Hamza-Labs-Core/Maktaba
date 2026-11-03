@@ -85,19 +85,44 @@ struct TrackChoice: Identifiable, Hashable {
     }
 
     /// What sound the item plays now, for the UI tests' state and the tests: the codec of its
-    /// enabled audio track ("aac"), nil when no audio track is enabled; and whether the
-    /// player is audible (not muted, volume up).
+    /// enabled audio tracks ("aac"), nil when no audio track is enabled; and whether the
+    /// player is audible (not muted, volume up). Reads the format descriptions AVFoundation
+    /// already has; `loadedSound` loads the ones it does not.
     static func sound(player: AVPlayer, item: AVPlayerItem) -> (codec: String?, audible: Bool) {
-        let enabled = item.tracks.filter { $0.isEnabled && $0.assetTrack?.mediaType == .audio }
-        let codec = enabled.lazy.compactMap { t -> String? in
-            guard let desc = t.assetTrack?.formatDescriptions.first else { return "audio" }
+        let formats = enabledAudio(of: item).map { t in
             // swiftlint:disable:next force_cast
-            return Self.codecName(CMFormatDescriptionGetMediaSubType(desc as! CMFormatDescription))
-        }.first
-        return (enabled.isEmpty ? nil : codec ?? "audio", !player.isMuted && player.volume > 0)
+            t.formatDescriptions.map { CMFormatDescriptionGetMediaSubType($0 as! CMFormatDescription) }
+        }
+        return (codec(of: formats), audible(player))
     }
 
-    static func codecName(_ subtype: FourCharCode) -> String {
+    /// `sound`, with each enabled audio track's format descriptions loaded first: a track that
+    /// starts after an audio switch or a discontinuity has none read yet.
+    static func loadedSound(player: AVPlayer, item: AVPlayerItem) async -> (codec: String?, audible: Bool) {
+        var formats: [[FourCharCode]] = []
+        for t in enabledAudio(of: item) {
+            let descs = (try? await t.load(.formatDescriptions)) ?? []
+            formats.append(descs.map { CMFormatDescriptionGetMediaSubType($0) })
+        }
+        return (codec(of: formats), audible(player))
+    }
+
+    /// The codec of the enabled audio tracks, given each one's format subtypes: the first one
+    /// known, "audio" when none is (a track whose format is not read yet, or one not listed
+    /// here), nil when no track is enabled. Any known one counts, not only the first track's:
+    /// around an audio switch the item lists the track it leaves next to the one it plays.
+    nonisolated static func codec(of tracks: [[FourCharCode]]) -> String? {
+        if tracks.isEmpty { return nil }
+        return tracks.lazy.flatMap { $0 }.map(codecName).first { $0 != "audio" } ?? "audio"
+    }
+
+    private static func enabledAudio(of item: AVPlayerItem) -> [AVAssetTrack] {
+        item.tracks.filter(\.isEnabled).compactMap(\.assetTrack).filter { $0.mediaType == .audio }
+    }
+
+    private static func audible(_ player: AVPlayer) -> Bool { !player.isMuted && player.volume > 0 }
+
+    nonisolated static func codecName(_ subtype: FourCharCode) -> String {
         switch subtype {
         case kAudioFormatMPEG4AAC, kAudioFormatMPEG4AAC_HE, kAudioFormatMPEG4AAC_HE_V2, kAudioFormatMPEG4AAC_LD: "aac"
         case kAudioFormatAC3: "ac3"

@@ -82,6 +82,8 @@ final class Playback {
     private var itemObservers: [NSObjectProtocol] = []
     private var statusObservation: NSKeyValueObservation?
     private var groupsTask: Task<Void, Never>?
+    /// Loading the enabled audio tracks' formats, when they were not read yet.
+    private var soundTask: Task<Void, Never>?
     private var legible: AVMediaSelectionGroup?
     private var audible: AVMediaSelectionGroup?
     private var nextTask: Task<Void, Never>?
@@ -437,6 +439,8 @@ final class Playback {
         itemObservers = []
         groupsTask?.cancel()
         groupsTask = nil
+        soundTask?.cancel()
+        soundTask = nil
     }
 
     private func itemStatusChanged() {
@@ -479,6 +483,18 @@ final class Playback {
         let now = PlayerTracks.sound(player: p, item: item)
         let s = Sound(codec: now.codec, audible: now.audible)
         if s != sound { sound = s }
+        // an enabled track whose format is not read yet (after an audio switch or a
+        // discontinuity): load it, one load at a time, rather than report "audio" for good
+        guard now.codec == "audio", soundTask == nil else { return }
+        soundTask = Task { [weak self] in
+            let loaded = await PlayerTracks.loadedSound(player: p, item: item)
+            // cancelled: the item was left, and unobserveItem cleared soundTask already
+            guard let self, !Task.isCancelled else { return }
+            self.soundTask = nil
+            guard self.player === p, p.currentItem === item else { return }
+            let s = Sound(codec: loaded.codec, audible: loaded.audible)
+            if s != self.sound { self.sound = s }
+        }
     }
 
     func playedToEnd() {
