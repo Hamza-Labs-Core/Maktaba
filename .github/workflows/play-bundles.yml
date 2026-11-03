@@ -135,14 +135,19 @@ jobs:
         with:
           packages: platform-tools platforms;android-37.0
 
+      # Gradle's own cache action, read-only: a tag's entries are seen by that tag alone, and
+      # each would push main's out of the repository's 10 GB cache. It restores the Gradle User
+      # Home main's Android apps job saved (_android-apps.yml; the job key names that job) with
+      # its dependency, wrapper and compiled-script entries.
       - name: Gradle caches
-        uses: actions/cache@v4
+        uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          GRADLE_BUILD_ACTION_CACHE_KEY_JOB: android-apps
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: play-bundles-gradle-${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/tv/android/gradle/*.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties', 'apps/tv/android/gradle/wrapper/gradle-wrapper.properties', 'apps/android/**/*.gradle.kts', 'apps/tv/android/**/*.gradle.kts') }}
-          restore-keys: play-bundles-gradle-
+          cache-read-only: true
+          add-job-summary: on-failure
+          # the step above checks both wrappers' jars
+          validate-wrappers: false
 
       # The keystore goes to the runner's temp folder; Gradle signs with it when
       # ANDROID_UPLOAD_KEYSTORE_FILE names it (the apps' signingConfigs "upload").

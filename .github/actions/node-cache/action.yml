@@ -1,0 +1,66 @@
+# Restores the npm cache or the pnpm store that main saved; it never saves. setup-node's own
+# cache has no read-only switch, and entries pull requests saved pushed main's out of the
+# repository's Actions cache (over its 10 GB limit, #615). So setup-node runs with no `cache:`
+# (and `package-manager-cache: false`), this action restores after it, and only a push to
+# main writes, with the job's last step:
+#
+#   - name: Save the pnpm store
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.key != '' && steps.pnpm-cache.outputs.cache-hit != 'true'
+#     uses: actions/cache/save@v4
+#     with:
+#       path: ${{ steps.pnpm-cache.outputs.path }}
+#       key: ${{ steps.pnpm-cache.outputs.key }}
+#
+# The key and path are setup-node's own (node-cache-<os>-<arch>-<manager>-<hash of the
+# lockfiles>; `npm config get cache` or `pnpm store path`): the lockfiles' content, never the
+# commit, and entries setup-node saved still restore.
+
+name: Node package caches (restore only)
+description: Restores main's npm cache or pnpm store under setup-node's key; never saves.
+
+inputs:
+  package-manager:
+    description: npm or pnpm
+    required: true
+  lock-hash:
+    description: hashFiles() of the lockfiles the job installs from
+    required: true
+
+outputs:
+  key:
+    description: the cache key (for actions/cache/save)
+    value: ${{ steps.key.outputs.key }}
+  path:
+    description: the cache folder (for actions/cache/save)
+    value: ${{ steps.key.outputs.path }}
+  cache-hit:
+    description: "'true' when the exact key was restored"
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PM: ${{ inputs.package-manager }}
+        HASH: ${{ inputs.lock-hash }}
+      run: |
+        set -euo pipefail
+        [ -n "${HASH}" ] || { echo "::error::node-cache: no lockfile matched"; exit 1; }
+        case "${PM}" in
+          npm) path=$(npm config get cache) ;;
+          pnpm) path=$(pnpm store path --silent) ;;
+          *) echo "::error::node-cache: package-manager is npm or pnpm, not ${PM}"; exit 1 ;;
+        esac
+        arch=$(printf '%s' "${RUNNER_ARCH}" | tr '[:upper:]' '[:lower:]')
+        {
+          echo "key=node-cache-${RUNNER_OS}-${arch}-${PM}-${HASH}"
+          echo "path=${path}"
+        } >> "${GITHUB_OUTPUT}"
+
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.key.outputs.path }}
+        key: ${{ steps.key.outputs.key }}
