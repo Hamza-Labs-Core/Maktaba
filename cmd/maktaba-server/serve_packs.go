@@ -446,6 +446,10 @@ func (a *packsAdmin) postOffline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := packs.OfflineName(a.m.Version, req.Platform, req.Bundle)
+	if filepath.Base(name) != name || strings.Contains(name, "..") {
+		writeConfigJSON(w, http.StatusBadRequest, map[string]string{"error": "bad offline file name"})
+		return
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.offline == nil {
