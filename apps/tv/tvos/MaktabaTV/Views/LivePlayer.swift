@@ -30,7 +30,13 @@ final class LivePlayback {
     /// The picture waits for data while the channel plays (a buffering stall): AVPlayer's
     /// `timeControlStatus` waiting after the picture moved, or its stall notice. The phase
     /// stays `.playing`; `LiveOverlays` turns a lasting wait into the buffering state.
-    private(set) var waiting = false
+    private(set) var waiting = false {
+        didSet { if waiting != oldValue { waitingSince = waiting ? .now : nil } }
+    }
+    /// Since when the picture waits (nil: it does not).
+    @ObservationIgnored private var waitingSince: ContinuousClock.Instant?
+    /// A wait this long is a player that gave up: the channel is opened again.
+    static let stuck: Duration = .seconds(15)
     /// The current item's picture has moved: a wait from then on is a stall, not the start.
     private var moved = false
 
@@ -224,6 +230,15 @@ final class LivePlayback {
         while !Task.isCancelled, phase == .playing {
             try? await Task.sleep(for: .seconds(3))
             guard !Task.isCancelled, phase == .playing else { return }
+            if waiting, let since = waitingSince, ContinuousClock.now - since >= Self.stuck {
+                // AVPlayer gave up on a segment that came too late and waits for good (seen
+                // on CI: three tries of one segment, then nothing): open the channel again
+                Log.ui.info("live picture: waited too long, opening the channel again")
+                let url = path == .relay ? (relayURL ?? opened) : opened
+                replaceItem(AVPlayerItem(url: url))
+                player.play()
+                continue
+            }
             guard player.currentItem?.status == .failed else { continue }
             if reopened >= 2 {
                 phase = .failed(player.currentItem?.error.map(HomeFailure.init)

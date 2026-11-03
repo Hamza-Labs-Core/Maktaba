@@ -169,10 +169,9 @@ final class TVLiveUITests: XCTestCase {
         sleep(7)
         XCTAssertTrue(banner.exists, "it stays while the channel starts")
         XCTAssertTrue(element("live.player.starting").exists, "still starting after the banner's time")
-        home.release()
-        XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
 
-        // the whole picture, nothing cropped; the watermark's corner kept clear
+        // the whole picture, nothing cropped; the watermark's corner kept clear (checked while
+        // the start is held, so the banner's 6 s never race these queries on a loaded runner)
         let screen = app.windows.firstMatch.frame
         let video = element("live.player.video")
         XCTAssertTrue(video.waitForExistence(timeout: 5), "the picture")
@@ -181,9 +180,12 @@ final class TVLiveUITests: XCTestCase {
                             width: screen.width * 0.16, height: screen.height * 0.2)
         XCTAssertTrue(banner.exists)
         XCTAssertFalse(banner.frame.intersects(corner), "the banner sits clear of the top-right corner: \(banner.frame)")
+
+        home.release()
+        XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
         shot("tv-live-slow-start-playing")
 
-        XCTAssertTrue(banner.waitForNonExistence(timeout: 10), "the banner goes after a slow start")
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 15), "the banner goes after a slow start")
         XCTAssertTrue(player.exists, "and the channel keeps playing")
         shot("tv-live-slow-start-clear")
 
@@ -257,7 +259,9 @@ final class TVLiveUITests: XCTestCase {
     /// The bug: a buffering stall did not change the playback phase, so the banner
     /// did not come back. Segment 6 is held (a latch): the picture plays twelve seconds, the
     /// banner goes, then the picture waits for data. The buffering state and the banner show;
-    /// when the segment comes, buffering goes at once and the banner after its time.
+    /// when the segment comes, buffering goes at once and the banner after its time. (AVPlayer
+    /// on CI gave up on the held segment after three tries and waited for good; the player
+    /// then opens the channel again after `LivePlayback.stuck`, which this covers too.)
     func testABufferingStallShowsTheBanner() throws {
         home.hold("GET", "/stream/channel/ch-1/seg6.ts")
         signIn("en")
