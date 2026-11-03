@@ -1,6 +1,7 @@
-# TestFlight: the iPhone apps
+# TestFlight: the iPhone and Apple TV apps
 
-Every `v*` release tag uploads the native iPhone apps from `apps/apple/` to App Store Connect,
+Every `v*` release tag uploads the native iPhone apps and the Apple TV app from `apps/apple/`
+to App Store Connect,
 where they appear in TestFlight. The workflow is `.github/workflows/testflight.yml`. It can
 also be run by hand from the Actions tab (*TestFlight* → *Run workflow*).
 
@@ -8,6 +9,10 @@ also be run by hand from the Actions tab (*TestFlight* → *Run workflow*).
 |---|---|---|
 | Maktaba Player | `Maktaba Player` | `com.hamzalabs.maktaba.player` |
 | Maktaba Remote | `Maktaba Remote` | `com.hamzalabs.maktaba.remote` |
+| Maktaba TV (Apple TV) | `Maktaba TV` | `com.hamzalabs.maktaba.tv` |
+
+Each app is its own job (`fail-fast: false`): if one upload fails, for example because its
+App Store Connect record doesn't exist yet, the other apps still upload.
 
 ## How it works
 
@@ -15,7 +20,8 @@ also be run by hand from the Actions tab (*TestFlight* → *Run workflow*).
    tag that is already published uploads nothing.
 2. A `macos-26` runner uses the newest Xcode it has. Until the runner image has Xcode 27, the
    Player is built without the iPhone Duo's half-folded layout (that code needs the iOS 27.1
-   SDK and sits behind `#if compiler(>=6.4)`). The build is otherwise the same.
+   SDK and sits behind `#if compiler(>=6.4)`). The build is otherwise the same. The TV app
+   targets tvOS 26 and archives with any Xcode 26 or later (`generic/platform=tvOS`).
 3. Versions: the tag's version is the app version (`v0.3.45` → `0.3.45`; a `-rc.N` suffix is
    dropped). A hand run uses the latest tag. The build number is the UTC time of the run
    (`YYYYMMDD.HHMMSS`), so every upload is new and higher than the last.
@@ -36,12 +42,17 @@ App records can't be created through the API, so the first upload fails until th
 (`Error Downloading App Information`, `missingApp(bundleId: …)` in the log).
 
 1. In [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → **+** → **New App**,
-   create both apps:
+   create the three apps:
 
    | Platform | Name | Primary language | Bundle ID | SKU |
    |---|---|---|---|---|
    | iOS | Maktaba Player | English | `com.hamzalabs.maktaba.player` | `maktaba-player-ios` |
    | iOS | Maktaba Remote | English | `com.hamzalabs.maktaba.remote` | `maktaba-remote-ios` |
+   | tvOS | Maktaba TV | English | `com.hamzalabs.maktaba.tv` | `maktaba-tv-tvos` |
+
+   For the Apple TV app pick the **tvOS** platform in the New App form. Its bundle ID is its
+   own, so it needs its own record. If the name "Maktaba TV" is taken, pick another that
+   starts with Maktaba.
 
    If a bundle ID isn't in the list, register it first: Certificates, Identifiers & Profiles →
    Identifiers → **+** → App IDs. Opening the target once in Xcode with automatic signing
@@ -61,7 +72,7 @@ Then run the workflow by hand, or push the next tag.
 
 1. Install **TestFlight** from the App Store.
 2. Open it with the Apple ID that is an internal tester. Maktaba Player and Maktaba Remote
-   show up there once App Store Connect has processed a build (usually 5–30 minutes after
+   show up there (Maktaba TV in the TestFlight app on the Apple TV) once App Store Connect has processed a build (usually 5–30 minutes after
    the upload). The apps declare that they use only standard encryption
    (`ITSAppUsesNonExemptEncryption` is `NO`), so App Store Connect doesn't ask the
    export-compliance question.

@@ -78,7 +78,7 @@ the two jobs are independent:
 | Job | Runner | Steps | Artifact |
 |---|---|---|---|
 | `android-tv` | `ubuntu-22.04` | JDK 17 + Android SDK → `gradlew :app:assembleRelease` | `maktaba-tv-<version>.apk` (attached to the Release) |
-| `tvos` | `macos-latest` | `swift build` (compile check) | *manual* — see below |
+| `tvos` | `macos-latest` | `make tv-build-ios` (tvOS simulator build of the `Maktaba TV` scheme) | none; TestFlight upload is `testflight.yml`'s, see below |
 
 **Android TV signing** reuses the same secrets as the mobile workflow
 (`ANDROID_KEYSTORE_BASE64` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`)
@@ -87,15 +87,13 @@ unsigned, so it is kept as the run's `maktaba-tv-android` artifact
 (`maktaba-tv-<version>-unsigned.apk`) and not attached to the Release.
 Build it locally with `make package-tv-android`.
 
-**tvOS distribution is manual.** Apple does not allow unsigned tvOS app
-distribution, and a shippable `.ipa` needs a full Xcode app target (not
-just the SwiftPM core), an Apple Distribution certificate, and a tvOS
-provisioning profile. CI therefore only compiles the SwiftUI sources
-(`swift build`, the same check as `make tv-build-ios`); a maintainer
-produces and uploads the release build in Xcode (**Product ▸ Archive ▸
-Distribute App ▸ TestFlight**). When an Xcode target + signing material
-are provisioned, the `xcodebuild archive`/`exportArchive` steps can be
-added to the `tvos` job to automate it.
+**tvOS goes to TestFlight on every tag.** The same `v*` tag runs
+[`.github/workflows/testflight.yml`](../../.github/workflows/testflight.yml),
+whose `Maktaba TV` leg archives the app for tvOS, signs it with Xcode's
+automatic cloud signing (the App Store Connect API key) and uploads it to
+App Store Connect, next to the iPhone apps. No certificate or profile is
+kept in the secrets. The one-time App Store Connect setup (the app record
+for `com.hamzalabs.maktaba.tv`) is in [docs/testflight.md](../../docs/testflight.md).
 
 ## Live TV at home and away (Epic 32 story 32.9, phase C — not built yet)
 
