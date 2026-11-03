@@ -22,6 +22,8 @@ import { cleanRoots } from "./libraries/LibraryForm";
 import { renderPage, memberUser, adminUser } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import type { User } from "../../lib/auth";
+import en from "../../i18n/en.json";
+import ar from "../../i18n/ar.json";
 
 const counts = (total: number, missing = 0) => ({
   total,
@@ -446,6 +448,35 @@ describe("AdminLibraries", () => {
     await waitFor(() => expect(post).toHaveBeenCalledWith("/api/libraries/big/empty-trash"));
     expect(await screen.findByText("Removed 3 missing videos.")).toBeInTheDocument();
   });
+
+  // the Queues page's dialog (components/queue/YouTubeSourcesDialog), for that library
+  for (const locale of ["en", "ar"] as const) {
+    it(`opens the YouTube sources of a library (${locale})`, async () => {
+      const cat = (locale === "ar" ? ar : en) as Record<string, string>;
+      if (locale === "ar") localStorage.setItem("mkt:locale", "ar");
+      try {
+        const user = userEvent.setup();
+        open(DATA, adminUser, { "/api/libraries/small/youtube/sources": { items: [] } });
+        await screen.findByRole("heading", { level: 2, name: "Othman (dup)" });
+        expect(
+          within(card("Dr. Othman Alkamees")).getByRole("button", {
+            name: cat["queue.offline.sources"],
+          })
+        ).toBeInTheDocument();
+        await user.click(
+          within(card("Othman (dup)")).getByRole("button", { name: cat["queue.offline.sources"] })
+        );
+        const title = cat["queue.yt.title"]!.replace("{name}", "");
+        const dialog = await screen.findByRole("dialog", { name: new RegExp(title) });
+        expect(dialog).toHaveAccessibleName(expect.stringContaining("Othman (dup)"));
+        expect(await within(dialog).findByText(cat["queue.yt.none"]!)).toBeInTheDocument();
+        expect(get).toHaveBeenCalledWith("/api/libraries/small/youtube/sources");
+        expect(get).not.toHaveBeenCalledWith("/api/libraries/big/youtube/sources");
+      } finally {
+        localStorage.removeItem("mkt:locale");
+      }
+    });
+  }
 
   it("shows the empty state", async () => {
     open({ items: [], conflict_groups: [] });

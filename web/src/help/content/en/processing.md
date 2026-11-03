@@ -75,7 +75,49 @@ Click an item's name anywhere (in Needs attention, Next up, the log) to open its
 
 ### Keep libraries offline, in MP4 and without duplicates {#offline}
 
-Each library row of the Queues page has a menu, in the order a video goes through: **Refresh from YouTube** (list the library's channels and playlists and download what is new), **Convert to MP4** and **Find duplicates**, plus **YouTube sources…** to add a channel or playlist by its URL, set its mode (new uploads and the back catalogue, new uploads only, or off) and its download options, retry what was gone or skipped, resume the back catalogue or import a Tartube database. **With selected** runs the first three for the ticked rows. A conversion or a duplicate search starts as a dry run: it writes its plan to the job and touches no file. The **YouTube**, **Not MP4** and **Duplicates** columns say where each library stands, and **Where each item is** shows each video's download, conversion and duplicate check, with the job's own **Cancel** and **Retry**.
+Each row of **Libraries** on this page has a menu, in the order a video goes through: **Refresh from YouTube** (list the library's channels and playlists and download what is new), **Convert to MP4** and **Find duplicates**, plus **YouTube sources…** (see [YouTube sources](#youtube-sources)). **With selected** runs the first three for the ticked rows. The **YouTube**, **Not MP4** and **Duplicates** columns say where each library stands, and **Where each item is** shows each video's download, conversion and duplicate check, with the job's own **Cancel** and **Retry**.
+
+How the work starts:
+
+- **Convert to MP4** from a library's menu plans every video of the library and queues a conversion for each file that needs one. The dialog opens with **Dry run: only write the plan to the job, touch no file** ticked: press **Queue the dry run** to see the plan first (it appears on the job when it finishes), then open the menu again, untick it and press **Queue it** to convert.
+- **Find duplicates** from a library's menu checks every converted video of the library for duplicates; a video that is not converted yet is converted first. It also starts with the dry run ticked.
+- To convert one video, click its name on this page to open its page, press **Choose queues…**, tick **Convert to MP4** and queue it. There is no separate convert button on the video itself.
+- A video downloaded from YouTube is handed on by itself: it is converted as soon as it lands, then checked for duplicates, while the next video downloads.
+- Automatic conversion after every scan is off by default (the library setting `convert.auto`), and no scan queues a conversion in this version: start it from the menu.
+
+### How a conversion decides {#convert-decides}
+
+**Convert to MP4** reads each file and picks one of four outcomes:
+
+- **Skip**: the file is already an `.mp4` or `.m4v` with H.264 or HEVC video, AAC, AC-3, E-AC-3 or MP3 audio, and the index at the front of the file, so it plays at once. It is left alone.
+- **Remux** (lossless): the video and audio are already fine for MP4 but sit in another container (`.mkv`, `.mov`, `.ts` and so on), or an MP4 has its index at the end. The streams are copied into a new MP4 without re-encoding.
+- **Audio only**: the video is fine but the audio is not (Opus, Vorbis or FLAC, the usual YouTube `.webm` case). The video is copied and the audio becomes AAC at 192 kbit/s.
+- **Re-encode** (lossy): any other video (VP9, AV1, MPEG-4 Part 2, WMV and so on) becomes H.264. This is **off by default**: a library re-encodes only when its advanced settings say `"convert": {"allow_reencode": true}` (see [Change a library](/help/library-management#edit)). Otherwise the file is skipped as one that needs re-encoding. Re-encoding uses the VideoToolbox H.264 preset taken from FileUtilities (`h264_videotoolbox` at 8 Mbit/s) when the main machine's ffmpeg has it, and `libx264` with CRF 20 (preset `medium`) when it does not or when VideoToolbox fails.
+
+A file with image subtitles (PGS or VobSub, as on Blu-ray and DVD rips) is skipped, because MP4 cannot hold them and they would be lost. Text subtitles are kept inside the MP4 and also written beside it as `<name>.<language>.srt`. Chapters and the file's metadata are kept. A file with no video stream is skipped too.
+
+Nothing is lost on the way. The new MP4 is made in a work folder on the main machine (`~/.maktaba/work/convert`), one file at a time, and is then checked: it is decoded in full, and its length, streams and frame count are compared with the original's. Only a file that passes takes the original's place on the share, where its size is checked again. The original goes to the library's trash (`.maktaba/trash`) for 30 days and can be restored from [File actions](#file-actions) until then. A file that fails the check leaves the original untouched; it is tried once more (re-encoded, where the library allows it) and then shows in [Failures](/help/failures). The video keeps its place, watch history, playlists, transcripts and chapters: nothing is transcribed again.
+
+### YouTube sources {#youtube-sources}
+
+A library's YouTube channels and playlists are its **sources**. When this version was installed, every YouTube channel a library already had became a source set to **Off**, so **nothing downloads until you turn a source on**. To turn one on:
+
+1. On this page, open the menu of the library's row in **Libraries** and choose **YouTube sources…** (the same dialog opens from **YouTube sources…** on [Manage libraries](/help/library-management#youtube-sources)).
+1. In **Mode** next to the source, choose **New uploads and back catalogue** (new uploads download first, then the older videos, a few at a time when YouTube is free) or **New uploads only** (only what is uploaded from now on). **Off** stops it: nothing more downloads, and what was downloaded stays.
+1. Turning a source on queues the library's refresh at once.
+
+To follow a new channel or playlist, paste its link in **Channel or playlist URL** under **Add a source**, choose its **Mode** (a new source starts as **New uploads and back catalogue**) and its **Folder** inside the library (empty: a folder named after its title), then press **Add**.
+
+**Options…** on a source sets how it downloads; press **Save** to keep them:
+
+- **Highest quality**: the tallest picture to download, from 360p to 2160p (1080p unless you change it).
+- **Subtitle languages**: the subtitles to fetch, as language codes (`ar,en` unless you change it).
+- **Also automatic subtitles**: also fetch YouTube's generated subtitles (on unless you change it).
+- **Audio only**: download the sound without the picture.
+- **Cookies from browser**: the browser whose YouTube sign-in to use, for videos that need one.
+- **Limit rate**: a download speed limit, such as `2M`.
+
+Each source also has **Turn off**, **Retry gone/skipped** and **Remove** (it stops following the source; what was downloaded stays). Under **Library actions**, **Resume back catalogue** carries on a paused back catalogue, **Retry gone/skipped/failed** wants those downloads again, and **Import from Tartube…** marks every video an existing Tartube database downloaded as already downloaded, so it is never fetched twice.
 
 ### Duplicates {#duplicates}
 
