@@ -59,6 +59,8 @@ func (h *Handler) Mount(r chi.Router) {
 		r.Get("/api/components", h.list)
 		r.Post("/api/components/preview", h.preview)
 		r.Post("/api/components/apply", h.apply)
+		r.Get("/api/components/bundles", h.bundles)
+		r.Post("/api/components/bundle", h.bundle)
 		r.Post("/api/components/offline", h.offlineMake)
 		r.Get("/api/components/offline/{name}", h.offlineGet)
 		r.Post("/api/components/import", h.importFile)

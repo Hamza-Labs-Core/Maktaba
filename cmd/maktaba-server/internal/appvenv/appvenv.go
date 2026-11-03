@@ -45,8 +45,9 @@ type Spec struct {
 	// machine needs. Every package is checked against its hash in the constraints whatever
 	// the folder holds.
 	Wheelhouse string
-	// NoExtras builds the venv with no extras at all (runtime.ml removed, story 51.16):
-	// Extras "" is the bootstrap's default, not none.
+	// NoExtras builds the venv with no extras at all (runtime.ml removed, story 51.16; a
+	// Core home, story 51.17): Extras "" is the bootstrap's default, not none. The
+	// pipeline folder's constraints-core.txt is taken then, when it has one.
 	NoExtras bool
 	// Offline installs from the wheelhouses alone and never from PyPI (a component
 	// pack's wheels: story 51.16). Wheelhouses are more folders beside Wheelhouse (each
@@ -148,6 +149,20 @@ func Python(payload string) string {
 		return filepath.Join(payload, "python", "python.exe")
 	}
 	return filepath.Join(payload, "python", "bin", "python3")
+}
+
+// CoreConstraintsFile is the pins of the pipeline's runtime with no extras, beside the
+// full set in a payload's pipeline folder (story 51.17).
+const CoreConstraintsFile = "constraints-core.txt"
+
+// CoreConstraints is the pipeline folder's constraints-core.txt, or "" when it has none
+// (a payload from before story 51.17).
+func CoreConstraints(pipeline string) string {
+	p := filepath.Join(pipeline, CoreConstraintsFile)
+	if fi, err := os.Stat(p); err == nil && fi.Mode().IsRegular() {
+		return p
+	}
+	return ""
 }
 
 // Wheel is the payload's pipeline wheel.
@@ -282,8 +297,14 @@ func Run(ctx context.Context, spec Spec, progress func(Progress)) (Result, error
 	// console). It stops pip, says interrupted and exits 130; one that cannot
 	// be asked is killed after stopWait, and the next run resumes the build.
 	bootstrap := func(extra ...string) (*exec.Cmd, *ctrlbreak.Stopper) {
-		args := append([]string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py,
-			"--payload", spec.pipeline(), "--venv", spec.Venv}, extra...)
+		args := []string{"-m", "maktaba_pipeline.venv_bootstrap", "--python", py}
+		if core := CoreConstraints(spec.pipeline()); spec.NoExtras && core != "" {
+			// story 51.17: a venv with no extras pins the runtime alone (no torch, no MLX)
+			args = append(args, "--wheel", wheel, "--constraints", core)
+		} else {
+			args = append(args, "--payload", spec.pipeline())
+		}
+		args = append(append(args, "--venv", spec.Venv), extra...)
 		switch {
 		case spec.NoExtras:
 			args = append(args, "--extras", "")

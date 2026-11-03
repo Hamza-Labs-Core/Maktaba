@@ -8,7 +8,7 @@
 #                                        links that a minimal system can lack, all on an
 #                                        $ORIGIN rpath
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
-#   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
+#   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-core.txt
 #   migrations/  the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
 #   licenses/  the third-party licences and where their sources are
 #   files.sha256                         every file and symlink, with mode, size, SHA-256
@@ -256,9 +256,13 @@ fi
 "$REPO_ROOT/deploy/packaging/node/build-release.sh" --version "$pyver" --out "$WORK/node" >/dev/null
 whl=("$WORK"/node/maktaba_pipeline-*-py3-none-any.whl)
 cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)
+cons_core=("$WORK"/node/maktaba-pipeline-*-constraints-core.txt)
 if [ "${#whl[@]}" -ne 1 ] || [ ! -f "${whl[0]}" ]; then die "expected one pipeline wheel"; fi
 cp "${whl[0]}" "$OUT/pipeline/"
+[ -f "${cons_core[0]}" ] || die "expected the core constraints (build-release.sh)"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
+# story 51.17: the runtime's pins alone, for a venv with no ML extras (a Core home)
+cp "${cons_core[0]}" "$OUT/pipeline/constraints-core.txt"
 
 # --- the database's migrations: setup's finish and the api's auto-migrate run from the user's
 # data directory, never a checkout, so the payload carries them (maktaba-api: beside bin/) -------
@@ -289,6 +293,7 @@ P_PY_VERSION="$PYTHON_VERSION" P_PY_URL="$(pin PYTHON_URL)" P_PY_SHA="$(pin PYTH
 P_PGV_VERSION="$PGVECTOR_VERSION" P_PGV_URL="$PGVECTOR_URL" P_PGV_SHA="$PGVECTOR_SHA256" \
 P_WHEEL="$WHEEL_NAME" P_WHEEL_SHA="$(sha256 "$OUT/pipeline/$WHEEL_NAME")" \
 P_CONS_SHA="$(sha256 "$OUT/pipeline/constraints.txt")" \
+P_CONS_CORE_SHA="$(sha256 "$OUT/pipeline/constraints-core.txt")" \
 "$PY" -I - "$OUT/payload.json" "${closure[@]}" <<'EOF'
 import json, os, sys
 e = os.environ
@@ -296,12 +301,14 @@ doc = {
     "schema": 1,
     "version": e["P_VERSION"],
     "platform": e["P_PLATFORM"],
+    "flavour": "full",
     "min_glibc": e["P_MIN_GLIBC"],
     "postgres": {"version": e["P_PG_VERSION"], "source": e["P_PG_URL"], "sha256": e["P_PG_SHA"],
                  "libraries": sys.argv[2:]},
     "pgvector": {"version": e["P_PGV_VERSION"], "source": e["P_PGV_URL"], "sha256": e["P_PGV_SHA"]},
     "python": {"version": e["P_PY_VERSION"], "source": e["P_PY_URL"], "sha256": e["P_PY_SHA"]},
-    "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"]},
+    "pipeline": {"wheel": e["P_WHEEL"], "sha256": e["P_WHEEL_SHA"], "constraints_sha256": e["P_CONS_SHA"],
+                 "constraints_core_sha256": e["P_CONS_CORE_SHA"]},
     "files": {"manifest": "files.sha256", **json.loads(e["P_MANIFEST"])},
 }
 with open(sys.argv[1], "w", encoding="utf-8") as f:

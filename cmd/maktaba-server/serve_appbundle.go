@@ -144,6 +144,10 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 			} else {
 				venv.spec.NoExtras = true
 			}
+		} else if extras, none, ok := choiceVenv(cfg, pl); ok {
+			// story 51.17: a home set up as Core (or Custom without the ML runtime) keeps
+			// its venv with no ML extras (constraints-core.txt)
+			venv.spec.Extras, venv.spec.NoExtras = extras, none
 		}
 		venvStep = &sharedStep{wait: detail("venv_waiting", "Waiting for the transcription tools"), run: venv.run}
 	} else {

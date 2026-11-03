@@ -376,6 +376,7 @@ launcher:
 mac_app:
   - *ci
   - 'tools/release/mac-app/**'
+  - 'tools/release/bundle-size/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'
