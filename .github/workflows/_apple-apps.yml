@@ -1,7 +1,8 @@
 # Reusable gate for the native Apple apps (Epic 42, `apps/apple` and the Apple TV app in
 # `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote, Maktaba Player
 # for iPhone and the Mac, Maktaba TV), and their String Catalogs in English and Arabic; and,
-# in a second job, the Player's UI tests on throwaway iPhone and iPad simulators.
+# in other jobs, the Player's UI tests on throwaway iPhone and iPad simulators and the Apple
+# TV app's Live TV, Home and Libraries UI tests on a throwaway Apple TV simulator.
 #
 # The catalogs: tools/apple/check-string-catalogs.py fails on a key without its Arabic
 # (state "translated") and, reading the .stringsdata the builds write (project.yml sets
@@ -307,6 +308,72 @@ jobs:
 
   # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
   # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the
+  # The Apple TV app's Live TV, Home and Libraries UI tests (TVLiveUITests) against the mock
+  # home, with the Siri remote, on a throwaway Apple TV simulator made and deleted here
+  # (MaktabaTVUITests.swift needs a real home and skips without one).
+  tv-ui-tests:
+    name: TV UI tests
+    if: inputs.build
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      DERIVED: ${{ github.workspace }}/build/tv-ui-derived
+      SHOTS: ${{ github.workspace }}/build/tv-shots
+      RESULTS: ${{ github.workspace }}/build/tv-results
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          xcode=$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -n1)
+          sudo xcode-select -s "$xcode/Contents/Developer"
+          xcodebuild -version
+
+      - name: Make and boot the Apple TV simulator
+        run: |
+          set -euo pipefail
+          mkdir -p "$SHOTS" "$RESULTS"
+          runtime=$(xcrun simctl list runtimes -j | python3 -c 'import json,sys; r=[x for x in json.load(sys.stdin)["runtimes"] if x["platform"]=="tvOS" and x["isAvailable"]]; print(sorted(r, key=lambda x: [int(p) for p in x["version"].split(".")])[-1]["identifier"])')
+          # the newest 4K Apple TV this Xcode knows
+          devtype=$(xcrun simctl list devicetypes -j | python3 -c "
+          import json, sys
+          t = [d['identifier'] for d in json.load(sys.stdin)['devicetypes'] if d['name'].startswith('Apple TV 4K')]
+          print(sorted(t)[-1])")
+          udid=$(xcrun simctl create "maktaba-ci-${GITHUB_RUN_ID}-tv" "$devtype" "$runtime")
+          echo "UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          xcrun simctl ui "$udid" appearance dark
+          xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.tv --mode "level:debug,persist:debug"
+          python3 tools/apple/sim-settle.py "$udid" "$RESULTS/tv-settle.log" --max 480
+
+      - name: Run the TV UI tests
+        working-directory: apps/apple
+        run: |
+          set -euo pipefail
+          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba TV" \
+            -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/tv.xcresult" \
+            CODE_SIGNING_ALLOWED=NO -only-testing "Maktaba TV UITests/TVLiveUITests"
+
+      - name: Keep the app's log, delete the simulator
+        if: always() && env.UDID != ''
+        run: |
+          xcrun simctl spawn "$UDID" log show --style compact --info --debug \
+            --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/tv-app.log" || true
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID" || true
+
+      - name: Keep the screenshots, results and the app's log
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: tv-ui-tests
+          path: |
+            build/tv-shots
+            build/tv-results
+          if-no-files-found: warn
+          retention-days: 14
+
   # build is ad-hoc signed, everything with the UI tests' entitlements (sandbox, network
   # client and server): the app's own add a keychain group, which needs a provisioning
   # profile. The Mac keychain test needs that group, so it is not among the classes here.
