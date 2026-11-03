@@ -7,6 +7,8 @@
 > who owns what). **Research:** [research.md](research.md): the code as it is, Plex, Jellyfin,
 > Emby, Tailscale, Cloudflare Tunnel, Hetzner prices, all with sources.
 > **Wiki:** [epic-50-cloud-no-downtime.md](../../../docs/wiki/epics/epic-50-cloud-no-downtime.md).
+> **Home broadcasting** (publishing a home's TV channels to people outside it, the Broadcaster
+> tier): §14, research in [research-broadcasting.md](research-broadcasting.md), stories 50.20–50.29.
 
 ## 1. Why
 
@@ -86,6 +88,15 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | F9 | **Apps ride out the cloud being down.** They keep the last connection list, try direct addresses first, and show plain messages. | 50.13 |
 | F10 | **Direct remote like Plex.** UPnP / NAT-PMP, an outside reachability check, and HTTPS on the direct path, with names on several separate direct-name domains (never under `maktaba.tv`). **Free on every plan.** | 50.15 |
 | F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through usage-based items at a payment provider TBD (not Stripe). | 50.19 |
+| F12 | **Home broadcasting: the Broadcaster tier** (§14.4). Pro gains guest sharing (1 invite-only channel on demand, 5 viewers, 50 viewer-hours); Broadcaster, an add-on to Pro, gives 3 channels, 100 concurrent viewers, 5,000 viewer-hours, up to 1080p, then optional pay-as-you-go viewer-hours with a cap, then the lowest rung, then new viewers wait. A viewer already playing is never stopped by a limit. Billed through the same payment provider (TBD, not Stripe). | 50.20 |
+| F13 | **The broadcast edge.** The home pushes each segment of each rendition once to Maktaba's Cloudflare edge (Worker, Durable Object, R2). Viewers never reach the home or the Hetzner relay. Segments are cached under token-free keys, so the home's upload doesn't depend on the number of viewers. Stream is a switchable fallback. | 50.21 |
+| F14 | **The home publishes channels**, with the ladder at home (top rung `copy`), an uplink check (≤ 50 % of the measured uplink), encoder-slot accounting against `max_active_channels`, always-on for open channels and on demand for invite-only ones, and an offline slate. | 50.22 |
+| F15 | **Only publishable items air** (a safety feature on the publisher's home): own recordings, Creative Commons (CC BY detected at YouTube intake) and sources with a recorded permission and proof link; the scheduler skips the rest while a channel is published; optional geo rules. Maktaba Cloud does no curation: channel building, scheduling and intake stay on the home. | 50.23 |
+| F16 | **What hosting status requires** (Maktaba charges for infrastructure, not content): a designated agent, notice and takedown (EN/AR form, counter-notice), a repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, publisher terms that put rights on the publisher; a Report button on every watch surface and a moderation queue for service admins. | 50.24 |
+| F17 | **Kill switch.** Per channel, publisher, home or global, through a signed broadcast revocation list (the Epic 54 pattern) that the edge and homes honour within 60 s, plus a break-glass switch. | 50.25 |
+| F18 | **Viewer access, free for viewers:** `invite` (default) or `open` (Turnstile, verified publishers) only; 10-minute heartbeat tokens, concurrency and per-IP limits. | 50.26 |
+| F19 | **Guest viewers** on `watch.maktaba.tv` and in every Maktaba Player and TV app (link, QR or short code), in English and Arabic. | 50.27 |
+| F20 | **Viewer analytics for the publisher** through Epic 53 (no personal data, small counts folded), and a canary broadcast probed from outside. | 50.28 |
 
 ### 4.2 Non-functional: the numbers
 
@@ -105,6 +116,16 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | **Cost** | §5 ceilings | §5 ceilings | Monthly in the admin revenue page (25.21). |
 | **Security** | §4.4 | §4.4 | Review per story. |
 | **Observability** | §4.5 | §4.5 | 50.10. |
+| **Broadcast playback availability (SLO)** | **99.9 %** a month for channels whose home is up (a target, no credit) | same | The canary broadcast (50.28): an outside viewer probe plays it every 60 s from two networks; a minute counts as down when both fail. |
+| **Broadcast: upload from the home per channel** | **1×** each rendition, whatever the number of viewers | same | Fan-out load test (50.29): 1 home, 1,000 simulated viewers, home bytes out = segments × rungs. |
+| **Broadcast glass-to-glass latency** | p95 **≤ 20 s** (≈ 12 s typical, 4 s segments) | same | Timestamp burned into the canary pattern (50.28). |
+| **Broadcast startup / channel switch** | start p75 ≤ 3 s; warm switch p75 < 2 s; on-demand cold start ≤ 15 s (tuning card < 100 ms) | same | Player telemetry (50.28), rehearsal (50.29). |
+| **Segment visible at the edge** after the home finishes it | p95 ≤ 1.5 s | same | Ingest timing (50.21). |
+| **Home offline → slate** | ≤ 15 s; no player error | same | Rehearsal (50.29). |
+| **Kill switch / takedown effect** | ≤ 60 s for new and playing viewers after the action | same | Rehearsal (50.29), 50.25. |
+| **Takedown handling** | valid notice to disabled ≤ 24 h (≤ 1 h urgent) | same | Moderation queue timestamps (50.24). |
+| **Broadcast with the Hetzner pair down** | channels keep playing ≤ 24 h (ingest token life) | same | Rehearsal (50.29). |
+| **Broadcast cost** | §14.4 cost model; alert at 80 % of the month's broadcast budget | same | Admin revenue page (25.21), 50.28. |
 
 ### 4.3 What keeps working when the cloud is down
 
@@ -352,6 +373,19 @@ paid), and Pro is uncapped within its allowance (§13 decision 4).
 | 50.17 | [A stateless API pool](story-50-17-api-pool.md) | 2 | 50.08 |
 | 50.18 | [The database on its own nodes](story-50-18-database-nodes.md) | 2 | 50.09, 50.17 |
 | 50.19 | [Plans: Free, Basic and Pro, enforced by the relay and billed by usage](story-50-19-plans-relay-billing.md) | 1 | 50.04, 50.05 |
+| 50.20 | [The Broadcaster tier and guest sharing](story-50-20-broadcaster-tier.md) | B | 50.19 |
+| 50.21 | [The broadcast edge](story-50-21-broadcast-edge.md) | B | 50.01 |
+| 50.22 | [The home's broadcaster](story-50-22-home-broadcaster.md) | B | 50.21, Epic 34.1, 34.3 |
+| 50.23 | [Publishable sources: permissions, Creative Commons, own recordings; geo](story-50-23-publishable-sources.md) | B | 50.22, Epic 34.1 |
+| 50.24 | [Takedown, reports and repeat infringers](story-50-24-takedown-reports.md) | B | 50.12, 50.23, 50.25 |
+| 50.25 | [Kill switch and the signed broadcast revocation list](story-50-25-kill-switch.md) | B | 50.21, 50.22 |
+| 50.26 | [Viewer access, limits and tokens](story-50-26-viewer-access.md) | B | 50.20, 50.21 |
+| 50.27 | [Guest viewers: the watch pages and the apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
+| 50.28 | [Viewer analytics and broadcast monitoring](story-50-28-analytics-monitoring.md) | B | 50.10, 50.21, 53.17 |
+| 50.29 | [The broadcast rehearsal and fan-out load test](story-50-29-broadcast-rehearsal.md) | B | 50.06, 50.21, 50.22, 50.25 |
+
+Phase **B** (home broadcasting, §14) comes after Phase 1's launch gate and doesn't depend on
+Phase 2.
 
 ```mermaid
 graph LR
@@ -383,6 +417,29 @@ graph LR
   S04 --> S19[50.19 plans, metering, billing]
   S05 --> S19
   S19 --> S16
+  S19 --> S20[50.20 Broadcaster tier]
+  S01 --> S21[50.21 broadcast edge]
+  S21 --> S22[50.22 home broadcaster]
+  E34_1[Epic 34.1 public flag, rights] --> S22
+  E34_3[Epic 34.3 public mux, slates] --> S22
+  S22 --> S23[50.23 publishable sources]
+  E34_1 --> S23
+  S21 --> S25[50.25 kill switch]
+  S22 --> S25
+  S23 --> S24[50.24 takedown, reports]
+  S25 --> S24
+  S12 --> S24
+  S20 --> S26[50.26 viewer access]
+  S21 --> S26
+  S26 --> S27[50.27 guest viewers]
+  E34_5[Epic 34.5/34.6 site UI, tvplayer] --> S27
+  S21 --> S28[50.28 analytics, monitoring]
+  S10 --> S28
+  E53_17 --> S28
+  S06 --> S29[50.29 broadcast rehearsal]
+  S21 --> S29
+  S22 --> S29
+  S25 --> S29
 ```
 
 Work that can start at once, in parallel: **50.01, 50.03, 50.05** (and 50.15 after 50.01;
@@ -482,3 +539,532 @@ The owner's answers to the open questions, applied to the stories above.
 6. **Direct remote on Free: yes, free.** Only the relay is paid. The home never checks its plan
    for direct access, and a Free home's connection list has local and direct entries only
    (50.15 §5, 50.13).
+
+## 14. Home broadcasting
+
+> **Status:** spec (2026-11-03). Owner decisions of 2026-11-03:
+>
+> - **Viewers never pay.** Access is **open or by invite link** only.
+> - The publisher pays Maktaba for the Broadcaster tier (payment provider TBD, never Stripe).
+> - **"We charge for infra, not content":** Maktaba Cloud is an infrastructure and hosting
+>   provider (§14.6).
+>
+> The questions still open are in §14.10.
+> **Research:** [research-broadcasting.md](research-broadcasting.md) (Plex, Jellyfin, Emby,
+> Owncast, PeerTube, Twitch, YouTube, Cloudflare Stream, Mux, Bunny, R2, LL-HLS, cost per
+> viewer-hour, rights; all with sources). **Stories:** 50.20–50.29.
+
+### 14.1 Why, and what it is
+
+The owner, 2026-11-03:
+
+> "the ability to stream TV from home servers to others, let's say an entertainment tier or a
+> home streamer tier. Explore that and what it requires."
+
+**Home broadcasting** lets a Maktaba home owner (the **publisher**) publish chosen live TV
+channels to **viewers who aren't users of their home**, through Maktaba Cloud. These are Maktaba
+TV's 24/7 channels built from the library, with the burned-in watermark and the guide. Viewers
+watch on a web page (`watch.maktaba.tv/<publisher>/<channel>`) or in the Maktaba Player and TV
+apps as **guests**, with no account on the home. **Viewers never pay.**
+
+**Maktaba Cloud carries the stream; the publisher makes the channel.** Everything that decides
+what airs runs on the **publisher's own home server**, under the publisher's control: channel
+building, scheduling, YouTube intake and the publishable marks. Maktaba Cloud receives finished
+segments and delivers them. It never selects, uploads, curates, recommends or owns what a
+publisher airs. This split is a design rule for every story below.
+
+| | Remote play (Epic 25, this epic) | Epic 34 public site | **Home broadcasting (§14)** |
+|---|---|---|---|
+| Who watches | the home's own users | anyone the owner allows | anyone with the link (open) or an invite |
+| Whose cloud | Maktaba Cloud (relay) | **the owner's own Cloudflare account** | **Maktaba Cloud** (Maktaba's Cloudflare account) |
+| Publishers | — | one (the account owner) | **many** (any Pro home owner) |
+| Video path | relay tunnel to the home | RTMPS push to the owner's Stream inputs | **segments pushed to R2**, served by Maktaba's Worker |
+| Who handles takedown | — | the owner | **Maktaba**, as host, with a process (§14.6) |
+| Paid by | Basic / Pro | the owner pays Cloudflare | the publisher's **Broadcaster** tier (§14.4); viewers pay nothing |
+
+**Reused from Epic 34, not rebuilt:**
+
+- the per-channel public flag and rights confirmation (34.1);
+- the public mux and its slate (34.3);
+- the guide publisher's blob format (34.2, `schema: 1`);
+- the site UI and `@maktaba/tvplayer` (34.5, 34.6);
+- the heartbeat tokens and limits (34.4, 34.9).
+
+A home can run both: the same public mux feeds the owner's own Epic 34 site and Maktaba
+broadcasting.
+
+**Not in this section:**
+
+- viewer payments, paid passes or payouts to publishers (owner decision, 2026-11-03);
+- VOD, catch-up or DVR (segments are deleted after 10 minutes);
+- a public directory or search of broadcasts (unlisted only, §14.6);
+- chat, comments and ads;
+- P2P delivery and LL-HLS;
+- custom domains per publisher (later, not specced: Cloudflare for SaaS would carry them, with
+  100 hostnames included and then $0.10 each a month);
+- more regions (Phase 3).
+
+### 14.2 Design
+
+```
+  HOME (publisher)                                   MAKTABA CLOUD
+ ┌──────────────────────────────────────┐   ┌──────────────── Cloudflare (Maktaba's account) ──────────────────────────────┐
+ │ channel (publishable items only)     │   │ ingest.maktaba.tv  Worker: verify ingest token ─► R2 (segments, 10 min)       │
+ │  └ mux (watermark + strip)           │   │                                       └─► DO ChannelLive (playlist, state)    │
+ │  └ ladder at home: copy + 720p/480p  │   │ live.maktaba.tv    Worker: viewer token ─► Cache API ─miss─► R2 ; playlist ◄─ DO│
+ │ broadcaster uploader ─ HTTPS PUT ────┼──►│ watch.maktaba.tv   site + API: play, beat, report, guide (R2 blobs)           │
+ │ control WS (wake, off-air, limits) ──┼──►│ DO PublisherControl · DO Revocations (signed list) · Analytics Engine         │
+ │ cloud link (existing tunnel) ────────┼─┐ └──────────────────────────────────────▲───────────────────────────────────────┘
+ └──────────────────────────────────────┘ │                                        │ HLS + JSON
+                                          │  Hetzner pair (§6, unchanged)          │
+                                          └► api.maktaba.tv: accounts, Broadcaster plan, ingest tokens (Ed25519, 24 h),
+                                             source permissions, takedown queue, revocation signing, metering, billing
+                                                                       viewers (browser, Maktaba Player/TV apps as guests)
+```
+
+- **Push, not pull.** The home uploads each finished segment of each rendition **once**, over
+  outbound HTTPS, to `ingest.maktaba.tv`. Viewers only ever reach Cloudflare, so the home's
+  upload is the same for 1 viewer as for 10,000. The Hetzner relay carries no broadcast video, so
+  broadcasting can't take capacity from paid remote play.
+  - The pull alternative (the relay fetches from the home and the edge caches) was rejected. It
+    needs requests into the home, the first viewer in each location waits, it uses relay capacity,
+    and caching non-R2 video through Cloudflare's CDN conflicts with its terms (research §2.4,
+    §4.1).
+- **Fetched from the home once, whatever the viewers.**
+  - Segment URLs are immutable and cached under a key without the viewer's token, so one cached
+    copy serves every viewer in a location.
+  - Cloudflare's cache lock collapses simultaneous misses to one R2 read per location.
+  - Playlists come from the channel's Durable Object and are cached at the edge for 1 s, so the DO
+    sees about one request per rendition per location per second (research §4.4).
+- **The ladder at home.**
+  - The top rung is a `copy` of the channel's own encode. The lower rungs (720p at 3 Mbps, 480p
+    at 1.2 Mbps) are extra hardware-encoder sessions in the same ffmpeg.
+  - Cloud transcoding on Hetzner would cost about one CCX13 per channel.
+  - Cloudflare Stream is the fallback (free encoding, $0.06 a viewer-hour). It serves homes whose
+    uplink can't carry a ladder, and the case where Cloudflare reads its terms against R2
+    delivery (`broadcast.delivery = stream`, 50.21).
+- **Latency.** Standard HLS with 4 s segments:
+  - glass to glass ≤ 20 s at p95 (about 12 s typical);
+  - start ≤ 3 s;
+  - channel switch < 2 s.
+
+  LL-HLS is left out. It needs about 10× the R2 writes, and library channels don't need it.
+- **Control plane on the Hetzner pair, data plane on Cloudflare.**
+  - The cloud API (Epic 50's two nodes) issues each published channel an **ingest token**. It is
+    Ed25519-signed, bound to the publisher, the channel and the rungs, valid 24 h, and refreshed
+    hourly over the cloud link.
+  - The edge checks it with the cloud's public key, so no shared secret sits at the edge (unlike
+    Epic 34's single `HOME_HMAC`).
+  - The cloud API also keeps accounts, plans, source permissions, the takedown queue, metering and
+    billing, and it **signs the revocation list**.
+  - A Hetzner outage doesn't stop broadcasts for up to 24 h (§14.8).
+- **Names.** These are proxied Workers Custom Domains on `maktaba.tv`; 50.01's DNS table gains
+  the rows in 50.21's PR:
+  - `watch.maktaba.tv`: pages and the API;
+  - `live.maktaba.tv`: playlists and segments;
+  - `ingest.maktaba.tv`: homes.
+
+### 14.3 What a publisher does
+
+1. On a **Pro** home, open Admin → Live TV → **Broadcast** and choose a channel. The page shows
+   how much of the channel's content is **publishable** (§14.6): the owner's own recordings,
+   Creative Commons items, and sources whose speaker or channel allows sharing. Only those can
+   air while the channel is published.
+2. Mark more sources publishable if they qualify: record the permission and a proof link (50.23).
+3. Choose the access (`invite` by default, or `open`), the ladder (checked against the measured
+   uplink and the encoder slots) and, optionally, countries.
+4. Publish. Within 30 s the channel is on `watch.maktaba.tv/<publisher>/<channel>` with its guide.
+   The publisher shares a link, a QR code or a short code (`MK-7Q4F`) for TV apps.
+5. Watch live viewers, viewer-hours and countries on the Broadcast page (50.28). Notices and
+   reports about the publisher's channels arrive there too (50.24).
+
+### 14.4 Plans: the Broadcaster tier
+
+This keeps decision 4's rules:
+
+- Free and Basic get no broadcasting.
+- Pro keeps everything it has and gains **guest sharing**.
+- **Broadcaster** is an add-on that needs Pro. It uses Pro's billing model: an allowance, then
+  optional pay-as-you-go with a cap the user sets, then lower quality.
+
+**A viewer already watching is never cut off by a limit;** at the end, *new* viewers wait. Only a
+takedown, a kill switch or a lapsed plan stops a playing viewer. **Viewers never pay**; only the
+publisher does.
+
+**We charge for infrastructure, not content** (owner, 2026-11-03). Every Broadcaster unit is a
+unit of infrastructure: channels carried, concurrent viewers served, viewer-hours of delivery,
+and the quality ladder's bandwidth. None of them is priced by what airs, and no price or plan
+depends on a programme, a source or a genre.
+
+| | Free | Basic | **Pro: guest sharing** | **Broadcaster** (add-on to Pro) |
+|---|---|---|---|---|
+| Published channels | — | — | **1**, invite-only, on demand | **3**; extra channels are a paid add-on |
+| Access | — | — | `invite` | `invite` or `open` (Turnstile; verified publisher) |
+| Concurrent viewers (all channels) | — | — | **5** | **100**; extra blocks of 100 are a paid add-on |
+| Viewer-hours a month | — | — | **50** | **5,000** |
+| Past the allowance | — | — | new guests wait (`broadcast.full`) | optional **pay-as-you-go viewer-hours** (off by default, with a monthly cap the user sets), then **lowest rung only** up to 2× the allowance (fair use), then new viewers wait |
+| Ladder | — | — | up to 720p + 480p | up to **1080p** (10 Mbps) + 720p + 480p |
+| Address | — | — | `watch.maktaba.tv/<publisher>/<channel>` | same |
+| Analytics (50.28) | — | — | live viewers, hours | full: viewers, peak, hours, average watch time, countries, devices, quality, errors |
+| Price | — | — | included in Pro | **TBD by the owner** |
+
+- **The meter is viewer-hours**, counted from heartbeats: a session that heartbeats for a minute
+  is a viewer-minute. On the primary path the cost follows requests, not bytes, and viewers
+  understand hours (research §3).
+- **Billing** goes through the same `billing.Provider` (TBD, never Stripe), on Pro's
+  subscription:
+  - item 4: the Broadcaster flat price;
+  - item 5: metered `broadcast_viewer_hours` for pay-as-you-go (hourly reports, idempotent,
+    clamped to the cap, as 50.19 §6);
+  - item 6: extra channels, per unit;
+  - item 7: extra blocks of 100 viewers, per unit.
+
+  Money only ever flows from the publisher to Maktaba. There are no payouts and no seller of
+  record for viewers.
+- **Why a separate tier, not part of Pro:** broadcasting to people outside the home brings costs
+  Pro doesn't have: always-on uploads (about $7–14 a channel a month), moderation and takedown
+  handling. Pro's guest sharing is on demand and invite-only, so it costs about a dollar a month
+  (below).
+
+#### Cost model (what it costs Maktaba a month; **estimates** from research §3)
+
+| | Primary path (R2 + Worker) | Fallback: Bunny Volume | Fallback: Cloudflare Stream | Worst region: Bunny Standard, Middle East |
+|---|---|---|---|---|
+| Per viewer-hour (blend 40 % 1080p, 40 % 720p, 20 % 480p = 2.45 GB/h) | ≈ $0.001 | ≈ $0.012 | $0.060 | ≈ $0.147 |
+| Fixed, per always-on channel: 1 rung / 3 rungs | ≈ $7.4 / $13.8 | same (R2 stays the origin) | ≈ $0.63 (recording capacity) | same as Bunny |
+| **Pro guest sharing** (on demand, ≤ 50 h at ≤ 720p) | **≈ $1** | ≈ $1.3 | ≈ $3 | ≈ $5 |
+| **Broadcaster** (3 channels × 3 rungs, 5,000 h) | **≈ $46** | ≈ $102 | ≈ $302 | ≈ $775 |
+| Broadcaster at the fair-use ceiling (another 5,000 h at 480p only) | +$5 | +$14 | +$300 | +$162 |
+| Pay-as-you-go, per 100 viewer-hours | $0.10 | $1.22 | $6.00 | $14.70 |
+| Extra channel (3 rungs) | $13.8 | $13.8 | $0.63 | $13.8 |
+
+- **Shared costs, not per tier:**
+  - Workers Paid, $5 a month (once per account);
+  - the DMCA agent, $6 every 3 years;
+  - a lawyer's review before launch (not estimated);
+  - **moderation time**, probably the largest real cost;
+  - the control plane, which rides on Epic 50's existing pair (no new Hetzner machine).
+- **What it means for prices (the owner sets them):**
+  - A Broadcaster price that covers the **Bunny fallback** (about $102 at the allowance) with
+    margin is safe on every path except the worst region.
+  - Stream is the emergency path; switching to it should come with a smaller allowance.
+  - Pay-as-you-go priced at or above the Stream cost ($6 per 100 h) never loses money on any path
+    except Bunny Middle East.
+- **Exposure is bounded** by concurrent viewers × hours (at most 100 × 730 = 73,000 h a month),
+  and past the fair-use ceiling new viewers wait.
+
+### 14.5 What the home needs
+
+- **Uplink:** the total of the rungs × 1.1 (research §5.1).
+
+  | Ladder | Uplink per channel |
+  |---|---|
+  | `copy` | 7.2 Mbps |
+  | `copy` + 480p | 8.5 Mbps |
+  | 1080p + 720p + 480p | 15.6 Mbps |
+  | 720p + 480p | 4.6 Mbps |
+  | 480p | 1.3 Mbps |
+
+  - Published channels together may use **at most 50 %** of the uplink.
+  - The uplink is measured by a 10 s upload test to `ingest.maktaba.tv` at publish time and once
+    a day.
+  - The home refuses a ladder that breaks the rule and suggests a smaller one.
+- **Encoder:**
+  - **One ffmpeg per published channel, always on while it is published.** Watch-only channels
+    are different: Epic 32 starts their encode at the first viewer and stops it after the warm
+    grace.
+  - Each lower rung is one more hardware session (`nvenc_max_sessions`,
+    `videotoolbox_max_sessions`).
+  - A published channel takes one `tv_output.max_active_channels` slot **permanently**. Each lower
+    rung takes `broadcast.rung_slot_weight` of a slot (default 0.5, measured in 50.22). Epic 34's
+    `reserve_slots` (2) stay free for LAN and Plex.
+  - Invite-only channels on demand hold their slot only while a guest watches.
+  - `docs/hardware.md` isn't on main yet; 50.22 links it when it lands.
+- **Always connected:**
+  - the cloud link, for ingest tokens and the revocation list;
+  - the control WebSocket to the edge, for wake, off-air and limits.
+
+### 14.6 Maktaba as a host: rights, takedown and moderation
+
+> **Not legal advice. Confirm with a lawyer before launch.** This section is a practical summary
+> of how copyright usually works and what the services' terms say (research §6), and the
+> low-friction way the product handles it.
+
+**The position: Maktaba Cloud is an infrastructure and hosting provider.**
+
+- It sells relay, bandwidth and uptime. It doesn't sell content.
+- It never selects, uploads or owns what a publisher airs.
+- **The publisher is responsible for having the rights** to what they broadcast.
+
+Hosting safe harbours (US DMCA § 512(c); the EU DSA's hosting rules) protect a host only when it
+has certain things in place. They are **what that status requires**, and each is small:
+
+| What hosting status requires | Where it is built |
+|---|---|
+| A **designated agent** for copyright notices (US Copyright Office, $6, renewed every 3 years) | 50.24 |
+| **Notice and takedown**: a notice form, disabling the named material quickly, and a counter-notice path | 50.24 |
+| A **repeat-infringer policy**: published, enforced and audited | 50.24 |
+| **Acting on actual knowledge**: when Maktaba learns of clearly infringing or illegal material (a report, a notice, an authority), it acts, even without a formal notice | 50.24, 50.25 |
+| **Publisher terms that put rights on the publisher**: the publisher warrants they have the rights and accepts takedowns and the policy | 50.20 (agreement at purchase), 50.22 (shown at publish) |
+
+**Keeping the position strong in the design:**
+
+- **No cloud-side curation.** Maktaba Cloud doesn't build channels, schedule programmes, pick
+  items, recommend, rank or feature anything. Channel building, scheduling and YouTube intake stay
+  on the publisher's home (Epic 27, Epic 34.1–34.3).
+- **The cloud only carries finished segments, the guide the home publishes, and the access
+  settings.** The only content-related acts Maktaba takes are the ones hosting status requires:
+  takedown, kill switch and acting on knowledge.
+- **No directory in the first version.** Channels are unlisted (link, QR code, short code). If a
+  directory comes later, it **lists only what publishers choose to list**, in a neutral order
+  (for example alphabetical or newest), with no picks, rankings or recommendations by Maktaba.
+
+**The owner's question:** *"YouTube is public, so if you are not paying, what's the legal
+issue?"* The short answer:
+
+- **Free to watch isn't the same as free to re-broadcast.** Copyright covers copying a work and
+  showing it to the public (public performance, or "communication to the public"), whether or not
+  money changes hands.
+- **YouTube's Terms** allow watching in YouTube's own player. They don't allow downloading or
+  redistributing outside it, unless the rights holder allows it.
+- **Non-commercial use helps** a fair-use argument in the US, but doesn't make re-broadcasting
+  safe. And Maktaba charging publishers for the tier makes the platform commercial.
+- **The fix is simple:** air content that is clearly **allowed to be shared**. A lot of the
+  owner's kind of content is.
+
+**The "publishable" default: a safety feature on the publisher's home (50.23).** It isn't
+Maktaba vetting content. It is the publisher's own home helping the publisher meet their
+responsibility, and the marks live on the home. While a channel is published, an item may air on
+it only if it is marked **publishable**, for one of these reasons:
+
+1. **Permission from the source.** The speaker or the channel allows sharing. Many Islamic
+   lecturers and dawah channels say so explicitly, in a video description, on their channel's
+   About page or on their website. The publisher records the permission once **per source**
+   (a YouTube channel, a speaker or a playlist), with a **proof link** and an optional
+   screenshot. Every item from that source becomes publishable.
+2. **Creative Commons.** YouTube lets uploaders choose the Creative Commons Attribution licence
+   (CC BY). The YouTube intake reads the licence and marks those items publishable
+   automatically. The guide and the watch page show the attribution (title, uploader, a link,
+   "CC BY").
+3. **The owner's own recordings.** The publisher marks a collection as their own work.
+
+**Quran recitation audio** is treated like any other source: the Qur'an's text has no copyright,
+but a specific recording belongs to its reciter or label. A recording is publishable when its
+reciter or label allows sharing (reason 1), when it is CC (reason 2), or when it is the owner's
+own (reason 3).
+
+**How it works on the channel:**
+
+- **By default, only publishable items can air on a published channel.**
+- A channel may mix sources. While it is published, **the scheduler skips the items that aren't
+  publishable**, so the schedule (and the guide) contains only publishable programmes. LAN viewers
+  see the same channel.
+- Epic 34's slate is kept only as the fallback for an item that loses its mark after it was
+  scheduled (a takedown, or a source's permission withdrawn).
+- The Broadcast page shows each channel's publishable share and the sources it could add, with a
+  one-click "record permission" for each.
+- Publishing a channel asks the publisher to confirm once that they have the rights to what it
+  airs (the agreement's warranty, §14.6 table). That confirmation is kept with the date and their
+  name. It is not a long legal form.
+- The cloud receives only the confirmation's date and version, for the takedown record. The marks,
+  the proof links and the schedule stay on the home.
+
+**Takedown (50.24).** It is cheap, and hosting status requires it:
+
+- A copyright page at `maktaba.tv/legal/copyright` (English and Arabic) with a notice form and
+  the designated agent's email. The agent is registered with the US Copyright Office ($6,
+  renewed every 3 years).
+- A valid notice takes the named item, source or channel off air. The target is ≤ 24 h, and
+  ≤ 1 h for urgent illegal content. If the notice names a source, its publishable mark is removed.
+- The publisher is told why and can counter-notify. We restore after 10–14 business days unless
+  the notifier goes to court.
+
+**Repeat infringers (50.24).** A valid notice is a **strike** on the publisher. **3 strikes in
+12 months** ends their broadcasting, and strikes expire after 12 months. The policy is published
+in English and Arabic and shown when publishing.
+
+**Moderation:**
+
+- **Reporting:** a *Report* button on every watch surface (copyright, illegal content, abuse,
+  other). Reports go to Maktaba's moderation queue (service admins only, enforced by the API's
+  role checks) and to the publisher.
+- **Kill switch (50.25):**
+  - It works per channel, per publisher, per home, or globally, from the cloud admin.
+  - It is sent as a **signed revocation list** in the Epic 54 §6.3 pattern (Ed25519, a version
+    that only goes up, sticky entries) to the edge and to homes.
+  - It takes effect within 60 s for new and playing viewers. The home stops uploading and tells
+    the publisher why.
+  - A break-glass Worker variable turns everything off if the cloud API itself is down.
+- **Geo (50.23):** optional per-channel allow or deny lists (`CF-IPCountry`, at the edge), plus a
+  Maktaba-wide deny list for sanctions.
+- **Publisher terms:** a short **Broadcaster agreement**, accepted when buying the tier. It says:
+  - Maktaba provides infrastructure;
+  - you are responsible for having the rights to what you air;
+  - we act on notices and on actual knowledge, and can take channels off air;
+  - the repeat-infringer policy applies.
+- **Before `open` access:** the publisher must be verified (a paid plan in good standing, a
+  confirmed email, and 7 days since the first publish).
+
+### 14.7 Viewers
+
+- **Access (50.26). Viewers never pay; there are two modes only:**
+  - `invite` (the default): signed invite links with an expiry, a use count and optional named
+    guests. A guest pass is kept in a cookie or in the app's keychain.
+  - `open`: anyone with the link, after one Turnstile check per session.
+- **Limits:**
+  - concurrent viewers per publisher (the plan's) and per channel (the publisher's setting);
+  - 3 sessions per IP (a salted hash, kept ≤ 24 h);
+  - 10-minute viewer tokens, refreshed by a 60 s heartbeat (Epic 34 R4.3/R4.4);
+  - rate limits per IP.
+- **Viewer apps (50.27):**
+  - The `watch.maktaba.tv` pages are Epic 34's site UI made multi-tenant: mobile-first, Arabic
+    (RTL) by default and English, the guide, `@maktaba/tvplayer` channel switching, attribution
+    for CC items, and the Report button.
+  - The **Maktaba Player and TV apps** (Apple, Android, Android TV, web) gain **Watch a
+    broadcast**: open a link, scan a QR code, or type the short code on a TV.
+  - The guest sees only that publisher's channels and guide, and needs no account. Every string
+    ships in English and Arabic.
+- **Viewer analytics for the publisher (50.28), via Epic 53:**
+  - The edge writes Analytics Engine events (play, heartbeat, rung, error, country, device
+    class, hashed session) and logs in the 53.01 schema (`service = broadcast-edge`).
+  - The cloud rolls them up hourly into `broadcast_usage_hourly`, for metering and for the
+    publisher's page, and emits the `maktaba_broadcast_*` metrics (53.17) that 50.10 alerts on.
+  - Countries with fewer than 5 viewers are folded into "other". No IP or viewer identity is
+    stored.
+
+### 14.8 Riding on the no-downtime design, and SLOs
+
+- **The data plane doesn't need Hetzner.** Playback, playlists, tokens and the last copy of the
+  revocation list all live on Cloudflare. If both Hetzner nodes are down:
+  - channels keep playing for up to the ingest token's 24 h;
+  - new publishes, permission changes and billing wait;
+  - metering stays in the edge's queue and in Analytics Engine, and is read when the API is back;
+  - kill switches still work through the break-glass variable.
+- **When the home goes offline:**
+  - With no new segment for 3 target durations (12 s), the channel's DO switches its playlists
+    to the **"Channel offline" slate**, after an `EXT-X-DISCONTINUITY`. The slate is in English
+    and Arabic, rendered by the home at publish time and uploaded once.
+  - The page shows `broadcast.homeOffline` and keeps the last published guide with its "last
+    updated" time.
+  - Players keep playing the slate, so nothing errors.
+  - When segments resume, there is another discontinuity and the channel is live again.
+  - After 24 h offline the channel shows *Off air* and can't be played until the home returns.
+- **Deploys:** Workers deploy with gradual rollouts (versions, by percentage), rehearsed in 50.29.
+  Durable Objects keep their state across versions. The cloud API follows 50.08.
+- **Monitoring (50.28):**
+  - The canary home (50.10) publishes a **canary broadcast**: the `canary` publisher,
+    invite-only, a test pattern.
+  - An outside viewer probe plays it every 60 s from two networks and measures glass-to-glass
+    latency from a timestamp burned into the pattern.
+  - It pages on two failures in a row, as 50.10 does.
+- **SLOs:** targets, not promises (no credit, decision 1). They are the *Broadcast …* rows in
+  §4.2's table.
+
+### 14.9 To confirm with a lawyer before launch
+
+This isn't legal advice. These are the points to take to a lawyer once, before `open`
+broadcasting, so the defaults above can be confirmed or adjusted (research §6.4):
+
+1. **Hosting status:** that §14.6's list (designated agent, notice and takedown, repeat-infringer
+   policy, acting on actual knowledge, publisher terms) is what's needed for Maktaba Cloud to be
+   treated as a hosting provider in the US (DMCA § 512(c)) and the EU (DSA). Points to cover:
+   - we keep live segments for only minutes;
+   - we charge publishers for infrastructure, not content;
+   - all content choices stay on the publisher's home.
+2. **What counts as permission:** whether a source's public statement that sharing is allowed,
+   recorded with a proof link, is enough evidence, and whether CC BY items need anything beyond
+   the attribution we show.
+3. **YouTube's Terms:** whether the CC BY and permission routes are enough to air downloaded
+   YouTube items in our own player, given the Terms' download and redistribution rules.
+4. **Where Maktaba is established,** and whether that brings duties beyond the notice form (for
+   example a contact point, or an EU representative).
+5. **The short Broadcaster agreement** (rights on the publisher, our infrastructure role), the
+   viewer terms, and the privacy notice (Cloudflare as processor, Turnstile, analytics).
+
+### 14.10 Open questions for the owner (with the recommended default)
+
+Decided on 2026-11-03:
+
+- Viewers never pay.
+- Access is open or by invite only.
+- Only publishable items air on published channels (a safety feature on the publisher's home).
+- Maktaba charges for infrastructure, not content, and is a hosting provider. The publisher holds
+  the rights responsibility, and Maktaba does no content curation.
+
+1. **Name.** *Broadcaster*, *Entertainment* or *Home streamer*? **Default: Broadcaster** (البث).
+2. **Does Broadcaster need Pro?** **Default: yes, as an add-on to Pro.**
+3. **Broadcaster's numbers.** **Default: 3 channels, 100 concurrent viewers, 5,000 viewer-hours a
+   month, up to 1080p with 3 rungs.**
+4. **Prices** (Broadcaster, pay-as-you-go per 100 viewer-hours, an extra channel, an extra 100
+   viewers). **Default: set so the Bunny fallback is covered with margin** (about $102 at the
+   allowance), and pay-as-you-go **at or above $6 per 100 h**. The broadcasting gate stays shut
+   while any price is `TBD`.
+5. **Guest sharing in Pro** (1 invite-only channel on demand, 5 viewers, 50 h). **Default: yes.**
+6. **Meter in viewer-hours or GB?** **Default: viewer-hours.**
+7. **Past the allowance and the cap.** **Default: lowest rung only up to 2× the allowance, then
+   new viewers wait.**
+8. **Delivery path.** **Default: R2 + Worker, once Cloudflare confirms in writing** that serving
+   HLS from R2 through Workers fits its terms at our volume; Stream is the switchable fallback.
+9. **Ladder at home or cloud ABR?** **Default: at home**; Stream per publisher later if uplinks
+   need it.
+10. **Default access.** **Default: `invite`**; `open` for verified publishers.
+11. **A public directory of broadcasts?** **Default: not in the first version** (unlisted only).
+    If one comes later, it lists only the channels publishers choose to list, in a neutral order,
+    with no picks, rankings or recommendations by Maktaba.
+12. **Which sources count as publishable?** **Default: the owner's own recordings, CC BY items
+    detected at YouTube intake, and sources with a recorded permission and proof link.** Nothing
+    else airs on a published channel.
+13. **When an item isn't publishable on a published channel.** **Default: the scheduler skips
+    it** (the channel's schedule holds publishable items only); the slate only covers an item
+    that loses its mark after scheduling.
+14. **Who records source permissions.** **Default: the publisher, for their own home;** Maktaba
+    keeps no shared list. (A shared list of known-permissive sources across publishers could
+    come later.)
+15. **Designated agent.** **Default: register with the US Copyright Office** under the legal
+    entity's name before open broadcasting.
+16. **Repeat-infringer threshold.** **Default: 3 valid strikes in 12 months; strikes expire after
+    12 months.**
+17. **Takedown targets.** **Default: ≤ 24 h from a valid notice; ≤ 1 h for urgent illegal
+    content.**
+18. **Geo default.** **Default: nothing blocked except a Maktaba-wide sanctions list;** the
+    publisher can restrict per channel.
+19. **Catch-up or DVR.** **Default: none;** segments are deleted after 10 minutes.
+20. **Analytics privacy threshold.** **Default: fold anything with fewer than 5 viewers into
+    "other".**
+21. **Guest mode in which apps.** **Default: all at once** (web, Apple TV and iOS, Android and
+    Android TV), English and Arabic together.
+
+### 14.11 Stories, phase and the broadcasting gate
+
+All in **Phase B** (broadcasting), after Phase 1's launch gate; it doesn't depend on Phase 2.
+
+| # | Story | Phase | Depends on |
+|---|---|---|---|
+| 50.20 | [The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing](story-50-20-broadcaster-tier.md) | B | 50.19 |
+| 50.21 | [The broadcast edge: ingest, R2 segments, playlists, one fetch from the home](story-50-21-broadcast-edge.md) | B | 50.01 |
+| 50.22 | [The home's broadcaster: publish, ladder at home, uplink and encoder checks](story-50-22-home-broadcaster.md) | B | 50.21, Epic 34.1, 34.3 |
+| 50.23 | [Publishable sources: permissions, Creative Commons, own recordings; geo](story-50-23-publishable-sources.md) | B | 50.22, Epic 34.1 |
+| 50.24 | [Takedown, reports and repeat infringers](story-50-24-takedown-reports.md) | B | 50.12, 50.23, 50.25 |
+| 50.25 | [Kill switch and the signed broadcast revocation list](story-50-25-kill-switch.md) | B | 50.21, 50.22 |
+| 50.26 | [Viewer access: invite and open; limits and tokens](story-50-26-viewer-access.md) | B | 50.20, 50.21 |
+| 50.27 | [Guest viewers: the watch pages and the Maktaba apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
+| 50.28 | [Viewer analytics and broadcast monitoring](story-50-28-analytics-monitoring.md) | B | 50.10, 50.21, 53.17 |
+| 50.29 | [The broadcast rehearsal and fan-out load test in CI](story-50-29-broadcast-rehearsal.md) | B | 50.06, 50.21, 50.22, 50.25 |
+
+Work that can start at once: **50.21** (after 50.01) and **50.20** (after 50.19). Then 50.22,
+50.25 and 50.26 can run in parallel.
+
+**The broadcasting gate.** Broadcasting is switched on only when all of these hold:
+
+1. Epic 50's own launch gate (§11) has passed.
+2. 50.20–50.29 are merged, and their CI rehearsals pass on the deployed sha.
+3. Cloudflare has confirmed the delivery path in writing (question 8), or `broadcast.delivery`
+   is `stream`.
+4. The designated agent is registered, and the copyright page, the Broadcaster agreement and the
+   repeat-infringer policy are live in English and Arabic.
+5. The lawyer's review in §14.9 is done.
+6. The Broadcaster catalog has no `TBD` left.
+7. The canary broadcast has met the §4.2 broadcast SLOs for 14 days.
+
+Until then `broadcast.enabled = false`, except for test publishers an admin grants on staging.
+`invite` can open before `open`: `broadcast.open_access.enabled` also needs items 4 and 5.
