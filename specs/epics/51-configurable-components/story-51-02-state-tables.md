@@ -205,8 +205,8 @@ built in parallel without racing for slots.
   pruned by the home's housekeeping when the node row is gone (51.14 shows nothing for it).
 - **Clock skew on nodes**: `since` and `updated_at` are set by the database (`now()`), not
   by the node.
-- **Holds never expire.** There is no `hold_until` column: the owner chose only "until I
-  turn it on" (README §13, decision 2). A hold is a row value, so it survives restarts and
+- **Holds never expire.** There is no `hold_until` column: a hold lasts until Start
+  (README §13, decision 2). A hold is a row value, so it survives restarts and
   updates, and only Start (51.08) clears it.
 - **Big `detail`**: capped at 4 KB by the store; larger is truncated with `"truncated":true`.
 
