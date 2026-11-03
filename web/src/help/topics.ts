@@ -32,6 +32,7 @@ export const HELP_CATEGORIES = [
       "analytics",
       "cloud",
       "storage",
+      "components",
     ],
   },
   { id: "connections", topics: ["extensions", "plex", "dizquetv"] },
