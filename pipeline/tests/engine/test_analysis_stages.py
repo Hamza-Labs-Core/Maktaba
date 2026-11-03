@@ -18,7 +18,7 @@ import pytest
 
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine.claim import claim_for_pool
-from maktaba_pipeline.engine.context import StageContext
+from maktaba_pipeline.engine.context import StageContext, StageFailure
 from maktaba_pipeline.engine.dispatch import dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH, StageDef, Subject, get_stage
@@ -413,6 +413,39 @@ async def test_chapter_frames_follow_the_chapters(db: Database, tmp_path: Path) 
         again = await chapter_thumbs.run(db, _job("video", v, lib), _ctx())
         assert again.summary == {"frames": 2, "removed": 1}
         assert not (tmp_path / str(h) / "chapter-2.jpg").exists()
+    finally:
+        chapter_thumbs.reset_frame_runner()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_frame_keeps_the_start_of_ffmpegs_words(
+    db: Database, tmp_path: Path
+) -> None:
+    """ffmpeg's long stderr is kept from its start, cut at a word: the tail began
+    mid-word ("ing thread with return code -22") on the owner's Remote."""
+    words = "Error while opening the decoder for the input stream " * 20
+
+    async def failing(args: list[str]) -> None:
+        raise RuntimeError(words + "Terminating thread with return code -22")
+
+    chapter_thumbs.set_frame_runner(failing, str(tmp_path))
+    try:
+        lib = await make_library(db)
+        v = await make_video(db, lib)
+        await db.execute(
+            "INSERT INTO chapters (video_id, seq, start_sec, title, source)"
+            " VALUES ($1, 0, 0, '', 'inferred')",
+            str(v),
+        )
+        with pytest.raises(StageFailure) as failed:
+            await chapter_thumbs.run(db, _job("video", v, lib), _ctx())
+        assert failed.value.kind == "chapter_frames_failed"
+        message = failed.value.message
+        assert message.startswith("Error while opening the decoder")
+        # cut at a whole word (where depends on the wrapped error's length), never mid-word
+        assert message.endswith("…") and len(message) <= 300
+        assert message[:-1].split()[-1] in words.split()
+        assert "Terminating" not in message
     finally:
         chapter_thumbs.reset_frame_runner()
 

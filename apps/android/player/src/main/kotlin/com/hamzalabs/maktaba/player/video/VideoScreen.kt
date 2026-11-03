@@ -76,6 +76,9 @@ import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
 import com.hamzalabs.maktaba.core.ui.Message
+import com.hamzalabs.maktaba.core.ui.Revalidating
+import com.hamzalabs.maktaba.core.ui.sentence
+import androidx.compose.ui.platform.LocalResources
 import com.hamzalabs.maktaba.core.ui.formatDuration
 import com.hamzalabs.maktaba.player.BackButton
 import com.hamzalabs.maktaba.player.R
@@ -232,11 +235,17 @@ class VideoPage(private val client: ApiClient, val id: String) {
 fun VideoScreen(id: String, nav: PlayerNavigator) {
     val home = LocalPlayerHome.current
     val client = home.client
-    val page = remember(client, id) { VideoPage(client, id) }
+    // kept by the signed-in home: another section and back (or a fold) shows the page read last
+    // at once, and reads it again behind it
+    val page = home.keep("video.$id") { VideoPage(client, id) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val saveFailed = stringResource(R.string.video_save_failed)
     LaunchedEffect(page) { page.load() }
+    // a read again that failed keeps the page: a snackbar says why
+    val resources = LocalResources.current
+    val refreshProblem = page.problem.takeIf { page.video != null }
+    LaunchedEffect(refreshProblem) { refreshProblem?.let { snackbar.showSnackbar(resources.getString(it.kind.sentence())) } }
 
     Scaffold(
         modifier = Modifier.testTag("video-page"),
@@ -256,7 +265,7 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
                     Modifier.testTag("video-not-available"),
                     detail = stringResource(R.string.video_not_available_detail),
                 )
-                page.problem != null -> ErrorState(
+                page.problem != null && video == null -> ErrorState(
                     page.problem!!,
                     title = stringResource(CoreR.string.error_title),
                     video = true,
@@ -273,6 +282,8 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
                     onWatched = { scope.launch { if (!page.toggleWatched()) snackbar.showSnackbar(saveFailed) } },
                 )
             }
+            // the page read last stays: a thin bar while it is read again
+            Revalidating(page.loading && video != null, Modifier.align(Alignment.TopCenter))
         }
     }
 }

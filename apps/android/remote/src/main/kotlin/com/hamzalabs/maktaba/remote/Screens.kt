@@ -37,7 +37,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ClusterOverview
 import com.hamzalabs.maktaba.core.api.FailureGroup
@@ -51,15 +53,21 @@ import com.hamzalabs.maktaba.core.ui.Message
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** Loads now and again every [everyMs] while the screen is up; [refreshing] while it runs. */
+/**
+ * Loads now and again every [everyMs] while the screen is up. True while the first read since
+ * the screen came up runs: what it read last is shown meanwhile ([AdminScreen]'s revalidating bar).
+ */
 @Composable
-internal fun Polling(everyMs: Long, load: suspend () -> Unit) {
+internal fun Polling(everyMs: Long, load: suspend () -> Unit): Boolean {
+    var first by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
         while (true) {
             load()
+            first = false
             delay(everyMs)
         }
     }
+    return first
 }
 
 @Composable
@@ -95,22 +103,45 @@ internal fun Busy() = CircularProgressIndicator(Modifier.size(18.dp), strokeWidt
  */
 @Composable
 fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
-    var groups by remember { mutableStateOf<List<FailureGroup>?>(null) }
-    var chosen by remember { mutableStateOf<String?>(null) }
+    var groups by remote.kept<List<FailureGroup>?>("attention.groups") { null }
+    var chosen by remote.kept<String?>("attention.chosen") { null }
     var busy by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val say = rememberSay()
     suspend fun load() {
         remote.load { needsAttention() }?.let { groups = it }
     }
     suspend fun retry(gs: List<FailureGroup>) {
         busy = if (gs.size == 1) gs[0].id else "all"
         remote.startAction()
-        for (g in gs) remote.act(g.label) { retry(g.stage, g.cause) }
+        for (g in gs) remote.act(say.groupTitle(g)) { retry(g.stage, g.cause) }
         busy = null
         load()
     }
-    Polling(15_000) { load() }
+    val revalidating = Polling(15_000) { load() }
+    AttentionContent(
+        groups, chosen, { chosen = it }, busy, remote, account, refreshing, revalidating,
+        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
+        onRetry = { gs -> scope.launch { retry(gs) } },
+    )
+}
+
+/** The Needs attention screen for [groups], apart from how they are read. */
+@Composable
+internal fun AttentionContent(
+    groups: List<FailureGroup>?,
+    chosen: String?,
+    choose: (String?) -> Unit,
+    busy: String?,
+    remote: Remote,
+    account: @Composable () -> Unit,
+    refreshing: Boolean,
+    revalidating: Boolean,
+    onRefresh: suspend () -> Unit,
+    onRetry: (List<FailureGroup>) -> Unit,
+) {
+    val say = rememberSay()
     val retryable = groups.orEmpty().filter { it.retryable }
     val group = groups?.firstOrNull { it.id == chosen }
     AdminScreen(
@@ -118,32 +149,31 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
         remote = remote,
         account = account,
         refreshing = refreshing,
-        onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
+        onRefresh = onRefresh,
+        revalidating = revalidating && groups != null,
         actions = {
-            TextButton(onClick = { scope.launch { retry(retryable) } }, enabled = retryable.isNotEmpty() && busy == null) {
+            TextButton(onClick = { onRetry(retryable) }, enabled = retryable.isNotEmpty() && busy == null) {
                 if (busy == "all") Busy() else Text(stringResource(R.string.retry_all))
             }
         },
-        chosenTitle = group?.label,
-        onUnchoose = { chosen = null },
+        chosenTitle = group?.let { say.groupTitle(it) },
+        onUnchoose = { choose(null) },
         detail = group?.let { g ->
             {
                 Detail {
                     Text(pluralStringResource(R.plurals.jobs, g.count, g.count), style = MaterialTheme.typography.headlineSmall)
                     Fact(stringResource(R.string.stage), g.stage)
-                    Fact(stringResource(R.string.cause), g.cause)
+                    Fact(stringResource(R.string.cause), causeKind(g.cause))
                     g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(readableMessage(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    if (g.retryable) {
-                        Button(onClick = { scope.launch { retry(listOf(g)) } }, enabled = busy == null) {
+                    val cannot = say.cannotRetry(g)
+                    if (cannot == null) {
+                        Button(onClick = { onRetry(listOf(g)) }, enabled = busy == null) {
                             if (busy == g.id) Busy() else Text(stringResource(R.string.retry))
                         }
                     } else {
-                        Text(
-                            stringResource(R.string.fixed_on_web, Say.spaced(g.action)),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text(cannot, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -159,23 +189,28 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
                 )
             }
             else -> items(gs, key = { it.id }) { g ->
+                val cannot = say.cannotRetry(g)
                 ListItem(
-                    headlineContent = { Text(stringResource(R.string.count_label, g.count, g.label)) },
+                    headlineContent = { Text(stringResource(R.string.count_label, g.count, say.groupTitle(g)), Modifier.testTag("group-title")) },
                     supportingContent = {
                         Column {
                             Text(g.stage)
-                            g.sampleMessage?.takeIf { it.isNotEmpty() }?.let { Text(it, maxLines = 2) }
+                            g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
+                                Text(readableMessage(it), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            }
+                            // no Retry: the row says why, and what fixes it
+                            if (cannot != null) Text(cannot, Modifier.testTag("cannot-retry"), color = MaterialTheme.colorScheme.tertiary)
                         }
                     },
                     trailingContent = {
-                        if (g.retryable) {
-                            OutlinedButton(onClick = { scope.launch { retry(listOf(g)) } }, enabled = busy == null) {
+                        if (cannot == null) {
+                            OutlinedButton(onClick = { onRetry(listOf(g)) }, enabled = busy == null) {
                                 if (busy == g.id) Busy() else Text(stringResource(R.string.retry))
                             }
                         }
                     },
                     colors = chosenColors(g.id == chosen),
-                    modifier = Modifier.clickable { chosen = g.id },
+                    modifier = Modifier.clickable { choose(g.id) }.testTag("group-${g.id}"),
                 )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
@@ -191,10 +226,10 @@ fun AttentionScreen(remote: Remote, account: @Composable () -> Unit) {
  */
 @Composable
 fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
-    var snap by remember { mutableStateOf<QueueSnapshot?>(null) }
-    var running by remember { mutableStateOf<List<JobRef>?>(null) }
-    var failures by remember { mutableStateOf<Pair<String, List<FailureGroup>>?>(null) }
-    var chosen by remember { mutableStateOf<String?>(null) }
+    var snap by remote.kept<QueueSnapshot?>("queue.snap") { null }
+    var running by remote.kept<List<JobRef>?>("queue.running") { null }
+    var failures by remote.kept<Pair<String, List<FailureGroup>>?>("queue.failures") { null }
+    var chosen by remote.kept<String?>("queue.chosen") { null }
     var busy by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -212,7 +247,7 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
         }
     }
     // the snapshot counts every job: a busy home takes seconds to answer, so not too often
-    Polling(30_000) { load() }
+    val revalidating = Polling(30_000) { load() }
     // the chosen stage's failures, read when it is chosen
     LaunchedEffect(chosen) {
         val stage = chosen?.takeUnless { it.startsWith("job:") } ?: return@LaunchedEffect
@@ -223,6 +258,7 @@ fun QueueScreen(remote: Remote, account: @Composable () -> Unit) {
         snap, running, failures, chosen, { chosen = it }, busy, remote, account, refreshing,
         onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
         act = ::act,
+        revalidating = revalidating,
     )
 }
 
@@ -240,6 +276,7 @@ internal fun QueueContent(
     refreshing: Boolean,
     onRefresh: suspend () -> Unit,
     act: (String, suspend com.hamzalabs.maktaba.core.api.ApiClient.() -> Unit) -> Unit,
+    revalidating: Boolean = false,
 ) {
     val row = snap?.rows?.firstOrNull { it.id == chosen }
     val job = running?.firstOrNull { "job:${it.id}" == chosen }
@@ -251,6 +288,7 @@ internal fun QueueContent(
         account = account,
         refreshing = refreshing,
         onRefresh = onRefresh,
+        revalidating = revalidating && snap != null,
         actions = {
             val s = snap
             if (s != null) {
@@ -369,10 +407,10 @@ private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolea
 /** The home's libraries, their folders, and a scan (new or changed files). */
 @Composable
 fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
-    var libraries by remember { mutableStateOf<List<Library>?>(null) }
-    var chosen by remember { mutableStateOf<String?>(null) }
+    var libraries by remote.kept<List<Library>?>("libraries.list") { null }
+    var chosen by remote.kept<String?>("libraries.chosen") { null }
     var busy by remember { mutableStateOf<String?>(null) }
-    var scanned by remember { mutableStateOf(setOf<String>()) }
+    var scanned by remote.kept("libraries.scanned") { setOf<String>() }
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     suspend fun load() {
@@ -386,7 +424,8 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
             busy = null
         }
     }
-    LaunchedEffect(Unit) { load() }
+    var revalidating by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) { load(); revalidating = false }
     val lib = libraries?.firstOrNull { it.id == chosen }
     AdminScreen(
         title = stringResource(R.string.place_libraries),
@@ -394,6 +433,7 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
         account = account,
         refreshing = refreshing,
         onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
+        revalidating = revalidating && libraries != null,
         chosenTitle = lib?.name,
         onUnchoose = { chosen = null },
         detail = lib?.let { l ->
@@ -439,9 +479,9 @@ fun LibrariesScreen(remote: Remote, account: @Composable () -> Unit) {
  */
 @Composable
 fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
-    var overview by remember { mutableStateOf<ClusterOverview?>(null) }
-    var processes by remember { mutableStateOf<ProcessesDoc?>(null) }
-    var chosen by remember { mutableStateOf<String?>(null) }
+    var overview by remote.kept<ClusterOverview?>("machines.overview") { null }
+    var processes by remote.kept<ProcessesDoc?>("machines.processes") { null }
+    var chosen by remote.kept<String?>("machines.chosen") { null }
     var busy by remember { mutableStateOf<String?>(null) }
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -449,7 +489,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
         remote.load { machines() }?.let { overview = it }
         remote.load { processes() }?.let { processes = it }
     }
-    Polling(15_000) { load() }
+    val revalidating = Polling(15_000) { load() }
     val machine = overview?.nodes?.firstOrNull { it.id == chosen }
     val process = processes?.processes?.firstOrNull { "proc:${it.id}" == chosen }
     val say = rememberSay()
@@ -459,6 +499,7 @@ fun MachinesScreen(remote: Remote, account: @Composable () -> Unit) {
         account = account,
         refreshing = refreshing,
         onRefresh = { refreshing = true; remote.clear(); load(); refreshing = false },
+        revalidating = revalidating && overview != null,
         chosenTitle = machine?.name ?: process?.let { say.process(it) },
         onUnchoose = { chosen = null },
         detail = when {

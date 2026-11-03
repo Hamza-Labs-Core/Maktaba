@@ -225,7 +225,9 @@ func nonNilStrings(s []string) []string {
 
 // errorText extracts a readable message from processing_jobs.error,
 // which is JSON {kind,message,traceback,retryable} on newer rows and a
-// plain string on older ones.
+// plain string on older ones. A message that carries a Python repr's
+// escapes as text (an ffmpeg tail quoted in it: "...)\n[out#0/image2 @")
+// reads with real line breaks: no one sees a backslash-n.
 func errorText(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if strings.HasPrefix(raw, "{") {
@@ -235,12 +237,28 @@ func errorText(raw string) string {
 		}
 		if json.Unmarshal([]byte(raw), &e) == nil && (e.Message != "" || e.Kind != "") {
 			if e.Message != "" {
-				return truncate(e.Message, 300)
+				return truncate(readable(e.Message), 300)
 			}
 			return e.Kind
 		}
 	}
-	return truncate(raw, 300)
+	return truncate(readable(raw), 300)
+}
+
+// reprEscapes are the escapes a message can carry as text.
+var reprEscapes = strings.NewReplacer(`\r\n`, "\n", `\n`, "\n", `\r`, "\n", `\t`, " ")
+
+// readable turns a message's literal escapes into the characters they
+// stand for, and drops blank lines.
+func readable(s string) string {
+	lines := strings.Split(reprEscapes.Replace(s), "\n")
+	kept := lines[:0]
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			kept = append(kept, strings.TrimRight(l, " "))
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, "\n"))
 }
 
 // legacyCause groups rows written before error_cause existed by the

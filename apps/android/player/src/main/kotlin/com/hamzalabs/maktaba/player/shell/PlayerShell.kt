@@ -2,7 +2,6 @@ package com.hamzalabs.maktaba.player.shell
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.adaptive.HingeInfo
@@ -39,6 +38,10 @@ import com.hamzalabs.maktaba.core.layout.HingeSplit
 import com.hamzalabs.maktaba.core.layout.LocalAdaptiveInfo
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
+import com.hamzalabs.maktaba.core.ui.NavigationLabel
+import com.hamzalabs.maktaba.core.ui.rememberNavigationLabelSizes
+import com.hamzalabs.maktaba.core.ui.navigationLabelsFit
+import androidx.compose.ui.platform.LocalConfiguration
 
 /** How the sections are offered (FR-8). */
 enum class ShellNavigation { Bar, Rail, CollapsibleRail, None }
@@ -192,18 +195,23 @@ fun PlayerShell(
     // One tree whatever the navigation, so the screens are never composed anew when it changes
     // (a video going full screen hides it): the suite draws the bar and the rail, the frame
     // inside it the collapsible rail.
+    val labels = sections.map { stringResource(it.label) }
+    // a cover screen at a large text size: the selected label only (see navigationLabelsFit)
+    val allLabels = navigation != ShellNavigation.Bar || navigationLabelsFit(labels, LocalConfiguration.current.screenWidthDp)
+    val labelSizes = rememberNavigationLabelSizes(labels)
     CompositionLocalProvider(LocalAdaptiveInfo provides adaptiveInfo) {
         NavigationSuiteScaffold(
             modifier = modifier.semantics { shellNavigation = navigation },
             layoutType = navigation.suiteType,
             navigationSuiteItems = {
-                sections.forEach { section ->
+                sections.forEachIndexed { i, section ->
                     val selected = section == current
                     item(
                         selected = selected,
                         onClick = { choose(section) },
                         icon = { Icon(if (selected) section.selectedIcon else section.icon, contentDescription = null) },
-                        label = { Text(stringResource(section.label)) },
+                        label = { NavigationLabel(labels[i], labelSizes) },
+                        alwaysShowLabel = allLabels,
                         modifier = Modifier.testTag("section-${section.name}"),
                     )
                 }

@@ -66,7 +66,7 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace \
             :client:test :core:testDebugUnitTest :remote:testDebugUnitTest \
-            :player:testDebugUnitTest :player:verifyRoborazziDebug \
+            :player:testDebugUnitTest :player:verifyRoborazziDebug :remote:verifyRoborazziDebug \
             :core:lintDebug :player:lintDebug :remote:lintDebug \
             assembleDebug :player:bundleRelease :remote:bundleRelease
 
@@ -109,4 +109,5 @@ jobs:
             apps/android/*/build/reports/
             apps/android/*/build/test-results/
             apps/android/player/build/outputs/roborazzi/
+            apps/android/remote/build/outputs/roborazzi/
           retention-days: 7

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-__all__ = ["classify", "norm"]
+__all__ = ["brief", "classify", "norm"]
 
 _MAX_LEN = 120
 
@@ -73,6 +73,23 @@ _NUM = re.compile(r"\d+(?:\.\d+)?")
 _WS = re.compile(r"\s+")
 
 
+def brief(message: str, limit: int = 300) -> str:
+    """The start of ``message`` for a job's error, at most ``limit`` characters.
+
+    The start, never the tail: a tail begins in the middle of a word ("ing thread
+    with return code -22"). A longer message ends at the last space before the
+    limit, with an ellipsis.
+    """
+    s = message.strip()
+    if len(s) <= limit:
+        return s
+    cut = s[: limit - 1]
+    space = cut.rfind(" ")
+    if space > limit // 2:
+        cut = cut[:space]
+    return cut.rstrip() + "…"
+
+
 def norm(message: str) -> str:
     """Strip volatile detail from a message. Idempotent."""
     s = message.lower()
@@ -87,10 +104,18 @@ def norm(message: str) -> str:
     return s[:_MAX_LEN]
 
 
+#: the cause codes: a stage that raises one as its kind has named the cause
+_CODES = frozenset(cause for cause, _ in _KNOWN)
+
+
 def classify(kind: str, message: str) -> str:
     """Normalised cause code for a failure ``(kind, message)``."""
     text = f"{kind} {message}"
     for cause, pattern in _KNOWN:
         if pattern.search(text):
             return cause
+    # "nas_timeout" with "<file>: no answer": the stage named it; the message's
+    # file (a path with spaces is not all <path>) must not split the group
+    if kind in _CODES:
+        return kind
     return f"{kind}:{norm(message)}"[: _MAX_LEN + len(kind) + 1]

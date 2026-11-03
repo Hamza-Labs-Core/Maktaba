@@ -71,9 +71,29 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
     /** A change that did not go through (a removal, a sign-out of a session), until shown. */
     var problem: Failure? by mutableStateOf(null)
 
+    /**
+     * A list read again while it is shown ([revalidating] says so): the rows read last stay until
+     * the answer replaces them, and a read that fails keeps them ([problem] says why, a snackbar).
+     * Only a list never read shows a spinner, or its error.
+     */
+    var revalidating: Boolean by mutableStateOf(false)
+        private set
+
+    private suspend fun <T> reread(current: Load<T>, block: suspend () -> T): Load<T> {
+        if (current !is Load.Ready) return attempt(block)
+        revalidating = true
+        try {
+            return when (val r = attempt(block)) {
+                is Load.Failed -> current.also { problem = r.failure }
+                else -> r
+            }
+        } finally {
+            revalidating = false
+        }
+    }
+
     suspend fun loadHistory() {
-        history = Load.Loading
-        history = attempt { client.watchHistory(limit = PAGE).also { historyMore = it.size == PAGE } }
+        history = reread(history) { client.watchHistory(limit = PAGE).also { historyMore = it.size == PAGE } }
     }
 
     suspend fun moreHistory() {
@@ -92,8 +112,7 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
     }
 
     suspend fun loadSessions() {
-        sessions = Load.Loading
-        sessions = attempt { client.signInSessions() }
+        sessions = reread(sessions) { client.signInSessions() }
     }
 
     /** Signs [session] out; it leaves the list once the home has done it. */
@@ -104,21 +123,25 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
     }
 
     suspend fun loadPlaylists() {
-        playlists = Load.Loading
-        playlists = attempt { client.playlists() }
+        playlists = reread(playlists) { client.playlists() }
     }
 
+    /** The playlist [playlist] holds (another one's rows are never shown for this one). */
+    private var playlistId: String? = null
+
     suspend fun loadPlaylist(id: String) {
-        playlist = Load.Loading
-        playlist = attempt { client.playlist(id) }
+        if (playlistId != id) {
+            playlistId = id
+            playlist = Load.Loading
+        }
+        playlist = reread(playlist) { client.playlist(id) }
     }
 
     /** The first video of playlist [id], to play it from the start (null: empty, or it failed). */
     suspend fun firstOf(id: String): String? = runCatchingApi { client.playlist(id) }?.items?.firstOrNull()?.id
 
     suspend fun loadFavorites() {
-        favorites = Load.Loading
-        favorites = attempt { client.favorites().also { favoritesNext = it.next }.items }
+        favorites = reread(favorites) { client.favorites().also { favoritesNext = it.next }.items }
     }
 
     suspend fun moreFavorites() {

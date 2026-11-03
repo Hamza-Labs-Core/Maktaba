@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from maktaba_pipeline.engine.causes import classify, norm
+from maktaba_pipeline.engine.causes import brief, classify, norm
 
 pytestmark = pytest.mark.unit
 
@@ -52,6 +52,28 @@ GOLDEN = [
 @pytest.mark.parametrize(("kind", "message", "cause"), GOLDEN)
 def test_known_patterns(kind: str, message: str, cause: str) -> None:
     assert classify(kind, message) == cause
+
+
+def test_a_kind_that_is_a_cause_code_is_the_cause() -> None:
+    # transcribe raises nas_timeout with "<file>: no answer"; an Arabic name with spaces
+    # is not all <path>, and each file made a group of its own, titled by its key
+    msg = "/v/شاهين/المعجزات والخوارق..برهان النبوة الثاني 2 | دلائل النبوة 3.mp4: no answer"
+    assert classify("nas_timeout", msg) == "nas_timeout"
+    assert classify("file_missing", "gone") == "file_missing"
+    # a kind that is not a cause code still groups by its normalised message
+    assert classify("model_unavailable", "4 of 4 clips got no answer from the model") == (
+        "model_unavailable:<n> of <n> clips got no answer from the model"
+    )
+
+
+def test_brief_keeps_the_start_and_cuts_at_a_word() -> None:
+    msg = "thumbnail failed: ffmpeg rc=234 tail='" + "Error opening output thread " * 20 + "'"
+    b = brief(msg)
+    assert b.startswith("thumbnail failed: ffmpeg rc=234")
+    assert len(b) <= 300
+    assert b.endswith("…")
+    assert b[:-1].endswith(("Error", "opening", "output", "thread"))
+    assert brief("  short  ") == "short"
 
 
 def test_plex_timeout_is_not_a_nas_timeout() -> None:

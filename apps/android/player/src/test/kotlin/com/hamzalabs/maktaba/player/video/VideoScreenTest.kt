@@ -170,6 +170,23 @@ class VideoScreenTest {
         compose.onNodeWithTag("video-favorite").assertIsNotSelected()
     }
 
+    @Test
+    fun aReadAgainThatFailsKeepsThePageAndSaysWhyInASnackbar() {
+        open("v1")
+        waitForTag("video-title")
+        // the home fails from now on: away (the player) and back reads the page again
+        val reads = count("/api/videos/v1")
+        fake.answer("/api/videos/v1") { FakeHome.json("""{"title":"boom"}""", 500) }
+        compose.onNodeWithTag("video-resume").performClick()
+        waitForTag("watch")
+        back()
+        compose.settledUntil(5_000) { count("/api/videos/v1") > reads }
+        waitForText(compose.activity.getString(com.hamzalabs.maktaba.core.R.string.error_server))
+        // the page read last stays, never the error page in its place
+        compose.onNodeWithText("The Night Journey", useUnmergedTree = true).assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasTestTag("error-state")).fetchSemanticsNodes().isEmpty())
+    }
+
     // ---------- not available ----------
 
     @Test

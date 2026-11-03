@@ -1,6 +1,9 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    // screenshot tests on the JVM (Robolectric): recordRoborazziDebug writes the references,
+    // verifyRoborazziDebug (CI) fails when a screen no longer matches them
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -65,6 +68,22 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // The screens' tests run on the JVM (Robolectric) against a fake home (MockWebServer): they
+    // need the app's resources, and Robolectric's native graphics for the screenshots.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+        unitTests.all { test ->
+            test.systemProperty("robolectric.graphicsMode", "NATIVE")
+            test.maxHeapSize = "3g"
+        }
+    }
+}
+
+// The references live beside the tests and change only in a reviewed PR.
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }
 
 dependencies {
@@ -74,4 +93,16 @@ dependencies {
     testImplementation(libs.junit)
     // StringsXml: the tests read the app's English and Arabic as Android does
     testImplementation(testFixtures(project(":client")))
+    // the screens on Robolectric against a fake home, and their screenshots (Roborazzi)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.espresso.core)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
+    debugImplementation(libs.compose.ui.test.manifest)
 }

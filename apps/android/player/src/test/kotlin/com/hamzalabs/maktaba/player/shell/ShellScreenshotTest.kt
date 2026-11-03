@@ -10,6 +10,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.RoborazziOptions
 import com.github.takahirom.roborazzi.captureRoboImage
 import com.hamzalabs.maktaba.player.harness.FakeHome
+import com.hamzalabs.maktaba.player.harness.assertBarLabelsAligned
+import com.hamzalabs.maktaba.player.harness.info
 import com.hamzalabs.maktaba.player.harness.Window
 import com.hamzalabs.maktaba.player.harness.setShell
 import com.hamzalabs.maktaba.player.harness.settledUntil
@@ -31,16 +33,45 @@ class ShellScreenshotTest {
     @get:Rule(order = 0) val home = FakeHome()
     @get:Rule(order = 1) val compose = createAndroidComposeRule<ComponentActivity>()
 
-    private fun shoot(window: Window, name: String) {
+    private fun shoot(window: Window, name: String, fontScale: Float = 1f) {
         // the shell's chrome is what these show: Libraries with no library (no posters to load)
         home.answer("/api/libraries/summary") { FakeHome.json("""{"items":[]}""") }
-        compose.setShell(home, window = window)
+        compose.setShell(home, window = window, fontScale = fontScale)
         compose.onNodeWithTag("section-Libraries").performClick()
         val empty = compose.activity.getString(com.hamzalabs.maktaba.player.R.string.libraries_empty)
         compose.settledUntil(5_000) { compose.onAllNodes(hasText(empty)).fetchSemanticsNodes().isNotEmpty() }
         compose.waitForIdle()
+        if (navigationFor(window.info()) == ShellNavigation.Bar) {
+            compose.assertBarLabelsAligned(
+                PlayerSection.entries.associate { "section-${it.name}" to compose.activity.getString(it.label) },
+                selected = "section-Libraries",
+            )
+        }
         compose.onRoot().captureRoboImage("src/test/screenshots/$name.png", roborazziOptions = options)
     }
+
+    // closed foldables (cover screens): the bar's five labels on ~65-80 dp each
+
+    @Test @Config(qualifiers = "w344dp-h882dp-420dpi")
+    fun foldCoverEnglish() = shoot(Window.FoldCover, "shell_foldcover_dark_en")
+
+    @Test @Config(qualifiers = "ar-w344dp-h882dp-420dpi")
+    fun foldCoverArabic() = shoot(Window.FoldCover, "shell_foldcover_dark_ar")
+
+    @Test @Config(qualifiers = "w344dp-h882dp-420dpi")
+    fun foldCoverEnglishLargeText() = shoot(Window.FoldCover, "shell_foldcover_dark_en_font130", 1.3f)
+
+    @Test @Config(qualifiers = "ar-w344dp-h882dp-420dpi")
+    fun foldCoverArabicLargestText() = shoot(Window.FoldCover, "shell_foldcover_dark_ar_font200", 2f)
+
+    @Test @Config(qualifiers = "w393dp-h916dp-440dpi")
+    fun razrFoldCoverEnglish() = shoot(Window.RazrFoldCover, "shell_razrfoldcover_dark_en")
+
+    @Test @Config(qualifiers = "ar-w393dp-h916dp-440dpi")
+    fun razrFoldCoverArabicLargeText() = shoot(Window.RazrFoldCover, "shell_razrfoldcover_dark_ar_font130", 1.3f)
+
+    @Test @Config(qualifiers = "w411dp-h923dp-420dpi")
+    fun pixelFoldCoverEnglish() = shoot(Window.PixelFoldCover, "shell_pixelfoldcover_dark_en")
 
     @Test @Config(qualifiers = "w411dp-h891dp-xxhdpi")
     fun phoneEnglish() = shoot(Window.Phone, "shell_phone_dark_en")

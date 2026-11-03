@@ -4,8 +4,8 @@ import "strings"
 
 // causeInfo is the human label and the one action offered for an
 // issue group. The cause codes are produced by the Python engine
-// (engine/causes.py, plan-06-11 §6.3); causes not listed here fall back
-// to the raw code as label and "retry" as action.
+// (engine/causes.py, plan-06-11 §6.3); a cause not listed here is labelled
+// by its kind (describeCause), with "retry" as action.
 type causeInfo struct {
 	Label  string
 	Action string
@@ -49,15 +49,46 @@ var causeLabels = map[string]causeInfo{
 	CauseStaleGraph:        {"No worker has synced this stage recently", ActionShowWorkers},
 }
 
-// describeCause returns the label/action for a cause code.
+// kindLabels names the failure kinds the stages raise that are not cause
+// codes of their own: a generated cause "kind:..." takes its kind's label.
+var kindLabels = map[string]string{
+	"model_unavailable":     "The model did not answer",
+	"chapter_frames_failed": "ffmpeg failed on the file",
+	"thumbnail_unreadable":  "The thumbnail could not be read",
+	"video_unhashed":        "The file has no content hash yet",
+	"unknown":               "Unknown failure",
+}
+
+// describeCause returns the label/action for a cause code. A generated
+// cause ("kind:normalised message", engine/causes.py) is a grouping key,
+// never a label: it is labelled by its kind, as a known cause's label (a
+// stage raised "nas_timeout" with a message the engine did not match), a
+// known kind's, else the kind in words ("Model unavailable"). The
+// normalised message, with its <n> and <path>, is never shown: the
+// group's sample_message says what happened.
 func describeCause(cause string) causeInfo {
 	if ci, ok := causeLabels[cause]; ok {
 		return ci
 	}
-	// Generated causes look like "kind:normalised message".
-	label := cause
-	if i := strings.IndexByte(cause, ':'); i > 0 && i < len(cause)-1 {
-		label = cause
+	kind := cause
+	if i := strings.IndexByte(cause, ':'); i > 0 {
+		kind = cause[:i]
 	}
-	return causeInfo{Label: label, Action: ActionRetry}
+	if ci, ok := causeLabels[kind]; ok {
+		return ci
+	}
+	if label, ok := kindLabels[kind]; ok {
+		return causeInfo{Label: label, Action: ActionRetry}
+	}
+	return causeInfo{Label: kindWords(kind), Action: ActionRetry}
+}
+
+// kindWords is a kind code in words: underscores as spaces, the first
+// letter capitalised ("model_unavailable" -> "Model unavailable").
+func kindWords(kind string) string {
+	w := strings.TrimSpace(strings.ReplaceAll(kind, "_", " "))
+	if w == "" {
+		return kindLabels["unknown"]
+	}
+	return strings.ToUpper(w[:1]) + w[1:]
 }

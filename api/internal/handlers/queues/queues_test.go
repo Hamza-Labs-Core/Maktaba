@@ -455,8 +455,37 @@ func TestDescribeCause(t *testing.T) {
 	if c := describeCause(CauseAwaitingReview); c.Action != ActionApply {
 		t.Errorf("awaiting_review action = %s", c.Action)
 	}
-	if c := describeCause("OSError:something <path>"); c.Label != "OSError:something <path>" || c.Action != ActionRetry {
-		t.Errorf("fallback = %+v", c)
+	// a generated cause ("kind:normalised message") is a grouping key: its
+	// label is the kind's, never the key with its <n> and <path>
+	for cause, label := range map[string]string{
+		"OSError:something <path>":                                        "OSError",
+		"model_unavailable:<n> of <n> clips got no answer from the model": "The model did not answer",
+		"nas_timeout:<path> شاهين/المعجزات والخوارق..برهان النبوة الثاني.mp<n>>: no answer": "NAS read timed out",
+		"some_new_kind:<n> things": "Some new kind",
+		"unknown:<hex>":            "Unknown failure",
+	} {
+		c := describeCause(cause)
+		if c.Label != label || c.Action != ActionRetry {
+			t.Errorf("describeCause(%q) = %+v, want label %q", cause, c, label)
+		}
+		if strings.ContainsAny(c.Label, "<>:") {
+			t.Errorf("describeCause(%q) label %q shows the key", cause, c.Label)
+		}
+	}
+	// a known cause's action holds for its generated variants too
+	if c := describeCause("plex_unreachable:relay: no answer from the home"); c.Label != "Plex is unreachable" || c.Action != ActionOpenSettings {
+		t.Errorf("plex_unreachable variant = %+v", c)
+	}
+}
+
+func TestErrorTextReadsEscapesAsLineBreaks(t *testing.T) {
+	raw := `{"kind":"chapter_frames_failed","message":"ffmpeg rc=1: return code -22 (Invalid argument)\\n[out#0/image2 @ 0x1]\\n\\nConversion failed!"}`
+	want := "ffmpeg rc=1: return code -22 (Invalid argument)\n[out#0/image2 @ 0x1]\nConversion failed!"
+	if got := errorText(raw); got != want {
+		t.Errorf("errorText = %q, want %q", got, want)
+	}
+	if got := errorText(`plain\tline\r\nnext`); got != "plain line\nnext" {
+		t.Errorf("errorText(plain) = %q", got)
 	}
 }
 

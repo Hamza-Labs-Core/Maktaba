@@ -94,6 +94,7 @@ import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.ui.ApproveSignIn
 import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.Message
+import com.hamzalabs.maktaba.core.ui.Revalidating
 import com.hamzalabs.maktaba.core.ui.ThemeMode
 import com.hamzalabs.maktaba.core.ui.formatDuration
 import com.hamzalabs.maktaba.core.ui.sentence
@@ -364,11 +365,15 @@ private fun Toggle(label: Int, checked: Boolean, tag: String, onChange: (Boolean
 }
 
 @Composable
-private fun <T> Loaded(load: Load<T>, title: Int, onRetry: () -> Unit, content: @Composable (T) -> Unit) {
+private fun <T> Loaded(load: Load<T>, title: Int, onRetry: () -> Unit, revalidating: Boolean = false, content: @Composable (T) -> Unit) {
     when (load) {
         Load.Loading -> Box(Modifier.fillMaxSize().testTag("profile-loading"), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         is Load.Failed -> ErrorState(load.failure, stringResource(title), onRetry = onRetry)
-        is Load.Ready -> content(load.value)
+        is Load.Ready -> Box(Modifier.fillMaxSize()) {
+            content(load.value)
+            // the rows read last stay; a thin bar says they are being read again
+            Revalidating(revalidating, Modifier.align(Alignment.TopCenter))
+        }
     }
 }
 
@@ -378,7 +383,7 @@ private fun <T> Loaded(load: Load<T>, title: Int, onRetry: () -> Unit, content: 
 private fun HistoryPage(state: ProfileState, nav: PlayerNavigator) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.loadHistory() }
-    Loaded(state.history, R.string.profile_history, onRetry = { scope.launch { state.loadHistory() } }) { items ->
+    Loaded(state.history, R.string.profile_history, onRetry = { scope.launch { state.loadHistory() } }, revalidating = state.revalidating) { items ->
         if (items.isEmpty()) {
             Message(stringResource(R.string.profile_history_empty))
             return@Loaded
@@ -425,7 +430,7 @@ private fun HistoryRow(entry: HistoryEntry, onOpen: () -> Unit, onRemove: () -> 
 private fun FavoritesPage(home: PlayerHome, state: ProfileState, nav: PlayerNavigator) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.loadFavorites() }
-    Loaded(state.favorites, R.string.profile_favorites, onRetry = { scope.launch { state.loadFavorites() } }) { items ->
+    Loaded(state.favorites, R.string.profile_favorites, onRetry = { scope.launch { state.loadFavorites() } }, revalidating = state.revalidating) { items ->
         if (items.isEmpty()) {
             Message(stringResource(R.string.profile_favorites_empty))
             return@Loaded
@@ -459,7 +464,7 @@ private fun FavoritesPage(home: PlayerHome, state: ProfileState, nav: PlayerNavi
 private fun PlaylistsPage(state: ProfileState, nav: PlayerNavigator) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.loadPlaylists() }
-    Loaded(state.playlists, R.string.profile_playlists, onRetry = { scope.launch { state.loadPlaylists() } }) { items ->
+    Loaded(state.playlists, R.string.profile_playlists, onRetry = { scope.launch { state.loadPlaylists() } }, revalidating = state.revalidating) { items ->
         if (items.isEmpty()) {
             Message(stringResource(R.string.profile_playlists_empty))
             return@Loaded
@@ -495,7 +500,7 @@ private fun PlaylistsPage(state: ProfileState, nav: PlayerNavigator) {
 private fun PlaylistPage(home: PlayerHome, state: ProfileState, page: ProfilePage.Playlist, nav: PlayerNavigator) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(page.id) { state.loadPlaylist(page.id) }
-    Loaded(state.playlist, R.string.profile_playlists, onRetry = { scope.launch { state.loadPlaylist(page.id) } }) { doc ->
+    Loaded(state.playlist, R.string.profile_playlists, onRetry = { scope.launch { state.loadPlaylist(page.id) } }, revalidating = state.revalidating) { doc ->
         LazyVerticalGrid(
             GridCells.Adaptive(PosterCardWidth),
             Modifier.fillMaxSize().testTag("playlist-grid"),
@@ -532,7 +537,7 @@ private fun PlaylistPage(home: PlayerHome, state: ProfileState, page: ProfilePag
 private fun SessionsPage(state: ProfileState) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { state.loadSessions() }
-    Loaded(state.sessions, R.string.profile_sessions, onRetry = { scope.launch { state.loadSessions() } }) { items ->
+    Loaded(state.sessions, R.string.profile_sessions, onRetry = { scope.launch { state.loadSessions() } }, revalidating = state.revalidating) { items ->
         if (items.isEmpty()) {
             Message(stringResource(R.string.profile_sessions_empty))
             return@Loaded

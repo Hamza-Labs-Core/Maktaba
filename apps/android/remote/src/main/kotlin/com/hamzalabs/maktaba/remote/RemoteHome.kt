@@ -22,16 +22,32 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.adaptive.WindowAdaptiveInfo
+import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffold
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
+import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScope
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import com.hamzalabs.maktaba.core.layout.LocalAdaptiveInfo
+import androidx.compose.ui.platform.LocalConfiguration
+import com.hamzalabs.maktaba.core.ui.NavigationLabel
+import com.hamzalabs.maktaba.core.ui.rememberNavigationLabelSizes
+import com.hamzalabs.maktaba.core.ui.navigationLabelsFit
+import com.hamzalabs.maktaba.core.ui.Revalidating
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -58,8 +74,9 @@ import com.hamzalabs.maktaba.core.R as CoreR
  * The Remote's places: what needs attention first, as on the web's queue page. The home's
  * processes are on Machines, the jobs running now on Queue.
  */
-enum class Place(@StringRes val label: Int, val icon: ImageVector) {
-    Attention(R.string.place_attention, Icons.Outlined.ReportProblem),
+enum class Place(@StringRes val label: Int, val icon: ImageVector, @StringRes val short: Int = label) {
+    // the bar's label is one word: five items share a cover screen ~70 dp each
+    Attention(R.string.place_attention, Icons.Outlined.ReportProblem, R.string.place_attention_short),
     Queue(R.string.place_queue, Icons.Outlined.Sync),
     Updates(R.string.place_updates, Icons.Outlined.SystemUpdate),
     Libraries(R.string.place_libraries, Icons.Outlined.VideoLibrary),
@@ -72,6 +89,16 @@ enum class Place(@StringRes val label: Int, val icon: ImageVector) {
  * failure, never an action's (that stays until another action, a refresh or another place).
  */
 class Remote(val client: ApiClient, private val session: AppSession) {
+    private val kept = mutableMapOf<String, MutableState<*>>()
+
+    /**
+     * A place's state under [key], kept for as long as this home is signed in: another place
+     * and back (or a fold) shows what was read last at once, and the next read updates it.
+     */
+    @Suppress("UNCHECKED_CAST")
+    fun <T> kept(key: String, initial: () -> T): MutableState<T> =
+        kept.getOrPut(key) { mutableStateOf(initial()) } as MutableState<T>
+
     private var loadProblem by mutableStateOf<Failure?>(null)
     private var actionProblems by mutableStateOf<List<ActionProblem>>(emptyList())
 
@@ -133,28 +160,59 @@ data class ActionProblem(val what: String?, val failure: Failure)
  */
 @Composable
 fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: ThemeStore) {
-    var place by rememberSaveable { mutableStateOf(Place.Attention) }
     val remote = remember(client) { Remote(client, session) }
-    val account: @Composable () -> Unit = { AccountMenu(session, user, themes) }
-    NavigationSuiteScaffold(
-        navigationSuiteItems = {
-            Place.entries.forEach { p ->
-                item(
-                    selected = p == place,
-                    onClick = { place = p; remote.clear() },
-                    icon = { Icon(p.icon, null) },
-                    label = { Text(stringResource(p.label)) },
-                )
-            }
-        },
-    ) {
-        when (place) {
-            Place.Attention -> AttentionScreen(remote, account)
-            Place.Queue -> QueueScreen(remote, account)
-            Place.Updates -> UpdatesScreen(remote, account)
-            Place.Libraries -> LibrariesScreen(remote, account)
-            Place.Machines -> MachinesScreen(remote, account)
+    RemoteFrame(remote, account = { AccountMenu(session, user, themes) })
+}
+
+/**
+ * The frame for [remote]: the places in the navigation suite. Each place keeps what it read
+ * ([Remote.kept]) and its scroll position (a saveable state per place), so switching shows the
+ * last page at once while it reads again.
+ */
+@Composable
+internal fun RemoteFrame(
+    remote: Remote,
+    account: @Composable () -> Unit,
+    adaptiveInfo: WindowAdaptiveInfo = currentWindowAdaptiveInfoV2(),
+    screens: @Composable (Place) -> Unit = { place -> PlaceScreen(place, remote, account) },
+) {
+    var place by rememberSaveable { mutableStateOf(Place.Attention) }
+    val places = rememberSaveableStateHolder()
+    val labels = Place.entries.map { stringResource(it.short) }
+    // a cover screen at a large text size: the selected label only (see navigationLabelsFit)
+    val allLabels = navigationLabelsFit(labels, LocalConfiguration.current.screenWidthDp)
+    val labelSizes = rememberNavigationLabelSizes(labels)
+    val items: NavigationSuiteScope.() -> Unit = {
+        Place.entries.forEachIndexed { i, p ->
+            item(
+                selected = p == place,
+                onClick = { if (p != place) { place = p; remote.clear() } },
+                icon = { Icon(p.icon, null) },
+                label = { NavigationLabel(labels[i], labelSizes) },
+                alwaysShowLabel = allLabels,
+                modifier = Modifier.testTag("place-${p.name}"),
+            )
         }
+    }
+    // the panes follow the same window (and hinge) as the navigation
+    CompositionLocalProvider(LocalAdaptiveInfo provides adaptiveInfo) {
+        NavigationSuiteScaffold(
+            navigationSuiteItems = items,
+            layoutType = NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(adaptiveInfo),
+        ) {
+            places.SaveableStateProvider(place.name) { screens(place) }
+        }
+    }
+}
+
+@Composable
+private fun PlaceScreen(place: Place, remote: Remote, account: @Composable () -> Unit) {
+    when (place) {
+        Place.Attention -> AttentionScreen(remote, account)
+        Place.Queue -> QueueScreen(remote, account)
+        Place.Updates -> UpdatesScreen(remote, account)
+        Place.Libraries -> LibrariesScreen(remote, account)
+        Place.Machines -> MachinesScreen(remote, account)
     }
 }
 
@@ -175,10 +233,14 @@ fun AdminScreen(
     chosenTitle: String? = null,
     onUnchoose: () -> Unit = {},
     detail: (@Composable () -> Unit)? = null,
+    revalidating: Boolean = false,
     rows: LazyListScope.() -> Unit,
 ) {
     val panes = currentPanes()
     val scope = rememberCoroutineScope()
+    // here, not in the list: the list is drawn in another place when the window folds or unfolds
+    // (one pane, beside the page, at the hinge), and its position goes with it
+    val listState = rememberLazyListState()
     val list: @Composable (Modifier) -> Unit = { modifier ->
         Scaffold(
             modifier = modifier,
@@ -189,7 +251,7 @@ fun AdminScreen(
                 onRefresh = { scope.launch { onRefresh() } },
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize().testTag("rows"), state = listState) {
                     if (remote.hasProblem) {
                         item {
                             Text(
@@ -204,6 +266,8 @@ fun AdminScreen(
                     }
                     rows()
                 }
+                // the rows read last stay; a thin bar says they are being read again
+                Revalidating(revalidating && !refreshing, Modifier.align(Alignment.TopCenter))
             }
         }
     }
