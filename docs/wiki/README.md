@@ -55,9 +55,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 - [Epic 23 — Security](epics/epic-23-security.md)
 - [Epic 24 — Data Integrity](epics/epic-24-data-integrity.md)
 
-### Cloud (epic 25)
+### Cloud (epics 25, 50)
 
 - [Epic 25 — Cloud Relay](epics/epic-25-cloud-relay.md)
+- [Epic 50 — Maktaba Cloud with no downtime](epics/epic-50-cloud-no-downtime.md)
 
 ## Cross-cutting wiki pages
 

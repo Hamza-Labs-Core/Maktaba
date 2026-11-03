@@ -54,4 +54,5 @@ older epics, a story file and a plan file per story. The number is the order the
 | 47 | [Keep libraries offline, in MP4, and without duplicates: three queue jobs](47-offline-convert-dedup/README.md) |
 | 48 | [The native Players: as good as the web, and as Plex](48-native-players/README.md) |
 | 49 | [Search that answers like Google: ranked, instant, and Arabic-aware](49-search/README.md) |
+| 50 | [Maktaba Cloud with no downtime: from one VPS to a relay people can pay for](50-cloud-no-downtime/README.md) |
 | 52 | [Word review: suspect words go to a person, in every language](52-transcript-word-review/README.md) |
