@@ -4,6 +4,10 @@
    "key": "planner",
    "title": "Channels",
    "what": "how channels, slots, fillers and the Quran channel are planned",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "themes",
@@ -2207,6 +2211,10 @@
    "key": "groups",
    "title": "Grouping",
    "what": "clip and stand-alone collections, promos, questions and fatwas",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "filler_max_minutes",
@@ -2289,6 +2297,10 @@
    "key": "detect",
    "title": "Detection",
    "what": "how shows, seasons and talk shows are found",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "generic_words",
@@ -2534,6 +2546,10 @@
    "key": "tag",
    "title": "Tagging",
    "what": "topic, format, audience and occasion tags, and what transcripts add to them",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "w_name",
@@ -2931,6 +2947,10 @@
    "key": "tagcheck",
    "title": "Tag check",
    "what": "a language model checks what each series is about",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -3033,6 +3053,10 @@
    "key": "books",
    "title": "Books",
    "what": "the book a lesson series explains decides its topics",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -3224,6 +3248,10 @@
    "key": "dizquetv",
    "title": "dizqueTV export",
    "what": "how the planned channels are written into dizqueTV: removing what the plan dropped, rewriting a channel that is on air",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "prune",
@@ -3317,6 +3345,10 @@
    "key": "tv",
    "title": "Maktaba TV",
    "what": "how Maktaba's own channels air: filler between programmes, the Ramadan grids, live broadcasts, loudness, the guide's days ahead",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "max_filler_per_gap",
@@ -3510,6 +3542,10 @@
    "key": "tv_output",
    "title": "Maktaba TV output",
    "what": "how a channel on air is encoded: encoder, picture, bitrates, how many channels and NVENC sessions at once",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "encoder",
@@ -3689,6 +3725,10 @@
    "key": "tv_cluster",
    "title": "Maktaba TV machines",
    "what": "which machines encode channels and how the home spreads them; one encode per channel",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "nodes_stream",
@@ -3764,6 +3804,10 @@
    "key": "tv_remote",
    "title": "Maktaba TV away from home",
    "what": "who may watch channels away from home through Cloudflare Stream, how many at once, the monthly budget and the storage guard",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "viewers",
@@ -3940,6 +3984,10 @@
    "key": "tv_simulcast",
    "title": "Simulcast",
    "what": "sending channels on to YouTube, Facebook or any RTMP destination through Cloudflare: on or off, destinations per channel, the monthly output-hours, the margins around a scheduled window",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -3995,6 +4043,10 @@
    "key": "tv_staging",
    "title": "TV staging",
    "what": "every TV change is prepared next to what is on the air, checked and approved before it goes on the air; when channels switch, rollback, the hot standby",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -4263,6 +4315,10 @@
    "key": "tv_strip",
    "title": "Channel strip",
    "what": "the news-style bar across a channel's picture: what is on now and next, and a clock rotating between cities",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -4599,6 +4655,10 @@
    "key": "enrich",
    "title": "Finding metadata",
    "what": "Find metadata and Re-enrich: Maktaba's own intel (transcripts, chapters, the book, file and folder names, sibling episodes) and a web search a language model reads; the daily caps",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "auto",
@@ -4797,6 +4857,10 @@
    "key": "display_titles",
    "title": "Display titles",
    "what": "short, clean on-air titles for the guide, the channel strip and the dizqueTV export",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -4937,6 +5001,10 @@
    "key": "exactdates",
    "title": "Exact dates",
    "what": "exact upload dates fetched from YouTube for series members (off until switched on)",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -4998,6 +5066,10 @@
    "key": "audit",
    "title": "Channel audit",
    "what": "is what each channel airs about the channel",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -5031,6 +5103,10 @@
    "key": "plexlive",
    "title": "Plex Live TV",
    "what": "Maktaba's channels in Plex: adding the tuner and its guide, refreshing the guide and the channel list",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "auto_register",
@@ -5130,6 +5206,10 @@
    "key": "repair",
    "title": "Broken files",
    "what": "downloads that cannot be read are fetched from YouTube again (off until switched on)",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -5196,6 +5276,10 @@
    "key": "relay",
    "title": "Extension relay",
    "what": "machines run the Plex stages through the home, which adds the Plex token they never see; limits per machine",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "enabled",
@@ -5261,6 +5345,10 @@
    "key": "storage",
    "title": "Canonical share paths",
    "what": "the home registers the storage servers it mounts and converts the stored media paths to smb://server/share/... by itself: when, how it checks, what it pauses, the backups",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "auto_canonicalize",
@@ -5374,6 +5462,10 @@
    "key": "updates",
    "title": "Updates",
    "what": "new signed releases installed by themselves in the quiet window, on the home first and then on every machine; channel, pin, defer, skip",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "auto_install",
@@ -5554,6 +5646,10 @@
    "key": "queue_health",
    "title": "Queue health",
    "what": "when a queue turns red, how often a failure is tried, what waits on the model, a share or disk space and how often those are checked, which failures are of which class",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "window_hours",
@@ -5662,6 +5758,10 @@
    "key": "cluster",
    "title": "Machines",
    "what": "every machine of the cluster as the same Maktaba: the home's accounts on all of them, when a machine stops waiting for the home",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "delegate_unreachable_grace_seconds",
@@ -5806,6 +5906,10 @@
    "key": "transcription",
    "title": "Transcription",
    "what": "which machines transcribe: while the second listen is on, those that run it, unless machines without it may too",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "without_second_listen",
@@ -5860,6 +5964,10 @@
    "key": "system_health",
    "title": "System health",
    "what": "when the System health page calls a worker late or gone, the database slow, a dependency check stale, and how long one check may take",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "heartbeat_late_seconds",
@@ -5937,6 +6045,10 @@
    "key": "search",
    "title": "Search",
    "what": "how search results are grouped per video, how many show on a page, how long a search's results are kept and how many recent searches each user keeps",
+   "version": [
+    1,
+    0
+   ],
    "fields": [
     {
      "name": "passages_per_video",

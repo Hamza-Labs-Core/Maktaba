@@ -17,14 +17,17 @@ trust (README H9), and a revocation list that cannot be frozen or rolled back.
 | Key | Held by | Signs | Lifetime |
 |---|---|---|---|
 | **Plugin root keys** R1, R2 (Ed25519) | the owner, offline (two hardware keys in two places) | `store-keys.json` | until rotated by a server release |
-| **Store online keys** S (Ed25519) | the store service, in the cloud's secret store (Epic 50) | packages (`store.sig`), `catalog-*.json`, `revoked.json` | 1 year, listed in `store-keys.json` with `expires` (13 months) |
+| **Store online keys** S (Ed25519) | the store service (54.15), as a Worker secret of the store's own Cloudflare Workers, with an offline copy held by the owner; never in the cloud | packages (`store.sig`), `catalog-*.json`, `revoked.json`, `revoked-head.json` | 1 year, listed in `store-keys.json` with `expires` (13 months) |
+| **Store entitlement keys** E (Ed25519, Phase 3) | the store service, a separate Worker secret | plugin entitlements (54.19 §6) | 1 year, listed in `store-keys.json` with `use: "entitlement"` |
 | **Developer keys** D (Ed25519) | each developer, on their machine (54.12) | packages (`developer.sig`) | until the developer revokes it |
 
 - `plugins-root.json` (R1 and R2 public keys, threshold 1) is **embedded** in every server
   binary (Go `embed`) and in the SDK. Rotating a root key ships in a server release and the old
   key signs the new root (TUF's root chaining, nothing more).
-- `store-keys.json` `{version, expires, keys: [{id, public, not_before, not_after}]}` is signed
-  by a root key, fetched with the catalog, and pinned by `version` (anti-rollback).
+- `store-keys.json` `{version, expires, keys: [{id, public, use ("store" | "entitlement"),
+  not_before, not_after}]}` is signed by a root key, fetched with the catalog, and pinned by
+  `version` (anti-rollback). A key is valid only for its `use`: an entitlement key cannot sign a
+  package and a store key cannot sign an entitlement.
 
 ### 2. Package signatures
 
@@ -54,6 +57,10 @@ Postgres.
 `revoked.json` `{version, issued, expires (issued + 48 h), entries: [{plugin_id,
 versions (semver range), developer_key_id?, action ("disable" | "warn" | "delist"), reason_code,
 issued}]}`, signed by S.
+
+`revoked-head.json` `{version, issued, sha256 (of the current revoked.json)}`, also signed by S,
+is the small file homes poll every 5 minutes (54.17); it only tells a home that a newer list
+exists, and the list itself is still verified on its own.
 
 - A home refuses a list with a lower `version` than the newest it has seen, or one past
   `expires`.
@@ -102,7 +109,8 @@ issued}]}`, signed by S.
 | T02 | unit (go) | tamper each file, each sig, swap sigs | verify | fail at the right step |
 | T03 | unit (go) | store-keys expired / old version / bad root | verify | refused |
 | T04 | unit (go) | revocation list older / expired / newer embedded | load | rules of §4 |
-| T05 | unit ×2 (go, rust) | shared vectors in `shared/plugins/testdata/signatures/` | verify | same answers |
+| T05 | unit ×3 (go, rust, ts) | shared vectors in `shared/plugins/testdata/signatures/` | sign (ts) and verify (all) | same answers |
+| T08 | unit (go) | an entitlement signed by a `store` key; a package signed by an `entitlement` key | verify | both refused (`key_use_mismatch`) |
 | T06 | CI (`store`) | online key rotation drill | rotate | homes accept new, refuse removed |
 | T07 | unit (go) | canonical JSON | sign/verify across Go and Rust | stable bytes |
 
@@ -123,12 +131,12 @@ issued}]}`, signed by S.
 | `plugind/crates/sig/` (new) | Rust verifier (SDK and harness). |
 | `shared/plugins/plugins-root.json` (new) | Root public keys (placeholders until the owner makes the keys; CI uses test keys with `-tags e2etrust` as Epic 51 does). |
 | `shared/plugins/testdata/signatures/` (new) | Vectors. |
-| `cloud/internal/store/signing/` (new, 54.15) | Signer side. |
+| `store/signing/` (new, 54.15) | Signer side (TypeScript, WebCrypto Ed25519), checked against the same vectors. |
 | `docs/plugins/trust.md` (new) | How the chain works, for developers. |
 
 ### Tests
 
-- Unit T01–T05, T07; CI T06 in `store`.
+- Unit T01–T05, T07, T08; CI T06 in `store`.
 
 ### Rollout
 

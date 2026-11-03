@@ -20,10 +20,13 @@ type Schema struct {
 
 // Section is one rules group stored under app_settings key rules.<Key>.
 type Section struct {
-	Key    string   `json:"key"`
-	Title  string   `json:"title"`
-	What   string   `json:"what"`
-	Fields []*Field `json:"fields"`
+	Key   string `json:"key"`
+	Title string `json:"title"`
+	What  string `json:"what"`
+	// Version is the section's schema version [major, minor] (story 51.13); a schema
+	// without one is 1.0.
+	Version []int    `json:"version,omitempty"`
+	Fields  []*Field `json:"fields"`
 
 	byName map[string]*Field
 }

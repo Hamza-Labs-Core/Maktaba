@@ -25,11 +25,14 @@ enum class ErrorKind {
     Busy,
     /** Anything else the home answered (a 5xx, an answer this app cannot read). */
     Server,
+    /** The part of the home this needs is turned off: 409 `component_off` (Epic 51 story 51.09). */
+    Off,
 }
 
 /**
  * An RFC 7807 problem as the home sends it: `{"type", "title", "status", "detail"}` and, from a
- * node, a machine-readable `code` (`home_unreachable`, `paused`, ...).
+ * node, a machine-readable `code` (`home_unreachable`, `paused`, ...). With code `component_off`,
+ * the [component] that is off and the [feature] it serves (`live_tv`; story 51.09).
  */
 data class Problem(
     val type: String = "",
@@ -37,6 +40,8 @@ data class Problem(
     val status: Int = 0,
     val detail: String = "",
     val code: String = "",
+    val component: String = "",
+    val feature: String = "",
 ) {
     /** The last part of [type] (`rendition-not-found`): the home's domain differs by install. */
     val slug: String get() = type.substringAfter("/problems/", "").trimEnd('/')
@@ -48,7 +53,8 @@ data class Problem(
             if (!text.startsWith("{")) return null
             val o = runCatching { ApiClient.json.parseToJsonElement(text) as? JsonObject }.getOrNull() ?: return null
             fun s(k: String) = (o[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
-            val p = Problem(s("type"), s("title"), s("status").toDoubleOrNull()?.toInt() ?: 0, s("detail"), s("code"))
+            val p = Problem(s("type"), s("title"), s("status").toDoubleOrNull()?.toInt() ?: 0, s("detail"), s("code"),
+                s("component"), s("feature"))
             return if (p.type.isEmpty() && p.title.isEmpty() && p.code.isEmpty()) null else p
         }
     }
@@ -62,6 +68,7 @@ fun errorKind(status: Int, problem: Problem?): ErrorKind {
     val slug = problem?.slug.orEmpty()
     val code = problem?.code.orEmpty()
     return when {
+        status == 409 && code == "component_off" -> ErrorKind.Off
         code == "home_unreachable" || code == "home_timeout" -> ErrorKind.Unreachable
         slug == "home-unreachable" || slug == "home-timeout" || slug == "video-unavailable-offline" -> ErrorKind.Unreachable
         status == 404 && slug in notReadySlugs -> ErrorKind.NotReady

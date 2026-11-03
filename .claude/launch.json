@@ -16,6 +16,12 @@
       "autoPort": true
     },
     {
+      "name": "devportal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "web/packages/devportal", "--", "--port", "8787", "--ip", "127.0.0.1"],
+      "port": 8787
+    },
+    {
       "name": "cloud-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "web", "dev:cloud"],

@@ -112,7 +112,8 @@ pulling, and its unfinished jobs go back to the queue for someone else.
 Each machine pulls only from the queues it can do:
 
 - a step that needs something the machine does not have is skipped (for example
-  transcription needs an Apple Silicon Mac),
+  transcription needs Apple Silicon, an NVIDIA GPU, or the slow CPU path on Windows and
+  Linux x86_64; see [hardware](../hardware.md#5-worker-machines)),
 - a few steps always run on the home (the search index, thumbnails, review pages),
 - the Plex steps (index, collections) run on a machine through the home, which adds the Plex
   token: the token never leaves the home (Admin > Machines > Relay; switch it off there and

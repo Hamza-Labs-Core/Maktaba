@@ -26,20 +26,22 @@ Settings → Plugins → **Browse** (admin only):
   **Install** (54.07 install with the store reference; grants dialog);
 - N13: ≤ 300 ms p95 from cache.
 
-### 2. Listing pages on maktaba.tv
+### 2. Listing pages on plugins.maktaba.tv
 
-`maktaba.tv/plugins` and `maktaba.tv/plugins/<id>`: the same data, server-rendered by the cloud
-web app for search engines, in English and Arabic (`/ar/plugins/…`), with an **Open in my
-Maktaba** button that deep-links to the home's Browse page (through the cloud for linked homes)
-and a **Download file** button for offline install (54.10). No sign-in to read; sign-in to rate
-or report.
+`plugins.maktaba.tv` and `plugins.maktaba.tv/p/<id>`: the same data, server-rendered by the
+store's `store-web` Worker (54.15) for search engines, in English and Arabic (`/ar/…`), with an
+**Open in my Maktaba** / «افتح في مكتبتي» button that opens the home's Browse page: through a
+`maktaba://plugins/<id>` link in the installed Maktaba apps, or, in a browser, at the home's
+address, asked once and remembered on that device only (no cloud hop), and a
+**Download file** / «نزّل الملف» button for offline install (54.10). No sign-in to read; a
+store account (not a Maktaba Cloud account) to rate or report.
 
 ### 3. Ratings
 
-- 1–5 stars and optional text (≤ 2,000 chars, any language), one per Maktaba account per plugin,
-  editable; only from an admin of a home that has had the plugin installed for 24 hours (the
-  store checks `store_installs` via the home's signed `seen`, or the home's own request when the
-  admin rates from inside the home).
+- 1–5 stars and optional text (≤ 2,000 chars, any language), one per **store account** per
+  plugin, editable; only from a verified store account linked to a home (54.15 §5) that has had
+  the plugin installed for 24 hours (the store checks `installs` from the home's signed `seen`,
+  or the home's own signed request when the admin rates from inside the home).
 - The developer may reply once per review. Reviews can be reported.
 - Averages shown with counts; fewer than 5 ratings shows "Not enough ratings".
 - Text is plain (no links, no HTML), the same rule as panels.
@@ -50,14 +52,16 @@ or report.
   work, misleading, offensive, copyright, other) and details; the home attaches the plugin id,
   version and nothing else (no library data, no logs unless the admin ticks "Attach this
   plugin's logs from the last 24 hours", which go through Epic 53.16's opt-in path).
-- Malware and data misuse page the store on-call and are triaged ≤ 24 h; others ≤ 2 business
+- Malware and data misuse alert the store on-call (email to the `store_admin`s, 54.16 §5) and are triaged ≤ 24 h; others ≤ 2 business
   days. Outcomes: no action, contact developer, `warn`, `delist`, `disable` (54.17), developer
   suspended. The reporter is told the outcome in general terms.
 
 ### 5. Roles
 
-Home: Browse, install, rate and report are admin-only, role-tested. Cloud: reading is public;
-rating needs an eligible account; moderation routes need `store_reviewer`; role tests for each.
+Home: Browse, install, rate and report are admin-only, role-tested. Store: reading is public;
+rating needs an eligible store account; reporting needs a verified store account (or a linked
+home's signature); moderation routes need `store_reviewer` (passkey) on the store's own admin
+pages (54.15 §7); role tests for each, including a Maktaba Cloud token, which is refused.
 
 ## Acceptance criteria
 
@@ -84,10 +88,10 @@ rating needs an eligible account; moderation routes need `store_reviewer`; role 
 |---|---|---|---|---|
 | T01 | unit (web) | catalog fixture, server versions | filter | compatibility rules |
 | T02 | unit (web) | search Arabic with/without diacritics | search | same results |
-| T03 | integration (PG, go, cloud) | rating eligibility | rate early / later | 403 / 200 |
-| T04 | integration (cloud) | malware report | file | page + queue top |
-| T05 | unit (web, cloud web) | review with URL, HTML | render | plain text |
-| T06 | role tests (home + cloud) | all routes | each role | per §5 |
+| T03 | integration (ts, Miniflare) | rating eligibility | rate early / later / with no linked home | 403 / 200 / 403 |
+| T04 | integration (ts) | malware report | file | on-call emailed + queue top |
+| T05 | unit (web, store web) | review with URL, HTML | render | plain text |
+| T06 | role tests (home + store) | all routes | each role, plus a cloud token | per §5 |
 | T07 | perf (web) | Browse from cache | open | ≤ 300 ms p95 (N13) |
 | T08 | unit | en + ar | new strings | complete; RTL snapshots (dark theme) |
 
@@ -105,10 +109,10 @@ rating needs an eligible account; moderation routes need `store_reviewer`; role 
 | File | Change |
 |---|---|
 | `web/src/pages/Admin/Plugins/Browse.tsx`, `StorePlugin.tsx` (new) | §1. |
-| Cloud web app: `plugins` pages (new) | §2, en + ar. |
-| `cloud/internal/store/ratings.go`, `reports.go` (new) | §3, §4. |
+| `store/web/` listing pages (new) | §2, en + ar. |
+| `store/web/ratings.ts`, `reports.ts` (new) | §3, §4. |
 | `api/internal/handlers/plugins/report.go` (new) | Home-side report and rate proxy (admin only). |
-| `web/src/i18n/{en,ar}.json`, cloud web strings | Strings. |
+| `web/src/i18n/{en,ar}.json`, `store/web/i18n/{en,ar}.json` | Strings. |
 
 ### Tests
 

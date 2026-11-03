@@ -4,15 +4,21 @@ Maktaba on Apple TV: your home's libraries on the television, driven with the Si
 
 ## What it is {#what-it-is}
 
-**Maktaba** for Apple TV (tvOS 26) shows your home's rails (continue watching first), its libraries and search, and plays videos with the system player: scrubbing, audio and subtitle choices. Settings shows who is signed in and to which home, the theme, and signing out.
+**Maktaba** for Apple TV (tvOS 26) has **Home** (your home's rails, continue watching first), **Libraries**, **Live TV**, **Search** and **Settings**. It plays videos with the system player: scrubbing, audio and subtitle choices. **Live TV** has **Now** (every channel you may watch, with what is on and its progress) and **Guide**; choose a channel to watch it live. Settings shows who is signed in and to which home, the theme, and signing out.
 
 ## How to use it {#how-to-use}
+
+### Get the app {#get-the-app}
+
+The app is in testing, so it comes from **TestFlight**, not the App Store yet. Ask the home's owner to add your Apple ID to the app's testers group in TestFlight (App Store Connect). Then install **TestFlight** from the Apple TV's App Store, sign in with that Apple ID, and install **Maktaba TV**. Each new release arrives there as an update.
+
+### Connect and sign in {#connect}
 
 1. Open **Maktaba** on the Apple TV. **Choose your home** shows:
    - **Recent homes**: the homes this Apple TV used, the last one first. Hold the select button on one to **Rename** it (on this TV only; leave the name empty to use the home's own) or **Remove** it (and its sign-in).
    - **On this network**: the homes that announce themselves on this network, one row per home. A machine that only works for a home is not listed.
    - **By address**: type the address you open Maktaba at in a browser (like `192.168.1.20:8088`) and choose **Connect**. A `maktaba://connect` link the home shared works too. The TV first checks that a Maktaba home answers there.
-2. Sign in. The TV shows **Sign in to** your home, a code in large letters and a QR code. On a phone or computer signed in to Maktaba, scan the QR code, or open **Approve a sign-in** (in Maktaba Remote, or the Player's account menu) and enter the code, or open the page under **Or open this page there:**. Check what asks, then **Approve**. The TV is signed in as you, with your own role. **A new code in 9:55** counts down; a code that runs out is replaced by itself.
+2. Sign in. The TV shows **Sign in to** your home, a code in large letters and a QR code. On a phone or computer signed in to Maktaba, scan the QR code, or open **Approve a TV or device** and enter the code (in Maktaba Remote at the top of every screen; in Maktaba Player under **Profile**; on an older app **Approve a sign-in** under the person icon; see [Approve a TV](/help/apple-apps#approve)), or open the page under **Or open this page there:**. Check what asks, then **Approve**. The TV is signed in as you, with your own role. **A new code in 9:55** counts down; a code that runs out is replaced by itself. When a phone has found the code, the TV says **Your phone found this device — tap Approve on it.**
 3. Or choose **Username & password** and type them with the Siri Remote. **Sign in with a code** goes back to the code. A home that signs in with a password only shows the password straight away.
 4. **Choose another home** goes back to the list. Browse with the Siri Remote. On a video's page, **Resume** starts where you stopped.
 

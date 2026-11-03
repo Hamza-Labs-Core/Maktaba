@@ -15,6 +15,8 @@ import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.api.retryAfterSeconds
 import com.hamzalabs.maktaba.core.ui.ErrorAction
 import com.hamzalabs.maktaba.core.ui.errorActions
+import com.hamzalabs.maktaba.core.ui.featureName
+import com.hamzalabs.maktaba.core.ui.sentence
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -124,5 +126,21 @@ class HomeErrorTest {
             listOf(ErrorAction.TryAgain),
             errorActions(NotFound, canRetry = true, canSignIn = false, canChooseHome = false, canGoBack = false),
         )
+        assertEquals("trying again will not turn it on", listOf(ErrorAction.Back), all(ErrorKind.Off))
+    }
+
+    /** Story 51.09 T13: a 409 component_off is [ErrorKind.Off], with the part and its feature. */
+    @Test
+    fun aPartThatIsOffIsOff() {
+        val body = """{"type":"https://maktaba.tv/problems/component-off","title":"This feature is off","status":409,"code":"component_off","component":"livetv","feature":"live_tv"}"""
+        assertEquals(ErrorKind.Off, kind(409, body))
+        val p = Problem.parse(body)!!
+        assertEquals("livetv", p.component)
+        assertEquals("live_tv", p.feature)
+        assertEquals("another 409", Server, kind(409, """{"status":409,"code":"stale_generation"}"""))
+        assertEquals("component_off on another status", Server, kind(500, """{"status":500,"code":"component_off"}"""))
+        assertEquals(com.hamzalabs.maktaba.core.R.string.error_off, ErrorKind.Off.sentence())
+        assertEquals(com.hamzalabs.maktaba.core.R.string.feature_live_tv, featureName("live_tv"))
+        assertNull("a feature from a newer home", featureName("holograms"))
     }
 }

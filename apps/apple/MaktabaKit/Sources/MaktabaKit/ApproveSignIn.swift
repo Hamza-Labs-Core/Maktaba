@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// "Approve a sign-in" (Epic 42 story 42.6): a device shows a code (a TV, a phone or a
+/// "Approve a TV or device" (Epic 42 story 42.6): a device shows a code (a TV, a phone or a
 /// computer signing in by code); a person signed in here types it or scans its QR code, sees
 /// what is asking (app, system, device, the name it gave), and approves it explicitly. The
 /// device is then signed in as this person. The Remote's and the Player's account menus
@@ -58,7 +58,7 @@ public struct ApproveSignInView: View {
                         .accessibilityIdentifier("approve.scan")
                     #endif
                 } footer: {
-                    Text(words.text(.approveIntro, homeName))
+                    Text(words.text(.approveIntro))
                 }
                 if let approved {
                     Section {
@@ -117,7 +117,7 @@ public struct ApproveSignInView: View {
                         Text(exp, style: .relative)
                     }
                 }
-                approveButtons(shown, name: d.deviceLabel ?? d.device)
+                approveButtons(shown, name: d.deviceLabel ?? d.clientApp.map(words.appName) ?? d.device)
             }
             .accessibilityIdentifier("approve.found")
         case .unknownOnThisHome:
@@ -134,6 +134,12 @@ public struct ApproveSignInView: View {
     }
 
     @ViewBuilder private func approveButtons(_ shown: String, name: String?) -> some View {
+        // what is asking and as whom, before Approve
+        if let name {
+            Text(words.text(.confirmSignIn, name, user.username))
+                .font(.headline)
+                .accessibilityIdentifier("approve.confirm")
+        }
         Text(words.text(.approveWarning, user.username, user.username))
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -167,6 +173,9 @@ public struct ApproveSignInView: View {
             defer { busy = false }
             do {
                 looked = (normalized, try await client.pendingDevice(code: normalized))
+            } catch APIError.status(403, _, _) {
+                // a sign-in through Maktaba Cloud cannot approve: only one on the home can
+                problem = words.text(.approveFromHome)
             } catch {
                 problem = HomeFailure(error).message()
             }
@@ -184,6 +193,7 @@ public struct ApproveSignInView: View {
                 looked = nil
             } catch let e as APIError {
                 switch e {
+                case .status(403, _, _): problem = words.text(.approveFromHome)
                 case .status(409, _, _): problem = words.text(.alreadyApproved)
                 case .status(404, _, _), .status(410, _, _): problem = words.text(.expired)
                 case .status(422, _, _): problem = words.text(.notACode)

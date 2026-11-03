@@ -91,6 +91,13 @@ func sqliteDB(t *testing.T) *sql.DB {
 			}
 		}
 	}
+	// slot 0181 (51.19); the API's SQLite applier takes ADD COLUMN IF NOT EXISTS
+	for _, s := range upStatements(t, migration(t, "0181_component_licence.sqlite.sql")) {
+		s = strings.Replace(s, "ADD COLUMN IF NOT EXISTS", "ADD COLUMN", 1)
+		if _, err := db.Exec(s); err != nil {
+			t.Fatalf("0181: %v\n%s", err, s)
+		}
+	}
 	return db
 }
 

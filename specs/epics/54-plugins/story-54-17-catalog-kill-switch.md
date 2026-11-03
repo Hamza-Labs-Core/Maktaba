@@ -7,8 +7,9 @@
 The home server, not any plugin, talks to the store: it fetches the signed catalog, downloads
 packages, offers updates, and above all honours the revocation list so a plugin Maktaba
 withdraws for malware stops in every home within minutes. This is the server reaching the
-internet on its own behalf, through Maktaba Cloud, with signatures, not the channel, deciding
-what is trusted.
+internet on its own behalf, straight to the store's CDN (`plugins-cdn.maktaba.tv`, 54.15), with
+signatures, not the channel, deciding what is trusted. Nothing here goes through Maktaba Cloud
+or needs the home to be linked to it, so a cloud outage changes nothing for plugins.
 
 ## Description
 
@@ -19,14 +20,19 @@ plugin installed or an admin opened Browse in the last 7 days):
 
 | What | When | How |
 |---|---|---|
-| `revoked.json` | every hour, and on push | via the cloud link when linked (the cloud link already carries messages from the cloud to the home; a new message type `plugins_revoked {version}` triggers a fetch), else HTTPS from `store.maktaba.tv` |
-| `store-keys.json` | with every catalog fetch | same |
+| `revoked-head.json` | every 5 minutes (± 30 s jitter) | HTTPS from `plugins-cdn.maktaba.tv`; a tiny signed `{version, issued, sha256}`, cached at the edge for 60 s; a version newer than the home's triggers a `revoked.json` fetch |
+| `revoked.json` | every hour, and when the head says it changed | same |
+| `store-keys.json` | with every catalog fetch and every `revoked.json` fetch | same |
 | `catalog-<api major>.json` | every 6 hours while plugins are installed; on opening Browse if older than 1 hour | same |
-| packages | on install or update | CDN by sha256; verified before use |
+| packages | on install or update | CDN by sha256 (paid ones through a signed URL, 54.19); verified before use |
 
-All three lists are verified (54.14) and kept in `<data>/state/plugins/` and Postgres with the
-newest-seen versions. Requests carry only the server version, platform and (linked) home
-assertion. A home with telemetry off sends no `seen` report (54.15 §6).
+All the lists are verified (54.14) and kept in `<data>/state/plugins/` and Postgres with the
+newest-seen versions. Requests for public files carry nothing identifying (a plain GET with the
+server version in the `User-Agent`). The only store requests a home signs are those of a home
+linked to a store account (54.15 §5): `seen` (skipped with telemetry off), rating eligibility
+and entitlements. The 5-minute head poll replaces a push: it reaches every home, linked or
+not, costs Cloudflare cache hits only, and needs no connection held open to any Maktaba
+server.
 
 ### 2. Updates
 
@@ -70,13 +76,18 @@ fetch.
 
 ## Acceptance criteria
 
-- **Given** a linked home with plugin P 1.2 installed,
+- **Given** a home (linked to a store account or not, linked to the cloud or not) with plugin
+  P 1.2 installed,
   **when** the store adds `disable` for P `<1.3`,
-  **then** within 5 minutes P is held with `revoked`, running jobs drained, admins notified,
-  and Start answers `409 plugin_revoked` (N10).
-- **Given** an unlinked home,
+  **then** within 7 minutes (5-minute poll, 60 s edge cache, jitter) P is held with `revoked`,
+  running jobs drained, admins notified, and Start answers `409 plugin_revoked` (N10).
+- **Given** Maktaba Cloud is unreachable,
   **when** the same entry is published,
-  **then** P is held within 65 minutes.
+  **then** P is held in the same time; no request goes to any cloud host.
+- **Given** a `revoked-head.json` naming a version the fetched `revoked.json` does not match,
+  **when** fetched,
+  **then** the home keeps its current list, retries on the next poll and logs
+  `revocation_head_mismatch`.
 - **Given** a `warn` entry,
   **when** applied,
   **then** P keeps running and the warning shows.
@@ -94,8 +105,8 @@ fetch.
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | integration (PG, go) | fake store + fake cloud link push | publish disable | held ≤ 5 min (fake clock) |
-| T02 | integration (PG, go) | no link | publish | held on next hourly fetch |
+| T01 | integration (PG, go) | fake CDN; head poll | publish disable | held ≤ 7 min (fake clock) |
+| T02 | integration (PG, go) | fake CDN; cloud host blackholed; no store link | publish | held ≤ 7 min; zero requests to cloud hosts |
 | T03 | integration (PG, go) | warn / delist | apply | per table |
 | T04 | unit (go) | rollback, expiry | fetch | per 54.14 rules |
 | T05 | integration (PG, go) | auto-update with/without new capability | night window | applied / waits |
@@ -119,8 +130,6 @@ fetch.
 | File | Change |
 |---|---|
 | `api/internal/plugins/catalog/` (new) | Loop, fetch, verify, updates, kill switch. |
-| `cmd/maktaba-server/internal/...cloudlink` handling / `maktaba-cloudlink` | New message type `plugins_revoked`. |
-| `cloud/internal/cloudlink/` | Send the push on revocation. |
 | `api/internal/handlers/plugins/catalog.go` (new) | Routes. |
 | `shared/components/catalog.toml` | `plugins.catalog` loop entry. |
 | `web/src/i18n/{en,ar}.json` | Revocation reasons, notices. |

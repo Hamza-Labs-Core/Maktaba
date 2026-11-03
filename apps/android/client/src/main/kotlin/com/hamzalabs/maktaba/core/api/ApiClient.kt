@@ -151,6 +151,17 @@ class ApiClient(
         }
     }
 
+    /**
+     * The devices waiting for an approval (`GET /api/pairing/pending`), newest first; null
+     * when the home is too old to say (no such route). A sign-in through Maktaba Cloud is told
+     * of none (it cannot approve).
+     */
+    suspend fun pendingSignIns(): PendingSignIns? = try {
+        decode<PendingSignIns>(send(request("GET", "/api/pairing/pending")))
+    } catch (e: ApiException.Status) {
+        if (e.code == 404 || e.code == 405 || e.code == 501) null else throw e
+    }
+
     /** Approves [code]: the device showing it is signed in as this person (`POST /api/pairing/approve`). */
     suspend fun approvePairing(code: String) {
         val c = PairingCode.normalize(code) ?: throw ApiException.Status(422, "not a sign-in code")

@@ -481,13 +481,14 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     ["Privacy", "/settings/privacy"],
     ["Models", "/settings/models"],
     ["Rules", "/settings/rules"],
+    ["Components", "/settings/components"],
     ["Advanced", "/settings/advanced"],
     ["Storage & discovery", "/settings/storage"],
     ["Subscription", "/settings/subscription"],
     ["About", "/settings/about"],
   ];
 
-  it("SAC-12: the tab nav lists all ten tabs with the right hrefs", () => {
+  it("SAC-12: the tab nav lists all eleven tabs with the right hrefs", () => {
     for (const path of ["/settings", "/settings/rules"]) {
       const { unmount } = renderSettings(path);
       const nav = screen.getByRole("navigation", { name: "Settings" });
@@ -497,12 +498,14 @@ describe("Settings account (test-cases/settings-account.md)", () => {
     }
   });
 
-  it("SAC-12b: Storage & discovery is an admin's tab only", () => {
+  it("SAC-12b: Components and Storage & discovery are an admin's tabs only", () => {
     renderSettings("/settings", { user: memberUser });
     const nav = screen.getByRole("navigation", { name: "Settings" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((l) => l.getAttribute("href"))).toEqual(
-      TABS.map(([, href]) => href).filter((h) => h !== "/settings/storage")
+      TABS.map(([, href]) => href).filter(
+        (h) => h !== "/settings/storage" && h !== "/settings/components"
+      )
     );
   });
 

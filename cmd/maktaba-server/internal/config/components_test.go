@@ -36,3 +36,23 @@ func TestComponentsReconcile(t *testing.T) {
 		t.Fatalf("an unset [components] is written:\n%s", raw)
 	}
 }
+
+// Story 51.09: [components] capabilities_gate, on unless off.
+func TestComponentsCapabilitiesGate(t *testing.T) {
+	for v, on := range map[string]bool{"": true, "on": true, "off": false, " Off ": false, "no": false} {
+		if got := (ComponentsSection{CapabilitiesGate: v}).CapabilitiesGateOn(); got != on {
+			t.Errorf("capabilities_gate = %q: %v, want %v", v, got, on)
+		}
+	}
+	path := filepath.Join(t.TempDir(), "server.toml")
+	if err := os.WriteFile(path, []byte("[components]\ncapabilities_gate = \"off\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := LoadFrom(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Components.CapabilitiesGateOn() || !cfg.Components.ReconcileOn() {
+		t.Fatalf("read %+v", cfg.Components)
+	}
+}

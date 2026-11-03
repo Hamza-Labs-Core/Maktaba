@@ -24,6 +24,8 @@ public struct ErrorStrings: Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case playerTitle, title
         case notFoundVideo, notFound, notReady, signedOut, noAccess, unreachable, busy, server
+        // a part of the home that is off (story 51.09); offAdmin names it with %@
+        case off, offAdmin
         case tryAgain, back, signInAgain, chooseAnotherHome, details
         // the sign-in screen, when the saved sign-in could not be checked
         case restoreFailed
@@ -39,8 +41,34 @@ public struct ErrorStrings: Sendable {
         case .unreachable: text(.unreachable)
         case .busy: text(.busy)
         case .server: text(.server)
+        case .off: text(.off)
         }
     }
+
+    /// A feature's name (`live_tv`: the `feature` of a 409 `component_off` and the keys of
+    /// `GET /api/capabilities`, story 51.09); nil for one this app does not know.
+    public func featureName(_ feature: String) -> String? {
+        (language == .ar ? Self.featuresAR : Self.featuresEN)[feature]
+    }
+
+    /// What a 409 `component_off` says: an admin is told where to turn the feature on;
+    /// anyone else (or a feature with no name here) reads the kind's sentence.
+    public func offSentence(feature: String?, admin: Bool) -> String {
+        guard admin, let name = feature.flatMap(featureName) else { return text(.off) }
+        return text(.offAdmin).replacingOccurrences(of: "%@", with: name)
+    }
+
+    static let featuresEN: [String: String] = [
+        "live_tv": "Live TV", "transcripts": "Transcripts", "subtitles": "Subtitles",
+        "semantic_search": "Search by meaning", "chapters": "Chapters", "youtube": "YouTube",
+        "plex": "Plex", "remote_access": "Access away from home", "recommendations": "Recommendations",
+    ]
+
+    static let featuresAR: [String: String] = [
+        "live_tv": "البث المباشر", "transcripts": "نصوص الفيديو", "subtitles": "الترجمة",
+        "semantic_search": "البحث بالمعنى", "chapters": "الفصول", "youtube": "يوتيوب",
+        "plex": "Plex", "remote_access": "الوصول من خارج المنزل", "recommendations": "الاقتراحات",
+    ]
 
     public func action(_ a: ErrorAction) -> String {
         switch a {
@@ -62,6 +90,8 @@ public struct ErrorStrings: Sendable {
         .unreachable: "Your home can't be reached. Check that it's on and connected to the network.",
         .busy: "Your home is busy right now. Try again in a moment.",
         .server: "Something went wrong on your home. Try again in a moment.",
+        .off: "This feature is turned off on this home.",
+        .offAdmin: "%@ is off on this home. Turn it on in Components.",
         .tryAgain: "Try again",
         .back: "Back",
         .signInAgain: "Sign in again",
@@ -81,6 +111,8 @@ public struct ErrorStrings: Sendable {
         .unreachable: "تعذّر الوصول إلى الجهاز الرئيسي. تأكد من أنه يعمل ومتصل بالشبكة.",
         .busy: "الجهاز الرئيسي مشغول الآن. حاول مجددًا بعد قليل.",
         .server: "حدث خطأ في الجهاز الرئيسي. حاول مجددًا بعد قليل.",
+        .off: "هذه الميزة متوقفة على الجهاز الرئيسي.",
+        .offAdmin: "%@ متوقفة على الجهاز الرئيسي. شغّلها من صفحة المكوّنات.",
         .tryAgain: "إعادة المحاولة",
         .back: "رجوع",
         .signInAgain: "سجّل الدخول مجددًا",

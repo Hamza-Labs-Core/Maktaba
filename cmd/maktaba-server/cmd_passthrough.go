@@ -41,7 +41,7 @@ func newKeysCmd() *cobra.Command {
 func newComponentsCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:                "components",
-		Short:              "List, turn on, off, stop or start the components (delegates to maktaba-api)",
+		Short:              "List, turn on, off, stop or start the components, import or make an offline file (delegates to maktaba-api)",
 		DisableFlagParsing: true,
 		RunE: func(_ *cobra.Command, args []string) error {
 			err := runAPISub("components", args)

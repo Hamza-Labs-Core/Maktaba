@@ -37,7 +37,8 @@ func TestRequireComponent(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body["code"] != "component_off" || body["component"] != "livetv" || body["status"] != float64(409) {
+	if body["code"] != "component_off" || body["component"] != "livetv" || body["status"] != float64(409) ||
+		body["feature"] != "live_tv" || body["type"] != TypeComponentOff || body["title"] != "This feature is off" {
 		t.Fatalf("problem %v", body)
 	}
 	if rec := call(RequireComponent(nil, "livetv")(ok)); rec.Code != http.StatusTeapot {

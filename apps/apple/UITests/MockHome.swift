@@ -374,6 +374,9 @@ final class MockHome: @unchecked Sendable {
             return (201, #"{"code":"\#(Self.code)","device_code":"dc","expires_at":"\#(exp)","verify_path":"/pair?code=\#(Self.code)","interval":1}"#)
         case ("POST", "/api/pairing/device/token"):
             return ok ? (200, #"{"access_token":"\#(Self.accessToken)","refresh_token":"ui-refresh"}"#) : (202, #"{"status":"pending"}"#)
+        case ("GET", "/api/pairing/pending"):
+            // no device waiting for an approval: no banner over the screens under test
+            return (200, #"{"count":0,"requests":[]}"#)
         case ("POST", "/api/auth/refresh"):
             return (200, #"{"access_token":"\#(Self.accessToken)","refresh_token":"ui-refresh"}"#)
         case ("GET", "/api/auth/me"):

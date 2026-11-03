@@ -65,6 +65,28 @@ async def database() -> AsyncIterator[str]:
         await admin.close()
 
 
+# A port nothing listens on: the rig's workers never reach a real API.
+DEAD_API_URL = "http://127.0.0.1:9"
+
+
+def worker_env(base: dict[str, str], home: Path) -> dict[str, str]:
+    """A rig worker's environment. The machine running the rig may be a live Maktaba home
+    (its API on 127.0.0.1:8080, its agent key under ~/.maktaba): a worker gets a throwaway
+    home folder, no cluster agent and an API address nothing answers, so it can read no
+    key of the real home and dial no real API. Whatever ``env`` the caller passes, these
+    win."""
+    home.mkdir(parents=True, exist_ok=True)
+    penv = dict(base)
+    penv.setdefault("MAKTABA_LOG_FORMAT", "json")
+    penv["HOME"] = str(home)
+    penv["USERPROFILE"] = str(home)
+    penv["MAKTABA_CLUSTER_AGENT"] = "0"
+    penv["MAKTABA_API_URL"] = DEAD_API_URL
+    penv["MAKTABA_HOME_AGENT_KEY"] = str(home / "home-agent.key")
+    penv["MAKTABA_SECRETS_KEY"] = str(home / "secrets.key")
+    return penv
+
+
 @dataclass
 class Worker:
     worker_id: str
@@ -99,11 +121,7 @@ class Rig:
         LOGS.mkdir(parents=True, exist_ok=True)
         log = LOGS / f"{worker_id}.log"
         st = tuple(stages)
-        penv = {**os.environ, **(env or {})}
-        penv.setdefault("MAKTABA_LOG_FORMAT", "json")
-        # no channel to a home API: whatever listens on this machine is not the rig's
-        penv["MAKTABA_CLUSTER_AGENT"] = "0"
-        penv["MAKTABA_API_URL"] = "http://127.0.0.1:9"
+        penv = worker_env({**os.environ, **(env or {})}, LOGS / "home" / worker_id)
         proc = subprocess.Popen(  # noqa: S603 - our own script
             [
                 sys.executable,

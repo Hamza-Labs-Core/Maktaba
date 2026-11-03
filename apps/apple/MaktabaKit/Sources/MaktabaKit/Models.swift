@@ -137,7 +137,9 @@ public struct DevicePairing: Codable, Sendable, Equatable {
     public let interval: Int
 
     public enum State: Sendable, Equatable {
-        case waiting, approved, expired
+        /// Not approved yet; `lookedUp`: not yet, but a phone signed in on the home has
+        /// read this code (the person is about to approve it).
+        case waiting, lookedUp, approved, expired
     }
 
     enum CodingKeys: String, CodingKey {

@@ -126,23 +126,18 @@ func TestPacksImportRouteRefusesAnotherVersion(t *testing.T) {
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), packs.ReasonOfflineWrongVersion) {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	// the CLI's call: the same refusal, said
-	srv := httptest.NewServer(h)
-	defer srv.Close()
-	var out strings.Builder
-	err := importOfflineAt(context.Background(), srv.Client(), srv.URL, "tok", dir, &out)
-	if err == nil || !strings.Contains(err.Error(), packs.ReasonOfflineWrongVersion) {
-		t.Fatalf("CLI import: %v", err)
-	}
-	// a file of this version with nothing new: said so
+	// a file of this version with nothing new: nothing installed
 	if err := os.WriteFile(filepath.Join(dir, packs.OfflineManifestName),
 		[]byte(`{"schema":1,"version":"0.4.2","platform":"linux-amd64","items":[]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out.Reset()
-	if err := importOfflineAt(context.Background(), srv.Client(), srv.URL, "tok", dir, &out); err != nil ||
-		!strings.Contains(out.String(), "nothing to install") {
-		t.Fatalf("CLI import of nothing: %v %q", err, out.String())
+	req = httptest.NewRequest(http.MethodPost, "/components/import", strings.NewReader(`{"path":"`+filepath.ToSlash(dir)+`"}`))
+	req.Header.Set("Authorization", "Bearer tok")
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"installed":[]`) {
+		t.Fatalf("import of nothing: %d %s", rec.Code, rec.Body.String())
 	}
 	_ = a
 }

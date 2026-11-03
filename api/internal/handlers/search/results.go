@@ -87,6 +87,9 @@ type Response struct {
 	// (Story 18.2 AC4 / HLB-333). Clients surface a "results may be
 	// incomplete" banner. Omitted on the happy path.
 	Degraded bool `json:"degraded,omitempty"`
+	// Semantic is "off" when the semantic search component is off (story 51.09): the
+	// semantic leg was skipped, not abandoned, and the results are keyword ones.
+	Semantic string `json:"semantic,omitempty"`
 
 	PageSize         int `json:"page_size"`
 	PassagesPageSize int `json:"passages_page_size"`
@@ -196,6 +199,11 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	default:
 		req.Mode = "hybrid"
 	}
+	// story 51.09: semantic search off answers keyword results at once
+	semOff := h.semanticOff()
+	if semOff && req.Mode == "semantic" {
+		req.Mode = "fts"
+	}
 	if req.Limit <= 0 || req.Limit > 200 {
 		req.Limit = 50
 	}
@@ -267,6 +275,9 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		TranscriptVideos: videos, TranscriptTotal: len(rn.Set.Videos),
 		Hits: hits, Total: len(hits),
 	}
+	if semOff {
+		resp.Semantic = "off"
+	}
 	if rn.ID != "" {
 		resp.ExpiresAt = rn.ExpiresAt.UTC()
 	}
@@ -328,7 +339,7 @@ func (h *Handler) compute(ctx context.Context, req Request, rl Rules) (*run, Res
 			}()
 		}
 	}
-	if (req.Mode == "semantic" || req.Mode == "hybrid") && h.Semantic != nil {
+	if (req.Mode == "semantic" || req.Mode == "hybrid") && h.Semantic != nil && !h.semanticOff() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

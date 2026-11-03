@@ -35,8 +35,10 @@ tvos/
 - **Signing in.** Typing a password with a remote is slow, so the TV shows a code and a QR
   code of `<home>/pair?code=…`. Someone signed in on a phone or computer approves it and the
   TV is signed in as them, with their own role (`POST /api/pairing/device`, `/approve`,
-  `/device/token`; see `api/internal/handlers/discovery/device.go`). A password is the
-  other way, and the only one on a home from before codes.
+  `/device/token`; see `api/internal/handlers/discovery/device.go`). The screen names the
+  phone's button ("Approve a TV or device" in Maktaba Remote, or Profile in Maktaba Player),
+  says when a phone has read the code (the poll's `looked_up`), counts down to a new code, and
+  has Get a new code. A password is the other way, and the only one on a home from before codes.
 - **Playback.** As in the Player apps: a stream session from the home, read through
   MaktabaKit's `StreamProxy` (the home's web port wants `Authorization: Bearer` on every
   `/stream/` request and AVPlayer cannot renew a token), the position reported every 10 s,

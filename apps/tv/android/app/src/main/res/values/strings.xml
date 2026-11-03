@@ -16,9 +16,17 @@
     <string name="address_hint">The address you open Maktaba at in a browser. A maktaba:// link the home shared works too.</string>
 
     <string name="signin_code_title">Sign in to %1$s</string>
-    <string name="signin_code_step1">On your phone or computer, open</string>
-    <string name="signin_code_step2">and enter this code. Or scan the code with your phone.</string>
-    <string name="signin_code_waiting">Waiting for you to approve this TV…</string>
+    <!-- %1$s: the phones' button (core approve_tv), %2$s: its name on older phone apps (signin_code_old_label) -->
+    <string name="signin_code_where">To sign in, approve this TV from your phone: in Maktaba Remote tap “%1$s” at the top, or in Maktaba Player open Profile and tap “%1$s”. On an older app it is “%2$s” under the person icon. Type this code, or scan the QR code.</string>
+    <string name="signin_code_old_label">Approve a sign-in</string>
+    <!-- %1$s: the approve page's address, without https:// -->
+    <string name="signin_code_computer">Or on a computer, open %1$s</string>
+    <!-- %1$s: minutes and seconds left, like 9:58 -->
+    <string name="signin_code_expires">Runs out in %1$s</string>
+    <string name="signin_code_renew">Get a new code</string>
+    <string name="signin_code_waiting">Waiting for approval…</string>
+    <!-- %1$s: the phone's approve button (core approve_button) -->
+    <string name="signin_code_looked_up">Your phone found this TV — tap “%1$s” on it.</string>
     <string name="signin_code_new">A new code. The last one ran out.</string>
     <string name="signin_with_password">Sign in with a password</string>
     <string name="signin_with_code">Sign in with a code</string>

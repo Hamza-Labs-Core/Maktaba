@@ -40,3 +40,19 @@ test("a reason code with no Arabic fails", () => {
   delete bad["components.reason.held"];
   assert.deepEqual(check(dump, en, bad), ["components.reason.held: no words in ar"]);
 });
+
+test("story 51.09 T15: a feature with no Arabic words fails", () => {
+  const bad = { ...ar };
+  delete bad["components.feature.live_tv"];
+  assert.deepEqual(check(dump, en, bad), ["components.feature.live_tv: no words in ar"]);
+});
+
+test("every feature of the catalog has its words, Plex the same in both", () => {
+  assert.equal(dump.features.length, 9);
+  for (const f of dump.features) {
+    assert.ok(en[`components.feature.${f}`], f);
+    assert.ok(ar[`components.feature.${f}`], f);
+  }
+  const copied = { ...ar, "components.feature.youtube": en["components.feature.youtube"] };
+  assert.deepEqual(check(dump, en, copied), ["components.feature.youtube: the ar words are a copy of the en words"]);
+});

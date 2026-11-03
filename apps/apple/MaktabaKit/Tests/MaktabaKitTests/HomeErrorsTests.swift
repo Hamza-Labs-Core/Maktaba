@@ -111,6 +111,32 @@ let renditionNotFound = #"{"type":"https://maktaba.invalid/problems/rendition-no
         #expect(HomeFailure(kind: .signedOut).actions == [.signInAgain, .back])
         #expect(HomeFailure(kind: .notFound).actions == [.back])
         #expect(HomeFailure(kind: .noAccess).actions == [.back])
+        #expect(HomeFailure(kind: .off).actions == [.back])
+    }
+
+    /// Story 51.09 T14: a 409 component_off is `.off`, with the part, its feature and words.
+    @Test func aPartThatIsOff() throws {
+        let body = #"{"type":"https://maktaba.tv/problems/component-off","title":"This feature is off","status":409,"code":"component_off","component":"livetv","feature":"live_tv"}"#
+        #expect(ErrorKind.of(status: 409, problem: Problem.parse(body)) == .off)
+        #expect(APIError.status(409, body).kind == .off)
+        let p = try #require(Problem.parse(body))
+        #expect(p.component == "livetv" && p.feature == "live_tv")
+        #expect(ErrorKind.of(status: 409, problem: Problem(code: "stale_generation")) == .server)
+        let en = ErrorStrings(.en), ar = ErrorStrings(.ar)
+        #expect(en.sentence(.off) == "This feature is turned off on this home.")
+        #expect(ar.sentence(.off) == "هذه الميزة متوقفة على الجهاز الرئيسي.")
+        #expect(en.offSentence(feature: "live_tv", admin: true) == "Live TV is off on this home. Turn it on in Components.")
+        #expect(ar.offSentence(feature: "live_tv", admin: true) == "البث المباشر متوقفة على الجهاز الرئيسي. شغّلها من صفحة المكوّنات.")
+        #expect(en.offSentence(feature: "live_tv", admin: false) == en.text(.off))
+        #expect(en.offSentence(feature: "holograms", admin: true) == en.text(.off))
+    }
+
+    @Test func everyFeatureHasItsNameInBothLanguages() {
+        #expect(Set(ErrorStrings.featuresEN.keys) == Set(ErrorStrings.featuresAR.keys))
+        #expect(ErrorStrings.featuresEN.count == 9)
+        for (id, en) in ErrorStrings.featuresEN where id != "plex" {
+            #expect(ErrorStrings.featuresAR[id] != en, "ar \(id) is not translated")
+        }
     }
 
     @Test func everyWordIsInBothLanguages() {

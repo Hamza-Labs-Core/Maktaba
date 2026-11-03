@@ -47,7 +47,8 @@ Both implement the same screens against the same endpoints:
 | Sign-in / refresh | `POST /api/auth/{login,refresh}` |
 
 **Auth.** A TV signs in with a code a signed-in person approves on a phone or
-the web (`<home>/pair`), or with a password as the fallback. JWT
+the web (`<home>/pair`), or with a password as the fallback. The Android TV code screen says
+where: in Maktaba Remote or Maktaba Player, "Approve a TV or device" (the phones' own label). JWT
 access/refresh tokens, stored in the platform secure store (tvOS Keychain /
 an Android Keystore key), injected as a `Bearer` header, with a single-flight
 **401 → refresh → retry** path. The web port's `/stream/` wants the token on

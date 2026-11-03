@@ -117,6 +117,13 @@ try {
     Assert-Equal $true ((Get-NodeSecondListenGap (ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce GTX 1080 Ti, 11264, 472.12')) -like '*older than R580*') 'a driver before R580 (the fallback query): the CPU build'
     Assert-Equal 'no NVIDIA GPU' (Get-NodeSecondListenGap $null) 'no GPU: the CPU build'
     Assert-Equal $null (ConvertFrom-NodeNvidiaSmi 'No devices were found') 'nvidia-smi without a GPU'
+    # the default extras: stt where the GPU transcribes (Whisper, CTranslate2 with CUDA)
+    $rtx = ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce RTX 2080 SUPER, 8192, 7.5, 616.64'
+    Assert-Equal 'stt' (Get-NodeDefaultExtras $rtx -Arch 'AMD64') 'an 8 GB card on x86_64: the stt extra'
+    Assert-Equal 'stt' (Get-NodeDefaultExtras $rtx -Arch 'x86' -Arch6432 'AMD64') 'a 32-bit PowerShell on x86_64: the stt extra'
+    Assert-Equal 'none' (Get-NodeDefaultExtras (ConvertFrom-NodeNvidiaSmi 'NVIDIA GeForce GT 1030, 2048, 6.1, 591.44') -Arch 'AMD64') 'a 2 GB card: none'
+    Assert-Equal 'none' (Get-NodeDefaultExtras $null -Arch 'AMD64') 'no NVIDIA GPU: none'
+    Assert-Equal 'none' (Get-NodeDefaultExtras $rtx -Arch 'ARM64' -Arch6432 '') 'Windows on Arm (no CUDA CTranslate2): none'
 
     # --- -FromWheel ----------------------------------------------------------------------------------
     $o = Resolve-NodePipelineOrigin -FromWheel $wheel -BundleDir $bundle -CheckoutPipeline $checkout -InstallConf $noConf

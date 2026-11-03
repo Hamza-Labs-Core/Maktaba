@@ -402,6 +402,8 @@ func TestDefaultPublicAllowlistIsPinned(t *testing.T) {
 		"/api/telemetry/app", "/api/telemetry/server/forget",
 		// Epic 42 story 42.6: approving a code, and seeing what asks with it, need a sign-in
 		"/api/pairing/approve", "/api/pairing/device/ABCD-1234", "/api/discovery/home/x",
+		// and the devices waiting for an approval
+		"/api/pairing/pending",
 	} {
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, httptest.NewRequest("POST", path, nil))

@@ -30,48 +30,48 @@ and `docs/`.
 
 | Rule                                                                                                                                                                                                                                                                                                                              | Since                  | Why                                                                                                                                                                                  |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **PR flow runs to the merge without asking:** implement → test → CI green → review it yourself → fix → CI green → merge with a merge commit → move live. Never ask "merge?". Ask only for real product decisions (costly backfill, deleting data).                                                                                | 2026-10-19             | "why tell you, process is, implement, test, checks pass, review, fix, checks pass, merge".                                                                                           |
-| **Claude reviews PRs, not Copilot.** The `copilot-pull-request-reviewer` check and its "quota" comment are noise: say so in one line and move on.                                                                                                                                                                                 | 2026-10-18             | "You review and stop asking copilot". Copilot comes from the author's personal GitHub setting and runs out of quota.                                                                 |
-| **Update, rollback, restore and migration paths are proven in CI first.** No release that touches update / restore / migration / supervisor / launcher / TV-staging code reaches the live Mac unless `update-rehearsal` passed on that exact commit. The tag guard enforces it ([docs/update-rehearsal.md](update-rehearsal.md)). | 2026-10-28             | "THIS NEED TO BE ON CI", after two outages in one day (see §6). "when ppl use this how are you going to fix it for them": recovery must be automatic or one click, never a terminal. |
+| **PR flow runs to the merge without asking:** implement → test → CI green → review it yourself → fix → CI green → merge with a merge commit → move live. Never ask "merge?". Ask only for real product decisions (costly backfill, deleting data).                                                                                | 2026-10-19             | Asking before each merge slowed every PR; the process is already set.                                                                                                                |
+| **Claude reviews PRs, not Copilot.** The `copilot-pull-request-reviewer` check and its "quota" comment are noise: say so in one line and move on.                                                                                                                                                                                 | 2026-10-18             | Copilot comes from the author's personal GitHub setting and runs out of quota.                                                                                                       |
+| **Update, rollback, restore and migration paths are proven in CI first.** No release that touches update / restore / migration / supervisor / launcher / TV-staging code reaches the live Mac unless `update-rehearsal` passed on that exact commit. The tag guard enforces it ([docs/update-rehearsal.md](update-rehearsal.md)). | 2026-10-28             | Two outages in one day (see §6). Recovery must be automatic or one click for users, never a terminal.                                                                                |
 | **One release at a time.** No stacking fixes on the live install in one day.                                                                                                                                                                                                                                                      | 2026-10-28             | v0.3.39 → v0.3.42 shipped in one day, each fixing the last; two outages.                                                                                                             |
-| **Arabic ships with English, on every platform, in the same PR.** Web `ar.json`, Android `values-ar`, Apple String Catalog `ar`. Reuse the web's wording. Keep a test that fails when an English string has no Arabic. Check RTL.                                                                                                 | 2026-10-31             | "Why no Arabic, it should go hand in hand" / "All platforms", after the Remote status screens shipped English-only.                                                                  |
+| **Arabic ships with English, on every platform, in the same PR.** Web `ar.json`, Android `values-ar`, Apple String Catalog `ar`. Reuse the web's wording. Keep a test that fails when an English string has no Arabic. Check RTL.                                                                                                 | 2026-10-31             | The Remote status screens shipped English-only.                                                                                                                                      |
 | **One Arabic word for the home:** «الجهاز الرئيسي» (replaces «الخادم الرئيسي»).                                                                                                                                                                                                                                                   | 2026-10-31             | Same wording in every app.                                                                                                                                                           |
-| **The API enforces every role rule**, with a role test (try the route as no one and as a viewer). Hiding UI is not a rule. A modified app with a viewer's token stays a viewer; cloud-linked sign-ins are play-scoped unless a home admin grants manage.                                                                          | 2026-10-25             | "Remember the apis need to enforce the user roles". See `TestAdminOnly` in `api/internal/handlers/cluster/cluster_test.go`.                                                          |
-| **Only admins can join a machine.**                                                                                                                                                                                                                                                                                               | 2026-10-25             | Owner, while separating viewers, home admins and the Maktaba service admin ([#310]).                                                                                                 |
+| **The API enforces every role rule**, with a role test (try the route as no one and as a viewer). Hiding UI is not a rule. A modified app with a viewer's token stays a viewer; cloud-linked sign-ins are play-scoped unless a home admin grants manage.                                                                          | 2026-10-25             | Hidden UI does not stop a modified app. See `TestAdminOnly` in `api/internal/handlers/cluster/cluster_test.go`.                                                                      |
+| **Only admins can join a machine.**                                                                                                                                                                                                                                                                                               | 2026-10-25             | Set while separating viewers, home admins and the Maktaba service admin ([#310]).                                                                                                    |
 | **Secrets are never printed or committed:** Plex token, DB password, signing keys, API keys. Credentials are typed by the owner only. Test accounts are used through the API (`login.sh` reads the Keychain unseen); never type passwords into sign-in forms.                                                                     | standing               | Security. [#328] removed the DB password from every URL a process gets.                                                                                                              |
 | **Live data only for justified recovery.** Tests never touch the live DB: use scratch Postgres clusters. Read-only checks are fine. Don't change Plex DVRs (use Add to Plex). Never call live Cloudflare, Stripe, DNS or the VPS without the owner's OK. Don't bypass the admin API to create users.                              | standing               | Outages and the classifier's denials taught this.                                                                                                                                    |
-| **Fix flaky tests at the root.** Never only re-run, never skip a test.                                                                                                                                                                                                                                                            | 2026-10-26             | "wtf skipping tests? fix them".                                                                                                                                                      |
+| **Fix flaky tests at the root.** Never only re-run, never skip a test.                                                                                                                                                                                                                                                            | 2026-10-26             | A failing test was skipped instead of fixed.                                                                                                                                         |
 | **Changed code needs its tests changed, in the same push.** The pre-push hook (`tools/affected-tests/install-hook.sh`) and CI's `affected-tests` job enforce it. The way out is a commit trailer `No-Test-Change: <reason>`. Never run Mac or simulator UI tests locally: the hook only compiles them. | 2026-11-01 | [#469] left the Mac UI tests stale ([#516]). |
-| **Throwaway simulators.** iOS sim tests create a device (`xcrun simctl create`), run, and delete it. Never reboot the shared "iPhone 17". Stop any `simctl log stream` you start.                                                                                                                                                 | 2026-10-31             | SpringBoard crashed 19 times in a day and every crash put a dialog in front of the owner.                                                                                            |
-| **Screenshots in the dark theme** unless showing a light-only issue.                                                                                                                                                                                                                                                              | 2026-10-28             | Owner preference.                                                                                                                                                                    |
-| **Plain, short answers.** Explain without jargon.                                                                                                                                                                                                                                                                                 | standing               | "don't understand" came often.                                                                                                                                                       |
-| **Verify yourself; don't assume. Don't ask, find the issue and fix.** No restart workarounds unless macOS needs one (Full Disk Access, Local Network).                                                                                                                                                                            | 2026-10-23 → 25        | "why the you don't verify?", "no stupid restart solutions".                                                                                                                          |
-| **Testing features on the live Mac is fine while in dev**, but say first that an update restarts the server and watch it through its whole confirm window. Update paths themselves: CI only (rule above).                                                                                                                         | 2026-10-27             | "live test as we are in dev".                                                                                                                                                        |
+| **Throwaway simulators.** iOS sim tests create a device (`xcrun simctl create`), run, and delete it. Never reboot the shared "iPhone 17". Stop any `simctl log stream` you start.                                                                                                                                                 | 2026-10-31             | SpringBoard crashed 19 times in a day and every crash put a dialog on the Mac's screen.                                                                                              |
+| **Screenshots in the dark theme** unless showing a light-only issue.                                                                                                                                                                                                                                                              | 2026-10-28             | The preferred default.                                                                                                                                                               |
+| **Plain, short answers.** Explain without jargon.                                                                                                                                                                                                                                                                                 | standing               | Jargon-heavy answers were often not understood.                                                                                                                                      |
+| **Verify yourself; don't assume. Don't ask, find the issue and fix.** No restart workarounds unless macOS needs one (Full Disk Access, Local Network).                                                                                                                                                                            | 2026-10-23 → 25        | Unverified claims and restart workarounds cost time.                                                                                                                                 |
+| **Testing features on the live Mac is fine while in dev**, but say first that an update restarts the server and watch it through its whole confirm window. Update paths themselves: CI only (rule above).                                                                                                                         | 2026-10-27             | The project is still in development.                                                                                                                                                 |
 | **Big multi-track work:** parallel worktree agents, keep going without check-ins, escalate only when a plan's premise turns out false.                                                                                                                                                                                            | 2026-05                | Gap-closure program.                                                                                                                                                                 |
 | **Worktrees live under `.claude/worktrees/`, never `$TMPDIR`** (macOS purges it).                                                                                                                                                                                                                                                 | 2026-10-18             | A purged worktree broke a live venv.                                                                                                                                                 |
 | **Never use a made-up sha** in a command or doc.                                                                                                                                                                                                                                                                                  | 2026-10-27             | A fabricated sha was used in a release command once; caught and killed.                                                                                                              |
-| **Clean up what's done:** archive finished sessions, remove merged worktrees and branches (keep a branch only if it has work not in main).                                                                                                                                                                                        | 2026-10-17, 2026-10-20 | "if the pr is closed why keep the branch?"                                                                                                                                           |
+| **Clean up what's done:** archive finished sessions, remove merged worktrees and branches (keep a branch only if it has work not in main).                                                                                                                                                                                        | 2026-10-17, 2026-10-20 | A closed PR's branch has no use.                                                                                                                                                     |
 
 ---
 
 ## 2. Architecture decisions and why
 
-### Product shape (2026-10-25, owner's words)
+### Product shape (2026-10-25)
 
 - Phone, foldable and tablet apps on Android and iOS: three **Player** and three **Remote**.
   Desktop Player and desktop Server. TV Player. Web is part of the server. A cloud web service
   on the VPS acts as a Remote and a Player for a connected home. Plus the **Maktaba service
   admin**, separate from home admins. Spec: [#305], `specs/epics/42-apps-player-remote-server/`.
 - Apps are **native** (SwiftUI, Kotlin/Compose), not web wrappers: [#306], [#321], [#325], [#342].
-- **Linked accounts** for remote play through Maktaba Cloud ([#309], [#327], [#388]). Rejected:
-  "a video link that plays without sign-in" (owner: "then don't do that idea", 2026-10-25).
+- **Linked accounts** for remote play through Maktaba Cloud ([#309], [#327], [#388]). Rejected
+  (2026-10-25): a video link that plays without sign-in.
 - Player builds are viewer-only, like the TV apps (2026-10-25).
 
 ### Live install: Maktaba.app with bundled Postgres (2026-10-20 → 23)
 
-- Owner: "all need to be part of one mac installation … postgres bundled if small". Epic 36
+- Everything is one Mac installation, with Postgres bundled because it is small. Epic 36
   ([#148]); the home Mac moved in with `migrate-from-dev` ([#158]) on 2026-10-23. The Docker
-  Postgres was stopped, not deleted ("don't finalize").
+  Postgres was stopped, not deleted (not finalized).
 - Updating live = merge → tag a release → CI builds a Developer ID signed, notarized dmg
   ([#288]) → the app updates itself. Local builds carry a placeholder updater key, so use CI
   builds. Intel Mac builds dropped: Apple silicon only ([#304]).
@@ -84,8 +84,8 @@ and `docs/`.
   pairing code, get a least-privilege Postgres role, and pull jobs by capability.
 - Phase 2, "the cluster channel" ([#58]): every worker holds a sealed WebSocket to a hub in the
   home's API. Logs and metrics are files on the share (`<share>/maktaba/cluster/<ip>/…`), with
-  a long-term archive on the home. The DB is only a cache. Owner rejected a central scheduler:
-  "all is split into queue, each machine will have jobs pulling from the queues on main".
+  a long-term archive on the home. The DB is only a cache. A central scheduler was rejected:
+  all work is split into queues, and each machine pulls jobs from the queues on the home.
 - Full nodes keep a live copy of the home's DB ([#178]); per-machine client certificates
   ([#349]).
 - **Machines update only after the home commits, never ahead of it** ([#434], 2026-10-31).
@@ -96,7 +96,7 @@ and `docs/`.
 - **D1, 2026-10-27:** no click in the desktop app. Updates started from the Updates page install
   everywhere; automatic ones in the window with a notice ([#389]).
 - **Backups never block an update:** taken on the side, complete (vectors kept) and fast
-  ([#397]). Owner: "backup should happen on the side … faster than 10 mins".
+  (under 10 minutes) ([#397]).
 - **A failed TV preview keeps the release:** TV stays on the old streaming software, the owner
   gets Retry / Drop. Undo everything only if TV breaks after it switched ([#404], 2026-10-28).
 - **Only manual TV changes need approval; TV changes never block updates** ([#429]).
@@ -114,23 +114,22 @@ and `docs/`.
   differs from the one it was told to run (`matchBinding`, [#443], [#446]).
 - TV changes: updates join one open change until approved; small changes go on air by
   themselves ([#167], [#203], [#248]).
-- Plex: Maktaba emulates an HDHomeRun tuner + XMLTV, "like dizqueTV" ([#61], [#139], [#159],
+- Plex: Maktaba emulates an HDHomeRun tuner + XMLTV, as dizqueTV does ([#61], [#139], [#159],
   [#214]). Auto-detection by Plex was never solved; Add to Plex adds it as a channel source.
 
 ### Transcription and search
 
 - Whole library transcribed on the queue engine with batched MLX Whisper ([#54]).
 - Model choice (2026-10-19): turbo + a second listen with Cohere Arabic, merged word by word
-  ([#113]). Why: the owner's own listening test on 20 disputed spots scored Cohere 17, turbo 0;
+  ([#113]). Why: a human listening test on 20 disputed spots scored Cohere 17, turbo 0;
   an LLM judge had favoured turbo's tidy spelling and was wrong. Turbo kept for Quran.
-- Search moved from Chroma to Postgres pgvector ([#319], 2026-10-26). Owner: "nothing better and
-  more efficient? … just migrate". Chroma broke whenever a worker was killed mid-write.
+- Search moved from Chroma to Postgres pgvector ([#319], 2026-10-26), the more efficient
+  option. Chroma broke whenever a worker was killed mid-write.
 
 ### Queues
 
 - Change-driven multi-level queue engine ([#47]). Everything is a queue job, one item at a time,
-  run in parallel by workers. Owner, 2026-10-17: "there is something called splitting work to
-  jobs".
+  run in parallel by workers.
 - Queue health: failure classes, parking, dependency watchers, a failing-items page ([#177],
   [#192], [#195]).
 - Epic 47: convert to MP4 → dedup → YouTube refresh, in that order, queue-based ([#412]–[#428]).
@@ -213,7 +212,7 @@ and `docs/`.
   because the PC's copy grant ran GRANTs mid-restore. Vectors, 630 post-data items and the ACLs
   were missing; recovered by hand (the ACLs were missed at first). Root causes fixed in [#433];
   TV changes stop blocking updates in [#429]. **Lesson:** this is why the CI rule and one
-  release at a time exist. Owner: "why do you keep rolling back changes and fucking things up?"
+  release at a time exist: each rollback made things worse.
 - **2026-10-31, TV `release_mismatch`.** A running TV slot asked to run another release kept the
   old one. Fixed in [#443], [#446]; rehearsal scenario 11 fails on pre-#443 code.
 
@@ -399,22 +398,22 @@ transcripts were not traced one by one; their work is in the PRs cited.
 
 - Asked: Plex Live TV from the YouTube archive. dizqueTV 1.7.0 was built from source on the PC
   (port 8002, tuned by Plex on the NAS as an HDHomeRun), which is why Maktaba TV emulates an
-  HDHomeRun with XMLTV. The owner then said "create tools for the work, don't do manually": that
+  HDHomeRun with XMLTV. Then the rule: build tools for the work, never do it by hand. That
   became mediaintel ([#46], [#48]), then Maktaba's queues ([#47]), channel rules ([#52], [#55])
   and Maktaba TV ([#57], which took in [#55]).
-- Owner rules set here: "this should all be baseed on config with ui for that config" (rules are
-  settings, not code); "verify the claim" (a guess at failing NAS disks was wrong: SMB timeouts
+- Rules set here: everything is config with a UI for that config (rules are
+  settings, not code); verify every claim (a guess at failing NAS disks was wrong: SMB timeouts
   from 32 parallel reads); no placeholder features (a stub audit followed: [#123], [#128],
-  [#130]–[#136]). Claude's own working rules from it: never change security settings (the owner
-  added the Defender exclusion himself); never use `git stash` (a shared stash swapped two
-  worktrees); tests bind 127.0.0.1 and build output is never committed (`api.exe` landed in
+  [#130]–[#136]). Claude's own working rules from it: never change security settings (the
+  Defender exclusion was added by hand, not by Claude); never use `git stash` (a shared stash
+  swapped two worktrees); tests bind 127.0.0.1 and build output is never committed (`api.exe` landed in
   [#119]; [#127]).
-- Decided: "windows will join mac and not the other way around". The PC's own home was retired
+- Decided: Windows joins the Mac, not the other way around. The PC's own home was retired
   and the PC joined `Mahmouds-Mac-Studio` as node `windows-pc` on 2026-10-19; [#75] then let its
   storage check accept files of unknown size, so the worker took jobs. Paths are canonical
   `smb://` ([#81], [#101], [#107]), and nodes reach Plex through the home and never hold its
-  token ([#73], [#78]). The owner also asked for TV hot swap ([#97], [#104], [#108]) and
-  automatic updates.
+  token ([#73], [#78]). TV hot swap ([#97], [#104], [#108]) and automatic updates were
+  asked for too.
 - PC facts: 192.168.50.24, RTX 2080 SUPER. `O:` = `\\Home-NAS\Originals`, `Y:` =
   `\\Home-NAS\Originals\Backup\Youtube`. Splunk holds 8000 and 8088 and MiniTool ShadowMaker
   8080, so setup picks a free port from 8780 (v0.1.0, `6b88722f`). The mediaintel data and a
@@ -425,14 +424,14 @@ transcripts were not traced one by one; their work is in the PRs cited.
 
 ### 2026-10-20 · PC · 798feb8d · v0.2.0 and the first node PRs
 
-- Merged [#141] and, on the owner's "Why this one? Merge it", [#138]; tagged v0.2.0 on
-  `e539c7af` ("Release tag no need for rc").
+- Merged [#141] and then [#138]; tagged v0.2.0 on `e539c7af` (a release tag, no rc
+  needed).
 - Four of the five release workflows failed (as on v0.1.0): opened [#142] for the icons, the
   Android SDK and the relay deploy.
 - Ran the PC as a full node from source: opened [#143] so its API and pipeline reach the home's
   database.
-- The owner asked why the whole site goes blank when the node can't reach its home "instead of
-  working and showing popup and maybne all actions disabled": that became [#145] (later folded
+- Requirement: when the node can't reach its home, the site keeps working, shows a notice and
+  disables actions instead of going blank. That became [#145] (later folded
   into [#178]).
 
 ### 2026-10-20 · PC · f43fad60 · "Maktaba worktree setup", the PC's coordinating session
@@ -441,16 +440,16 @@ transcripts were not traced one by one; their work is in the PRs cited.
   every PR from this side. It ran the side sessions below (node copy, Windows and Linux apps,
   updates), merged about 70 PRs and tagged about 17 releases between v0.3.0-rc.1 and v0.3.33
   (the Mac tagged the rest). On 10-31 it traced these PC sessions.
-- Owner rules set here (for §1): "review all prs from this side, then fix and merge" (a merge
+- Rules set here (for §1): review all PRs from this side, then fix and merge (a merge
   commit on the exact reviewed head, `--match-head-commit` with the full sha, every check green);
-  "why you keep creating prs, fix and merge" (fold findings and new CI failures into PRs already
-  open); "why are you not polling it???" (wait on CI yourself, merge on green); "tag every …
-  merge" (the next patch tag at once, after main's `ci.yml` passes on the merge commit, pushed
+  fix and merge instead of opening new PRs (fold findings and new CI failures into PRs already
+  open); poll CI yourself (wait on CI yourself, merge on green); tag every merge (the next patch
+  tag at once, after main's `ci.yml` passes on the merge commit, pushed
   with the owner's `gh` so the release builds start; since 10-31, not while §3–§5 hold a
-  release); "this is not a manual step, its a feature of maktaba".
+  release); a recurring manual step becomes a Maktaba feature.
 - PC setup: the node and dizqueTV start from sign-in scheduled tasks (logon +30 s), because `O:`
-  and `Y:` exist only in the signed-in session. On 2026-10-25 the owner chose "Install the
-  Windows app instead": the node moved from the hand-built copy in `E:\tv\maktaba-local` to
+  and `Y:` exist only in the signed-in session. On 2026-10-25 it was decided to install the
+  Windows app instead: the node moved from the hand-built copy in `E:\tv\maktaba-local` to
   `%LOCALAPPDATA%\Maktaba`, task `Maktaba Server <SID>` running `Maktaba.exe --server-agent`.
   `node.json` is in `%APPDATA%\Maktaba` (on `E:`); web 8780, API 8781, streaming 8782. Claude's
   working rules on this PC: restart its services only through their sign-in tasks; never touch
@@ -473,23 +472,23 @@ transcripts were not traced one by one; their work is in the PRs cited.
   v0.3.42 node paused its jobs and streaming. 10-31 (updates §3): the Mac is on v0.3.44, the PC
   on v0.3.42. The order waits because no app window runs and the server's
   `maktaba://install-update` link gets Windows' "Get an app" popup: the link was registered only
-  in Claude's private registry copy. Handed to `c17dd289`, where the owner then answered both
-  open questions.
+  in Claude's private registry copy. Handed to `c17dd289`, where both open questions were then
+  answered.
 
 ### 2026-10-20 · PC · ce7a4c40 · A node that loses its home, then its database copy (Epic 37)
 
-- Asked: fix [#145]'s review findings. The owner's outage rules: "no sign in when in outage,
-  videos should play if you have path, jobs should pause". Playback with the home's database
+- Asked: fix [#145]'s review findings. Outage rules: no sign-in during an outage, videos play
+  when their path is reachable, jobs pause. Playback with the home's database
   down became [#157].
-- Then the owner changed the design: every joined node keeps the home's whole database,
-  read-only, "so it can function as read only"; sign-in works offline; "all in a feature branch
-  with everything and merge once". [#145] and [#157] closed into [#178].
+- Then the design changed: every joined node keeps the home's whole database,
+  read-only, so it can work read-only; sign-in works offline; everything goes in one feature
+  branch, merged once. [#145] and [#157] closed into [#178].
 - Why logical replication: Postgres can't stream physically from an arm64 Mac to an x86 PC, and
   a physical copy would carry every secret and session id. One slot per node; the copy pauses
   while the home's schema is ahead; secrets and other machines' rows stay out. Pinned Postgres
   went into [#196] (`postgres.exe` needs a restricted, non-admin token).
-- Also built: switching the home, Plex and Cloudflare included ("credentials through the
-  encrypted handoff, never the replica"). Owner decisions: standby homes only, late writes kept
+- Also built: switching the home, Plex and Cloudflare included (credentials go through the
+  encrypted handoff, never the replica). Decisions: standby homes only, late writes kept
   aside with an apply, the supervisor runs the cloud relay.
 - Failures: a node's replication role could read every table through `test_decoding` (only
   `pgoutput` ships now, foreign slots are dropped); the freeze wasn't a fence (lib/pq's
@@ -510,11 +509,11 @@ transcripts were not traced one by one; their work is in the PRs cited.
 
 ### 2026-10-20 · PC · c8ac551a · Rework [#145] (stopped)
 
-- Stopped at once by the owner; the work went on in `ce7a4c40`.
+- Stopped at once; the work went on in `ce7a4c40`.
 
 ### 2026-10-21 · PC · 295d4839 · Windows one-app install (Epic 38)
 
-- Asked (relayed): "also need the same one app setup on windows similar to mac". About 30 PRs,
+- Asked (relayed): the same one-app setup on Windows as on the Mac. About 30 PRs,
   spec [#165] and stories 38.1–38.14, reviewed and merged by `f43fad60`.
 - Why a sign-in task, not a service: `O:` and `Y:` exist only in the user's session. The task
   `\Maktaba Server <SID>` runs `Maktaba.exe --server-agent` 30 s after sign-in, with a 5-minute
@@ -536,13 +535,13 @@ transcripts were not traced one by one; their work is in the PRs cited.
 
 ### 2026-10-21 · PC · 454c33cb · Linux one-app install (Epic 39)
 
-- Asked (relayed): "and another for linux". Spec [#166] and the story PRs, merged by
+- Asked (relayed): the same for Linux. Spec [#166] and the story PRs, merged by
   `f43fad60`.
 - Why: the AppImage is the main download, with .deb and .rpm from the same build, all updated by
   the Tauri updater; no apt/dnf repo (a second updater and trust root, hosting, root for every
   update). The server runs from a per-user runtime copy with a `current` link and rollback
   ([#174]), as a systemd user service with linger ([#173]).
-- Owner decision "Use the distro's ffmpeg": the pinned Linux ffmpeg builds were
+- Decided: use the distro's ffmpeg. The pinned Linux ffmpeg builds were
   `--enable-nonfree`, so not redistributable. Linux bundles none and the packages depend on
   ffmpeg ([#229]); the approved mirror ([#220]) was closed unpublished.
 - Lessons: curl's `--retry` doesn't retry a Cloudflare 521 (an ffmpeg host outage, [#216]);
@@ -554,20 +553,20 @@ transcripts were not traced one by one; their work is in the PRs cited.
 
 ### 2026-10-23 · PC · 9bd8e01c · Automatic updates (Epic 35) and what broke live
 
-- Asked: "shouldn't it update automaticly? what?", then "build it". [#271] (v0.3.0): one update
+- Asked: why it didn't update by itself, then to build it. [#271] (v0.3.0): one update
   path per install kind, the home's run drives the nodes, and each machine's journal finishes a
   run whichever release starts next.
-- Owner decisions: D1 "Ask first" (desktop apps stage the home's order and install on a click;
+- Decisions: D1 "Ask first" (desktop apps stage the home's order and install on a click;
   reversed to no click on 2026-10-27, [#389]); D2 a rollback restores the pre-update dump; D3 the
   Linux app updates itself without root. The order file `updates/app-install.json` goes ordered
   → staged → go → installing; on Windows the app the server starts must break away from the
   launcher's kill-on-close job.
-- "it tried to update and failed and it didn't say why": every attempt shows its reason and
+- A failed update gave no reason. Now every attempt shows its reason and
   links the logs ([#276]). The rest of the spec was built by ten parallel worktree agents
   ([#287]).
 - Live failures fixed: the Mac moved its Postgres without the node's role, so a node now gets
-  its access back by itself ([#276], [#307]: "it should just try to rejoin"); Mac notarization
-  broke on empty `APPLE_*` variables ([#276]); "remove the stupid continue with mac", the tray at
+  its access back by itself ([#276], [#307]); Mac notarization
+  broke on empty `APPLE_*` variables ([#276]); the unwanted "Continue with Mac" step, the tray at
   sign-in and the blank window after updates ([#320]); client certificates on the home's
   database ([#349]).
 - Lessons: Go on Windows ignores `TZ`; `go test … | tail` hides a failing exit code; Defender
@@ -582,9 +581,9 @@ transcripts were not traced one by one; their work is in the PRs cited.
   private registry copy, so the server, outside it, can't open the link and the app never got
   the v0.3.44 order. Claude's shell shows the key, so `reg query` there proves nothing. Rule:
   never install or start Maktaba from Claude's shell on this PC; the owner runs the installer.
-- Owner decisions, 2026-10-31: "Agent installs (Recommended)": the always-running
+- Decided 2026-10-31: agent installs (the recommended option): the always-running
   `Maktaba.exe --server-agent` installs a node's update itself instead of waking the desktop
-  app (changes §2, Updates). "Yes, open it": a PR so the node's copy notices a dead link to the
+  app (changes §2, Updates). Also a PR so the node's copy notices a dead link to the
   home's database within about a minute and ends replication workers that won't stop. Both are
   in progress there; their PRs go in its own later entry.
 
@@ -711,7 +710,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
     flavors: run `:remote:testPhoneDebugUnitTest`, not `testDebugUnitTest`. The web uses pnpm
     (`pnpm install --frozen-lockfile`); `npm ci` fails, because there is no npm lockfile.
 - 2026-10-31 · Epic 48 spec agent of `b743b7d4`: [#458] writes `specs/epics/48-native-players/`
-  after the owner found the Players thin ("is that epic really DONE???"). Epic 42 asked only for
+  after a review found the Players thin. Epic 42 asked only for
   libraries and playback, so its checks passed with no Home, nav, Live TV or brand.
   - Decided: Live TV for the TV apps is *in* 48 (own track, files disjoint); downloads, the
     Remote's screens and the Windows/Linux player are follow-ups; one token source in
@@ -930,7 +929,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
     is configurable (a fixed 60 s gate check was stricter, dropped in review). Open: DASH
     top-level segments (`/stream/{session}/init-*.m4s`, `chunk-*.m4s`) are not on the allow-list;
     48.24 or 48.33 must add them before AirPlay or Cast uses DASH.
-  - [#476] spec: the owner's TestFlight findings. "No audio" traced to codec-less
+  - [#476] spec: findings from TestFlight testing. "No audio" traced to codec-less
     `audio_tracks` rows, not the Player's audio session (already `.playback`); AirPlay and the
     video page's poster became criteria of 48.24 and 48.19; 48.19 gained `maktaba://video/{id}`.
   - [#477] silent streams: transcribe's bare `audio_tracks` row (68e9e903) plus the probe's
@@ -961,7 +960,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
     method: Swift 6 gives it main-actor isolation and traps off the main thread. Make it in a
     `nonisolated static func` and hop on. The first CI run of [#512] crashed every watch test so.
   - The iPhone simulator reports no Picture in Picture (the iPad one floats it); the PiP UI
-    test asserts there is no PiP button on iPhone (no skip: the owner's rule). `AVRoutePickerView` adds its inner button late on iPad:
+    test asserts there is no PiP button on iPhone (no skip: tests are never skipped). `AVRoutePickerView` adds its inner button late on iPad:
     `AirPlayButton.Picker` names every control in it once it is on screen.
   - The Mac menu helper clicked View ▸ Profile when asked for Live TV: a coordinate on a menu
     item finds it again by identifier, and every SwiftUI menu item's is `menuAction:` (the
@@ -990,8 +989,8 @@ Append here: date, session, one to five lines on what changed. Newest last.
   - Waiting on the owner: make the upload key (keytool in `docs/google-play.md`) and add the
     secrets; create the three apps in Play Console and upload each first bundle by hand; later
     turn on `PLAY_UPLOAD`.
-- 2026-11-01 · affected-tests agent of `b743b7d4`: [#516] (not merged; the owner asked for the PR
-  only). **New owner rule:** a push that changes code also changes the tests that cover it, and
+- 2026-11-01 · affected-tests agent of `b743b7d4`: [#516] (not merged; only the PR was asked
+  for). **New rule:** a push that changes code also changes the tests that cover it, and
   this fails at once, before CI. Why: [#469] made the Player's sign-in a segmented choice, and the
   Mac UI tests (`PlayerMacTests/UI/PlayerMacMenuUITests.swift`, which tap "With a code") went
   stale with nothing running them.
@@ -1222,7 +1221,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - One CI run (41376606909): aLibraryShowsItsHubRowsAndLeavesTheEmptyOnesOut waited 10 s for the libraries list; the other 11 tests took ~0.5 s. Six local runs of the class all passed; the report held no app log (Robolectric drops android.util.Log), so the cause wasn't recorded.
 - Changes: a missed wait now says which paths the app asked the home and what the screen showed. Each FakeHome gets its own OkHttp connection pool (it shared defaultHttp's across tests).
 - Not root-caused yet: the next miss names it.
-- Owner: "always request the logs so it doesn't drop them". Both Android Gradle roots (apps/android, apps/tv/android) set `robolectric.logging=stdout` on every Test task; LogsKeptTest fails if it goes. Reports now carry the app's log.
+- Rule: tests always keep the app's log, so none is dropped. Both Android Gradle roots (apps/android, apps/tv/android) set `robolectric.logging=stdout` on every Test task; LogsKeptTest fails if it goes. Reports now carry the app's log.
 - Root cause found (with the new diagnostics): the miss is always the first wait, and the report showed "asked [/api/libraries/summary]; showing [libraries-list, tabs]": the answer came, no error was logged, the screen stayed on its spinner. Under Robolectric a bare `compose.waitUntil` only polls; an answer landing after the last idle isn't applied until the main looper is idled. Reproduced with a 500 ms late answer: poll-only took 4.6 s of a 5 s budget, poll-with-idle 0.6 s.
 - Fix: harness/Settle.kt `settledUntil` (waitForIdle in every poll) and `settled` (same, plus the asked/shown message); all three Libraries test classes use them. ~80 other bare waitUntil calls remain in the Player tests; not converted blindly (watch tests wait on things that hide by themselves, and settling advances the clock).
 - Converted: every Player-test wait on a fake-home answer or what it causes (tags/text, request counts, HomeCache files, session phase, fake engine calls) is now `settledUntil`, in the 16 Home/Video/Profile/Search/Shell/Start/Connect/Components/Live test files; HomeScreenTest's gated "not answered yet" wait dropped its inner waitForIdle (the gate is the test's own latch, so settling can't let the answer in early); ConnectProgress's AwaitingApproval wait converted too (its countdown is on a fixed clock).
@@ -1236,7 +1235,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 
 ## 2026-11-02 — Maktaba renamed the Mac on the network (mDNS name conflict)
 
-- Owner saw macOS rename "Mahmouds-Mac-Studio.local" to "…-2.local". Cause: maktaba-api and maktaba-server each ran a zeroconf responder (`lsof -iUDP:5353`) announcing via RegisterProxy with the Mac's own Bonjour name, which publishes A/AAAA for it with the cache-flush (owner) bit. mDNSResponder saw other answerers for its name and renamed the Mac; our servers then claim the new name on restart.
+- macOS renamed "Mahmouds-Mac-Studio.local" to "…-2.local". Cause: maktaba-api and maktaba-server each ran a zeroconf responder (`lsof -iUDP:5353`) announcing via RegisterProxy with the Mac's own Bonjour name, which publishes A/AAAA for it with the cache-flush (owner) bit. mDNSResponder saw other answerers for its name and renamed the Mac; our servers then claim the new name on restart.
 - Fix (fix/mdns-system-responder): register() returns an `announcement` (SetText, Shutdown). On macOS it runs `dns-sd -R` under /bin/sh that ends it when our stdin pipe closes (Shutdown, or our process dying any way), restarted if it ends by itself. Elsewhere zeroconf as before. Same file in api/internal/discovery and cmd/maktaba-server/internal/mdns.
 - Gotcha: a POSIX shell gives a background job /dev/null as stdin, so the watcher must read a copy (`exec 3<&0 … read _ <&3`), or it kills dns-sd at once.
 - Not done: Linux hosts with avahi-daemon and Windows (own mDNS) have the same conflict risk; still zeroconf there.
@@ -1261,17 +1260,17 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - Tests: `tests/stages/test_thumbs_subfolder.py` (names with Arabic and fullwidth colons; sqlite and a scratch PG on :55471 started from the app's bundled binaries, data in the scratchpad) and a walker test.
 ## 2026-11-02 — Android Player: a collapsible rail, a draggable list-detail divider, half-fold layouts ([#523])
 
-- Owner's report: on a foldable open flat (sideways, 841 dp) and a big tablet, Libraries showed a permanent 360 dp drawer, the list (380 dp) and the videos squeezed to ~100 dp. Cause: `navigationFor` gave expanded windows `NavigationDrawer`, and the list had a fixed 380 dp.
+- Report: on a foldable open flat (sideways, 841 dp) and a big tablet, Libraries showed a permanent 360 dp drawer, the list (380 dp) and the videos squeezed to ~100 dp. Cause: `navigationFor` gave expanded windows `NavigationDrawer`, and the list had a fixed 380 dp.
 - Decided: expanded windows and a book-held foldable get a collapsible rail (`shell/CollapsibleRail.kt`, material3 1.4.0's `WideNavigationRail`, no upgrade needed). It is 96 dp of icons and expands over the content (modal, with a scrim: chosen over push so the content never reflows). The menu button or a mouse hover opens it; choosing, a tap outside, Back or the mouse leaving close it. Compact and tabletop keep the bar, medium keeps the rail.
 - Decided: `core/layout/ListDetailSplit` is a draggable divider. List min 240, page min 320, default list 380 but at most 40 %. It has a 48 dp handle, TalkBack widen/narrow actions and arrow keys, and is mirrored in RTL. Kept in saved state and in SharedPreferences `maktaba.splits`. Used by Libraries and the Remote.
-- Decided (owner's follow-up "you do nothing on half fold in regard to nav"): in book posture the rail and the list sit on the start page and the list ends at the hinge. The split is the hinge (no drag handle: any other split puts a pane under it), and the expanded rail is capped to the start page. In tabletop, the page is on top and the list and bar on the bottom; non-splitting screens keep to the top half (`OffTheHinge` in PlayerShell). The shell passes its adaptive info down (`LocalAdaptiveInfo`), so tests fake hinges through `WindowAdaptiveInfo` (`harness.folded`).
+- Decided (follow-up: half-fold postures had no navigation changes): in book posture the rail and the list sit on the start page and the list ends at the hinge. The split is the hinge (no drag handle: any other split puts a pane under it), and the expanded rail is capped to the start page. In tabletop, the page is on top and the list and bar on the bottom; non-splitting screens keep to the top half (`OffTheHinge` in PlayerShell). The shell passes its adaptive info down (`LocalAdaptiveInfo`), so tests fake hinges through `WindowAdaptiveInfo` (`harness.folded`).
 - Failed first: (1) the rail's Back didn't win over a section's Back. A BackHandler that is always composed keeps its old registration order; it is now composed only while open. (2) Swapping between NavigationSuiteScaffold and the rail frame recomposed the screens, and a live channel going full screen restarted. Both now share one tree. (3) The rail's IconButton was 40 dp, and HomeScreenTest's accessibility audit caught it.
 - Gotcha: `recordRoborazziDebug` rewrites every PNG, even unchanged ones (byte noise). Re-record only the tests that `verifyRoborazziDebug` fails. The before shots for the PR body live on the branch `screenshots/android-rail-before`.
 - Not verified on a real foldable or tablet, and no emulator run. Open: in book posture, Home/Search (screens that don't split) still span both pages.
 - CI failed the first push (run 41472993431): four LayoutScreenshotTest pictures had the library page scrolled down a row. That was unsettled content, not fonts or a layout bug. The hub rows can land after the first videos, and the grid then keeps the first video in view (scroll anchoring), so the picture depended on the order the answers arrived in. The test now waits for idle and scrolls the page to its top before each capture; the goldens are re-recorded and the tolerance is unchanged. The jump itself is still in `LibraryPage` (the rows can end up above the view on a slow home): a follow-up for that screen.
 ## 2026-11-02 — CI runs what a change touches (ci/run-what-changed)
 
-- Owner: "ci should only run if the change touches it". An Android-only PR ran pipeline integration, Go replica, e2e and all nine Player UI shards; a Remote rename ran the Player UI tests.
+- Requirement: CI runs only what a change touches. An Android-only PR ran pipeline integration, Go replica, e2e and all nine Player UI shards; a Remote rename ran the Player UI tests.
 - Now: `.github/ci-paths.yml` holds one path filter per job or part, derived from what each workflow builds and tests (Go modules + what their tests read, pipeline + the docs/help its tests read, web + the two api files help.coverage reads, tokens, each app). ci.yml's `changes` job evaluates it on a pull request only; on a push to main/release/* every output is true, so main and the tags get the full run (mac/win/linux app builds now run on every push too). The update rehearsal's own triggers are unchanged.
 - Parts: `_lint.yml` (repo checks always; go/pipeline/web), `_unit.yml` (go/pipeline/web/tokens/desktop_shell), `_integration.yml` (integration/compat_prev), `_node-packaging.yml` (packaging/release_venv), `_apple-apps.yml` (build/player_ui) take boolean inputs. Makefile: `lockfile-check` split into -py/-web/-go.
 - Apple: the Player UI shards run for Player/, Shared/, MaktabaKit sources, UITests/, PlayerMacTests/, the Player schemes. The shared project.pbxproj counts only when `tools/ci/apple_player_scope.py` finds a Player object among its changes (parses the file at HEAD^1 and HEAD; the Remote rename caaf91a0 and Remote icon 3912dca8 come out false, UI-test changes true).
@@ -1283,7 +1282,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 ## 2026-11-02 — extract paused by nobody, thumbnail starved: stage pauses need an owner, pools share fairly
 
 - Read-only look at the live home: extract (`nas_read`) had `paused = true`, `paused_at`/`paused_by` NULL since 2026-10-22 22:31. Thumbnail (70k pending at 900) had not run because thumb_small and chapter_thumbs (~42k at 100) always filled `nas_read`'s 2 slots under `ORDER BY priority, id`.
-- Writer: no code. Every pause writer in git history sets both columns. It was a Claude session (`30850266`) on 2026-10-23 02:37 UTC, after the owner said "pause this shit": a raw `psql` `update job_stages set paused = true where stage = 'extract'` on the live Docker Postgres. Later that night the same session did the same for `index` and `chapter_infer` on the bundled Postgres. Lesson: never write operator columns by hand. Pause through `POST /api/queues/{stage}/pause` (the DB now refuses anything else).
+- Writer: no code. Every pause writer in git history sets both columns. It was a Claude session (`30850266`) on 2026-10-23 02:37 UTC, after a request to pause it: a raw `psql` `update job_stages set paused = true where stage = 'extract'` on the live Docker Postgres. Later that night the same session did the same for `index` and `chapter_infer` on the bundled Postgres. Lesson: never write operator columns by hand. Pause through `POST /api/queues/{stage}/pause` (the DB now refuses anything else).
 - Fix ([#524], slot 0172):
   - orphaned pauses are resumed, with `audit_log` `admin` / `queue.stage_orphan_pause_resumed`
   - a trigger (not a CHECK: `ADD CONSTRAINT` would make the release unsafe to roll back on its schema) refuses a pause without `paused_at` and `paused_by`
@@ -1302,7 +1301,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 ## 2026-11-02 — extract writes no WAV on a streaming backend
 
 - Live: 1,323 extract jobs waiting (847 pending, 476 paused), stage paused by hand; each would write `~/.maktaba/cache/audio/<hash>.wav` (~115 MB/h) that nothing reads: the engine's transcribe decodes off the share, and the configured backend (`whisper-mlx`) streams.
-- Owner's call: code only, no migration. `extract_handler` asks `stt.transcribe.configured_backend_requires_file()` (backend name resolved as `default_select_backend` does; true only for a class with `requires_file = True`, today `openai-api`). Streaming: `commit_extract_skipped` (no ffmpeg, no file, no `audio_cache` row, no `last_extracted_at`), FSM `PROBED -> AUDIO_EXTRACTED` and the TRANSCRIBE enqueue as after a real extract, except the enqueue is left out when transcription is already handled (active transcript or live transcribe job, the #267 rule), logs `extract_skipped_streaming_backend`. So 0172 resuming the stage is harmless: the backlog finishes in ms.
+- Decided: code only, no migration. `extract_handler` asks `stt.transcribe.configured_backend_requires_file()` (backend name resolved as `default_select_backend` does; true only for a class with `requires_file = True`, today `openai-api`). Streaming: `commit_extract_skipped` (no ffmpeg, no file, no `audio_cache` row, no `last_extracted_at`), FSM `PROBED -> AUDIO_EXTRACTED` and the TRANSCRIBE enqueue as after a real extract, except the enqueue is left out when transcription is already handled (active transcript or live transcribe job, the #267 rule), logs `extract_skipped_streaming_backend`. So 0172 resuming the stage is harmless: the backlog finishes in ms.
 - Follow-up PR (not done): drop the probe→extract edge and probe's eager enqueue, transcribe requests extract via `may_request` when a backend needs a file, delete orphaned WAVs. Note for it: `--no-engine` mode chains probe→extract→legacy transcribe_handler, which reads `audio_cache`; on a streaming backend that handler now finds no artifact.
 
 ## 2026-11-02 — test_a_corrupt_input_fails_at_once got 'done': random bytes aren't always corrupt
@@ -1315,17 +1314,17 @@ Append here: date, session, one to five lines on what changed. Newest last.
 
 ## 2026-11-02 — CI runs only what a change touches ([#528]); trail-only PRs run nothing ([#532])
 
-- Owner (shouting): "I TOLD YOU THEY SHOULD ONLY RUN WHEN THEIR RELATED CODE CHANGES". ci.yml's `code: '**'` filter ran every job on every PR (Apple UI shards 27–53 min on a Remote rename). [#528] (merge fad707d8): `.github/ci-paths.yml` holds one filter per job/part, applied on PRs only (a push runs everything); `tools/ci/ci_paths.py guard` (in lint) fails on an unfiltered/unmarked job, a job missing from `ci-success`, an unused filter, or a tracked file no filter covers. Until a filter exists, merge on the related checks.
-- Owner: "Update trail on its own PRs, no ci no test" — every code PR appending here made every open PR conflict on each merge (a main merge + CI restart each). [#532] (merge 091ebe1e): `changes` has a `repo` output, false when only this file changed; lint, pr-body-check and affected-tests are gated by it, so a trail-only PR runs only `changes` + `ci-success`. Still runs: CodeQL default setup (can't be filtered, not required) and the labeler. A push to main still runs full CI (the tag guard needs it). Dropped: one file per change under docs/trail/.
-- Owner: "Why you keep asking, no leave later shit, do it now always" — follow-ups start at once (parallel worktree agents); never ask "now or later?" or which of two reasonable designs.
+- Requirement (asked again): jobs run only when their related code changes. ci.yml's `code: '**'` filter ran every job on every PR (Apple UI shards 27–53 min on a Remote rename). [#528] (merge fad707d8): `.github/ci-paths.yml` holds one filter per job/part, applied on PRs only (a push runs everything); `tools/ci/ci_paths.py guard` (in lint) fails on an unfiltered/unmarked job, a job missing from `ci-success`, an unused filter, or a tracked file no filter covers. Until a filter exists, merge on the related checks.
+- Rule: trail updates go in their own PRs, with no CI and no tests. Why: every code PR appending here made every open PR conflict on each merge (a main merge + CI restart each). [#532] (merge 091ebe1e): `changes` has a `repo` output, false when only this file changed; lint, pr-body-check and affected-tests are gated by it, so a trail-only PR runs only `changes` + `ci-success`. Still runs: CodeQL default setup (can't be filtered, not required) and the labeler. A push to main still runs full CI (the tag guard needs it). Dropped: one file per change under docs/trail/.
+- Rule: follow-ups start at once (parallel worktree agents); never ask "now or later?" or which of two reasonable designs.
 
 ## 2026-11-02 — Merges and fixes (coordinator `b743b7d4`)
 
 - 2026-11-02 · affected-tests agent of `b743b7d4`: [#516] merged at 65d09858 (merge commit) once lint, affected-tests, CodeQL, unit, integration, android-apps and apple-apps (Apple apps, Mac UI) passed on 7b93f4d0. The first coverage-map run on main is not checked yet.
-- 2026-11-02 · coordinator `b743b7d4`: [#529] merged at 5c8dda56: LibraryPage/Libraries grid stay at top when the hub answers late (lazy grid key anchoring; `StaysAtTopWhen` + `requestScrollToItem(0)`); #523's scroll-to-top test workaround removed. [#525] merged at 2ea78099 (.thumbs/ sidecars, one-time sweep, @eaDir ignored) — its agent reran the ubuntu installer job (rule broken), root-fix launched. [#527] merged at bb4a742b (extract no-op on streaming backends); tag hold lifted. [#526] merged at b9e2efcc (convert corrupt fixture). [#523] merged at 245915cc (Android rail + resizable panes + postures). Owner rules: follow-ups start at once, never "now or later?"; trail only in trail-only PRs with no CI/tests.
+- 2026-11-02 · coordinator `b743b7d4`: [#529] merged at 5c8dda56: LibraryPage/Libraries grid stay at top when the hub answers late (lazy grid key anchoring; `StaysAtTopWhen` + `requestScrollToItem(0)`); #523's scroll-to-top test workaround removed. [#525] merged at 2ea78099 (.thumbs/ sidecars, one-time sweep, @eaDir ignored) — its agent reran the ubuntu installer job (rule broken), root-fix launched. [#527] merged at bb4a742b (extract no-op on streaming backends); tag hold lifted. [#526] merged at b9e2efcc (convert corrupt fixture). [#523] merged at 245915cc (Android rail + resizable panes + postures). Rules: follow-ups start at once, never "now or later?"; trail only in trail-only PRs with no CI/tests.
 
 ## 2026-11-02 — Sign-in forms: Return goes to the next field, the field stays above the keyboard
-- Owner: "both iOS and Android, sign in need the next field arrow ... because the keyboard blocks the field."
+- Requirement: on iOS and Android, sign-in fields get a Next key, and the keyboard never covers the field.
 - Apple (MaktabaKit `StartViews.swift`, `CloudViews.swift`): `@FocusState` field chain. Username Next -> password Go; cloud email Next -> password (Next -> address when Advanced shows it, else Go) -> address Go; picker address Go. `keepsFocusInView` (`KeyboardFocus.swift`) scrolls the focused row to the middle on each focus change and again 350 ms later, once the keyboard is up. No new visible text, so no new strings.
 - Android (core `StartScreens.kt`, `CloudScreens.kt`): FocusRequester chain, same order. The last field takes Go. `rememberKeptAboveKeyboard()` (`KeyboardFields.kt`) brings the focused field into view on focus and on every IME height change. The activities were already edge-to-edge + adjustResize, and `StartFrame` already pads for the IME.
 - Tests: `SignInKeyboardTest` (player, Robolectric, v2 compose rule) for home, cloud and cloud+Advanced. `PlayerSignInKeyboardUITests` (iPhone/iPad CI): Return moves keyboard focus to the password, the password is above the keyboard, and Return sends the login. Text goes in through `typeExactly` (#510); only Return uses `typeText("\n")`.
@@ -1402,7 +1401,7 @@ Append here: date, session, one to five lines on what changed. Newest last.
 
 - 2026-11-02 — PR #551 (merge 7221566d), follow-ups to #538, both copies (`api/internal/discovery` + `cmd/maktaba-server/internal/mdns`). Linux: systemd-resolved is detected as the responder (resolve1 running, MulticastDNS yes globally and on a link). With RegisterService on its D-Bus interface and polkit `org.freedesktop.resolve1.register-service` allowing it (or root), the announcement goes through D-Bus `RegisterService` (sssqqqaa{say}) on a held-open connection (resolved drops it on close; re-registered if resolved restarts), target = resolved's LLMNRHostname. Otherwise zeroconf announces under `<host>-maktaba` and LocalHostName follows. `.dnssd` files rejected (root-only, read on start/reload). Avahi still wins when both run. Windows: a pktmon capture showed DnsServiceConstructInstance splits the name at every ".", escaped or not, and keeps "\" as a byte, so RFC 6763 escaping doesn't work; a "." in the home name becomes U+2024 on Windows. dns-sd -R, avahi-publish-service and RegisterService take the raw name. zeroconf also split dotted names; its instance is now written as miekg/dns writes a label. Gotchas: the Windows responder answers none of the machine's own queries, so the Windows check reads the adapter with pktmon. Open: the resolved path hasn't run where resolved answers mDNS (follow-up agent turns it on in CI).
 
-- 2026-11-02 — PR #557 (merge b2125c01): play-bundles.yml's Google Play upload is keyless. Workload Identity Federation (GitHub OIDC) via google-github-actions/auth v2.1.13 @ c200f369, `id-token: write` on the play job only; r0adkll/upload-google-play v1.1.5 @ e738b9dd reads the external_account credentials file through `serviceAccountJson` (its google-auth-library 9.15.1 supports it, checked at the sha). Gate: repo variables `PLAY_WIF_PROVIDER` + `PLAY_SERVICE_ACCOUNT`; secret `PLAY_SERVICE_ACCOUNT_JSON` removed everywhere. Why: the owner refused to download a key (Google warns against it). Owner did the Google side the same day: project maktaba-513518 (number 714997343823), service account maktaba-play-upload with no key, pool/provider `github`, Workload Identity User for principalSet …/attribute.repository/Hamza-Labs-Core/Maktaba; Play Console grant is "Release apps to testing tracks" only (no production). Both variables set by the coordinator. Setup steps: docs/google-play.md "One-time setup".
+- 2026-11-02 — PR #557 (merge b2125c01): play-bundles.yml's Google Play upload is keyless. Workload Identity Federation (GitHub OIDC) via google-github-actions/auth v2.1.13 @ c200f369, `id-token: write` on the play job only; r0adkll/upload-google-play v1.1.5 @ e738b9dd reads the external_account credentials file through `serviceAccountJson` (its google-auth-library 9.15.1 supports it, checked at the sha). Gate: repo variables `PLAY_WIF_PROVIDER` + `PLAY_SERVICE_ACCOUNT`; secret `PLAY_SERVICE_ACCOUNT_JSON` removed everywhere. Why: no downloaded key (Google warns against it). The Google side was set up the same day: project maktaba-513518 (number 714997343823), service account maktaba-play-upload with no key, pool/provider `github`, Workload Identity User for principalSet …/attribute.repository/Hamza-Labs-Core/Maktaba; Play Console grant is "Release apps to testing tracks" only (no production). Both variables set by the coordinator. Setup steps: docs/google-play.md "One-time setup".
 
 - 2026-11-02 — PR #541 (merge baa7e1ec): `PlayerConnectProgressUITests` sign-in-and-restore no longer skips on unsigned CI. Cause: an unsigned iOS app can't use the Keychain (`errSecMissingEntitlement`), so no token survived the relaunch. Decision: a Debug-only `-maktaba-secrets-in-file` seam puts `TokenStore` on `UITestSecrets` (JSON in Application Support, removed by `-maktaba-session-reset`); `PlayerUITestCase.launch` always passes it; the Keychain stays covered by `MacKeychain`/`Tokens` unit suites. Bug the skip hid: `RestoreSection`'s Section-level `accessibilityIdentifier` replaced the progress row's `connect.progress.<step>`, so the restore steps were invisible to VoiceOver and tests (a wrapping container doesn't help; SwiftUI merges it and the outer id wins). Fix: no id on the Section; `signin.restoreProblem` on the problem text. All 4 tests pass on iPhone and iPad CI. Gotcha: the scratchpad is shared between sessions, so `xcodebuild -resultBundlePath` needs a unique subfolder.
 
@@ -1453,9 +1452,9 @@ Append here: date, session, one to five lines on what changed. Newest last.
 - 2026-11-02 — PR #539 (merge 99e51114c): the single Apple integration PR. Player UI tests build once per device and run 6 duration-balanced shards per device (`tools/apple/ui-durations.json`), with the three text sizes checked in one launch through a Debug-only, flag-gated `TextSizeHook`. Shards boot while the app builds and wait until the simulator's own processes are quiet (`tools/apple/sim-settle.py`, at most 8 min; waiting for the whole runner to go idle cost 12 min per shard), then fetch the build through the API (`actions: read` in `ci.yml`). The longest shard went from 53.6 to 29.8 min. Folded in: #566 (warm-up and Libraries audit), #567 (whole app log), #568 (Arabic names), #575 (close the app after each test), the RouteStub redirect race, and the permissions-gate `@State` fix. #566's rail swipes were removed: after #569 they did nothing, and a swipe back left a row under the iPad sidebar, failing contrast. testShimmer reads each text size only after the app took it.
 
 - 2026-11-02 — PR #576 (merge a6d918a92): Live guide UI tests flaked (4 of about 200: "time scrolled 116→116", "channels scrolled up 427.5→427.5"). Not a product bug: the XCUITest swipes were quick flicks (58 pt in 58 ms on an iPad row), a drag that finishes in under about 20 ms is never scrolled, and on busy runners the swipes moved nothing. A two-axis guide rework didn't change the result and was dropped. `PlayerUITestCase.drag` presses, moves at 400 pt/s and holds before lifting; the guide tests use it, and the time test checks it returns to its start. Lesson: scroll in tests with press-drag-hold, not `swipeUp()`/`swipeLeft()`.
-- 2026-11-02 — v0.3.56 tagged by hand at 655b565 (#539's final PR head, the same tree as main's merge commit 99e51114c). Its PR CI passed every check, and the update rehearsal passed on 99e51114c. Main CI on 99e51114c had failed three iPhone/iPad UI shards. The owner decided tags no longer wait on those shards; #577 changes the tag guard to match.
+- 2026-11-02 — v0.3.56 tagged by hand at 655b565 (#539's final PR head, the same tree as main's merge commit 99e51114c). Its PR CI passed every check, and the update rehearsal passed on 99e51114c. Main CI on 99e51114c had failed three iPhone/iPad UI shards. Decided: tags no longer wait on those shards; #577 changes the tag guard to match.
 
-- 2026-11-02 — PR #577 (merge d3f00845): the tag guard no longer waits on the iPhone/iPad Player UI shards (owner: "Tag without them"). `tag-guard.sh` judges a failed CI run by its jobs: all must be success or skipped except `IGNORED_CI_JOBS` (the iphone/ipad shards) and `ci-success`. Mac UI, the UI test builds and cancellations still block, and a run in progress is still waited for. Each release prints the ignored failures as a warning. Remove `IGNORED_CI_JOBS` once the shards are fixed. Merge commit `d3f00845`.
+- 2026-11-02 — PR #577 (merge d3f00845): the tag guard no longer waits on the iPhone/iPad Player UI shards. `tag-guard.sh` judges a failed CI run by its jobs: all must be success or skipped except `IGNORED_CI_JOBS` (the iphone/ipad shards) and `ci-success`. Mac UI, the UI test builds and cancellations still block, and a run in progress is still waited for. Each release prints the ignored failures as a warning. Remove `IGNORED_CI_JOBS` once the shards are fixed. Merge commit `d3f00845`.
 
 - 2026-11-02 — PR #578 (merge 5e4bd3943): the Apple TV app (Maktaba TV, com.hamzalabs.maktaba.tv) goes to TestFlight on every v* tag, as a third entry in testflight.yml: tvOS archive, the same automatic signing, and fail-fast off so a TV failure leaves Player and Remote alone. The TV target now declares ITSAppUsesNonExemptEncryption NO; its icons, Top Shelf images and Arabic name were already in place. `test_testflight.py` keeps all three apps in the matrix. The owner still has to create the tvOS app record in App Store Connect. Merge commit `5e4bd3943`.
 
@@ -1475,12 +1474,12 @@ Append here: date, session, one to five lines on what changed. Newest last.
 
 - 2026-11-03 — PR #587 (merge 04f09fc84): Epic 51 spec, configurable components. One catalog of ~30 components; wanted state (absent/installed/enabled plus a hold that survives restarts) in Postgres, actual state per machine with reason codes; disabling stops taking jobs, drains, pauses what is left with no attempt counted, keeps the queue and catches up on enable; dependents wait instead of being disabled; packs come out with each server release under its existing signature; existing installs are seeded from today's switches and checked by update-rehearsal scenario 12; no new paywalls. Rejected: `server.toml` as the store, cascade-disable, one installer per bundle, a third-party store. The story writers found ~25 README errors against the code (wheels download on first run, ollama is Mac only, the relay agent can't be gated, live updates use SSE), all fixed before merge.
 
-- 2026-11-03 — PR #588 (merge b1ed8f51): the owner's answers to Epics 50–53's open questions, applied in one docs PR. Epic 50 gains 50.19: Free (no relay), Basic (~3 Mbps relay, 2 streams, 500 GB soft fair use), Pro (full quality, optional capped pay-as-you-go, never cut off), extra streams paid; no downtime credits; direct certificates on several separate domains outside maktaba.tv; R2 backup copy; CPX22 etcd witness. Epic 51: Stop means "until I turn it on" (no timed holds); plugins point to Epic 54. Epic 52: no LLM judge (52.7 kept as a removed stub), review admins only, background check of all ~45k transcripts, Quran check against the Tanzil text (52.15). Epic 53: crash reports and screenshots off by default, asked at setup; retention 7/30/90 days within 1 GB.
+- 2026-11-03 — PR #588 (merge b1ed8f51): answers to Epics 50–53's open questions, applied in one docs PR. Epic 50 gains 50.19: Free (no relay), Basic (~3 Mbps relay, 2 streams, 500 GB soft fair use), Pro (full quality, optional capped pay-as-you-go, never cut off), extra streams paid; no downtime credits; direct certificates on several separate domains outside maktaba.tv; R2 backup copy; CPX22 etcd witness. Epic 51: Stop lasts until it is turned back on (no timed holds); plugins point to Epic 54. Epic 52: no LLM judge (52.7 kept as a removed stub), review admins only, background check of all ~45k transcripts, Quran check against the Tanzil text (52.15). Epic 53: crash reports and screenshots off by default, asked at setup; retention 7/30/90 days within 1 GB.
 
 - 2026-11-03 — PR #589 (merge 43b18152f): Epic 54 spec, third-party plugins that extend the queue with no internet access, plus a Maktaba store. Plugins are WebAssembly components run by a sandboxed Rust host (`maktaba-plugind`, Wasmtime). Sockets and files are never given to plugins, the host runs in each OS's sandbox, and a CI-only job proves zero network connections on macOS, Linux and Windows. The pipeline keeps the queue and the API checks every call against admin-granted permissions; each plugin is an Epic 51 component. The store (maktaba.tv; docs on maktaba.dev) has automated checks plus human review, developer and Maktaba signatures under an offline root, a signed revocation list, offline file install behind an "Allow unreviewed plugins" opt-in, and paid plugins via Stripe Connect (85/15 proposed). Open owner questions are in README §14.
 
 - 2026-11-03 — PR #590 (merge 3d1fc7b1b): On a Razr Fold's cover screen, the Remote's "Needs attention" tab label wrapped to two lines and ran into the screen edge. Pages also went blank when switching tabs, because each tab's state was thrown away. PR #590 makes bar labels one line at one shared size, inset from the edges, in both Android apps. Pages now keep what they showed while they refresh, and attention groups show translated titles with clean detail lines instead of raw grouping keys. Screenshot tests now cover the Galaxy Fold, Razr Fold (density estimated) and Pixel Fold cover screens at text sizes up to 2.0, in English and Arabic.
 
-- 2026-11-03 — PR #591 (merge fb955c66b): applied the owner's Epic 54 decisions. No Stripe ever; 85/15 split; seller of record and payment provider decided at Phase 3 (candidates Paddle, Adyen for Platforms, or developers selling directly with offline licence keys; reselling third-party products must be confirmed in writing); $25 one-time fee to sell; English and Arabic listings with labelled machine translation; source to reviewers for every version; a sticky admin keep-off separate from the store switch-off that can't be undone; library checkboxes start empty; panels shown to everyone once installed. Story 54.19 was rewritten with no fixed payment provider, and Epic 50's Stripe became "payment provider TBD (not Stripe)". Same PR, at the owner's request: README §15 and stories 54.22–54.36 (Phase 4) spec turning all 56 of Maktaba's own stages into 15 native, trusted first-party plugins on the same interface, using named statements, a database role per plugin, a per-stage switch, CI parity proofs and nine migration waves.
+- 2026-11-03 — PR #591 (merge fb955c66b): applied the Epic 54 decisions. No Stripe ever; 85/15 split; seller of record and payment provider decided at Phase 3 (candidates Paddle, Adyen for Platforms, or developers selling directly with offline licence keys; reselling third-party products must be confirmed in writing); $25 one-time fee to sell; English and Arabic listings with labelled machine translation; source to reviewers for every version; a sticky admin keep-off separate from the store switch-off that can't be undone; library checkboxes start empty; panels shown to everyone once installed. Story 54.19 was rewritten with no fixed payment provider, and Epic 50's Stripe became "payment provider TBD (not Stripe)". Same PR: README §15 and stories 54.22–54.36 (Phase 4) spec turning all 56 of Maktaba's own stages into 15 native, trusted first-party plugins on the same interface, using named statements, a database role per plugin, a per-stage switch, CI parity proofs and nine migration waves.
 
-- 2026-11-03 — Stripe removed everywhere (PR #593, merge 1d5bd9a07), per the owner's rule "No stripe ever"; payment provider TBD. Cloud billing now goes through a `billing.Provider` interface (checkout, portal, verify+parse webhook into neutral events). The only shipped provider is `none` (default `[billing] provider = "none"`; unknown providers fail config validation): paid plans show "Payments coming soon" in English and Arabic, checkout and portal return 503 `payments_not_set_up`, and `/v1/billing/webhook/{provider}` returns 404. Service admins set plans by hand via the new `POST /v1/admin/accounts/{id}/plan` (reason required, audited, not revenue, 409 while a provider bills) and a Set plan dialog in the web console. Migration 00160001 renames the Stripe-named billing columns and ledger to `provider_*` / `provider_events` and adds a `provider` column (up/down tested). Remaining grep hits are old migration SQL, the 0016 rename statements, StripEpisode, visual stripes, "never Stripe" lines in Epics 50/54, and the trail.
+- 2026-11-03 — Stripe removed everywhere (PR #593, merge 1d5bd9a07), per the no-Stripe rule; payment provider TBD. Cloud billing now goes through a `billing.Provider` interface (checkout, portal, verify+parse webhook into neutral events). The only shipped provider is `none` (default `[billing] provider = "none"`; unknown providers fail config validation): paid plans show "Payments coming soon" in English and Arabic, checkout and portal return 503 `payments_not_set_up`, and `/v1/billing/webhook/{provider}` returns 404. Service admins set plans by hand via the new `POST /v1/admin/accounts/{id}/plan` (reason required, audited, not revenue, 409 while a provider bills) and a Set plan dialog in the web console. Migration 00160001 renames the Stripe-named billing columns and ledger to `provider_*` / `provider_events` and adds a `provider` column (up/down tested). Remaining grep hits are old migration SQL, the 0016 rename statements, StripEpisode, visual stripes, "never Stripe" lines in Epics 50/54, and the trail.
