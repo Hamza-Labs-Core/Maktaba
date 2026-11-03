@@ -175,6 +175,33 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 10), "back on Live TV")
     }
 
+    /// Going home while a channel plays keeps it playing (the owner's report: leaving the app cut
+    /// it): the player goes on reloading the channel's live playlist while the app is away (it
+    /// reaches the home through the app's own stream proxy, so a suspended app reads nothing), and
+    /// the channel is still on screen back in the app. The simulator does not enforce
+    /// background modes (see `PlayerWatchUITests.testGoingHomeWhilePlayingKeepsItPlaying`,
+    /// which checks the shipped Info.plist): this proves leaving and coming back keeps it going.
+    func testGoingHomeWhileAChannelPlaysKeepsItPlaying() {
+        launchSignedIn(section: "live", open: "channel/ch-1")
+        XCTAssertTrue(element("screen.channel").waitForExistence(timeout: 20), "the live player")
+        XCTAssertTrue(wait(timeout: 20) { self.home.seen.contains { $0.hasPrefix("GET /stream/channel/ch-1/seg") } },
+                      "it plays; the home saw \(home.seen)")
+        let reloads = { self.home.seen.filter { $0 == "GET /stream/channel/ch-1/live.m3u8" }.count }
+
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(XCUIApplication(bundleIdentifier: "com.apple.springboard").wait(for: .runningForeground, timeout: 10),
+                      "the Home Screen is in front")
+        let away = reloads()
+        // a live playlist (no end, 2 s segments): the player reloads it every few seconds
+        XCTAssertTrue(wait(timeout: 30) { reloads() >= away + 3 }, "the live playlist reloads in the background: \(away) then \(reloads())")
+
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
+        XCTAssertTrue(channel(contains: "Lectures TV"), "still on channel 1")
+        XCTAssertTrue(app.buttons["live.player.pause"].waitForExistence(timeout: 20), "still playing: the pause button")
+        shot("live-back-from-home")
+    }
+
     /// Away from home (`tv/info` says `via_relay`): it tunes a remote session, plays its URL
     /// through the relay loader, heartbeats (every 2 s here: the beat's own clock is the
     /// fake one in MaktabaKit's LiveRelayTests), and ends the session on leaving.

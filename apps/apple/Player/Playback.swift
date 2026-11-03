@@ -276,6 +276,13 @@ final class Playback {
         ].joined(separator: ";")
     }
 
+    /// A player that plays on when the person leaves the app without Picture in Picture.
+    static func newPlayer() -> AVPlayer {
+        let p = AVPlayer()
+        p.keepPlayingInBackground()
+        return p
+    }
+
     private func run(_ v: Video, asked: Double?) async {
         var state = v.playbackState
         if asked == nil, state == nil {
@@ -321,8 +328,7 @@ final class Playback {
             signedURL = url
             proxiedURL = local
             let item = AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route))
-            let p = player ?? AVPlayer()
-            p.keepPlayingInBackground()
+            let p = player ?? Self.newPlayer()
             observe(item, of: p)
             p.replaceCurrentItem(with: item)
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
