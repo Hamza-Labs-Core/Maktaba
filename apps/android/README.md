@@ -73,7 +73,12 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
   code: `POST /api/pairing/device` (this device's name as `device_label`), the code shown
   large with a QR of `verify_url` (else the home's `verify_path`), polling
   `/api/pairing/device/token` until approved, a new code when one runs out (`DeviceSignIn`).
-  **Approve a sign-in** is in the account menu of both apps: type or scan the code,
+  **Approve a TV or device** is in sight: a TV-with-check button on every Remote place's top
+  bar (before the account menu, which keeps the item too) and the first row of the Player's
+  Profile. While a device waits (`GET /api/pairing/pending`, asked every 12 s while the app is
+  in front; never the code), both apps show a banner at the top ("A TV is asking to sign in:
+  … Enter code") and a notification on the "Sign-in requests" channel when notifications are
+  allowed (the app never asks for them just for this). Approving: type or scan the code,
   `GET /api/pairing/device/{code}` shows what is asking (app, platform, device, its name), then
   an explicit Approve (`POST /api/pairing/approve`). An older home without the lookup is
   approved only after a warning to check the code on one's own device.

@@ -9,6 +9,8 @@ struct RemoteRoot: View {
     let user: User
     @State private var model: RemoteModel
     @SceneStorage("remote.tab") private var tab = RemoteTab.attention
+    @State private var pending = PendingSignInsWatcher()
+    @Environment(\.scenePhase) private var scenePhase
 
     init(session: AppSession, user: User, client: APIClient) {
         self.session = session
@@ -37,8 +39,26 @@ struct RemoteRoot: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        // a TV (or another device) waiting for an approval: said at the top, Enter code
+        // opens Approve a TV or device
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let request = pending.banner {
+                PendingSignInBanner(request: request,
+                                    enterCode: { session.approvingSignIn = true },
+                                    dismiss: { pending.dismiss() })
+            }
+        }
         .environment(model)
         .task { await model.poll() }
+        // asked every 12 s while the app is in front only
+        .task(id: scenePhase == .active) {
+            guard scenePhase == .active else { return }
+            await pending.run(model.client)
+        }
+        // back from approving: the device approved is no longer waiting
+        .onChange(of: session.approvingSignIn) { _, open in
+            if !open { Task { await pending.refresh(model.client) } }
+        }
     }
 
     private func screen(@ViewBuilder _ content: () -> some View) -> some View {
@@ -57,10 +77,17 @@ struct AccountMenu: ToolbarContent {
     @AppStorage(ThemeMode.storageKey) private var theme = ThemeMode.system
 
     var body: some ToolbarContent {
+        // a TV, phone or computer showing a sign-in code (Epic 42 story 42.6): in sight on
+        // every screen, not only under the account menu
+        ToolbarItem(placement: .primaryAction) {
+            Button(ConnectStrings.forPreferredLanguages().text(.approveMenu), systemImage: "checkmark.tv") {
+                model.session.approvingSignIn = true
+            }
+            .accessibilityIdentifier("approve.tv")
+        }
         ToolbarItem(placement: .secondaryAction) {
             Menu("Account", systemImage: "person.crop.circle") {
                 if let home = model.session.current { Text(home.name) }
-                // a TV, phone or computer showing a sign-in code (Epic 42 story 42.6)
                 Button(ConnectStrings.forPreferredLanguages().text(.approveMenu), systemImage: "checkmark.shield") {
                     model.session.approvingSignIn = true
                 }

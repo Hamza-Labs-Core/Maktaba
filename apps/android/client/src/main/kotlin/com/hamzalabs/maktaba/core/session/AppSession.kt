@@ -656,6 +656,7 @@ class AppSession(
         onCode: (DeviceCode) -> Unit,
         sleep: suspend (Long) -> Unit = this.sleep,
         renew: Boolean = true,
+        onLookedUp: () -> Unit = {},
     ) {
         val c = client ?: return
         val home = _current.value ?: return
@@ -668,7 +669,7 @@ class AppSession(
                 if (c !== client) return
                 onCode(code)
                 _progress.value = ConnectProgress.AwaitingApproval(code.code, device.deadline(code), attempt)
-                val tokens = device.poll(code)
+                val tokens = device.poll(code, onLookedUp)
                 if (c !== client) return
                 if (tokens != null) {
                     c.keep(tokens)

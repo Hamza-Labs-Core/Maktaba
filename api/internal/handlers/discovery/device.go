@@ -8,8 +8,12 @@
 //	                                  asking comes from X-Maktaba-Client)
 //	GET  /api/pairing/device/{code}   signed in: what is asking with that code
 //	POST /api/pairing/approve         signed in: the person approves the code
-//	POST /api/pairing/device/token    public, per IP: the app polls; 202 until approved,
-//	                                  then its tokens (once)
+//	POST /api/pairing/device/token    public, per IP: the app polls; 202 until approved
+//	                                  (with looked_up once a phone read its code), then
+//	                                  its tokens (once)
+//	GET  /api/pairing/pending         signed in on the home, per IP: the devices waiting
+//	                                  for an approval (what they are, never their code),
+//	                                  so a phone can say "a TV is asking to sign in"
 //
 // The device code the app keeps is its expiry, the key's id and a random part, and the
 // code it shows is an HMAC of that under the key (DeviceKey: the home derives it from
@@ -34,6 +38,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -83,9 +88,16 @@ const deviceCodeLen = 8 + 4 + 16
 // deviceRequest is what asked for a code: its app, platform and device (from
 // X-Maktaba-Client) and the label it gave, until the code expires.
 type deviceRequest struct {
+	// ID names the request in GET /api/pairing/pending (random: it says nothing of the
+	// code, so the list cannot be turned into an approval).
+	ID      string
 	Client  client.Info
 	Label   string
+	Created time.Time
 	Expires time.Time
+	// LookedUp is when a signed-in person first read this code (DeviceLookup): the app
+	// showing it says "your phone found this TV".
+	LookedUp time.Time
 }
 
 // deviceRequests are the codes waiting for an approval, by code (eight characters, no
@@ -127,6 +139,35 @@ func (d *deviceRequests) get(code string, now time.Time) (deviceRequest, bool) {
 	return r, true
 }
 
+// lookedUp marks a code read by an approver (the first time counts).
+func (d *deviceRequests) lookedUp(code string, now time.Time) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if r, ok := d.m[code]; ok && r.LookedUp.IsZero() {
+		r.LookedUp = now
+		d.m[code] = r
+	}
+}
+
+// pending is every request still waiting, newest first.
+func (d *deviceRequests) pending(now time.Time) []deviceRequest {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]deviceRequest, 0, len(d.m))
+	for _, r := range d.m {
+		if !now.After(r.Expires) {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if !out[i].Created.Equal(out[j].Created) {
+			return out[i].Created.After(out[j].Created)
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
 // drop forgets a code (its app collected its tokens).
 func (d *deviceRequests) drop(code string) {
 	d.mu.Lock()
@@ -137,7 +178,7 @@ func (d *deviceRequests) drop(code string) {
 // MountDevice attaches the sign-in-by-code routes. perMin caps the public ones per IP
 // (0: the defaults; negative: no limit, for tests).
 func (h *Handler) MountDevice(r chi.Router, perMin int) {
-	start, poll := []func(http.Handler) http.Handler(nil), []func(http.Handler) http.Handler(nil)
+	start, poll, pending := []func(http.Handler) http.Handler(nil), []func(http.Handler) http.Handler(nil), []func(http.Handler) http.Handler(nil)
 	if perMin >= 0 {
 		s, p := 20, 60
 		if perMin > 0 {
@@ -145,11 +186,14 @@ func (h *Handler) MountDevice(r chi.Router, perMin int) {
 		}
 		start = append(start, mw.PerIP(s))
 		poll = append(poll, mw.PerIP(p))
+		// the apps ask every 10–15 s while open: a few apps behind one address fit
+		pending = append(pending, mw.PerIP(p))
 	}
 	r.With(start...).Post("/api/pairing/device", h.DeviceStart)
 	r.Get("/api/pairing/device/{code}", h.DeviceLookup)
 	r.Post("/api/pairing/approve", h.Approve)
 	r.With(poll...).Post("/api/pairing/device/token", h.DeviceToken)
+	r.With(pending...).Get("/api/pairing/pending", h.DevicePending)
 }
 
 type deviceStartRequest struct {
@@ -188,9 +232,16 @@ func (h *Handler) DeviceStart(w http.ResponseWriter, r *http.Request) {
 	}
 	code := h.deviceCode(raw)
 	expires := time.Unix(exp.Unix(), 0).UTC()
+	id := make([]byte, 9)
+	if _, err := rand.Read(id); err != nil {
+		httperror.Write(w, r, httperror.Internal("device request id").Wrap(err))
+		return
+	}
 	if !h.requests.put(code, deviceRequest{
+		ID:      base64.RawURLEncoding.EncodeToString(id),
 		Client:  client.Parse(r.Header.Get(client.Header)),
 		Label:   cleanLabel(body.DeviceLabel),
+		Created: time.Unix(now.Unix(), 0).UTC(),
 		Expires: expires,
 	}, now) {
 		httperror.Write(w, r, httperror.Unavailable(30))
@@ -230,10 +281,15 @@ func (h *Handler) DeviceLookup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := discovery.NormalizeCode(chi.URLParam(r, "code"))
-	req, ok := h.requests.get(code, h.now())
+	now := h.now()
+	req, ok := h.requests.get(code, now)
 	if !validDeviceCode(code) || !ok {
 		httperror.Write(w, r, codeNotHeld())
 		return
+	}
+	// a cloud sign-in may read a code but cannot approve it: the device is not told
+	if !principal.FromContext(r.Context()).ViaCloud() {
+		h.requests.lookedUp(code, now)
 	}
 	common.WriteJSON(w, r, http.StatusOK, deviceLookupResponse{
 		Code:        code[:4] + "-" + code[4:],
@@ -243,6 +299,52 @@ func (h *Handler) DeviceLookup(w http.ResponseWriter, r *http.Request) {
 		DeviceLabel: req.Label,
 		ExpiresAt:   req.Expires,
 	})
+}
+
+// pendingRequest is one device waiting for an approval, as a signed-in app shows it:
+// what it is and when it asked, never its code or its device code. The person still
+// types or scans the code from the device's screen: that is the proof they can see it.
+type pendingRequest struct {
+	ID          string    `json:"id"`
+	ClientApp   string    `json:"client_app"`
+	Platform    string    `json:"platform"`
+	Device      string    `json:"device"`
+	DeviceLabel string    `json:"device_label"`
+	CreatedAt   time.Time `json:"created_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+type pendingResponse struct {
+	Count    int              `json:"count"`
+	Requests []pendingRequest `json:"requests"`
+}
+
+// DevicePending lists the devices waiting for an approval, for a person signed in on
+// the home (any role: each approves for themselves). A sign-in through Maktaba Cloud
+// cannot approve (Approve), so it is told of nothing: an empty list.
+func (h *Handler) DevicePending(w http.ResponseWriter, r *http.Request) {
+	p := principal.FromContext(r.Context())
+	if p == nil {
+		httperror.Write(w, r, unauthorized())
+		return
+	}
+	out := pendingResponse{Requests: []pendingRequest{}}
+	if !p.ViaCloud() {
+		for _, req := range h.requests.pending(h.now()) {
+			out.Requests = append(out.Requests, pendingRequest{
+				ID:          req.ID,
+				ClientApp:   known(req.Client.App),
+				Platform:    known(req.Client.Platform),
+				Device:      known(req.Client.Device),
+				DeviceLabel: req.Label,
+				CreatedAt:   req.Created,
+				ExpiresAt:   req.Expires,
+			})
+		}
+	}
+	out.Count = len(out.Requests)
+	w.Header().Set("Cache-Control", "no-store")
+	common.WriteJSON(w, r, http.StatusOK, out)
 }
 
 type approveRequest struct {
@@ -344,7 +446,11 @@ func (h *Handler) DeviceToken(w http.ResponseWriter, r *http.Request) {
 			httperror.Write(w, r, gone("code not held: ask for a new one"))
 			return
 		}
-		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"status": "pending", "interval": devicePollInterval})
+		// looked_up: a signed-in person read this code (the device can say "your phone
+		// found this TV"); only the device holding the device code is told
+		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{
+			"status": "pending", "interval": devicePollInterval, "looked_up": !asked.LookedUp.IsZero(),
+		})
 		return
 	case errors.Is(err, discovery.ErrCodeExpired):
 		httperror.Write(w, r, gone("approval expired: ask for a new code"))
