@@ -234,7 +234,7 @@ async def run_agent(
             # (and at every retry): a node paused at start has no map yet
             locator = share.ShareLocator(root, how, path_map=active_path_map)
         files = await asyncio.to_thread(
-            ClusterFiles, None, ip, worker_id, reason=how, locate=locator
+            ClusterFiles, None, ip, worker_id, reason=how, locate=locator, status_dir=status_dir()
         )
         await asyncio.to_thread(
             files.set_identity,

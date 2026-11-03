@@ -121,9 +121,10 @@ class MaktabaTvConfig:
     loudnorm_target_lufs: float = -16.0
     #: speechnorm: the most a quiet passage is raised (times; dizqueTV's 6.25)
     speechnorm_expansion: float = 6.25
-    #: the corner logo is left off filler and bumpers (dizqueTV's disableFillerOverlay);
-    #: programmes and live broadcasts always carry it
-    watermark_skip_filler: bool = True
+    #: the corner logo is left off filler and bumpers (dizqueTV's disableFillerOverlay)
+    #: when on; off (the default), every block carries it, programmes and live broadcasts
+    #: always do
+    watermark_skip_filler: bool = False
     #: every channel's schedule is planned this many days ahead (what the guide shows)
     horizon_days: int = 7
     #: a channel is topped up when less than this many days are planned
@@ -561,8 +562,8 @@ register(
         "watermark_skip_filler": Help(
             TV,
             "No corner logo on filler",
-            "Filler clips and bumpers air without the channel's corner logo, as dizqueTV; "
-            "programmes and live broadcasts always carry it. Off: the logo on every block.",
+            "Off (default): the logo on every block. On: filler clips and bumpers air "
+            "without it, as dizqueTV.",
         ),
         "horizon_days": Help(
             TVG,

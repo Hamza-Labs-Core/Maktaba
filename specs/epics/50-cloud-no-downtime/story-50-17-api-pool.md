@@ -32,6 +32,10 @@ apps ── api.maktaba.tv (Cloudflare proxy) ── Hetzner LB11 (HTTP, health 
   (architecture §13.6). Any node can serve any request.
 - The real client IP: nodes trust `CF-Connecting-IP` only when the request comes from the LB's
   private address, and the LB only accepts Cloudflare's IP ranges (Hetzner firewall).
+- **Updated by 50.31:** the LB takes no public traffic. `cloudflared` runs on two of the API
+  nodes and sends the Tunnel's traffic to the LB's private address; the LB's public interface
+  is off. The nodes' `server.trusted_proxies` is the LB's private address. The admin listener
+  (50.32) sits behind a second LB service on its own port.
 
 ### 2. The worker runs once
 

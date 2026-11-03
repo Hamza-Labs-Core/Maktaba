@@ -5,7 +5,7 @@ While a component is off its stages make no jobs: an upstream job that finishes 
 edge as ``skipped_component_off`` (``engine/propagate.py``). When the component comes back
 its leader (``components/runner.py``) enqueues this job with the payload
 ``{"components": [{"component": "<id>", "off_since": "<ts>" | null}]}`` (entries of two
-components enabled at once are merged into one job, slot 0175).
+components enabled at once are merged into one job, slot 0176).
 
 For each component's stage S and each graph edge U -> S, the ``done`` jobs of U with a
 success outcome that finished since ``off_since`` (all of them when it is unknown) are

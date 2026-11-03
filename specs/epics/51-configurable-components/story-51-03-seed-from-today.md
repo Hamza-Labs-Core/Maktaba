@@ -168,7 +168,7 @@ Scenarios 13–14 (packs) belong to 51.18.
 | `cmd/maktaba-server/internal/componentseed/toml.go` (new) | The imported keys, line lookup, `toml_key_superseded`. |
 | `cmd/maktaba-server/internal/componentseed/seed_test.go`, `seed_pg_test.go` (new) | T01–T08. |
 | `cmd/maktaba-server/cmd_serve.go` | Call `Seed` after the database is up, before `Build*`; nodes call the override seed. |
-| `shared/db/migrations/0173_components.sql` / `.sqlite.sql` | `component_override_seed` is added to 51.02's slot (coordinate in the same integration branch; no new slot). |
+| `shared/db/migrations/0174_components.sql` / `.sqlite.sql` | `component_override_seed` is added to 51.02's slot (coordinate in the same integration branch; no new slot). |
 | `shared/components/catalog.toml` (+ synced copy) | Reason `toml_superseded`. |
 | `web/src/i18n/en.json`, `web/src/i18n/ar.json` | `components.reason.toml_superseded`, English and Arabic. |
 | `api/rehearsal_components_e2e_test.go` (new) | Scenario 12. |

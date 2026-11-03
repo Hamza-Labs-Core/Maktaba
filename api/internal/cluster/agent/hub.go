@@ -6,8 +6,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -83,7 +85,10 @@ type Config struct {
 	// HomeAddr is the home's folder / address ("" → LANAddress()).
 	HomeAddr string
 	// Locator finds the cluster directory; nil writes no files.
-	Locator       *Locator
+	Locator *Locator
+	// LocalDir is this machine's own cluster folder (~/.maktaba/cluster): its
+	// local fallback and its status folder are swept too. Empty: not swept.
+	LocalDir      string
 	RetentionDays int
 	FileMaxBytes  int64
 
@@ -348,9 +353,21 @@ func (h *Hub) locateLoop(ctx context.Context) {
 func (h *Hub) sweepLoop(ctx context.Context) {
 	sweep := func() {
 		loc := h.Location()
-		if n, err := h.sweeper.Sweep(loc.Dir); err != nil {
+		n, err := h.sweeper.Sweep(loc.Dir)
+		if local := h.cfg.LocalDir; local != "" {
+			// the home's own folder: its local fallback (when the share is in use) and
+			// its processes' status files
+			if filepath.Clean(local) != filepath.Clean(loc.Dir) {
+				m, lerr := h.sweeper.Sweep(local)
+				n, err = n+m, errors.Join(err, lerr)
+			}
+			m, serr := h.sweeper.SweepStatus(filepath.Join(local, "status"))
+			n, err = n+m, errors.Join(err, serr)
+		}
+		if err != nil {
 			h.log().Warn("cluster: retention sweep failed", "err", err, "event", "cluster_sweep_failed")
-		} else if n > 0 {
+		}
+		if n > 0 {
 			h.log().Info("cluster: expired cluster files removed", "count", n, "event", "cluster_sweep")
 		}
 	}

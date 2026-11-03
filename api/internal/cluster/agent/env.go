@@ -119,6 +119,7 @@ func FromEnv(getenv func(string) string) (Config, []string) {
 	if err != nil {
 		warn = append(warn, "MAKTABA_PATH_MAP ignored: "+err.Error())
 	}
+	cfg.LocalDir = FallbackDir()
 	cfg.Locator = &Locator{
 		Override:  strings.TrimSpace(getenv("MAKTABA_CLUSTER_DIR")),
 		ShareRoot: strings.TrimSpace(getenv("MAKTABA_SHARE_ROOT")),

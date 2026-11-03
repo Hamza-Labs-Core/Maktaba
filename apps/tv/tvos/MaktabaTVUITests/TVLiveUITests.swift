@@ -103,6 +103,8 @@ final class TVLiveUITests: XCTestCase {
         remote.press(.menu)
         XCTAssertTrue(mini.waitForNonExistence(timeout: 10), "Menu closes the mini-guide")
         XCTAssertTrue(player.exists, "and the channel keeps playing")
+        // Menu puts a banner away before it leaves: wait for it to go on its own first
+        XCTAssertTrue(element("live.player.banner").waitForNonExistence(timeout: 15), "the banner goes")
         remote.press(.menu)
         XCTAssertTrue(player.waitForNonExistence(timeout: 10), "Menu again leaves the player")
         XCTAssertTrue(onNow.waitForExistence(timeout: 10), "back on the guide")
@@ -139,6 +141,8 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(element("live.miniguide").waitForExistence(timeout: 10))
         shot("tv-live-miniguide-ar")
         remote.press(.menu)
+        XCTAssertTrue(element("live.miniguide").waitForNonExistence(timeout: 10))
+        XCTAssertTrue(element("live.player.banner").waitForNonExistence(timeout: 15), "the banner goes")
         remote.press(.menu)
         XCTAssertTrue(element("live.player").waitForNonExistence(timeout: 10))
     }
@@ -168,6 +172,112 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(element("feature.turnOn").label.contains("/settings/components"), "where to turn it on")
         XCTAssertFalse(app.buttons["live.channel.ch-1"].exists, "no channels")
         shot("tv-live-off-admin")
+    }
+
+    /// The bug: a channel slower to start than the banner's six seconds kept the
+    /// banner up for good. Here the playlist is held until the banner's time has passed (a
+    /// latch: a 9 s delay raced the checks on a loaded runner): the banner stays while it
+    /// starts, then goes 6 s after the picture plays; Play/Pause brings it back, Menu puts it away. The
+    /// picture fills the screen edge to edge, and nothing is drawn over the top-right corner,
+    /// where the home burns the channel's logo into the picture.
+    func testBannerHidesAfterASlowStart() throws {
+        home.hold("GET", "/stream/channel/ch-1/index.m3u8")
+        signIn("en")
+        openLiveTab("Live TV")
+        let first = app.buttons["live.channel.ch-1"]
+        moveFocus(to: first, with: .down)
+        remote.press(.select)
+
+        let player = element("live.player")
+        XCTAssertTrue(player.waitForExistence(timeout: 10), "the live player")
+        let banner = element("live.player.banner")
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "the banner on the tune")
+        sleep(7)
+        XCTAssertTrue(banner.exists, "it stays while the channel starts")
+        XCTAssertTrue(element("live.player.starting").exists, "still starting after the banner's time")
+        home.release()
+        XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
+
+        // the whole picture, nothing cropped; the watermark's corner kept clear
+        let screen = app.windows.firstMatch.frame
+        let video = element("live.player.video")
+        XCTAssertTrue(video.waitForExistence(timeout: 5), "the picture")
+        XCTAssertEqual(video.frame, screen, "the picture fills the screen")
+        let corner = CGRect(x: screen.maxX - screen.width * 0.16, y: screen.minY,
+                            width: screen.width * 0.16, height: screen.height * 0.2)
+        XCTAssertTrue(banner.exists)
+        XCTAssertFalse(banner.frame.intersects(corner), "the banner sits clear of the top-right corner: \(banner.frame)")
+        shot("tv-live-slow-start-playing")
+
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 10), "the banner goes after a slow start")
+        XCTAssertTrue(player.exists, "and the channel keeps playing")
+        shot("tv-live-slow-start-clear")
+
+        remote.press(.playPause)
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "Play/Pause shows the banner again")
+        remote.press(.menu)
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 5), "Menu puts it away")
+        XCTAssertTrue(player.exists, "without leaving the channel")
+
+        remote.press(.select)
+        let mini = element("live.miniguide")
+        XCTAssertTrue(mini.waitForExistence(timeout: 10), "the mini-guide")
+        XCTAssertFalse(mini.frame.intersects(corner), "clear of the top-right corner too")
+        XCTAssertTrue(mini.waitForNonExistence(timeout: 15), "the mini-guide goes on its own")
+        remote.press(.menu)
+        XCTAssertTrue(player.waitForNonExistence(timeout: 10), "Menu leaves the player")
+    }
+
+    /// The bug: the TV's home had Continue watching and nothing else. Every row of
+    /// the Player's Home is there, with its posters; a row that fails stays as a retry tile.
+    func testHomeHasEveryRow() throws {
+        home.stub("GET", "/api/channels/now", status: 500, body: #"{"title":"down","status":500}"#)
+        signIn("en")
+        let rows = ["continue", "ondeck", "live", "favorites", "added", "watched", "pinned-lib-lectures", "rec-for_you"]
+        XCTAssertTrue(element("home.row.continue").waitForExistence(timeout: 20), "Home; the home saw \(home.seen)")
+        for row in rows {
+            XCTAssertTrue(element("home.row.\(row)").exists, "the \(row) row")
+        }
+        XCTAssertTrue(home.seen.contains("GET /api/home"), "Home's rows from /api/home")
+        XCTAssertTrue(app.staticTexts["Recently added"].exists && app.staticTexts["Up next"].exists, "the row titles")
+        XCTAssertTrue(element("video.card.v2.art").waitForExistence(timeout: 20), "a card's poster")
+        shot("tv-home-en")
+
+        // On now could not be read: a retry tile in its place; Select reads again
+        let retry = element("home.row.live").descendants(matching: .any)["home.row.retry"].firstMatch
+        XCTAssertTrue(retry.exists, "a failed row stays as a retry tile")
+        home.reset()
+        moveFocus(to: retry, with: .down)
+        remote.press(.select)
+        XCTAssertTrue(element("home.live.ch-1").waitForExistence(timeout: 20), "On now, read again")
+    }
+
+    /// Home in Arabic: the rows' titles are the app's own, translated.
+    func testHomeHasEveryRowArabic() throws {
+        signIn("ar")
+        XCTAssertTrue(element("home.row.added").waitForExistence(timeout: 20), "Home")
+        XCTAssertTrue(app.staticTexts["أضيف حديثًا"].exists, "Recently added in Arabic")
+        XCTAssertTrue(app.staticTexts["يُعرض الآن"].exists, "On now in Arabic")
+        shot("tv-home-ar")
+    }
+
+    /// The bug: the libraries had no pictures. Each tile shows its newest video's.
+    func testLibraryTilesHaveArt() throws {
+        signIn("en")
+        let tab = app.tabBars.buttons["Libraries"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        for _ in 0..<4 where !app.tabBars.buttons.allElementsBoundByIndex.contains(where: \.hasFocus) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: tab, with: .right)
+        remote.press(.select)
+        XCTAssertTrue(wait { self.home.seen.contains("GET /api/libraries/summary") }, "the libraries with their art")
+        for lib in ["lib-docs", "lib-lectures"] {
+            XCTAssertTrue(element("library.card.\(lib).art").waitForExistence(timeout: 20), "\(lib)'s picture")
+        }
+        XCTAssertTrue(home.seen.contains("GET /api/videos/v12/poster"), "the newest video's poster, with the token")
+        shot("tv-libraries-en")
     }
 
     // MARK: helpers

@@ -72,6 +72,18 @@ final class PlayerWatchTests: XCTestCase {
         XCTAssertEqual(WatchLogic.qualities([]).map(\.kbps), [6000, 3000, 1200], "direct play: the service's own rungs")
     }
 
+    /// The sound's codec is any enabled track's known one: around an audio switch the item
+    /// lists a track not read yet (no formats) before the one that plays (PR #595's iPad run
+    /// reported "audio" for 30 s after a switch to Arabic, the sound on).
+    func testTheSoundsCodecIsAnyEnabledTracksKnownOne() {
+        XCTAssertNil(PlayerTracks.codec(of: []), "no audio track enabled")
+        XCTAssertEqual(PlayerTracks.codec(of: [[kAudioFormatMPEG4AAC]]), "aac")
+        XCTAssertEqual(PlayerTracks.codec(of: [[], [kAudioFormatMPEG4AAC]]), "aac", "a track not read yet, then the one that plays")
+        XCTAssertEqual(PlayerTracks.codec(of: [[0x7A7A_7A7A], [kAudioFormatEnhancedAC3]]), "eac3")
+        XCTAssertEqual(PlayerTracks.codec(of: [[]]), "audio", "a track whose format is not read yet")
+        XCTAssertEqual(PlayerTracks.codec(of: [[0x7A7A_7A7A]]), "audio", "a format not listed")
+    }
+
     // MARK: the tracks, on a real stream
 
     /// FR-39a: a stream with sound (the home's shape: AAC in the video's segments) plays with
@@ -140,7 +152,16 @@ final class PlayerWatchTests: XCTestCase {
         PlayerTracks.select(ar, in: groups.audible, of: item)
         PlayerTracks.ensureAudio(player: player, item: item, audible: groups.audible)
         XCTAssertEqual(PlayerTracks.selected(in: groups.audible, of: item)?.language, "ar")
-        try await wait("the Arabic sound plays") { PlayerTracks.sound(player: player, item: item).codec == "aac" }
+        // as the app does: the selection's change notification makes sure of the sound again
+        try await wait("the switch lands", timeout: 20) { item.tracks.contains { $0.isEnabled && $0.assetTrack?.mediaType == .audio } }
+        PlayerTracks.ensureAudio(player: player, item: item, audible: groups.audible)
+        var codec: String?
+        let end = Date().addingTimeInterval(20)
+        while codec != "aac", Date() < end {
+            codec = await PlayerTracks.loadedSound(player: player, item: item).codec
+            if codec != "aac" { try await Task.sleep(for: .milliseconds(100)) }
+        }
+        XCTAssertEqual(codec, "aac", "the Arabic sound plays")
         XCTAssertTrue(PlayerTracks.sound(player: player, item: item).audible)
     }
 

@@ -254,7 +254,7 @@ components_chaos:
   - 'pipeline/src/maktaba_pipeline/engine/sync.py'
   - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
   - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
-  - 'shared/db/migrations/0175_component_stage_gate.sql'
+  - 'shared/db/migrations/0176_component_stage_gate.sql'
   - 'tests/components/**'
   - '.github/workflows/_components.yml'
 
@@ -492,7 +492,9 @@ devportal:
   - 'web/packages/devportal/**'
   - 'docs/developers/**'
   - 'CHANGELOG.md'
+  - 'CHANGELOG.ar.md'
   - 'shared/api/openapi.json'
+  - 'shared/api/openapi.ar.json'
   - 'api/internal/security/disclosure.go'
   - 'web/public/icons/**'
   - '.github/workflows/_devportal.yml'

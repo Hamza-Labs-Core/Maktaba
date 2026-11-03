@@ -1,13 +1,13 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0174 (Epic 51, story 51.03) - a joined machine's first overrides.
+-- Slot 0175 (Epic 51, story 51.03) - a joined machine's first overrides.
 --
 -- The home's supervisor seeds the home's desired state once, from what it runs today
 -- (story 51.03; it writes the tables). A joined machine seeds nothing at home level: at
 -- its first boot on this release it writes overrides for itself, only where its own
 -- server.toml differs from the home ([tv] slots off on a machine whose home has them on).
--- maktaba_worker has only SELECT on component_overrides (slot 0173), so the machine goes
+-- maktaba_worker has only SELECT on component_overrides (slot 0174), so the machine goes
 -- through component_override_seed(p_node, p_rows): guarded by cluster_node_guard (its own
 -- node only), it inserts a row only where the machine has none for that component, so an
 -- override an admin set (or cleared, which keeps the row) is never replaced. p_rows is a

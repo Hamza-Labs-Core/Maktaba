@@ -12,6 +12,16 @@ final class PlayerShellUITests: PlayerUITestCase {
     /// A library card of `Fixtures/libraries-summary.json` (the Libraries root, story 48.18).
     private let libraryCard = "library.lib-docs"
 
+    /// Continue pressed the moment the first run's walkthrough shows (what `launch` does) closes
+    /// it, and it stays closed: on PR #595's iPad run the sheet stayed up with Continue
+    /// pressed and the model's flag already false; the button now closes its sheet itself.
+    func testTheWalkthroughClosesOnContinueAndStaysClosed() {
+        launch()
+        sleep(2)
+        XCTAssertFalse(element("permissions.walkthrough").exists, "closed, and not shown again")
+        XCTAssertTrue(app.textFields["picker.address"].waitForExistence(timeout: 10), "the home picker, reachable")
+    }
+
     /// A TestFlight build shows `PlayerSection.enabled`: Home (story 48.17) first, then
     /// Libraries (48.18) reading the home's library cards, Live TV (48.21, the mock has
     /// channels), Search (48.20) and Profile (48.22).

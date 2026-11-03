@@ -11,7 +11,7 @@ import pytest
 from maktaba_pipeline.classify.production_style import STYLE_VERSION, StyleMetrics
 from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.enqueue import enqueue_job
-from maktaba_pipeline.engine.graph import CATALOG_ID
+from maktaba_pipeline.engine.graph import CATALOG_ID, get_stage
 from maktaba_pipeline.engine.media import reset_runner
 from maktaba_pipeline.engine.sql import dumps, loads, now, to_ts
 from maktaba_pipeline.engine.stages.write_channels import FOLLOW_PLAN, content_hash
@@ -359,3 +359,11 @@ def test_content_hash_ignores_unrelated_keys() -> None:
     a = {"number": 1, "name": "x", "mode_config": {"a": 1}, "extra": "ignored"}
     assert content_hash(a) == content_hash({**a, "extra": "other"})
     assert content_hash(a) != content_hash({**a, "name": "y"})
+
+
+def test_write_channels_runs_again_for_the_logo_on_filler_default() -> None:
+    """Version 5: rules tv.watermark_skip_filler is off by default (the corner logo on every
+    block). The bump makes the version sweep run write_channels on the update, which
+    re-stages every channel whose stored look still leaves the logo off filler."""
+    stage = get_stage("write_channels")
+    assert stage is not None and stage.version >= 5

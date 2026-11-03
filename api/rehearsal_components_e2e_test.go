@@ -108,7 +108,7 @@ func (m *appMachine) componentsHome(db *sql.DB) componentsHome {
 	t := m.r.t
 	t.Helper()
 	h := componentsHome{Processes: m.settledProcesses(3 * time.Minute)}
-	// the catch-up stage is new with this release (slot 0173, hidden): not a stage the
+	// the catch-up stage is new with this release (slot 0174, hidden): not a stage the
 	// previous release had
 	h.Stages = stringsOf(t, db, `SELECT stage || ' enabled=' || enabled || ' reason=' || coalesce(disabled_reason, '-') ||
 		' paused=' || paused FROM job_stages WHERE stage <> 'component_catchup' ORDER BY stage`)

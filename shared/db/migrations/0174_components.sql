@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0173 (Epic 51, story 51.02) - desired and actual state of the components.
+-- Slot 0174 (Epic 51, story 51.02) - desired and actual state of the components.
 --
 -- The component catalog (shared/components/catalog.toml) says what parts Maktaba has.
 -- These tables say which should run and what each machine is really doing, kept apart

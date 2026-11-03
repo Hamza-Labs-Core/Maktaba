@@ -138,7 +138,7 @@ func TestBackoffDoublesToTheCap(t *testing.T) {
 	}
 }
 
-// On scratch Postgres (MAKTABA_TEST_PG_URL, slot 0173 applied by the caller's test DB or
+// On scratch Postgres (MAKTABA_TEST_PG_URL, slot 0174 applied by the caller's test DB or
 // here): a real notification and a reconnect after pg_terminate_backend.
 func TestRealPostgres(t *testing.T) {
 	dsn := os.Getenv("MAKTABA_TEST_PG_URL")

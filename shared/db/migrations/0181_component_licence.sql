@@ -20,7 +20,7 @@
 --
 -- The API rewrites the two columns when the licence changes (an apply, a refresh, a
 -- revocation, the license_reload loop). That is not a change of the admin's wish: it
--- moves the revision and sends NOTIFY components_changed (the trigger of slot 0173
+-- moves the revision and sends NOTIFY components_changed (the trigger of slot 0174
 -- fires on every update), but it does not move the row's generation, so an admin's
 -- generation and the runners' observed_generation stay as they are.
 --

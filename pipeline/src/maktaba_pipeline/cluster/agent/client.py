@@ -301,6 +301,7 @@ class ChannelAgent:
         self.on_settings = on_settings
         self.metrics_every = metrics_every
         self.status_path = status_path
+        self._status_removed = False
         #: the worker's pause (``paused: ...``: the home's schema, or its database gone)
         self.paused = paused
         self.backoff_min = backoff_min
@@ -381,7 +382,8 @@ class ChannelAgent:
             for t in side + ([watcher] if watcher else []):
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await t
-            self._set_state("stopped")
+            self.state = "stopped"
+            self.remove_status()
 
     async def _watch(self, shutdown: asyncio.Event) -> None:
         await shutdown.wait()
@@ -1044,8 +1046,9 @@ class ChannelAgent:
 
     def write_status(self) -> None:
         """The local status file (``maktaba-server status``) as things are now: at each
-        change of the channel's state, and of the worker's pause."""
-        if self.status_path is None:
+        change of the channel's state, and of the worker's pause. Written whole to a temp
+        file renamed over it; never again once the agent stopped (:meth:`remove_status`)."""
+        if self.status_path is None or self._status_removed:
             return
         try:
             self.status_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1054,6 +1057,16 @@ class ChannelAgent:
             os.replace(tmp, self.status_path)
         except OSError:
             pass
+
+    def remove_status(self) -> None:
+        """The agent stopped: its status file goes (and a temp file a cut-short write
+        left), so nothing lists a process that is gone."""
+        self._status_removed = True
+        if self.status_path is None:
+            return
+        for p in (self.status_path, self.status_path.with_suffix(".tmp")):
+            with contextlib.suppress(OSError):
+                p.unlink()
 
     def _warn(self, event: str, **fields: Any) -> None:
         """Warn once a minute per kind (a home down for an hour is one line a minute)."""

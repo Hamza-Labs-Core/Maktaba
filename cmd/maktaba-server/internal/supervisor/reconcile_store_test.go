@@ -16,11 +16,11 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
-// T12 (story 51.04): the real store (slot 0173's SQLite twin), a real supervisor and
+// T12 (story 51.04): the real store (slot 0174's SQLite twin), a real supervisor and
 // fake workers: flipping transcription stops and starts its stt workers, and the other
 // processes keep their pids.
 
-// componentsBase are the older slots' tables slot 0173 touches (shared/components/store's
+// componentsBase are the older slots' tables slot 0174 touches (shared/components/store's
 // test has the same).
 const componentsBase = `
 CREATE TABLE cluster_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '');
@@ -37,7 +37,7 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL);
 `
 
-// componentsDB is a fresh SQLite file with slot 0173's twin applied.
+// componentsDB is a fresh SQLite file with slot 0174's twin applied.
 func componentsDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "c.db"))
@@ -47,7 +47,7 @@ func componentsDB(t *testing.T) *sql.DB {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	stmts := strings.Split(componentsBase, ";\n")
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0173_components.sqlite.sql"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0174_components.sqlite.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

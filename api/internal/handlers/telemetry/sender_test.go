@@ -282,7 +282,7 @@ func TestNothingButTheAllowList(t *testing.T) {
 	}
 }
 
-// withComponents adds the component tables (slot 0173's twin, the columns read) to db.
+// withComponents adds the component tables (slot 0174's twin, the columns read) to db.
 func withComponents(t *testing.T, db *sql.DB, bundle string, rows ...[2]string) {
 	t.Helper()
 	for _, q := range []string{`CREATE TABLE components (id TEXT PRIMARY KEY, want TEXT)`,

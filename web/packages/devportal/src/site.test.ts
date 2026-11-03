@@ -1,7 +1,9 @@
 // @vitest-environment node
 // The build and the built site (dist/, from `npm run build`): the public-safety scan, the
-// allow-list, the strings in both languages, security.txt, robots.txt and the sitemap.
+// allow-list, every page in English and Arabic (and the checks that keep them paired),
+// security.txt, robots.txt and the sitemap.
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -9,6 +11,8 @@ import { scanDir, scanText } from "../scripts/scan.mjs";
 import {
   DOCS,
   MAX_EXPIRY_MONTHS,
+  REPO,
+  checkSources,
   expiresAt,
   readDisclosurePolicy,
   rewriteHref,
@@ -18,6 +22,18 @@ import {
   slug,
 } from "../scripts/build.mjs";
 import { isSafeUrl } from "../scripts/urls.mjs";
+import {
+  MAX_LATIN_SHARE,
+  applyOverlay,
+  changelogOutline,
+  checkChangelog,
+  checkGuides,
+  checkOverlay,
+  checkPages,
+  htmlProse,
+  latinShare,
+  openapiProse,
+} from "../scripts/parity.mjs";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 
 type Element = DefaultTreeAdapterMap["element"];
@@ -270,18 +286,123 @@ describe("English and Arabic", () => {
     }
   });
 
-  it("every page's strings are keys the toggle knows, with the toggle on the page", () => {
+  it("every page is in both languages, each linking the other", () => {
     const pages = files(DIST).filter((f) => f.endsWith(".html"));
-    expect(pages.length).toBeGreaterThan(5);
-    for (const p of pages) {
+    const en = pages.filter((f) => !f.startsWith("ar/"));
+    const ar = pages.filter((f) => f.startsWith("ar/"));
+    expect(en.length).toBeGreaterThan(15);
+    expect(ar.map((f) => f.slice(3)).sort()).toEqual([...en].sort());
+    for (const p of en) {
+      const sitePath = "/" + p.replace(/index\.html$/, "").replace(/\.html$/, "");
       const html = read(p);
-      expect(html, p).toContain('id="lang-toggle"');
-      expect(html, p).toMatch(/src="\/assets\/lang\.js\?v=[0-9a-f]{10}"/);
-      for (const m of html.matchAll(/data-i18n(?:-label|-title)?="([^"]+)"/g)) {
-        expect(STRINGS.en[m[1]], `${p}: ${m[1]}`).toBeDefined();
-      }
+      expect(html, p).toContain('<html lang="en" dir="ltr">');
+      expect(html, p).toMatch(new RegExp(`id="lang-switch"[^>]*href="/ar${sitePath}"`));
+      const arHtml = read(`ar/${p}`);
+      expect(arHtml, p).toContain('<html lang="ar" dir="rtl">');
+      expect(arHtml, p).toMatch(new RegExp(`id="lang-switch"[^>]*href="${sitePath}"`));
+      expect(arHtml, p).toContain(`hreflang="en" href="https://maktaba.dev${sitePath}"`);
     }
-    expect(read("assets/i18n.js")).toContain("MAKTABA_STRINGS");
+    // the Arabic chrome links Arabic pages
+    const home = read("ar/index.html");
+    for (const href of ["/ar/plugins/", "/ar/contributing/", "/ar/api/", "/ar/changelog/"])
+      expect(home).toContain(`href="${href}"`);
+    expect(read("ar/plugins/sandbox/index.html")).toContain('href="/ar/plugins/manifest/"');
+  });
+
+  it("an Arabic page is Arabic: its prose outside code is mostly Arabic script", () => {
+    for (const p of files(DIST).filter((f) => f.startsWith("ar/") && f.endsWith(".html"))) {
+      expect(latinShare(htmlProse(read(p))), p).toBeLessThan(MAX_LATIN_SHARE);
+    }
+    // and the check tells an English page apart
+    expect(latinShare(htmlProse(read("plugins/manifest/index.html")))).toBeGreaterThan(0.9);
+  });
+
+  it("the Arabic API reference reads the description with its prose in Arabic", () => {
+    const ar = JSON.parse(read("ar/api/openapi.json"));
+    const en = JSON.parse(read("api/openapi.json"));
+    expect(Object.keys(ar.paths)).toEqual(Object.keys(en.paths));
+    expect(ar.info.title).toBe("واجهة مكتبة البرمجية");
+    expect(ar.tags[0].name).toBe(en.tags[0].name);
+    expect(/[؀-ۿ]/.test(ar.tags[0]["x-displayName"])).toBe(true);
+    const html = read("ar/api/index.html");
+    expect(html).toContain('data-spec="/ar/api/openapi.json"');
+    expect(read("api/index.html")).toContain('data-spec="/api/openapi.json"');
+  });
+
+  it("the sources agree in both languages (the build's parity check)", () => {
+    expect(checkSources()).toEqual([]);
+  });
+
+  it("a guide with no Arabic twin, or an Arabic guide with no English one, fails", () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "parity-"));
+    fs.mkdirSync(path.join(tmp, "g"));
+    fs.writeFileSync(path.join(tmp, "g/a.md"), "# A");
+    fs.writeFileSync(path.join(tmp, "g/b.ar.md"), "# ب");
+    expect(checkGuides(tmp, "g", ["g/a.md"])).toEqual([
+      "g/a.md: no Arabic version (g/a.ar.md)",
+      "g/b.ar.md: an Arabic guide with no English page to pair",
+    ]);
+    fs.rmSync(tmp, { recursive: true });
+  });
+
+  it("an unpaired or English-only page fails the page check", () => {
+    const english = "<p>This page was left in English, every word of it.</p>";
+    const arabic = "<p>هذه الصفحة بالعربية، و`code` يبقى كما هو.</p>";
+    expect(checkPages(["a.html", "ar/a.html"], () => arabic)).toEqual([]);
+    expect(checkPages(["a.html", "ar/a.html", "b.html"], () => english)).toEqual([
+      "ar/a.html: 100% of its prose is Latin script",
+      "b.html: no Arabic page (ar/b.html)",
+    ]);
+    expect(checkPages(["ar/c.html"], () => arabic)).toEqual([
+      "ar/c.html: an Arabic page with no English page",
+    ]);
+  });
+
+  it("a changelog entry in one language only fails", () => {
+    const en = fs.readFileSync(path.join(REPO, "CHANGELOG.md"), "utf8");
+    const ar = fs.readFileSync(path.join(REPO, "CHANGELOG.ar.md"), "utf8");
+    expect(checkChangelog(en, ar)).toEqual([]);
+    expect(changelogOutline(ar, "ar")[0].release).toBe("Unreleased");
+    const added = en.replace(
+      "## [Unreleased]\n",
+      "## [Unreleased]\n\n### Fixed\n\n- one more fix\n"
+    );
+    expect(checkChangelog(added, ar)).toHaveLength(1);
+    expect(checkChangelog(added, ar)[0]).toMatch(/every entry is added in both languages/);
+    // the same entry counts, with the sections named in Arabic
+    const one = "## [Unreleased]\n\n### Fixed\n\n- a\n- b\n";
+    expect(checkChangelog(one, "## [لم يصدر بعد]\n\n### أُصلح\n\n- أ\n- ب\n")).toEqual([]);
+    expect(checkChangelog(one, "## [لم يصدر بعد]\n\n### أُصلح\n\n- أ\n")).toHaveLength(1);
+  });
+
+  it("the OpenAPI overlay translates every string, against the current English", () => {
+    const doc = {
+      info: { title: "T", description: "About." },
+      tags: [{ name: "Auth" }],
+      paths: { "/a/{id}": { get: { summary: "Get one." } } },
+    };
+    const prose = openapiProse(doc);
+    expect(Object.keys(prose)).toEqual([
+      "/info/title",
+      "/info/description",
+      "/tags/0/name",
+      "/paths/~1a~1{id}/get/summary",
+    ]);
+    const strings = Object.fromEntries(
+      Object.entries(prose).map(([k, en], i) => [k, { en, ar: `نص عربي ${i}` }])
+    );
+    expect(checkOverlay(doc, { strings })).toEqual([]);
+    const out = applyOverlay(doc, { strings });
+    expect(out.paths["/a/{id}"].get.summary).toBe("نص عربي 3");
+    expect(out.tags[0]).toEqual({ name: "Auth", "x-displayName": "نص عربي 2" });
+    // the English changed: translate again; a string left out, or left in English, fails
+    const changed = { ...doc, info: { ...doc.info, description: "About, new." } };
+    expect(checkOverlay(changed, { strings })[0]).toMatch(/the English changed/);
+    const rest: Record<string, { en: string; ar: string }> = { ...strings };
+    delete rest["/info/title"];
+    expect(checkOverlay(doc, { strings: rest })[0]).toMatch(/has no Arabic/);
+    const english = { ...strings, "/info/description": { en: "About.", ar: "About." } };
+    expect(checkOverlay(doc, { strings: english })[0]).toMatch(/not Arabic/);
   });
 
   it("the portal's pages carry no inline script (the CSP allows none)", () => {
@@ -290,7 +411,6 @@ describe("English and Arabic", () => {
     for (const p of files(DIST).filter((f) => f.endsWith(".html"))) {
       const els = elements(parse(read(p)));
       const scripts = els.filter((e) => e.tagName === "script");
-      expect(scripts.length, p).toBeGreaterThan(0);
       for (const s of scripts) {
         expect(attr(s, "src"), p).toBeTruthy();
         expect(s.childNodes.length, p).toBe(0);
@@ -379,10 +499,13 @@ describe("security.txt, robots.txt, sitemap", () => {
     expect(locs).toContain("/plugins/");
     expect(locs).toContain("/contributing/");
     expect(locs).toContain("/changelog/");
+    expect(locs).toContain("/ar/");
+    expect(locs).toContain("/ar/changelog/");
     for (const l of locs) expect(fs.existsSync(path.join(DIST, l, "index.html")), l).toBe(true);
   });
 
-  it("there is a 404 page", () => {
-    expect(read("404.html")).toContain('data-i18n="404.title"');
+  it("there is a 404 page in each language", () => {
+    expect(read("404.html")).toContain(`<h1>${STRINGS.en["404.title"]}</h1>`);
+    expect(read("ar/404.html")).toContain(`<h1>${STRINGS.ar["404.title"]}</h1>`);
   });
 });

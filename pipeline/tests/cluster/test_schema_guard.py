@@ -70,6 +70,15 @@ def test_schema_rev_is_the_highest_migration_this_code_ships() -> None:
     assert max(slots) == SCHEMA_REV
 
 
+def test_schema_rev_is_the_same_in_every_service() -> None:
+    """The API's and the streaming node's SchemaRev are raised with this one (slot 0173:
+    write_channels' seed)."""
+    root = MIGRATIONS_DIR.parents[2]
+    for go in ("api/internal/cluster/schemaguard/guard.go", "streaming/internal/cluster/schema.go"):
+        m = re.search(r"const SchemaRev = (\d+)", (root / go).read_text(encoding="utf-8"))
+        assert m is not None and int(m.group(1)) == SCHEMA_REV, go
+
+
 def test_a_breaking_migration_is_marked_in_the_manifest() -> None:
     """A migration that (re)defines ``maktaba_min_node_schema()`` says so in its MANIFEST
     row (``Breaking for older nodes``), and a row that says so ships the function."""

@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 54,
-    "stories": 618,
+    "stories": 623,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -5907,6 +5907,51 @@
       "plan_files": []
     },
     {
+      "id": "50.30",
+      "epic": 50,
+      "num": "30",
+      "slug": "cloudflare-edge-rules",
+      "title": "Cloudflare in front: TLS, WAF, rate limits and bot protection",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-30-cloudflare-edge-rules.md",
+      "plan_files": []
+    },
+    {
+      "id": "50.31",
+      "epic": 50,
+      "num": "31",
+      "slug": "origin-through-cloudflare",
+      "title": "The origin only through Cloudflare: the Tunnel and the trusted client IP",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-31-origin-through-cloudflare.md",
+      "plan_files": []
+    },
+    {
+      "id": "50.32",
+      "epic": 50,
+      "num": "32",
+      "slug": "admin-hostname",
+      "title": "The operator console on admin.maktaba.tv: its own host, bundle, cookies and CSP",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-32-admin-hostname.md",
+      "plan_files": []
+    },
+    {
+      "id": "50.33",
+      "epic": 50,
+      "num": "33",
+      "slug": "staff-auth",
+      "title": "Staff sign-in for the operator console: MFA, short sessions, re-authentication",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-33-staff-auth.md",
+      "plan_files": []
+    },
+    {
+      "id": "50.34",
+      "epic": 50,
+      "num": "34",
+      "slug": "cloudflare-deploys",
+      "title": "Cloudflare deploys from CI",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-34-cloudflare-deploys.md",
+      "plan_files": []
+    },
+    {
       "id": "51.01",
       "epic": 51,
       "num": "01",
@@ -6496,7 +6541,7 @@
       "epic": 54,
       "num": "15",
       "slug": "store-service",
-      "title": "The store service and developer accounts",
+      "title": "The store service, store accounts and linking a home",
       "story_file": "specs/epics/54-plugins/story-54-15-store-service.md",
       "plan_files": []
     },

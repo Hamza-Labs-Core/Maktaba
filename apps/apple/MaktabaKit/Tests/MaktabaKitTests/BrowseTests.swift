@@ -337,6 +337,20 @@ enum BrowseHome {
             #expect(BrowseStub.last?.query == [:])
         }
 
+        /// A library tile's picture (the TV's Libraries, `AuthorizedImage`): its newest video's
+        /// small poster, asked with the person's token (an `AsyncImage` could not send it).
+        @Test func aLibraryTilesPosterCarriesTheToken() async throws {
+            try BrowseHome.answer("/api/libraries/summary", "libraries-summary")
+            let c = BrowseHome.client().0
+            let lib = try #require(LibrarySummary.ordered(try await c.librarySummaries()).first)
+            let art = try #require(lib.posterVideoIDs.first)
+            BrowseStub.on("GET", "/api/videos/\(art)/poster", (200, "png"))
+            #expect(try await c.poster(video: art, small: true) == Data("png".utf8))
+            let asked = try #require(BrowseStub.last)
+            #expect(asked.path == "/api/videos/\(art)/poster" && asked.query == ["size": "small"])
+            #expect(asked.bearer != nil, "the token goes with the picture")
+        }
+
         @Test func watchedAndFavorite() async throws {
             try BrowseHome.answer("POST", "/api/me/watched", "mark-watched")
             try BrowseHome.answer("POST", "/api/me/favorites", "mark-favorite")

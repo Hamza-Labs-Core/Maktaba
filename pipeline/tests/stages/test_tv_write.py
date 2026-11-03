@@ -120,7 +120,7 @@ async def test_filler_pools_lists_and_look_are_written_idempotently(
                       "width_pct": 10.0, "margin_pct": 3.0},
         "loading_path": str(tmp_path / "logos" / "loading-news.png"),
         "loudnorm": {"enabled": True, "filter": "speechnorm", "target_lufs": -16.0, "expansion": 6.25},
-        "watermark_skip_filler": True,  # rules tv.watermark_skip_filler, as dizqueTV
+        "watermark_skip_filler": False,  # rules tv.watermark_skip_filler: the logo on every block
     }  # fmt: skip
     other = await db.fetchrow("SELECT logo_path, mode_config FROM channels WHERE number = 106")
     assert other["logo_path"] == str(tmp_path / "logos" / "default.png")
@@ -180,6 +180,26 @@ async def _override(
 
 
 @pytest.mark.asyncio
+async def test_a_new_rules_default_restages_every_channel_look(
+    db: Database, tmp_path: Path
+) -> None:
+    """Channels written under the old default (no corner logo on filler) take the new one
+    (the logo on every block) on the next run, with no rule stored and no hand edit: the
+    stage compares the effective look, not whether the rules changed."""
+    plan, _, _ = await _plan(db, tmp_path)
+    await _write(db, plan, MaktabaTvConfig(watermark_skip_filler=True))  # the old default
+    before = await db.fetch("SELECT mode_config FROM channels ORDER BY number")
+    assert before and all(loads(r["mode_config"])["look"]["watermark_skip_filler"] for r in before)
+
+    _, wp = await compute_changes(db, plan, MaktabaTvConfig())  # nothing stored: the default
+    assert len(wp.update) == len(before) and not wp.user_edited and not wp.create
+    await apply_changes(db, wp)
+    after = await db.fetch("SELECT mode_config FROM channels ORDER BY number")
+    assert all(loads(r["mode_config"])["look"]["watermark_skip_filler"] is False for r in after)
+    assert (await _write(db, plan)).is_empty  # and it stays put
+
+
+@pytest.mark.asyncio
 async def test_the_plan_carries_its_art_in_the_maktaba_keys(db: Database, tmp_path: Path) -> None:
     from maktaba_pipeline.engine.stages._plan_json import _with_art
 
@@ -196,13 +216,13 @@ async def test_the_plan_carries_its_art_in_the_maktaba_keys(db: Database, tmp_pa
     assert row["logo_path"] == str(tmp_path / "logos" / "default.png")
     look_ = loads(row["mode_config"])["look"]
     assert look_["loudnorm"]["filter"] == "speechnorm"
-    assert look_["watermark_skip_filler"] is True
+    assert look_["watermark_skip_filler"] is False
 
-    # the corner-logo rule turned off: the channel's look changes, nothing else
-    _, wp = await compute_changes(db, plan, MaktabaTvConfig(watermark_skip_filler=False))
+    # the corner-logo rule turned on (dizqueTV's way): the channel's look changes, nothing else
+    _, wp = await compute_changes(db, plan, MaktabaTvConfig(watermark_skip_filler=True))
     assert wp.update and not wp.user_edited
     for _, want in wp.update:
-        assert want.values["mode_config"]["look"]["watermark_skip_filler"] is False
+        assert want.values["mode_config"]["look"]["watermark_skip_filler"] is True
 
     # rules tv.loudnorm_mode picks the filter the streaming service applies
     await _write(db, plan, MaktabaTvConfig(loudnorm_mode="loudnorm", loudnorm_target_lufs=-23.0))

@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0175 (Epic 51, story 51.06) - a component's stages stop without losing work.
+-- Slot 0176 (Epic 51, story 51.06) - a component's stages stop without losing work.
 --
 --   processing_jobs_enqueue   a stage switched off by its component
 --                             (job_stages.disabled_reason = 'component_off') answers
