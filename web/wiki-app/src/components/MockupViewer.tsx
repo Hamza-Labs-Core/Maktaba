@@ -10,10 +10,34 @@ interface Props {
   defaultOpen?: boolean;
 }
 
+// The public developer portal (maktaba.dev) publishes no mockups: their sample data (paths,
+// LAN addresses) fails its public-safety scan. Its build sets VITE_WIKI_NO_MOCKUPS=1 and a
+// mockup is a link to its source instead.
+const NO_MOCKUPS = import.meta.env.VITE_WIKI_NO_MOCKUPS === '1';
+
 export function MockupViewer({ path, defaultOpen = true }: Props) {
   const [open, setOpen] = useState(defaultOpen);
   const url = mockupUrl(path);
   const filename = path.split('/').slice(-1)[0];
+
+  if (NO_MOCKUPS) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 px-3 py-2 text-[12.5px] text-slate-700 dark:text-slate-200">
+        <span className="font-medium">{filename}</span>
+        <div className="flex-1" />
+        <a
+          href={githubUrlFor(path)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-[11.5px] text-slate-600 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-300 px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+          title="View the mockup's source on GitHub"
+        >
+          <ExternalLink className="h-3 w-3" />
+          Source
+        </a>
+      </div>
+    );
+  }
 
   if (!url) {
     return (

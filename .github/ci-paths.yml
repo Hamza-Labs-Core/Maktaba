@@ -383,3 +383,21 @@ apple_player_ui:
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
   - '.github/workflows/_apple-apps.yml'
+
+# ---- the developer portal (_devportal.yml) ----------------------------------------------
+
+# maktaba.dev: the portal, and every file its allow-list publishes (the wiki and its data,
+# Epic 54's developer docs, the changelog, the OpenAPI description, the disclosure policy
+# security.txt is built from, the icons). devportal-deploy.yml deploys on the same paths.
+devportal:
+  - *ci
+  - 'web/packages/devportal/**'
+  - 'web/wiki-app/**'
+  - 'specs/epics/54-plugins/**'
+  - 'specs/diagrams/**'
+  - 'CHANGELOG.md'
+  - 'shared/api/openapi.json'
+  - 'api/internal/security/disclosure.go'
+  - 'web/public/icons/**'
+  - '.github/workflows/_devportal.yml'
+  - '.github/workflows/devportal-deploy.yml'
