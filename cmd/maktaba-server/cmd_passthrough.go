@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 
@@ -32,6 +33,33 @@ func newLicenseCmd() *cobra.Command {
 
 func newKeysCmd() *cobra.Command {
 	return delegateCmd("keys", "Generate or rotate JWT signing keys (delegates to maktaba-api)")
+}
+
+// newComponentsCmd is `maktaba-server components …` (Epic 51 story 51.08). Its exit
+// codes mean something to scripts (2: a write with no terminal and no --yes, 3: the
+// server is not running), so the child's code is this process's.
+func newComponentsCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:                "components",
+		Short:              "List, turn on, off, stop or start the components (delegates to maktaba-api)",
+		DisableFlagParsing: true,
+		RunE: func(_ *cobra.Command, args []string) error {
+			err := runAPISub("components", args)
+			if code, ok := childExitCode(err); ok {
+				os.Exit(code)
+			}
+			return err
+		},
+	}
+}
+
+// childExitCode is the exit code of a child that ran and failed.
+func childExitCode(err error) (int, bool) {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) && ee.ExitCode() > 0 {
+		return ee.ExitCode(), true
+	}
+	return 0, false
 }
 
 func delegateCmd(sub, short string) *cobra.Command {

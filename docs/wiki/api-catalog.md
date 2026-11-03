@@ -103,3 +103,19 @@ Admin only (the API answers 403 to anyone else, 401 signed out), audited, and qu
 | `GET` | `/api/queues/duplicates` | Queue | Duplicate groups with their members (filters, keyset paged) | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
 | `POST` | `/api/queues/duplicates/{gid}/apply` | Queue | Merge a group (dedup_apply), optionally with the keeper chosen | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
 | `POST` | `/api/queues/duplicates/{gid}/dismiss` | Queue | Dismiss a group: the scan never makes it again | [47.11](../../specs/epics/47-offline-convert-dedup/README.md) |
+
+## Epic 51: configurable components (the Components page)
+
+Admin only (no sign-in 401; a viewer, a cloud play sign-in, a token without the admin scope and a machine 403), home placement, and audited: every change writes one `audit_log` row per component (`category = components`) in the same transaction. The CLI `maktaba-server components list|show|enable|disable|stop|start|install|remove|bundle` goes through the same service (`actor_source = cli`; exit 2 without a terminal and without `--yes`, exit 3 when the server is not running).
+
+| Method | Path | Tag | Summary | Owning stories |
+|--------|------|-----|---------|----------------|
+| `GET` | `/api/components` | Components | Every component: catalog fields, desired row, phase per machine, required_by, size, and the bundle line | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `GET` | `/api/components/{id}` | Components | One component, its parts and conditions per machine, and its last 20 audit rows | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `PUT` | `/api/components/{id}` | Components | Set want (enabled, installed, absent), with generation and with_conflicts | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `DELETE` | `/api/components/{id}` | Components | Want absent (refused while something on requires it) | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `POST` | `/api/components/{id}/install` | Components | Put an absent component on disk, off | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `POST` | `/api/components/{id}/stop` | Components | Hold it until start (no end time; a body with until is 400) | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `POST` | `/api/components/{id}/start` | Components | Clear the hold | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `POST` | `/api/components/preview` | Components | The effect of a batch (or a bundle), changing nothing | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
+| `POST` | `/api/components/apply` | Components | A batch of changes (or a bundle) in one transaction, or none | [51.08](../../specs/epics/51-configurable-components/story-51-08-admin-api-cli.md) |
