@@ -665,6 +665,12 @@ func (s *Store) Statuses(ctx context.Context) ([]Status, error) {
 	return s.statuses(ctx, `SELECT `+statusCols+` FROM component_status ORDER BY id, machine, part`)
 }
 
+// StatusesOfMachine is one machine's rows ("home" or a node id), by id and part: what
+// that machine's /metrics exports (story 51.14).
+func (s *Store) StatusesOfMachine(ctx context.Context, machine string) ([]Status, error) {
+	return s.statuses(ctx, `SELECT `+statusCols+` FROM component_status WHERE machine = $1 ORDER BY id, part`, machine)
+}
+
 func (s *Store) statuses(ctx context.Context, q string, args ...any) ([]Status, error) {
 	rows, err := s.DB.QueryContext(ctx, q, args...)
 	if err != nil {

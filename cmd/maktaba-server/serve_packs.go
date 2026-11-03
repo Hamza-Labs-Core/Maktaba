@@ -285,6 +285,9 @@ type packsAdmin struct {
 	m     *packs.Manager
 	r     *packs.Runner
 	token string
+	// metrics are this machine's component metrics on /metrics (story 51.14); nil
+	// without a reconciler.
+	metrics *supervisor.ComponentMetrics
 
 	mu      sync.Mutex
 	offline map[string]*offlineJob

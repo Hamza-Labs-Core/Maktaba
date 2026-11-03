@@ -12,6 +12,7 @@ import { Badge } from "@ds/components/Badge/Badge";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { HealthStatus, StatusItem, StatusReport } from "../../lib/systemStatus";
 import { useFmt, type Fmt } from "../../components/queue/format";
+import { componentTitle } from "../../components/cluster/format";
 import { HelpLink } from "../../help/HelpLink";
 import { systemHealthHelp } from "../../help/registry";
 
@@ -80,6 +81,17 @@ export function itemReason(it: StatusItem, t: T, fmt: Fmt, n: (v: number) => str
       if (k.endsWith("_seconds")) vars[k.slice(0, -"_seconds".length)] = fmt.dur(v);
     } else if (v !== null && v !== undefined) {
       vars[k] = String(v);
+    }
+  }
+  // Epic 51: the Components line names a component by id and its reason by code
+  if (it.kind === "components") {
+    if (typeof it.params?.component === "string")
+      vars.component = componentTitle(it.params.component, t);
+    if (typeof it.params?.why === "string") {
+      const why = it.params.why;
+      const k = `health.componentWhy.${why}`;
+      const w = t(k);
+      vars.why = w === k ? why.replace(/_/g, " ") : w;
     }
   }
   const key = `health.reason.${it.code}`;

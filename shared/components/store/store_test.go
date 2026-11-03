@@ -279,6 +279,13 @@ func TestReportStatusPrunesAndKeepsSince(t *testing.T) {
 	if len(all) != 2 {
 		t.Fatalf("after prune %d rows: %+v", len(all), all)
 	}
+	// story 51.14: one machine's rows only
+	if mine, err := s.StatusesOfMachine(ctx, Home); err != nil || len(mine) != 2 {
+		t.Fatalf("home's rows %v, %v", mine, err)
+	}
+	if other, err := s.StatusesOfMachine(ctx, "another-node"); err != nil || len(other) != 0 {
+		t.Fatalf("another machine's rows %v, %v", other, err)
+	}
 	again, _ := s.StatusOf(ctx, "livetv")
 	var api Status
 	for _, r := range again {

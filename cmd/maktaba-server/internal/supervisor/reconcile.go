@@ -150,6 +150,71 @@ type Reconciler struct {
 	updates  chan desiredUpdate
 	passes   int
 	loopsCtx context.Context
+	health   map[string]*compHealth // story 51.14: transitions and last errors, by component
+}
+
+// compHealth is what the status rows' detail carries of one component beyond its phase
+// (story 51.14): the time from the generation acted on to the phase it reached, and the
+// last failure seen (kept after it recovers, until the supervisor restarts).
+type compHealth struct {
+	gen        int64
+	actedAt    time.Time
+	pending    bool
+	phase      string
+	transition map[string]any // {to, seconds}
+	lastError  map[string]any // {code, at}
+}
+
+// settledPhase is a phase a change ends in (not one it passes through).
+func settledPhase(p string) bool {
+	switch p {
+	case components.PhaseStarting, components.PhaseDraining, components.PhaseInstalling, components.PhaseRemoving, "":
+		return false
+	}
+	return true
+}
+
+// healthDetail updates the component's transition and last error from the phase this
+// pass shows, and returns them as detail fields.
+func (r *Reconciler) healthDetail(id string, gen int64, phase, reason string) map[string]any {
+	now := time.Now()
+	if r.Now != nil {
+		now = r.Now()
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.health == nil {
+		r.health = map[string]*compHealth{}
+	}
+	h := r.health[id]
+	if h == nil {
+		h = &compHealth{gen: -1}
+		r.health[id] = h
+	}
+	if h.gen != gen {
+		h.gen, h.actedAt, h.pending = gen, now, true
+	}
+	if h.pending && settledPhase(phase) {
+		h.pending = false
+		secs := now.Sub(h.actedAt).Seconds()
+		h.transition = map[string]any{"to": phase, "seconds": float64(int64(secs*1000)) / 1000}
+	}
+	if phase == components.PhaseFailed && h.phase != components.PhaseFailed {
+		code := reason
+		if code == "" {
+			code = components.PhaseFailed
+		}
+		h.lastError = map[string]any{"code": code, "at": now.UTC().Format(time.RFC3339Nano)}
+	}
+	h.phase = phase
+	out := map[string]any{}
+	if h.transition != nil {
+		out["last_transition"] = h.transition
+	}
+	if h.lastError != nil {
+		out["last_error"] = h.lastError
+	}
+	return out
 }
 
 type desiredUpdate struct {
@@ -771,8 +836,12 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		if !hasCond(row.Conditions, components.CondReady) {
 			row.Conditions = append(row.Conditions, ready)
 		}
+		detail := r.healthDetail(comp.ID, dec.gen, phase, reason)
 		if restarts > 0 {
-			row.Detail = map[string]any{"restarts": restarts}
+			detail["restarts"] = restarts
+		}
+		if len(detail) > 0 {
+			row.Detail = detail
 		}
 		out = append(out, row)
 	}

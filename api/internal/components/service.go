@@ -171,11 +171,14 @@ func (s *Service) queued(ctx context.Context, ids []string) int {
 
 // MachineView is one machine's status of a component: the worst of its parts.
 type MachineView struct {
-	Machine            string         `json:"machine"`
-	Phase              string         `json:"phase"`
-	Reason             string         `json:"reason,omitempty"`
-	ObservedGeneration int64          `json:"observed_generation"`
-	Parts              []store.Status `json:"parts,omitempty"`
+	Machine            string `json:"machine"`
+	Phase              string `json:"phase"`
+	Reason             string `json:"reason,omitempty"`
+	ObservedGeneration int64  `json:"observed_generation"`
+	// Health is the machine's uptime, restarts, last error, version, memory and disk
+	// (story 51.14, health.go).
+	Health *Health        `json:"health,omitempty"`
+	Parts  []store.Status `json:"parts,omitempty"`
 }
 
 // View is one component as the admin page shows it.
@@ -209,6 +212,9 @@ type View struct {
 	Machines      []MachineView `json:"machines"`
 	RequiredBy    []string      `json:"required_by"`
 	InstallSizeMB int64         `json:"install_size_mb"`
+	// Health is the home's (machines[0] when it is the home); nil with no status row
+	// from the home yet.
+	Health *Health `json:"health,omitempty"`
 	// Progress is this machine's last or running install or removal of an asset, as its
 	// supervisor reports it (story 51.16); nil when there was none or no supervisor answers.
 	Progress *InstallProgress `json:"progress,omitempty"`
@@ -266,6 +272,8 @@ type snapshot struct {
 	gates    map[string]gate
 	statuses map[string][]store.Status
 	meta     store.Meta
+	heard    map[string]time.Time // joined machines' last heartbeat (health.go)
+	now      time.Time
 }
 
 func (s *Service) snapshot(ctx context.Context) (*snapshot, error) {
@@ -282,10 +290,17 @@ func (s *Service) snapshot(ctx context.Context) (*snapshot, error) {
 		return nil, err
 	}
 	st := map[string][]store.Status{}
+	nodes := false
 	for _, r := range all {
 		st[r.ID] = append(st[r.ID], r)
+		nodes = nodes || r.Machine != store.Home
 	}
-	return &snapshot{rows: rows, rev: rev, gates: gatesLicensed(s.cat(), rows, s.licensed), statuses: st, meta: meta}, nil
+	snap := &snapshot{rows: rows, rev: rev, gates: gatesLicensed(s.cat(), rows, s.licensed), statuses: st, meta: meta,
+		now: s.now()}
+	if nodes {
+		snap.heard = s.heardFrom(ctx)
+	}
+	return snap, nil
 }
 
 // List is every component, in catalog order.
@@ -357,21 +372,6 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		}
 		return strings.Compare(a, b)
 	})
-	for _, m := range machines {
-		roll := store.Rollup(byMachine[m])
-		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: roll.Reason(), ObservedGeneration: roll.ObservedGeneration}
-		if parts {
-			mv.Parts = byMachine[m]
-		}
-		v.Machines = append(v.Machines, mv)
-		if m == store.Home {
-			v.Phase, v.Reason = mv.Phase, mv.Reason
-		}
-	}
-	v.RequiredBy = requiredBy(cat, snap.rows, c.ID)
-	if v.RequiredBy == nil {
-		v.RequiredBy = []string{}
-	}
 	var bytes int64
 	for _, f := range c.Files {
 		bytes += f.Size
@@ -380,6 +380,22 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		v.InstallSizeMB = (bytes + 1<<20 - 1) >> 20
 	} else {
 		v.InstallSizeMB = int64(c.Resources.DiskMB)
+	}
+	for _, m := range machines {
+		roll := store.Rollup(byMachine[m])
+		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: roll.Reason(), ObservedGeneration: roll.ObservedGeneration,
+			Health: healthOf(c, byMachine[m], roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
+		if parts {
+			mv.Parts = byMachine[m]
+		}
+		v.Machines = append(v.Machines, mv)
+		if m == store.Home {
+			v.Phase, v.Reason, v.Health = mv.Phase, mv.Reason, mv.Health
+		}
+	}
+	v.RequiredBy = requiredBy(cat, snap.rows, c.ID)
+	if v.RequiredBy == nil {
+		v.RequiredBy = []string{}
 	}
 	return v
 }
