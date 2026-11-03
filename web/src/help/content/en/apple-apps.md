@@ -27,7 +27,7 @@ Each new Maktaba release arrives in TestFlight as an update.
 
 1. Open the app. The first time, it shows **Before you start**: the permission it needs and why (see [Permissions](#permissions)). Read it, tap **Allow access**, then **Continue**.
 2. Pick your home. **On this network** lists the homes the app finds by itself. You can also type the home's address, like `192.168.1.20:8088` or `mac.local:8088` (the address you open the web app at), or, on iPhone and iPad, tap **Scan a QR code** and point the camera at the code on the home's **Connect an app** page (account menu in the web app). On the Mac, paste the link from that page.
-3. Sign in with your Maktaba user name and password, or choose **With a code**: the app shows a short code and a QR code. On a device that is already signed in, open the QR (or the web app's **Sign in a device** page, or **Approve a sign-in…** in an app, see [Approve a TV or another device](#approve)), check which device is asking, and tap **Approve**. The new device gets your account, never more.
+3. Sign in with your Maktaba user name and password, or choose **With a code**: the app shows a short code and a QR code. On a device that is already signed in, open the QR (or the web app's **Sign in a device** page, or **Approve a TV or device** in an app, see [Approve a TV or another device](#approve)), check which device is asking, and tap **Approve**. The new device gets your account, never more.
 4. Next time the app opens on that home. **Recent homes** lists every home you have added; rename one or swipe it to forget it. A sign-in belongs to the address it was made at: the same home at a new address asks you to sign in again.
 
 A `maktaba://connect` link opened from elsewhere always asks before it adds or switches a home.
@@ -36,9 +36,11 @@ A `maktaba://connect` link opened from elsewhere always asks before it adds or s
 
 A TV, or a phone that signs in **With a code**, shows a code like `ABCD-1234` and a QR code. Approve it from an app you are already signed in to:
 
-- **Maktaba Player** on iPhone and iPad: open **Profile** and tap **Approve a sign-in…**.
-- **Maktaba Player** on the Mac: the **Account** menu → **Approve a sign-in…**.
-- **Maktaba Remote**: tap the person icon (**Account**) at the top of any screen, then **Approve a sign-in…**.
+- **Maktaba Remote**: tap **Approve a TV or device** at the top of any screen. It is also in the person icon's menu (**Account**). While a TV or device waits, a banner at the top says so, for example **A TV is asking to sign in: Living room. Approve it by typing the code it shows.** **Enter code** opens the approval; **Dismiss** hides the banner until another device asks.
+- **Maktaba Player** on iPhone and iPad: open **Profile** and tap **Approve a TV or device**.
+- **Maktaba Player** on the Mac: the **Account** menu → **Approve a TV or device**.
+
+An app from before this change calls it **Approve a sign-in**, under the person icon.
 
 Type the code and tap **Continue**, or tap **Scan its QR code** and point the camera at it. Check which device is asking, then tap **Approve**. The device is signed in as you, with your own role. The web app's **Sign in a device** page does the same.
 

@@ -41,8 +41,10 @@ To use another home, tap **Choose another home** on the sign-in screen.
 
 A TV, or a phone that signs in **With a code**, shows a code like `ABCD-1234` and a QR code. Approve it from an app you are already signed in to:
 
-- **Maktaba Player**: open **Profile** and tap **Approve a sign-in**.
-- **Maktaba Remote**: tap the person icon (**Account**) at the top, then **Approve a sign-in**.
+- **Maktaba Remote**: tap the TV button with a check mark (**Approve a TV or device**) at the top of any screen. It is also in the person icon's menu (**Account**).
+- **Maktaba Player**: open **Profile** and tap **Approve a TV or device**, the first row.
+
+While a TV or device waits, both apps show a banner at the top, for example **A TV is asking to sign in: Living room. Approve it by typing the code it shows.** **Enter code** opens the approval; **Dismiss** hides the banner until another device asks. When notifications are already allowed for the app, a notification says the same (**A TV is asking to sign in**); tap it to approve. The apps never ask for notifications just for this. An app from before this change calls it **Approve a sign-in**, under the person icon.
 
 Type the code, or scan the QR code the device shows. Check which device is asking, then tap **Approve**. The device is signed in as you, with your own role. The web app's **Sign in a device** page does the same.
 
@@ -78,7 +80,7 @@ The first time you open an app, **Before you start** lists the permission with w
 - **When it is asked:** the first time you tap **Scan a QR code**, not at the first start.
 - **Without it:** type the address or the code instead; everything else works.
 
-The apps ask for nothing else. They do not use your location, microphone or contacts. Maktaba Player keeps a video's sound playing with the screen off and shows the usual playback controls while it plays; that needs no permission.
+The apps ask for nothing else. They do not use your location, microphone or contacts. Maktaba Player keeps a video's sound playing with the screen off and shows the usual playback controls while it plays; that needs no permission. Notifications are never asked for: when you allow them yourself (Settings → Apps → the app → Notifications), the apps tell you when a TV is asking to sign in (the **Sign-in requests** category).
 
 ## What the states and messages mean {#states}
 
@@ -112,7 +114,7 @@ Yes, with a home's internet address. Choose **Not now**, then **Enter an address
 
 ### Why don't the apps ask to send notifications? {#faq-notifications}
 
-They send no alerts. The Player's playback controls, shown while a video plays, need no permission, and the apps need no battery exemption.
+They need none to work. Their only alert is **A TV is asking to sign in**, and it shows only when you have allowed notifications yourself; the banner at the top of the app says the same without them. The Player's playback controls need no permission, and the apps need no battery exemption.
 
 ## When something goes wrong {#troubleshooting}
 

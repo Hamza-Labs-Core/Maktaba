@@ -252,10 +252,12 @@ Every release tag uploads a new build to both, which reaches testers as an updat
 
 **Signing in a TV or a device by code.** A TV (or a phone or computer that chooses *With a
 code*) shows a code like `ABCD-1234` and a QR code. Approve it from an app that is already
-signed in: in **Maktaba Player**, open **Profile** and tap **Approve a sign-in** (on the Mac,
-the **Account** menu); in **Maktaba Remote**, tap the person icon at the top, then **Approve a
-sign-in**; or open the web app's **Sign in a device** page (`/pair`). The device is signed in as
-you, with your role.
+signed in: in **Maktaba Remote**, tap **Approve a TV or device** at the top of any screen; in
+**Maktaba Player**, open **Profile** and tap **Approve a TV or device** (on the Mac, the
+**Account** menu); or open the web app's **Sign in a device** page (`/pair`). While a TV waits,
+the Remote (and the Android Player) shows a banner with **Enter code**, and the Android apps a
+notification when notifications are allowed. Older apps call it **Approve a sign-in**, under the
+person icon. The device is signed in as you, with your role.
 
 The older Capacitor web-app wrapper (`apps/mobile`, `maktaba-<version>.apk`) is not one of
 these apps. Installed by hand, it shows a *New version available* banner with *Get update*

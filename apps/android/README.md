@@ -96,8 +96,8 @@ reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
   local network, by mDNS or by address, needs `ACCESS_LOCAL_NETWORK`, a runtime permission
   (Android shows it as «Nearby devices»). Without it, only an internet address works.
 - **Permissions walkthrough** (`core/permissions`): the walkthrough's only permission is the
-  local network one (the camera is asked for at Scan, above; no notifications; NSD needs no
-  Wi-Fi permission). The Player's playback service (`media.PlaybackService`, a
+  local network one (the camera is asked for at Scan, above; notifications are never asked for, only used
+  for sign-in requests when already allowed; NSD needs no Wi-Fi permission). The Player's playback service (`media.PlaybackService`, a
   `mediaPlayback` foreground service) keeps a video's sound with the screen off (story 48.33)
   and needs no runtime permission. `PermissionsGate` shows the walkthrough over the
   app on the first run and again whenever a required permission is missing, read again on
