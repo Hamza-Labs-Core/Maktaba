@@ -5,9 +5,9 @@
 # web bundle to build here. Two independent native builds:
 #
 #   Android TV  →  maktaba-tv-<version>.apk   (Compose-for-TV + Media3)
-#   tvOS        →  swift build (compile check) — a distributable .ipa is
-#                  produced + shipped MANUALLY via Xcode/TestFlight (see
-#                  the tvOS job notes).
+#   tvOS        →  a tvOS simulator build of the "Maktaba TV" scheme (compile
+#                  check). The signed App Store build is archived and uploaded
+#                  to TestFlight by testflight.yml, on the same tag.
 #
 # Bundle / application id on both: com.hamzalabs.maktaba.tv
 #
@@ -20,8 +20,9 @@
 # (`maktaba-tv-<version>-unsigned.apk`) and the run warns. Reuses the same
 # secret names as the mobile workflow:
 #   ANDROID_KEYSTORE_BASE64 / ANDROID_KEY_ALIAS / ANDROID_KEY_PASSWORD
-# tvOS: App Store / TestFlight distribution requires an Apple Developer
-# account + Xcode app target; CI only compiles the SwiftPM core. See notes.
+# tvOS: signed and uploaded to TestFlight by testflight.yml (its "Maktaba TV" leg:
+# Xcode's automatic cloud signing with the App Store Connect API key). Nothing is
+# signed here. See docs/testflight.md.
 name: TV Release
 
 on:
@@ -143,7 +144,7 @@ jobs:
         run: tools/release/release-assets.sh upload "${TAG}" out/*
 
   tvos:
-    name: tvos (compile check — distribution manual)
+    name: tvos (compile check; TestFlight in testflight.yml)
     needs: [guard]
     runs-on: macos-latest
     timeout-minutes: 30
@@ -156,13 +157,9 @@ jobs:
       - name: Build the Apple TV app (tvOS simulator)
         run: make tv-build-ios
 
-      # DISTRIBUTION IS MANUAL. A shippable tvOS .ipa needs an Apple
-      # Distribution cert + tvOS provisioning profile, and upload to App Store Connect /
-      # TestFlight — Apple does not allow unsigned tvOS app distribution.
-      # Until that signing material is provisioned, the
-      # release artifact for tvOS is produced by a maintainer in Xcode
-      # (Product ▸ Archive ▸ Distribute App ▸ TestFlight). This job only
-      # guards that the SwiftUI sources still compile.
-      - name: Note manual tvOS distribution
+      # Distribution is testflight.yml's: on the same tag its "Maktaba TV" leg archives the
+      # app for tvOS, signs it (automatic cloud signing) and uploads it to TestFlight. This
+      # job only guards that the sources still compile.
+      - name: Note tvOS distribution
         run: |
-          echo "::notice::Apple TV app built. A distributable .ipa is built + uploaded MANUALLY via Xcode/TestFlight (Apple requires signed App Store/TestFlight distribution for tvOS) — see apps/tv/tvos/README.md."
+          echo "::notice::Apple TV app built. The signed build is uploaded to TestFlight by the TestFlight workflow (testflight.yml, its Maktaba TV leg) on this tag; see docs/testflight.md."
