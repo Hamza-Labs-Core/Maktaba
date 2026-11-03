@@ -144,9 +144,19 @@ class VideoPage(private val client: ApiClient, val id: String) {
     /** Where Resume starts, in seconds: the saved position, unless watched or not started. */
     val resumeAtSec: Double? get() = if (watched) null else video?.resumeAtSec
 
+    /**
+     * How many times Favorite and Mark watched were toggled. A read again that began before a
+     * toggle was answered before its save, so it keeps what the person chose (else the old
+     * value comes back on screen while the home has the new one).
+     */
+    private var favoriteEdits = 0
+    private var watchedEdits = 0
+
     suspend fun load() {
         loading = true
         problem = null
+        val favoriteSeen = favoriteEdits
+        val watchedSeen = watchedEdits
         try {
             coroutineScope {
                 val detail = async { client.videoDetail(id) }
@@ -155,10 +165,12 @@ class VideoPage(private val client: ApiClient, val id: String) {
                 val lines = async { optional { client.segments(id, limit = TRANSCRIPT_LINES).items }.orEmpty() }
                 val v = detail.await()
                 val m: MyVideo? = mine.await()
-                video = v
+                val toggledWatched = watchedEdits != watchedSeen
+                // a Mark watched since the read began keeps its playback state (Play, not Resume)
+                video = if (toggledWatched) v.copy(playbackState = video?.playbackState) else v
                 notAvailable = false
-                favorite = m?.favorite ?: (v.favorite == true)
-                watched = m?.completed ?: (v.playbackState?.completed == true)
+                if (favoriteEdits == favoriteSeen) favorite = m?.favorite ?: (v.favorite == true)
+                if (!toggledWatched) watched = m?.completed ?: (v.playbackState?.completed == true)
                 series = m?.series
                 this@VideoPage.chapters = chapters.await().sortedBy { it.startSec }
                 transcript = lines.await().take(TRANSCRIPT_LINES)
@@ -181,6 +193,7 @@ class VideoPage(private val client: ApiClient, val id: String) {
     /** Favorite on or off (`POST /api/me/favorites`); false when the home did not take it (the toggle goes back). */
     suspend fun toggleFavorite(): Boolean {
         val want = !favorite
+        favoriteEdits++
         favorite = want
         return saved { client.setFavorite(listOf(id), want) }.also { if (!it) favorite = !want }
     }
@@ -192,6 +205,7 @@ class VideoPage(private val client: ApiClient, val id: String) {
     suspend fun toggleWatched(): Boolean {
         val want = !watched
         val before = video
+        watchedEdits++
         watched = want
         video = before?.copy(playbackState = PlaybackState(positionSec = 0.0, completed = want))
         return saved { client.markWatched(listOf(id), want) }.also {

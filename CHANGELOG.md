@@ -24,6 +24,11 @@ build fails when the two differ.
   Home now uses MaktabaKit's `HomeShelves`, as the Apple TV: a row that cannot be read keeps
   what it showed, or shows a tile that reads Home again, in English and Arabic.
 
+- **Android: Favorite or Mark watched tapped while a video's page is read again stays as
+  tapped.** Coming back to a video's page reads it again behind the page shown; a tap on
+  Favorite or Mark watched before that read came back was saved, but the read then put the old
+  state back on screen. The page now keeps what was tapped since the read began.
+
 - **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
   transcribe.** Its capability report looked for the GPU only through `pynvml`, which no
   install brings (an RTX 2080 SUPER reported `"gpus": []`), and counted the `stt` extra only by
