@@ -187,15 +187,22 @@ func TestDBStore(t *testing.T) {
 	if err := s.Put(ctx, "cf_api_token", []byte("v1"), ""); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Put(ctx, "cf_api_token", []byte("v2"), "u1"); err != nil {
+	// a long, distinctive value: the in-clear check below looks for it in the stored bytes,
+	// and a two-byte one ("v2") turned up in random AES-GCM ciphertext about once in a couple
+	// of thousand runs (PR #614's lint run)
+	const second = "cf-token-value-2-0123456789-not-in-cipher"
+	if err := s.Put(ctx, "cf_api_token", []byte(second), "u1"); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.Get(ctx, "cf_api_token"); err != nil || string(got) != "v2" {
+	if got, err := s.Get(ctx, "cf_api_token"); err != nil || string(got) != second {
 		t.Fatalf("get = %q %v", got, err)
 	}
 	var raw []byte
-	if err := db.QueryRow(`SELECT ciphertext FROM home_secrets WHERE name = 'cf_api_token'`).Scan(&raw); err != nil || bytes.Contains(raw, []byte("v2")) {
-		t.Fatalf("stored in clear or missing: %v", err)
+	if err := db.QueryRow(`SELECT ciphertext FROM home_secrets WHERE name = 'cf_api_token'`).Scan(&raw); err != nil {
+		t.Fatalf("stored ciphertext missing: %v", err)
+	}
+	if bytes.Contains(raw, []byte(second)) {
+		t.Fatalf("stored in clear: %q", raw)
 	}
 	// EC3: the key file was replaced; the secret is there but cannot open
 	other := &DBStore{DB: db, Key: testKey(t, 8)}
