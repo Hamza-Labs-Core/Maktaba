@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 119,
+    "endpoint": 120,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -8002,6 +8002,33 @@
         "lang": "ar",
         "source": {
           "content": "d6c295ddc3c624a8"
+        }
+      }
+    },
+    {
+      "id": "ep-get-queues-libraries-activity",
+      "type": "endpoint",
+      "title": "GET /queues/libraries/activity",
+      "content": "المهام المنتهية لكل مكتبة في كل يوم (مخزّنة مؤقتًا دقيقة واحدة)",
+      "tags": [
+        "api",
+        "Queue",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/queues/libraries/activity",
+        "tag": "Queue",
+        "operationId": "getQueueLibraryActivity"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "702ac969bdabe38e"
         }
       }
     },
