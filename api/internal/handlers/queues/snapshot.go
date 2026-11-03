@@ -404,6 +404,7 @@ func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
 		sh := stageHealth(healthInputs{
 			Failures: hd.failures[st], DoneWindow: hd.done[st], Waiting: hd.waiting[st],
 			FailedOpen: open[st], Ignored: hd.ignored[st],
+			Component: componentHoldOf(stages[i], queues[i].Counts.Pending),
 		}, hd.cfg)
 		queues[i].Health = &sh
 		if f := h.StageETA[queues[i].Stage]; f != nil {
