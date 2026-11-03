@@ -29,17 +29,17 @@ import type { EntryType, WikiBundle, WikiEntry } from '@/types/wiki';
 import {
   GITHUB_ISSUES,
   GITHUB_REPO,
-  PENPOT_LINK,
-  PHASE_INFO,
   PHASES,
+  TYPE_LABEL_PLURAL,
+  phaseText,
 } from '@/lib/labels';
+import { t } from '@/lib/i18n';
+import { LangSwitch } from './LangSwitch';
 
 interface Props {
   bundle: WikiBundle;
   theme: 'light' | 'dark';
   toggleTheme: () => void;
-  dir: 'ltr' | 'rtl';
-  toggleDir: () => void;
   query: string;
   onQueryChange: (q: string) => void;
   searchInputRef: React.RefObject<HTMLInputElement>;
@@ -50,8 +50,6 @@ export function Sidebar({
   bundle,
   theme,
   toggleTheme,
-  dir,
-  toggleDir,
   query,
   onQueryChange,
   searchInputRef,
@@ -84,7 +82,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="flex h-screen w-full flex-col overflow-hidden border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
+    <aside className="flex h-screen w-full flex-col overflow-hidden border-e border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
       {/* Header */}
       <div className="border-b border-slate-200 dark:border-slate-800 p-4 sticky top-0 bg-slate-50 dark:bg-slate-950 z-10">
         <Link
@@ -97,25 +95,26 @@ export function Sidebar({
           </div>
           <div className="leading-tight">
             <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              Maktaba
+              {t('app.name')}
             </div>
             <div className="text-[11px] text-slate-500 dark:text-slate-400">
-              Wiki
+              {t('app.short')}
             </div>
           </div>
         </Link>
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+          <Search className="absolute start-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
           <input
             ref={searchInputRef}
             value={query}
             onChange={(e) => onQueryChange(e.target.value)}
             onKeyDown={onSearchKeyDown}
             type="search"
-            placeholder="Search wiki…"
-            className="w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-1.5 pl-8 pr-9 text-[13px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
+            placeholder={t('search.placeholder')}
+            aria-label={t('search.title')}
+            className="w-full rounded-md border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 py-1.5 ps-8 pe-9 text-[13px] text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none"
           />
-          <kbd className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-1.5 py-px text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+          <kbd className="absolute end-2 top-1/2 -translate-y-1/2 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-1.5 py-px text-[10px] text-slate-500 dark:text-slate-400 font-mono">
             /
           </kbd>
         </div>
@@ -124,15 +123,14 @@ export function Sidebar({
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-2 text-[13px]">
         {/* External */}
-        <Section heading="External">
-          <ExternalRow href={GITHUB_ISSUES} icon={<CircleDot className="h-3.5 w-3.5" />} label="Issues · المشكلات" hint="GitHub" />
-          <ExternalRow href={PENPOT_LINK} icon={<Sparkles className="h-3.5 w-3.5" />} label="Penpot" hint="design" />
-          <ExternalRow href={GITHUB_REPO} icon={<Github className="h-3.5 w-3.5" />} label="GitHub" hint="repo" />
+        <Section heading={t('nav.external')}>
+          <ExternalRow href={GITHUB_ISSUES} icon={<CircleDot className="h-3.5 w-3.5" />} label={t('nav.issues')} hint={t('nav.issues.hint')} />
+          <ExternalRow href={GITHUB_REPO} icon={<Github className="h-3.5 w-3.5" />} label="GitHub" hint={t('nav.repo.hint')} />
         </Section>
 
         {/* Home */}
         <Section>
-          <NavItem to="/" icon={<Home className="h-3.5 w-3.5" />} label="Overview" onClose={onClose} />
+          <NavItem to="/" icon={<Home className="h-3.5 w-3.5" />} label={t('nav.overview')} onClose={onClose} />
         </Section>
 
         {/* Phases & epics */}
@@ -144,19 +142,9 @@ export function Sidebar({
             0,
           );
           return (
-            <Section
-              heading={
-                <>
-                  {PHASE_INFO[ph].title}{' '}
-                  <span lang="ar" dir="rtl" className="normal-case tracking-normal">
-                    {PHASE_INFO[ph].titleAr}
-                  </span>
-                </>
-              }
-              key={ph}
-            >
+            <Section heading={phaseText(ph).title} key={ph}>
               <CollapsibleGroup
-                label={`${phaseEpics.length} epics`}
+                label={t('nav.epics', { n: phaseEpics.length })}
                 count={phaseStoryCount}
                 defaultOpen={ph === 1}
               >
@@ -174,7 +162,7 @@ export function Sidebar({
                         to="/entry/$id"
                         params={{ id: epic.id }}
                         icon={<BookMarked className="h-3.5 w-3.5" />}
-                        label="Overview"
+                        label={t('nav.overview')}
                         onClose={onClose}
                       />
                       {stories.map((s) => (
@@ -196,7 +184,7 @@ export function Sidebar({
         })}
 
         {/* Browse */}
-        <Section heading="Browse">
+        <Section heading={t('nav.browse')}>
           <BrowseRow type="feature" icon={<Sparkles className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} />
           <BrowseRow type="entity" icon={<Database className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} />
           <BrowseRow type="endpoint" icon={<GitBranch className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} />
@@ -204,11 +192,11 @@ export function Sidebar({
           <BrowseRow type="mockup" icon={<Image className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} />
           <BrowseRow type="review" icon={<ListChecks className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} />
           <BrowseRow type="plan" icon={<Layers className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} />
-          <BrowseRow type="story" icon={<FileText className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} label="All Stories" />
+          <BrowseRow type="story" icon={<FileText className="h-3.5 w-3.5" />} bundle={bundle} onClose={onClose} label={t('nav.allStories')} />
           <NavItem
             to="/glossary"
             icon={<BookMarked className="h-3.5 w-3.5" />}
-            label="Glossary"
+            label={t('nav.glossary')}
             onClose={onClose}
           />
         </Section>
@@ -218,24 +206,19 @@ export function Sidebar({
       <div className="flex items-center gap-2 border-t border-slate-200 dark:border-slate-800 p-2.5 bg-slate-50 dark:bg-slate-950">
         <button
           onClick={toggleTheme}
-          title="Toggle theme"
+          title={t('theme.toggle')}
           className="inline-flex items-center gap-1.5 rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
         >
           {theme === 'dark' ? <Moon className="h-3 w-3" /> : <Sun className="h-3 w-3" />}
-          {theme === 'dark' ? 'Dark' : 'Light'}
+          {theme === 'dark' ? t('theme.dark') : t('theme.light')}
         </button>
-        <button
-          onClick={toggleDir}
-          title="Toggle text direction"
-          className="inline-flex items-center gap-1.5 rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-        >
-          {dir.toUpperCase()}
-        </button>
+        <LangSwitch />
         <a
           href={GITHUB_REPO}
           target="_blank"
           rel="noopener noreferrer"
-          className="ml-auto inline-flex items-center gap-1 rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+          aria-label="GitHub"
+          className="ms-auto inline-flex items-center gap-1 rounded border border-slate-200 dark:border-slate-700 px-2 py-1 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
         >
           <Github className="h-3 w-3" />
         </a>
@@ -254,7 +237,7 @@ function Section({
   return (
     <div className="mb-1">
       {heading && (
-        <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-500">
+        <div className="px-3 pt-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-500 rtl:normal-case rtl:tracking-normal rtl:text-[11px]">
           {heading}
         </div>
       )}
@@ -351,10 +334,11 @@ function CollapsibleGroup({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100 transition-colors text-left"
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100 transition-colors text-start"
       >
         <ChevronRight
-          className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-90' : ''} rtl:${open ? '-rotate-90' : 'rotate-180'}`}
+          className={`h-3 w-3 shrink-0 transition-transform ${open ? 'rotate-90' : 'rtl:rotate-180'}`}
         />
         <span className="flex-1 truncate font-medium">{label}</span>
         {count != null && (
@@ -363,7 +347,7 @@ function CollapsibleGroup({
           </span>
         )}
       </button>
-      {open && <div className="ml-3 border-l border-slate-200 dark:border-slate-800 pl-1 mt-0.5 mb-1">{children}</div>}
+      {open && <div className="ms-3 border-s border-slate-200 dark:border-slate-800 ps-1 mt-0.5 mb-1">{children}</div>}
     </div>
   );
 }
@@ -382,22 +366,12 @@ function BrowseRow({
   label?: string;
 }) {
   const arr = bundle.byType.get(type) || [];
-  const labels: Partial<Record<EntryType, string>> = {
-    feature: 'Features',
-    entity: 'Entities',
-    endpoint: 'API Endpoints',
-    diagram: 'Diagrams',
-    mockup: 'Mockups',
-    review: 'Reviews',
-    plan: 'Plans',
-    story: 'All Stories',
-  };
   return (
     <NavItem
       to="/type/$type"
       params={{ type }}
       icon={icon}
-      label={label || labels[type] || type}
+      label={label || TYPE_LABEL_PLURAL[type]}
       badge={arr.length}
       onClose={onClose}
     />

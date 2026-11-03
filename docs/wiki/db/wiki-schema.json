@@ -39,6 +39,13 @@
       },
       "description": "The part files (beside wiki.json) holding the stories and plans."
     },
+    "lang": {
+      "type": "string",
+      "enum": [
+        "ar"
+      ],
+      "description": "The Arabic database (db/ar/): its text in Arabic. Absent in English."
+    },
     "entries": {
       "type": "array",
       "items": {
@@ -148,6 +155,24 @@
         },
         "metadata": {
           "type": "object"
+        },
+        "i18n": {
+          "type": "object",
+          "description": "In the Arabic database: the language, and for each field shown in Arabic the hash of the English it translates (the drift check).",
+          "properties": {
+            "lang": {
+              "type": "string",
+              "enum": [
+                "ar"
+              ]
+            },
+            "source": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
         }
       }
     }

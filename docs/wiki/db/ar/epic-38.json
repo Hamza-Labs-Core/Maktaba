@@ -1,0 +1,15 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 38 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-38-windows-app": {
+      "title": {
+        "hash": "93be858b10443066",
+        "ar": "مكتبة على Windows"
+      },
+      "content": {
+        "hash": "5ce4b2092a4b8806",
+        "ar": "مكتبة على نظام ويندوز: تثبيت واحد يشغّل كل شيء.\n\nالمتطلب (2026-10-20): إعداد التطبيق الواحد نفسه على ويندوز كما هو على أجهزة ماك."
+      }
+    }
+  }
+}
