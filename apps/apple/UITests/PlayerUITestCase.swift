@@ -58,6 +58,11 @@ class PlayerUITestCase: XCTestCase {
     /// read at its usual pace); then closed. What it took is in the test log and the result
     /// bundle. A later test process (after a crash) finds the simulator ready and pays one
     /// sign-in.
+    /// How many times longer than a test the warm-up's launch and sign-in may wait at each
+    /// step: on an iPad on CI the walkthrough took more than 5 s to go and the shell drew at
+    /// 200 s, which failed the shard's first test inside the warm-up meant to absorb it.
+    static let warmUpPatience: TimeInterval = 12
+
     private func warmUpOnce() throws {
         guard !Self.warmedUp else { return }
         Self.warmedUp = true
@@ -70,7 +75,8 @@ class PlayerUITestCase: XCTestCase {
         }
         XCTContext.runActivity(named: "The simulator's first launches of the app") { activity in
             let start = Date()
-            launchSignedIn(section: "libraries")
+            // the first launch's slowness is what this pays: its steps wait as long as it takes
+            launchSignedIn(section: "libraries", patience: Self.warmUpPatience)
             let shell = element("player.shell").waitForExistence(timeout: 120)
             let drawn = Date().timeIntervalSince(start)
             var quick = 0
@@ -126,7 +132,7 @@ class PlayerUITestCase: XCTestCase {
     /// never the next test's; off only for a relaunch that checks a setting was kept.
     func launch(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
                 fresh: Bool = true, resetSettings: Bool = true, theme: String? = "dark", controlsStay: Bool = true,
-                extra: [String] = []) {
+                extra: [String] = [], patience: TimeInterval = 1) {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale, "-maktaba-secrets-in-file"]
@@ -146,21 +152,22 @@ class PlayerUITestCase: XCTestCase {
         app.launch()
         if fresh {
             let walkthrough = element("permissions.walkthrough")
-            if walkthrough.waitForExistence(timeout: 10) {
+            if walkthrough.waitForExistence(timeout: 10 * patience) {
                 app.buttons["permissions.continue"].tap()
-                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5))
+                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5 * patience))
             }
         }
     }
 
     /// The mock home's address typed in the picker, then a code approved elsewhere.
     /// `timeout`: how long the picker may take to show (longer at a large text size).
-    func signIn(timeout: TimeInterval = 10) {
+    /// `patience`: every other wait, as many times longer (the warm-up's first launch).
+    func signIn(timeout: TimeInterval = 10, patience: TimeInterval = 1) {
         let field = app.textFields["picker.address"]
         // at a large text size the picker's header and nearby homes push the field (and its
         // Connect) below the screen, where the Form has not made them yet
-        XCTAssertTrue(element("start.brand").waitForExistence(timeout: timeout), "the start screen")
-        if !field.waitForExistence(timeout: 2) { scrollUntil(field) }
+        XCTAssertTrue(element("start.brand").waitForExistence(timeout: timeout * patience), "the start screen")
+        if !field.waitForExistence(timeout: 2 * patience) { scrollUntil(field) }
         XCTAssertTrue(field.exists, "the home picker")
         field.typeExactly(home.url, in: app)
         // submitted from the field's own Return (`onSubmit`, the same `add` as Connect), not a
@@ -171,17 +178,18 @@ class PlayerUITestCase: XCTestCase {
         // Connect button's own tap is still driven by ConnectUITests and the progress tests.
         field.typeText("\n")
         let byCode = app.buttons[language == "ar" ? "برمز" : "With a code"]
-        XCTAssertTrue(byCode.waitForExistence(timeout: 10), "the sign-in screen offers a code")
+        XCTAssertTrue(byCode.waitForExistence(timeout: 10 * patience), "the sign-in screen offers a code")
         byCode.tap()
         home.approve()
-        XCTAssertTrue(byCode.waitForNonExistence(timeout: 20), "approved: signed in")
+        XCTAssertTrue(byCode.waitForNonExistence(timeout: 20 * patience), "approved: signed in")
     }
 
     /// A first run, signed in to the mock home.
     func launchSignedIn(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
-                        controlsStay: Bool = true, extra: [String] = []) {
-        launch(language, sections: sections, section: section, open: open, controlsStay: controlsStay, extra: extra)
-        signIn()
+                        controlsStay: Bool = true, extra: [String] = [], patience: TimeInterval = 1) {
+        launch(language, sections: sections, section: section, open: open, controlsStay: controlsStay, extra: extra,
+               patience: patience)
+        signIn(patience: patience)
     }
 
     func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
