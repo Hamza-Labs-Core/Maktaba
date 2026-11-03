@@ -258,6 +258,18 @@ public actor APIClient {
         _ = try await sendRaw(request("POST", "/api/pairing/approve", body: ["code": code.filter { $0 != "-" }]))
     }
 
+    /// The devices waiting for an approval on this home (`GET /api/pairing/pending`, signed
+    /// in), newest first, without their codes. nil: a home from before the list (404 or 405).
+    /// A sign-in through Maktaba Cloud gets an empty list (it cannot approve).
+    public func pendingSignIns() async throws -> [PendingSignIn]? {
+        do {
+            let r: PendingSignIns = try await get("/api/pairing/pending")
+            return r.requests
+        } catch let APIError.status(code, _, _) where code == 404 || code == 405 {
+            return nil
+        }
+    }
+
     /// Asks whether the code was approved; once it is, this device is signed in as the
     /// person who approved it (the tokens are kept, as after `signIn`).
     public func collectDevicePairing(_ p: DevicePairing, label: String) async throws -> DevicePairing.State {
@@ -277,7 +289,11 @@ public actor APIClient {
                 throw APIError.decoding(String(describing: error))
             }
             return .approved
-        case 202, 429:
+        case 202:
+            // looked_up: a phone signed in on the home has read this code (newer homes)
+            let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            return body?["looked_up"] as? Bool == true ? .lookedUp : .waiting
+        case 429:
             return .waiting
         case 409, 410:
             return .expired

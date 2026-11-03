@@ -314,10 +314,11 @@ struct TVSignInView: View {
                 SectionTitle(tv.text(.codeTitle, session.current?.name ?? ""), size: 52)
                 switch codeFlow?.status {
                 case let .showing(p)?:
-                    Text(words.text(.codeIntro, session.current?.name ?? ""))
+                    Text(words.codeIntro)
                         .font(Theme.body(30))
                         .foregroundStyle(Theme.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("pairing-intro")
                     Text(verbatim: p.code)
                         .font(.system(size: 110, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.goldText)
@@ -336,6 +337,13 @@ struct TVSignInView: View {
                     HStack(spacing: 16) {
                         ProgressView()
                         Text(words.text(.waiting)).foregroundStyle(Theme.muted)
+                    }
+                    // a phone signed in on the home has read this code: approval is next
+                    if codeFlow?.lookedUp == true {
+                        Label(words.text(.lookedUp), systemImage: "iphone.radiowaves.left.and.right")
+                            .font(Theme.body(28, weight: .semibold))
+                            .foregroundStyle(Theme.goldText)
+                            .accessibilityIdentifier("pairing-looked-up")
                     }
                     TimelineView(.periodic(from: .now, by: 1)) { ctx in
                         let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
@@ -361,6 +369,11 @@ struct TVSignInView: View {
                     }
                     Button(tv.text(.otherHome), systemImage: "house") { session.switchHome() }
                         .accessibilityIdentifier("signin.homes")
+                    // last, so the remote's first focus stays where it was
+                    if codeFlow?.pairing != nil {
+                        Button(words.text(.newCode), systemImage: "arrow.clockwise") { codeFlow?.newCode() }
+                            .accessibilityIdentifier("pairing-new-code")
+                    }
                 }
                 .buttonStyle(.gold)
                 .padding(.top, 20)
