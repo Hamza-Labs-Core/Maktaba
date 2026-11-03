@@ -60,13 +60,13 @@ jobs:
       # entry, shared between runs. The entry's key is the wrapper, the version catalogs and the
       # build scripts (not the commit), so a run on the same inputs reuses it and writes nothing
       # new; after a version change it restores the newest entry for this job and fetches only
-      # what changed. Pull requests write too: an entry already there is never written again.
+      # what changed. Only main writes (the action's default): the repository's Actions cache is
+      # over its 10 GB limit, and entries a pull request writes would push main's out sooner.
       - name: Gradle caches
         uses: gradle/actions/setup-gradle@v6.4.0
         env:
           GRADLE_BUILD_ACTION_CACHE_KEY_JOB_EXECUTION: ${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/desktop-player/gradle/*.toml', 'apps/desktop-player/gradle/wrapper/gradle-wrapper.properties', 'apps/desktop-player/**/*.gradle.kts', 'apps/desktop-player/gradle.properties', 'apps/android/client/build.gradle.kts') }}
         with:
-          cache-read-only: false
           add-job-summary: on-failure
           # the step above checks the wrapper jar
           validate-wrappers: false
