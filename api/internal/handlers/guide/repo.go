@@ -3,6 +3,7 @@ package guide
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -22,6 +23,9 @@ type ChannelMeta struct {
 	Slug      string
 	LogoPath  *string
 	Category  string
+	// Watermark is the corner the channel's logo is burned into on air
+	// ("top-right" ...), "" when the channel airs none (watermarkCorner).
+	Watermark string
 }
 
 // ProgramRow is one channel_programs block as read for the guide.
@@ -39,7 +43,7 @@ type ProgramRow struct {
 // channelsVisible returns enabled channels, optionally filtered by
 // category. ACL scoping is applied by the caller against the principal.
 func (rp *repo) channelsVisible(ctx context.Context, category string) ([]ChannelMeta, error) {
-	q := `SELECT id, library_id, number, name, slug, logo_path, category
+	q := `SELECT id, library_id, number, name, slug, logo_path, category, mode_config
 	      FROM channels WHERE enabled = true AND lifecycle = 'live'`
 	var args []any
 	if category != "" {
@@ -55,10 +59,11 @@ func (rp *repo) channelsVisible(ctx context.Context, category string) ([]Channel
 	out := []ChannelMeta{}
 	for rows.Next() {
 		var c ChannelMeta
-		var lib, logo sql.NullString
-		if err := rows.Scan(&c.ID, &lib, &c.Number, &c.Name, &c.Slug, &logo, &c.Category); err != nil {
+		var lib, logo, modeConfig sql.NullString
+		if err := rows.Scan(&c.ID, &lib, &c.Number, &c.Name, &c.Slug, &logo, &c.Category, &modeConfig); err != nil {
 			continue
 		}
+		c.Watermark = watermarkCorner(modeConfig.String)
 		if lib.Valid {
 			c.LibraryID = &lib.String
 		}
@@ -72,13 +77,14 @@ func (rp *repo) channelsVisible(ctx context.Context, category string) ([]Channel
 
 func (rp *repo) oneChannel(ctx context.Context, id string) (ChannelMeta, error) {
 	row := rp.db.QueryRowContext(ctx, `
-		SELECT id, library_id, number, name, slug, logo_path, category
+		SELECT id, library_id, number, name, slug, logo_path, category, mode_config
 		FROM channels WHERE id = $1`, id)
 	var c ChannelMeta
-	var lib, logo sql.NullString
-	if err := row.Scan(&c.ID, &lib, &c.Number, &c.Name, &c.Slug, &logo, &c.Category); err != nil {
+	var lib, logo, modeConfig sql.NullString
+	if err := row.Scan(&c.ID, &lib, &c.Number, &c.Name, &c.Slug, &logo, &c.Category, &modeConfig); err != nil {
 		return ChannelMeta{}, err
 	}
+	c.Watermark = watermarkCorner(modeConfig.String)
 	if lib.Valid {
 		c.LibraryID = &lib.String
 	}
@@ -199,4 +205,32 @@ func itoa(i int) string {
 		d = append([]byte{'-'}, d...)
 	}
 	return string(d)
+}
+
+// watermarkCorner is the corner of the logo the stream engine burns into the
+// picture, read from mode_config->'look'->'watermark' as the engine reads it
+// (streaming/internal/channel/look.go ParseLook): a watermark without a path
+// is none (""), an unknown or missing position is top-right. A player keeps
+// its overlays clear of that corner.
+func watermarkCorner(modeConfig string) string {
+	var mc struct {
+		Look struct {
+			Watermark *struct {
+				Path     string `json:"path"`
+				Position string `json:"position"`
+			} `json:"watermark"`
+		} `json:"look"`
+	}
+	if strings.TrimSpace(modeConfig) == "" || json.Unmarshal([]byte(modeConfig), &mc) != nil {
+		return ""
+	}
+	w := mc.Look.Watermark
+	if w == nil || strings.TrimSpace(w.Path) == "" {
+		return ""
+	}
+	switch w.Position {
+	case "top-right", "top-left", "bottom-right", "bottom-left":
+		return w.Position
+	}
+	return "top-right"
 }

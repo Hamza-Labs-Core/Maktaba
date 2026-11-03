@@ -77,7 +77,9 @@ struct HomeView: View {
         let read = await HomeShelves.load(
             home: { try await client.home() },
             rails: { try await client.homeRails(surface: "tv-home") },
-            now: { try await client.channelsNow() })
+            now: { try await client.channelsNow() },
+            // a row that cannot be read again keeps what it showed (as the Player's Home)
+            keeping: shelves)
         // the screen went away (or a newer read started): nothing to say
         guard !Task.isCancelled else { return }
         for shelf in read {

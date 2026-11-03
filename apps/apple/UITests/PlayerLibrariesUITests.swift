@@ -325,7 +325,6 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
     private func auditOnce(_ page: String) -> (found: [String], during: [String]) {
         // every issue of the page in one failure (the audit itself stops at the first)
         var found: [String] = []
-        let asked = home.requests.count
         do {
             try accessibilityAudit { issue in
                 // a progress bar is a reading, not a control: no 44-pt target (as 48.14's audit)
@@ -339,7 +338,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         } catch {
             found.append("\(error)")
         }
-        return (found, home.requests.dropFirst(asked).map { "\($0.method) \($0.path)\($0.query.isEmpty ? "" : "?" + $0.query)" })
+        return (found, home.requests.dropFirst(auditFrom).map { "\($0.method) \($0.path)\($0.query.isEmpty ? "" : "?" + $0.query)" })
     }
 
     // MARK: the Series tab's pages

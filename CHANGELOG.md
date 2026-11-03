@@ -36,6 +36,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
+  logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
+  data, or its stall notice) did not change the playback phase, so the channel banner did not
+  come back. A wait of more than a second now shows the banner and a Buffering line; both go
+  when the picture moves again (the banner 6 s later). `GET /api/channels/now` and the guide
+  give each channel's `watermark_position`, the corner the home burns its logo into; with a
+  bottom corner the banner and the mini-guide sit at the top. The iPhone, iPad and Mac Player's
+  Home now uses MaktabaKit's `HomeShelves`, as the Apple TV: a row that cannot be read keeps
+  what it showed, or shows a tile that reads Home again, in English and Arabic.
+
 - **Android: Favorite or Mark watched tapped while a video's page is read again stays as
   tapped.** Coming back to a video's page reads it again behind the page shown; a tap on
   Favorite or Mark watched before that read came back was saved, but the read then put the old

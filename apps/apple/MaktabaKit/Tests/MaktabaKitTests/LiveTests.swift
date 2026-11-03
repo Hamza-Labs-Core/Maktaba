@@ -209,6 +209,20 @@ private func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
         #expect(LiveStub.seen.last?.auth == "Bearer a-live")
     }
 
+    /// The corner the home burns the logo into (`watermark_position`); none, an older home or
+    /// an unknown corner read as nil (the overlays then sit at the bottom).
+    @Test func theWatermarksCorner() throws {
+        func corner(_ json: String) throws -> WatermarkCorner? {
+            try JSONDecoder.home.decode(LiveChannel.self, from: Data(json.utf8)).watermark
+        }
+        #expect(try corner(#"{"id":"c1","watermark_position":"bottom-left"}"#) == .bottomLeft)
+        #expect(try corner(#"{"id":"c1","watermark_position":"bottom-right"}"#) == .bottomRight)
+        #expect(try corner(#"{"id":"c1","watermark_position":"top-right"}"#) == .topRight)
+        #expect(try corner(#"{"id":"c1"}"#) == nil)
+        #expect(try corner(#"{"id":"c1","watermark_position":"middle"}"#) == nil)
+        #expect(WatermarkCorner.bottomLeft.isBottom && !WatermarkCorner.topLeft.isBottom)
+    }
+
     @Test func readsWhereTheTVStreams() async throws {
         LiveStub.on("GET /api/tv/info", 200, LiveFixtures.info(viaRelay: true, available: false, reason: "remote viewing is off"))
         let i = try await LiveStub.client().tvInfo()

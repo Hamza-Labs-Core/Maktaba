@@ -75,6 +75,26 @@ import MaktabaKit
         #expect(playback.sound == Playback.Sound(codec: nil, audible: true), "a player it no longer plays says nothing")
     }
 
+    /// A player still waiting 15 s after it was first seen waiting is opened again where it
+    /// is (PR #614's iPhone run: stopped at 1257 s for good after an audio switch, its rate
+    /// 1); a wait that ends sooner, or one that ends and starts again, is left alone; after
+    /// a reopen the count starts over. Driven by its own clock, the watch's looks 10 s apart.
+    @Test func aPlayerStuckWaitingFifteenSecondsOpensAgain() {
+        let home = URL(string: "http://127.0.0.1:9")!
+        let playback = Playback(client: APIClient(home: home, tokens: TokenStore(app: "test.mac.stuck", home: home)))
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        func at(_ s: TimeInterval) -> Date { t0.addingTimeInterval(s) }
+        #expect(!playback.stuck(waiting: false, at: at(0)), "playing")
+        #expect(!playback.stuck(waiting: true, at: at(10)), "first seen waiting")
+        #expect(!playback.stuck(waiting: true, at: at(20)), "waiting 10 s: a slow segment")
+        #expect(playback.stuck(waiting: true, at: at(30)), "waiting 20 s: stuck, opened again")
+        #expect(!playback.stuck(waiting: true, at: at(40)), "after the reopen the count starts over")
+        #expect(!playback.stuck(waiting: false, at: at(50)), "it plays again")
+        #expect(!playback.stuck(waiting: true, at: at(60)), "a new wait")
+        #expect(!playback.stuck(waiting: true, at: at(70)))
+        #expect(playback.stuck(waiting: true, at: at(75)), "15 s since it was first seen waiting")
+    }
+
     /// A UI test's `-maktaba-settings-reset` puts autoplay back on as the app starts (PlayerApp
     /// applies it, not only the Profile), so a test that turned it off never leaves the next
     /// test's player without Up next.
