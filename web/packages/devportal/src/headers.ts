@@ -38,16 +38,7 @@ export const CSP_API = csp({
   "font-src": "'self' data:",
   "worker-src": "'self' blob:",
 });
-// The wiki: rendered markdown may carry style attributes; a diagram opens in the
-// diagrams.net viewer (a frame, which it sends the diagram to); its page loads its fonts
-// from Google Fonts.
-export const CSP_WIKI = csp({
-  "style-src": "'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "font-src": "'self' https://fonts.gstatic.com",
-  "frame-src": "https://viewer.diagrams.net",
-});
 export function cspFor(path: string): string {
-  if (path.startsWith("/wiki/")) return CSP_WIKI;
   if (path.startsWith("/api/")) return CSP_API;
   return CSP_DEFAULT;
 }
@@ -61,12 +52,26 @@ export const SECURITY_HEADERS: Record<string, string> = {
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 };
 
-// Vite's content-hashed bundle names (index-Bx3k9Q2a.js) never change: cache them for good.
-const HASHED = /^\/wiki\/assets\/.+-[A-Za-z0-9_-]{8,}\.(js|css|woff2?|svg|png)$/;
+export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
+
+// Pages the site published before and does not any more. The epics wiki (/wiki/) and the
+// Epic 54 story pages (/plugins/story-54-*) are not for this site: the specs live on
+// GitHub, and the plugin guides replaced the story pages.
+export const MOVED: [prefix: string, to: string][] = [
+  ["/wiki", `${GITHUB}/tree/main/specs/epics`],
+  ["/plugins/story-54-", "/plugins/"],
+];
+
+/** Where an old path now lives, or null. */
+export function movedTo(path: string): string | null {
+  for (const [prefix, to] of MOVED) {
+    if (path === prefix || path.startsWith(prefix.endsWith("-") ? prefix : `${prefix}/`)) return to;
+  }
+  return null;
+}
 
 export function cacheControl(path: string, contentType: string, status: number): string {
   if (status >= 400) return "no-store";
-  if (HASHED.test(path)) return "public, max-age=31536000, immutable";
   if (contentType.startsWith("text/html")) return "public, max-age=0, must-revalidate";
   return "public, max-age=3600";
 }

@@ -45,6 +45,8 @@ export interface WikiDB {
   description?: string;
   generated_from?: string[];
   counts?: Partial<Record<EntryType, number>>;
+  /** wiki.json only: the part files beside it that hold the stories and plans. */
+  parts?: string[];
   entries: WikiEntry[];
 }
 

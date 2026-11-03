@@ -1,14 +1,13 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { CSP_API, CSP_DEFAULT, CSP_WIKI, cacheControl } from "./headers";
+import { CSP_API, CSP_DEFAULT, cacheControl, movedTo } from "./headers";
 import worker, { type Env } from "./worker";
 
 // an assets binding over a few files: what wrangler's [assets] would serve from dist/
 const FILES: Record<string, [string, string]> = {
   "/": ["<!doctype html>home", "text/html; charset=utf-8"],
   "/404": ["<!doctype html>not found page", "text/html; charset=utf-8"],
-  "/wiki/": ["<!doctype html>wiki", "text/html; charset=utf-8"],
-  "/wiki/assets/index-Dy6jf78D.js": ["console.log(1)", "text/javascript"],
+  "/plugins/": ["<!doctype html>plugins", "text/html; charset=utf-8"],
   "/api/": ["<!doctype html>api", "text/html; charset=utf-8"],
   "/assets/portal.css": ["body{}", "text/css"],
   "/.well-known/security.txt": ["Contact: mailto:security@maktaba.dev\n", "text/plain"],
@@ -35,9 +34,9 @@ const get = (url: string, env: Env = fakeEnv(), init?: RequestInit) =>
 
 describe("redirects", () => {
   it("sends www to the apex, keeping path and query", async () => {
-    const res = await get("https://www.maktaba.dev/wiki/?q=1");
+    const res = await get("https://www.maktaba.dev/plugins/?q=1");
     expect(res.status).toBe(301);
-    expect(res.headers.get("Location")).toBe("https://maktaba.dev/wiki/?q=1");
+    expect(res.headers.get("Location")).toBe("https://maktaba.dev/plugins/?q=1");
   });
 
   it("sends http to https", async () => {
@@ -50,6 +49,25 @@ describe("redirects", () => {
     const env = { ...fakeEnv(), CANONICAL_REDIRECTS: "off" };
     expect((await get("http://maktaba.dev/", env)).status).toBe(200);
     expect((await get("http://www.maktaba.dev/", env)).status).toBe(200);
+  });
+
+  it("sends the old epics wiki to the specs on GitHub", async () => {
+    for (const p of ["/wiki", "/wiki/", "/wiki/assets/index-Dy6jf78D.js", "/wiki/db/wiki.json"]) {
+      const res = await get(`https://maktaba.dev${p}`);
+      expect(res.status, p).toBe(301);
+      expect(res.headers.get("Location"), p).toBe(
+        "https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics"
+      );
+    }
+    expect(movedTo("/wikis")).toBeNull();
+  });
+
+  it("sends the old Epic 54 story pages to the plugin guides", async () => {
+    const res = await get("https://maktaba.dev/plugins/story-54-01-manifest-package/");
+    expect(res.status).toBe(301);
+    expect(res.headers.get("Location")).toBe("/plugins/");
+    expect(movedTo("/plugins/manifest/")).toBeNull();
+    expect((await get("https://maktaba.dev/plugins/")).status).toBe(200);
   });
 
   it("points /security.txt at /.well-known/security.txt", async () => {
@@ -66,7 +84,7 @@ describe("redirects", () => {
 
 describe("security headers", () => {
   it("every page gets HSTS, nosniff, a referrer policy and no framing", async () => {
-    for (const path of ["/", "/wiki/", "/api/", "/nope"]) {
+    for (const path of ["/", "/plugins/", "/api/", "/nope"]) {
       const res = await get("https://maktaba.dev" + path);
       expect(res.headers.get("Strict-Transport-Security")).toBe("max-age=31536000");
       expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -96,20 +114,9 @@ describe("security headers", () => {
     expect(csp).not.toMatch(/https:\/\//);
   });
 
-  it("the wiki may frame the diagrams.net viewer and nothing else", async () => {
-    const csp = (await get("https://maktaba.dev/wiki/")).headers.get("Content-Security-Policy")!;
-    expect(csp).toBe(CSP_WIKI);
-    expect(csp).toContain("frame-src https://viewer.diagrams.net");
-    expect(csp).toContain("script-src 'self';");
-  });
 });
 
 describe("caching", () => {
-  it("hashed wiki bundles are immutable", async () => {
-    const res = await get("https://maktaba.dev/wiki/assets/index-Dy6jf78D.js");
-    expect(res.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
-  });
-
   it("HTML revalidates every time", async () => {
     const res = await get("https://maktaba.dev/");
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=0, must-revalidate");

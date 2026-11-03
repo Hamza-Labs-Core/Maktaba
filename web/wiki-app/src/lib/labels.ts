@@ -47,31 +47,63 @@ export const METHOD_CHIP_CLASS: Record<string, string> = {
   DELETE: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
 };
 
-export const PHASE_INFO: Record<
-  number,
-  { title: string; sub: string; range: string }
-> = {
+// The epic groups the sidebar and the dashboard show (an epic's `phase`), each in English and
+// Arabic. docs/wiki/db/curated.json sets an epic's phase; an epic it does not name is in 5.
+export interface PhaseInfo {
+  title: string;
+  titleAr: string;
+  sub: string;
+  subAr: string;
+  range: string;
+  rangeAr: string;
+}
+
+export const PHASE_INFO: Record<number, PhaseInfo> = {
   1: {
     title: 'Phase 1 · Pipeline',
+    titleAr: 'المرحلة 1 · خط المعالجة',
     sub: 'Scanner → Audio → Transcription → Subtitles → Search → Job Queue',
+    subAr: 'الماسح ← الصوت ← التفريغ النصي ← الترجمات ← البحث ← طابور المهام',
     range: 'Epics 01–06',
+    rangeAr: 'الملاحم 01–06',
   },
   2: {
     title: 'Phase 2 · API & Streaming',
+    titleAr: 'المرحلة 2 · الواجهة البرمجية والبث',
     sub: 'API server, streaming, library mgmt, auth & security',
+    subAr: 'خادم الواجهة البرمجية، البث، إدارة المكتبات، تسجيل الدخول والأمان',
     range: 'Epics 07–10',
+    rangeAr: 'الملاحم 07–10',
   },
   3: {
     title: 'Phase 3 · Clients',
+    titleAr: 'المرحلة 3 · التطبيقات',
     sub: 'Web, mobile, desktop, TV, discovery, subscriptions, design',
+    subAr: 'الويب، الجوال، سطح المكتب، التلفاز، الاكتشاف، الاشتراكات، التصميم',
     range: 'Epics 11–17',
+    rangeAr: 'الملاحم 11–17',
   },
   4: {
     title: 'Phase 4 · Hardening',
+    titleAr: 'المرحلة 4 · التحصين',
     sub: 'Performance, scalability, testing, observability, devops, security',
+    subAr: 'الأداء، التوسع، الاختبار، المراقبة، التشغيل، الأمان',
     range: 'Epics 18–24',
+    rangeAr: 'الملاحم 18–24',
+  },
+  5: {
+    title: 'Phase 5 · Platform',
+    titleAr: 'المرحلة 5 · المنصة',
+    sub: 'Cloud, live TV, the apps, machines, queue health, search, plugins',
+    subAr: 'السحابة، التلفاز المباشر، التطبيقات، الأجهزة، صحة الطوابير، البحث، الإضافات',
+    range: 'Epics 25 onward',
+    rangeAr: 'الملاحم من 25 فصاعدًا',
   },
 };
+
+export const PHASES: number[] = Object.keys(PHASE_INFO)
+  .map(Number)
+  .sort((a, b) => a - b);
 
 export const GITHUB_REPO = 'https://github.com/Hamza-Labs-Core/Maktaba';
 export const GITHUB_BRANCH = 'main';

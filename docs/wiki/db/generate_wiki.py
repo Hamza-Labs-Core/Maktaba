@@ -1,918 +1,691 @@
 #!/usr/bin/env python3
-"""Generate the Maktaba wiki database.
+"""Generate the Maktaba wiki database from the repo's own specs.
 
-Reads:
-  /tmp/maktaba-specs/specs/*           (specs from merge-origin-license)
-  /tmp/maktaba-specs/shared/db/*       (migrations manifest)
-  ./shared/api/openapi.yaml             (current branch)
-  ./web/mockups/                        (current branch)
+    python3 docs/wiki/db/generate_wiki.py           write the database
+    python3 docs/wiki/db/generate_wiki.py --check   fail if the committed database is stale
+
+Reads (all repo-relative, found from this file's own path, so it runs from any directory):
+  specs/epics/*/            each epic's README.md, story-*.md and plan-*.md; an epic without
+                            story files gets its stories from the README's Stories section
+  specs/*.md                architecture.md (DB tables) and the review / audit documents
+  specs/diagrams/*.drawio
+  shared/api/openapi.yaml   the endpoints
+  web/mockups/**/*.html
+  docs/wiki/db/curated.json the hand-kept data the specs do not carry (epic names, phases
+                            and engines, hand-written summaries, Linear ids, the implementation
+                            phases, the cross-reference inventory). Edit it, not the output.
 
 Writes:
-  ./docs/wiki/INDEX.md
-  ./docs/wiki/stories-map.md
-  ./docs/wiki/features.md
-  ./docs/wiki/entities.md
-  ./docs/wiki/api-catalog.md
-  ./docs/wiki/db/wiki.json
-  ./docs/wiki/db/wiki-schema.json
+  web/wiki-app/public/db/wiki.json              meta, its parts, and every entry that is not
+                                                a story or a plan
+  web/wiki-app/public/db/wiki-epics-NN-MM.json  the stories and plans of epics NN to MM
+  web/wiki-app/public/db/wiki-cross-refs.json   the cross-reference inventory
+  docs/wiki/db/wiki-schema.json                 the JSON schema
+
+The output is deterministic (no timestamps), so --check compares bytes. CI runs --check
+(.github/workflows/ci.yml, the wiki job) whenever a spec, a mockup, the OpenAPI description or
+this folder changes. Every string is scrubbed of home paths, private addresses and
+personal .local names, and no paragraph quotes the owner.
+
+Python 3.10+, standard library only.
 """
 
+from __future__ import annotations
+
+import argparse
 import json
-import os
 import re
 import sys
 from collections import defaultdict
 from pathlib import Path
 
-SPECS = Path("/tmp/maktaba-specs/specs")
-SHARED = Path("/tmp/maktaba-specs/shared")
-REPO = Path(".")
-OUT = REPO / "docs" / "wiki"
-DB = OUT / "db"
+REPO = Path(__file__).resolve().parents[3]
+SPECS = REPO / "specs"
+CURATED = REPO / "docs" / "wiki" / "db" / "curated.json"
+OUT_DB = REPO / "web" / "wiki-app" / "public" / "db"
+SCHEMA_OUT = REPO / "docs" / "wiki" / "db" / "wiki-schema.json"
+
+# Epics per wiki-epics-NN-MM.json part file.
+PART_SIZE = 9
+# The phase an epic takes when curated.json names none: "Platform", Epics 25 onward.
+DEFAULT_PHASE = 5
+# Characters of a spec file kept as an entry's content.
+EXCERPT = 600
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-EPIC_NAME_FROM_DIR = {
-    "01-scanner": "Scanner",
-    "02-audio-extraction": "Audio Extraction",
-    "03-transcription": "Transcription",
-    "04-subtitles": "Subtitles",
-    "05-search-indexing": "Search & Indexing",
-    "06-job-queue": "Job Queue",
-    "07-api-server": "API Server",
-    "08-streaming": "Streaming",
-    "09-library-management": "Library Management",
-    "10-auth-security": "Auth & Security",
-    "11-web-ui": "Web UI",
-    "12-mobile": "Mobile",
-    "13-desktop": "Desktop",
-    "14-tv-apps": "TV Apps",
-    "15-discovery": "Discovery",
-    "16-subscriptions": "Subscriptions",
-    "17-ux-design-system": "UX & Design System",
-    "18-performance": "Performance",
-    "19-scalability": "Scalability",
-    "20-testing": "Testing",
-    "21-observability": "Observability",
-    "22-devops": "DevOps",
-    "23-security": "Security Hardening",
-    "24-data-integrity": "Data Integrity",
-}
-
-EPIC_PHASE = {
-    # rough phase grouping based on epic ranges; not in source files
-    "01-scanner": 1, "02-audio-extraction": 1, "03-transcription": 1,
-    "04-subtitles": 1, "05-search-indexing": 1, "06-job-queue": 1,
-    "07-api-server": 2, "08-streaming": 2,
-    "09-library-management": 2, "10-auth-security": 2,
-    "11-web-ui": 3, "12-mobile": 3, "13-desktop": 3, "14-tv-apps": 3,
-    "15-discovery": 3, "16-subscriptions": 3, "17-ux-design-system": 3,
-    "18-performance": 4, "19-scalability": 4, "20-testing": 4,
-    "21-observability": 4, "22-devops": 4, "23-security": 4,
-    "24-data-integrity": 4,
-}
-
-EPIC_ENGINE = {
-    "01-scanner": "Pipeline (Python)",
-    "02-audio-extraction": "Pipeline (Python)",
-    "03-transcription": "Pipeline (Python)",
-    "04-subtitles": "Pipeline (Python)",
-    "05-search-indexing": "Pipeline (Python) + API (Go)",
-    "06-job-queue": "Pipeline + API (cross-cutting)",
-    "07-api-server": "API (Go)",
-    "08-streaming": "Streaming (Go)",
-    "09-library-management": "API (Go)",
-    "10-auth-security": "API (Go)",
-    "11-web-ui": "Web (React/TS)",
-    "12-mobile": "Mobile (Capacitor + plugins)",
-    "13-desktop": "Desktop (Tauri)",
-    "14-tv-apps": "TV (Swift / Kotlin)",
-    "15-discovery": "API (Go) + Web",
-    "16-subscriptions": "API (Go) + Pipeline",
-    "17-ux-design-system": "Web (React/TS)",
-    "18-performance": "Cross-cutting",
-    "19-scalability": "Cross-cutting",
-    "20-testing": "Cross-cutting",
-    "21-observability": "Cross-cutting",
-    "22-devops": "Cross-cutting",
-    "23-security": "API + Streaming",
-    "24-data-integrity": "Cross-cutting",
-}
-
 
 def read(p: Path) -> str:
     try:
         return p.read_text(encoding="utf-8")
-    except Exception:
+    except OSError:
         return ""
 
 
-def parse_story_id(filename: str):
-    """story-EE-NN-slug.md  →  (EE, NN, slug, 'EE.NN')"""
-    m = re.match(r"^story-(\d{2})-(\d{2})-(.+)\.md$", filename)
-    if not m:
-        return None
-    return m.group(1), m.group(2), m.group(3), f"{int(m.group(1))}.{int(m.group(2))}"
+def rel(p: Path) -> str:
+    return p.relative_to(REPO).as_posix()
 
 
-def parse_plan_id(filename: str):
-    m = re.match(r"^plan-(\d{2})-(\d{2})-(.+)\.md$", filename)
-    if not m:
-        return None
-    return m.group(1), m.group(2), m.group(3)
-
-
-def first_heading_title(text: str) -> str:
-    for line in text.splitlines():
-        if line.startswith("# "):
-            return line[2:].strip()
-    return ""
-
-
-def extract_story_title(text: str) -> str:
-    """First H1 like '# Story 1.1 — Bootstrap a library'."""
-    h = first_heading_title(text)
-    # Strip "Story X.Y —" / "Story X.Y -"
-    h = re.sub(r"^Story\s+\d+\.\d+\s*[—–-]\s*", "", h)
-    return h
-
-
-def extract_plan_title(text: str) -> str:
-    h = first_heading_title(text)
-    h = re.sub(r"^Plan\s+\d+\.\d+\s*[—–-]\s*", "", h)
-    return h
+def nat_key(s: str) -> list[tuple[int, int | str]]:
+    """Natural sort: 'story-9.2' < 'story-10.1'; numbers and words never compared."""
+    return [(0, int(t)) if t.isdigit() else (1, t) for t in re.findall(r"\d+|\D+", s)]
 
 
 def slug_to_title(slug: str) -> str:
     return slug.replace("-", " ").title()
 
 
-# ---------------------------------------------------------------------------
-# 1. Inventory stories / plans / READMEs
-# ---------------------------------------------------------------------------
+def slugify(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:60]
 
-epics = {}   # epic_dir -> dict
-stories = {}  # 'EE.NN' -> dict
-plans = {}    # plan_id -> dict
 
-for epic_dir in sorted((SPECS / "epics").iterdir()):
-    if not epic_dir.is_dir():
-        continue
-    en = epic_dir.name
-    readme = read(epic_dir / "README.md")
-    epic_goal = ""
-    for line in readme.splitlines():
-        s = line.strip()
-        if s.startswith("**Goal.**"):
-            epic_goal = s.replace("**Goal.**", "").strip()
-            break
-    if not epic_goal:
-        # fallback to second line of README
-        readme_lines = [l for l in readme.splitlines() if l.strip()]
-        if len(readme_lines) > 1:
-            epic_goal = readme_lines[1].strip()
+def first_heading(text: str) -> str:
+    for line in text.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
 
-    epic_stories = []
-    epic_plans = []
-    for f in sorted(epic_dir.iterdir()):
-        if f.name.startswith("story-"):
-            sid = parse_story_id(f.name)
-            if not sid:
-                continue
-            ee, nn, slug, dotted = sid
-            text = read(f)
-            title = extract_story_title(text) or slug_to_title(slug)
-            stories[dotted] = {
-                "id": dotted,
-                "ee": ee, "nn": nn, "slug": slug,
-                "title": title,
-                "epic": en,
-                "epic_name": EPIC_NAME_FROM_DIR.get(en, en),
-                "story_file": f"specs/epics/{en}/{f.name}",
-                "plan_file": None,
-                "raw": text,
-            }
-            epic_stories.append(dotted)
-        elif f.name.startswith("plan-"):
-            pid = parse_plan_id(f.name)
-            if not pid:
-                continue
-            ee, nn, slug = pid
-            text = read(f)
-            title = extract_plan_title(text) or slug_to_title(slug)
-            plan_key = f"{ee}.{nn}-{slug}"
-            plans[plan_key] = {
-                "id": plan_key,
-                "ee": ee, "nn": nn, "slug": slug,
-                "title": title,
-                "epic": en,
-                "plan_file": f"specs/epics/{en}/{f.name}",
-                "raw": text,
-            }
-            epic_plans.append(plan_key)
-    epics[en] = {
-        "id": en,
-        "name": EPIC_NAME_FROM_DIR.get(en, en),
-        "phase": EPIC_PHASE.get(en),
-        "engine": EPIC_ENGINE.get(en, "—"),
-        "goal": epic_goal,
-        "readme": f"specs/epics/{en}/README.md",
-        "stories": epic_stories,
-        "plans": epic_plans,
-    }
 
-# Match plans → stories (same EE.NN often pairs with story EE.NN)
-for plan in plans.values():
-    dotted = f"{int(plan['ee'])}.{int(plan['nn'])}"
-    if dotted in stories:
-        # only set if matching slug or first match
-        if not stories[dotted]["plan_file"] or stories[dotted]["slug"] == plan["slug"]:
-            stories[dotted]["plan_file"] = plan["plan_file"]
-            stories[dotted]["plan_key"] = plan["id"]
+def parse_doc_name(prefix: str, filename: str):
+    """story-EE-NN-slug.md -> (EE, NN, slug); story-EE-slug.md -> (EE, None, slug)."""
+    m = re.match(rf"^{prefix}-(\d{{2}})-(?:(\d{{2}})-)?(.+)\.md$", filename)
+    if not m:
+        return None
+    return int(m.group(1)), (int(m.group(2)) if m.group(2) else None), m.group(3)
 
-# ---------------------------------------------------------------------------
-# 2. Diagrams
-# ---------------------------------------------------------------------------
 
-diagrams = []
-for d in sorted((SPECS / "diagrams").iterdir()):
-    if d.suffix == ".drawio":
-        name = d.stem
-        diagrams.append({
-            "id": f"diagram-{name}",
-            "name": name,
-            "title": slug_to_title(name),
-            "file": f"specs/diagrams/{d.name}",
-        })
+def dotted(ee: int, nn: int | None, slug: str) -> str:
+    return f"{ee}.{nn}" if nn is not None else f"{ee}.{slug}"
 
-# ---------------------------------------------------------------------------
-# 3. Reviews
-# ---------------------------------------------------------------------------
 
-reviews = []
-for r in sorted(SPECS.glob("REVIEW*.md")):
-    reviews.append({
-        "id": f"review-{r.stem.lower()}",
-        "name": r.stem,
-        "file": f"specs/{r.name}",
-    })
-for r in sorted(SPECS.glob("PLAN_REVIEW*.md")):
-    reviews.append({
-        "id": f"review-{r.stem.lower()}",
-        "name": r.stem,
-        "file": f"specs/{r.name}",
-    })
+def strip_title(h: str, word: str) -> str:
+    return re.sub(rf"^{word}\s+\d+\.\d+\s*[—–:-]\s*", "", h).strip()
 
-# ---------------------------------------------------------------------------
-# 4. Mockups (current repo)
-# ---------------------------------------------------------------------------
 
-mockups = []
-mockup_root = REPO / "web" / "mockups"
-for m in sorted(mockup_root.rglob("*.html")):
-    rel = m.relative_to(REPO).as_posix()
-    name = m.stem
-    title = slug_to_title(name)
-    # try to map to a story by 'mockup-EE-NN-slug.html'
-    story_id = None
-    sm = re.match(r"^mockup-(\d{2})-(\d{2})-", name)
-    if sm:
-        story_id = f"{int(sm.group(1))}.{int(sm.group(2))}"
-    mockups.append({
-        "id": f"mockup-{name}",
-        "name": name,
-        "title": title,
-        "file": rel,
-        "story": story_id,
-        "category": m.parent.name if m.parent.name != "mockups" else "shared",
-    })
+def epic_name_from_readme(readme: str, fallback: str) -> str:
+    """'# Epic 50: Maktaba Cloud with no downtime: from ...' -> 'Maktaba Cloud with no downtime'."""
+    h = first_heading(readme)
+    h = re.sub(r"^Epic\s+\d+\s*[—–:-]\s*", "", h).strip()
+    return h.split(": ")[0].strip() or fallback
 
-# Attach mockups to stories where directly mapped
-for mk in mockups:
-    if mk["story"] and mk["story"] in stories:
-        stories[mk["story"]].setdefault("mockup_files", []).append(mk["file"])
 
-# ---------------------------------------------------------------------------
-# 5. OpenAPI endpoints
-# ---------------------------------------------------------------------------
+def epic_goal(readme: str) -> str:
+    """The **Goal.** paragraph, else the first block under '## Goal(s)'. Without either: the
+    title's own words, then the first plain paragraph that states something (not a quote's
+    lead-in ending in ':', not a heading, blockquote, table or list)."""
+    lines = readme.splitlines()
 
-oapi_path = REPO / "shared" / "api" / "openapi.yaml"
-oapi_text = read(oapi_path)
-endpoints = []
-# Light hand-rolled YAML walker (paths section only)
-in_paths = False
-current_path = None
-for raw_line in oapi_text.splitlines():
-    if raw_line.startswith("paths:"):
-        in_paths = True
-        continue
-    if not in_paths:
-        continue
-    # End of paths section: another top-level key with no leading space
-    if raw_line and not raw_line.startswith(" ") and not raw_line.startswith("#"):
-        in_paths = False
-        continue
-    m_path = re.match(r"^  (/[A-Za-z0-9._/{}-]+):\s*$", raw_line)
-    if m_path:
-        current_path = m_path.group(1)
-        continue
-    m_method = re.match(r"^    (get|post|put|patch|delete|options|head):\s*$", raw_line)
-    if m_method and current_path:
-        method = m_method.group(1).upper()
-        endpoints.append({
-            "id": f"ep-{method.lower()}-{re.sub(r'[^A-Za-z0-9]+', '-', current_path).strip('-')}",
-            "method": method, "path": current_path,
-            "summary": "", "operationId": "", "tag": "",
-        })
-# Pull operationId / summary / tags by re-parsing per endpoint (simple line scan)
-lines = oapi_text.splitlines()
-for ep in endpoints:
-    # find the line of the path then the line of the method then look ahead
+    def paragraph(start: int) -> str:
+        out = []
+        for line in lines[start:]:
+            if not line.strip() or line.startswith("#"):
+                break
+            out.append(line.strip())
+        return " ".join(out)
+
     for i, line in enumerate(lines):
-        if line == f"  {ep['path']}:":
-            # search for the method within ~80 lines
-            for j in range(i + 1, min(i + 800, len(lines))):
-                lj = lines[j]
-                if re.match(r"^    [a-z]+:\s*$", lj):
-                    if lj.strip().rstrip(":").lower() == ep["method"].lower():
-                        # next ~30 lines: scan for summary/operationId/tags
-                        for k in range(j + 1, min(j + 60, len(lines))):
-                            lk = lines[k]
-                            if re.match(r"^    [a-z]+:\s*$", lk):  # next method
-                                break
-                            if lk.startswith("  /"):  # next path
-                                break
-                            ms = re.match(r"^      summary:\s*(.+)$", lk)
-                            if ms:
-                                ep["summary"] = ms.group(1).strip().strip('"\'')
-                            mo = re.match(r"^      operationId:\s*(.+)$", lk)
-                            if mo:
-                                ep["operationId"] = mo.group(1).strip().strip('"\'')
-                            if lk.strip().startswith("tags:"):
-                                # next line(s) starting with '- '
-                                for kk in range(k + 1, min(k + 8, len(lines))):
-                                    lkk = lines[kk]
-                                    mt = re.match(r"^      - (.+)$", lkk)
-                                    if mt:
-                                        ep["tag"] = mt.group(1).strip().strip('"\'')
-                                        break
-                                    if not lkk.startswith("        "):
-                                        break
-                        break
-            break
+        if line.strip().startswith("**Goal.**"):
+            return paragraph(i).replace("**Goal.**", "").strip()
+    title = re.sub(r"^Epic\s+\d+\s*[—–:-]\s*", "", first_heading(readme)).strip()
+    for i, line in enumerate(lines):
+        if re.match(r"^##\s+Goals?\b", line):
+            for j in range(i + 1, len(lines)):
+                if lines[j].startswith("#"):
+                    break
+                if lines[j].strip() and not lines[j - 1].strip():
+                    p = paragraph(j)
+                    if not p.endswith(":") and not p.startswith(">"):
+                        return f"{title}.\n\n{p}" if title else p
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if not s or s.startswith(("#", ">", "|", "-", "*", "```")) or re.match(r"^\d+\.", s):
+            continue
+        if i > 0 and lines[i - 1].strip():
+            continue
+        p = paragraph(i)
+        if p.endswith(":"):
+            continue
+        return f"{title}.\n\n{p}" if title else p
+    return title
+
+
+# ---- inline stories (an epic whose README lists its stories) -----------------------------
+
+STORY_HEADING = re.compile(r"^(#{1,6})\s+.*\bstor(y|ies)\b", re.IGNORECASE)
+
+
+def inline_stories(readme: str, ee: int) -> list[dict]:
+    """Stories an epic README lists in its Stories section(s): table rows whose first cell is
+    the story number ('| 45.1 | **Title** | scope |') and list items that start with it in
+    bold ('- **45.1** text', '1. **42.1 Title:** text'). First mention wins."""
+    out: dict[str, dict] = {}
+    level = 0
+    item: dict | None = None  # the list item a wrapped line continues
+    for line in readme.splitlines():
+        if item is not None and re.match(r"^\s{2,}\S", line) and not re.match(r"^\s*(?:[-*]|\d+\.)\s", line):
+            item["text"] += " " + line.strip()
+            continue
+        item = None
+        h = re.match(r"^(#{1,6})\s", line)
+        if h:
+            n = len(h.group(1))
+            if STORY_HEADING.match(line):
+                level = n
+            elif level and n <= level:
+                level = 0
+            continue
+        if not level:
+            continue
+        m = re.match(rf"^\|\s*\**{ee}\.(\d+)\**\s*\|\s*(.*?)\s*\|(.*)$", line)
+        if m:
+            nn, title, rest = int(m.group(1)), m.group(2), m.group(3)
+            title = title.replace("**", "").strip()
+            scope = " ".join(c.strip() for c in rest.split("|") if c.strip())
+            if not title:
+                title = scope.split(". ")[0]
+            text = f"{title}. {scope}".strip() if scope else title
+            out.setdefault(f"{ee}.{nn}", {"nn": nn, "title": short_title(title), "text": text})
+            continue
+        m = re.match(rf"^\s*(?:[-*]|\d+\.)\s+\*\*{ee}\.(\d+)\b\s*([^*]*)\*\*[\s:.—–-]*(.*)$", line)
+        if m:
+            nn, bold, rest = int(m.group(1)), m.group(2).strip().rstrip(":.").strip(), m.group(3).strip()
+            text = f"{bold}. {rest}" if bold else rest
+            key = f"{ee}.{nn}"
+            if key not in out:
+                out[key] = {"nn": nn, "title": bold, "text": text}
+                item = out[key]
+    for v in out.values():
+        if not v["title"]:  # a list item: its first clause
+            v["title"] = re.split(r"(?<=[.;:])\s|\s[—–]\s", v["text"])[0].rstrip(".;:")
+        v["title"] = short_title(v["title"])
+    return [dict(v, id=k) for k, v in out.items()]
+
+
+def short_title(t: str, limit: int = 90) -> str:
+    """A title cut to its first clause, or at a word, when it runs past `limit`."""
+    t = t.strip()
+    if len(t) <= limit:
+        return t
+    for sep in ("; ", ": ", " (", ", "):
+        i = t.find(sep)
+        if 8 <= i <= limit:
+            return t[:i]
+    return t[: t.rfind(" ", 0, limit)].rstrip(",;:") + "…"
+
+
+# ---- no quotes of the owner's words ------------------------------------------------------
+
+OWNER = re.compile(r"\b(?:the\s+)?owner(?:'s|’s)?\b", re.IGNORECASE)
+QUOTE = re.compile(r"[\"“”]")
+
+
+def drop_owner_quotes(text: str) -> str:
+    """The wiki never quotes the owner: a paragraph that names the owner and quotes them
+    goes, and so does a lead-in ('The owner's decisions (2026-10-19):') with the quote or
+    list that follows it, up to the next heading."""
+    out: list[str] = []
+    skipping = False
+    for block in re.split(r"\n\s*\n", text):
+        s = block.strip()
+        if s.startswith("#"):
+            skipping = False
+        elif skipping:
+            continue
+        if OWNER.search(s) and not s.startswith("#"):
+            if QUOTE.search(s):
+                continue
+            if s.endswith(":"):
+                skipping = True
+                continue
+        out.append(block)
+    return "\n\n".join(out)
+
+
+# ---- public safety (the same rules as web/packages/devportal/scripts/scan.mjs) ----------
+
+ALLOWED_LOCAL_HOSTS = {"maktaba.local", "tcp.local", "_tcp.local"}
+SCRUB = [
+    (re.compile(r"/Users/[A-Za-z0-9._-]+"), "~"),
+    (re.compile(r"/home/[a-z][a-z0-9_-]*/(?!\*)"), "~/"),
+    (re.compile(r"C:\\Users\\[^\\\s]*"), "%USERPROFILE%"),
+    (re.compile(r"claude-trail", re.IGNORECASE), "[internal]"),
+    (re.compile(r"docs/audits/"), "[internal]/"),
+    (
+        re.compile(
+            r"(?<![\d.])(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}"
+            r"|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}"
+            r"|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}"
+            r"|169\.254\.\d{1,3}\.\d{1,3})(?![\d.]*\d)"
+        ),
+        "[private address]",
+    ),
+    (re.compile(r"\b[a-z0-9-]+\.[a-z0-9-]+\.ts\.net\b", re.IGNORECASE), "[name].ts.net"),
+]
+LOCAL_HOST = re.compile(r"\b[A-Za-z0-9_][A-Za-z0-9_-]*\.local\b")
+
+
+def scrub_text(s: str) -> str:
+    for rx, rep in SCRUB:
+        s = rx.sub(rep, s)
+    return LOCAL_HOST.sub(lambda m: m.group(0) if m.group(0).lower() in ALLOWED_LOCAL_HOSTS else "[name].local", s)
+
+
+def scrub(v):
+    if isinstance(v, str):
+        return scrub_text(v)
+    if isinstance(v, list):
+        return [scrub(x) for x in v]
+    if isinstance(v, dict):
+        return {k: scrub(x) for k, x in v.items()}
+    return v
+
 
 # ---------------------------------------------------------------------------
-# 6. DB entities (parse architecture §8 + plan-introduced extensions)
+# Build
 # ---------------------------------------------------------------------------
 
-arch_text = read(SPECS / "architecture.md")
-manifest_text = read(SHARED / "db" / "migrations" / "MANIFEST.md")
 
-# Find every CREATE TABLE in §8.* of architecture
-entities = {}
-for m in re.finditer(r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(\w+)\s*\(", arch_text):
-    name = m.group(1)
-    if name in ("AS", "(", ""):
-        continue
-    if name not in entities:
-        entities[name] = {
-            "id": f"entity-{name}",
-            "name": name,
-            "source": "architecture.md §8",
-            "migration_slot": None,
-            "owning_plan": None,
+def build() -> dict[Path, str]:
+    curated = json.loads(read(CURATED) or "{}")
+    cur_epics: dict = curated.get("epics", {})
+    overlays: dict = curated.get("overlays", {})
+
+    # ---- 1. epics, stories, plans --------------------------------------------------------
+    epics: dict[str, dict] = {}
+    stories: dict[str, dict] = {}
+    plans: dict[str, dict] = {}
+
+    for epic_dir in sorted((SPECS / "epics").iterdir(), key=lambda p: nat_key(p.name)):
+        if not epic_dir.is_dir() or not re.match(r"^\d{2}-", epic_dir.name):
+            continue
+        en = epic_dir.name
+        ee = int(en[:2])
+        readme = drop_owner_quotes(read(epic_dir / "README.md"))
+        meta = cur_epics.get(en, {})
+        name = meta.get("name") or epic_name_from_readme(readme, slug_to_title(en[3:]))
+        phase = meta.get("phase", DEFAULT_PHASE)
+        epic_stories: list[str] = []
+        epic_plans: list[str] = []
+        for f in sorted(epic_dir.iterdir(), key=lambda p: nat_key(p.name)):
+            if f.name.startswith("story-"):
+                p = parse_doc_name("story", f.name)
+                if not p:
+                    continue
+                s_ee, nn, slug = p
+                sid = dotted(s_ee, nn, slug)
+                text = drop_owner_quotes(read(f))
+                stories[sid] = {
+                    "id": sid, "nn": nn, "slug": slug, "epic": en, "phase": phase,
+                    "title": strip_title(first_heading(text), "Story") or slug_to_title(slug),
+                    "story_file": rel(f), "plan_file": None, "plan_key": None, "raw": text,
+                }
+                epic_stories.append(sid)
+            elif f.name.startswith("plan-"):
+                p = parse_doc_name("plan", f.name)
+                if not p:
+                    continue
+                p_ee, nn, slug = p
+                key = f"{p_ee:02d}.{nn:02d}-{slug}" if nn is not None else f"{p_ee:02d}-{slug}"
+                text = drop_owner_quotes(read(f))
+                plans[key] = {
+                    "id": key, "ee": p_ee, "nn": nn, "slug": slug, "epic": en, "phase": phase,
+                    "title": strip_title(first_heading(text), "Plan") or slug_to_title(slug),
+                    "plan_file": rel(f), "raw": text,
+                }
+                epic_plans.append(key)
+        for st in inline_stories(readme, ee):
+            if st["id"] in stories:
+                continue
+            stories[st["id"]] = {
+                "id": st["id"], "nn": st["nn"], "slug": slugify(st["title"]), "epic": en,
+                "phase": phase, "title": st["title"], "story_file": rel(epic_dir / "README.md"),
+                "plan_file": None, "plan_key": None, "raw": st["text"], "inline": True,
+            }
+            epic_stories.append(st["id"])
+        epics[en] = {
+            "id": en, "num": ee, "name": name, "phase": phase, "engine": meta.get("engine"),
+            "goal": epic_goal(readme), "readme": rel(epic_dir / "README.md"),
+            "stories": sorted(epic_stories, key=nat_key), "plans": epic_plans,
         }
 
-# Plan-introduced tables from §8.7 table
-m87 = re.search(r"\*\*Plan-introduced tables\.\*\*[\s\S]*?\|-+\|[\s\S]*?(?=\n\n)", arch_text)
-if m87:
-    for row in re.findall(r"^\|\s*`?(\w+)`?\s*\|\s*([^|]+)\|\s*([0-9]{4})\s*\|", m87.group(0), re.MULTILINE):
-        name, plan_cell, slot = row
-        if name not in entities:
-            entities[name] = {"id": f"entity-{name}", "name": name, "source": "architecture.md §8.7", "migration_slot": slot, "owning_plan": plan_cell.strip().strip('`')}
-        else:
-            entities[name]["migration_slot"] = slot
-            entities[name]["owning_plan"] = plan_cell.strip().strip('`')
+    for plan in plans.values():
+        sid = dotted(plan["ee"], plan["nn"], plan["slug"])
+        st = stories.get(sid)
+        if st and (not st["plan_file"] or st["slug"] == plan["slug"]):
+            st["plan_file"] = plan["plan_file"]
+            st["plan_key"] = plan["id"]
 
-# Fill migration slot owners from MANIFEST (slot -> plan, summary)
-manifest_rows = []
-for row in re.finditer(r"^\|\s*`(\d{4})`\s*\|\s*`([^`]+)`\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*([^|]*)\|\s*(.+?)\s*\|$", manifest_text, re.MULTILINE):
-    slot, fname, plan, plan_path, deps, summary = row.groups()
-    manifest_rows.append({
-        "slot": slot, "filename": fname, "plan": plan,
-        "plan_path": plan_path, "depends_on": deps.strip(),
-        "summary": summary.strip(),
-    })
-
-# Try to attach migration slots to entities by parsing summary
-for r in manifest_rows:
-    s = r["summary"].lower()
-    for ent in entities:
-        if f"`{ent.lower()}`" in s or f" {ent.lower()} " in s:
-            entities[ent].setdefault("migrations", []).append(r["slot"])
-
-# Build entity → stories map (heuristic via raw story text mentioning the table name in backticks)
-table_to_stories = defaultdict(set)
-table_to_plans = defaultdict(set)
-for sid, story in stories.items():
-    txt = story["raw"]
-    for ent in entities:
-        if re.search(r"`%s`" % re.escape(ent), txt):
-            table_to_stories[ent].add(sid)
-for pid, plan in plans.items():
-    txt = plan["raw"]
-    for ent in entities:
-        if re.search(r"`%s`" % re.escape(ent), txt):
-            table_to_plans[ent].add(pid)
-
-# Build endpoint → story map (heuristic via path mention in story text)
-endpoint_to_stories = defaultdict(set)
-for ep in endpoints:
-    pat = ep["path"]
-    # search for the literal path in story bodies
-    needle = pat
-    for sid, story in stories.items():
-        if needle in story["raw"]:
-            endpoint_to_stories[(ep["method"], ep["path"])].add(sid)
-
-# Story → endpoints
-story_to_endpoints = defaultdict(list)
-for (method, path), sids in endpoint_to_stories.items():
-    for sid in sids:
-        story_to_endpoints[sid].append(f"{method} {path}")
-
-# Story → tables
-story_to_tables = defaultdict(list)
-for tbl, sids in table_to_stories.items():
-    for sid in sids:
-        story_to_tables[sid].append(tbl)
-
-# ---------------------------------------------------------------------------
-# 7. Write INDEX.md
-# ---------------------------------------------------------------------------
-
-OUT.mkdir(parents=True, exist_ok=True)
-DB.mkdir(parents=True, exist_ok=True)
-
-
-def w(path: Path, content: str):
-    path.write_text(content, encoding="utf-8")
-    print(f"wrote {path}")
-
-
-index_lines = [
-    "# Maktaba Wiki — Master Index",
-    "",
-    "> Comprehensive index of every artifact in the Maktaba project: 24 epics,",
-    f"> {len(stories)} stories, {len(plans)} plans, {len(diagrams)} diagrams,",
-    f"> {len(mockups)} mockups, {len(endpoints)} API endpoints, {len(entities)} DB entities.",
-    "",
-    "## Quick navigation",
-    "",
-    "| Catalog | File | Entries |",
-    "|---|---|---|",
-    f"| Stories | [stories-map.md](stories-map.md) | {len(stories)} |",
-    f"| Features | [features.md](features.md) | per epic |",
-    f"| DB entities | [entities.md](entities.md) | {len(entities)} |",
-    f"| API endpoints | [api-catalog.md](api-catalog.md) | {len(endpoints)} |",
-    f"| Machine-readable DB | [db/wiki.json](db/wiki.json) | {len(stories)+len(plans)+len(epics)+len(diagrams)+len(mockups)+len(endpoints)+len(entities)+len(reviews)} entries |",
-    f"| JSON schema | [db/wiki-schema.json](db/wiki-schema.json) | — |",
-    "",
-    "## Epic table",
-    "",
-    "| # | Epic | Phase | Engine | Stories | Plans | Mockups | Goal |",
-    "|---|---|---|---|---|---|---|---|",
-]
-
-# Per-epic mockup count: count mockups whose story id starts with that epic, plus admin/desktop/etc.
-admin_mockups = [m for m in mockups if m["category"] == "admin"]
-desktop_mockups = [m for m in mockups if m["category"] == "desktop"]
-mobile_mockups = [m for m in mockups if m["category"] == "mobile"]
-tv_mockups = [m for m in mockups if m["category"] == "tv"]
-themelib_mockups = [m for m in mockups if m["category"] == "theme-library"]
-
-# rough per-epic mockup attribution
-epic_to_mockups = defaultdict(list)
-for mk in mockups:
-    if mk["story"]:
-        ee = mk["story"].split(".")[0].zfill(2)
-        for ed in epics:
-            if ed.startswith(ee + "-"):
-                epic_to_mockups[ed].append(mk)
-                break
-    elif mk["category"] == "admin":
-        # admin maps mostly to 09-library-management, 10-auth-security, 21-observability
-        epic_to_mockups["09-library-management"].append(mk)
-    elif mk["category"] == "desktop":
-        epic_to_mockups["13-desktop"].append(mk)
-    elif mk["category"] == "mobile":
-        epic_to_mockups["12-mobile"].append(mk)
-    elif mk["category"] == "tv":
-        epic_to_mockups["14-tv-apps"].append(mk)
-    elif mk["category"] == "theme-library":
-        epic_to_mockups["17-ux-design-system"].append(mk)
-
-for en, e in epics.items():
-    num = en.split("-")[0]
-    goal_short = (e["goal"][:90] + "…") if len(e["goal"]) > 90 else e["goal"]
-    n_mockups = len(epic_to_mockups.get(en, []))
-    index_lines.append(
-        f"| {num} | [{e['name']}](../../{e['readme']}) | {e['phase'] or '—'} | {e['engine']} | {len(e['stories'])} | {len(e['plans'])} | {n_mockups} | {goal_short} |"
-    )
-
-index_lines += [
-    "",
-    "## Diagrams",
-    "",
-    "| Diagram | File |",
-    "|---|---|",
-]
-for d in diagrams:
-    index_lines.append(f"| {d['title']} | [{d['file']}](../../{d['file']}) |")
-
-index_lines += [
-    "",
-    "## Reviews",
-    "",
-    "| Review | File |",
-    "|---|---|",
-]
-for r in reviews:
-    index_lines.append(f"| {r['name']} | [{r['file']}](../../{r['file']}) |")
-
-index_lines += [
-    "",
-    "## Cross-platform mockups",
-    "",
-    "| Surface | Count | Folder |",
-    "|---|---|---|",
-    f"| Admin (web) | {len(admin_mockups)} | [web/mockups/admin/](../../web/mockups/admin/) |",
-    f"| Mobile | {len(mobile_mockups)} | [web/mockups/mobile/](../../web/mockups/mobile/) |",
-    f"| Desktop | {len(desktop_mockups)} | [web/mockups/desktop/](../../web/mockups/desktop/) |",
-    f"| TV | {len(tv_mockups)} | [web/mockups/tv/](../../web/mockups/tv/) |",
-    f"| Theme library | {len(themelib_mockups)} | [web/mockups/theme-library/](../../web/mockups/theme-library/) |",
-    "",
-    "## Reference docs",
-    "",
-    "- [specs/architecture.md](../../specs/architecture.md) — full system architecture (12 sections + 3 appendices)",
-    "- [shared/api/openapi.yaml](../../shared/api/openapi.yaml) — OpenAPI 3.1 spec",
-    "- [shared/db/migrations/MANIFEST.md](../../shared/db/migrations/MANIFEST.md) — migration slot manifest",
-    "",
-    "*Generated by `docs/wiki/db/wiki.json` · cross-references derive from `git`-tracked files in this branch and the spec branch (`merge-origin-license`).*",
-]
-
-w(OUT / "INDEX.md", "\n".join(index_lines) + "\n")
-
-# ---------------------------------------------------------------------------
-# 8. stories-map.md
-# ---------------------------------------------------------------------------
-
-sm_lines = [
-    "# Stories Map",
-    "",
-    f"All {len(stories)} stories across 24 epics. Cross-referenced against plans, mockups,",
-    "API endpoints (from `openapi.yaml`), DB tables (from architecture §8), and diagrams.",
-    "",
-    "Linear issue IDs are not embedded in story files — column shown for completeness.",
-    "",
-    "| ID | Title | Epic | Phase | Plan | Mockup | API | Tables |",
-    "|----|-------|------|-------|------|--------|-----|--------|",
-]
-for sid in sorted(stories.keys(), key=lambda s: tuple(int(x) for x in s.split("."))):
-    st = stories[sid]
-    plan_cell = f"[plan]({{}})".format("../../" + st["plan_file"]) if st.get("plan_file") else "—"
-    mk_cells = st.get("mockup_files", [])
-    mk_cell = ", ".join(f"[m{i+1}](../../{m})" for i, m in enumerate(mk_cells)) if mk_cells else "—"
-    eps = story_to_endpoints.get(sid, [])
-    api_cell = ", ".join(f"`{e}`" for e in eps[:3]) + (f" + {len(eps) - 3}" if len(eps) > 3 else "") if eps else "—"
-    tbls = story_to_tables.get(sid, [])
-    tbl_cell = ", ".join(f"`{t}`" for t in tbls[:3]) + (f" + {len(tbls) - 3}" if len(tbls) > 3 else "") if tbls else "—"
-    sm_lines.append(
-        f"| **[{sid}](../../{st['story_file']})** | {st['title']} | {st['epic_name']} "
-        f"| {EPIC_PHASE.get(st['epic'], '—')} | {plan_cell} | {mk_cell} | {api_cell} | {tbl_cell} |"
-    )
-
-w(OUT / "stories-map.md", "\n".join(sm_lines) + "\n")
-
-# ---------------------------------------------------------------------------
-# 9. features.md
-# ---------------------------------------------------------------------------
-
-f_lines = [
-    "# Feature catalog",
-    "",
-    "Every feature in Maktaba, organized by epic. Each entry lists the stories that",
-    "implement it, the plans that detail it, the mockups that show it, and the API",
-    "endpoints that serve it.",
-    "",
-]
-for en, e in epics.items():
-    f_lines += [
-        f"## Epic {en.split('-')[0]} — {e['name']}",
-        "",
-        f"**Engine:** {e['engine']}  ·  **Phase:** {e['phase']}",
-        "",
-        f"**Goal.** {e['goal']}",
-        "",
-        f"📖 [Epic README](../../{e['readme']})",
-        "",
-        "### Features",
-        "",
+    # ---- 2. diagrams, reviews, mockups ---------------------------------------------------
+    diagrams = [
+        {"id": f"diagram-{d.stem}", "name": d.stem, "title": slug_to_title(d.stem), "file": rel(d)}
+        for d in sorted((SPECS / "diagrams").glob("*.drawio"))
     ]
-    for sid in e["stories"]:
+    reviews = [
+        {"id": f"review-{r.stem.lower()}", "name": r.stem, "file": rel(r)}
+        for r in sorted(SPECS.glob("*.md"))
+        if r.name != "architecture.md"
+    ]
+    mockups = []
+    mockup_ids: set[str] = set()
+    for m in sorted((REPO / "web" / "mockups").rglob("*.html"), key=lambda p: nat_key(rel(p))):
+        sm = re.match(r"^mockup-(\d{2})-(\d{2})-", m.stem)
+        category = m.parent.name if m.parent.name != "mockups" else "shared"
+        mid = f"mockup-{m.stem}"
+        if mid in mockup_ids:  # the same name in another folder
+            mid = f"mockup-{category}-{m.stem}"
+        mockup_ids.add(mid)
+        mockups.append({
+            "id": mid, "name": m.stem, "title": slug_to_title(m.stem), "file": rel(m),
+            "story": f"{int(sm.group(1))}.{int(sm.group(2))}" if sm else None, "category": category,
+        })
+    mockup_by_file = {mk["file"]: mk["id"] for mk in mockups}
+    for mk in mockups:
+        if mk["story"] in stories:
+            stories[mk["story"]].setdefault("mockup_files", []).append(mk["file"])
+    epic_mockups: dict[str, int] = defaultdict(int)
+    category_epic = {"admin": "09-library-management", "desktop": "13-desktop", "mobile": "12-mobile",
+                     "tv": "14-tv-apps", "theme-library": "17-ux-design-system"}
+    for mk in mockups:
+        if mk["story"]:
+            ee = mk["story"].split(".")[0].zfill(2)
+            for en in epics:
+                if en.startswith(ee + "-"):
+                    epic_mockups[en] += 1
+                    break
+        elif mk["category"] in category_epic:
+            epic_mockups[category_epic[mk["category"]]] += 1
+
+    # ---- 3. endpoints (a light walk of openapi.yaml's paths) -----------------------------
+    endpoints = []
+    lines = read(REPO / "shared" / "api" / "openapi.yaml").splitlines()
+    in_paths, path, cur = False, None, None
+    for line in lines:
+        if line.startswith("paths:"):
+            in_paths = True
+            continue
+        if not in_paths:
+            continue
+        if line and not line.startswith((" ", "#")):
+            break
+        mp = re.match(r"^  (/[A-Za-z0-9._/{}-]+):\s*$", line)
+        if mp:
+            path, cur = mp.group(1), None
+            continue
+        mm = re.match(r"^    (get|post|put|patch|delete|options|head):\s*$", line)
+        if mm and path:
+            method = mm.group(1).upper()
+            cur = {
+                "id": f"ep-{method.lower()}-{re.sub(r'[^A-Za-z0-9]+', '-', path).strip('-')}",
+                "method": method, "path": path, "summary": "", "operationId": "", "tag": "",
+                "_tags_next": False,
+            }
+            endpoints.append(cur)
+            continue
+        if cur is None:
+            continue
+        if re.match(r"^    \S", line):  # another key of the path item (parameters, …)
+            cur = None
+            continue
+        ms = re.match(r"^      summary:\s*(.+)$", line)
+        if ms:
+            cur["summary"] = ms.group(1).strip().strip("\"'")
+        mo = re.match(r"^      operationId:\s*(.+)$", line)
+        if mo:
+            cur["operationId"] = mo.group(1).strip().strip("\"'")
+        mt = re.match(r"^      tags:\s*\[([^\]]*)\]", line)
+        if mt and not cur["tag"]:
+            cur["tag"] = mt.group(1).split(",")[0].strip().strip("\"'")
+        if re.match(r"^      tags:\s*$", line):
+            cur["_tags_next"] = True
+            continue
+        if cur["_tags_next"]:
+            ml = re.match(r"^      (?:  )?- (.+)$", line)
+            if ml and not cur["tag"]:
+                cur["tag"] = ml.group(1).strip().strip("\"'")
+            cur["_tags_next"] = False
+    for ep in endpoints:
+        ep.pop("_tags_next", None)
+
+    # ---- 4. DB entities (architecture §8) ------------------------------------------------
+    arch = read(SPECS / "architecture.md")
+    entities: dict[str, dict] = {}
+    for m in re.finditer(r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(\w+)\s*\(", arch):
+        entities.setdefault(m.group(1), {"name": m.group(1), "source": "architecture.md §8",
+                                         "migration_slot": None, "owning_plan": None})
+    m87 = re.search(r"\*\*Plan-introduced tables\.\*\*[\s\S]*?\|-+\|[\s\S]*?(?=\n\n)", arch)
+    if m87:
+        for name, plan_cell, slot in re.findall(
+            r"^\|\s*`?(\w+)`?\s*\|\s*([^|]+)\|\s*([0-9]{4})\s*\|", m87.group(0), re.MULTILINE
+        ):
+            ent = entities.setdefault(name, {"name": name, "source": "architecture.md §8.7"})
+            ent["migration_slot"] = slot
+            ent["owning_plan"] = plan_cell.strip().strip("`")
+
+    # ---- 5. cross-references by mention ---------------------------------------------------
+    story_tables: dict[str, list[str]] = defaultdict(list)
+    table_stories: dict[str, list[str]] = defaultdict(list)
+    for sid in sorted(stories, key=nat_key):
+        raw = stories[sid]["raw"]
+        for ent in sorted(entities):
+            if f"`{ent}`" in raw:
+                story_tables[sid].append(ent)
+                table_stories[ent].append(sid)
+    story_eps: dict[str, list[str]] = defaultdict(list)
+    ep_stories: dict[str, list[str]] = defaultdict(list)
+    for ep in endpoints:
+        for sid in sorted(stories, key=nat_key):
+            if ep["path"] in stories[sid]["raw"]:
+                story_eps[sid].append(f"{ep['method']} {ep['path']}")
+                ep_stories[ep["id"]].append(sid)
+
+    linear_by_story = {}
+    for issue in curated.get("cross_refs", {}).get("issues", []):
+        num = issue.get("story_num")
+        if issue.get("id") and num and re.match(r"^\d+\.\d+$", num):
+            a, b = num.split(".")
+            linear_by_story.setdefault(f"story-{int(a)}.{int(b)}", issue["id"])
+
+    # ---- 6. entries -----------------------------------------------------------------------
+    entries: list[dict] = []
+    for en, e in epics.items():
+        entries.append({
+            "id": f"epic-{en}", "type": "epic", "title": e["name"], "epic": en,
+            "phase": e["phase"], "engine": e["engine"], "content": e["goal"],
+            "tags": ["epic", en, f"phase-{e['phase']}"],
+            "related": [f"story-{s}" for s in e["stories"]] + [f"plan-{p}" for p in e["plans"]],
+            "files": {"readme": e["readme"]},
+            "metadata": {"story_count": len(e["stories"]), "plan_count": len(e["plans"]),
+                         "mockup_count": epic_mockups.get(en, 0)},
+        })
+    for sid in sorted(stories, key=nat_key):
         st = stories[sid]
-        eps = story_to_endpoints.get(sid, [])
-        tbls = story_to_tables.get(sid, [])
         mks = st.get("mockup_files", [])
-        f_lines.append(f"#### {sid} — {st['title']}")
-        f_lines.append("")
-        f_lines.append(f"- 📄 Story: [{st['story_file']}](../../{st['story_file']})")
-        if st.get("plan_file"):
-            f_lines.append(f"- 🛠 Plan: [{st['plan_file']}](../../{st['plan_file']})")
-        if mks:
-            f_lines.append("- 🖼 Mockups: " + ", ".join(f"[{Path(m).name}](../../{m})" for m in mks))
-        if eps:
-            f_lines.append("- 🔌 API: " + ", ".join(f"`{e}`" for e in eps[:5]) + (f" *(+{len(eps) - 5})*" if len(eps) > 5 else ""))
-        if tbls:
-            f_lines.append("- 🗄 Tables: " + ", ".join(f"`{t}`" for t in tbls[:6]) + (f" *(+{len(tbls) - 6})*" if len(tbls) > 6 else ""))
-        f_lines.append("")
-    f_lines.append("")
+        related = [f"epic-{st['epic']}"]
+        if st["plan_key"]:
+            related.append(f"plan-{st['plan_key']}")
+        related += [f"entity-{t}" for t in story_tables.get(sid, [])]
+        related += [ep["id"] for ep in endpoints if sid in ep_stories.get(ep["id"], [])]
+        related += [mockup_by_file[m] for m in mks]
+        meta = {"slug": st["slug"]}
+        if st.get("inline"):
+            meta["inline"] = True
+        entries.append({
+            "id": f"story-{sid}", "type": "story", "title": st["title"], "epic": st["epic"],
+            "phase": st["phase"], "content": st["raw"][:EXCERPT],
+            "tags": ["story", st["epic"], f"phase-{st['phase']}"], "related": related,
+            "files": {"story": st["story_file"], "plan": st["plan_file"], "mockups": mks},
+            "linear": linear_by_story.get(f"story-{sid}"),
+            "api_endpoints": story_eps.get(sid, []), "db_tables": story_tables.get(sid, []),
+            "metadata": meta,
+        })
+    for pid in sorted(plans, key=nat_key):
+        plan = plans[pid]
+        related = [f"epic-{plan['epic']}"]
+        sid = dotted(plan["ee"], plan["nn"], plan["slug"])
+        if sid in stories:
+            related.append(f"story-{sid}")
+        entries.append({
+            "id": f"plan-{pid}", "type": "plan", "title": plan["title"], "epic": plan["epic"],
+            "phase": plan["phase"], "content": plan["raw"][:EXCERPT], "tags": ["plan", plan["epic"]],
+            "related": related, "files": {"plan": plan["plan_file"]}, "metadata": {"slug": plan["slug"]},
+        })
+    for d in diagrams:
+        entries.append({
+            "id": d["id"], "type": "diagram", "title": d["title"],
+            "content": f"Architecture diagram: {d['title']}.", "tags": ["diagram"], "related": [],
+            "files": {"diagram": d["file"]},
+        })
+    for r in reviews:
+        entries.append({
+            "id": r["id"], "type": "review", "title": r["name"],
+            "content": f"Review document: {r['name']}.", "tags": ["review"], "related": [],
+            "files": {"review": r["file"]},
+        })
+    for mk in mockups:
+        entries.append({
+            "id": mk["id"], "type": "mockup", "title": mk["title"],
+            "content": f"HTML mockup ({mk['category']}): {mk['title']}.",
+            "tags": ["mockup", mk["category"]],
+            "related": [f"story-{mk['story']}"] if mk["story"] in stories else [],
+            "files": {"mockup": mk["file"]}, "metadata": {"category": mk["category"]},
+        })
+    for ep in endpoints:
+        entries.append({
+            "id": ep["id"], "type": "endpoint", "title": f"{ep['method']} {ep['path']}",
+            "content": ep["summary"] or f"{ep['method']} {ep['path']}",
+            "tags": ["api", ep["tag"] or "untagged", ep["method"].lower()],
+            "related": [f"story-{s}" for s in ep_stories.get(ep["id"], [])],
+            "files": {"openapi": "shared/api/openapi.yaml"},
+            "metadata": {"method": ep["method"], "path": ep["path"], "tag": ep["tag"],
+                         "operationId": ep["operationId"]},
+        })
+    for name in sorted(entities):
+        ent = entities[name]
+        entries.append({
+            "id": f"entity-{name}", "type": "entity", "title": name,
+            "content": f"Database table `{name}`. Source: {ent['source']}.",
+            "tags": ["entity", "database"], "related": [f"story-{s}" for s in table_stories.get(name, [])],
+            "files": {"schema": "specs/architecture.md#8-database-schema",
+                      "manifest": "shared/db/migrations/MANIFEST.md"},
+            "metadata": {"source": ent["source"], "migration_slot": ent.get("migration_slot"),
+                         "owning_plan": ent.get("owning_plan")},
+        })
 
-w(OUT / "features.md", "\n".join(f_lines))
+    # ---- 7. the hand-kept data -------------------------------------------------------------
+    by_id = {e["id"]: e for e in entries}
+    for e in curated.get("entries", []):
+        if e["id"] not in by_id:
+            entries.append(e)
+            by_id[e["id"]] = e
+    for oid, o in overlays.items():
+        e = by_id.get(oid)
+        if e is None:
+            continue  # the spec it described is gone
+        summary = o.get("summary")
+        if summary and summary not in (e.get("content") or ""):
+            e["content"] = f"{summary}\n\n{e['content']}" if e.get("content") else summary
+        for k in ("tags", "related", "api_endpoints", "db_tables"):
+            if o.get(k):
+                e[k] = list(dict.fromkeys((e.get(k) or []) + o[k]))
+        if o.get("linear") and not e.get("linear"):
+            e["linear"] = o["linear"]
+        if o.get("metadata"):
+            e["metadata"] = {**o["metadata"], **(e.get("metadata") or {})}
+    # a related id points at an entry that exists
+    for e in entries:
+        e["related"] = [r for r in e.get("related", []) if r in by_id and r != e["id"]]
+    entries = scrub(entries)
 
-# ---------------------------------------------------------------------------
-# 10. entities.md
-# ---------------------------------------------------------------------------
+    # ---- 8. the files ----------------------------------------------------------------------
+    def dump(obj) -> str:
+        return json.dumps(obj, indent=2, ensure_ascii=False) + "\n"
 
-e_lines = [
-    "# DB Entity catalog",
-    "",
-    "Every database table in Maktaba — base schema (architecture §8.1–§8.6) and plan-",
-    "introduced extensions (§8.7). Owning migration is from",
-    "[`shared/db/migrations/MANIFEST.md`](../../shared/db/migrations/MANIFEST.md);",
-    "stories and plans are derived by scanning their text for backticked table names.",
-    "",
-    "| Table | Source | Migration | Owning plan | Stories | Plans (count) |",
-    "|-------|--------|-----------|-------------|---------|---------------|",
-]
-for name in sorted(entities):
-    ent = entities[name]
-    sids = sorted(table_to_stories.get(name, set()), key=lambda s: tuple(int(x) for x in s.split(".")))[:6]
-    s_cell = ", ".join(f"[{s}](stories-map.md#{s.replace('.', '')})" for s in sids) or "—"
-    if len(table_to_stories.get(name, set())) > 6:
-        s_cell += f" *(+{len(table_to_stories[name]) - 6})*"
-    p_count = len(table_to_plans.get(name, set()))
-    e_lines.append(
-        f"| `{name}` | {ent['source']} | "
-        f"{ent.get('migration_slot') or '—'} | "
-        f"{ent.get('owning_plan') or '—'} | "
-        f"{s_cell} | {p_count} |"
-    )
+    max_epic = max((e["num"] for e in epics.values()), default=1)
+    ranges = [(lo, min(lo + PART_SIZE - 1, max_epic)) for lo in range(1, max_epic + 1, PART_SIZE)]
 
-e_lines += [
-    "",
-    "## Migration manifest (full)",
-    "",
-    "| Slot | File | Plan | Depends on | Summary |",
-    "|------|------|------|-----------|---------|",
-]
-for r in manifest_rows:
-    # plan_path is relative to MANIFEST.md (../../specs/epics/...).
-    # docs/wiki/entities.md has the same depth, so the prefix matches.
-    e_lines.append(
-        f"| `{r['slot']}` | `{r['filename']}` | [{r['plan']}]({r['plan_path']}) | "
-        f"{r['depends_on']} | {r['summary']} |"
-    )
+    def part_name(lo: int, hi: int) -> str:
+        return f"wiki-epics-{lo:02d}-{hi:02d}.json"
 
-w(OUT / "entities.md", "\n".join(e_lines) + "\n")
+    parts: dict[str, list[dict]] = {part_name(lo, hi): [] for lo, hi in ranges}
+    main_entries = []
+    for e in entries:
+        if e["type"] in ("story", "plan") and e.get("epic"):
+            n = int(e["epic"][:2])
+            lo = 1 + ((n - 1) // PART_SIZE) * PART_SIZE
+            parts[part_name(lo, min(lo + PART_SIZE - 1, max_epic))].append(e)
+        else:
+            main_entries.append(e)
 
-# ---------------------------------------------------------------------------
-# 11. api-catalog.md
-# ---------------------------------------------------------------------------
+    counts: dict[str, int] = defaultdict(int)
+    for e in entries:
+        counts[e["type"]] += 1
+    first, last = min(e["num"] for e in epics.values()), max_epic
+    wiki = {
+        "version": "2.0",
+        "project": "Maktaba",
+        "description": ("Self-hosted media intelligence platform: full Plex alternative + "
+                        "every-word-searchable transcripts. See specs/architecture.md."),
+        "generated_from": [
+            f"specs/epics/** ({len(epics)} epics, {first:02d} to {last:02d}: READMEs, stories, plans)",
+            "specs/architecture.md (DB tables)",
+            f"specs/*.md ({len(reviews)} reviews and audits)",
+            f"specs/diagrams/*.drawio ({len(diagrams)} diagrams)",
+            "shared/api/openapi.yaml",
+            "web/mockups/**/*.html",
+            "docs/wiki/db/curated.json (hand-kept)",
+        ],
+        "counts": dict(sorted(counts.items())),
+        "parts": list(parts),
+        "entries": main_entries,
+    }
+    out: dict[Path, str] = {OUT_DB / "wiki.json": dump(wiki)}
+    for name, ents in parts.items():
+        out[OUT_DB / name] = dump({"version": "2.0", "part": name, "entries": ents})
 
-a_lines = [
-    "# API catalog",
-    "",
-    f"All {len(endpoints)} REST/WebSocket endpoints in",
-    "[`shared/api/openapi.yaml`](../../shared/api/openapi.yaml). Each row links the",
-    "endpoint to the stories that mention it and to a candidate mockup that shows",
-    "the UI for that surface.",
-    "",
-    "| Method | Path | Tag | Summary | Owning stories |",
-    "|--------|------|-----|---------|----------------|",
-]
-for ep in sorted(endpoints, key=lambda e: (e["tag"] or "zzz", e["path"], e["method"])):
-    sids = sorted(endpoint_to_stories.get((ep["method"], ep["path"]), set()),
-                  key=lambda s: tuple(int(x) for x in s.split(".")))
-    s_cell = ", ".join(f"[{s}](stories-map.md)" for s in sids[:5]) + (f" *(+{len(sids) - 5})*" if len(sids) > 5 else "") if sids else "—"
-    summary = ep["summary"].replace("|", "\\|")[:80]
-    a_lines.append(f"| `{ep['method']}` | `{ep['path']}` | {ep['tag'] or '—'} | {summary} | {s_cell} |")
-
-w(OUT / "api-catalog.md", "\n".join(a_lines) + "\n")
-
-# ---------------------------------------------------------------------------
-# 12. wiki.json + wiki-schema.json
-# ---------------------------------------------------------------------------
-
-# Build entries
-entries = []
-
-# Epics
-for en, e in epics.items():
-    related = []
-    related.extend([f"story-{sid.replace('.', '-').zfill(0)}" for sid in e["stories"]])  # noop placeholder; we use 'story-EE.NN'
-    related = [f"story-{sid}" for sid in e["stories"]] + [f"plan-{p}" for p in e["plans"]]
-    entries.append({
-        "id": f"epic-{en}",
-        "type": "epic",
-        "title": e["name"],
-        "epic": en,
-        "phase": e["phase"],
-        "engine": e["engine"],
-        "content": e["goal"],
-        "tags": ["epic", en, f"phase-{e['phase']}"],
-        "related": related,
-        "files": {"readme": e["readme"]},
-        "metadata": {
-            "story_count": len(e["stories"]),
-            "plan_count": len(e["plans"]),
-            "mockup_count": len(epic_to_mockups.get(en, [])),
+    xref_cur = curated.get("cross_refs", {})
+    xref = {
+        "schema_version": 2,
+        "generated_for": "Maktaba",
+        "linear_range": xref_cur.get("linear_range"),
+        "totals": {
+            "epics": len(epics), "stories": len(stories), "plans": len(plans),
+            "diagrams": len(diagrams), "mockups": len(mockups),
+            "issues": len(xref_cur.get("issues", [])),
         },
-    })
+        "epics": [
+            {"id": f"{e['num']:02d}", "slug": en[3:], "title": e["name"],
+             "description": (overlays.get(f"epic-{en}", {}).get("summary") or e["goal"]),
+             "readme": e["readme"]}
+            for en, e in epics.items()
+        ],
+        "stories": [
+            {"id": (f"{int(s['epic'][:2]):02d}.{s['nn']:02d}" if s["nn"] is not None else s["id"]),
+             "epic": int(s["epic"][:2]), "num": (f"{s['nn']:02d}" if s["nn"] is not None else s["slug"]),
+             "slug": s["slug"], "title": s["title"], "story_file": s["story_file"],
+             "plan_files": [s["plan_file"]] if s["plan_file"] else []}
+            for s in (stories[k] for k in sorted(stories, key=nat_key))
+        ],
+        "diagrams": [{"key": d["name"], "path": d["file"]} for d in diagrams],
+    }
+    for k in ("issues", "files", "build_order", "critical_path", "parallel_tracks", "reviews",
+              "grpc_rpcs", "notify_channels"):
+        if k in xref_cur:
+            xref[k] = xref_cur[k]
+    out[OUT_DB / "wiki-cross-refs.json"] = dump(scrub(xref))
+    out[SCHEMA_OUT] = json.dumps(SCHEMA, indent=2) + "\n"
+    return out
 
-# Stories
-for sid, st in stories.items():
-    eps = story_to_endpoints.get(sid, [])
-    tbls = story_to_tables.get(sid, [])
-    mks = st.get("mockup_files", [])
-    related = [f"epic-{st['epic']}"]
-    if st.get("plan_key"):
-        related.append(f"plan-{st['plan_key']}")
-    for t in tbls:
-        related.append(f"entity-{t}")
-    for e in eps:
-        method, path = e.split(" ", 1)
-        related.append(f"ep-{method.lower()}-{re.sub(r'[^A-Za-z0-9]+', '-', path).strip('-')}")
-    for m in mks:
-        related.append(f"mockup-{Path(m).stem}")
-    entries.append({
-        "id": f"story-{sid}",
-        "type": "story",
-        "title": st["title"],
-        "epic": st["epic"],
-        "phase": EPIC_PHASE.get(st["epic"]),
-        "content": st["raw"][:600],
-        "tags": ["story", st["epic"], f"phase-{EPIC_PHASE.get(st['epic'])}"],
-        "related": related,
-        "files": {
-            "story": st["story_file"],
-            "plan": st.get("plan_file"),
-            "mockups": mks,
-        },
-        "linear": None,
-        "api_endpoints": eps,
-        "db_tables": tbls,
-        "metadata": {"slug": st["slug"]},
-    })
 
-# Plans
-for pid, plan in plans.items():
-    related = [f"epic-{plan['epic']}"]
-    # match story by EE.NN
-    dotted = f"{int(plan['ee'])}.{int(plan['nn'])}"
-    if dotted in stories:
-        related.append(f"story-{dotted}")
-    entries.append({
-        "id": f"plan-{pid}",
-        "type": "plan",
-        "title": plan["title"],
-        "epic": plan["epic"],
-        "phase": EPIC_PHASE.get(plan["epic"]),
-        "content": plan["raw"][:600],
-        "tags": ["plan", plan["epic"]],
-        "related": related,
-        "files": {"plan": plan["plan_file"]},
-        "metadata": {"slug": plan["slug"]},
-    })
-
-# Diagrams
-for d in diagrams:
-    entries.append({
-        "id": d["id"],
-        "type": "diagram",
-        "title": d["title"],
-        "content": f"Architecture diagram: {d['title']}.",
-        "tags": ["diagram"],
-        "related": [],
-        "files": {"diagram": d["file"]},
-    })
-
-# Reviews
-for r in reviews:
-    entries.append({
-        "id": r["id"],
-        "type": "review",
-        "title": r["name"],
-        "content": f"Plan-review document: {r['name']}.",
-        "tags": ["review"],
-        "related": [],
-        "files": {"review": r["file"]},
-    })
-
-# Mockups
-for mk in mockups:
-    related = []
-    if mk["story"] and mk["story"] in stories:
-        related.append(f"story-{mk['story']}")
-    entries.append({
-        "id": mk["id"],
-        "type": "mockup",
-        "title": mk["title"],
-        "content": f"HTML mockup ({mk['category']}): {mk['title']}.",
-        "tags": ["mockup", mk["category"]],
-        "related": related,
-        "files": {"mockup": mk["file"]},
-        "metadata": {"category": mk["category"]},
-    })
-
-# API endpoints
-for ep in endpoints:
-    sids = sorted(endpoint_to_stories.get((ep["method"], ep["path"]), set()),
-                  key=lambda s: tuple(int(x) for x in s.split(".")))
-    related = [f"story-{s}" for s in sids]
-    entries.append({
-        "id": ep["id"],
-        "type": "endpoint",
-        "title": f"{ep['method']} {ep['path']}",
-        "content": ep["summary"] or f"{ep['method']} {ep['path']}",
-        "tags": ["api", ep["tag"] or "untagged", ep["method"].lower()],
-        "related": related,
-        "files": {"openapi": "shared/api/openapi.yaml"},
-        "metadata": {
-            "method": ep["method"],
-            "path": ep["path"],
-            "tag": ep["tag"],
-            "operationId": ep["operationId"],
-        },
-    })
-
-# Entities
-for name, ent in entities.items():
-    sids = sorted(table_to_stories.get(name, set()),
-                  key=lambda s: tuple(int(x) for x in s.split(".")))
-    related = [f"story-{s}" for s in sids]
-    entries.append({
-        "id": ent["id"],
-        "type": "entity",
-        "title": name,
-        "content": f"Database table `{name}`. Source: {ent['source']}.",
-        "tags": ["entity", "database"],
-        "related": related,
-        "files": {
-            "schema": "specs/architecture.md#8-database-schema",
-            "manifest": "shared/db/migrations/MANIFEST.md",
-        },
-        "metadata": {
-            "source": ent["source"],
-            "migration_slot": ent.get("migration_slot"),
-            "owning_plan": ent.get("owning_plan"),
-        },
-    })
-
-# Build counts
-type_counts = defaultdict(int)
-for e in entries:
-    type_counts[e["type"]] += 1
-
-wiki = {
-    "version": "1.0",
-    "project": "Maktaba",
-    "description": "Self-hosted media intelligence platform: full Plex alternative + every-word-searchable transcripts. See specs/architecture.md.",
-    "generated_from": [
-        "specs/architecture.md (merge-origin-license)",
-        "specs/epics/**/*.md (24 epics)",
-        "specs/diagrams/*.drawio (14 diagrams)",
-        "specs/REVIEW*.md, specs/PLAN_REVIEW*.md (5 reviews)",
-        "shared/db/migrations/MANIFEST.md",
-        "shared/api/openapi.yaml",
-        "web/mockups/**/*.html",
-    ],
-    "counts": dict(type_counts),
-    "entries": entries,
-}
-
-with open(DB / "wiki.json", "w", encoding="utf-8") as fh:
-    json.dump(wiki, fh, indent=2, ensure_ascii=False)
-print(f"wrote {DB / 'wiki.json'}  ({len(entries)} entries)")
-
-# Schema
-schema = {
+SCHEMA = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "https://maktaba.example/wiki-schema.json",
+    "$id": "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/wiki/db/wiki-schema.json",
     "title": "Maktaba Wiki Database",
-    "description": "Machine-readable wiki of the Maktaba project: epics, stories, plans, diagrams, reviews, mockups, API endpoints, DB entities.",
+    "description": ("Machine-readable wiki of the Maktaba project: epics, stories, plans, diagrams, "
+                    "reviews, mockups, API endpoints, DB entities, phases. wiki.json holds the meta "
+                    "and every entry but the stories and plans, which are in the files `parts` names "
+                    "(same shape: an `entries` array)."),
     "type": "object",
     "required": ["version", "project", "entries"],
     "properties": {
@@ -920,11 +693,11 @@ schema = {
         "project": {"type": "string"},
         "description": {"type": "string"},
         "generated_from": {"type": "array", "items": {"type": "string"}},
-        "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
-        "entries": {
-            "type": "array",
-            "items": {"$ref": "#/$defs/entry"},
-        },
+        "counts": {"type": "object", "additionalProperties": {"type": "integer"},
+                   "description": "Entries per type, across wiki.json and its parts."},
+        "parts": {"type": "array", "items": {"type": "string"},
+                  "description": "The part files (beside wiki.json) holding the stories and plans."},
+        "entries": {"type": "array", "items": {"$ref": "#/$defs/entry"}},
     },
     "$defs": {
         "entry": {
@@ -932,55 +705,61 @@ schema = {
             "required": ["id", "type", "title"],
             "properties": {
                 "id": {"type": "string", "description": "Stable identifier; cross-references use this."},
-                "type": {
-                    "type": "string",
-                    "enum": ["epic", "story", "plan", "diagram", "review", "mockup", "endpoint", "entity", "feature"],
-                },
+                "type": {"type": "string", "enum": ["epic", "story", "plan", "diagram", "review", "mockup",
+                                                    "endpoint", "entity", "feature", "phase"]},
                 "title": {"type": "string"},
                 "epic": {"type": ["string", "null"]},
                 "phase": {"type": ["integer", "null"]},
                 "engine": {"type": ["string", "null"]},
                 "content": {"type": "string", "description": "Markdown body or short description."},
                 "tags": {"type": "array", "items": {"type": "string"}},
-                "related": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Other entry ids related to this one.",
-                },
+                "related": {"type": "array", "items": {"type": "string"},
+                            "description": "Other entry ids related to this one."},
                 "files": {
                     "type": "object",
-                    "additionalProperties": {
-                        "anyOf": [
-                            {"type": "string"},
-                            {"type": "array", "items": {"type": "string"}},
-                            {"type": "null"},
-                        ]
-                    },
+                    "additionalProperties": {"anyOf": [{"type": "string"},
+                                                       {"type": "array", "items": {"type": "string"}},
+                                                       {"type": "null"}]},
                     "description": "Map of role -> repo-relative file path(s).",
                 },
-                "linear": {"type": ["string", "null"], "description": "Linear issue id if known (HLB-XXX); null if unset."},
-                "api_endpoints": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Endpoints in 'METHOD /path' form mentioned by this entry.",
-                },
-                "db_tables": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "DB tables mentioned by this entry.",
-                },
+                "linear": {"type": ["string", "null"], "description": "Linear issue id if known (HLB-XXX)."},
+                "api_endpoints": {"type": "array", "items": {"type": "string"},
+                                  "description": "Endpoints in 'METHOD /path' form mentioned by this entry."},
+                "db_tables": {"type": "array", "items": {"type": "string"},
+                              "description": "DB tables mentioned by this entry."},
                 "metadata": {"type": "object"},
             },
         }
     },
 }
 
-with open(DB / "wiki-schema.json", "w", encoding="utf-8") as fh:
-    json.dump(schema, fh, indent=2)
-print(f"wrote {DB / 'wiki-schema.json'}")
 
-print("\nSummary:")
-print(f"  epics={len(epics)}, stories={len(stories)}, plans={len(plans)}")
-print(f"  diagrams={len(diagrams)}, reviews={len(reviews)}, mockups={len(mockups)}")
-print(f"  endpoints={len(endpoints)}, entities={len(entities)}")
-print(f"  total entries={len(entries)}")
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--check", action="store_true", help="fail if the committed database is stale")
+    args = ap.parse_args(argv)
+    out = build()
+    stale_parts = [p for p in OUT_DB.glob("wiki-epics-*.json") if p not in out]
+    if args.check:
+        bad = [rel(p) for p, text in out.items() if read(p) != text] + [rel(p) for p in stale_parts]
+        if bad:
+            print("wiki database is out of date with the specs:", file=sys.stderr)
+            for b in bad:
+                print(f"  {b}", file=sys.stderr)
+            print("run: python3 docs/wiki/db/generate_wiki.py  (and commit the result)", file=sys.stderr)
+            return 1
+        print(f"wiki database matches the specs ({len(out)} files)")
+        return 0
+    OUT_DB.mkdir(parents=True, exist_ok=True)
+    for p, text in out.items():
+        if read(p) != text:
+            p.write_text(text, encoding="utf-8")
+            print(f"wrote {rel(p)}")
+    for p in stale_parts:
+        p.unlink()
+        print(f"removed {rel(p)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

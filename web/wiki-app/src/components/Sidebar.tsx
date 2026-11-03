@@ -31,6 +31,7 @@ import {
   LINEAR_PROJECT,
   PENPOT_LINK,
   PHASE_INFO,
+  PHASES,
 } from '@/lib/labels';
 
 interface Props {
@@ -135,7 +136,7 @@ export function Sidebar({
         </Section>
 
         {/* Phases & epics */}
-        {[1, 2, 3, 4].map((ph) => {
+        {PHASES.map((ph) => {
           const phaseEpics = phases.get(ph);
           if (!phaseEpics || !phaseEpics.length) return null;
           const phaseStoryCount = phaseEpics.reduce(
@@ -143,7 +144,17 @@ export function Sidebar({
             0,
           );
           return (
-            <Section heading={PHASE_INFO[ph].title} key={ph}>
+            <Section
+              heading={
+                <>
+                  {PHASE_INFO[ph].title}{' '}
+                  <span lang="ar" dir="rtl" className="normal-case tracking-normal">
+                    {PHASE_INFO[ph].titleAr}
+                  </span>
+                </>
+              }
+              key={ph}
+            >
               <CollapsibleGroup
                 label={`${phaseEpics.length} epics`}
                 count={phaseStoryCount}
@@ -237,7 +248,7 @@ function Section({
   heading,
   children,
 }: {
-  heading?: string;
+  heading?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (

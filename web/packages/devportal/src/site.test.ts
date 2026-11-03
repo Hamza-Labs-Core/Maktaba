@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 import { scanDir, scanText } from "../scripts/scan.mjs";
 import {
   DOCS,
-  WIKI_ALLOW,
+  MAX_EXPIRY_MONTHS,
+  expiresAt,
   readDisclosurePolicy,
   rewriteHref,
   scrubMarkdown,
@@ -91,35 +92,60 @@ describe("the allow-list", () => {
   it("publishes no internal document", () => {
     const all = files(DIST);
     expect(all.some((f) => /claude-trail|audits|advisories|\.md$/.test(f))).toBe(false);
-    expect(all.some((f) => f.startsWith("wiki/mockups/"))).toBe(false);
   });
 
-  it("every wiki file is one the allow-list names", () => {
-    const wiki = files(DIST).filter((f) => f.startsWith("wiki/"));
-    expect(wiki.length).toBeGreaterThan(3);
-    for (const f of wiki) {
-      const rel = f.slice("wiki/".length);
-      expect(
-        WIKI_ALLOW.some((re: RegExp) => re.test(rel)),
-        f
-      ).toBe(true);
-    }
-  });
-
-  it("publishes only the docs it names", () => {
+  it("publishes only the docs it names: the developer guides and the changelog", () => {
     const srcs = DOCS.map((d: { src: string }) => d.src);
     expect(srcs).toContain("CHANGELOG.md");
     expect(
-      srcs.every((s: string) => s === "CHANGELOG.md" || s.startsWith("specs/epics/54-plugins/"))
+      srcs.every((s: string) => s === "CHANGELOG.md" || s.startsWith("docs/developers/"))
     ).toBe(true);
     for (const d of DOCS) expect(fs.existsSync(path.join(DIST, d.out, "index.html"))).toBe(true);
   });
 
-  it("the wiki loads from /wiki/", () => {
-    const html = read("wiki/index.html");
-    expect(html).toMatch(/src="\/wiki\/assets\/index-[^"]+\.js"/);
-    for (const f of ["wiki.json", "wiki-cross-refs.json"]) {
-      expect(fs.existsSync(path.join(DIST, "wiki/db", f))).toBe(true);
+  // the epics and specs live on GitHub: no epics wiki, no spec or story page on this site
+  it("carries no epics wiki and no spec pages", () => {
+    const all = files(DIST);
+    expect(all.some((f) => f.startsWith("wiki/"))).toBe(false);
+    expect(all.some((f) => /story-\d\d-|specs\/epics/.test(f))).toBe(false);
+    for (const p of all.filter((f) => f.endsWith(".html"))) {
+      expect(read(p), p).not.toMatch(/href="\/wiki\//);
+    }
+  });
+
+  it("has the plugin, contributing and security guides, each in its group's contents", () => {
+    for (const p of [
+      "plugins/index.html",
+      "plugins/manifest/index.html",
+      "plugins/sandbox/index.html",
+      "plugins/queue-and-api/index.html",
+      "plugins/testing-and-packaging/index.html",
+      "plugins/publishing/index.html",
+      "contributing/index.html",
+      "contributing/architecture/index.html",
+      "contributing/repo-layout/index.html",
+      "contributing/local-setup/index.html",
+      "contributing/tests/index.html",
+      "contributing/conventions/index.html",
+      "contributing/ci/index.html",
+      "contributing/pull-requests/index.html",
+      "security/conformance/index.html",
+    ])
+      expect(fs.existsSync(path.join(DIST, p)), p).toBe(true);
+    const html = read("plugins/sandbox/index.html");
+    expect(html).toContain('<nav class="toc"');
+    expect(html).toContain('href="/plugins/manifest/"');
+    expect(read("contributing/index.html")).toContain('href="/contributing/pull-requests/"');
+    expect(read("security/policy/index.html")).toContain('href="/security/conformance/"');
+    const home = read("index.html");
+    for (const href of ["/plugins/", "/contributing/", "/api/", "/changelog/", "/security/policy/"])
+      expect(home).toContain(`href="${href}"`);
+    expect(home).toContain('href="https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics"');
+  });
+
+  it("quotes no one: no owner's words on any page", () => {
+    for (const p of files(DIST).filter((f) => f.endsWith(".html"))) {
+      expect(read(p), p).not.toMatch(/the owner(?:'s|&#39;s)? (?:words|said|asked|decided)|The owner, 20\d\d/i);
     }
   });
 
@@ -150,15 +176,19 @@ describe("scrubbing markdown", () => {
   });
 
   it("links a published doc locally and anything else to GitHub, never to internal files", () => {
-    const published = new Map([["specs/epics/54-plugins/README.md", "plugins/"]]);
-    const from = "specs/epics/54-plugins/story-54-01-manifest-package.md";
-    expect(rewriteHref("README.md#4-the-plugin-model", from, published)).toBe(
-      "/plugins/#4-the-plugin-model"
+    const published = new Map([
+      ["docs/developers/plugins/README.md", "plugins/"],
+      ["docs/developers/security/conformance.md", "security/conformance/"],
+    ]);
+    const from = "docs/developers/plugins/sandbox.md";
+    expect(rewriteHref("README.md#the-plugin-model", from, published)).toBe(
+      "/plugins/#the-plugin-model"
     );
-    expect(rewriteHref("../51-configurable-components/README.md", from, published)).toBe(
-      "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/51-configurable-components/README.md"
+    expect(rewriteHref("../security/conformance.md", from, published)).toBe("/security/conformance/");
+    expect(rewriteHref("../../../specs/epics/54-plugins/README.md", from, published)).toBe(
+      "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md"
     );
-    expect(rewriteHref("../../../docs/claude-trail.md", from, published)).toBeNull();
+    expect(rewriteHref("../../claude-trail.md", from, published)).toBeNull();
     expect(rewriteHref("https://example.com/x", from, published)).toBe("https://example.com/x");
   });
 });
@@ -168,9 +198,9 @@ describe("isSafeUrl", () => {
     "https://github.com/Hamza-Labs-Core/Maktaba",
     "http://example.com/",
     "mailto:security@maktaba.dev",
-    "/wiki/",
+    "/contributing/",
     "../plugins/",
-    "story-54-01-manifest-package/",
+    "manifest/",
     "#4-the-plugin-model",
     "/api/openapi.json?v=1",
   ])("allows %s", (u) => {
@@ -235,7 +265,7 @@ describe("English and Arabic", () => {
   });
 
   it("every page's strings are keys the toggle knows, with the toggle on the page", () => {
-    const pages = files(DIST).filter((f) => f.endsWith(".html") && !f.startsWith("wiki/"));
+    const pages = files(DIST).filter((f) => f.endsWith(".html"));
     expect(pages.length).toBeGreaterThan(5);
     for (const p of pages) {
       const html = read(p);
@@ -289,13 +319,39 @@ describe("security.txt, robots.txt, sitemap", () => {
   it("security.txt is the API's own disclosure policy, with an expiry ahead", () => {
     const policy = readDisclosurePolicy();
     const txt = read(".well-known/security.txt");
-    expect(txt).toBe(securityTxt(policy));
+    const noExpires = (s: string) => s.replace(/^Expires: .*\n/m, "");
+    expect(noExpires(txt)).toBe(noExpires(securityTxt(policy)));
     expect(txt).toMatch(/^Contact: mailto:security@maktaba\.dev$/m);
-    expect(txt).toMatch(/^Expires: \d{4}-\d\d-\d\dT00:00:00Z$/m);
     expect(txt).toMatch(/^Policy: https:\/\/maktaba\.dev\/security\/policy$/m);
     expect(txt).toMatch(/^Canonical: https:\/\/maktaba\.dev\/\.well-known\/security\.txt$/m);
     expect(txt).toMatch(/^Preferred-Languages: en, ar$/m);
-    expect(policy.expires.getTime()).toBeGreaterThan(Date.now());
+    // the rolling expiry: the build day (today, or yesterday for a build that ran past
+    // midnight UTC) plus ExpiryMonths, ahead of now and under a year (RFC 9116)
+    const m = txt.match(/^Expires: (\d{4}-\d\d-\d\dT00:00:00Z)$/m);
+    expect(m).not.toBeNull();
+    const exp = new Date(m![1]);
+    const now = new Date();
+    const day = 86400000;
+    const built = [now, new Date(now.getTime() - day)].map((d) =>
+      expiresAt(d, policy.expiryMonths).getTime()
+    );
+    expect(built).toContain(exp.getTime());
+    expect(exp.getTime()).toBeGreaterThan(now.getTime());
+    expect(exp.getTime()).toBeLessThan(now.getTime() + 365 * day);
+  });
+
+  it("the expiry rolls: ExpiryMonths after the build day, as the API's ExpiresAt", () => {
+    const at = (iso: string) => readDisclosurePolicy(new Date(iso)).expires.toISOString();
+    expect(readDisclosurePolicy().expiryMonths).toBe(MAX_EXPIRY_MONTHS);
+    // the same cases as api/internal/security/security_test.go TestDefaultPolicyExpiryRolls
+    expect(at("2026-11-03T15:04:05Z")).toBe("2027-10-03T00:00:00.000Z");
+    expect(at("2027-01-01T00:00:00Z")).toBe("2027-12-01T00:00:00.000Z");
+    expect(at("2026-03-31T12:00:00Z")).toBe("2027-03-03T00:00:00.000Z");
+    expect(at("2026-11-03T23:30:00-05:00")).toBe("2027-10-04T00:00:00.000Z");
+    // the file the build writes, for a build on a given day
+    expect(securityTxt(readDisclosurePolicy(new Date("2026-11-03T09:00:00Z")))).toMatch(
+      /^Expires: 2027-10-03T00:00:00Z$/m
+    );
   });
 
   it("the policy and hall-of-fame pages security.txt names exist", () => {
@@ -313,8 +369,9 @@ describe("security.txt, robots.txt, sitemap", () => {
     const xml = read("sitemap.xml");
     const locs = [...xml.matchAll(/<loc>https:\/\/maktaba\.dev(\/[^<]*)<\/loc>/g)].map((m) => m[1]);
     expect(locs).toContain("/");
-    expect(locs).toContain("/wiki/");
+    expect(locs).not.toContain("/wiki/");
     expect(locs).toContain("/plugins/");
+    expect(locs).toContain("/contributing/");
     expect(locs).toContain("/changelog/");
     for (const l of locs) expect(fs.existsSync(path.join(DIST, l, "index.html")), l).toBe(true);
   });

@@ -3,7 +3,7 @@
 // assembled (scripts/build.mjs) and puts the cache and security headers on every response.
 // No backend, no KV, no secrets.
 
-import { APEX, redirect, withHeaders } from "./headers";
+import { APEX, movedTo, redirect, withHeaders } from "./headers";
 
 export interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
@@ -30,6 +30,9 @@ export default {
     }
     // RFC 9116 §3: the file lives under /.well-known/; the old root path points there
     if (url.pathname === "/security.txt") return redirect("/.well-known/security.txt");
+    // the epics wiki and the Epic 54 story pages: gone from this site (headers.ts MOVED)
+    const moved = movedTo(url.pathname);
+    if (moved) return redirect(moved);
 
     let res = await env.ASSETS.fetch(req);
     if (res.status === 404) {
