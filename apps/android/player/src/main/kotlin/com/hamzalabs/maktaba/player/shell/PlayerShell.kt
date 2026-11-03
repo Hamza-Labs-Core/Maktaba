@@ -39,6 +39,7 @@ import com.hamzalabs.maktaba.core.layout.LocalAdaptiveInfo
 import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.ui.NavigationLabel
+import com.hamzalabs.maktaba.core.ui.rememberNavigationLabelSizes
 import com.hamzalabs.maktaba.core.ui.navigationLabelsFit
 import androidx.compose.ui.platform.LocalConfiguration
 
@@ -197,6 +198,7 @@ fun PlayerShell(
     val labels = sections.map { stringResource(it.label) }
     // a cover screen at a large text size: the selected label only (see navigationLabelsFit)
     val allLabels = navigation != ShellNavigation.Bar || navigationLabelsFit(labels, LocalConfiguration.current.screenWidthDp)
+    val labelSizes = rememberNavigationLabelSizes(labels)
     CompositionLocalProvider(LocalAdaptiveInfo provides adaptiveInfo) {
         NavigationSuiteScaffold(
             modifier = modifier.semantics { shellNavigation = navigation },
@@ -208,7 +210,7 @@ fun PlayerShell(
                         selected = selected,
                         onClick = { choose(section) },
                         icon = { Icon(if (selected) section.selectedIcon else section.icon, contentDescription = null) },
-                        label = { NavigationLabel(labels[i]) },
+                        label = { NavigationLabel(labels[i], labelSizes) },
                         alwaysShowLabel = allLabels,
                         modifier = Modifier.testTag("section-${section.name}"),
                     )

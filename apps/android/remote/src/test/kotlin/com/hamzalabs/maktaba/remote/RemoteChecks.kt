@@ -48,6 +48,11 @@ fun ComposeContentTestRule.assertBarLabelsAligned(labels: Map<String, String>, s
         assertTrue("$text inside the screen: $b in 0..$width", b.left >= 0f && b.right <= width.toFloat())
         assertTrue("$text centred under its item: $b, item $item", abs(b.center.x - item.center.x) <= 2f)
         assertTrue("$text inside its item: $b, item $item", b.left >= item.left - 1f && b.right <= item.right + 1f)
+        // the glyphs themselves, centred in the label, keep off the screen's edges (an end label touched them)
+        val drawn = layout.single().multiParagraph.getLineWidth(0)
+        val edge = 2 * density.density
+        val glyphs = b.center.x - drawn / 2 to b.center.x + drawn / 2
+        assertTrue("$text off the screen's edges: $glyphs in 0..$width", glyphs.first >= edge && glyphs.second <= width - edge)
     }
     val heights = checked.values.map { it.boundsInRoot.height }
     assertTrue("labels of one height: $heights", heights.all { abs(it - heights[0]) <= 1f })

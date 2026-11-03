@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.testTag
 import com.hamzalabs.maktaba.core.layout.LocalAdaptiveInfo
 import androidx.compose.ui.platform.LocalConfiguration
 import com.hamzalabs.maktaba.core.ui.NavigationLabel
+import com.hamzalabs.maktaba.core.ui.rememberNavigationLabelSizes
 import com.hamzalabs.maktaba.core.ui.navigationLabelsFit
 import com.hamzalabs.maktaba.core.ui.Revalidating
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -180,13 +181,14 @@ internal fun RemoteFrame(
     val labels = Place.entries.map { stringResource(it.short) }
     // a cover screen at a large text size: the selected label only (see navigationLabelsFit)
     val allLabels = navigationLabelsFit(labels, LocalConfiguration.current.screenWidthDp)
+    val labelSizes = rememberNavigationLabelSizes(labels)
     val items: NavigationSuiteScope.() -> Unit = {
         Place.entries.forEachIndexed { i, p ->
             item(
                 selected = p == place,
                 onClick = { if (p != place) { place = p; remote.clear() } },
                 icon = { Icon(p.icon, null) },
-                label = { NavigationLabel(labels[i]) },
+                label = { NavigationLabel(labels[i], labelSizes) },
                 alwaysShowLabel = allLabels,
                 modifier = Modifier.testTag("place-${p.name}"),
             )
