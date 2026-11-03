@@ -240,7 +240,9 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
     for (const libs of [{ items: null }, {}]) {
       const { unmount } = setup({ "/api/queues/libraries": libs });
       await pageReady();
-      expect(screen.getByText("No libraries match.")).toBeInTheDocument();
+      expect(
+        screen.getByText("No libraries yet. Add one on Manage libraries.")
+      ).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Queue work…" }));
       const dlg = await screen.findByRole("dialog", { name: "Queue work" });
       expect(within(dlg).queryByRole("checkbox", { name: /Islamic lectures/ })).toBeNull();
@@ -248,7 +250,10 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
       unmount();
     }
     setup({ "/api/queues/libraries": { items: [{ ...librariesFixture[0], strip: null }] } });
-    expect(await screen.findByRole("link", { name: /Islamic lectures/ })).toBeInTheDocument();
+    expect(await screen.findByText("All 1 libraries are up to date.")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Open the library dashboard (1)" })
+    ).toBeInTheDocument();
     noCrash();
   });
 
@@ -408,7 +413,7 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
     expect(await screen.findByText("All caught up")).toBeInTheDocument();
     expect(screen.getByText("Nothing needs attention.")).toBeInTheDocument();
     expect(await screen.findByText("No activity yet.")).toBeInTheDocument();
-    expect(screen.getByText("No libraries match.")).toBeInTheDocument();
+    expect(screen.getByText("No libraries yet. Add one on Manage libraries.")).toBeInTheDocument();
     expect(await screen.findByText("No workers have reported in.")).toBeInTheDocument();
     expect(document.querySelector("[data-stage]")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Queue work…" }));
@@ -699,7 +704,7 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
         <>
           <Route path="/queue/:stage" element={<p>stage page</p>} />
           <Route path="/queue/reports" element={<p>reports page</p>} />
-          <Route path="/queue/items/:kind/:id" element={<p>item page</p>} />
+          <Route path="/admin/libraries/:id" element={<p>library page</p>} />
         </>
       ),
     });
@@ -714,7 +719,7 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
       "/admin/extensions"
     );
     await userEvent.click(screen.getByRole("link", { name: /Islamic lectures/ }));
-    expect(await screen.findByText("item page")).toBeInTheDocument();
+    expect(await screen.findByText("library page")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "go back" }));
     expect(await pageReady()).toBeInTheDocument();
     // not stuck on Loading…: the activity log mounts again with the page and
@@ -722,26 +727,23 @@ describe("QueueOverview (test-cases/queue-overview.md)", () => {
     await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
   });
 
-  it("QOV-25: libraries table: no match, select all, re-queue selected / one", async () => {
+  it("QOV-25: libraries panel: the ones needing attention open their page; the dashboard has all", async () => {
     setup();
     await pageReady();
-    const search = screen.getByRole("searchbox", { name: "Search libraries" });
-    await userEvent.type(search, "zzz");
-    expect(screen.getByText("No libraries match.")).toBeInTheDocument();
-    await userEvent.clear(search);
-    expect(screen.getByRole("button", { name: "Re-queue selected (0)" })).toBeDisabled();
-    await userEvent.click(screen.getByRole("checkbox", { name: "Select all libraries" }));
-    expect(screen.getByRole("checkbox", { name: "Select Islamic lectures" })).toBeChecked();
-    await userEvent.click(screen.getByRole("button", { name: "Re-queue selected (2)" }));
-    const dlg = await screen.findByRole("dialog", { name: "Queue work" });
-    expect(within(dlg).getByRole("checkbox", { name: /Islamic lectures/ })).toBeChecked();
-    expect(within(dlg).getByRole("checkbox", { name: /قصة وآية/ })).toBeChecked();
-    await userEvent.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    await userEvent.click(screen.getByRole("button", { name: /^Re-queue .*Islamic lectures/ }));
-    const one = await screen.findByRole("dialog", { name: "Queue work" });
-    expect(within(one).getByRole("checkbox", { name: /Islamic lectures/ })).toBeChecked();
-    expect(within(one).getByRole("checkbox", { name: /قصة وآية/ })).not.toBeChecked();
+    const panel = screen.getByRole("region", { name: "Libraries" });
+    expect(within(panel).getByText("1 of 2 libraries need attention.")).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: /Islamic lectures/ })).toHaveAttribute(
+      "href",
+      "/admin/libraries/lib-1#queues"
+    );
+    expect(within(panel).getByText("8 failed")).toBeInTheDocument();
+    // the up-to-date library is on the dashboard, not in the panel
+    expect(within(panel).queryByRole("link", { name: /قصة وآية/ })).toBeNull();
+    expect(
+      within(panel).getByRole("link", { name: "Open the library dashboard (2)" })
+    ).toHaveAttribute("href", "/queue/libraries");
+    // the bulk actions moved to the dashboard
+    expect(screen.queryByRole("button", { name: /Re-queue selected/ })).toBeNull();
   });
 
   it("QOV-26: activity log: queue filter, Load older failure then success, load error", async () => {

@@ -4,14 +4,17 @@
 //                               not), counts, last scan, a running scan, and the
 //                               folders two libraries claim (conflict_groups)
 //
-// Each library has Scan (with progress, followed after a reload too), Edit,
-// YouTube sources… (the Queues page's dialog, components/queue),
+// Each library's name opens its own admin page (/admin/libraries/:id); each has
+// Scan (with progress, followed after a reload too), Edit, YouTube sources…
+// (the dashboard's dialog, components/queue; the same list is the library
+// page's YouTube section),
 // Empty trash, Merge and Remove; "Folders claimed twice" offers a one-click
 // Merge into the library that holds the videos. The dialogs live in
 // ./libraries/. The API refuses all of it to anyone but an admin. A return
 // shows the last answer at once (lib/usePageData); a change drops the
 // answers it makes stale, the members' views of the libraries too.
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { Button } from "@ds/components/Button/Button";
@@ -290,7 +293,9 @@ function LibraryCard({
     <li className="mkt-libadmin__card" aria-labelledby={headingId}>
       <div className="mkt-libadmin__card-head">
         <h2 id={headingId}>
-          <bdi>{lib.name}</bdi>
+          <Link to={`/admin/libraries/${encodeURIComponent(lib.id)}`}>
+            <bdi>{lib.name}</bdi>
+          </Link>
         </h2>
         <p className="mkt-libadmin__counts">
           {t("libraryAdmin.counts.videos", { count: n(c.total) })}

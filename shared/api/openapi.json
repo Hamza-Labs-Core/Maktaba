@@ -3888,6 +3888,102 @@
         "operationId": "getQueueLibraries"
       }
     },
+    "/queues/libraries/activity": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Each library's finished jobs per day (cached 1 min)",
+        "description": "The jobs of each library that finished done or failed on each UTC day of the window, oldest first. `done` and `failed` are aligned with `days`; a library with no finished job in the window is left out. Home admins only.",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Days in the window, ending today (UTC).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 14
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "days",
+                    "items"
+                  ],
+                  "properties": {
+                    "days": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "date"
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "library_id",
+                          "done",
+                          "failed"
+                        ],
+                        "properties": {
+                          "library_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "done": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          "failed": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueLibraryActivity"
+      }
+    },
     "/queues/health": {
       "get": {
         "tags": [

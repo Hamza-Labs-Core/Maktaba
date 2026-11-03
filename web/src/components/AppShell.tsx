@@ -114,6 +114,7 @@ const ADMIN = [
   { to: "/transcription", key: "nav.transcription", icon: "✎" },
   { to: "/settings", key: "nav.settings", icon: "☰" },
   { to: "/admin/libraries", key: "nav.admin.libraries", icon: "▣" },
+  { to: "/queue/libraries", key: "nav.libraryDashboard", icon: "▧" },
   { to: "/admin/users", key: "nav.admin.users", icon: "◉" },
   { to: "/admin/library-acl", key: "nav.admin.libraryAcl", icon: "▦" },
   { to: "/admin/channels", key: "nav.admin.channels", icon: "▥" },
@@ -335,7 +336,11 @@ export function AppShell() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === LIVE_TV_PATH}
+                  end={
+                    item.to === LIVE_TV_PATH ||
+                    // the library dashboard has its own entry, so Processing is not lit there too
+                    (item.to === "/queue" && pathname.startsWith("/queue/libraries"))
+                  }
                   className="mkt-nav-link"
                   title={t(item.key)}
                   aria-label={t(item.key)}
