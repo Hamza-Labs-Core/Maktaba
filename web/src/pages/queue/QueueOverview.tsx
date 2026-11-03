@@ -1,5 +1,6 @@
 // /queue — the queue control centre (plan 06-11 §9). Health strip, the
-// stage flow in lanes, "Needs attention" + live activity, libraries.
+// stage flow in lanes, "Needs attention" + live activity, and the libraries
+// that need an admin (the library dashboard, /queue/libraries, has them all).
 // ?host=<node id | home> (the Machines page's "View in queues") adds the
 // jobs running on that machine, with their progress, and narrows the
 // lanes' live runs to it.
@@ -25,7 +26,7 @@ import { ExplainPanel } from "../../components/queue/ExplainPanel";
 import { HealthStrip } from "../../components/queue/HealthStrip";
 import { InsightsPanel } from "../../components/queue/InsightsPanel";
 import { IssueList, groupKey } from "../../components/queue/IssueList";
-import { LibrariesTable } from "../../components/queue/LibrariesTable";
+import { LibrariesAttention } from "../../components/libdash/LibrariesAttention";
 import { PulseBanner } from "../../components/queue/PulseBanner";
 import { RunPanel } from "../../components/queue/RunPanel";
 import { StylePanel } from "../../components/queue/StylePanel";
@@ -33,16 +34,12 @@ import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { WorkersStrip } from "../../components/queue/WorkersStrip";
 import { QueueHeader, overallState } from "../../components/queue/QueueHeader";
 import { RetriggerDialog, type RetriggerSubject } from "../../components/queue/RetriggerDialog";
-import {
-  OfflineActionDialog,
-  type OfflineActionTarget,
-} from "../../components/queue/OfflineActionDialog";
 import { OfflineItemsPanel } from "../../components/queue/OfflineItemsPanel";
-import { YouTubeSourcesDialog } from "../../components/queue/YouTubeSourcesDialog";
 import { useAction } from "../../components/queue/useAction";
 import { useThrottledReload } from "../../components/queue/useThrottledReload";
 import { safeGroups, safeLibraries, safeSnapshot } from "./safeData";
 import "../../styles/queue.css";
+import "../../styles/libdash.css";
 
 export function QueueOverview() {
   const { t, n } = useI18n();
@@ -58,10 +55,8 @@ export function QueueOverview() {
   const admin = useIsAdmin();
   const [issues, setIssues] = useState<FailureGroup[]>([]);
   const [libraries, setLibraries] = useState<LibraryQueueRow[]>([]);
-  // Epic 47: the libraries' offline columns, and the dialogs of their actions (admins)
+  // Epic 47: what the libraries need besides their queues (admins)
   const [offline, setOffline] = useState<Record<string, OfflineSummary> | undefined>(undefined);
-  const [offlineAction, setOfflineAction] = useState<OfflineActionTarget | null>(null);
-  const [sourcesOf, setSourcesOf] = useState<{ id: string; name: string } | null>(null);
   // bumps after an action here, so "Where each item is" shows what was just queued
   const [itemsBump, setItemsBump] = useState(0);
   const [extensions, setExtensions] = useState<Extension[] | null>(null);
@@ -204,12 +199,6 @@ export function QueueOverview() {
       .run(groupKey(g), () => queueApi.apply(g.stage, { all: true }))
       .then((r) => r && refreshAfter());
 
-  const openDialog = (rows: LibraryQueueRow[]) =>
-    setDialog({
-      open: true,
-      subjects: rows.map((r) => ({ kind: "library", id: r.library_id, label: r.name })),
-    });
-
   return (
     <section className="mkt-page mkt-q">
       <QueueHeader
@@ -317,22 +306,7 @@ export function QueueOverview() {
         </section>
       </div>
 
-      <LibrariesTable
-        rows={libraries}
-        stages={snapshot.stages}
-        onRequeue={openDialog}
-        offline={admin ? offline : undefined}
-        onOffline={
-          admin
-            ? (a, rows) =>
-                setOfflineAction({
-                  action: a,
-                  libraries: rows.map((r) => ({ id: r.library_id, name: r.name })),
-                })
-            : undefined
-        }
-        onSources={admin ? (r) => setSourcesOf({ id: r.library_id, name: r.name }) : undefined}
-      />
+      <LibrariesAttention rows={libraries} offline={admin ? offline : undefined} />
 
       {admin && <OfflineItemsPanel tick={stream.finishedTick + itemsBump} />}
 
@@ -344,17 +318,6 @@ export function QueueOverview() {
           <StylePanel libraries={libraries} canEdit={admin} />
         </div>
       </div>
-
-      <OfflineActionDialog
-        target={offlineAction}
-        onClose={() => setOfflineAction(null)}
-        onDone={refreshAfter}
-      />
-      <YouTubeSourcesDialog
-        library={sourcesOf}
-        onClose={() => setSourcesOf(null)}
-        onChanged={loadOffline}
-      />
 
       <RetriggerDialog
         open={dialog.open}

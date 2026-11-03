@@ -149,6 +149,11 @@ describe("AdminLibraries", () => {
       await screen.findByRole("heading", { level: 2, name: "Dr. Othman Alkamees" })
     ).toBeInTheDocument();
     const big = card("Dr. Othman Alkamees");
+    // the name opens the library's own admin page
+    expect(within(big).getByRole("link", { name: /Dr\. Othman Alkamees/ })).toHaveAttribute(
+      "href",
+      "/admin/libraries/big"
+    );
     expect(within(big).getByText(/47,273 videos/)).toBeInTheDocument();
     expect(within(big).getByText(/3 missing/)).toBeInTheDocument();
     expect(within(big).getByText("Reachable")).toBeInTheDocument();

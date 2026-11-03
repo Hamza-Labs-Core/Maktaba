@@ -128,6 +128,7 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"GET", "/api/queues", "/api/queues", ""},
 		{"GET", "/api/queues/graph", "/api/queues/graph", ""},
 		{"GET", "/api/queues/libraries", "/api/queues/libraries", ""},
+		{"GET", "/api/queues/libraries/activity", "/api/queues/libraries/activity", ""},
 		{"GET", "/api/queues/health", "/api/queues/health", ""},
 		{"GET", "/api/queues/insights", "/api/queues/insights", ""},
 		{"GET", "/api/queues/pulse", "/api/queues/pulse", ""},

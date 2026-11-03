@@ -75,6 +75,21 @@ build fails when the two differ.
 
 ### Added
 
+- **A library dashboard and a page for each library.** Processing > Library dashboard
+  (`/queue/libraries`, admins) shows one tile per library: overall progress as a gauge, done,
+  running, waiting and failed as a bar, the last two weeks' finished jobs as a small chart, and
+  badges for failures, YouTube on or off (one click opens its sources), files left to convert and
+  duplicates to review. The tiles filter by needs attention, failing, to convert and YouTube off
+  (each with its count), sort by attention, name, failures, size or last change, and can be
+  selected for Re-queue, Refresh from YouTube, Convert to MP4 and Find duplicates. A library's
+  name opens its own admin page (`/admin/libraries/:id`, also from Manage libraries and the
+  Queues page) with its overview (videos, series, hours, storage, folders, health), queue
+  status (gauge, work per day, failing items, every queue and the actions), YouTube sources
+  with their modes, conversion (files left and the re-encode and convert-after-scan settings),
+  duplicates, trash, settings and access. The Queues page's long libraries table gives way to a
+  short list of the libraries needing attention. The new `GET /api/queues/libraries/activity`
+  (admins only, cached a minute) gives each library's finished and failed jobs per day. In
+  English and Arabic, right to left, and at phone width without sideways scrolling.
 - **maktaba.dev, the developer portal.** The plugin guides, the contributing guides, security
   (the policy, `security.txt` and the rules plugins and contributors follow), the API reference
   and the changelog on one site; the epics and specs stay on GitHub. Every page is in English

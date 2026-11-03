@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post, put, patch, hub } = vi.hoisted(() => {
@@ -133,10 +133,10 @@ describe("QueueOverview", () => {
     const issues = screen.getByRole("heading", { name: "Needs attention" }).closest("section")!;
     expect(within(issues).getByText("YouTube asked for a bot check")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
-    // libraries table
+    // libraries panel: the one needing attention opens its library page
     expect(screen.getByRole("link", { name: /Islamic lectures/ })).toHaveAttribute(
       "href",
-      "/queue/items/library/lib-1"
+      "/admin/libraries/lib-1#queues"
     );
   });
 
@@ -309,25 +309,6 @@ describe("QueueOverview", () => {
       mode: "queue",
       priority: 50,
     });
-  });
-
-  it("re-queues several libraries at once from the table", async () => {
-    setup();
-    await screen.findByRole("link", { name: /Islamic lectures/ });
-    await userEvent.click(screen.getByLabelText("Select all libraries"));
-    await userEvent.click(screen.getByRole("button", { name: "Re-queue selected (2)" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: "Queue work (2)" })).toBeEnabled();
-  });
-
-  it("filters the libraries table by name", async () => {
-    setup();
-    await screen.findByRole("link", { name: /Islamic lectures/ });
-    fireEvent.change(screen.getAllByPlaceholderText("Search libraries")[0], {
-      target: { value: "قصة" },
-    });
-    expect(screen.queryByRole("link", { name: /Islamic lectures/ })).toBeNull();
-    expect(screen.getByRole("link", { name: /قصة وآية/ })).toBeInTheDocument();
   });
 
   it("uses only token colours (no inline colour styles) in light and dark", async () => {

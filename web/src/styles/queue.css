@@ -675,21 +675,6 @@ summary.mkt-q-lane__title {
   accent-color: var(--color-accent);
 }
 
-/* ---- libraries -------------------------------------------------------- */
-.mkt-q-libs {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-.mkt-q-libs__bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-3);
-}
-.mkt-q-libs__bar h2 {
-  margin-inline-end: auto;
-}
 .mkt-q-tablewrap {
   overflow-x: auto;
   border: 1px solid var(--color-border);
@@ -1680,16 +1665,7 @@ summary.mkt-q-lane__title {
 }
 
 /* ---------- Epic 47: offline, MP4, no duplicates ---------- */
-.mkt-q-libs__rowactions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-.mkt-q-libs__yt {
-  font-size: var(--font-size-sm);
-  min-inline-size: 12rem;
-}
-.mkt-q-libs__menu .mk-menu__trigger,
+/* the library dashboard's With selected menu */
 .mkt-q-libs__bulk .mk-menu__trigger {
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--color-border);
@@ -1775,11 +1751,6 @@ summary.mkt-q-lane__title {
   background: color-mix(in srgb, var(--q-done) 12%, transparent);
 }
 
-/* the row menu opens towards the table, so the scrolling table wrap never clips it */
-.mkt-q-libs__menu .mk-menu__list {
-  inset-inline-start: auto;
-  inset-inline-end: 0;
-}
 .mkt-q-ytsrc input:not([type="checkbox"]):not([type="radio"]),
 .mkt-q-ytsrc select,
 .mkt-q-items select {
