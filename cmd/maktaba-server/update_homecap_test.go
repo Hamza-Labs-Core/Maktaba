@@ -17,7 +17,7 @@ import (
 )
 
 // A joined machine's own updater never installs a release above the one its home
-// committed (the owner's rule, 2026-10-28); one joined to no home updates as before.
+// committed (rule of 2026-10-28); one joined to no home updates as before.
 func TestJoinedMachineNeverUpdatesPastItsHome(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

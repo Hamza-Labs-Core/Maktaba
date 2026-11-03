@@ -675,7 +675,7 @@ async def test_real_ytdlp_smoke(
 async def test_each_video_goes_on_to_convert_while_the_next_downloads(
     db: Database, tmp_path: Path, fake: FakeYtDlp
 ) -> None:
-    """Owner, 2026-10-28: download, convert, dedup, one item at a time, through the graph:
+    """Download, convert, dedup, one item at a time, through the graph:
     video 1's convert job exists while video 2 is still downloading."""
     lib = await make_lib(db, tmp_path)
     sid = await add_source(db, lib)

@@ -8,7 +8,7 @@ moment it is spoken. On the home (45,339 videos, 23.1 M transcript lines) it doe
 - **It is slow, and sometimes fails.** A common word (الله) matches millions of lines. The keyword
   query ranks every matching line (`ts_rank` per segment, `max` per video) before it answers:
   23-60 s, and a 500 when the 60 s statement timeout cancels it (server log, 2026-11-01). The app
-  waits it out, so "search doesn't work in the app". PR #513 caps the ranking at 5,000 matching
+  waits it out, so search seems not to work in the app. PR #513 caps the ranking at 5,000 matching
   lines as a stopgap (91 ms); this epic replaces the cap.
 - **It ranks the wrong thing.** It ranks lines, and for one word every line scores about the
   same. What should differ is the video: a lecture that says الصبر 200 times against one that
@@ -142,7 +142,7 @@ CREATE INDEX ON video_search_docs (library_id);
 ```
 
 - Title and speakers weigh more than body (pg_textsearch multi-field; weights tuned on the
-  owner's test queries, story 49.9).
+  home's test queries, story 49.9).
 - Lines stay where they are (`transcript_segments` + GIN): they give the passages and the jump
   times for the top videos only, so that query is bounded by video ids.
 - Not copied to the machines' replicas if they do not serve search (`cluster_copy_excluded`), as
@@ -245,7 +245,7 @@ runs only when the person opens that tab or submits from it; Results never waits
 
 ## 8. Decisions
 
-- One delivery, no phases: word forms, AI mode and every client are in this epic (owner, 2026-11-01).
+- One delivery, no phases: word forms, AI mode and every client are in this epic (2026-11-01).
 - No language model in ordinary search; AI mode is a separate tab, run only when chosen, like
-  Google's AI mode (owner, 2026-11-01).
-- The relevance tests are generated from the home's own transcripts, not a hand-written list (owner, 2026-11-01).
+  Google's AI mode (2026-11-01).
+- The relevance tests are generated from the home's own transcripts, not a hand-written list (2026-11-01).

@@ -1,6 +1,6 @@
 # Design — Offline-first local user, server-authoritative on connect
 
-> Decision inputs (from product owner):
+> Decision inputs:
 > **Model = offline-first local account** · **Identity authority =
 > server wins on connect.**
 >

@@ -53,7 +53,7 @@ func ResolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback
 // resolveReleaseBinary is ResolveReleaseBinary that also looks at kept(version): the
 // streaming binaries of that release this install keeps elsewhere (a desktop app's copy
 // kept before its update, another runtime directory), the first whose SHA-256 is the
-// release's. A TV held on the release before (story 35.6, the owner's decision of
+// release's. A TV held on the release before (story 35.6, decided
 // 2026-10-28) restarts its slots on that release's binary from there.
 func resolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback string,
 	kept func(version string) []string) (ReleaseBinary, error) {

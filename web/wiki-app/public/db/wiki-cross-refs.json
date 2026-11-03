@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 54,
-    "stories": 623,
+    "stories": 634,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -237,70 +237,70 @@
       "id": "33",
       "slug": "tv-staging-hot-swap",
       "title": "Maktaba TV staging, hot swap and change management",
-      "description": "Maktaba TV staging, hot swap and change management.\n\nToday every TV change lands on the air the moment it is written: `write_channels` rewrites `channels`, a stale channel's future is regenerated in place after the block on air (`channels/pass_.py`), a new `rules.tv_output` takes effect on the next block, and a new `maktaba-streaming` binary means restarting the one process that encodes every channel. A bad change is found by viewers.",
+      "description": "Maktaba TV staging, hot swap and change management.\n\nRequirement: TV gets staging and hot swap. Changes go to staging; once staging is ready and live, a switch happens. So: two TV processes, a load-balanced hot swap, and an internal change management flow.",
       "readme": "specs/epics/33-tv-staging-hot-swap/README.md"
     },
     {
       "id": "34",
       "slug": "tv-public-site",
       "title": "Maktaba TV public site (working name `tv.maktaba.com`)",
-      "description": "Maktaba TV public site (working name `tv.maktaba.com`).\n\nEpic 32 lets **signed-in Maktaba users** watch a channel away from home through Cloudflare Stream. This epic adds a **public website** where **anyone the owner allows** (everyone, everyone who passes a bot check, invited people, or Maktaba account holders) opens a web page, sees the channel grid and the guide, and watches the channels the owner made public. Everything a visitor touches runs on Cloudflare: a Worker with static assets serves the site and its API, R2 holds the published guide, a Durable Object coordinates sessions and talks to the home, and Cloudflare Stream delivers the video. **The visitor never reaches the home.** The home only connects outward: it publishes the lineup and guide, keeps an outbound control connection to the Worker, and pushes the public channels to their Stream live inputs.",
+      "description": "Maktaba TV public site (working name `tv.maktaba.com`).\n\nRequirement: a public TV site (working name tv.maktaba.com; the domain is checked later) where people watch the channels through Cloudflare, as a feature next to Epic 32.",
       "readme": "specs/epics/34-tv-public-site/README.md"
     },
     {
       "id": "35",
       "slug": "cluster-full-nodes-and-updates",
       "title": "Full-Maktaba cluster machines and automatic updates for the whole cluster",
-      "description": "Full-Maktaba cluster machines and automatic updates for the whole cluster.\n\nOwner decisions are marked **owner**; the rest were proposed by the first draft and accepted by the owner on 2026-10-19 (**accepted default**). The questions and their answers are listed under [Decisions on the open questions](#decisions-on-the-open-questions).",
+      "description": "Full-Maktaba cluster machines and automatic updates for the whole cluster.\n\n1. *Every machine that joins is a full Maktaba* — web UI, API, pipeline worker and, optionally, TV streaming. Opening any machine's web address gives the same Maktaba. The home stays the single source of truth: one database (the home's Postgres; machines use their own limited role), migrations only on the home, the home is the TV front door (HDHomeRun, SSDP, XMLTV, M3U, the push relay), and the Plex and Cloudflare secrets never leave the home (machines reach Plex through the service door, story 31.R). 2. *Updates are fully automatic.* The home checks for new signed releases, installs them in a quiet window (default 03:00–05:00 local) unless a check fails, then rolls the same version out to every joined machine one at a time, each verified before the next, with rollback on failure.",
       "readme": "specs/epics/35-cluster-full-nodes-and-updates/README.md"
     },
     {
       "id": "36",
       "slug": "mac-app",
       "title": "Maktaba.app",
-      "description": "Maktaba.app: one Mac installation that runs everything.\n\n`apps/desktop` is a client only (no sidecar). The Mac Docker overlay (`docker-compose.mac.yml`) cannot work as written (macOS ffmpeg into a Linux container, an unread `MAKTABA_STT_BACKEND`).",
+      "description": "Maktaba.app: one Mac installation that runs everything.\n\n1. **One Mac installation runs everything.** A home Mac installs Maktaba once and gets the API, streaming (Live TV), the pipeline workers *including MLX transcription and the second listen*, semantic search, the web app, the database, ffmpeg, starting at login and restarting anything that stops. No Docker, no Homebrew Postgres, no terminal steps, no Claude-session-held processes. 2. **It is a Mac app: `Maktaba.app`.** Drag to Applications, open, follow a short setup. The window is the web app (as today); closing it leaves the server running; the menu-bar item shows status. 3. **Postgres is bundled** inside the app (≈30–40 MB for Apple Silicon), private to Maktaba, so it never clashes with another Postgres on the Mac.",
       "readme": "specs/epics/36-mac-app/README.md"
     },
     {
       "id": "37",
       "slug": "node-replica",
       "title": "Every full node keeps a live copy of its home's database",
-      "description": "Every full node keeps a live copy of its home's database.\n\nDecisions the user made: **sign-in works offline**; a **full live copy**, by **logical replication** (it replaced the physical standby first built: a copy that is its own database can leave the home's secrets out and can become the home); **one feature branch, merged once**; and **nothing is a manual step** — joining sets the copy up, already-joined nodes convert on update, the home's side configures itself, TLS is automatic, the tunables are rules on the settings page, and the copy's state shows on the Machines page and the node's own status.",
+      "description": "Every full node keeps a live copy of its home's database.\n\nA full node (Epic 35) used to depend on its home for everything a person does: checking a sign-in, reading the library, playing, watching TV. PR #145 made a node degrade to read-only on the home's last answers for ten minutes; PR #157 kept a playback catalog for the home's database being down. This epic replaces both with this requirement: a joined node has a passive/active relation with the home. It holds the whole database of the home, read-only and replicated at once, so sign-in, TV, playback and the rest work offline from that node, without the home's full features.",
       "readme": "specs/epics/37-node-replica/README.md"
     },
     {
       "id": "38",
       "slug": "windows-app",
       "title": "Maktaba for Windows",
-      "description": "Maktaba for Windows: one installation that runs everything.\n\n1. **One Windows installation runs everything.** One installer gives the API, streaming (Live TV), the pipeline workers *including transcription*, semantic search, the web app, the database and ffmpeg. The server starts at sign-in, restarts anything that stops, and shows no console window. No Docker, no separate Postgres install, no hand-made `.cmd` loops, no terminal steps. 2. **It is the Maktaba desktop app.** Install, open, follow a short setup. The window is the web app; closing it leaves the server running; the tray icon shows its status. 3. **Postgres 16.15 is bundled**, private to Maktaba (loopback, port 54329), so it never meets another Postgres on the PC. 4. **Per user, in the user's session.** A LocalSystem service cannot see the NAS drives mapped in the user's session (`O:`, `Y:` → `\\\\Home-NAS\\Originals`). The server runs as the signed-in user from a sign-in task, as Maktaba's own `setup --service` already does on Windows.",
+      "description": "Maktaba for Windows: one installation that runs everything.\n\nRequirement (2026-10-20): the same one-app setup on Windows as on the Mac.",
       "readme": "specs/epics/38-windows-app/README.md"
     },
     {
       "id": "39",
       "slug": "linux-app",
       "title": "Maktaba for Linux",
-      "description": "Maktaba for Linux: one installation that runs everything.\n\n1. **One Linux installation runs everything**: the API, streaming (Live TV), the pipeline workers *including transcription and the second listen*, semantic search, the web app and the database, with the distribution's ffmpeg (below). It starts at boot and restarts anything that stops. No Docker, no distro Postgres, no terminal steps. 2. **It is a desktop app where there is a desktop**: install the AppImage (or the .deb / .rpm), open it and follow the same short setup as on the Mac. The window is the web app. Closing it leaves the server running, and the tray icon shows the server's status. 3. **The same payload runs a machine without a desktop** (a NAS, a mini PC, a VM): unpack it, then `maktaba-server setup` asks the same questions in the terminal. No window is needed. 4. **Postgres is bundled** (Postgres 16.15 for x86_64 and aarch64), private to Maktaba, so it never clashes with a distro Postgres.",
+      "description": "Maktaba for Linux: one installation that runs everything.\n\nRequirement (2026-10-20): the same one-app setup as on the Mac, on Windows and on Linux.",
       "readme": "specs/epics/39-linux-app/README.md"
     },
     {
       "id": "40",
       "slug": "queue-health",
       "title": "Queue health",
-      "description": "Queue health: a red tile means something is wrong.\n\nEvery one of these paints its tile red today (`queueVisualState`: `failed_open > 0` → `failing`), so the page is red all the time and a real breakage cannot be seen.",
+      "description": "Queue health: a red tile means something is wrong.\n\n1. **A tile's colour says what to do.** A stage is not red because a small share of its jobs failed. Red means *many recent jobs fail the same new way* (a bug or a bad setting). Jobs waiting on something outside them (the model, the share, disk space) are **Waiting**, and resume on their own. Items that no retry can fix (a missing or damaged file) are a **Needs you** count, not a red tile. 2. **Every failure has a class**, decided by data, not by `if`s spread through the stages: `transient`, `dependency:<name>`, `resource:<name>`, `item_permanent`, `unknown`. 3. **Parked jobs never burn attempts.** Small health probes watch the dependencies; when one is healthy again, the jobs parked on it are queued again by themselves. 4. **One page lists every failing item** — all stages, all classes, waiting ones too — with filters and the fixes an admin can make there (fix path, check permission, retry now, ignore, re-download, rescan, remove), one item or a whole group at a time, every action audited. 5. **The failures there today are moved into this model** (the 6,577 `check_tags` and 1,029 `check_clips` model failures become Waiting, missing files go to Needs you).",
       "readme": "specs/epics/40-queue-health/README.md"
     },
     {
       "id": "41",
       "slug": "help-guide",
       "title": "Help",
-      "description": "Help: a user guide and FAQ for every feature, in the app.\n\n1. **One help topic per feature**, in English and Arabic, inside the app at `/help`. 2. Each topic answers, in plain short language: **what it is**, **how to use it**, **what its states and messages mean**, **FAQ**, and **when something goes wrong** (every error kind: what it means, whether Maktaba fixes it itself, what you can do). 3. **Linkable everywhere**: every page title has a `?` link to its topic, every rules field links to its section of the guide, queue tiles and failure causes link to their entries; every link is a plain URL you can share. 4. **Help can't fall behind**: a test fails when a page, a rules section, a queue stage or an error kind has no help entry, or when a link points at a topic or anchor that doesn't exist.",
+      "description": "Help: a user guide and FAQ for every feature, in the app.\n\nRequirement (2026-10-21): a user guide and FAQ for each feature, saying what to do and what it means; audit the features, build the help, and make it linkable.",
       "readme": "specs/epics/41-help-guide/README.md"
     },
     {
       "id": "42",
       "slug": "apps-player-remote-server",
       "title": "The apps",
-      "description": "The apps: Player, Remote and Server.\n\nPlayers come first. The Remote starts with the essentials: status, needs attention with Retry and Retry all, processing, machines, updates, admin push alerts. Deeper admin pages open the home's web UI until they are built natively.",
+      "description": "The apps: Player, Remote and Server.\n\n1. **Three kinds of app.** - **Player:** browse and watch, nothing else, like the TV apps. - **Remote:** manage a home server from elsewhere: processing, transcription, settings, users, Live TV, machines, updates, and the rest of the admin pages. - **Server:** runs Maktaba itself (the API, streaming, the pipeline, the database). 2. **Which apps exist:**",
       "readme": "specs/epics/42-apps-player-remote-server/README.md"
     },
     {
@@ -342,7 +342,7 @@
       "id": "48",
       "slug": "native-players",
       "title": "The native Players",
-      "description": "The native Players: as good as the web, and as Plex.\n\nWhat went wrong: the stories listed plumbing (connect, sign in, stream sessions), and the acceptance checked the plumbing. Nothing in Epic 42 described the screens a viewer expects, so nothing failed when they were missing. This epic lists every screen, with checks a test can run.",
+      "description": "The native Players: as good as the web, and as Plex.\n\nA review of the Player apps on 2026-10-31 found five gaps: the app starts light with no theme; there is no navigation, only a libraries view, nothing like Plex; there is no TV; Epic 42 was called done anyway; and both apps' sign-in pages are bare, with no logo and no theme like the web's.",
       "readme": "specs/epics/48-native-players/README.md"
     },
     {
@@ -356,35 +356,35 @@
       "id": "50",
       "slug": "cloud-no-downtime",
       "title": "Maktaba Cloud with no downtime",
-      "description": "Maktaba Cloud with no downtime: from one VPS to a relay people can pay for.\n\nPrices are **as of 2026-11-03**, EUR a month excluding VAT, from Hetzner's plan pages (sources in [research.md](research.md) §4). Hetzner raised prices twice in 2026, and today the CX and CAX plans say \"currently not available\" to order. So each row shows what can be ordered today (**orderable**) and what it costs if the cheaper plan comes back (**if CX/CAX**). Check the vCPU and RAM of a plan when ordering: each node needs at least **2 vCPU and 4 GB RAM** (Postgres, Patroni, etcd, Caddy and the cloud processes on one machine).",
+      "description": "Maktaba Cloud with no downtime: from one VPS to a relay people can pay for.\n\nRequirement: once people pay for remote access, there must be no downtime.",
       "readme": "specs/epics/50-cloud-no-downtime/README.md"
     },
     {
       "id": "51",
       "slug": "configurable-components",
       "title": "Every part of Maktaba can be turned on, off, added later or left out",
-      "description": "Every part of Maktaba can be turned on, off, added later or left out.\n\nToday a new install starts everything it can: transcription workers, the index worker, the LLM server, Live TV slots, YouTube sync, the cluster hub, the relay agent and about 40 background loops in the API, streaming and the pipeline. A home that only wants to play its films still downloads about 2 GB of machine-learning wheels and models on first run, and still runs the workers. An admin who wants transcription off tonight has to pause stages one by one on the Queues page. A Linux owner who never wants Live TV has to edit `server.toml` and restart. Nothing tells the apps that a feature is off, so they show Live TV tabs that cannot work.",
+      "description": "Every part of Maktaba can be turned on, off, added later or left out.\n\nRequirement: today every worker and feature starts right away. Each one must instead be driven by config or settings, so it can be stopped and started, enabled and disabled, with server bundles that ship with or without components, and components that can be added later.",
       "readme": "specs/epics/51-configurable-components/README.md"
     },
     {
       "id": "52",
       "slug": "transcript-word-review",
       "title": "Word review",
-      "description": "Word review: suspect words go to a person, in every language.\n\nSo the epic is in three parts: **keep the evidence** (each word's time, confidence and the second listener's version), **point at suspect words** with language packs that know each language's spelling, and **let a person fix them fast**, with every fix teaching the next transcript.",
+      "description": "Word review: suspect words go to a person, in every language.\n\nRequirement: transcription was chosen after hearing tests. Next, a queue job (or the step that runs the second review) reviews each transcript and saves the location of every word that is not in the dictionary, looks wrong or has low confidence, for a person to review and give the correct spelling. It must support every language, with languages added as add-ons.",
       "readme": "specs/epics/52-transcript-word-review/README.md"
     },
     {
       "id": "53",
       "slug": "logs-errors-reports",
       "title": "Logs, errors and problem reports from every part, and a UI that never goes dark",
-      "description": "Logs, errors and problem reports from every part, and a UI that never goes dark.\n\nMeasured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.07.",
+      "description": "Logs, errors and problem reports from every part, and a UI that never goes dark.\n\nRequirement: log, bug and error reporting across the server, the apps, the cloud and the API, all customer facing, with a server admin UI to view, search and analyse logs and dashboards. Every part of the server must be reportable, and no crash may break everything or make the UI unreachable.",
       "readme": "specs/epics/53-logs-errors-reports/README.md"
     },
     {
       "id": "54",
       "slug": "plugins",
       "title": "Plugins",
-      "description": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nIn short: other people can add functions to Maktaba. A plugin takes jobs from the queue, reads what it is allowed to read through the Maktaba API, and writes results back. It can never reach the internet. Maktaba runs a store that reviews, signs and sells plugins.",
+      "description": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nRequirement: a plugin system for third-party queue extenders that never call the internet and add new functions by working with the queues and the Maktaba API, and a store for those plugins.",
       "readme": "specs/epics/54-plugins/README.md"
     }
   ],
@@ -5070,6 +5070,24 @@
       "plan_files": []
     },
     {
+      "id": "45.22",
+      "epic": 45,
+      "num": "22",
+      "slug": "per-user-star-ratings-if-favorites-prove-too-coarse",
+      "title": "Per-user star ratings, if favorites prove too coarse",
+      "story_file": "specs/epics/45-libraries-ui/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "45.23",
+      "epic": 45,
+      "num": "23",
+      "slug": "profiles-with-a-pin-in-the-mac-app-s-window-and-parental-lim",
+      "title": "Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low",
+      "story_file": "specs/epics/45-libraries-ui/README.md",
+      "plan_files": []
+    },
+    {
       "id": "45.24",
       "epic": 45,
       "num": "24",
@@ -5408,6 +5426,87 @@
       "num": "16",
       "slug": "android-player-components",
       "title": "Android Player components",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.17",
+      "epic": 48,
+      "num": "17",
+      "slug": "home",
+      "title": "Home",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.18",
+      "epic": 48,
+      "num": "18",
+      "slug": "libraries-a-library-series-a-series",
+      "title": "Libraries, a library, Series, a series",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.19",
+      "epic": 48,
+      "num": "19",
+      "slug": "a-video-s-page",
+      "title": "A video's page",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.20",
+      "epic": 48,
+      "num": "20",
+      "slug": "search",
+      "title": "Search",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.21",
+      "epic": 48,
+      "num": "21",
+      "slug": "live-tv",
+      "title": "Live TV",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.22",
+      "epic": 48,
+      "num": "22",
+      "slug": "profile-and-settings",
+      "title": "Profile and Settings",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.23",
+      "epic": 48,
+      "num": "23",
+      "slug": "the-player-resume-next-tracks-quality",
+      "title": "The player: resume, next, tracks, quality",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.24",
+      "epic": 48,
+      "num": "24",
+      "slug": "the-player-pip-airplay-now-playing",
+      "title": "The player: PiP, AirPlay, Now Playing",
+      "story_file": "specs/epics/48-native-players/README.md",
+      "plan_files": []
+    },
+    {
+      "id": "48.25",
+      "epic": 48,
+      "num": "25",
+      "slug": "the-mac-player",
+      "title": "The Mac player",
       "story_file": "specs/epics/48-native-players/README.md",
       "plan_files": []
     },

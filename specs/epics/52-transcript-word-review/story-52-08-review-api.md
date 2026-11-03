@@ -6,7 +6,7 @@
 
 `word_check` (52.6) saves suspect words as `word_flags` rows. Nobody can act on them yet. This
 story gives the apps one API to list flags, open one with its context, hear the audio around the
-word, and resolve it. The owner's rule is that the API enforces every role rule (trail §1), so
+word, and resolve it. The project rule is that the API enforces every role rule (trail §1), so
 the rights in README §4.5 live here, not in the apps.
 
 ## Description
@@ -51,7 +51,7 @@ signed-URL scheme of Epic 10) to the streaming service:
 
 ### 3. Roles (enforced here): home admins only
 
-The owner decided (README §8, decision 1, 2026-11-03) that **only home admins review**. The check
+Decided 2026-11-03 (README §8, decision 1): **only home admins review**. The check
 is inline, the way `transcription.go:304` does it:
 
 - `p == nil` → 401.

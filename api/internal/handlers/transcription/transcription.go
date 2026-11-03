@@ -35,7 +35,7 @@ import (
 )
 
 // Stages are the transcription programme's stages, in pipeline order.
-var Stages = []string{"transcribe", "subtitle_gen", "index"}
+var Stages = []string{"transcribe", "second_listen", "subtitle_gen", "index"}
 
 // CacheTTL bounds how stale a served summary may be.
 const CacheTTL = 3 * time.Second

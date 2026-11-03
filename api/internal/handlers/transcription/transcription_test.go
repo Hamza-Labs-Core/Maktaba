@@ -156,10 +156,11 @@ func TestSummary_Full(t *testing.T) {
 	}
 	wantStages := []StageCounts{
 		{Stage: "transcribe", Pending: 75, Running: 3, Done: 40, Failed: 3},
+		{Stage: "second_listen"}, // its own stage since the split: none in this fixture
 		{Stage: "subtitle_gen", Done: 38},
 		{Stage: "index", Running: 4},
 	}
-	if len(s.Stages) != 3 {
+	if len(s.Stages) != 4 {
 		t.Fatalf("stages = %+v", s.Stages)
 	}
 	for i, w := range wantStages {
@@ -205,7 +206,7 @@ func TestSummary_QueryArguments(t *testing.T) {
 	decode(t, f.get(viewer()))
 
 	stage := f.db.Find("group by stage, subject_id")
-	if len(stage) != 1 || stage[0].Args[0] != "{\"transcribe\",\"subtitle_gen\",\"index\"}" {
+	if len(stage) != 1 || stage[0].Args[0] != "{\"transcribe\",\"second_listen\",\"subtitle_gen\",\"index\"}" {
 		t.Errorf("stage counts call = %+v", stage)
 	}
 	rate := f.db.Find("with w as")
@@ -226,7 +227,7 @@ func TestSummary_QueryArguments(t *testing.T) {
 func TestSummary_Empty(t *testing.T) {
 	f := newFixture(segmentsRule(0), rateRule(0, 0.0, nil, 0, 0.0, nil), liveRule(0, 0, 0))
 	s := decode(t, f.get(viewer()))
-	if s.Totals != (Totals{}) || len(s.Libraries) != 0 || len(s.Failures) != 0 || len(s.Stages) != 3 {
+	if s.Totals != (Totals{}) || len(s.Libraries) != 0 || len(s.Failures) != 0 || len(s.Stages) != 4 {
 		t.Errorf("empty summary = %+v", s)
 	}
 	if s.Rate.Last10m.AvgJobRTF != nil {

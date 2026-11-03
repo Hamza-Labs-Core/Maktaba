@@ -540,7 +540,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		m.TV = &apiTV{cfg: cfg, releaseDir: releaseDir}
 	}
 	// a front door or a TV slot keeps the release it runs (a TV held on the release before
-	// when its change's check failed: story 35.6, the owner's decision of 2026-10-28)
+	// when its change's check failed: story 35.6, decided 2026-10-28)
 	switch in := inst.(type) {
 	case *updater.LayoutInstaller:
 		in.InUse = u.releasesInUse

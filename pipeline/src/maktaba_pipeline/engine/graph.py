@@ -93,6 +93,8 @@ EXACT_DATES_VERSION = 1
 REPAIR_VERSION = 1
 #: transcribe / subtitle_gen (plan 03-10): stages/transcribe.py, stages/subtitle_gen.py
 TRANSCRIBE_VERSION = 1
+#: second_listen (Cohere on Whisper's stored transcript): stages/second_listen.py
+SECOND_LISTEN_VERSION = 1
 SUBTITLE_VERSION = 1
 #: transcript analysis (stages/chapter_infer.py, topic_assign.py, topic_recluster.py)
 CHAPTER_VERSION = 1
@@ -223,6 +225,11 @@ POOLS: tuple[PoolDef, ...] = (
     # transcription: the jobs of a worker share one batched Whisper (stt/batched.py), so
     # the pool size is the batch, not a count of competing GPU users
     PoolDef("gpu", "GPU", "per_worker", 32, 32),
+    # the second listen: Cohere hears one file's stretches at a time on the GPU; the files
+    # beyond it wait with their audio decoded. On a GPU that holds one model at a time
+    # the supervisor sets the worker's own size to its Whisper batch
+    # (MAKTABA_POOL_LISTEN), so that a turn of the second listen has a batch to hear
+    PoolDef("listen", "Second listen", "per_worker", 4, 4),
     # writes next to the videos (subtitle files): small, kept apart from the reads
     PoolDef("nas_write", "NAS writes", "global", 4, 4),
     PoolDef("network_plex", "Plex", "global", 2, 2),
@@ -355,7 +362,7 @@ GRAPH: tuple[StageDef, ...] = (
         version=YT_FETCH_VERSION,
         external_write=True,
         # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (owner, 2026-10-28: download, convert, dedup)
+        # downloads the next one (download, convert, dedup; decided 2026-10-28)
         may_request=("convert_mp4", "youtube_fetch"),
     ),
     StageDef(
@@ -368,7 +375,7 @@ GRAPH: tuple[StageDef, ...] = (
         version=YT_BACKFILL_VERSION,
         external_write=True,
         # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (owner, 2026-10-28: download, convert, dedup)
+        # downloads the next one (download, convert, dedup; decided 2026-10-28)
         may_request=("convert_mp4", "youtube_backfill"),
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
@@ -770,6 +777,25 @@ GRAPH: tuple[StageDef, ...] = (
         lane="speech",
         lane_order=2,
         version=TRANSCRIBE_VERSION,
+        # Whisper's words (with their timings) go to the second listen; what reads a
+        # transcript follows that stage, so it runs once, on the corrected words
+        edges=(Edge("second_listen", "same"),),
+        may_request=("extract",),
+        max_attempts=3,
+        # it decodes the video off the share: not where the share cannot be read
+        storage="read",
+    ),
+    # Cohere Transcribe Arabic on Whisper's stored transcript and the file's audio: any
+    # machine whose GPU holds it (beside Whisper, or taking turns with it); with the second
+    # listen off it passes the transcript on as it is
+    StageDef(
+        name="second_listen",
+        label="Second listen",
+        subject_kinds=("video",),
+        pool="listen",
+        lane="speech",
+        lane_order=3,
+        version=SECOND_LISTEN_VERSION,
         # what is said is tagging evidence too: its season, or its library's loose videos
         edges=(
             Edge("subtitle_gen", "same"),
@@ -777,9 +803,8 @@ GRAPH: tuple[StageDef, ...] = (
             Edge("tag", "season_of"),
             Edge("tag", "loose_library_of"),
         ),
-        may_request=("extract",),
         max_attempts=3,
-        # it decodes the video off the share: not where the share cannot be read
+        # it decodes the video's audio off the share again
         storage="read",
     ),
     StageDef(
@@ -788,7 +813,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("video",),
         pool="nas_write",
         lane="speech",
-        lane_order=3,
+        lane_order=4,
         version=SUBTITLE_VERSION,
         external_write=True,
     ),
@@ -799,7 +824,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("video",),
         pool="cpu",
         lane="speech",
-        lane_order=4,
+        lane_order=5,
         version=INDEX_VERSION,
         edges=(Edge("chapter_infer", "same"),),
         placement="home",
@@ -812,7 +837,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("video",),
         pool="cpu",
         lane="speech",
-        lane_order=5,
+        lane_order=6,
         version=CHAPTER_VERSION,
         # only the chapter frames depend on chapters; the poster and sprite came from
         # content_hash already
@@ -825,7 +850,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("video",),
         pool="nas_read",
         lane="speech",
-        lane_order=6,
+        lane_order=7,
         version=CHAPTER_THUMBS_VERSION,
         # the frames go to the thumbnail cache of the machine that serves them
         placement="home",
@@ -836,7 +861,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("video",),
         pool="cpu",
         lane="speech",
-        lane_order=7,
+        lane_order=8,
         version=TOPIC_ASSIGN_VERSION,
         # every newly vectored video counts towards the library's next clustering
         edges=(Edge("topic_recluster", "library_of", when="always"),),
@@ -847,7 +872,7 @@ GRAPH: tuple[StageDef, ...] = (
         subject_kinds=("library",),
         pool="cpu",
         lane="speech",
-        lane_order=8,
+        lane_order=9,
         version=TOPIC_RECLUSTER_VERSION,
         # once per batch of transcriptions, not per video: a 47 000-video library
         # clusters in seconds, but there is no point doing it every few seconds

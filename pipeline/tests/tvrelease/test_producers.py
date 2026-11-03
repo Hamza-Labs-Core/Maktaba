@@ -122,7 +122,7 @@ async def _events(db: Database, cid: str) -> list[tuple[str, str]]:
 
 @pytest.mark.asyncio
 async def test_updates_join_one_change_until_it_is_approved(db: Database) -> None:
-    """TC3 / AC3 (the owner's rule): a plan opens change #N; a hand filler edit and a
+    """TC3 / AC3 (the rule): a plan opens change #N; a hand filler edit and a
     second plan join #N (same id and number, an event each); the newer plan replaces
     the older plan's part, the hand edit is kept. Approved, #N takes no more updates:
     the next one opens #N+1."""
@@ -241,7 +241,7 @@ async def _check(db: Database, cid: str) -> None:
 
 @pytest.mark.asyncio
 async def test_updates_join_a_checked_change_until_it_is_approved(db: Database) -> None:
-    """The owner's rule (story 33.12 AC3): a plan opens #N and auto mode stages it; once
+    """The rule of story 33.12 AC3: a plan opens #N and auto mode stages it; once
     checked (ready, no one approved it) a rules edit joins #N and sends it back to
     draft (its report kept in the reopen event, a stage asked once); the next plan joins
     #N too and stages it again. Approved, #N takes no more: the next update opens #N+1."""

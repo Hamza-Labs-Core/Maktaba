@@ -190,7 +190,7 @@ async def live_streaming(db: Any) -> tuple[str, str]:
 
     A release that changes no binary (a schedule, settings, lineup or art change) records
     it, so it stages and swaps on what the live TV runs and never moves it to other
-    software (the owner's rule of 2026-10-28, #404: when only an update's TV check fails,
+    software (the rule of 2026-10-28, #404: when only an update's TV check fails,
     the TV stays on its old version until the update's Retry passes, or a later release's
     own binary change passes its check). It is, as the API's ``liveStreaming`` and the
     supervisor's ``HeldStreamingVersion`` read it:

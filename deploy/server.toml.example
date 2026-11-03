@@ -118,12 +118,13 @@ roots = ["/mnt/videos", "/mnt/movies"]
 # The second listen that corrects Whisper's words: "on" (default) / "off"
 # (MAKTABA_STT_REFINE), and its model (MAKTABA_STT_REFINE_MODEL; a repo or a
 # local folder, default CohereLabs/cohere-transcribe-arabic-07-2026). On Windows
-# and Linux it runs on the NVIDIA GPU beside Whisper, when the GPU holds both
-# (10 GB and up on Windows, 8 GB and up elsewhere; compute capability 7.5 and up,
-# driver R580 and up), its model can be had (a Hugging Face login, a copy here or
-# a home's on the share) and the GPU has the room free; the GPU's tiers then give
-# Whisper a smaller batch. Elsewhere a transcript keeps Whisper's words and says
-# why, and its model is not downloaded.
+# and Linux it runs on the NVIDIA GPU, as a stage of its own after Whisper's:
+# beside Whisper where the GPU holds both (10 GB and up on Windows, 8 GB and up
+# elsewhere), taking turns with it on a smaller one (8 GB on Windows, 6 GB
+# elsewhere); compute capability 7.5 and up, driver R580 and up, and its model
+# can be had (a Hugging Face login, a copy here or a home's on the share).
+# Elsewhere the machine still transcribes, a machine that runs the second listen
+# corrects its transcripts, and its model is not downloaded.
 # refine = "on"
 # refine_model = "CohereLabs/cohere-transcribe-arabic-07-2026"
 # Transcription workers beside the main worker (each one batched Whisper; the

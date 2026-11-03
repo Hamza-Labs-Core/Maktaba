@@ -36,7 +36,7 @@ import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 /** Corner radius shared by cards, panels and the focus ring. */
 val CardCorner = RoundedCornerShape(12.dp)
 
-/** Width of the gold focus ring (owner spec: 3px gold outline). */
+/** Width of the gold focus ring (spec: 3px gold outline). */
 val FocusRingWidth: Dp = 3.dp
 
 /**

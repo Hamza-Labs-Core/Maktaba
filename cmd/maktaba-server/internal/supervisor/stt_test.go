@@ -16,8 +16,9 @@ import (
 
 // fakeMachine makes PlanSTT see an Apple Silicon Mac (or not: an x86_64 Windows or
 // Linux machine) with gb of RAM, 8 logical CPUs, no NVIDIA GPU (fakeGPU gives it
-// one) and a pipeline Python with the stt extra. The second listen fits on a GPU of
-// 9.5 GiB or more, as on Windows, on every OS (fakeRefineMin changes it).
+// one) and a pipeline Python with the stt extra. The second listen fits beside Whisper
+// on a GPU of 9.5 GiB or more and runs (taking turns with it) on one of 7.5 GiB or
+// more, as on Windows, on every OS (fakeRefineTogether, fakeRefineMin change them).
 func fakeMachine(t *testing.T, apple bool, gb uint64) {
 	t.Helper()
 	prevA, prevM, prevC, prevW, prevS, prevL := appleSilicon, totalMemory, numCPU, cudaWhisper, sttInstalled, secondListenModel
@@ -34,10 +35,20 @@ func fakeMachine(t *testing.T, apple bool, gb uint64) {
 	venvTorch = func(string) string { return torchCUDA }
 	secondListenModel = func(config.Config) bool { return true } // a token, or a copy here
 	fakeGPU(t, "", errors.New("nvidia-smi: not found"))
-	fakeRefineMin(t, 9.5)
+	fakeRefineTogether(t, 9.5)
+	fakeRefineMin(t, 7.5)
 }
 
-// fakeRefineMin sets the smallest GPU the second listen fits on (refineMinGB).
+// fakeRefineTogether sets the smallest GPU the second listen fits on beside Whisper
+// (refineTogetherGB).
+func fakeRefineTogether(t *testing.T, gb float64) {
+	t.Helper()
+	prev := refineTogetherGB
+	t.Cleanup(func() { refineTogetherGB = prev })
+	refineTogetherGB = gb
+}
+
+// fakeRefineMin sets the smallest GPU the second listen runs on at all (refineMinGB).
 func fakeRefineMin(t *testing.T, gb float64) {
 	t.Helper()
 	prev := refineMinGB
@@ -151,10 +162,15 @@ func TestPlanForGPUWithRefine(t *testing.T) {
 	// on Windows (WDDM): a process's budget is about 1.05 GiB short of the card, loading
 	// the model beside Whisper takes 1.6 GiB more than its weights, and Whisper turbo
 	// holds 1.0 GiB of it in float16 (0.55 in int8_float16) and 0.14 per file: measured
-	// on the RTX 2080 SUPER (8 GB), which therefore keeps Whisper alone
-	fakeRefineMin(t, 9.5)
-	if _, fits := PlanForGPUWithRefine(8); fits || SecondListenFits(8) {
+	// on the RTX 2080 SUPER (8 GB), which therefore keeps Whisper's own tier: the two
+	// take turns on it (the pipeline's stt/gpu_turns.py)
+	fakeRefineTogether(t, 9.5)
+	fakeRefineMin(t, 7.5)
+	if _, fits := PlanForGPUWithRefine(8); fits || SecondListenTogether(8) {
 		t.Error("an 8 GB card cannot hold the second listen beside Whisper under Windows")
+	}
+	if !SecondListenFits(8) || SecondListenFits(6) {
+		t.Error("an 8 GB card runs the second listen taking turns with Whisper; a 6 GB one does not")
 	}
 	type machine struct {
 		name                              string
@@ -167,7 +183,7 @@ func TestPlanForGPUWithRefine(t *testing.T) {
 		// figures (2.3 GiB in float16, 1.2 in int8_float16, with CUDA's buffers)
 		{"linux", 7.5, 0.3, 0.5, 2.3, 1.2, []float64{80, 40, 24, 16, 12, 11, 10, 8, 7.6}},
 	} {
-		fakeRefineMin(t, m.minGB)
+		fakeRefineTogether(t, m.minGB)
 		prev, _ := PlanForGPUWithRefine(1 << 10)
 		for _, gb := range m.sizes {
 			p, fits := PlanForGPUWithRefine(gb)
@@ -195,7 +211,7 @@ func TestPlanForGPUWithRefine(t *testing.T) {
 			prev = p
 		}
 	}
-	fakeRefineMin(t, 7.5)
+	fakeRefineTogether(t, 7.5)
 	if p, fits := PlanForGPUWithRefine(8); !fits || p.Batch != 4 || p.ComputeType != "int8_float16" {
 		t.Errorf("an 8 GB card beside the second listen, outside Windows = %+v, %v", p, fits)
 	}
@@ -227,7 +243,7 @@ func TestPlanSTTLeavesRoomForTheSecondListen(t *testing.T) {
 	if p := PlanSTT(cfg); p.Batch != 8 || p.ComputeType != "" {
 		t.Errorf("8 GB, Windows threshold = %+v", p)
 	}
-	fakeRefineMin(t, 7.5) // ... elsewhere it fits, Whisper made smaller
+	fakeRefineTogether(t, 7.5) // ... elsewhere it fits, Whisper made smaller
 	if p := PlanSTT(cfg); p.Batch != 4 || p.ComputeType != "int8_float16" {
 		t.Errorf("8 GB, Linux threshold = %+v", p)
 	}
@@ -237,38 +253,46 @@ func TestPlanSTTLeavesRoomForTheSecondListen(t *testing.T) {
 		t.Errorf("[transcription] overrides beside the second listen = %+v", p)
 	}
 	m := envMap(mainProcess(t, cfg).Cmd.Env)
-	if sttExclude(m) != "transcribe" {
-		t.Errorf("the main worker leaves transcribe to the GPU worker: %v", m)
+	if sttExclude(m) != GPUStages {
+		t.Errorf("the main worker leaves transcribe and the second listen to the GPU worker: %v", m)
 	}
 	procs, err := BuildPipelineInstances(Options{Config: cfg})
 	if err != nil || len(procs) != 1 {
 		t.Fatalf("workers = %d, %v", len(procs), err)
 	}
-	if w := envMap(procs[0].Cmd.Env); w["MAKTABA_STT_BATCH"] != "4" || w["MAKTABA_STT_COMPUTE_TYPE"] != "int8_float16" {
+	if w := envMap(procs[0].Cmd.Env); w["MAKTABA_STT_BATCH"] != "4" || w["MAKTABA_STT_COMPUTE_TYPE"] != "int8_float16" ||
+		w["MAKTABA_PIPELINE_STAGES"] != GPUStages {
 		t.Errorf("the worker beside the second listen: %v", w)
 	}
 }
 
-// defaultRefineMinGB is refineMinGB as this OS has it (the tests change it).
-var defaultRefineMinGB = refineMinGB
+// defaultRefineMinGB and defaultRefineTogetherGB are refineMinGB and refineTogetherGB
+// as this OS has them (the tests change them).
+var defaultRefineMinGB, defaultRefineTogetherGB = refineMinGB, refineTogetherGB
 
-// TestRefineThresholdIsThePipelines: the supervisor leaves room for the second listen
-// on exactly the GPUs the pipeline runs it on (MIN_GPU_GB in stt/cohere_cuda.py).
+// TestRefineThresholdIsThePipelines: the supervisor plans the second listen on exactly
+// the GPUs the pipeline runs it on (MIN_GPU_GB in stt/cohere_cuda.py), and leaves it
+// room beside Whisper on exactly those it keeps both loaded on (TOGETHER_GPU_GB).
 func TestRefineThresholdIsThePipelines(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "pipeline", "src", "maktaba_pipeline", "stt", "cohere_cuda.py"))
 	if err != nil {
 		t.Skipf("the pipeline's source is not in this checkout: %v", err)
 	}
-	m := regexp.MustCompile(`(?m)^MIN_GPU_GB = ([0-9.]+) if sys\.platform == "win32" else ([0-9.]+)\r?$`).FindSubmatch(src)
-	if m == nil {
-		t.Fatal("stt/cohere_cuda.py: no MIN_GPU_GB line to compare with")
-	}
-	want := string(m[2])
-	if runtime.GOOS == "windows" {
-		want = string(m[1])
-	}
-	if got := strconv.FormatFloat(defaultRefineMinGB, 'f', -1, 64); got != want {
-		t.Errorf("refineMinGB = %s on %s, the pipeline's MIN_GPU_GB = %s", got, runtime.GOOS, want)
+	for _, c := range []struct {
+		name string
+		got  float64
+	}{{"MIN_GPU_GB", defaultRefineMinGB}, {"TOGETHER_GPU_GB", defaultRefineTogetherGB}} {
+		m := regexp.MustCompile(`(?m)^` + c.name + ` = ([0-9.]+) if sys\.platform == "win32" else ([0-9.]+)\r?$`).FindSubmatch(src)
+		if m == nil {
+			t.Fatalf("stt/cohere_cuda.py: no %s line to compare with", c.name)
+		}
+		want := string(m[2])
+		if runtime.GOOS == "windows" {
+			want = string(m[1])
+		}
+		if w, err := strconv.ParseFloat(want, 64); err != nil || w != c.got {
+			t.Errorf("the supervisor's %s = %v on %s, the pipeline's %s", c.name, c.got, runtime.GOOS, want)
+		}
 	}
 	cc := regexp.MustCompile(`(?m)^MIN_COMPUTE = \((\d+), (\d+)\)\r?$`).FindSubmatch(src)
 	if cc == nil || string(cc[1]) != strconv.Itoa(refineMinComputeMajor) || string(cc[2]) != strconv.Itoa(refineMinComputeMinor) {
@@ -321,9 +345,9 @@ func TestTheSecondListenNeedsTheWholeCapability(t *testing.T) {
 	}{
 		{"NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44\n", 1, 8},  // runs it: its tier
 		{"NVIDIA GeForce RTX 3080 Ti, 12288\n", 1, 8},               // nvidia-smi does not say: runs it
-		{"NVIDIA GeForce GTX 1080 Ti, 11264, 6.1, 591.44\n", 0, 16}, // Pascal: Whisper alone, no worker
-		{"NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 572.16\n", 0, 16}, // driver before R580
-		{"NVIDIA GeForce GTX 1080 Ti, 11264, 472.12\n", 0, 16},      // the old fallback's driver
+		{"NVIDIA GeForce GTX 1080 Ti, 11264, 6.1, 591.44\n", 1, 16}, // Pascal: Whisper alone
+		{"NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 572.16\n", 1, 16}, // driver before R580
+		{"NVIDIA GeForce GTX 1080 Ti, 11264, 472.12\n", 1, 16},      // the old fallback's driver
 	} {
 		fakeGPU(t, c.smi, nil)
 		if p := PlanSTT(cfg); p.Workers != c.workers || p.Batch != c.batch {
@@ -332,7 +356,7 @@ func TestTheSecondListenNeedsTheWholeCapability(t *testing.T) {
 	}
 	fakeGPU(t, "NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44\n", nil)
 	secondListenModel = func(config.Config) bool { return false } // no token, no copy
-	if p := PlanSTT(cfg); p.Workers != 0 || p.Batch != 16 {
+	if p := PlanSTT(cfg); p.Workers != 1 || p.Batch != 16 {
 		t.Errorf("no way to the model: %+v, want Whisper alone", p)
 	}
 	secondListenModel = func(config.Config) bool { return true }
@@ -427,7 +451,7 @@ func TestSetupsSecondListenCheckIsTheSupervisors(t *testing.T) {
 		}
 		return n / 1024
 	}
-	if w, o := gb(read("secondListenMinMiBWindows")), gb(read("secondListenMinMiB")); w != 9.5 || o != 7.5 ||
+	if w, o := gb(read("secondListenMinMiBWindows")), gb(read("secondListenMinMiB")); w != 7.5 || o != 6 ||
 		(runtime.GOOS == "windows" && w != defaultRefineMinGB) || (runtime.GOOS != "windows" && o != defaultRefineMinGB) {
 		t.Errorf("setup's memory thresholds %v (Windows) and %v GiB, the supervisor's %v on %s", w, o, defaultRefineMinGB, runtime.GOOS)
 	}
@@ -599,49 +623,43 @@ func TestPlanSTTOnAnNvidiaGPU(t *testing.T) {
 	}
 }
 
-// Review of #201, item 1: with the second listen on, a machine that cannot run it
-// starts no transcription workers of its own accord (the main worker transcribes
-// only when the home's rules let it); one that can (Apple Silicon) does.
-func TestWorkersWaitForTheSecondListen(t *testing.T) {
+// Since the second listen is a stage of its own, a machine transcribes whether or not
+// it runs the second listen: the 8 GB PC under Windows gets its GPU worker, with
+// Whisper's own tier (it runs the second listen too, taking turns with Whisper), and
+// so does a GPU the second listen does not run on at all.
+func TestWorkersTranscribeWithoutWaitingForTheSecondListen(t *testing.T) {
 	noSTTEnv(t)
 	fakeMachine(t, false, 32)
 	fakeGPU(t, rtx2080Super, nil)
 	cfg := config.Defaults() // refine on
 	p := PlanSTT(cfg)
-	if p.Workers != 0 || p.Batch != 8 || !p.ct2 {
-		t.Errorf("an 8 GB GPU with the second listen on = %+v, want no workers and the GPU's knobs", p)
+	if p.Workers != 1 || p.Batch != 8 || p.ComputeType != "" || !p.ct2 || p.refine {
+		t.Errorf("an 8 GB GPU with the second listen on = %+v, want its worker and Whisper's tier", p)
+	}
+	if !secondListenRuns(cfg) {
+		t.Error("an 8 GB card under Windows runs the second listen, taking turns with Whisper")
 	}
 	procs, err := BuildPipelineInstances(Options{Config: cfg})
-	if err != nil || len(procs) != 0 {
+	if err != nil || len(procs) != 1 {
 		t.Fatalf("workers = %d, %v", len(procs), err)
 	}
-	main := envMap(mainProcess(t, cfg).Cmd.Env)
-	if v := sttExclude(main); v != "" {
-		t.Errorf("the main worker decides by the rules: exclude = %q", v)
+	w := envMap(procs[0].Cmd.Env)
+	if w["MAKTABA_PIPELINE_STAGES"] != GPUStages || w["MAKTABA_POOL_LISTEN"] != "8" || w["MAKTABA_POOL_GPU"] != "8" {
+		t.Errorf("the GPU worker runs both stages, a batch of each: %v", w)
 	}
-	if main["MAKTABA_STT_BATCH"] != "8" {
-		t.Errorf("the main worker has the GPU's knobs for when the rules let it: %v", main)
+	if v := sttExclude(envMap(mainProcess(t, cfg).Cmd.Env)); v != GPUStages {
+		t.Errorf("the main worker leaves both to the GPU worker: exclude = %q", v)
 	}
-	t.Setenv("MAKTABA_STT_REFINE", "0") // the operator's own environment, as server.toml's refine
-	if p := PlanSTT(cfg); p.Workers != 1 {
-		t.Errorf("MAKTABA_STT_REFINE=0 = %+v, want the GPU's worker", p)
+	fakeGPU(t, "NVIDIA GeForce GTX 1080 Ti, 11264, 6.1, 591.44\n", nil) // no second listen at all
+	if secondListenRuns(cfg) {
+		t.Error("Pascal runs no second listen")
 	}
-	t.Setenv("MAKTABA_STT_REFINE", "")
-	c := cfg
-	c.Transcription.Workers = 1 // asked for: the workers run, and transcribe as the rules say
-	if p := PlanSTT(c); p.Workers != 1 || p.Batch != 8 {
-		t.Errorf("workers = 1 with the second listen on = %+v", p)
-	}
-	secondListen := secondListenRuns
-	t.Cleanup(func() { secondListenRuns = secondListen })
-	secondListenRuns = func(config.Config) bool { return true }
-	if p := PlanSTT(cfg); p.Workers != 1 {
-		t.Errorf("a GPU that runs the second listen = %+v, want its worker", p)
+	if p := PlanSTT(cfg); p.Workers != 1 || p.Batch != 16 {
+		t.Errorf("a GPU without the second listen still transcribes: %+v", p)
 	}
 	fakeMachine(t, true, 96)
-	secondListenRuns = secondListen
 	if p := PlanSTT(cfg); p.Workers != 2 {
-		t.Errorf("Apple Silicon runs the second listen: %+v", p)
+		t.Errorf("Apple Silicon: %+v", p)
 	}
 }
 
@@ -678,11 +696,11 @@ func TestTheOperatorsExclusionStands(t *testing.T) {
 		t.Fatalf("workers = %d, %v", len(procs), err)
 	}
 	for _, p := range procs {
-		if m := envMap(p.Cmd.Env); m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index" || m["MAKTABA_PIPELINE_STAGES"] != "transcribe" {
+		if m := envMap(p.Cmd.Env); m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index" || m["MAKTABA_PIPELINE_STAGES"] != GPUStages {
 			t.Errorf("%s: exclude %q, stages %q", p.Instance, m["MAKTABA_PIPELINE_EXCLUDE_STAGES"], m["MAKTABA_PIPELINE_STAGES"])
 		}
 	}
-	if m := envMap(mainProcess(t, cfg).Cmd.Env); m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index,transcribe" {
+	if m := envMap(mainProcess(t, cfg).Cmd.Env); m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index,"+GPUStages {
 		t.Errorf("the main worker leaves transcribe to the workers: %q", m["MAKTABA_PIPELINE_EXCLUDE_STAGES"])
 	}
 }
@@ -819,9 +837,9 @@ func TestTheSecondListenNeedsTheVenvsCUDATorch(t *testing.T) {
 		batch   int
 	}{
 		{torchCUDA, beside.Workers, beside.Batch},
-		{"", beside.Workers, beside.Batch}, // the probe could not say
-		{torchCPU, 0, alone.Batch},         // Whisper's own batch, for the main worker
-		{torchAbsent, 0, alone.Batch},
+		{"", beside.Workers, beside.Batch},     // the probe could not say
+		{torchCPU, alone.Workers, alone.Batch}, // Whisper's own tier: no second listen here
+		{torchAbsent, alone.Workers, alone.Batch},
 	} {
 		asked := ""
 		venvTorch = func(python string) string { asked = python; return c.torch }
@@ -942,7 +960,7 @@ func TestPipelineWorkersOnAppleSilicon(t *testing.T) {
 	t.Setenv("MAKTABA_PIPELINE_EXCLUDE_STAGES", "index")
 	cfg := config.Defaults()
 	main := envMap(mainProcess(t, cfg).Cmd.Env)
-	if main["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index,transcribe" {
+	if main["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index,"+GPUStages {
 		t.Fatalf("the main worker must leave transcribe to the workers, keeping the operator's exclusions: %v", main["MAKTABA_PIPELINE_EXCLUDE_STAGES"])
 	}
 	if v := main["MAKTABA_STT_AUDIO_HOURS"]; v != "" {
@@ -955,7 +973,7 @@ func TestPipelineWorkersOnAppleSilicon(t *testing.T) {
 	for i, p := range procs {
 		m := envMap(p.Cmd.Env)
 		slot := "stt-" + string(rune('1'+i))
-		if p.Instance != slot || m["MAKTABA_STT_SLOT"] != slot || m["MAKTABA_PIPELINE_STAGES"] != "transcribe" ||
+		if p.Instance != slot || m["MAKTABA_STT_SLOT"] != slot || m["MAKTABA_PIPELINE_STAGES"] != GPUStages ||
 			m["MAKTABA_PIPELINE_EXCLUDE_STAGES"] != "index" || m["MAKTABA_PIPELINE_GRPC_ADDR"] != "" {
 			t.Errorf("worker %d: %s %v", i, p.Instance, m)
 		}
@@ -989,7 +1007,7 @@ func TestPipelineWorkersOnAnNvidiaGPU(t *testing.T) {
 	cfg := noRefine()
 	cfg.Transcription.ComputeType = "int8_float16"
 	main := envMap(mainProcess(t, cfg).Cmd.Env)
-	if sttExclude(main) != "transcribe" {
+	if sttExclude(main) != GPUStages {
 		t.Errorf("the main worker leaves transcribe to the GPU worker: %q", main["MAKTABA_PIPELINE_EXCLUDE_STAGES"])
 	}
 	for _, k := range []string{"MAKTABA_STT_AUDIO_HOURS", "MAKTABA_STT_COMPUTE_TYPE", "MAKTABA_STT_CPU_THREADS"} {
@@ -1003,7 +1021,7 @@ func TestPipelineWorkersOnAnNvidiaGPU(t *testing.T) {
 	}
 	m := envMap(procs[0].Cmd.Env)
 	host := PlanForRAM(32)
-	if m["MAKTABA_STT_SLOT"] != "stt-1" || m["MAKTABA_PIPELINE_STAGES"] != "transcribe" ||
+	if m["MAKTABA_STT_SLOT"] != "stt-1" || m["MAKTABA_PIPELINE_STAGES"] != GPUStages ||
 		m["MAKTABA_STT_COMPUTE_TYPE"] != "int8_float16" || m["MAKTABA_STT_BATCH"] != "10" ||
 		m["MAKTABA_STT_AUDIO_HOURS"] != num(host.AudioHours) || m["MAKTABA_STT_MIN_FREE_PCT"] != num(host.MinFreePct) {
 		t.Errorf("GPU worker env: %v", m)

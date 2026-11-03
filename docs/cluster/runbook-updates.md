@@ -234,7 +234,7 @@ running release was not touched. Free space on the disk of the install root (old
   (Live TV > Changes) until the window and its overrun ended. Approve or reject that change; the
   next window tries again. Nothing counts against the release.
 - **TV held** (`update.tv_held`): the TV change's check failed before any swap. The release is
-  installed and not blocked; the TV stays on the previous streaming software (the owner's decision,
+  installed and not blocked; the TV stays on the previous streaming software (decided
   2026-10-28). On Admin → Updates, read what failed (Live TV > Changes has the full report), then
   **Retry** once the cause is fixed, or **Drop** to leave the TV where it is until a later release.
 - `failed_tv`: the TV change's swap failed, or the TV failed on the air after it switched (it was

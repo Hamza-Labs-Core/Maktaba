@@ -8,7 +8,7 @@
 # tauri-action (which also publishes the updater feed).
 #
 # Unsigned: SmartScreen warns on the first run of a downloaded installer. Authenticode
-# signing is the owner's decision (README.md, Signing).
+# signing is deferred (README.md, Signing).
 #
 # Usage: build-app.sh [--version VERSION]   (extra options go to payload.sh)
 # Output: <cargo target dir>/release/bundle/nsis/Maktaba_<version>_x64-setup.exe

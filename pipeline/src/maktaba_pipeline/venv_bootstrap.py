@@ -105,8 +105,9 @@ DEFAULT_EXTRAS = "stt,search"
 #: what the second listen needs of an NVIDIA GPU, as the pipeline checks it
 #: (stt/cohere_cuda.py: MIN_GPU_GB on Windows, MIN_COMPUTE, MIN_DRIVER; a test keeps them
 #: equal): this module runs before the venv exists and imports nothing of the pipeline.
-#: Torch's CUDA build is worth its 2 GB only where the second listen runs.
-SECOND_LISTEN_MIN_GIB = 9.5
+#: Torch's CUDA build is worth its 2 GB only where the second listen runs: an 8 GB card
+#: runs it, taking turns with Whisper on the GPU (stt/gpu_turns.py).
+SECOND_LISTEN_MIN_GIB = 7.5
 SECOND_LISTEN_MIN_COMPUTE = (7, 5)
 SECOND_LISTEN_MIN_DRIVER = 580
 #: the smallest NVIDIA GPU (GiB) Whisper runs on with CUDA, Whisper alone (the supervisor's

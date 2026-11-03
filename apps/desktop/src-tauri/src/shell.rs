@@ -565,7 +565,7 @@ fn build_tray_menu(app: &AppHandle, entries: &[Entry]) -> tauri::Result<Menu<Wry
     Ok(menu)
 }
 
-/// The home's order to install a release (Epic 35, autoinstall.rs; owner decision D1 of
+/// The home's order to install a release (Epic 35, autoinstall.rs; decision D1 of
 /// 2026-10-27: no click): staged and said when it comes, installed at the home's go by
 /// itself. Read on every status poll and when the server opens the app with
 /// maktaba://install-update.
@@ -1133,7 +1133,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
 }
 
 /// The tray's update item (autoinstall::click). The home's order is no button (it
-/// installs by itself at the home's go: owner decision D1, 2026-10-27), and an app that
+/// installs by itself at the home's go: decision D1, 2026-10-27), and an app that
 /// runs the server installs nothing else of its own, but the Linux app older than its
 /// server, which catches up with exactly the server's release; a client installs its
 /// own feed's update.
@@ -1253,7 +1253,7 @@ fn install_update_from(app: AppHandle, source: Source) {
                     attempts::set_to(p, id, &to);
                 }
             }
-            // a machine joined to a home never goes ahead of it (the owner's rule,
+            // a machine joined to a home never goes ahead of it (the rule of
             // 2026-10-28): what its server says of the home, asked before anything stops
             let server_side = shell(&app).server_side();
             let joined = local_web_url(&app).and_then(|u| status::joined(&u));
@@ -1598,7 +1598,7 @@ fn register_again(to: &str, force: bool) -> Result<(), Failure> {
 }
 
 /// Linux: every CATCH_UP_EVERY, whether the server runs a newer release than this app (the
-/// server updates its own runtime, owner decision D3): the tray offers the catch-up, or
+/// server updates its own runtime, decision D3): the tray offers the catch-up, or
 /// stops offering it once this app is that release. Never at start (sync_runtime does it).
 #[cfg(target_os = "linux")]
 fn recheck_catch_up(app: &AppHandle) {
@@ -1813,7 +1813,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                     server,
                     running,
                 }) => {
-                    // the server updates its own runtime (Epic 35, owner decision D3):
+                    // the server updates its own runtime (Epic 35, decision D3):
                     // this app catches up with exactly the release the server runs,
                     // offered in the tray (never the channel's newest, which can be
                     // newer than the server)
@@ -1945,7 +1945,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         std::thread::sleep(POLL_EVERY);
     });
 
-    // an app that runs the server installs what its home orders (owner decision D1),
+    // an app that runs the server installs what its home orders (decision D1),
     // not what its own feed offers: its own check is a client's (and the Linux app's when
     // older than the server, set above)
     let handle = app.clone();

@@ -30,7 +30,7 @@ component:
   `grants_needed`, `revoked`, `unreviewed_disallowed`, `plugin_crash_loop`, `sandbox_partial`
   (inherited from the host), `kept_off`, each with English and Arabic words.
 
-**Keep off (owner decision 2026-11-03).** An admin's disable is sticky. It writes
+**Keep off (decided 2026-11-03).** An admin's disable is sticky. It writes
 `plugin_keep_off (plugin_id PK, set_by, set_at)`, a table keyed by plugin id and kept apart
 from `plugin_installs`, and the desired state `want = disabled` with reason `kept_off`. While
 the row exists, nothing but an admin's enable turns the plugin on:

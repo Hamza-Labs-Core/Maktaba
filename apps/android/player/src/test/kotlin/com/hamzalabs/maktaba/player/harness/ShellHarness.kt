@@ -53,7 +53,7 @@ enum class Window(val widthDp: Int, val heightDp: Int, val qualifiers: String) {
     FoldCover(344, 882, "w344dp-h882dp-420dpi"),
     /**
      * Motorola Razr Fold (2026) closed (cover): 1080 × 2520 px, 6.6" (~415 ppi). Its density is
-     * not published: 440 dpi (2.75) is an estimate from the owner's screenshot (the bar's 80 dp
+     * not published: 440 dpi (2.75) is an estimate from a device screenshot (the bar's 80 dp
      * and the list's 20 sp lines measure ~2.7 px per dp). Its inner screen (2232 × 2484 px,
      * 8.1") opens as an expanded window, as [FoldableWide].
      */
@@ -121,7 +121,7 @@ fun ComposeContentTestRule.setShell(
 
 /**
  * The bottom bar's labels line up: each shown one is one line, whole, inside the screen and
- * centred under its item, all at the same top and height (the owner's cover screen: a label that
+ * centred under its item, all at the same top and height (seen on a real cover screen: a label that
  * wrapped sat higher than the others and ran into the screen's edge). A bar that shows the
  * selected label only (a large text size: Material draws the others transparent, off their
  * place) is checked on the selected one. [selected] is always checked.

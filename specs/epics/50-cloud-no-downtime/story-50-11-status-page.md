@@ -47,7 +47,7 @@ request rate above 5 %), **outage** (both networks fail two probes in a row), **
   incidents of the last 90 days.
 - **The uptime target, with no credit.** Under the bars the page states the 99.9 % monthly
   target for Remote access and last month's measured figure, and says plainly that it is a
-  target, not a guarantee, with **no credit or refund** for downtime (owner decision,
+  target, not a guarantee, with **no credit or refund** for downtime (decided
   2026-11-03; README §13 decision 1; wording `uptime.policy` from 50.12). The page never shows a
   credit amount, a credit schedule or a "you're owed" message.
 - **English and Arabic**: the language follows `Accept-Language` on first load, with a switch;

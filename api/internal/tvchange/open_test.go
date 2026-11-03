@@ -86,7 +86,7 @@ func lastReopen(t *testing.T, s *Store, id string) *Event {
 	return got
 }
 
-// Story 33.12 AC3 (the owner's rule): a plan opens #N; auto mode stages it and it is
+// Story 33.12 AC3: a plan opens #N; auto mode stages it and it is
 // checked (ready, no one approved it); a rules PATCH joins #N and sends it back to
 // draft, checked again (one stage asked); the next update joins #N too. Approved, #N
 // takes no more: the next update opens #N+1.

@@ -7,7 +7,7 @@
 The services export Prometheus metrics (`/metrics` on the API admin port with the supervisor's
 update metrics; the pipeline's own exporter), but nothing keeps their history. The queue tiles
 (Epic 40) show now, not last week. Plex puts bandwidth, resources and history behind Plex Pass and
-people still install Tautulli. The owner wants dashboards inside Maktaba.
+people still install Tautulli. Maktaba needs its dashboards built in.
 
 ## Description
 
@@ -25,7 +25,7 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 - Counters become rates per minute; gauges keep the last value (1 min) and min/max/avg (1 h).
 - **Only an allow-list** of series (`shared/metrics/dashboard-series.json`, about 200 series),
   so a new high-cardinality metric can't grow the store. Label values per series are capped at 50.
-- 7 days at 1 minute, **30 days** at 1 hour (shortened with the owner's retention decision of
+- 7 days at 1 minute, **30 days** at 1 hour (shortened by the retention decision of
   2026-11-03, to match the errors' 30 days). About 200 × 1,440 rows a day: a few MB, inside
   `logs.db`'s share of the 1 GB cap.
 - Error counts per component come from 53.10's hours, not from metrics.

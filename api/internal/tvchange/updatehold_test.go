@@ -11,8 +11,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange/tvchangetest"
 )
 
-// The owner's rules of 2026-10-28: "only manual needs approval" and "tv changes should not
-// block updates" (rules.go ChangeRule, updatehold.go).
+// Rules of 2026-10-28: only a manual change needs approval, and TV changes do not
+// block updates (rules.go ChangeRule, updatehold.go).
 
 // lineupChange inserts a draft from producer source touching n channels (diff.lineup
 // changed), the way a channel plan or the editor leaves one.

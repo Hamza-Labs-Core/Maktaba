@@ -6,8 +6,8 @@
 
 ## Why
 
-The owner asked, 2026-11-03: *"YouTube is public, so if you are not paying, what's the legal
-issue?"* The practical answer (README §14.6, research §6.1):
+A common question is whether public YouTube videos can be shared when no money is charged.
+The practical answer (README §14.6, research §6.1):
 
 - **Free to watch isn't a licence to re-broadcast.** Copyright covers copying a work and showing
   it to the public whether or not money changes hands.
@@ -16,7 +16,7 @@ issue?"* The practical answer (README §14.6, research §6.1):
 - **Non-commercial use** helps a fair-use argument but doesn't make it safe, and Maktaba charging
   publishers for the tier makes the platform commercial.
 
-A lot of the owner's kind of content **is** clearly allowed to be shared. So this story makes
+A lot of the content in a typical Maktaba library **is** clearly allowed to be shared. So this story makes
 the publisher's home air only what is marked **publishable**, and makes marking easy. It is a
 **safety feature on the publisher's home**, applied under the publisher's control. It isn't
 Maktaba vetting content: Maktaba Cloud stays an infrastructure provider with no curation

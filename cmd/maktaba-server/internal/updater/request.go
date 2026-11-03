@@ -13,7 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-// Orderer is an install its desktop app installs (owner decision D1, 2026-10-27,
+// Orderer is an install its desktop app installs (decision D1, 2026-10-27,
 // install-kinds.md "No click"): a desktop app that runs the server — Maktaba.app, the
 // Windows app, the Linux app's runtime — installs the release the home orders without
 // anyone clicking on that machine. Apply orders the release (Order: the app stages it
@@ -44,7 +44,7 @@ const (
 	RequestOrdered = "ordered"
 	// RequestStaged (app): staged and shown; it waits for the home's go.
 	RequestStaged = "staged"
-	// requestClicked (an app from before owner decision D1 was replaced, 2026-10-27):
+	// requestClicked (an app from before decision D1 was replaced, 2026-10-27):
 	// someone clicked Install. Read as staged: the go needs no click.
 	requestClicked = "clicked"
 	// RequestGo (server): the home's run is ready; the app installs what it staged

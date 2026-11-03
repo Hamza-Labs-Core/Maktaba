@@ -10,8 +10,8 @@
 | D2 | The API checks its own role privileges at start. | A copied superuser URL must never let a node run DDL. |
 | D3 | One Go machine agent per node, in the supervisor; the API uses it over loopback. | One channel per machine for Go; survives API restarts. |
 | D4 | Go schema guard mirrors the streaming one with shared fixtures. | Same verdicts and texts in Python, streaming and API. |
-| D5 | Worker-only nodes are converted automatically on their next update (`update.convert`, verified with sigstore-python). | Owner decision (2026-10-19): no machine is left behind on the old install. |
-| D6 | Full nodes always run the streaming role for VOD, reading the NAS directly. | Owner decision: media never goes through the home. |
+| D5 | Worker-only nodes are converted automatically on their next update (`update.convert`, verified with sigstore-python). | Decided 2026-10-19: no machine is left behind on the old install. |
+| D6 | Full nodes always run the streaming role for VOD, reading the NAS directly. | Decided: media never goes through the home. |
 
 ## 1. Files
 

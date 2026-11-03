@@ -9,7 +9,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
-// A TV held on the release before (its change's check failed: the owner's decision of
+// A TV held on the release before (its change's check failed: decided
 // 2026-10-28) keeps running that release's streaming binary: no commit prunes it while
 // the live TV uses it, whatever the install kind.
 

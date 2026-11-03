@@ -5,9 +5,9 @@
 ## Why
 
 When the API or Postgres is down, the web app shows "Maktaba is restarting" and reloads every
-5 seconds, for as long as it takes. If it never comes back, the owner has no way in except a
-terminal, which the owner ruled out ("recovery must be automatic or one click, never a
-terminal"). Home Assistant's recovery mode is the model: the UI, the logs and restore keep
+5 seconds, for as long as it takes. If it never comes back, the admin has no way in except a
+terminal, which the project rules out: recovery must be automatic or one click, never a
+terminal. Home Assistant's recovery mode is the model: the UI, the logs and restore keep
 working when the core can't start.
 
 ## Description

@@ -1,7 +1,7 @@
 # Story 52.15 — Quran check: verse runs against the Quran text
 
 > Epic 52 · Phase 1 · Depends on: 52.4, 52.6 · Needed by: 52.11 (reason label), 52.14 (switch)
-> Owner's decision 4 (2026-11-03, [README §8](README.md#8-decisions-2026-11-03)).
+> Decision 4 (2026-11-03, [README §8](README.md#8-decisions-2026-11-03)).
 
 ## Why
 
@@ -9,7 +9,7 @@ Lectures quote the Quran and some files are recitation. The first draft protecte
 inside a detected verse run, so it never flagged one. But the run detector
 (`classify/quran.verse_runs`) needs every folded word to match the text exactly, so a misheard
 word ends the run, and the rest of the verse falls to the ordinary dictionary checks. Those know
-nothing about the verse. The owner decided to **check** verse runs against the Quran text: compare
+nothing about the verse. Decision 4 is to **check** verse runs against the Quran text: compare
 each word with the matched verse and flag only real mismatches. A correctly heard verse must never
 appear in the queue, and a misheard verse word must, with the verse's word as the suggestion.
 

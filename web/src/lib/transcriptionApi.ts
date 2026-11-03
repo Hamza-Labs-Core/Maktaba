@@ -3,7 +3,12 @@
 import { api } from "./api";
 
 /** The programme's stages, in pipeline order. */
-export const TRANSCRIPTION_STAGES = ["transcribe", "subtitle_gen", "index"] as const;
+export const TRANSCRIPTION_STAGES = [
+  "transcribe",
+  "second_listen",
+  "subtitle_gen",
+  "index",
+] as const;
 export type TranscriptionStage = (typeof TRANSCRIPTION_STAGES)[number];
 
 export interface TranscriptionTotals {

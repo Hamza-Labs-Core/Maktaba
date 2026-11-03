@@ -20,7 +20,7 @@ never both think they are.
 | **B** | NBG1 | the same; the cloud processes are stopped while B is the standby |
 | **W** (witness) | HEL1 | etcd only for this story (50.10 adds monitoring and the canary home, 50.09 the restore drill) |
 
-**The witness machine (owner decision, 2026-11-03; README §13 decision 3):** a **Hetzner
+**The witness machine (decided 2026-11-03; README §13 decision 3):** a **Hetzner
 CPX22** (€19.99 a month), ordered now rather than waiting for CX23 to come back. Its witness
 job is **etcd only**, the third vote, which needs about **1–2 vCPU, 1–2 GB RAM and ~20 GB
 disk**; a CPX22 covers that with room. The monitoring, canary home and restore drill that later

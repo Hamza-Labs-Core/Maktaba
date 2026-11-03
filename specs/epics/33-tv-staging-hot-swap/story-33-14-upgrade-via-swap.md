@@ -16,7 +16,7 @@ Design: [design.md](design.md) §13.
 - **AC1** `POST /api/admin/system/update` (and `maktaba-server update`) with staging on downloads to
   `bin/releases/<version>/`, verifies checksums (Epic 28), and creates a `binary` TV change (release =
   live release with the new streaming version).
-- **AC2** The change is staged and verified, then waits for an admin's approval (owner decision:
+- **AC2** The change is staged and verified, then waits for an admin's approval (decided:
   `auto_promote.binary = approval` by default) and is swapped; viewers, Plex, remote viewers and simulcast outputs see no interruption (33.7/33.8 ACs).
   *Amended by [Epic 35](../35-cluster-full-nodes-and-updates/story-35-06-tv-during-updates.md):* a binary change
   created by the automatic cluster updater (`source.kind = auto_update`) is promoted without approval

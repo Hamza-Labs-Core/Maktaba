@@ -1,4 +1,4 @@
-// The server agent installs the home's orders on Windows (owner, 2026-10-31: an update must
+// The server agent installs the home's orders on Windows (decided 2026-10-31: an update must
 // not wait for the window app). The always-running `Maktaba.exe --server-agent` (the sign-in
 // task's) answers the order the server writes (updates/app-install.json, autoinstall.rs) in
 // the window app's place: ordered, it stages the release from the release's own feed

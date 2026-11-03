@@ -13,7 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
-// The owner's decision (2026-10-28): when only the TV change's check fails, the update
+// Decided 2026-10-28: when only the TV change's check fails, the update
 // installs, the TV stays on the streaming software it ran, the release is not blocked,
 // and the admin retries or drops the change from the Updates page.
 

@@ -1172,7 +1172,7 @@ interface RunPanelProps {
   onTV: (action: "retry" | "drop") => void;
 }
 
-/** A TV held at an update (the owner's decision, 2026-10-28): the release installed, and
+/** A TV held at an update (decided 2026-10-28): the release installed, and
  * the live TV stayed on its streaming software when the change's check failed before any
  * swap. Held, it offers Retry (check it again: a pass swaps as usual) and Drop (withdraw
  * it: the TV stays where it is until a later release), with what failed; afterwards it

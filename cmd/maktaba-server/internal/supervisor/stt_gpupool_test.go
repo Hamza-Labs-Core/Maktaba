@@ -10,10 +10,9 @@ import (
 // The Windows node (RTX 2080 SUPER, 8 GB): the gpu pool is per worker, and the
 // cluster's size was set for the home's GPU (2 on the live Mac). The worker that
 // transcribes there takes the batch sized from its own GPU (MAKTABA_POOL_GPU, which the
-// pipeline's claim loop reads): 8 files at once, the batch that ran at 72x. With the
-// second listen on (an 8 GB card does not hold it beside Whisper on Windows) the main
-// worker carries it, for when the home's rules let it transcribe; on the CPU and on a Mac
-// no size of its own (the cluster's pool stands).
+// pipeline's claim loop reads): 8 files at once, the batch that ran at 72x. The second
+// listen is a stage of its own that the same worker runs, taking turns with Whisper on
+// the 8 GB card; on the CPU and on a Mac no size of its own (the cluster's pool stands).
 func TestPlanSTTSizesTheGPUPoolPerNode(t *testing.T) {
 	noSTTEnv(t)
 	fakeMachine(t, false, 128)
@@ -30,12 +29,12 @@ func TestPlanSTTSizesTheGPUPoolPerNode(t *testing.T) {
 		t.Errorf("the main worker leaves transcribe to the GPU worker: MAKTABA_POOL_GPU=%s", m["MAKTABA_POOL_GPU"])
 	}
 
-	on := config.Defaults() // the second listen on
-	if p := PlanSTT(on); p.Workers != 0 || !p.gpu || p.Batch != 8 {
+	on := config.Defaults() // the second listen on: Whisper and it take turns on the card
+	if p := PlanSTT(on); p.Workers != 1 || !p.gpu || p.Batch != 8 {
 		t.Errorf("an 8 GB GPU with the second listen on = %+v", p)
 	}
-	if m := envMap(mainProcess(t, on).Cmd.Env); m["MAKTABA_POOL_GPU"] != "8" || m["MAKTABA_STT_BATCH"] != "8" {
-		t.Errorf("the main worker transcribes when the rules let it, with the GPU's pool: %v", m)
+	if m := envMap(buildPipelineOK(t, on)[0].Cmd.Env); m["MAKTABA_POOL_GPU"] != "8" || m["MAKTABA_POOL_LISTEN"] != "8" {
+		t.Errorf("the GPU worker's own pools: a batch of each stage: %v", m)
 	}
 
 	c := cfg

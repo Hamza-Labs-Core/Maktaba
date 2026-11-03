@@ -41,7 +41,7 @@ The video bytes for remote viewers never cross the Maktaba relay: the relay carr
 calls (guide, tune, heartbeat). Cloudflare delivers the video and adds the adaptive bitrate ladder
 that the LAN stream does not have.
 
-## Decisions already made (owner)
+## Decisions already made
 
 | Question | Decision |
 |---|---|
@@ -468,14 +468,14 @@ budget.
   `cloud/internal/cloudlink.LocalProxy` exists but `maktaba-server` does not start it — see Q5.
 - Web player hls.js (audit P1-3) — folded into 32.9.
 
-## Open questions — decided (owner, 2026-10-18)
+## Open questions — decided (2026-10-18)
 
-Every question below is closed. "Owner decision" means the owner chose it; "accepted default,
+Every question below is closed. "Decided" means a product decision was made; "accepted default,
 revisit if needed" means the spec's recommendation stands as the default and can be revisited
 later without changing the rest of the design. The decisions are folded into design.md and the
 stories.
 
-1. **Recording must be on for live HLS — owner decision.** Cloudflare plays a live input over
+1. **Recording must be on for live HLS — decided.** Cloudflare plays a live input over
    HLS/DASH only with recording mode `automatic` ("off" = not recorded *and not available for
    playback*). Decided: recording mode **`automatic`**; Maktaba **deletes each recording as soon
    as its broadcast ends** (design §7.7); the account is sized for the **$5/month 1,000-minute
@@ -490,7 +490,7 @@ stories.
    broadcast, so tokens die with it). Verify in the 32.6 spike that a signed token for the live
    video id plays the in-progress broadcast (the docs show live input ids and video ids both work as
    playback ids). Fallback: `sub` = live input id with an input cool-down of one token lifetime
-   before reuse. *(Spike item, not an owner question; stays open until the 32.6 spike.)*
+   before reuse. *(Spike item, not a product question; stays open until the 32.6 spike.)*
 3. **Is `exp` checked on every segment?** The docs say rules are checked continuously. The web
    player swaps tokens without a reload (32.9); the native apps are to re-tune at expiry (32.9
    AC9-11, not built yet). Confirm in the spike. *(Spike item, as Q2.)*
@@ -499,7 +499,7 @@ stories.
    lists the measurements still due and gets the report's numbers. The web player does not
    depend on the answer to Q3: hls.js rewrites the token on every request, and Safari swaps in
    the new URL at each token refresh.
-4. **Upload bandwidth — owner decision.** The home's upload is **1 Gb/s**, so no separate
+4. **Upload bandwidth — decided.** The home's upload is **1 Gb/s**, so no separate
    "remote rendition" encode is needed: each remote channel is pushed once at the channel bitrate
    (**≈ 6.5 Mb/s**, the default 6 Mb/s video + audio). `tv_remote.max_channels` defaults to **22**
    concurrent remote channels — every channel of the lineup (≈ 143 Mb/s, ~15 % of the uplink);
@@ -510,13 +510,13 @@ stories.
    agent is wired into `maktaba-server` as part of the Epic 25 work before Phase B; until then, and
    for users with their own reverse proxy or tunnel, `remote_detection = relay_or_public_ip` ("a
    public client IP counts as remote") is an **opt-in**; the default stays `relay`.
-6. **Who may watch remotely — owner decision.** **All signed-in users** (`tv_remote.viewers =
+6. **Who may watch remotely — decided.** **All signed-in users** (`tv_remote.viewers =
    all`), **2 concurrent remote streams per user** (`tv_remote.max_streams_per_user = 2`, a
    setting).
 7. **Other secrets in `extensions` — accepted default, revisit if needed.** All extension secrets
    (the Plex token in `extensions.settings` today, and any future `secret` field) move to
    `home_secrets` in story 32.6, so node roles cannot read them.
-8. **Budget at 100 % — owner decision.** **Refuse new remote tunes (402 `budget_exhausted`) and let
+8. **Budget at 100 % — decided.** **Refuse new remote tunes (402 `budget_exhausted`) and let
    running sessions finish**; nothing is cut mid-programme (`budget_action = block_new`, the
    default; `warn` remains a setting).
 9. **Rotation at `max_push_hours` — accepted default, revisit if needed.** A short re-buffer for
@@ -534,8 +534,8 @@ stories.
     `streamKey`, `enabled` only — no connection status, and no output events in the live webhooks.
     *Default:* Maktaba shows its own output state plus the input's status; the 32.6 spike checks
     whether the output object or Notifications report a destination's rejection, and 32.13 uses it
-    if so. *(Spike item, as Q2/Q3.)* Simulcast itself was added by the owner on 2026-10-18
-    (scope, R13).
+    if so. *(Spike item, as Q2/Q3.)* Simulcast itself was added to the scope on 2026-10-18
+    (R13).
 
 ## Cloudflare facts this design relies on (with sources)
 

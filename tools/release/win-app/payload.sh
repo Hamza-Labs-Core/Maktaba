@@ -22,7 +22,7 @@
 # Microsoft's app-local deployment) and is checked to be signed by Microsoft. The CUDA /
 # torch wheels and the models are not here: the app downloads them on first run (38.7).
 #
-# Nothing is signed: Authenticode signing is the owner's decision (README.md, Signing).
+# Nothing is signed: Authenticode signing is deferred (README.md, Signing).
 #
 # It also writes <build>/tauri.win-app.conf.json, the config overlay `tauri build --config`
 # takes to bundle the payload as the NSIS installer's server\, with the installer hooks.

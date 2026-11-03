@@ -30,7 +30,7 @@ const (
 	NoticeNeedsPerson     = "update.needs_person"
 	// NoticeAppInstalls: a desktop app that runs the server was ordered the release: it
 	// stages it and installs it at the home's go, and restarts, with no click there
-	// (owner decision D1, 2026-10-27; it replaced update.waiting_click).
+	// (decision D1, 2026-10-27; it replaced update.waiting_click).
 	NoticeAppInstalls = "update.app_installs"
 )
 
@@ -458,8 +458,8 @@ func (d *Driver) advance(ctx context.Context, run Run) error {
 	case RunHomeApplying:
 		return d.homeApplying(ctx, run, det)
 	case RunHomeCommitted, RunRollingOut:
-		// no machine is ordered anything before the home committed the release (the
-		// owner's decision, 2026-10-28): the watermark is the home's commit
+		// no machine is ordered anything before the home committed the release
+		// (decided 2026-10-28): the watermark is the home's commit
 		if !d.homeCommittedTo(ctx, run.Version) {
 			d.audit(ctx, run, "machines_without_home_commit", nil)
 			return d.finish(ctx, run, det, RunFailed, map[string]any{"code": "home_not_committed",
@@ -830,7 +830,7 @@ func (d *Driver) tvBusy(ctx context.Context) (bool, int) {
 // TVSwapWait is how long the home's restart waits for a TV change that swaps (a swap
 // takes seconds). Past it the update goes on: a swap the restart cuts follows the swap's
 // failure rollback (Epic 33). Only the restart waits: the run started and drained the
-// cluster already. No other TV change holds an update (the owner's rule of 2026-10-28):
+// cluster already. No other TV change holds an update (rule of 2026-10-28):
 // the change controller sets them aside while it runs (tvchange/updatehold.go).
 const TVSwapWait = 2 * time.Minute
 
@@ -1038,7 +1038,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 
 // orderHome orders the release from the home's desktop app: it stages it and tells the
 // person there when it installs; once it is staged, the home's go installs it
-// (homeStaged), with no click there (owner decision D1, 2026-10-27).
+// (homeStaged), with no click there (decision D1, 2026-10-27).
 func (d *Driver) orderHome(ctx context.Context, run Run, det RunDetail) error {
 	order := map[string]any{"run_id": run.ID}
 	by := d.installBy(run, d.policy(ctx))
@@ -1182,7 +1182,7 @@ func (d *Driver) homeApplying(ctx context.Context, run Run, det RunDetail) error
 			noteStore(d.log(), "SetRunBackup", d.Store.SetRunBackup(ctx, run.ID, map[string]any{"path": st.Backup.Path, "bytes": st.Backup.Bytes}), "run_id", run.ID)
 		}
 		// only the TV's check failed: the release is kept, the TV held on its software
-		// (the owner's decision, 2026-10-28)
+		// (decided 2026-10-28)
 		d.tvHeldAtCommit(ctx, run, &det, st)
 		return d.homeCommitted(ctx, run, det)
 	case MRolledBack:
@@ -1492,7 +1492,7 @@ func (d *Driver) machineTVBusy(ctx context.Context, nodeID string) bool {
 }
 
 // mayRestartMachines reports whether the run may restart a machine now: an admin's run
-// any time; an automatic one inside its window (a desktop app's too: owner decision D1,
+// any time; an automatic one inside its window (a desktop app's too: decision D1,
 // 2026-10-27).
 func (d *Driver) mayRestartMachines(run Run, pol Policy) bool {
 	if run.Trigger == TriggerManual || run.Trigger == TriggerRetry {
@@ -1723,7 +1723,7 @@ func (d *Driver) rollOut(ctx context.Context, run Run, det RunDetail) error {
 	held := busy || d.switchoverOpen(ctx) || d.withdrawn(ctx, run.Version, true)
 	if !held {
 		// the next machine's turn, in order: one prepared, or a desktop app that staged
-		// its order (its go: no click there, owner decision D1, 2026-10-27), each inside
+		// its order (its go: no click there, decision D1, 2026-10-27), each inside
 		// an automatic run's window and under the TV gate
 		targets, _ = d.Store.Targets(ctx, run.ID)
 		for _, t := range targets {
@@ -1970,8 +1970,8 @@ func (d *Driver) maybeFinishRollout(ctx context.Context, run Run, det RunDetail)
 	}
 	pol := d.policy(ctx)
 	deadline := d.windowDeadline(run, pol)
-	// an automatic run's window is every machine's, a desktop app's too (owner decision
-	// D1, 2026-10-27): what did not go in it waits for the next one
+	// an automatic run's window is every machine's, a desktop app's too (decision D1,
+	// 2026-10-27): what did not go in it waits for the next one
 	pastWindow := !deadline.IsZero() && d.now().After(deadline)
 	failed, held, waiting, busy := 0, 0, 0, false
 	var needYou []string // the machines that need a person, with their reasons

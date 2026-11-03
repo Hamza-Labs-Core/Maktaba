@@ -3,8 +3,8 @@
 package main
 
 // The update rehearsal's scenario 10 (docs/update-rehearsal.md): a joined machine never
-// updates before its home commits (the owner, 2026-10-28: his PC ran v0.3.42, paused,
-// while the home rolled back to 0.3.41). Two paths, each its own test:
+// updates before its home commits (on 2026-10-28 a PC ran v0.3.42, paused, while the
+// home rolled back to 0.3.41). Two paths, each its own test:
 //
 //	10a the home's driver orders no machine before the home commits, a run that gives
 //	    up on its home mid-watch (journal_lost) included

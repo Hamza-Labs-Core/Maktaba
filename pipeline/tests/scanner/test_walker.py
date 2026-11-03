@@ -153,7 +153,7 @@ def test_walk_prunes_custom_ignored_dirnames(tmp_path: Path) -> None:
 @pytest.mark.unit
 def test_walk_skips_thumbs_and_synology_index_folders(tmp_path: Path) -> None:
     """A channel folder's ``.thumbs/`` and the NAS's ``@eaDir`` index are never library
-    content, whatever they hold (2026-11: the owner's NAS has both)."""
+    content, whatever they hold (2026-11: a real NAS has both)."""
     chan = "Abdul Basit- Mojawwad"
     _touch(tmp_path, f"{chan}/Abasa： 80.mp4")
     _touch(tmp_path, f"{chan}/.thumbs/Abasa： 80.jpg")

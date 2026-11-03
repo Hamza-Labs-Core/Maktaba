@@ -102,8 +102,9 @@ machine until it is added as its own, Epic 38 story 38.1). `gpus` lists the NVID
 the pipeline's run line names the one it transcribes on (`params.gpu`).
 
 With the second listen on, `second_listen` says whether this machine can run it: Apple Silicon (MLX),
-or an NVIDIA GPU with 9.5 GiB on Windows (7.5 GiB elsewhere), a compute capability of 7.5 (Turing) or
-more and an R580 driver or newer, which the pipeline's room check and the supervisor's tiers use
+or an NVIDIA GPU with 7.5 GiB on Windows (6 GiB elsewhere; one with less than 9.5 GiB on Windows, 7.5
+elsewhere, takes turns with Whisper), a compute capability of 7.5 (Turing) or more and an R580 driver
+or newer, which the pipeline's room check and the supervisor's tiers use
 too. Where it cannot, `{"runs": false, "code", "params"}` names why, and the same finding is among
 the `warnings`: `second_listen_no_gpu`, `second_listen_gpu_small` (`gpu`, `have_bytes`,
 `need_bytes`), `second_listen_gpu_old` (`gpu`, `compute`), `second_listen_driver_old` (`gpu`,

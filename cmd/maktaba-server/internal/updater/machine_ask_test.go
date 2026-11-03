@@ -11,7 +11,7 @@ import (
 )
 
 // askRig is a machine whose app installs the release (a desktop app that runs the server,
-// owner decision D1), prepared for run-1.
+// decision D1), prepared for run-1.
 func askRig(t *testing.T, w *world) *rig {
 	t.Helper()
 	r := startRig(t, t.TempDir(), w, healthy)

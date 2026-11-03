@@ -9,7 +9,7 @@ import (
 // Story 35.6: the home's new release moves the TV to its streaming binary before it
 // commits; how the run ends when that fails.
 
-// AC3, as the owner decided it (2026-10-28): a TV change whose swap failed, or that
+// AC3, as decided 2026-10-28: a TV change whose swap failed, or that
 // failed on the air after it switched, rolls the release back, blocks it and tells the
 // admin (a check that fails before any swap holds the TV instead: driver_tvheld_test.go).
 func TestDriverFailedTVBlocksTheRelease(t *testing.T) {

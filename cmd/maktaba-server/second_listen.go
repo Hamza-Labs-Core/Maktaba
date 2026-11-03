@@ -9,14 +9,14 @@ import (
 )
 
 // What the second listen needs on Windows and Linux (Cohere Transcribe on torch
-// CUDA, beside Whisper on the same GPU; Epic 38 story 38.9). The pipeline's room
-// check and the supervisor's tiers use the same values (SecondListenFits).
+// CUDA, on the GPU Whisper uses: beside it, or taking turns with it where the GPU
+// holds one at a time; Epic 38 story 38.9). The pipeline's check (MIN_GPU_GB) and
+// the supervisor's SecondListenFits use the same values.
 const (
-	// secondListenMinMiBWindows: Windows keeps part of a GPU's memory for the
-	// desktop, and a process that runs out spills into system memory (several
-	// times slower) instead of failing
-	secondListenMinMiBWindows = 9728 // 9.5 GiB
-	secondListenMinMiB        = 7680 // 7.5 GiB
+	// secondListenMinMiBWindows: Windows keeps about 1 GiB of a GPU for the desktop;
+	// an 8 GB card still holds Cohere alone (6.1 GiB) while Whisper is off it
+	secondListenMinMiBWindows = 7680 // 7.5 GiB
+	secondListenMinMiB        = 6144 // 6 GiB
 	// torch's CUDA 13 build: Turing (compute capability 7.5) or newer, and an
 	// R580 driver or newer
 	secondListenMinCompute = 7.5
@@ -81,7 +81,7 @@ func secondListenGPU(g hostinfo.GPU, needMiB uint64) *secondListen {
 	if g.MemoryMB < needMiB {
 		return &secondListen{Code: "second_listen_gpu_small",
 			Params: map[string]any{"gpu": g.Name, "have_bytes": g.MemoryMB << 20, "need_bytes": needMiB << 20},
-			Message: fmt.Sprintf("%s has %d MiB: the second listen needs a GPU of %d MiB or more beside Whisper here, so Whisper's words are kept.",
+			Message: fmt.Sprintf("%s has %d MiB: the second listen needs a GPU of %d MiB or more here, so Whisper's words are kept.",
 				g.Name, g.MemoryMB, needMiB)}
 	}
 	return nil

@@ -30,7 +30,7 @@ graph TD
   S11 --> S13[52.13 native review]
 ```
 
-52.7 (LLM judge) is **removed** (owner's decision 3, 2026-11-03) and has no node. 52.15 (Quran
+52.7 (LLM judge) is **removed** (decision 3, 2026-11-03) and has no node. 52.15 (Quran
 check) is new (decision 4).
 
 | Story | Depends on | Can run in parallel with |
@@ -51,7 +51,7 @@ check) is new (decision 4).
 | 52.13 | 52.8, 52.9, 52.11 (wording) | — |
 | ~~52.7~~ | Removed 2026-11-03 | — |
 
-Following the owner's rule for big efforts (trail §1): parallel worktree agents per track into
+Following the project rule for big efforts (trail §1): parallel worktree agents per track into
 one integration branch, one PR per phase, not one PR per story.
 
 | Track | Stories |
@@ -102,7 +102,7 @@ release, so `update-rehearsal` runs on the tag as for every release.
 |---|---|---|
 | R1 (52.1) | New transcripts keep `word_data`. Nothing reads it yet | Storage per word measured read-only on the live DB after a day; if > 12 bytes a word, stop and revisit |
 | R2 (52.3-52.6, 52.15) | `word_check` with the Quran check runs on new transcripts (`word_review.enabled` default on) | Flags visible only to admins on a read-only page; the flag rate is checked against ≤ 3% of words on a read-only sample, and `quran_mismatch` flags on recitation libraries are spot-checked |
-| R3 | Backfill of **all ~45k existing transcripts** (owner's decision 2), lowest priority, idle-only (`backfill` default on) | Queue health tile with progress; never runs while `transcribe` has pending work |
+| R3 | Backfill of **all ~45k existing transcripts** (decision 2), lowest priority, idle-only (`backfill` default on) | Queue health tile with progress; never runs while `transcribe` has pending work |
 | R4 (52.8-52.14) | The review queue, for home admins only (decision 1) | Role tests in CI (`write` → 403); Arabic + English strings |
 | R5 (52.10) | Vocabulary on; derived prompt for new transcriptions | A CI test proves a vocabulary change does not change `transcribe`'s input fingerprint |
 | R6 (52.13) | Native review in the next app release (TestFlight, Android) | Throwaway simulators; Mac UI tests only in CI |

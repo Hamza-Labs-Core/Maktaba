@@ -51,7 +51,7 @@ type Settings struct {
 	Bad []string
 }
 
-// DefaultSettings are the owner's defaults (README Q1, Q4, Q6, Q8).
+// DefaultSettings are the defaults decided in README Q1, Q4, Q6 and Q8.
 func DefaultSettings() Settings {
 	return Settings{
 		Viewers: ViewersAll, MaxStreamsPerUser: 2, MaxChannels: 22,

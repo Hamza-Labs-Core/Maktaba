@@ -24,7 +24,7 @@ fun ComposeContentTestRule.has(tag: String): Boolean =
 
 /**
  * The bottom bar's labels line up: each one line, all at the same height and top, each centred
- * under its own item and inside the screen (the owner's cover screen: "Needs attention" wrapped
+ * under its own item and inside the screen (seen on a real cover screen: "Needs attention" wrapped
  * to two lines, sat higher than the other four and ran into the screen's left edge). A bar that
  * shows the selected label only (a large text size: Material draws the others transparent, off
  * their place) is checked on the selected one. [selected] is always checked.

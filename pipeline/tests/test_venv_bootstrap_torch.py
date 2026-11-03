@@ -36,9 +36,16 @@ def test_the_thresholds_are_the_pipelines() -> None:
     """The bootstrap runs before the venv exists and cannot import them: kept equal here."""
     assert vb.SECOND_LISTEN_MIN_COMPUTE == cohere_cuda.MIN_COMPUTE
     assert vb.SECOND_LISTEN_MIN_DRIVER == cohere_cuda.MIN_DRIVER
-    assert vb.SECOND_LISTEN_MIN_GIB == 9.5  # MIN_GPU_GB on Windows, the cuda set's platform
+    assert vb.SECOND_LISTEN_MIN_GIB == 7.5  # MIN_GPU_GB on Windows, the cuda set's platform
     if sys.platform == "win32":
         assert vb.SECOND_LISTEN_MIN_GIB == cohere_cuda.MIN_GPU_GB
+
+
+def test_the_8_gb_pc_gets_the_cuda_build(windows: None, tmp_path: Path) -> None:
+    """The RTX 2080 SUPER runs the second listen, taking turns with Whisper (gpu_turns)."""
+    gpu = vb.Gpu("NVIDIA GeForce RTX 2080 SUPER", 8.0, (7, 5), "616.64")
+    build, _why = vb.torch_build("auto", _payload(tmp_path), probe=lambda: gpu)
+    assert build == "cuda"
 
 
 def test_a_gpu_that_runs_the_second_listen_gets_the_cuda_build(
@@ -55,7 +62,7 @@ def test_a_gpu_that_runs_the_second_listen_gets_the_cuda_build(
     ("gpu", "why"),
     [
         (None, "no NVIDIA GPU"),
-        (vb.Gpu("NVIDIA GeForce RTX 2080 SUPER", 8.0, (7, 5), "616.64"), "8.0 GiB, under 9.5"),
+        (vb.Gpu("NVIDIA GeForce RTX 2060", 6.0, (7, 5), "616.64"), "6.0 GiB, under 7.5"),
         (vb.Gpu("NVIDIA GeForce GTX 1080 Ti", 11.0, (6, 1), "591.44"), "compute capability 6.1"),
         (vb.Gpu("NVIDIA GeForce RTX 3080 Ti", 12.0, (8, 6), "572.16"), "older than R580"),
     ],

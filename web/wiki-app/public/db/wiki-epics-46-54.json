@@ -1005,6 +1005,249 @@
       }
     },
     {
+      "id": "story-48.17",
+      "type": "story",
+      "title": "Home",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "Home. FR-10 to FR-13.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "home",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.18",
+      "type": "story",
+      "title": "Libraries, a library, Series, a series",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "Libraries, a library, Series, a series. FR-14 to FR-17.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "libraries-a-library-series-a-series",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.19",
+      "type": "story",
+      "title": "A video's page",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "A video's page. FR-18.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "a-video-s-page",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.20",
+      "type": "story",
+      "title": "Search",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "Search. FR-19, FR-20.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "search",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.21",
+      "type": "story",
+      "title": "Live TV",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "Live TV. After 48.7, 48.3. FR-21 to FR-24.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.22",
+      "type": "story",
+      "title": "Profile and Settings",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "Profile and Settings. FR-25 to FR-31.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "profile-and-settings",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.23",
+      "type": "story",
+      "title": "The player: resume, next, tracks, quality",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "The player: resume, next, tracks, quality. After 48.4. Files: `apps/apple/Player/Playback.swift`, new `Player/Watch/*`, `MaktabaKit/PlayerSurface.swift`.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-player-resume-next-tracks-quality",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.24",
+      "type": "story",
+      "title": "The player: PiP, AirPlay, Now Playing",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "The player: PiP, AirPlay, Now Playing. After 48.23, 48.12. Files: as 48.23.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-player-pip-airplay-now-playing",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-48.25",
+      "type": "story",
+      "title": "The Mac player",
+      "epic": "48-native-players",
+      "phase": 5,
+      "content": "The Mac player. After 48.13. Files: `apps/apple/Player/PlayerApp.swift` (commands only), new `Player/Mac/*`, `PlayerMacTests/*`.",
+      "tags": [
+        "story",
+        "48-native-players",
+        "phase-5"
+      ],
+      "related": [
+        "epic-48-native-players"
+      ],
+      "files": {
+        "story": "specs/epics/48-native-players/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-mac-player",
+        "inline": true
+      }
+    },
+    {
       "id": "story-48.26",
       "type": "story",
       "title": "Home",
@@ -1848,7 +2091,7 @@
       "title": "The cloud rehearsal in CI",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.06 — The cloud rehearsal in CI\n\n> Epic 50 · Phase 1 · Depends on: 50.01 · Needed by: 50.07, 50.14\n\n## Why\n\nThis story builds the **cloud rehearsal**: the whole Phase 1 cluster in Docker on a CI runner,\nwith no real Hetzner, Cloudflare or Let's Encrypt, broken on purpose in each way it can break.\nEach scenario ends with remote play working, measures the downtime, and fails above its budget.\nIts verdict gates every cloud deploy and every tag.\n\n## Description\n\n### 1. What runs\n\n`.github/workflows/cloud-rehearsal.yml` (new), verdict job **`cloud-rehearsal`**. One Docker\nCompose project ",
+      "content": "# Story 50.06 — The cloud rehearsal in CI\n\n> Epic 50 · Phase 1 · Depends on: 50.01 · Needed by: 50.07, 50.14\n\n## Why\n\nThe rule since 2026-10-28: update, rollback, restore and migration paths are **proven\nin CI first** (`docs/update-rehearsal.md`). The same goes for the cloud.\nFailover, deploys and restores are exactly the paths that run rarely and break silently; the\nfirst time a Patroni failover runs must not be on the VPS with paying users on it.\n\nThis story builds the **cloud rehearsal**: the whole Phase 1 cluster in Docker on a CI runner,\nwith no real Hetzner, Cloudflare or Let's Encrypt, ",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2004,7 +2247,7 @@
       "title": "Incident handling",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.12 — Incident handling\n\n> Epic 50 · Phase 1 · Depends on: 50.10, 50.11 · Needed by: launch gate (README §11)\n\n## Why\n\n## Description\n\n### 1. Severities\n\n| Level | Means | Examples | Response | Update users |\n|---|---|---|---|---|\n| **SEV1** | Paying users can't play remotely, or data is at risk | both nodes down; relay down > 3 min; database lost; secrets leaked | acknowledge in **15 min**, any hour | status page within **15 min**, then every 30 min |\n| **SEV2** | Degraded, or one safety net gone | standby down (no failover possible); backups failing > 24 h; sign-in down but relay u",
+      "content": "# Story 50.12 — Incident handling\n\n> Epic 50 · Phase 1 · Depends on: 50.10, 50.11 · Needed by: launch gate (README §11)\n\n## Why\n\nFailover and alerts handle the failures we planned for. The rest need a person, and today\nthat person is the owner, alone, maybe at 3 a.m. The rule is that recovery must be\nautomatic or one click, never a terminal, so it still works once many people use the service.\nWhere a person must act, they need a short, tested page that says what to do, and\nusers need to hear what is going on in their language.\n\n## Description\n\n### 1. Severities\n\n| Level | Means | Examples | Re",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2189,7 +2432,7 @@
       "title": "Plans: Free, Basic and Pro, enforced by the relay and billed by usage",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.19 — Plans: Free, Basic and Pro, enforced by the relay and billed by usage\n\n> Epic 50 · Phase 1 · Depends on: 50.04, 50.05 · Needed by: launch gate (README §11), 50.16\n\n## Why\n\nThe new rule is that **only the relay is paid**, a paid plan **never cuts remote play off**, and\nthe relay itself enforces each plan.\n\n## Description\n\n### 1. The plans\n\n| | **Free** | **Basic** (paid) | **Pro** (paid) |\n|---|---|---|---|\n| Play at home (LAN) | yes | yes | yes |\n| Direct remote (50.15) | **yes, free** | yes | yes |\n| Relay | **no** | yes, **capped quality** about **3 Mbps** a stream | yes, **f",
+      "content": "# Story 50.19 — Plans: Free, Basic and Pro, enforced by the relay and billed by usage\n\n> Epic 50 · Phase 1 · Depends on: 50.04, 50.05 · Needed by: launch gate (README §11), 50.16\n\n## Why\n\nThe decisions of 2026-11-03 (README §13, decisions 4 and 6) replace every plan we have\nwritten down so far: the architecture doc's Pro 2 / Family 5 streams, and the code's Free / Pro /\nFamily with 1 / 4 / 10 streams and 5 / 100 / 500 GiB (`cloud/internal/billing/plans.go`), which\nthe license calls `free` / `home` / `pro` (`cloud/internal/license/license.go`,\n`TierForPlan`) and the cloud web app shows as the \"",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2303,7 +2546,7 @@
       "title": "Publishable sources: permissions, Creative Commons, own recordings; geo",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.23 — Publishable sources: permissions, Creative Commons, own recordings; geo\n\n> Epic 50 · Phase B · Depends on: 50.22, Epic 34.1 · Needed by: 50.24, the broadcasting gate\n\n> **Not legal advice. Confirm with a lawyer before launch** (README §14.9).\n\n## Why\n\n- **Free to watch isn't a licence to re-broadcast.** Copyright covers copying a work and showing\n  it to the public whether or not money changes hands.\n- **YouTube's Terms** don't allow downloading and redistributing outside YouTube's player without\n  the rights holder's permission.\n- **Non-commercial use** helps a fair-use argume",
+      "content": "# Story 50.23 — Publishable sources: permissions, Creative Commons, own recordings; geo\n\n> Epic 50 · Phase B · Depends on: 50.22, Epic 34.1 · Needed by: 50.24, the broadcasting gate\n\n> **Not legal advice. Confirm with a lawyer before launch** (README §14.9).\n\n## Why\n\nA common question is whether public YouTube videos can be shared when no money is charged.\nThe practical answer (README §14.6, research §6.1):\n\n- **Free to watch isn't a licence to re-broadcast.** Copyright covers copying a work and showing\n  it to the public whether or not money changes hands.\n- **YouTube's Terms** don't allow do",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2381,7 +2624,7 @@
       "title": "Viewer access: invite and open; limits and tokens",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.26 — Viewer access: invite and open; limits and tokens\n\n> Epic 50 · Phase B · Depends on: 50.20, 50.21 · Needed by: 50.27, 50.29\n\n## Why\n\n## Description\n\n### 1. Invite\n\n- The publisher creates **invite links** on the Broadcast page or in the cloud web app. Each\n  invite is a cloud-signed token (Ed25519, broadcast key, `kid`) holding:\n  - the publisher, and one or all of their channels;\n  - an expiry (default 30 days, up to 1 year);\n  - a use limit (default 10 devices, up to 500);\n  - an optional label (\"Family in Cairo\").\n- **Redeeming.** Opening `watch.maktaba.tv/i/<invite>` redeem",
+      "content": "# Story 50.26 — Viewer access: invite and open; limits and tokens\n\n> Epic 50 · Phase B · Depends on: 50.20, 50.21 · Needed by: 50.27, 50.29\n\n## Why\n\nViewers aren't users of the home and **never pay** (decided 2026-11-03). Access is one of\ntwo modes:\n\n- `invite` (the default): the publisher decides who;\n- `open`: anyone with the link.\n\nBoth modes need the same protections against scraping and cost abuse that Epic 34 specced for its\nsite (34.4, 34.9): short-lived tokens refreshed by a heartbeat, concurrency limits, and per-IP\nlimits.\n\n## Description\n\n### 1. Invite\n\n- The publisher creates **invi",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2898,7 +3141,7 @@
       "title": "The Components page",
       "epic": "51-configurable-components",
       "phase": 5,
-      "content": "# Story 51.10 — The Components page\n\n> Epic 51 · Phase 2 · Depends on: 51.08 · Needed by: 51.17\n\n## Why\n\n## Description\n\n### 1. Where it lives\n\n`/settings/components`, a new tab in Settings (`web/src/pages/Settings.tsx`), shown to admins\nonly, next to Models and Rules. A viewer who types the URL gets the same \"admins only\" panel as\nthe other server tabs. The API refuses them anyway (51.08). The Desktop app's tray and window\nmenu get an **Open Components** item beside **Open logs** (`apps/desktop/src-tauri/src/tray.rs`\n`WINDOW_ITEMS`). It opens the page on the local home in the browser with `ag",
+      "content": "# Story 51.10 — The Components page\n\n> Epic 51 · Phase 2 · Depends on: 51.08 · Needed by: 51.17\n\n## Why\n\nParts of Maktaba must be stopped and started, enabled and disabled, from settings.\nThe admin API exists after 51.08, but owners use the web. Today the nearest tools are spread\nout: stage pauses on the Queues page, extensions on their own page, `[llm]` and `[tv]` only in\n`server.toml`. This story adds one page that shows every part of the home, what it is doing and\nwhy, and lets an admin turn it on, off, hold it, and see the effect before anything changes.\n\n## Description\n\n### 1. Where it li",
       "tags": [
         "story",
         "51-configurable-components",
@@ -3144,7 +3387,7 @@
       "title": "Updates and rollback carry packs",
       "epic": "51-configurable-components",
       "phase": 5,
-      "content": "# Story 51.18 — Updates and rollback carry packs\n\n> Epic 51 · Phase 3 · Depends on: 51.16 · Needed by: —\n\n## Why\n\nFirst-party packs only fit the server version they were built with (H5, 51.15: the index's\n`server` is the exact version). A Core home that installed `runtime.ml` 0.4.2 and updates to\n0.4.3 must have `runtime.ml` 0.4.3 on disk **before** 0.4.3 starts, or transcription breaks\nafter every update. A rollback to 0.4.2 must find 0.4.2's packs again. And old packs must not\npile up: `runtime.ml` is about 2 GB per version.\n\nThe update path is where the owner lost the site twice on 2026-10-",
+      "content": "# Story 51.18 — Updates and rollback carry packs\n\n> Epic 51 · Phase 3 · Depends on: 51.16 · Needed by: —\n\n## Why\n\nFirst-party packs only fit the server version they were built with (H5, 51.15: the index's\n`server` is the exact version). A Core home that installed `runtime.ml` 0.4.2 and updates to\n0.4.3 must have `runtime.ml` 0.4.3 on disk **before** 0.4.3 starts, or transcription breaks\nafter every update. A rollback to 0.4.2 must find 0.4.2's packs again. And old packs must not\npile up: `runtime.ml` is about 2 GB per version.\n\nThe update path is where the site went down twice on 2026-10-28. T",
       "tags": [
         "story",
         "51-configurable-components",
@@ -3233,7 +3476,7 @@
       "title": "Evaluation set, metrics and calibration",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.02 — Evaluation set, metrics and calibration\n\n> Epic 52 · Phase 1 · Depends on: — (uses 52.1's output for confidence curves once it lands) ·\n> Needed by: 52.6, 52.15 (52.7, the LLM judge, is removed)\n\n## Why\n\nA flagger that is never measured drifts into one of two failures: it flags too much (reviewers\ngive up) or it misses the words that matter. The hearing tests (2026-10-19, [#113]) showed that\njudgement without measurement goes wrong: an LLM judge preferred turbo's tidy spelling, and the\nowner's ears found Cohere right 17 times out of 20. This story builds the yardstick first:\na ",
+      "content": "# Story 52.02 — Evaluation set, metrics and calibration\n\n> Epic 52 · Phase 1 · Depends on: — (uses 52.1's output for confidence curves once it lands) ·\n> Needed by: 52.6, 52.15 (52.7, the LLM judge, is removed)\n\n## Why\n\nA flagger that is never measured drifts into one of two failures: it flags too much (reviewers\ngive up) or it misses the words that matter. The hearing tests (2026-10-19, [#113]) showed that\njudgement without measurement goes wrong: an LLM judge preferred turbo's tidy spelling, and a\ncheck by ear found Cohere right 17 times out of 20. This story builds the yardstick first:\na go",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3259,7 +3502,7 @@
       "title": "The language pack contract, registry and fallback pack",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.03 — The language pack contract, registry and fallback pack\n\n> Epic 52 · Phase 1 · Depends on: — · Needed by: 52.4, 52.5, 52.6\n\n## Why\n\n## Description\n\n### 1. The contract\n\n`pipeline/src/maktaba_pipeline/language_packs/base.py`:\n\n```python\n@dataclass(frozen=True, slots=True)\nclass Token:\n    text: str\n    start: int            # code points into the sentence text\n    end: int\n    kind: Literal[\"word\", \"number\", \"punct\", \"symbol\"]\n    script: str           # ISO 15924, e.g. \"Arab\", \"Latn\"\n\nclass Known(Enum):\n    KNOWN = \"known\"; UNKNOWN = \"unknown\"; UNSURE = \"unsure\"\n\nclass LanguageP",
+      "content": "# Story 52.03 — The language pack contract, registry and fallback pack\n\n> Epic 52 · Phase 1 · Depends on: — · Needed by: 52.4, 52.5, 52.6\n\n## Why\n\nRequirement: support every language, with languages added as add-ons. Today the only language knowledge is Arabic-specific and scattered:\n`text/arabic.py` (folding), `stt/cohere.py` (the CAMeL dictionary), `classify/quran.py`. A word\nchecker built on those would be Arabic forever. This story defines one contract every language\nplugs into, a registry that finds installed packs, and a fallback that gives *any* language\nsomething useful on day one.\n\n##",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3311,7 +3554,7 @@
       "title": "English language pack",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.05 — English language pack\n\n> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6\n> Installed as an Epic 51 component (`langpack-en`). Deterministic Hunspell checks only (owner's\n> decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English\n> has its own pack for its tokenizer rules (contractions, possessives, acronyms).\n\n## Why\n\nEnglish is the library's second language, both in English talks and inside Arabic lectures\n(code-switching, PR #556's two-track files). English needs no morphology engine. Hunspell's affix\nrules cover its inflection, ",
+      "content": "# Story 52.05 — English language pack\n\n> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6\n> Installed as an Epic 51 component (`langpack-en`). Deterministic Hunspell checks only (README §8,\n> decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English\n> has its own pack for its tokenizer rules (contractions, possessives, acronyms).\n\n## Why\n\nEnglish is the library's second language, both in English talks and inside Arabic lectures\n(code-switching, PR #556's two-track files). English needs no morphology engine. Hunspell's affix\nrules cover its inflectio",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3337,7 +3580,7 @@
       "title": "`word_check`: flags, names and old transcripts",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.06 — `word_check`: flags, names and old transcripts\n\n> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5 · Needed by: 52.8, 52.14, 52.15\n\n## Why\n\n## Description\n\n### 1. The stage\n\n- Name `word_check`, pool `cpu`, one job per video, in `engine/graph.py`.\n- Edge `transcribe → word_check` (`same`). It also runs when the vocabulary or a pack changes\n  (52.10 queues the affected transcripts), and when the library's `word_review` settings change.\n- **Input fingerprint**: active transcript id, `transcripts.revision` (52.9; 0 until then),\n  `registry.versions()` of the packs this",
+      "content": "# Story 52.06 — `word_check`: flags, names and old transcripts\n\n> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5 · Needed by: 52.8, 52.14, 52.15\n\n## Why\n\nThis is the queue job that reviews each transcript and saves the location of every word that is\nnot in the dictionary, looks wrong or has low confidence, for a person to review. It turns 52.1's evidence and the packs' knowledge into\n`word_flags` rows: where the word is, why it is suspect, how sure we are, and what it might be.\nIt runs on the CPU, so it can run again whenever the packs, the vocabulary or the thresholds\nchange, wi",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3369,7 +3612,7 @@
       "title": "The LLM judge that flags, not rewrites (REMOVED)",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.07 — The LLM judge that flags, not rewrites (REMOVED)\n\n> Epic 52 · **Removed 2026-11-03** by the owner's decision 3 ([README §8](README.md#8-decisions-2026-11-03)).\n> The number is kept so references stay valid; no story replaces it, and nothing is renumbered.\n\n## Why it was removed\n\nThe first draft added an optional `word_judge` stage: an LLM on the cluster would read flagged\nand borderline sentences and add an `llm_disagrees` verdict and an `llm` candidate. The owner\ndecided there is **no LLM judge**. The hearing test (2026-10-19) had already shown an LLM judge\npreferring tidy wro",
+      "content": "# Story 52.07 — The LLM judge that flags, not rewrites (REMOVED)\n\n> Epic 52 · **Removed 2026-11-03** by decision 3 ([README §8](README.md#8-decisions-2026-11-03)).\n> The number is kept so references stay valid; no story replaces it, and nothing is renumbered.\n\n## Why it was removed\n\nThe first draft added an optional `word_judge` stage: an LLM on the cluster would read flagged\nand borderline sentences and add an `llm_disagrees` verdict and an `llm` candidate. It was\ndecided there is **no LLM judge**. The hearing test (2026-10-19) had already shown an LLM judge\npreferring tidy wrong spelling, an",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3395,7 +3638,7 @@
       "title": "Review API, roles and the audio clip",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.08 — Review API, roles and the audio clip\n\n> Epic 52 · Phase 2 · Depends on: 52.6 · Needed by: 52.9, 52.11, 52.13\n\n## Why\n\n`word_check` (52.6) saves suspect words as `word_flags` rows. Nobody can act on them yet. This\nstory gives the apps one API to list flags, open one with its context, hear the audio around the\nword, and resolve it. The owner's rule is that the API enforces every role rule (trail §1), so\nthe rights in README §4.5 live here, not in the apps.\n\n## Description\n\n### 1. Routes\n\nAll routes are under `/api/review`, JSON, and need a signed-in user.\n\n| Method and path | Doe",
+      "content": "# Story 52.08 — Review API, roles and the audio clip\n\n> Epic 52 · Phase 2 · Depends on: 52.6 · Needed by: 52.9, 52.11, 52.13\n\n## Why\n\n`word_check` (52.6) saves suspect words as `word_flags` rows. Nobody can act on them yet. This\nstory gives the apps one API to list flags, open one with its context, hear the audio around the\nword, and resolve it. The project rule is that the API enforces every role rule (trail §1), so\nthe rights in README §4.5 live here, not in the apps.\n\n## Description\n\n### 1. Routes\n\nAll routes are under `/api/review`, JSON, and need a signed-in user.\n\n| Method and path | Doe",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3461,7 +3704,7 @@
       "title": "Vocabulary: learning from fixes",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.10 — Vocabulary: learning from fixes\n\n> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)\n\n## Why\n\nA lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times\nunless the system learns it. The owner wants each fix to count. This story turns fixes into a\nvocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second\nlisten and new transcriptions spell it right. It never re-transcribes the library\nby itself.\n\n## Description\n\n### 1. Tables (slot 0173+)\n\n- `vocabulary (id",
+      "content": "# Story 52.10 — Vocabulary: learning from fixes\n\n> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)\n\n## Why\n\nA lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times\nunless the system learns it. Each fix must count. This story turns fixes into a\nvocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second\nlisten and new transcriptions spell it right. It never re-transcribes the library\nby itself.\n\n## Description\n\n### 1. Tables (slot 0173+)\n\n- `vocabulary (id, scope 'home'",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3619,7 +3862,7 @@
       "title": "Quran check: verse runs against the Quran text",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.15 — Quran check: verse runs against the Quran text\n\n> Epic 52 · Phase 1 · Depends on: 52.4, 52.6 · Needed by: 52.11 (reason label), 52.14 (switch)\n> Owner's decision 4 (2026-11-03, [README §8](README.md#8-decisions-2026-11-03)).\n\n## Why\n\nLectures quote the Quran and some files are recitation. The first draft protected every word\ninside a detected verse run, so it never flagged one. But the run detector\n(`classify/quran.verse_runs`) needs every folded word to match the text exactly, so a misheard\nword ends the run, and the rest of the verse falls to the ordinary dictionary checks. T",
+      "content": "# Story 52.15 — Quran check: verse runs against the Quran text\n\n> Epic 52 · Phase 1 · Depends on: 52.4, 52.6 · Needed by: 52.11 (reason label), 52.14 (switch)\n> Decision 4 (2026-11-03, [README §8](README.md#8-decisions-2026-11-03)).\n\n## Why\n\nLectures quote the Quran and some files are recitation. The first draft protected every word\ninside a detected verse run, so it never flagged one. But the run detector\n(`classify/quran.verse_runs`) needs every folded word to match the text exactly, so a misheard\nword ends the run, and the rest of the verse falls to the ordinary dictionary checks. Those kno",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3726,7 +3969,7 @@
       "title": "The recovery console",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.04 — The recovery console\n\n> Epic 53 · Phase 1 · Depends on: 53.02, 53.03 · Needed by: 53.07\n\n## Why\n\n## Description\n\n### 1. Where it lives\n\n`/recovery` on the web port, served by the supervisor from a small page embedded in its binary\n(server-rendered HTML with one small script, the shared page theme, dark by default), **not**\nthe SPA and **not** through the API. It loads in ≤ 1 s with every child down.\n\nThe existing \"Maktaba is restarting\" page (for `/api/` HTML requests while the API is down,\n`cmd_serve.go:696`) gains a line under its spinner: what is down (from 53.03) and, after",
+      "content": "# Story 53.04 — The recovery console\n\n> Epic 53 · Phase 1 · Depends on: 53.02, 53.03 · Needed by: 53.07\n\n## Why\n\nWhen the API or Postgres is down, the web app shows \"Maktaba is restarting\" and reloads every\n5 seconds, for as long as it takes. If it never comes back, the admin has no way in except a\nterminal, which the project rules out: recovery must be automatic or one click, never a\nterminal. Home Assistant's recovery mode is the model: the UI, the logs and restore keep\nworking when the core can't start.\n\n## Description\n\n### 1. Where it lives\n\n`/recovery` on the web port, served by the super",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -3807,7 +4050,7 @@
       "title": "The fault rehearsal in CI",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.07 — The fault rehearsal in CI\n\n> Epic 53 · Phase 1 · Depends on: 53.03, 53.04, 53.05, 53.06 · Needed by: release gate\n\n## Why\n\n## Description\n\n### 1. The harness\n\n`.github/workflows/fault-rehearsal.yml`, verdict job **fault-rehearsal**, built on the update\nrehearsal's kit (`tools/rehearsal/build.sh`, `postgres.sh`, the Mac app's install layout on\nLinux, the small seed): one home of **this commit**, started the way the launcher starts it, with\nthe web built in (`-tags embed_web`; unlike the update rehearsal, which doesn't build the web, the\nUI is what this checks).\n\nEach scenario is",
+      "content": "# Story 53.07 — The fault rehearsal in CI\n\n> Epic 53 · Phase 1 · Depends on: 53.03, 53.04, 53.05, 53.06 · Needed by: release gate\n\n## Why\n\nThe rule since the 2026-10-28 outages: failure paths are proven in CI before they reach\nthe Mac. The update rehearsal does that for updates. Nothing yet kills\nthe API or Postgres and checks the UI still loads. \"No crash breaks everything\" is a promise only a\ntest can keep.\n\n## Description\n\n### 1. The harness\n\n`.github/workflows/fault-rehearsal.yml`, verdict job **fault-rehearsal**, built on the update\nrehearsal's kit (`tools/rehearsal/build.sh`, `postgres.s",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -3953,7 +4196,7 @@
       "title": "Dashboards and home analytics",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.12 — Dashboards and home analytics\n\n> Epic 53 · Phase 2 · Depends on: 53.09 · Needed by: 53.13\n\n## Why\n\nThe services export Prometheus metrics (`/metrics` on the API admin port with the supervisor's\nupdate metrics; the pipeline's own exporter), but nothing keeps their history. The queue tiles\n(Epic 40) show now, not last week. Plex puts bandwidth, resources and history behind Plex Pass and\npeople still install Tautulli. The owner wants dashboards inside Maktaba.\n\n## Description\n\n### 1. Rollups (README D9)\n\nThe `logs` role scrapes every local `/metrics` endpoint every **15 s** (API, ",
+      "content": "# Story 53.12 — Dashboards and home analytics\n\n> Epic 53 · Phase 2 · Depends on: 53.09 · Needed by: 53.13\n\n## Why\n\nThe services export Prometheus metrics (`/metrics` on the API admin port with the supervisor's\nupdate metrics; the pipeline's own exporter), but nothing keeps their history. The queue tiles\n(Epic 40) show now, not last week. Plex puts bandwidth, resources and history behind Plex Pass and\npeople still install Tautulli. Maktaba needs its dashboards built in.\n\n## Description\n\n### 1. Rollups (README D9)\n\nThe `logs` role scrapes every local `/metrics` endpoint every **15 s** (API, stre",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4161,7 +4404,7 @@
       "title": "The OS sandbox and the egress tests",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.03 — The OS sandbox and the egress tests\n\n> Epic 54 · Phase 1 · Depends on: 54.02 · Needed by: 54.16\n\n## Why\n\n## Description\n\n### 1. When the sandbox is applied\n\n`maktaba-plugind` applies its sandbox in `main()` after opening its two unix sockets and its\ncache folder, and **before** reading any plugin. If any required step fails it exits with code\n78 and `sandbox_unavailable:<step>`; the supervisor reports `plugins.host` *Failed* with that\nreason, and no plugin runs.\n\n### 2. macOS\n\n- A Seatbelt profile `plugind.sb` ships in the app bundle (`Contents/Resources/`), applied with\n  `san",
+      "content": "# Story 54.03 — The OS sandbox and the egress tests\n\n> Epic 54 · Phase 1 · Depends on: 54.02 · Needed by: 54.16\n\n## Why\n\nThe WebAssembly layer (54.02) is the main wall: a plugin cannot name a socket. But one bug in\nWasmtime would turn a plugin into native code with the server user's rights, which include the\nnetwork. The rule is: no internet, enforced, not promised. This story puts the host\nprocess itself in each operating system's sandbox, with no network and almost no files, and\nproves it in CI on every OS with native code that tries to get out and must fail.\n\n## Description\n\n### 1. When the",
       "tags": [
         "story",
         "54-plugins",
@@ -4244,7 +4487,7 @@
       "title": "Plugin stages in the queue: events, schedules, dispatch",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.06 — Plugin stages in the queue: events, schedules, dispatch\n\n> Epic 54 · Phase 1 · Depends on: 54.02, 54.04 · Needed by: 54.07, 54.20\n\n## Why\n\n## Description\n\n### 1. The plugin loader\n\n`pipeline/src/maktaba_pipeline/plugins/loader.py` turns each **enabled** plugin install (54.07)\ninto a `PluginExtension` that satisfies the existing `Extension` protocol\n(`extensions/base.py`), so the graph build path is the one built-in extensions use:\n\n- `manifest`: name `plugin:<id>`, version, stage names (`p_<hash>_<name>`, 54.01 §4).\n- `register(graph)`: for each `[[stage]]` a `StageDef` with `e",
+      "content": "# Story 54.06 — Plugin stages in the queue: events, schedules, dispatch\n\n> Epic 54 · Phase 1 · Depends on: 54.02, 54.04 · Needed by: 54.07, 54.20\n\n## Why\n\nThe requirement is a queue extender. Maktaba's queue already knows how to claim, retry,\ndrain, park and explain jobs (Epics 6, 40, 51). A plugin stage should be a normal stage in that\nqueue, shown on the Queues page with its own tile, with nothing new to learn for the owner,\nwhile its code runs in the plugin host instead of the worker.\n\n## Description\n\n### 1. The plugin loader\n\n`pipeline/src/maktaba_pipeline/plugins/loader.py` turns each **e",
       "tags": [
         "story",
         "54-plugins",
@@ -4691,7 +4934,7 @@
       "title": "First-party plugins: the trusted manifest and release signing",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.22 — First-party plugins: the trusted manifest and release signing\n\n> Epic 54 · Phase 4 · Depends on: 54.01, Epic 51 (51.15) · Needed by: 54.23, 54.24, 54.27\n\n## Why\n\n## Description\n\n### 1. The manifest schema grows, once\n\n`shared/plugins/manifest.schema.json` (54.01) gains:\n\n- `runtime`: `\"wasm\"` (default) or `\"native-python\"`.\n- `[trusted]`: `runner`, `db.read`, `db.write`, `statements`, `settings`, `files.read`,\n  `files.write`, `exec`, `gpu`, `net`, `service`, `component` (README §15.4, §15.5).\n- In `[[stage]]`, the `StageDef` fields third-party plugins can't use: exact `name`, ",
+      "content": "# Story 54.22 — First-party plugins: the trusted manifest and release signing\n\n> Epic 54 · Phase 4 · Depends on: 54.01, Epic 51 (51.15) · Needed by: 54.23, 54.24, 54.27\n\n## Why\n\nMaktaba's own stages are to be plugins on the same interface as third-party ones\n(README §15). They need rights no third-party plugin may have: their own SQL, library files,\nffmpeg, the GPU, sometimes the network. Those rights must be **declared**, **reviewed**, and\n**unlockable only by Maktaba's release signature**, or \"first-party\" becomes a back door any\npackage could claim.\n\n## Description\n\n### 1. The manifest sche",
       "tags": [
         "story",
         "54-plugins",

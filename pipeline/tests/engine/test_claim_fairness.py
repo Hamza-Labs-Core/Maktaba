@@ -1,6 +1,6 @@
 """No stage of a pool starves (2026-11-02): the claim shares a pool among its stages.
 
-On the owner's home the thumbnail stage (70k jobs at priority 900) had not run since
+On a real home the thumbnail stage (70k jobs at priority 900) had not run since
 2026-10-22: nas_read has two slots, and thumb_small and chapter_thumbs (42k jobs at 100)
 always had the next job under a strict ``ORDER BY priority, id``. The claim now gives each
 priority class claims in inverse proportion to its priority (stride scheduling over

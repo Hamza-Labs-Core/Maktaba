@@ -9,8 +9,9 @@ once with ``hf auth login``, then publishes a copy to the share that the other m
 load from, :mod:`~.model_share`) or the dictionary's data (``camel_data -i morphology-db-msa-r13``,
 fetched here on first use) stores Whisper's transcript as it is and says why in the
 transcript's metadata. So does a Windows or Linux machine without an NVIDIA GPU that holds
-the model beside Whisper (:func:`unavailable`), and, until the model is loaded, one whose
-GPU has too little free memory for it at that moment.
+the model (beside Whisper, or with Whisper off it while it runs, :mod:`.gpu_turns`:
+:func:`unavailable`), and, until the model is loaded, one whose GPU has too little free
+memory for it at that moment.
 """
 
 from __future__ import annotations
@@ -36,7 +37,10 @@ __all__ = [
     "Recogniser",
     "dictionary",
     "load_failure",
+    "forget_failure",
     "loaded",
+    "loaded_recogniser",
+    "loaded_recogniser_all",
     "recogniser",
     "unavailable",
 ]
@@ -145,8 +149,8 @@ def unavailable(device: str | None = None) -> str | None:
     """Why this machine has no second listen at all, or None: its transcripts then keep
     Whisper's words, and ``models download`` fetches neither the model nor the dictionary.
     Apple Silicon always has one; Windows and Linux need torch's CUDA and an NVIDIA GPU that
-    holds the model beside Whisper (:func:`.cohere_cuda.problem`). ``device`` is Whisper's
-    (``MAKTABA_STT_DEVICE`` when not given)."""
+    holds the model, beside Whisper or taking turns with it (:func:`.cohere_cuda.problem`).
+    ``device`` is Whisper's (``MAKTABA_STT_DEVICE`` when not given)."""
     if engine.current() == engine.MLX:
         return None
     from . import cohere_cuda
@@ -157,7 +161,11 @@ def unavailable(device: str | None = None) -> str | None:
 
 
 def recogniser(
-    model_id: str, share: Path | None = None, settings: WhisperSettings | None = None
+    model_id: str,
+    share: Path | None = None,
+    settings: WhisperSettings | None = None,
+    *,
+    beside_whisper: bool = True,
 ) -> Recogniser:
     """The process's recogniser for ``model_id``, loaded on first use: from Hugging Face,
     else from the copy on ``share`` (the share's models folder, :mod:`~.model_share`).
@@ -165,7 +173,8 @@ def recogniser(
     has no room for it now. A failed load and a GPU without room alike are not tried again
     until their backoff is over (:func:`load_failure`). A Hugging Face load publishes the
     snapshot to ``share`` (once per process, on a thread of its own). ``settings`` are
-    Whisper's: on CUDA the second listen uses its GPU and leaves room for its batch."""
+    Whisper's: on CUDA the second listen uses its GPU and leaves room for its batch, unless
+    the two take turns on it (``beside_whisper`` False, :mod:`.gpu_turns`)."""
     cuda = engine.current() != engine.MLX
     why = unavailable(settings.device if settings is not None and cuda else None)
     if why is not None:
@@ -185,14 +194,16 @@ def recogniser(
                 # it waits out its backoff like a failed load, so that a worker does not
                 # make every transcript without its second listen meanwhile
                 try:
-                    full = cohere_cuda.room(model_id, settings or WhisperSettings())
+                    full = cohere_cuda.room(
+                        model_id, settings or WhisperSettings(), beside_whisper=beside_whisper
+                    )
                 except Exception as exc:  # noqa: BLE001 - the driver's answer: no room known
                     full = f"the GPU's free memory could not be read: {type(exc).__name__}: {exc}"
                 if full is not None:
                     _failed(model_id, full, "cohere.no_room", no_room=True)
                     raise NoRoom(full)
             try:
-                rec = _REC[model_id] = _open(model_id, share, settings)
+                rec = _REC[model_id] = _open(model_id, share, settings, beside_whisper)
             except Exception as exc:
                 _failed(model_id, f"{type(exc).__name__}: {exc}", "cohere.load_failed")
                 raise
@@ -222,25 +233,52 @@ def load_failure(model_id: str) -> str | None:
     return f"{f.message} (tried {f.tries}x; next try in {round(left / 60)} min)"
 
 
+def forget_failure(model_id: str) -> None:
+    """Forget ``model_id``'s last failed load or missing room: the next use tries at once
+    (the GPU was made room on: Whisper is off it in the second listen's turn)."""
+    _FAILED.pop(model_id, None)
+
+
 def loaded(model_id: str) -> bool:
     """The process has ``model_id`` loaded already (no need to look for the share)."""
     return model_id in _REC
 
 
+def loaded_recogniser(model_id: str) -> Recogniser | None:
+    """The process's recogniser for ``model_id`` when it is loaded, else None."""
+    return _REC.get(model_id)
+
+
+def loaded_recogniser_all() -> list[Recogniser]:
+    """Every recogniser the process has loaded."""
+    return list(_REC.values())
+
+
 def _new(
-    model_id: str, path: Path | None, source: str, settings: WhisperSettings | None
+    model_id: str,
+    path: Path | None,
+    source: str,
+    settings: WhisperSettings | None,
+    beside_whisper: bool = True,
 ) -> Recogniser:
     """A recogniser on this machine's engine."""
     if engine.current() == engine.MLX:
         return CohereRecogniser(model_id, path, source=source)
     from .cohere_cuda import CudaRecogniser
 
-    return CudaRecogniser(model_id, path, source=source, settings=settings)
+    return CudaRecogniser(
+        model_id, path, source=source, settings=settings, beside_whisper=beside_whisper
+    )
 
 
-def _open(model_id: str, share: Path | None, settings: WhisperSettings | None = None) -> Recogniser:
+def _open(
+    model_id: str,
+    share: Path | None,
+    settings: WhisperSettings | None = None,
+    beside_whisper: bool = True,
+) -> Recogniser:
     try:
-        rec = _new(model_id, None, "hf", settings)
+        rec = _new(model_id, None, "hf", settings, beside_whisper)
     except Exception as hf_exc:  # noqa: BLE001 - gated, not logged in, offline: the share
         if engine.current() != engine.MLX:
             from .cohere_cuda import LoadError
@@ -254,7 +292,7 @@ def _open(model_id: str, share: Path | None, settings: WhisperSettings | None = 
                 f"Hugging Face: {type(hf_exc).__name__}: {hf_exc} | share: {exc}"
             ) from hf_exc
         _log.info("stt.model_from_share", model=model_id, folder=str(path), hf_error=str(hf_exc))
-        return _new(model_id, path, "share", settings)
+        return _new(model_id, path, "share", settings, beside_whisper)
     if share is not None and model_id not in _PUBLISHED:
         _PUBLISHED.add(model_id)
         threading.Thread(

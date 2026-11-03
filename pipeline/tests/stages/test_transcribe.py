@@ -73,6 +73,8 @@ def fake(monkeypatch: pytest.MonkeyPatch) -> FakeTranscriber:
     monkeypatch.setattr(tr, "decode_audio", decode)
     monkeypatch.setattr(tr, "get_transcriber", lambda settings: f)
     monkeypatch.setattr(tr, "use_vad", lambda: False)  # the fake audio is silence
+    # the second listen passes the transcript on (tests/stages/test_second_listen.py: on)
+    monkeypatch.setenv("MAKTABA_STT_REFINE", "0")
     return f
 
 
@@ -92,8 +94,8 @@ async def test_a_transcript_and_its_subtitle_files(
     rt = await core_runtime(db)
     vid, media = await _one_video(db, tmp_path)
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
-    ran = await drain_core(db, rt, only={"transcribe", "subtitle_gen"})
-    assert ran == ["transcribe", "subtitle_gen"]
+    ran = await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
+    assert ran == ["transcribe", "second_listen", "subtitle_gen"]
 
     t = await db.fetchrow(
         "SELECT id, language, backend, model FROM transcripts WHERE video_id = $1 AND is_active",
@@ -123,7 +125,7 @@ async def test_a_transcript_and_its_subtitle_files(
 
     # unchanged input: skipped, the model is not run again
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
-    await drain_core(db, rt, only={"transcribe", "subtitle_gen"})
+    await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
     assert fake.calls == 1
 
 
@@ -164,7 +166,7 @@ async def test_a_subtitle_file_maktaba_did_not_write_is_left_alone(
     mine = media.with_name("درس السيرة 01.ar.srt")
     mine.write_text("1\n00:00:00,000 --> 00:00:01,000\nhand made\n", encoding="utf-8")
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
-    await drain_core(db, rt, only={"transcribe", "subtitle_gen"})
+    await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
     assert "hand made" in mine.read_text(encoding="utf-8")  # untouched
     assert media.with_name("درس السيرة 01.ar.vtt").exists()  # the other one is written
     summary = await db.fetchval(
@@ -244,7 +246,7 @@ async def test_a_subtitle_file_identical_to_ours_is_ours_even_unrecorded(
     vid, media = await _one_video(db, tmp_path)
     media.with_name("درس السيرة 01.ar.srt").write_text(srt(LINES), encoding="utf-8")
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
-    await drain_core(db, rt, only={"transcribe", "subtitle_gen"})
+    await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
     rows = await db.fetch(
         "SELECT format FROM subtitle_files WHERE video_id = $1 AND deleted_at IS NULL"
         " ORDER BY format",

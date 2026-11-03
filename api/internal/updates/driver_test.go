@@ -24,7 +24,7 @@ type fakeMachine struct {
 	onApply   func()
 	installer string
 	// asks: a desktop app: apply orders, the app stages it (on the next status, unless
-	// appSlow), then apply again is the go (no click: owner decision D1, 2026-10-27)
+	// appSlow), then apply again is the go (no click: decision D1, 2026-10-27)
 	asks, appSlow bool
 	// legacy: a supervisor from before that decision: apply orders (awaiting_click), a
 	// click there (clicked), then apply again

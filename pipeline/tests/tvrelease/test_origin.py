@@ -1,4 +1,4 @@
-"""The owner's rule of 2026-10-28, "only manual needs approval": who made a TV change
+"""The rule of 2026-10-28, only a manual change needs an approval: who made a TV change
 (``tv_changes.origin``, slot 0169) decides whether it waits for an admin. The channel
 plan's and the schedule's changes are automatic; a person's change, or one a person's
 edit joined, is manual."""

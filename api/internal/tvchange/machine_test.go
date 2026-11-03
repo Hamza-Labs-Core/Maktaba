@@ -133,7 +133,7 @@ func TestAutoPromoteRules(t *testing.T) {
 
 // TestDefaultsAutoRules: the shipped rules (schema.json, from the pipeline's
 // MaktabaTvStagingConfig) put every kind's automatic change on the air once verified
-// (the owner's rule of 2026-10-28: only a manual change needs an approval), and a
+// (rule of 2026-10-28: only a manual change needs an approval), and a
 // stored "approval" from before reads as immediate.
 func TestDefaultsAutoRules(t *testing.T) {
 	c, err := LoadConfig(t.Context(), nil)

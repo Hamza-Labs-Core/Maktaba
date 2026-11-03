@@ -1,6 +1,6 @@
 # Epic 54: Plugins: new functions from the queue, with no internet, from a Maktaba store
 
-> **Status:** spec (2026-11-03; owner decisions applied in §14; first-party plugins added in
+> **Status:** spec (2026-11-03; decisions applied in §14; first-party plugins added in
 > §15). **Builds on:** [Epic 51](../51-configurable-components/README.md)
 > (components, desired and actual state, drain without lost work, signed packs, offline import),
 > [Epic 6](../06-job-queue/README.md) (the queue), [Epic 40](../40-queue-health/README.md)
@@ -16,9 +16,9 @@
 
 ## 1. Why
 
-The owner, 2026-11-03: *"Spec a third-party no internet calling plugging queue extender that
-allows new functions by interacting with queues and maktaba API and a store for such
-plugins/jobs"*.
+Requirement: a plugin system for third-party queue extenders that never call the internet and
+add new functions by working with the queues and the Maktaba API, and a store for those
+plugins.
 
 In short: other people can add functions to Maktaba. A plugin takes jobs from the queue, reads
 what it is allowed to read through the Maktaba API, and writes results back. It can never
@@ -85,7 +85,7 @@ strangers. Epic 51 left a store to "a later epic on this model" (Epic 51 H5). Th
 7. **A good developer experience.** An SDK and templates for Rust, JavaScript/TypeScript,
    Python and Go (TinyGo), a local test harness with a mock Maktaba API, and docs.
 8. **English and Arabic** for every Maktaba string, and every store-listed plugin's strings.
-9. **Maktaba's own stages are plugins too** (owner, 2026-11-03). All 56 of today's stages move,
+9. **Maktaba's own stages are plugins too** (decided 2026-11-03). All 56 of today's stages move,
    stage by stage with no downtime and no data loss, into first-party plugins that use the same
    manifest, dispatch and plugin API as third-party ones, with a trusted capability set that
    only Maktaba's release signature unlocks (§15).
@@ -243,7 +243,7 @@ useless off the box.
 
 - The manifest marks each capability `required` or `optional`. At install the admin sees them
   in plain words (English and Arabic, from Maktaba's strings, not the plugin's), picks the
-  libraries (**none ticked**: the admin ticks each one; owner decision 2026-11-03), and can
+  libraries (**none ticked**: the admin ticks each one; decided 2026-11-03), and can
   untick optional ones. The plugin is told which it has (`job.grants()`).
 - **A plugin's rating** is shown like Home Assistant's add-on rating: from the capabilities it
   asks for and whether the store reviewed it (story 54.08).
@@ -303,7 +303,7 @@ schema      = "ui/settings.schema.json"         # JSON Schema subset; no secret 
 [[panel]]                                       # Phase 3
 on          = "video"
 schema      = "ui/panel.json"
-# shown to everyone in the home who can see the subject, viewers included (owner decision 2026-11-03)
+# shown to everyone in the home who can see the subject, viewers included (decided 2026-11-03)
 ```
 
 The manifest is validated by one schema (`shared/plugins/manifest.schema.json`) in the Go API,
@@ -512,7 +512,7 @@ down. The reasons, in short (story 54.15 has them in full):
 3. They upload a package signed with their key, plus a **source archive** (required for every
    version, kept private to reviewers) and release notes in English and Arabic. A store
    listing needs English **and** Arabic strings; machine translation is allowed and labelled
-   on the listing (owner decision 2026-11-03).
+   on the listing (decided 2026-11-03).
 4. **Automated checks** (story 54.16) run in ≤ 30 minutes: manifest schema; signature; size;
    the import audit (only allowed interfaces; every imported `maktaba:plugin` interface covered
    by a declared capability, and declared capabilities not imported flagged); a malware scan;
@@ -523,7 +523,7 @@ down. The reasons, in short (story 54.15 has them in full):
 5. **Human review** for every first submission, every version that adds a capability or a
    panel, and every version the automated checks flag. Reviewers see the checks report, the
    call trace and the source. **Every version's source archive goes to reviewers** and is
-   kept private (owner decision 2026-11-03); a version without one is refused.
+   kept private (decided 2026-11-03); a version without one is refused.
 6. On approval the store **countersigns** and publishes. On rejection the developer gets the
    reasons from a fixed list plus notes.
 
@@ -548,8 +548,8 @@ down. The reasons, in short (story 54.15 has them in full):
   - `delist`: removed from the catalog; installed copies keep working.
 - **The admin's "keep off"** is the home's own switch, not the store's: when an admin
   disables a plugin, it stays off through plugin updates, server updates and rollbacks,
-  backup restores and reinstalls of the same plugin id, until an admin turns it on (owner
-  decision 2026-11-03). It is stored per plugin id in `plugin_keep_off`, outside the install
+  backup restores and reinstalls of the same plugin id, until an admin turns it on (decided
+  2026-11-03). It is stored per plugin id in `plugin_keep_off`, outside the install
   row, so removing and reinstalling the plugin does not clear it. A store `disable` and a
   keep-off can both apply; turning keep-off off never undoes a store `disable`.
 - **How fast:** every home, linked or not, polls a tiny signed `revoked-head.json` on the CDN
@@ -577,7 +577,7 @@ down. The reasons, in short (story 54.15 has them in full):
 
 ### 6.5 Free and paid plugins (Phase 3)
 
-Owner decisions of 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
+Decisions of 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
 any Stripe-owned service such as Lemon Squeezy); Maktaba keeps **15 %** of each paid plugin
 sale and the developer gets **85 %**; publishing free plugins is free, selling needs a
 **one-time $25** developer fee. Payments belong to the store, not to Maktaba Cloud: its own
@@ -721,7 +721,7 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | T1 | **A malicious plugin tries to send data out** (sockets, DNS, HTTP) | No network interfaces linked in Wasm (§5.2); OS sandbox on the host (§5.3); CI escape probes with a canary (§5.4); no `network` capability exists. |
 | T2 | **…through Maktaba's own networked parts** (writes data that Plex sync, the cloud relay, telemetry or a problem report then carries out) | Every plugin write is attributed. First-party exporters (Plex collections, telemetry, problem reports to Maktaba, the cloud's metadata cache) skip `origin = plugin:*` fields and `plugin_data` unless an admin turns on "share with Plex" per plugin. Problem reports never include plugin data or logs unless the admin ticks them (Epic 53.15). |
 | T3 | **…through files on disk** (subtitle files written next to videos on a NAS that syncs to the cloud) | Only `subtitles.write` writes next to media; content is parsed as WebVTT/SRT and re-serialised by Maktaba (no arbitrary bytes), ≤ 4 MB, names chosen by Maktaba. Other artifacts live under `<data>/plugins/`. Documented: the owner's own sync of media folders is outside Maktaba. |
-| T4 | **…through the apps** (a panel or string that makes an app fetch a URL: a beacon) | Panels and strings are plain text; URLs, HTML and markdown links are refused by the API and again by each app's renderer; images only as home-served artifacts; CI test in every app. **Panels are shown to everyone in the home, viewers included, once the plugin is installed, with no separate viewer approval** (owner decision 2026-11-03). The guard is the store review (a person reviews every first submission and every version that adds a panel) plus the read-only, data-only panel schema; the admin can still disable or uninstall the plugin at any time, and viewers see panels only on subjects their library access allows. |
+| T4 | **…through the apps** (a panel or string that makes an app fetch a URL: a beacon) | Panels and strings are plain text; URLs, HTML and markdown links are refused by the API and again by each app's renderer; images only as home-served artifacts; CI test in every app. **Panels are shown to everyone in the home, viewers included, once the plugin is installed, with no separate viewer approval** (decided 2026-11-03). The guard is the store review (a person reviews every first submission and every version that adds a panel) plus the read-only, data-only panel schema; the admin can still disable or uninstall the plugin at any time, and viewers see panels only on subjects their library access allows. |
 | T5 | **…through another plugin** (collusion: one reads, another leaks) | No plugin can leak (T1–T4), and cross-plugin reads need `plugin-data.read:<id>` granted by the admin and an explicit export by the other plugin. |
 | T6 | **Reading more than granted** | Server-side scope checks per call; tokens bound to job, subject, libraries, grant generation, expiry; the guest never holds the token. Role tests and capability tests for every interface. |
 | T7 | **Escaping Wasm** (a Wasmtime bug) | The OS sandbox still denies network and files; Wasmtime pinned and patched within 14 days of an advisory; fuzzing of host functions (`cargo fuzz`) in nightly CI. |
@@ -910,7 +910,7 @@ each needs the previous one green in a tagged release.
 | update-rehearsal scenario 15 | gates every tag | an installed plugin survives a server update and a rollback; an incompatible one goes *Waiting* `incompatible`, not *Failed* |
 | update-rehearsal scenario 16 (one per wave) | gates every tag of a Phase 4 wave | a home updated mid-queue across the flip: no job lost or rerun, the wave's stages run as plugins, and a rollback runs them in-process again |
 
-## 14. Owner decisions (2026-11-03)
+## 14. Decisions (2026-11-03)
 
 Items 1 and 3–9 are decided. Open: the payment provider (item 2, at Phase 3), the
 email provider (item 10) and the isolated check runner (item 11).
@@ -953,7 +953,7 @@ email provider (item 10) and the isolated check runner (item 11).
 
 ## 15. Maktaba's own stages as first-party plugins
 
-The owner, 2026-11-03, added to this epic: turn **all** of Maktaba's own queues and stages into
+Added to this epic on 2026-11-03: turn **all** of Maktaba's own queues and stages into
 first-party Maktaba plugins that use the same plugin interface as third-party ones. This
 section is that design. Stories 54.22–54.36 build it (Phase 4, §8).
 

@@ -7,8 +7,8 @@
 
 A flagger that is never measured drifts into one of two failures: it flags too much (reviewers
 give up) or it misses the words that matter. The hearing tests (2026-10-19, [#113]) showed that
-judgement without measurement goes wrong: an LLM judge preferred turbo's tidy spelling, and the
-owner's ears found Cohere right 17 times out of 20. This story builds the yardstick first:
+judgement without measurement goes wrong: an LLM judge preferred turbo's tidy spelling, and a
+check by ear found Cohere right 17 times out of 20. This story builds the yardstick first:
 a gold set, the metrics, and per-language calibration curves for Whisper's word probability.
 
 ## Description
@@ -21,7 +21,7 @@ a gold set, the metrics, and per-language calibration curves for Whisper's word 
 | Quran recitation inside lectures | 15 min | The same files |
 | English talks | 1 h | The home's library |
 | Code-switched Arabic/English | 30 min | The same |
-| The owner's 20 disputed hearing-test spots | 20 clips | The 2026-10-19 test notes |
+| The 20 disputed hearing-test spots | 20 clips | The 2026-10-19 test notes |
 
 Each clip has a **reference transcript** corrected by a person (the owner or a reviewer they
 choose), in the library's own spelling: hamza written, «ة» and «ى» as the dictionary spells them.

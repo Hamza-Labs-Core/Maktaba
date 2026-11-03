@@ -12,6 +12,28 @@ build fails when the two differ.
 
 ## [Unreleased]
 
+### Changed
+
+- **The second listen is a stage of its own, and an 8 GB card on Windows runs it.** Whisper's
+  `transcribe` stores its transcript with each sentence's words (their timings), and a new
+  `second_listen` stage (its own `listen` pool, per machine) reads that transcript and the
+  file's audio, runs Cohere Transcribe Arabic and stores the corrected transcript as the
+  video's active one; subtitles, the search index and tags follow it, so they run once, on
+  the corrected words. A machine that cannot run the second listen still transcribes, and
+  one that can corrects its transcripts. On a GPU that holds Whisper and Cohere together
+  (9.5 GiB and up on Windows, 7.5 elsewhere, as measured from the driver's free memory, not
+  the operating system) both stay loaded; on a smaller one (from 7.5 GiB on Windows, 6
+  elsewhere: the RTX 2080 SUPER) the two take turns: one model on the GPU at a time, each for
+  a batch of files (at most 30 minutes while the other waits), the idle one's weights moved
+  to the host's memory and back in a few seconds instead of loaded again from disk. Admin >
+  Machines says how a machine runs the second listen (beside Whisper, taking turns, or why
+  not) in English and Arabic, and the queue shows the new stage. The supervisor's STT workers
+  run both stages, the installers and the venv bootstrap give an 8 GB Windows card torch's
+  CUDA build, and "Transcribe without the second listen" now lets a machine without it pass
+  a transcript on after 15 minutes, for one with it first. Transcripts made before (without
+  stored words) that lack their second listen are transcribed again by a machine that runs
+  it, a few at a time.
+
 ### Fixed
 
 - **Android: Favorite or Mark watched tapped while a video's page is read again stays as
@@ -164,7 +186,7 @@ build fails when the two differ.
   Remote says what the web admin says, in the web's own Arabic for each state, step and code; a
   value it has no words for is still shown as the home sent it. A unit test and lint now fail
   any Android or Android TV string that has no Arabic.
-- **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the owner's
+- **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the project's
   standing rules, the decisions and why, failures and their fixes, the live state, the work in
   flight, what waits on the owner and the release history. `CLAUDE.md` tells every session to
   read it first and add to it before it ends.

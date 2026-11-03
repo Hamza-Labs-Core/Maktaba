@@ -47,7 +47,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
 /**
- * The sign-in forms from the keyboard (the owner: "sign in need the next field arrow"): the
+ * The sign-in forms from the keyboard (each field needs a Next key to the next field): the
  * keyboard's Next on a field moves to the next one, and its Go on the last one signs in. The
  * home's and the cloud's sign-ins talk to a MockWebServer that refuses them; what is checked is
  * that the sign-in was sent.

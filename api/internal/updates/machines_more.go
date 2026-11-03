@@ -36,8 +36,8 @@ func (d *Driver) clusterRelease(ctx context.Context) (string, error) {
 	}
 	if !d.homeSettledOn(ctx, cur) {
 		// the home runs it but has not committed it (its watch goes on after its run gave
-		// up on it, home_timeout): the machines follow once it commits, never before (the
-		// owner's decision, 2026-10-28)
+		// up on it, home_timeout): the machines follow once it commits, never before
+		// (decided 2026-10-28)
 		return wm, nil
 	}
 	if err := d.Store.RaiseWatermark(ctx, cur); err != nil {

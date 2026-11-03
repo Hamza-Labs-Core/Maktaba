@@ -27,8 +27,8 @@ const (
 	SourceRollback = "rollback"
 )
 
-// Origins of a change (tv_changes.origin, migration 0169; the owner's rule of
-// 2026-10-28, "only manual needs approval").
+// Origins of a change (tv_changes.origin, migration 0169; rule of 2026-10-28: only a
+// manual change needs approval).
 const (
 	// OriginAuto: the system made it (a channel plan, a schedule release, the updater's
 	// binary change, a rollback no person asked for). It goes on the air by its kind's

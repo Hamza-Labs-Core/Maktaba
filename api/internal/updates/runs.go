@@ -39,7 +39,7 @@ const (
 // drained, and a newer release may take its place.
 const StepWaitingApp = "waiting_app"
 
-// StepWaitingClick is that step as runs from before owner decision D1 was replaced
+// StepWaitingClick is that step as runs from before decision D1 was replaced
 // (2026-10-27) name it (they waited for clicks): read as StepWaitingApp.
 const StepWaitingClick = "waiting_click"
 
@@ -65,7 +65,7 @@ const (
 	TargetConverting = "converting"
 	// A desktop app that runs the server: ordered, its app stages the release (the
 	// rollout goes on with the others), then it waits for its turn (app_staged) and
-	// installs at its go, with no click (owner decision D1, 2026-10-27).
+	// installs at its go, with no click (decision D1, 2026-10-27).
 	TargetOrdered   = "ordered"
 	TargetAppStaged = "app_staged"
 	// TargetWaitingClick and TargetClicked are those two states as runs from before

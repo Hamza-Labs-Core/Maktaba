@@ -7,11 +7,9 @@
 
 ## 1. Why
 
-The owner, 2026-10-31, after opening the Player apps:
-
-> "Why the player app starts light, seem no theme, and very basic no nav, only libraries view,
-> where plex like? where is tv? is that epic really DONE??? why both app sign in page so basic,
-> no logos, no theme like web?"
+A review of the Player apps on 2026-10-31 found five gaps: the app starts light with no theme;
+there is no navigation, only a libraries view, nothing like Plex; there is no TV; Epic 42 was
+called done anyway; and both apps' sign-in pages are bare, with no logo and no theme like the web's.
 
 Epic 42 asked the Player for "home by address, sign-in, libraries, a video, watching" (story
 42.1). That was built, tested and called done. It is a list of videos with a play button. The
@@ -233,7 +231,7 @@ and Android (phone, foldable, tablet).
   already declared; Android: a `MediaSessionService`); Now Playing (title, art, position) and
   remote commands (play, pause, ±10 s, next).
 - **FR-39a** **Sound**: every video with an audio stream plays with sound on every Player and
-  the web. The owner's TestFlight report on 0.3.44, "no audio", was not the Player: the transcribe
+  the web. A TestFlight report on 0.3.44 of no audio was not the Player: the transcribe
   stage wrote a bare `audio_tracks` row (no codec, no channels) before the probe's, whose insert
   then did nothing, and streaming read "no codec, 0 channels" as "no audio" and transcoded
   without any. 32,381 of 148,589 probed videos on the owner's home were silent this way. Fixed in
@@ -282,7 +280,7 @@ a mid tablet; home on the LAN unless said. Each has its test in the stories.
 
 ### Language
 
-- **NFR-10** English and Arabic in the same PR, every string (the owner's rule):
+- **NFR-10** English and Arabic in the same PR, every string (project rule):
   `tools/apple/check-string-catalogs.py` and Android's `TranslationsTest` fail on a missing one.
   Arabic wording reuses `web/src/i18n/ar.json`; "the home" is «الجهاز الرئيسي».
 - **NFR-11** RTL: layouts mirror, rows start on the right, the scrubber and ±10 s mirror,
@@ -394,7 +392,7 @@ keeps native types, and the source stays one file the web already owns.
 
 Decided: **in**, as its own track (stories 48.34, 48.35).
 
-- The owner's "where is tv?" is about the TV most of all; shipping Live TV on the phone but not
+- The missing TV in the review is about the television most of all; shipping Live TV on the phone but not
   on the television would repeat Epic 42's gap.
 - The hard parts are shared and built here anyway: the Live client (48.7, 48.9), and the server
   fix G1 that must land before any native live player.
@@ -408,7 +406,7 @@ Decided: **in**, as its own track (stories 48.34, 48.35).
   half-built screen must never be reachable: the shell (48.13, 48.15) shows only the sections
   whose screens have merged (one list, `PlayerSection.enabled`); each screen story turns its
   section on.
-- One release at a time (the owner's rule): this epic adds no release step; its PRs ride the
+- One release at a time (project rule): this epic adds no release step; its PRs ride the
   normal releases.
 
 ## 8. Stories
@@ -541,7 +539,7 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
         the full one on iPad, Mac and TV, from 48.5), at its own shape (a portrait video's
         poster is not cropped to 16:9); with no poster (404), a placeholder of the same size
         shows the title on the brand colour. Snapshot tests: with a poster, without, dark en/ar.
-        (The owner's TestFlight report on 0.3.44: "no thumbnail on video page".)
+        (A TestFlight report on 0.3.44: no thumbnail on the video page.)
   - [ ] Deep links: `maktaba://video/{id}` opens this page (FR-9); a video the user may not see
         shows "not available".
 - **48.20 Search.** FR-19, FR-20.
@@ -578,8 +576,8 @@ Apple (after 48.13 and 48.14; Files: `apps/apple/Player/<Screen>/*` and its cata
         sound, and progress keeps reporting from the phone; checked by hand once per release
         candidate and written in the PR (an AirPlay receiver can't run in CI).
   - [x] Prerequisites, already in place: the audio session's `.playback` category with
-        `.moviePlayback` (`Playback.play`) and the `audio` background mode. The owner's
-        TestFlight report on 0.3.44: "no air play".
+        `.moviePlayback` (`Playback.play`) and the `audio` background mode. A
+        TestFlight report on 0.3.44: no AirPlay.
   - [x] Now Playing has title, art, position; remote play / pause / skip work (`MPRemoteCommandCenter`
         test hooks).
   - [x] Live TV too: the AirPlay and PiP buttons on the live player, Now Playing (channel,
@@ -628,8 +626,8 @@ TV (own track):
   `ui/SignedInApp.kt`, `ui/components/TopBar.kt`, `data/TvApi.kt`, strings.
   - [ ] The same, D-pad only; a JVM test for the guide's focus moves.
 
-Both platforms (owner request, 2026-11-01: "Connecting to home needs more info on the apps, like
-connecting, pending whatever, same on retry"):
+Both platforms (request of 2026-11-01: connecting to a home shows more in the apps, such as
+connecting and pending, and the same on retry):
 
 - **48.37 Connect progress: never a bare spinner.** Apple files: MaktabaKit `ConnectProgress.swift`,
   `ConnectProgressView.swift`, `Connect.swift` (`HomeProbe`), `Homes.swift` (`AppSession`: connect,
@@ -664,7 +662,7 @@ connecting, pending whatever, same on retry"):
   - [ ] Every screen walked on a branch stack (scratch Postgres, never the live DB): iPhone,
         iPad, Mac, Pixel phone, a foldable emulator, a tablet emulator, Apple TV and Android TV
         simulators; dark, English and Arabic; the screenshots attached to the PR.
-  - [ ] The owner's first five complaints each answered by a screenshot.
+  - [ ] The five gaps the review found (§1) each answered by a screenshot.
 
 ## 9. Acceptance
 

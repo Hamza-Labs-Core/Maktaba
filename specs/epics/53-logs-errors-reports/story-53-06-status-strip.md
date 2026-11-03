@@ -117,7 +117,7 @@ See §3, plus `web/src/i18n/en.json` / `ar.json`, `apps/apple/MaktabaKit/Sources
 
 ### Tests
 
-T01–T04 in each app's unit job; T05 in the CI UI jobs only (owner rule: no local Mac or
+T01–T04 in each app's unit job; T05 in the CI UI jobs only (project rule: no local Mac or
 simulator UI runs); T06 in the fault rehearsal.
 
 ### Rollout
