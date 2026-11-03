@@ -96,6 +96,22 @@ Changes limited to `specs/`, `docs/` or Markdown files run only the jobs whose f
 include those files, so they usually finish quickly. They still need a clear summary and
 a review.
 
+## English and Arabic
+
+maktaba.dev carries every page in English and Arabic, and its build fails when the two
+drift, so a change to what it publishes lands in both languages in the same pull request:
+
+- **A guide** in `docs/developers/` has its Arabic twin beside it (`name.md` and
+  `name.ar.md`). Change both, or add both for a new guide.
+- **A changelog entry** goes in `CHANGELOG.md` and, in Arabic, in `CHANGELOG.ar.md`: the
+  same release, the same section, the same place in the list.
+- **The API description:** a new or changed summary or description in
+  `shared/api/openapi.json` gets its Arabic in `shared/api/openapi.ar.json` (keyed by its
+  JSON pointer, with the English it translates).
+
+Write natural Modern Standard Arabic. Code, commands, file names and identifiers stay as
+written.
+
 ## Security fixes
 
 Do not open a public pull request or issue that describes an unfixed vulnerability.

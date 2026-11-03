@@ -6,7 +6,9 @@ follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The `[Unreleased]` section accrues entries between tagged releases.
 The CI changelog gate (Story 22.5 AC-3) blocks user-visible PRs that
-don't append a line here; docs-only PRs are exempt.
+don't append a line here; docs-only PRs are exempt. Every entry is also added, in Arabic,
+to [CHANGELOG.ar.md](CHANGELOG.ar.md), in the same release and section; the maktaba.dev
+build fails when the two differ.
 
 ## [Unreleased]
 
@@ -30,9 +32,12 @@ don't append a line here; docs-only PRs are exempt.
 
 ### Added
 
-- **maktaba.dev, the developer portal.** The wiki, the API reference, the plugin developer docs,
-  the changelog and `security.txt` on one site, with its pages in English and Arabic. It is a
-  Cloudflare Worker built from the repository by an allow-list, deployed from main
+- **maktaba.dev, the developer portal.** The plugin guides, the contributing guides, security
+  (the policy, `security.txt` and the rules plugins and contributors follow), the API reference
+  and the changelog on one site; the epics and specs stay on GitHub. Every page is in English
+  and in Arabic under `/ar/` (right to left), each with a language switch, and the build fails
+  when a page, a guide, a changelog entry or an API description is missing in either language.
+  It is a Cloudflare Worker built from the repository by an allow-list, deployed from main
   (`web/packages/devportal`).
 - **AirPlay, Picture in Picture and Now Playing in the Apple Player.** Videos and live TV play
   on an Apple TV from the AirPlay button, float in Picture in Picture (also on going home), and
