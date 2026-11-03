@@ -16,6 +16,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -64,6 +65,11 @@ type Supervisor struct {
 	// slots' first start under heldMu; read under mu.
 	held   heldStreaming
 	heldMu sync.Mutex
+	// catalog is the component catalog the processes belong to (WithCatalog; default the
+	// embedded one): their Component and the grace Allow(false) gives them.
+	catalog *components.Catalog
+	// hangGrace is HangGrace as New read it (a probe never reads the var a test changes)
+	hangGrace time.Duration
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -77,6 +83,8 @@ type child struct {
 	failed     bool         // in a crash loop (state failed or retrying from it)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
+	allowed    bool         // its component's gate is open (Allow, story 51.04); it runs only when allowed and wanted
+	draining   bool         // asked to stop by Allow(false), not exited yet
 	binding    *SlotBinding // tv-slot: the TV release it runs (nil: the current binary)
 	ranWith    *SlotBinding // tv-slot: the binding its running process started with
 	basePath   string       // the binary the process was built with
@@ -118,6 +126,8 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 		log:    os.Stderr,
 		now:    time.Now,
 		fatal:  make(chan error, 1),
+		// HangGrace read once: a probe goroutine of this supervisor never reads the var
+		hangGrace: HangGrace,
 	}
 	s.host, _ = os.Hostname()
 	for _, o := range opts {
@@ -126,23 +136,33 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 	// each check bounds itself (checkChild): a child may take longer than the policy's
 	s.client = &http.Client{}
 	s.started = s.now()
+	if s.catalog == nil {
+		s.catalog = components.Default()
+	}
 	for _, p := range procs {
 		st := StateStarting
-		if p.OnDemand {
+		if p.OnDemand || p.Dormant {
 			st = StateStopped
 		}
+		if p.Component == "" {
+			if comp, ok := s.catalog.ByProcess(string(p.Role), p.Instance); ok {
+				p.Component = comp.ID
+			}
+		}
 		s.children = append(s.children, &child{
-			proc:   p,
-			wanted: !p.OnDemand,
+			proc:    p,
+			wanted:  !p.OnDemand,
+			allowed: !p.Dormant,
 			basePath: func() string {
 				if p.Cmd != nil {
 					return p.Cmd.Path
 				}
 				return ""
 			}(),
-			wake:   make(chan struct{}, 1),
-			done:   make(chan struct{}),
-			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand},
+			wake: make(chan struct{}, 1),
+			done: make(chan struct{}),
+			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand,
+				Component: p.Component, Blocked: p.Dormant},
 		})
 	}
 	if s.sink != nil {
@@ -448,8 +468,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			s.mu.Unlock()
 			return
 		}
-		if !c.wanted {
-			// an on-demand process (or one stopped on request): wait to be asked
+		if !c.wanted || !c.allowed {
+			// an on-demand process (or one stopped on request, or its component's gate
+			// closed: Allow): wait to be asked
 			c.status.State = StateStopped
 			clearPortTaken(c)
 			s.mu.Unlock()
@@ -590,6 +611,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	c.cmd = nil
 	c.tree = nil
 	c.ident = 0
+	c.draining = false
 	s.mu.Unlock()
 	if c.proc.Survives {
 		s.saveRecord(false)
@@ -821,7 +843,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			// native call holding its GIL) finishes it and exits, where a kill mid-write
 			// can leave its store broken (the Chroma index). Killed after HangGrace.
 			if c.proc.askStop(cmd.Process, tree) == nil {
-				hang := c.proc.graceFor(HangGrace)
+				hang := c.proc.graceFor(s.hangGrace)
 				select {
 				case <-ctx.Done():
 					return // it stopped

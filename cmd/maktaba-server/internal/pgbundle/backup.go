@@ -203,26 +203,38 @@ func dueEvery(now, last time.Time, p NightlyPolicy) bool {
 // RunBackups makes the nightly dump until ctx ends, checking every interval. A
 // failed dump (postgres down) is logged and tried again at the next check.
 func (b Bundle) RunBackups(ctx context.Context, interval time.Duration, log io.Writer) {
+	b.RunBackupsLoop(ctx, ctx, interval, log)
+}
+
+// RunBackupsLoop is RunBackups whose loop ends with loop (the backups component turned
+// off, Epic 51 story 51.04) while a dump under way runs with work (the server's): a dump
+// is never cut by the component's stop; the loop returns once it ends.
+func (b Bundle) RunBackupsLoop(loop, work context.Context, interval time.Duration, log io.Writer) {
 	p := b.nightly()
 	if p.Off {
 		fmt.Fprintln(log, "[postgres] the scheduled backups are off ([backups] nightly = \"off\"): no dump is taken "+
 			"unless asked")
 		return
 	}
+	runBackups(loop, work, interval, log, func() bool { return dueEvery(time.Now(), b.lastBackup(), p) }, b.Backup)
+}
+
+// runBackups is RunBackupsLoop's loop: dump when due says so, at every tick of interval.
+func runBackups(loop, work context.Context, interval time.Duration, log io.Writer, due func() bool,
+	dump func(ctx context.Context, now time.Time) (string, error)) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
 	for {
 		select {
-		case <-ctx.Done():
+		case <-loop.Done():
 			return
 		case <-t.C:
 		}
-		now := time.Now()
-		if !dueEvery(now, b.lastBackup(), p) {
+		if loop.Err() != nil || !due() {
 			continue
 		}
-		if path, err := b.Backup(ctx, now); err != nil {
-			if ctx.Err() == nil {
+		if path, err := dump(work, time.Now()); err != nil {
+			if work.Err() == nil {
 				fmt.Fprintf(log, "[postgres] nightly backup failed (trying again later): %v\n", err)
 			}
 		} else {

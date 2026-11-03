@@ -99,6 +99,30 @@ the license server's Maktaba Cloud (`off`: nowhere).
 enabled = "on"           # on (default): the consents decide | off: nothing is sent
 ```
 
+**Components (`[components]`, Epic 51 story 51.04).** The whole machine's supervisor
+reads this machine's desired state (the `components` tables) and starts or stops the
+processes of switchable components live: the stt workers (`transcription`), the index
+worker (`search.semantic`), ollama (`llm`), the relay agent (`cloud.link`), the TV slots
+(`livetv.slots`), and its own loops, mDNS (`discovery.mdns`) and the nightly dump
+(`backups`; a dump under way ends first). Requirements start first and dependents stop
+first; a component turned off has its drain grace plus 10 s before its process is killed
+(transcription: 130 s), and is not restarted. A component with no row runs as this file
+builds it. It reports `component_status` rows of part `supervisor`, and keeps the last
+desired state in `state/components.json` under the state root, from which it sets the
+gates at boot before the database answers (a held component never starts during an
+update's restart). Where that desired state disagrees with `[tv] slots`, `[llm] enabled`
+or `[cloud] enabled`, it decides what is built for the boot (the database wins, said in
+the log). A
+single `--role` and a SQLite database run no reconciler. `off` is the kill switch: the
+processes are the ones this file builds, as before Epic 51, status still says
+`reconcile_off`, and every role gets `MAKTABA_COMPONENTS_RECONCILE=off` so its own
+runner acts on nothing either.
+
+```toml
+[components]
+reconcile = "on"         # on (default) | off: report only, act on nothing
+```
+
 **Streaming on a cluster node (Epic 32.1).** On a machine that joined a home
 (Epic 31, `node.json` holds its database credential), `maktaba-server serve
 --role streaming` runs the streaming service as a cluster node: the home's
