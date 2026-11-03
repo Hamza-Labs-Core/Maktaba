@@ -21,6 +21,11 @@ type Change struct {
 	Want       string `json:"want,omitempty"`
 	Hold       *bool  `json:"hold,omitempty"`
 	Generation *int64 `json:"generation,omitempty"`
+	// Machine, when set, makes the change one machine's override (story 51.12): Want may
+	// then also be "follow" (clear the override's want), Hold is that machine's hold and
+	// Generation the override row's (0: none). Every change of a request names the same
+	// machine, or none.
+	Machine string `json:"machine,omitempty"`
 }
 
 // Request is one batch of changes. Generation, when given, is the revision the caller

@@ -28,6 +28,9 @@ type Service struct {
 	// Now is the clock of a hold's at (nil: time.Now).
 	Now    func() time.Time
 	Logger *slog.Logger
+	// OnMachineChanged is called after a machine's override rewrote its stage switches
+	// (51.12): its processes reload their stages at once (nil: at their next refresh).
+	OnMachineChanged func(node string)
 }
 
 // NewService is the service on db, with the embedded catalog.
@@ -68,6 +71,12 @@ func (s *Service) Known(id string) bool {
 
 // Preview is the effect of req over the rows as they are, changing nothing.
 func (s *Service) Preview(ctx context.Context, req Request) (Preview, error) {
+	if node, err := machineOf(req); err != nil || node != "" {
+		if err != nil {
+			return Preview{}, err
+		}
+		return s.previewMachine(ctx, node, req)
+	}
 	rows, rev, err := s.Store.Desired(ctx, store.Home)
 	if err != nil {
 		return Preview{}, err
@@ -86,6 +95,8 @@ type Result struct {
 	Revision int64           `json:"revision"`
 	Changed  []store.Desired `json:"changed"`
 	Effect   Preview         `json:"effect"`
+	// Overrides are the override rows a machine's change wrote (51.12).
+	Overrides []store.Override `json:"overrides,omitempty"`
 }
 
 // Apply makes every change of req in one transaction, or none: each is checked against
@@ -94,6 +105,12 @@ type Result struct {
 func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, error) {
 	if strings.TrimSpace(actor.By) == "" {
 		return Result{}, errors.New("components: a change needs who makes it")
+	}
+	if node, err := machineOf(req); err != nil || node != "" {
+		if err != nil {
+			return Result{}, err
+		}
+		return s.applyMachine(ctx, node, req, actor)
 	}
 	var p *plan
 	batch := uuid.NewString()

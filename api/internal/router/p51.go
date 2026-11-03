@@ -30,6 +30,7 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 	}
 	s := components.NewService(d.DB)
 	s.Logger = d.Logger
+	s.OnMachineChanged = reloadMachineStages // 51.12: a machine's override rewrote its stage switches
 	ref := d.License
 	s.Licensed = func(flag string) bool { return ref.Store().Allows(subscriptions.Feature(flag)) }
 	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger}
