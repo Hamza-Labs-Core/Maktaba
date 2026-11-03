@@ -4,7 +4,9 @@ Run by every worker at start. It owns the *structural* columns (label, pool,
 edges, version, ...) and never touches the operator columns (``paused``,
 ``write_mode``, ``paused_by``, ...). ``enabled`` / ``disabled_reason`` are
 shared: the worker may flip them only while ``disabled_reason`` is NULL,
-``not_configured`` or ``extension_disabled``; an ``operator`` disable always wins.
+``not_configured`` or ``extension_disabled``, or one of the component reasons
+(``component_off``, ``component_held``: Epic 51) when it knows the components'
+gates; an ``operator`` disable always wins.
 """
 
 from __future__ import annotations
@@ -18,10 +20,24 @@ from ..extensions.store import ExtensionState
 from .graph import POOLS, PoolDef, StageDef
 from .sql import dumps, is_pg, now, to_ts
 
-__all__ = ["SyncReport", "stage_enabled_state", "stages_ahead", "sync_graph"]
+__all__ = [
+    "COMPONENT_HELD",
+    "COMPONENT_OFF",
+    "COMPONENT_REASONS",
+    "SyncReport",
+    "apply_gates",
+    "stage_enabled_state",
+    "stages_ahead",
+    "sync_graph",
+]
 
 #: reasons the worker itself may set or clear
 WORKER_REASONS = ("not_configured", "extension_disabled")
+#: reasons the components' gate sets (Epic 51, story 51.06): the stage's component is off
+#: (or one it requires is), or an admin stopped it until started again
+COMPONENT_OFF = "component_off"
+COMPONENT_HELD = "component_held"
+COMPONENT_REASONS = (COMPONENT_OFF, COMPONENT_HELD)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,18 +49,23 @@ class SyncReport:
 
 
 def stage_enabled_state(
-    stage: StageDef, extensions: Mapping[str, ExtensionState]
+    stage: StageDef,
+    extensions: Mapping[str, ExtensionState],
+    gate: str | None = None,
 ) -> tuple[bool, str | None]:
-    """``(enabled, disabled_reason)`` the graph wants for ``stage``."""
+    """``(enabled, disabled_reason)`` the graph wants for ``stage``. ``gate`` is its
+    component's at home level (``component_off`` / ``component_held``, None when open):
+    it comes after the graph's own reasons, so a stage off for those keeps their words."""
     if stage.unreleased:
         return False, "not_configured"
-    if stage.extension is None:
-        return True, None
-    state = extensions.get(stage.extension)
-    if state is None or not state.enabled:
-        return False, "extension_disabled"
-    if not state.configured:
-        return False, "not_configured"
+    if stage.extension is not None:
+        state = extensions.get(stage.extension)
+        if state is None or not state.enabled:
+            return False, "extension_disabled"
+        if not state.configured:
+            return False, "not_configured"
+    if gate in COMPONENT_REASONS:
+        return False, gate
     return True, None
 
 
@@ -84,10 +105,14 @@ ON CONFLICT (stage) DO UPDATE SET
     enabled = CASE WHEN job_stages.disabled_reason IS NULL
                      OR job_stages.disabled_reason IN
                         ('not_configured', 'extension_disabled')
+                     OR ($22 AND job_stages.disabled_reason IN
+                        ('component_off', 'component_held'))
                    THEN EXCLUDED.enabled ELSE job_stages.enabled END,
     disabled_reason = CASE WHEN job_stages.disabled_reason IS NULL
                              OR job_stages.disabled_reason IN
                                 ('not_configured', 'extension_disabled')
+                             OR ($22 AND job_stages.disabled_reason IN
+                                ('component_off', 'component_held'))
                            THEN EXCLUDED.disabled_reason ELSE job_stages.disabled_reason END,
     graph_synced_at = EXCLUDED.graph_synced_at,
     updated_at = EXCLUDED.updated_at
@@ -98,9 +123,16 @@ async def sync_graph(
     db: Any,
     graph: Sequence[StageDef],
     extensions: Mapping[str, ExtensionState] | None = None,
+    gates: Mapping[str, str] | None = None,
 ) -> SyncReport:
-    """Upsert every stage of ``graph``; return what changed."""
+    """Upsert every stage of ``graph``; return what changed.
+
+    ``gates`` (stage -> ``component_off`` / ``component_held``) are the components' at
+    home level (Epic 51). Without it (None) a stage row with a component reason is left
+    as it is: only a sync that knows the gates may set or clear those."""
     extensions = extensions or {}
+    known = gates is not None
+    gates = gates or {}
     await _ensure_pools(db, POOLS)
     old = {
         r["stage"]: int(r["version"])
@@ -110,7 +142,7 @@ async def sync_graph(
     versions: dict[str, tuple[int, int]] = {}
     added: list[str] = []
     for s in graph:
-        enabled, reason = stage_enabled_state(s, extensions)
+        enabled, reason = stage_enabled_state(s, extensions, gates.get(s.name))
         await db.execute(
             _UPSERT,
             s.name,
@@ -134,6 +166,7 @@ async def sync_graph(
             reason,
             ts,
             s.placement,
+            known,
         )
         if s.name not in old:
             added.append(s.name)
@@ -154,3 +187,46 @@ async def stages_ahead(db: Any, graph: Sequence[StageDef]) -> dict[str, int]:
         for r in rows
         if r["stage"] in mine and int(r["version"]) > mine[r["stage"]]
     }
+
+
+_APPLY_GATE = """
+UPDATE job_stages
+   SET enabled = $2, disabled_reason = $3, updated_at = $4
+ WHERE stage = $1
+   AND (disabled_reason IS NULL OR disabled_reason IN
+        ('not_configured', 'extension_disabled', 'component_off', 'component_held'))
+   AND NOT (enabled = $2 AND COALESCE(disabled_reason, '') = COALESCE($3, ''))
+RETURNING stage
+"""
+
+
+async def apply_gates(
+    db: Any,
+    graph: Sequence[StageDef],
+    gates: Mapping[str, str],
+    extensions: Mapping[str, ExtensionState] | None = None,
+    *,
+    stages: Sequence[str] | None = None,
+) -> list[tuple[str, bool, str | None, bool, str | None]]:
+    """Write the components' gates (Epic 51) into ``job_stages`` at once: the rows the
+    graph sync would write (:func:`stage_enabled_state`), never one an operator turned
+    off. ``stages`` limits it to those (default: every stage of ``graph``). Returns the
+    rows that changed: ``(stage, old enabled, old reason, enabled, reason)``."""
+    extensions = extensions or {}
+    ts = to_ts(db, now())
+    names = None if stages is None else set(stages)
+    cur = {
+        r["stage"]: (bool(r["enabled"]), r["disabled_reason"])
+        for r in await db.fetch("SELECT stage, enabled, disabled_reason FROM job_stages")
+    }
+    out: list[tuple[str, bool, str | None, bool, str | None]] = []
+    for s in graph:
+        if (names is not None and s.name not in names) or s.name not in cur:
+            continue
+        old_on, old_why = cur[s.name]
+        enabled, reason = stage_enabled_state(s, extensions, gates.get(s.name))
+        if (old_on, old_why) == (enabled, reason):
+            continue
+        if await db.fetchrow(_APPLY_GATE, s.name, enabled, reason, ts) is not None:
+            out.append((s.name, old_on, old_why, enabled, reason))
+    return out

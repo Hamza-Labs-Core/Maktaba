@@ -1710,6 +1710,8 @@
   "queue.stage.index.desc": "يضيف النص إلى البحث.",
   "queue.stage.thumbnail.desc": "ينشئ إطارات الملصقات.",
   "queue.waiting.no_worker": "بانتظار عامل يخدم {stage}",
+  "queue.waiting.component_off": "{component} مُطفأ",
+  "queue.waiting.component_held": "{component} موقوف",
   "queue.card.servedBy": "يخدمه {hosts}",
   "queue.workers.title": "العمّال",
   "queue.workers.none": "لم يُبلغ أي عامل عن نفسه.",
@@ -1965,6 +1967,8 @@
   "machines.stages.offWhy": "لا يسحب منه: {reason}",
   "machines.reason.overloaded": "الجهاز مثقل بالعمل",
   "machines.reason.not_assigned": "لم يُسند إلى هذا الجهاز",
+  "machines.reason.component_off": "{component} مُطفأ",
+  "machines.reason.component_held": "{component} موقوف",
   "queue.card.on": "على {machine}",
   "queue.card.liveJobs": "يعمل الآن في {queue}",
   "queue.card.liveMore": "و{n} غيرها",
@@ -6086,5 +6090,6 @@
   "components.detail.pack_importing": "جارٍ قراءة الملف: {name}",
   "components.detail.pack_offline": "جارٍ جمع {name}: {done} من {total}",
   "components.offline.import": "استيراد ملف",
-  "components.offline.download": "تنزيل للاستخدام دون اتصال"
+  "components.offline.download": "تنزيل للاستخدام دون اتصال",
+  "components.reason.not_configured": "يحتاج إلى إعداداته: افتح إعدادات {component}."
 }

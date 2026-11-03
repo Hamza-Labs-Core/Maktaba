@@ -186,10 +186,7 @@ async def test_seed_matches_graph(db: Database) -> None:
     )
     seeded = {r["stage"]: r for r in rows}
     names = {s.name for s in GRAPH}
-    # seeded before its StageDef: slot 0173's component_catchup row (story 51.02; 51.06
-    # adds the StageDef, and from then on the row is checked like the rest)
-    ahead = {"component_catchup"} - names
-    assert set(seeded) - ahead == names
+    assert set(seeded) == names
     for s in GRAPH:
         r = seeded[s.name]
         assert (r["pool"], r["lane"], r["lane_order"], r["version"]) == (

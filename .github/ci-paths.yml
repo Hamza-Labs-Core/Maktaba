@@ -216,6 +216,43 @@ compat_prev:
   - 'tools/compat-prev/**'
   - '.github/workflows/_integration.yml'
 
+# Epic 51 (story 51.06): components-live, real sleepy workers switching components on
+# Postgres: the pipeline's runner and what it drives (the selection, the stage rows, the
+# enqueue, the claims and drains), the components' migrations, the catalog and the drivers
+components:
+  - *ci
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/src/maktaba_pipeline/components/**'
+  - 'pipeline/src/maktaba_pipeline/runtime.py'
+  - 'pipeline/src/maktaba_pipeline/cluster/stages.py'
+  - 'pipeline/src/maktaba_pipeline/engine/sync.py'
+  - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
+  - 'pipeline/src/maktaba_pipeline/engine/propagate.py'
+  - 'pipeline/src/maktaba_pipeline/engine/claim.py'
+  - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
+  - 'pipeline/src/maktaba_pipeline/pipeline/shutdown.py'
+  - 'pipeline/src/maktaba_pipeline/pipeline/runner.py'
+  - 'pipeline/tests/engine/migrate.py'
+  - 'shared/components/**'
+  - 'shared/db/migrations/*component*'
+  - 'tests/__init__.py'
+  - 'tests/components/**'
+  - '.github/workflows/_components.yml'
+
+# components-chaos on a pull request: the runner, the drain and the claims it stops
+components_chaos:
+  - *ci
+  - 'pipeline/src/maktaba_pipeline/components/**'
+  - 'pipeline/src/maktaba_pipeline/pipeline/shutdown.py'
+  - 'pipeline/src/maktaba_pipeline/pipeline/runner.py'
+  - 'pipeline/src/maktaba_pipeline/engine/sync.py'
+  - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
+  - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
+  - 'shared/db/migrations/0175_component_stage_gate.sql'
+  - 'tests/components/**'
+  - '.github/workflows/_components.yml'
+
 # the machines' copies and switching the home (api, the server, the launcher, streaming
 # are built and run)
 replica:

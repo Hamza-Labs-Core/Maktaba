@@ -131,8 +131,23 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "the catalog runs its check, the Go and the pipeline parts": (
         ["shared/components/catalog.toml"],
-        GO_SERVER | {"components-packs"},
-        {"lint": {"go", "pipeline", "catalog"}, "unit": {"go", "pipeline"}},
+        GO_SERVER | {"components-packs", "components"},
+        {
+            "lint": {"go", "pipeline", "catalog"},
+            "unit": {"go", "pipeline"},
+            "components": {"live"},
+        },
+    ),
+    "the component runner runs components-live and components-chaos": (
+        ["pipeline/src/maktaba_pipeline/components/runner.py"],
+        {"unit", "integration", "e2e", "node-packaging", "components"},
+        {
+            "lint": {"pipeline", "catalog"},
+            "unit": {"pipeline"},
+            "integration": {"integration"},
+            "node-packaging": {"packaging", "release_venv"},
+            "components": {"live", "chaos"},
+        },
     ),
     "a pack recipe builds and verifies the packs": (
         ["tools/release/packs/recipes/runtime.ml.sh"],

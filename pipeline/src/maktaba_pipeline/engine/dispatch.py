@@ -46,6 +46,7 @@ class EngineRuntime:
             write_mode="auto" if row is None else str(row["write_mode"]),
             settings={n: s.settings for n, s in self.extension_states.items()},
             path_map=self.path_map,
+            graph=self.graph,
         )
 
 

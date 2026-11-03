@@ -220,7 +220,8 @@
         "fp_gate",
         "access_check",
         "storage_canonicalize",
-        "categorize"
+        "categorize",
+        "component_catchup"
       ],
       "stop_grace_s": 5,
       "switchable": false,
@@ -2365,7 +2366,8 @@
     "packs_disabled",
     "pack_missing",
     "install_failed",
-    "busy"
+    "busy",
+    "not_configured"
   ],
   "schema": 1
 }
