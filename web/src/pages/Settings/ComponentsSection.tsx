@@ -34,6 +34,7 @@ import { LinesPlaceholder } from "../../components/Placeholders";
 import { useBytes } from "../../components/queue/offline";
 import { ComponentConfirm, isSimple, type Action, type Plan } from "./ComponentConfirm";
 import { ComponentDrawer } from "./ComponentDrawer";
+import { BundleDialog } from "./BundleDialog";
 import { ComponentSettingsLink } from "./ComponentSettingsLink";
 import {
   BUSY_PHASES,
@@ -131,6 +132,7 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  const [bundleOpen, setBundleOpen] = useState(false);
 
   const views = useMemo(() => list?.components ?? [], [list]);
   const titleOf = useMemo(() => titleFinder(t, views), [t, views]);
@@ -312,7 +314,26 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
 
   return (
     <div className={`mkt-settings__panel mkt-comp${offline ? " is-offline" : ""}`}>
-      <Head list={list} titleOf={titleOf} />
+      <Head
+        list={list}
+        titleOf={titleOf}
+        onChangeBundle={offline ? undefined : () => setBundleOpen(true)}
+      />
+      {bundleOpen && (
+        <BundleDialog
+          basedOn={list.bundle?.base ?? ""}
+          titleOf={titleOf}
+          onClose={() => setBundleOpen(false)}
+          onApplied={(b) => {
+            setBundleOpen(false);
+            void reload();
+            toast.show({
+              tone: "success",
+              message: t("components.bundle.done", { bundle: t(`components.bundle.${b}`) }),
+            });
+          }}
+        />
+      )}
       {offline && (
         <p role="alert" className="mkt-comp__offline">
           {errorText(error, t)}
@@ -353,7 +374,16 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
   );
 }
 
-function Head({ list, titleOf }: { list?: ListView; titleOf?: (id: string) => string }) {
+function Head({
+  list,
+  titleOf,
+  onChangeBundle,
+}: {
+  list?: ListView;
+  titleOf?: (id: string) => string;
+  /** opens the Change bundle dialog (story 51.17) */
+  onChangeBundle?: () => void;
+}) {
   const { t, locale } = useI18n();
   const b = list?.bundle;
   const parts: string[] = [];
@@ -375,6 +405,11 @@ function Head({ list, titleOf }: { list?: ListView; titleOf?: (id: string) => st
         <p className="mkt-comp__bundle" data-testid="comp-bundle">
           {parts.join(t("components.bundle.sep"))}
         </p>
+      )}
+      {onChangeBundle && (
+        <Button variant="secondary" onClick={onChangeBundle} data-testid="comp-change-bundle">
+          {t("components.bundle.change")}
+        </Button>
       )}
       <p className="mkt-comp__intro">
         {t("components.page.intro")} <HelpLink to={{ topic: "components" }} />

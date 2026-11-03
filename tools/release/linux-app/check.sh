@@ -177,6 +177,13 @@ if [ -x "$SCRATCH/venv/bin/pip" ]; then ok "venv has pip"; else fail "venv has n
 echo "pipeline"
 whl=("$PAYLOAD"/pipeline/maktaba_pipeline-*-py3-none-any.whl)
 if [ -f "${whl[0]}" ]; then ok "wheel ${whl[0]##*/}"; else fail "no pipeline wheel"; fi
+# the core venv's pins (story 51.17): hashed, and no ML package among them
+if [ -s "$PAYLOAD/pipeline/constraints-core.txt" ] && grep -q -- '--hash=sha256:' "$PAYLOAD/pipeline/constraints-core.txt" &&
+    ! grep -qE '^(torch|mlx|mlx-whisper|faster-whisper|transformers)==' "$PAYLOAD/pipeline/constraints-core.txt"; then
+    ok "constraints-core.txt (hashed, no ML packages)"
+else
+    fail "constraints-core.txt missing, without hashes or with an ML package"
+fi
 if [ -s "$PAYLOAD/pipeline/constraints.txt" ] && grep -q -- '--hash=sha256:' "$PAYLOAD/pipeline/constraints.txt"; then
     ok "constraints.txt (hashed)"
 else

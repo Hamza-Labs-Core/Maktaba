@@ -39,4 +39,11 @@ bundle="$REPO_ROOT/apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bu
 signed=()
 [ -n "${APPLE_SIGNING_IDENTITY:-}" ] && signed=(--signed)
 "$SCRIPT_DIR/check.sh" --app "$bundle/macos/Maktaba.app" ${signed[@]+"${signed[@]}"}
+# the core flavour (story 51.17, `--flavour core`): the same app, named Maktaba-Core_ so the
+# release and the updater feed (darwin-aarch64-core) tell it from the full one
+if grep -q '"flavour": "core"' "$BUILD/server/payload.json" 2>/dev/null; then
+    for f in "$bundle"/dmg/Maktaba_*.dmg; do
+        [ -f "$f" ] && mv -f "$f" "$bundle/dmg/Maktaba-Core_${f##*/Maktaba_}"
+    done
+fi
 du -sh "$bundle/macos/Maktaba.app" "$bundle"/dmg/*.dmg

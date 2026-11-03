@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -203,6 +204,29 @@ func feedPlatform() string {
 	return runtime.GOOS + "-" + arch
 }
 
+// feedKey is the feed key of this machine's app among keys: a Core app's
+// (<platform>-core, story 51.17) when it has one, else the Full app's; a Full app never
+// takes a Core key.
+func feedKey(keys []string, core bool) (string, bool) {
+	plat := feedPlatform()
+	slices.Sort(keys)
+	pick := func(want func(string) bool) (string, bool) {
+		for _, k := range keys {
+			if (k == plat || strings.HasPrefix(k, plat+"-")) && want(k) {
+				return k, true
+			}
+		}
+		return "", false
+	}
+	isCore := func(k string) bool { return k == plat+"-core" || strings.HasPrefix(k, plat+"-core-") }
+	if core {
+		if k, ok := pick(isCore); ok {
+			return k, true
+		}
+	}
+	return pick(func(k string) bool { return !isCore(k) })
+}
+
 // Preflight implements Installer: the app is where it was, the launcher is new enough to
 // keep its guard, and the release's updater feed has this platform's app.
 func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
@@ -253,13 +277,15 @@ func (ai *AppInstaller) Preflight(ctx context.Context, j *Journal) error {
 	if layout.CompareVersions(f.Version, j.Job.Version) != 0 {
 		return Fail("no_app_update", "latest.json is %s, not %s", f.Version, j.Job.Version)
 	}
-	for k, p := range f.Platforms {
-		if k == feedPlatform() || strings.HasPrefix(k, feedPlatform()+"-") {
-			if !strings.HasPrefix(p.URL, base) {
-				return Fail("no_app_update", "latest.json names %s for %s, not a file of %s", p.URL, k, base)
-			}
-			return nil
+	keys := make([]string, 0, len(f.Platforms))
+	for k := range f.Platforms {
+		keys = append(keys, k)
+	}
+	if k, ok := feedKey(keys, payloadAt(ai.Payload).Core()); ok {
+		if p := f.Platforms[k]; !strings.HasPrefix(p.URL, base) {
+			return Fail("no_app_update", "latest.json names %s for %s, not a file of %s", p.URL, k, base)
 		}
+		return nil
 	}
 	return Fail("no_app_update", "%s has no app for %s", j.Job.Tag, feedPlatform())
 }

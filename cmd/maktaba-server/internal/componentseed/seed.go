@@ -42,6 +42,18 @@ type Facts struct {
 	OperatorOff map[string]bool // stage -> turned off on the Queues page (disabled_reason = operator)
 	Extensions  map[string]bool // extensions.name -> enabled
 	HDHR        bool            // hdhr_device.enabled
+
+	// Choice is setup's answer to "Choose what to run" (story 51.17, ReadChoice); nil is
+	// Full, today's switches.
+	Choice *Choice
+}
+
+// BundleOf is the bundle a seed with f writes: setup's choice, else Full.
+func BundleOf(f Facts) string {
+	if f.Choice != nil && f.Choice.Bundle != "" {
+		return f.Choice.Bundle
+	}
+	return Bundle
 }
 
 // alwaysOn are the switchable components whose loops always run today.
@@ -200,7 +212,11 @@ func Seed(ctx context.Context, st *store.Store, cat *components.Catalog, f Facts
 		if err := ReadDB(ctx, q, &facts); err != nil {
 			return store.SeedPlan{}, err
 		}
-		return store.SeedPlan{Wants: Plan(cat, facts), Bundle: Bundle, Release: release,
+		wants := Plan(cat, facts)
+		if f.Choice != nil && f.Choice.Bundle != Bundle {
+			wants = PlanChoice(cat, facts, *f.Choice)
+		}
+		return store.SeedPlan{Wants: wants, Bundle: BundleOf(f), Release: release,
 			TomlImported: Imported(f.Config)}, nil
 	})
 }

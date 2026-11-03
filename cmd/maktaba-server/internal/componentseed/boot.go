@@ -53,7 +53,7 @@ func (h Home) Run(ctx context.Context) error {
 	}
 	if seeded {
 		fmt.Fprintf(log, "[serve] components: desired state seeded from what this home runs today "+
-			"(bundle %s, %d components, release %s)\n", Bundle, len(desired), h.Release)
+			"(bundle %s, %d components, release %s)\n", BundleOf(h.Facts), len(desired), h.Release)
 	}
 	var found []Finding
 	if h.TomlPath != "" {

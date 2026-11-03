@@ -32,6 +32,9 @@ type Request struct {
 	Generation    *int64   `json:"generation,omitempty"`
 	WithConflicts bool     `json:"with_conflicts,omitempty"`
 	Bundle        string   `json:"bundle,omitempty"`
+	// RemoveUnused, with Bundle, also removes the files of the assets the bundle leaves
+	// out (want absent); without it they are only turned off (story 51.17).
+	RemoveUnused bool `json:"remove_unused,omitempty"`
 }
 
 // Actor is who asks: By is the row's updated_by and the hold's by; Source is
@@ -232,7 +235,7 @@ func validWant(w string) bool {
 // turned off (its files kept), then what it holds is turned on. A component whose
 // licence flag this home lacks is in it too: makePlan refuses the whole bundle then
 // (story 51.19), no half-applied bundle.
-func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b string) []Change {
+func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b string, removeUnused bool) []Change {
 	in := map[string]bool{}
 	for _, id := range cat.InBundle(b) {
 		in[id] = true
@@ -242,8 +245,21 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 	for i := len(order) - 1; i >= 0; i-- {
 		id := order[i]
 		c, _ := cat.Get(id)
+		if removeUnused && c.Kind == components.KindAsset {
+			continue // removed below
+		}
 		if c.Switchable && !in[id] && wantOf(rows, id) == components.WantEnabled {
 			out = append(out, Change{ID: id, Want: components.WantInstalled})
+		}
+	}
+	if removeUnused {
+		// an asset left out loses its files too (after what needs it is off)
+		for i := len(order) - 1; i >= 0; i-- {
+			id := order[i]
+			c, _ := cat.Get(id)
+			if c.Switchable && c.Kind == components.KindAsset && !in[id] && wantOf(rows, id) != components.WantAbsent {
+				out = append(out, Change{ID: id, Want: components.WantAbsent})
+			}
 		}
 	}
 	for _, id := range order {
@@ -304,7 +320,7 @@ func makePlanTier(cat *components.Catalog, licensed func(string) bool, tier stri
 		if len(req.Changes) > 0 {
 			return nil, refuse(http.StatusBadRequest, "", CodeBadBundle, "a bundle is applied on its own, without changes")
 		}
-		changes = bundleChanges(cat, p.rows, req.Bundle)
+		changes = bundleChanges(cat, p.rows, req.Bundle, req.RemoveUnused)
 		action = "component.bundle_apply"
 		p.bundle = req.Bundle
 		// a bundle that would turn on a component the licence lacks is refused whole,
