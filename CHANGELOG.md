@@ -48,6 +48,18 @@ build fails when the two differ.
 
 ### Added
 
+- **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
+  (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
+  as a component, with what it needs and what it conflicts with. Admin > Components shows each
+  one's state on every machine, previews what a change does (queued jobs kept, what else stops)
+  and applies it in one step; a stopped component keeps its queue and picks up again when
+  started. The API enforces every rule (`/api/components`, admin only; a route whose component
+  is off answers `409 component_off`), and `GET /api/capabilities` tells every app what is on,
+  so the web, Android and Apple apps hide what is off from a viewer and tell an admin where to
+  turn it on, in English and Arabic. Setup offers three bundles (Full, today's Maktaba; Core,
+  a smaller download; Worker, for a joined machine), the bundle can be changed later, and a
+  component added later downloads as a signed pack, or from an offline file for a home without
+  internet. `[components] reconcile = off` in `server.toml` leaves everything as it is.
 - **maktaba.dev, the developer portal.** The plugin guides, the contributing guides, security
   (the policy, `security.txt` and the rules plugins and contributors follow), the API reference
   and the changelog on one site; the epics and specs stay on GitHub. Every page is in English
