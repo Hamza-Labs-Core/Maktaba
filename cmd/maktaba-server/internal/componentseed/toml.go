@@ -174,6 +174,10 @@ type Finding struct {
 	Desired   string // the want the database has (it wins)
 }
 
+// secretKeys are written in a finding as "set", never as their value: a url may carry a
+// login, and a finding goes to the log and to a status row.
+var secretKeys = map[string]bool{"llm.url": true}
+
 // Superseded compares each imported key the file sets with its component's desired
 // state. desired is the home's (store.Desired); a component with no row is not compared.
 func Superseded(raw []byte, cfg config.Config, desired map[string]store.Desired) []Finding {
@@ -189,7 +193,11 @@ func Superseded(raw []byte, cfg config.Config, desired map[string]store.Desired)
 		if !ok || !have || d.Want == says {
 			continue
 		}
-		out = append(out, Finding{Key: k.String(), Value: l.Value, Line: l.N, Component: k.Component,
+		value := l.Value
+		if secretKeys[k.String()] {
+			value = "set"
+		}
+		out = append(out, Finding{Key: k.String(), Value: value, Line: l.N, Component: k.Component,
 			Says: says, Desired: d.Want})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Line < out[j].Line })

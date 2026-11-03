@@ -381,6 +381,23 @@ func TestTomlSuperseded(t *testing.T) {
 	}
 }
 
+// A superseded [llm] url is reported as "set": the url may carry a login, and a finding
+// goes to the log and to a status row.
+func TestTomlSupersededHidesURL(t *testing.T) {
+	raw := []byte("[llm]\nurl = \"http://user:pw@10.0.0.2:11434\"\n")
+	var cfg config.Config
+	cfg.LLM.URL = "http://user:pw@10.0.0.2:11434"
+	found := Superseded(raw, cfg, map[string]store.Desired{"llm": {Want: components.WantInstalled}})
+	if len(found) != 1 || found[0].Key != "llm.url" || found[0].Value != "set" {
+		t.Fatalf("findings %+v", found)
+	}
+	var log bytes.Buffer
+	LogSuperseded(&log, "server.toml", found)
+	if strings.Contains(log.String(), "pw@") {
+		t.Fatalf("log carries the url: %s", log.String())
+	}
+}
+
 // AC: MAKTABA_UPDATE_DISABLE=1 at the seed: updates.auto still enabled, its status says
 // env_override (and the variable); --no-mdns says boot_flag.
 func TestEnvOverrideNotImported(t *testing.T) {

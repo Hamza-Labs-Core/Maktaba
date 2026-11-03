@@ -103,6 +103,10 @@ type ChildStatus struct {
 	// Adopted: the process runs from before this supervisor started (handed over
 	// across its restart, story 35.7); it is watched, not waited for.
 	Adopted bool `json:"adopted,omitempty"`
+	// Component is the catalog component the process belongs to (Epic 51 story 51.04).
+	Component string `json:"component,omitempty"`
+	// Blocked: its component's gate is closed (Allow): it does not run, wanted or not.
+	Blocked bool `json:"blocked,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,
@@ -252,6 +256,13 @@ func (s *Supervisor) Handler() http.Handler {
 		parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/slots/"), "/"), "/")
 		if len(parts) != 2 || (parts[1] != "start" && parts[1] != "stop") {
 			http.Error(w, "POST /slots/{instance}/start|stop", http.StatusBadRequest)
+			return
+		}
+		// story 51.04: no slot starts while its component (livetv.slots) is off
+		if comp, open, ok := s.Gate(RoleTVSlot, parts[0]); ok && !open && parts[1] == "start" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"code": "component_off", "component": comp})
 			return
 		}
 		if parts[1] == "start" && r.ContentLength > 0 {
