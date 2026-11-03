@@ -29,28 +29,69 @@ except ImportError:  # pip's own copy
 
 
 def _manylinux(arch: str) -> list[str]:
-    tags = [f"manylinux_{g}_{arch}" for g in ("2_17", "2_24", "2_26", "2_27", "2_28", "2_31", "2_34", "2_35")]
+    tags = [
+        f"manylinux_{g}_{arch}"
+        for g in ("2_17", "2_24", "2_26", "2_27", "2_28", "2_31", "2_34", "2_35")
+    ]
     return tags + [f"manylinux2014_{arch}"]
 
 
 def _macos(arch: str, start: int) -> list[str]:
-    return [t for major in range(start, 16) for t in (f"macosx_{major}_0_{arch}", f"macosx_{major}_0_universal2")]
+    return [
+        t
+        for major in range(start, 16)
+        for t in (f"macosx_{major}_0_{arch}", f"macosx_{major}_0_universal2")
+    ]
 
 
 #: the catalog's platforms as pip downloads for them: wheel tags and marker values
 TARGETS: dict[str, tuple[str, list[str], dict[str, str]]] = {
-    "linux-amd64": ("linux/amd64", _manylinux("x86_64"),
-                    {"sys_platform": "linux", "platform_system": "Linux", "platform_machine": "x86_64", "os_name": "posix"}),
-    "linux-arm64": ("linux/arm64", _manylinux("aarch64"),
-                    {"sys_platform": "linux", "platform_system": "Linux", "platform_machine": "aarch64", "os_name": "posix"}),
-    "darwin-arm64": ("darwin/arm64", _macos("arm64", 11),
-                     {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "arm64", "os_name": "posix"}),
-    "windows-amd64": ("windows/amd64", ["win_amd64"],
-                      {"sys_platform": "win32", "platform_system": "Windows", "platform_machine": "AMD64", "os_name": "nt"}),
+    "linux-amd64": (
+        "linux/amd64",
+        _manylinux("x86_64"),
+        {
+            "sys_platform": "linux",
+            "platform_system": "Linux",
+            "platform_machine": "x86_64",
+            "os_name": "posix",
+        },
+    ),
+    "linux-arm64": (
+        "linux/arm64",
+        _manylinux("aarch64"),
+        {
+            "sys_platform": "linux",
+            "platform_system": "Linux",
+            "platform_machine": "aarch64",
+            "os_name": "posix",
+        },
+    ),
+    "darwin-arm64": (
+        "darwin/arm64",
+        _macos("arm64", 11),
+        {
+            "sys_platform": "darwin",
+            "platform_system": "Darwin",
+            "platform_machine": "arm64",
+            "os_name": "posix",
+        },
+    ),
+    "windows-amd64": (
+        "windows/amd64",
+        ["win_amd64"],
+        {
+            "sys_platform": "win32",
+            "platform_system": "Windows",
+            "platform_machine": "AMD64",
+            "os_name": "nt",
+        },
+    ),
 }
 
 _MISSING = re.compile(
-    r"(?:no matching distribution found for|could not find a version that satisfies the requirement)\s+([A-Za-z0-9][A-Za-z0-9._-]*)",
+    r"(?:no matching distribution found for"
+    r"|could not find a version that satisfies the requirement)"
+    r"\s+([A-Za-z0-9][A-Za-z0-9._-]*)",
     re.I,
 )
 
@@ -89,14 +130,36 @@ def pins_for(constraints: Path, env: dict[str, str]) -> tuple[list[str], list[st
     return pins, options
 
 
-def download(pins: list[str], options: list[str], dest: Path, tags: list[str], py: str, work: Path) -> list[str]:
+def download(
+    pins: list[str], options: list[str], dest: Path, tags: list[str], py: str, work: Path
+) -> list[str]:
     missing: list[str] = []
     for _ in range(60):
         req = work / "pins.txt"
         req.write_text("\n".join(options + pins) + "\n", encoding="utf-8")
-        cmd = [sys.executable, "-m", "pip", "download", "--disable-pip-version-check", "--no-input", "--no-deps",
-               "--only-binary=:all:", "--require-hashes", "--dest", str(dest), "--python-version", py,
-               "--implementation", "cp", "--abi", "cp" + py.replace(".", ""), "--abi", "abi3", "--abi", "none"]
+        cmd = [
+            sys.executable,
+            "-m",
+            "pip",
+            "download",
+            "--disable-pip-version-check",
+            "--no-input",
+            "--no-deps",
+            "--only-binary=:all:",
+            "--require-hashes",
+            "--dest",
+            str(dest),
+            "--python-version",
+            py,
+            "--implementation",
+            "cp",
+            "--abi",
+            "cp" + py.replace(".", ""),
+            "--abi",
+            "abi3",
+            "--abi",
+            "none",
+        ]
         for t in tags:
             cmd += ["--platform", t]
         cmd += ["-r", str(req)]
@@ -125,8 +188,14 @@ def main() -> int:
     a = ap.parse_args()
     os_arch, tags, marker = TARGETS[a.platform]
     py = ".".join(a.python.split(".")[:2])
-    env = {"python_version": py, "python_full_version": py + ".0", "implementation_name": "cpython",
-           "platform_python_implementation": "CPython", "implementation_version": py + ".0", **marker}
+    env = {
+        "python_version": py,
+        "python_full_version": py + ".0",
+        "implementation_name": "cpython",
+        "platform_python_implementation": "CPython",
+        "implementation_version": py + ".0",
+        **marker,
+    }
     a.dest.mkdir(parents=True, exist_ok=True)
     work = a.dest.parent / ".wheelhouse-work"
     work.mkdir(exist_ok=True)
@@ -145,12 +214,20 @@ def main() -> int:
                 h.update(chunk)
         files.append({"name": w.name, "sha256": h.hexdigest(), "size": w.stat().st_size})
     built = dt.datetime.fromtimestamp(int(os.environ["SOURCE_DATE_EPOCH"]), dt.UTC)
-    index = {"version": a.version, "platform": os_arch, "python": py, "files": files,
-             "built_at": built.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    index = {
+        "version": a.version,
+        "platform": os_arch,
+        "python": py,
+        "files": files,
+        "built_at": built.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    }
     if missing:
         index["missing"] = sorted(set(missing))
     (a.dest / "index.json").write_text(json.dumps(index, indent=2) + "\n", encoding="utf-8")
-    print(f"{len(files)} wheels for {a.platform}, {len(set(missing))} pins without one", file=sys.stderr)
+    print(
+        f"{len(files)} wheels for {a.platform}, {len(set(missing))} pins without one",
+        file=sys.stderr,
+    )
     return 0
 
 
