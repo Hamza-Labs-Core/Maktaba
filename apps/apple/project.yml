@@ -308,6 +308,9 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        # only the system's HTTPS, as the iPhone apps: no export-compliance question on every
+        # TestFlight build (testflight.yml uploads it)
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         # its own catalog: the layered tvOS icon and Top Shelf images (AppIcon.brandassets)
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: ""

@@ -8,7 +8,9 @@
 #     and release.yml then builds and signs nothing again: only a draft is rebuilt);
 #   - its commit is on main, and the newest published release's commit is in its history
 #     (a tag cut from a branch that missed what the newest release carried would undo it);
-#   - CI passed on that commit (the CI workflow's run for it; a run still going is waited for);
+#   - CI passed on that commit (the CI workflow's run for it; a run still going is waited for).
+#     A finished run that failed only on the jobs IGNORED_CI_JOBS names (the flaky iPhone/iPad
+#     Player UI shards, the owner 2026-11-02) and the ci-success rollup counts as passed;
 #   - the update rehearsal passed on that exact commit (update-rehearsal.yml: every update
 #     path of the Mac app, from the latest published release to this commit; waited for
 #     likewise). The owner, 2026-10-28: no release before its updates are proven in CI.
@@ -19,7 +21,7 @@
 #
 # Env: TAG, SHA, GH_TOKEN, GITHUB_REPOSITORY; ALLOW_TAG (the variable); CI_WORKFLOW
 # (default ci.yml); REHEARSAL_WORKFLOW (default update-rehearsal.yml); CI_WAIT_SECONDS
-# (default 3600, for each). Writes maintenance=, published=,
+# (default 3600, for each); CI_POLL_SECONDS (default 30). Writes maintenance=, published=,
 # latest= (true|false) and newest= to $GITHUB_OUTPUT when set.
 set -euo pipefail
 
@@ -70,26 +72,68 @@ fi
 # waited for while it runs; and 4. the update rehearsal passed on that exact commit
 # (update-rehearsal.yml, docs/update-rehearsal.md: every update path of the owner's Mac
 # app, rehearsed; it runs on every push to main and release/*)
-passed_on() { # passed_on WORKFLOW WHAT
-    local workflow="$1" what="$2" runs
+# The CI jobs a release does not wait on. The owner, 2026-11-02 ("Tag without them"): the
+# Apple iPhone/iPad Player UI test shards are flaky and are being fixed separately, so a
+# finished CI run whose only failed jobs are these shards (and the ci-success rollup that
+# reports them) still lets a tag through. Exactly the iphone/ipad shards: the Mac UI job
+# "(mac)", the UI test builds and every other Apple job stay required. Remove this variable
+# (set it to '') once the shards are reliable.
+IGNORED_CI_JOBS='^apple-apps / Player UI tests [(](iphone|ipad) [0-9]+/[0-9]+[)]$'
+# The rollup job: not judged itself; the jobs it rolls up are judged directly instead.
+CI_ROLLUP_JOB='ci-success'
+
+# jobs_pass RUN_ID: a finished CI run failed only on ignored jobs. Every other job is success
+# or skipped (a failure, a cancellation, anything else blocks). The ignored jobs that failed
+# are printed so the release notes them.
+jobs_pass() {
+    local id="$1" jobs blocking ignored
+    jobs="$(gh api "repos/${GITHUB_REPOSITORY:?}/actions/runs/${id}/jobs?per_page=100" --paginate \
+        --jq '.jobs[] | "\(.conclusion)\t\(.name)"')" || return 1
+    [ -n "${jobs}" ] || return 1
+    blocking="$(awk -F'\t' -v ign="${IGNORED_CI_JOBS}" -v rollup="${CI_ROLLUP_JOB}" '
+        $2 == rollup { next }
+        ign != "" && $2 ~ ign { next }
+        $1 != "success" && $1 != "skipped" { print $2 " (" $1 ")" }' <<<"${jobs}")"
+    if [ -n "${blocking}" ]; then
+        echo "tag guard: CI run ${id} failed on required jobs: $(tr '\n' ',' <<<"${blocking}" | sed 's/,$//')"
+        return 1
+    fi
+    ignored="$(awk -F'\t' -v ign="${IGNORED_CI_JOBS}" '
+        ign != "" && $2 ~ ign && $1 != "success" && $1 != "skipped" { print $2 " (" $1 ")" }' <<<"${jobs}")"
+    echo "::warning::tag guard: CI run ${id} passed every required job; ignored failures (the owner, 2026-11-02: flaky iPhone/iPad Player UI shards): $(tr '\n' ',' <<<"${ignored:-none}" | sed 's/,$//')"
+    return 0
+}
+
+passed_on() { # passed_on WORKFLOW WHAT [judge-jobs]
+    local workflow="$1" what="$2" judge="${3:-}" runs id
     local deadline=$(( $(date +%s) + wait_s ))
     while :; do
-        runs="$(gh run list --workflow "${workflow}" --commit "${SHA}" --limit 50 --json status,conclusion \
-            --jq '[.[] | "\(.status) \(.conclusion)"] | .[]' 2>/dev/null || true)"
-        if grep -q '^completed success$' <<<"${runs}"; then
+        runs="$(gh run list --workflow "${workflow}" --commit "${SHA}" --limit 50 --json status,conclusion,databaseId \
+            --jq '[.[] | "\(.status) \(.conclusion) \(.databaseId)"] | .[]' 2>/dev/null || true)"
+        if grep -q '^completed success ' <<<"${runs}"; then
             echo "tag guard: ${what} passed on ${SHA}"
             return 0
         fi
+        # a finished, failed CI run whose only failed jobs are the ignored ones (a cancelled run
+        # is never judged: it blocks)
+        if [ -n "${judge}" ]; then
+            while read -r id; do
+                if jobs_pass "${id}" </dev/null; then
+                    echo "tag guard: ${what} passed on ${SHA} (run ${id}, every required job)"
+                    return 0
+                fi
+            done < <(awk '$1 == "completed" && $2 == "failure" { print $3 }' <<<"${runs}")
+        fi
         if [ -n "${runs}" ] && ! grep -qv '^completed ' <<<"${runs}"; then
-            err "${what} did not pass on ${SHA} ($(tr '\n' ',' <<<"${runs}" | sed 's/,$//')): fix main, then tag the commit ${what} passed on"
+            err "${what} did not pass on ${SHA} ($(cut -d' ' -f1,2 <<<"${runs}" | tr '\n' ',' | sed 's/,$//')): fix main, then tag the commit ${what} passed on"
         fi
         [ "$(date +%s)" -lt "${deadline}" ] \
             || err "no finished run of ${what} on ${SHA} after ${wait_s}s (${runs:-none started}): tag a commit ${what} passed on"
         echo "tag guard: waiting for ${what} on ${SHA} (${runs:-not started yet})"
-        sleep 30
+        sleep "${CI_POLL_SECONDS:-30}"
     done
 }
-passed_on "${ci}" "CI"
+passed_on "${ci}" "CI" judge-jobs
 passed_on "${REHEARSAL_WORKFLOW:-update-rehearsal.yml}" "the update rehearsal"
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then

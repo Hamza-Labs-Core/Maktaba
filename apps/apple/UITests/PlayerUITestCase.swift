@@ -463,6 +463,23 @@ class PlayerUITestCase: XCTestCase {
         }
     }
 
+    /// Drags the content under `element` by `offset` as a finger does that means to scroll:
+    /// down, moving for about half a second, then still for a moment before it lifts.
+    ///
+    /// Not `swipeUp()` and the like: a swipe is a flick let go while still moving, and a
+    /// scroll view follows a flick only when it sees the finger move over a few frames before
+    /// the lift. One that is over in under ~20 ms is not followed at all (every time, on a
+    /// throwaway simulator); a swipe on a 68-pt guide row is 58 pt in 58 ms. On busy CI
+    /// runners the guide's swipes moved nothing, not a point and no animation (2 November
+    /// 2026: four runs, iPhone and iPad), while the same tests passed on the same commits on
+    /// other runners. A drag that moves for half a second and stops before it lifts is
+    /// followed however its touches are paced.
+    func drag(_ element: XCUIElement, by offset: CGVector, from point: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
+        let start = element.coordinate(withNormalizedOffset: point)
+        start.press(forDuration: 0.05, thenDragTo: start.withOffset(offset),
+                    withVelocity: XCUIGestureVelocity(rawValue: 400), thenHoldForDuration: 0.3)
+    }
+
     /// Swipes up until `e` is on screen and can be tapped (a few swipes at most).
     func scrollUntil(_ e: XCUIElement) {
         for _ in 0 ..< 8 where !(e.exists && e.isHittable) { app.swipeUp(velocity: .slow) }
