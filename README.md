@@ -134,6 +134,29 @@ troubleshooting, and pre-commit setup.
 
 ---
 
+## Hardware requirements
+
+Transcribing the backlog decides the hardware; everything else is light. Measured on the live
+home (Mac Studio M3 Ultra, 96 GB, v0.3.62): about **1,120 audio-hours a day (~47× real time)**,
+so ~50,000 videos of 15 minutes take about **11 days** and ~150,000 about a month. Once it has
+caught up, the new videos of a day take minutes.
+
+| | Small (~5k videos) | Medium (~50k, a few TV channels) | Large (~150k, 20+ channels) |
+|---|---|---|---|
+| macOS (Apple Silicon) | 16–24 GB | Max-class GPU, 36–64 GB | Ultra-class GPU, 96 GB+ |
+| Windows / Linux (x86_64) | 16 GB RAM, NVIDIA 4 GB+ or CPU only (slow) | 32 GB RAM, NVIDIA 10 GB+ (Linux 8 GB+) | 64 GB+ RAM, NVIDIA 20 GB+ or several machines |
+| Disk for Maktaba's data, plus backups | ~20 GB | ~60 GB | ~150 GB |
+
+The media stays on your NAS (SMB or NFS); live TV sends about 10 Mbps per watched channel.
+CPU-only transcription runs at about 2.6× real time: fine for keeping up, too slow to catch up
+a large library. Linux aarch64 runs the server without transcription.
+
+[docs/hardware.md](docs/hardware.md) has the measurements, how each number was found (measured,
+from the code, or estimated), the settings that change the load, worker machines, and running
+the home on a dev machine.
+
+---
+
 ## Install the home server
 
 **Linux, one installation that runs everything** ([Epic 39](specs/epics/39-linux-app/README.md)).
@@ -433,6 +456,7 @@ maktaba/
 See:
 
 - [`specs/architecture.md`](specs/architecture.md) — system design.
+- [`docs/hardware.md`](docs/hardware.md) — what the home and worker machines need, by library size, measured on the live home.
 - [`docs/testing.md`](docs/testing.md) — test pyramid, tier budgets, CI gates.
 - [`docs/cluster/README.md`](docs/cluster/README.md) — several machines as one Maktaba home: joining, files on the share, LLMs, troubleshooting.
 - [`docs/updates.md`](docs/updates.md) — how updates install, roll back and restore.
