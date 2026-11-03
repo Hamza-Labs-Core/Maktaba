@@ -112,7 +112,32 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "server only": (
         ["cmd/maktaba-server/internal/supervisor/supervisor.go"],
         {"unit", "integration", "replica", "launcher", "node-packaging"},
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration"}, "node-packaging": {"release_venv"}},
+        {
+            "lint": {"go", "catalog"},
+            "unit": {"go"},
+            "integration": {"integration"},
+            "node-packaging": {"release_venv"},
+        },
+    ),
+    # Epic 51 (story 51.01): a change to the graph runs the catalog job beside the pipeline's
+    "the stage graph runs the catalog check": (
+        ["pipeline/src/maktaba_pipeline/engine/graph.py"],
+        {"unit", "integration", "e2e", "node-packaging"},
+        {
+            "lint": {"pipeline", "catalog"},
+            "unit": {"pipeline"},
+            "node-packaging": {"packaging", "release_venv"},
+        },
+    ),
+    "the catalog runs its check, the Go and the pipeline parts": (
+        ["shared/components/catalog.toml"],
+        GO_SERVER,
+        {"lint": {"go", "pipeline", "catalog"}, "unit": {"go", "pipeline"}},
+    ),
+    "the language files run the catalog's words check": (
+        ["web/src/i18n/ar.json"],
+        {"unit", "e2e", "build-artifacts"},
+        {"lint": {"web", "catalog"}, "unit": {"web"}},
     ),
     "web only": (
         ["web/src/pages/Home.tsx"],

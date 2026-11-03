@@ -21,6 +21,7 @@ require (
 )
 
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
@@ -116,3 +117,5 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify => ../../shar
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme => ../../shared/go/pagetheme
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/ports => ../../shared/go/ports
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../../shared/components

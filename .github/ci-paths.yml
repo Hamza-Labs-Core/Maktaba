@@ -112,6 +112,33 @@ lint_web:
   - *web
   - '.github/workflows/_lint.yml'
 
+# the component catalog (Epic 51, story 51.01): the catalog and its pipeline copy, what
+# it must cover (the graph, the extensions, the supervisor's roles, the loop start
+# files), the words its titles and reasons need, and the checks themselves
+catalog:
+  - *ci
+  - *make
+  - '.github/workflows/_lint.yml'
+  - 'shared/components/**'
+  - 'pipeline/src/maktaba_pipeline/components/**'
+  - 'pipeline/tests/components/**'
+  - 'pipeline/src/maktaba_pipeline/engine/graph.py'
+  - 'pipeline/src/maktaba_pipeline/extensions/**'
+  - 'pipeline/src/maktaba_pipeline/runtime.py'
+  - 'pipeline/src/maktaba_pipeline/rules.py'
+  - 'cmd/maktaba-server/internal/supervisor/**'
+  - 'cmd/maktaba-server/cmd_serve.go'
+  - 'api/main.go'
+  - 'api/cluster_bootstrap.go'
+  - 'api/node_bootstrap.go'
+  - 'api/internal/router/**'
+  - 'api/internal/flags/declarations.go'
+  - 'streaming/*_wire.go'
+  - 'web/src/i18n/en.json'
+  - 'web/src/i18n/ar.json'
+  - 'tools/ci/catalog_words.mjs'
+  - 'tools/ci/catalog_words.test.mjs'
+
 # ---- unit (_unit.yml) -----------------------------------------------------------------
 
 unit_go:

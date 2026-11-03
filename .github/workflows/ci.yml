@@ -69,6 +69,7 @@ jobs:
       lint_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_go == 'true' }}
       lint_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_pipeline == 'true' }}
       lint_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_web == 'true' }}
+      catalog: ${{ github.event_name != 'pull_request' || steps.filter.outputs.catalog == 'true' }}
       unit_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_go == 'true' }}
       unit_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_pipeline == 'true' }}
       unit_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_web == 'true' }}
@@ -140,6 +141,7 @@ jobs:
       go: ${{ needs.changes.outputs.lint_go == 'true' }}
       pipeline: ${{ needs.changes.outputs.lint_pipeline == 'true' }}
       web: ${{ needs.changes.outputs.lint_web == 'true' }}
+      catalog: ${{ needs.changes.outputs.catalog == 'true' }}
 
   unit:
     needs: [changes]

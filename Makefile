@@ -8,7 +8,7 @@
 SHELL := /bin/bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-GO_MODULES := api streaming cmd/maktaba-server cmd/maktaba-launcher shared/go/layout shared/go/pagetheme shared/go/ports shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/go/releaseverify shared/testtier/go tools/release tools/test-budget tools/log-lint tools/affected-tests
+GO_MODULES := api streaming cmd/maktaba-server cmd/maktaba-launcher shared/components shared/go/layout shared/go/pagetheme shared/go/ports shared/log/go shared/health/go shared/metrics/go shared/tracing/go shared/errrpt/go shared/go/releaseverify shared/testtier/go tools/release tools/test-budget tools/log-lint tools/affected-tests
 PIPELINE_DIR := pipeline
 WEB_DIR := web
 MIGRATIONS_DIR := shared/db/migrations
@@ -212,6 +212,22 @@ lint-log:  ## Story 21.1 AC-4: no runtime data concatenated into log msg.
 	@echo "==> log-lint (api/streaming/shared log sites)"
 	cd $(LOG_LINT_DIR) && go run . \
 		--dirs "$(CURDIR)/api,$(CURDIR)/streaming,$(CURDIR)/shared/log/go,$(CURDIR)/shared/health/go,$(CURDIR)/shared/metrics/go,$(CURDIR)/shared/tracing/go,$(CURDIR)/shared/errrpt/go"
+
+.PHONY: catalog-sync
+catalog-sync:  ## Epic 51: copy the component catalog into the pipeline and rewrite the loaders' shared dump.
+	cp shared/components/catalog.toml $(PIPELINE_DIR)/src/maktaba_pipeline/components/catalog.toml
+	cd shared/components && go run ./cmd/catalog-dump > testdata/catalog.dump.json.tmp
+	mv shared/components/testdata/catalog.dump.json.tmp shared/components/testdata/catalog.dump.json
+
+.PHONY: catalog-check
+catalog-check:  ## Epic 51 (story 51.01): the catalog job: the copy is current, every stage, role and title is in it.
+	$(MAKE) --no-print-directory catalog-sync
+	git diff --exit-code -- shared/components $(PIPELINE_DIR)/src/maktaba_pipeline/components/catalog.toml
+	cd $(PIPELINE_DIR) && uv run --extra dev pytest tests/components/test_catalog.py -q -p no:cacheprovider
+	cd shared/components && go test -count=1 ./...
+	cd cmd/maktaba-server && CGO_ENABLED=0 go test -count=1 ./internal/supervisor -run TestCatalogRoles
+	node tools/ci/catalog_words.mjs
+	node --test tools/ci/catalog_words.test.mjs
 
 .PHONY: lint-migrations
 lint-migrations:  ## Migration conventions: append-only + idempotency + SQLite parity.

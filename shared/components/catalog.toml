@@ -1,0 +1,691 @@
+# The component catalog (Epic 51, story 51.01): every part of Maktaba, once.
+#
+# Every pipeline stage, supervisor process and background loop belongs to exactly one
+# component here; the `catalog` CI job fails when code and this file drift apart. The
+# words for each title_key / desc_key, phase and reason live in web/src/i18n/en.json and
+# ar.json, never here.
+#
+# Embedded in the Go binaries (shared/components, go:embed) and in the pipeline
+# (maktaba_pipeline/components/catalog.toml, a byte-for-byte copy written by
+# `make catalog-sync`). Both loaders refuse an unknown field.
+#
+# Fields (story 51.01 §1):
+#   id          ^[a-z][a-z0-9_]*(\.[a-z0-9_*-]+)*$, unique; core.* ids are not switchable
+#   kind        process | stages | loop | extension | asset, or a + join of the first
+#               three in the order stages+process+loop; it matches the lists it has
+#   switchable  default true; false for core.* and only for them
+#   group       the UI section
+#   stages      StageDef names (engine/graph.py and the built-in extensions)
+#   processes   "<role>/<instance>"; "*" alone matches any instance, "x-*" a prefix;
+#               "pipeline/" is the main pipeline worker
+#   loops       "<host>:<name>", host supervisor | api | streaming | pipeline
+#   requires    ids, or "any:a|b|c" (one of them is enough); started first, stopped last
+#   wants       ids used when present (missing: degraded, not blocked)
+#   conflicts   ids that cannot run at the same time; listed on both sides
+#   settings    "rules.<section>" and "toml:<section>.<key>" it owns
+#   platforms   darwin-arm64 | windows-amd64 | linux-amd64 | linux-arm64
+#   placement   any | home
+#   bundles     full | core | worker: enabled by default in these bundles
+#   drain       { grace_s = 30, checkpoint = false } (stages)
+#   stop_grace_s  loops only; default 5
+#   licence     an existing flag of api/internal/flags/declarations.go, or empty
+#   features    the user-facing words it serves (top-level `features`)
+#   resources   { ram_mb, disk_mb, gpu = none | preferred | required }
+#   since       first release with this id
+#   assets: source (default), sources (per platform), files ({path, sha256, size},
+#   filled by 51.15), in_payload
+
+schema = 1
+
+phases = ["not_installed", "installing", "removing", "off", "stopped", "waiting",
+          "starting", "running", "degraded", "draining", "failed"]
+
+reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_enough_memory",
+           "verify_failed", "crash_loop", "held", "stop_timeout", "settings_invalid",
+           "env_override", "boot_flag", "reconcile_off", "not_in_payload", "component_off",
+           "component_held", "required_by"]
+
+# GET /api/capabilities answers these words (README §4.12). chapters and
+# recommendations have no component behind them yet and always answer "on".
+features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube",
+            "plex", "remote_access", "recommendations"]
+
+# ---- core: always on, shown for their health -----------------------------------------
+
+[[component]]
+id         = "core.postgres"
+kind       = "process"
+switchable = false
+group      = "core"
+title_key  = "components.core.postgres.title"
+desc_key   = "components.core.postgres.desc"
+processes  = ["postgres/"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "core.api"
+kind       = "process+loop"
+switchable = false
+group      = "core"
+title_key  = "components.core.api.title"
+desc_key   = "components.core.api.desc"
+processes  = ["api/"]
+loops      = ["api:process_recorder", "api:license_refresher", "api:license_reload",
+              "api:eventbus_run", "api:eventbus_pruner", "api:idempotency_sweep",
+              "api:jwt_key_reaper", "api:queues_snapshots", "api:sharepath_reload",
+              "api:browse_rowcache_listen"]
+settings   = ["rules.audit", "rules.storage", "rules.system_health", "rules.search"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "core.streaming"
+kind       = "process+loop"
+switchable = false
+group      = "core"
+title_key  = "components.core.streaming.title"
+desc_key   = "components.core.streaming.desc"
+processes  = ["streaming/"]
+loops      = ["streaming:watchdog", "streaming:cache_gc", "streaming:session_reaper",
+              "streaming:vod_purge", "streaming:hwaccel", "streaming:share_map"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "core.pipeline"
+kind       = "stages+process+loop"
+switchable = false
+group      = "core"
+title_key  = "components.core.pipeline.title"
+desc_key   = "components.core.pipeline.desc"
+# component_catchup (51.06) joins these when its StageDef lands
+stages     = ["scan", "probe", "content_hash", "thumb_hash", "link", "fingerprint",
+              "style_sample", "fp_gate", "access_check", "storage_canonicalize", "categorize"]
+processes  = ["pipeline/", "pipeline/chroma-copy"]
+loops      = ["pipeline:worker-hb", "pipeline:stage-selection", "pipeline:reconciler",
+              "pipeline:pruner", "pipeline:audio-cache-sweep", "pipeline:claim-lease",
+              "pipeline:index-close"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "core.node"
+kind       = "process+loop"
+switchable = false
+group      = "core"
+title_key  = "components.core.node.title"
+desc_key   = "components.core.node.desc"
+processes  = ["copy/"]
+loops      = ["api:node_agent_feed", "api:node_check_role", "api:node_db_watch",
+              "api:node_keep_home_seen", "api:node_link_client", "api:node_report",
+              "api:node_report_loop", "api:node_resolver_watch", "api:node_schema_guard",
+              "api:nodedb_when_up", "api:cluster_copies", "api:clusterauth_node_read"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "core.updates"
+kind       = "loop"
+switchable = false
+group      = "core"
+title_key  = "components.core.updates.title"
+desc_key   = "components.core.updates.desc"
+loops      = ["api:updates_health_sampler", "api:update_disconnect_machines"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "core.switchover"
+kind       = "loop"
+switchable = false
+group      = "core"
+title_key  = "components.core.switchover.title"
+desc_key   = "components.core.switchover.desc"
+loops      = ["api:switchover_resume", "api:switchover_keep_standbys", "api:switchover_finish",
+              "api:switchover_run", "api:switchover_after_cancel", "api:switchover_retry_thaw"]
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "core", "worker"]
+since      = "0.3.66"
+
+# ---- media and library ---------------------------------------------------------------
+
+[[component]]
+id        = "media.thumbnails"
+kind      = "stages"
+group     = "media"
+title_key = "components.media.thumbnails.title"
+desc_key  = "components.media.thumbnails.desc"
+stages    = ["thumbnail", "thumb_small", "chapter_thumbs"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core", "worker"]
+since     = "0.3.66"
+
+[[component]]
+id        = "library.convert"
+kind      = "stages"
+group     = "library"
+title_key = "components.library.convert.title"
+desc_key  = "components.library.convert.desc"
+stages    = ["convert_mp4"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core", "worker"]
+since     = "0.3.66"
+
+[[component]]
+id        = "library.dedup"
+kind      = "stages"
+group     = "library"
+title_key = "components.library.dedup.title"
+desc_key  = "components.library.dedup.desc"
+stages    = ["dedup_scan", "dedup_apply", "trash_purge", "file_restore"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core"]
+since     = "0.3.66"
+
+[[component]]
+id        = "library.repair"
+kind      = "stages"
+group     = "library"
+title_key = "components.library.repair.title"
+desc_key  = "components.library.repair.desc"
+stages    = ["repair_broken"]
+wants     = ["tool.yt-dlp"]
+settings  = ["rules.repair"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+since     = "0.3.66"
+
+# ---- processing ----------------------------------------------------------------------
+
+[[component]]
+id        = "transcription"
+kind      = "stages+process"
+group     = "processing"
+title_key = "components.transcription.title"
+desc_key  = "components.transcription.desc"
+# refine, second listen and word merge run inside transcribe
+stages    = ["extract", "transcribe"]
+processes = ["pipeline/stt-*"]
+requires  = ["runtime.ml", "any:model.whisper-turbo|model.whisper-large-v3|model.whisper-medium"]
+wants     = ["model.cohere-arabic"]
+settings  = ["rules.transcription", "toml:transcription.workers"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+resources = { ram_mb = 6000, disk_mb = 0, gpu = "preferred" }
+drain     = { grace_s = 120, checkpoint = true }
+bundles   = ["full", "worker"]
+features  = ["transcripts"]
+since     = "0.3.66"
+
+[[component]]
+id        = "subtitles"
+kind      = "stages"
+group     = "processing"
+title_key = "components.subtitles.title"
+desc_key  = "components.subtitles.desc"
+stages    = ["subtitle_gen"]
+requires  = ["transcription"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+features  = ["subtitles"]
+since     = "0.3.66"
+
+[[component]]
+id        = "search.semantic"
+kind      = "stages+process"
+group     = "processing"
+title_key = "components.search.semantic.title"
+desc_key  = "components.search.semantic.desc"
+stages    = ["index", "chapter_infer", "topic_assign", "topic_recluster"]
+processes = ["pipeline/index"]
+requires  = ["runtime.ml", "model.embedder"]
+settings  = ["toml:pipeline.index_worker"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+features  = ["semantic_search"]
+since     = "0.3.66"
+
+[[component]]
+id        = "classify"
+kind      = "stages"
+group     = "processing"
+title_key = "components.classify.title"
+desc_key  = "components.classify.desc"
+stages    = ["detect", "tag", "check_tags", "check_clips", "display_title", "books",
+             "topic_collections", "promo_links", "clip_groups", "rate_style", "review_pages"]
+wants     = ["llm"]
+settings  = ["rules.detect", "rules.tag", "rules.tagcheck", "rules.books",
+             "rules.display_titles", "rules.groups"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+since     = "0.3.66"
+
+[[component]]
+id        = "enrich"
+kind      = "stages+loop"
+group     = "processing"
+title_key = "components.enrich.title"
+desc_key  = "components.enrich.desc"
+stages    = ["enrich"]
+loops     = ["api:enrichment_auto_accept"]
+settings  = ["rules.enrich"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+since     = "0.3.66"
+
+[[component]]
+id        = "llm"
+kind      = "process"
+group     = "processing"
+title_key = "components.llm.title"
+desc_key  = "components.llm.desc"
+processes = ["ollama/"]
+requires  = ["runtime.ollama", "any:model.llm.qwen2_5-7b"]
+settings  = ["toml:llm.enabled", "toml:llm.models"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+resources = { ram_mb = 6000, disk_mb = 0, gpu = "preferred" }
+bundles   = ["full"]
+since     = "0.3.66"
+
+# ---- integrations --------------------------------------------------------------------
+
+[[component]]
+id        = "youtube"
+kind      = "stages"
+group     = "integrations"
+title_key = "components.youtube.title"
+desc_key  = "components.youtube.desc"
+stages    = ["youtube_sync", "youtube_fetch", "youtube_backfill", "exact_dates"]
+requires  = ["tool.yt-dlp"]
+settings  = ["rules.exactdates"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+features  = ["youtube"]
+since     = "0.3.66"
+
+[[component]]
+id        = "ext.plex"
+kind      = "extension"
+group     = "integrations"
+title_key = "components.ext.plex.title"
+desc_key  = "components.ext.plex.desc"
+stages    = ["plex_index", "plex_collection", "plex_groups", "plex_livetv"]
+settings  = ["rules.plexlive"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+# on as its extensions row says (51.07), in no bundle by default
+bundles   = []
+features  = ["plex"]
+since     = "0.3.66"
+
+[[component]]
+id        = "ext.dizquetv"
+kind      = "extension"
+group     = "integrations"
+title_key = "components.ext.dizquetv.title"
+desc_key  = "components.ext.dizquetv.desc"
+stages    = ["dizquetv_show", "dizquetv_channels", "dizquetv_audit"]
+requires  = ["livetv"]
+settings  = ["rules.dizquetv"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.66"
+
+[[component]]
+id        = "ext.cloudflare_stream"
+kind      = "extension"
+group     = "integrations"
+title_key = "components.ext.cloudflare_stream.title"
+desc_key  = "components.ext.cloudflare_stream.desc"
+requires  = ["livetv"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.66"
+
+# ---- live TV -------------------------------------------------------------------------
+
+[[component]]
+id        = "livetv"
+kind      = "stages+loop"
+group     = "livetv"
+title_key = "components.livetv.title"
+desc_key  = "components.livetv.desc"
+stages    = ["plan_channels", "write_channels"]
+loops     = ["api:tvchange_controller", "api:tvremote_controller", "api:tvremote_publisher",
+             "api:tvremote_health_sampler", "pipeline:channel-topup"]
+settings  = ["rules.planner", "rules.tv", "rules.tv_output", "rules.tv_strip",
+             "rules.tv_simulcast", "rules.tv_remote", "rules.tv_cluster"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+features  = ["live_tv"]
+since     = "0.3.66"
+
+[[component]]
+id        = "livetv.slots"
+kind      = "stages+process+loop"
+group     = "livetv"
+title_key = "components.livetv.slots.title"
+desc_key  = "components.livetv.slots.desc"
+stages    = ["tv_stage", "tv_swap", "tv_gc", "tv_rollback"]
+processes = ["tv-slot/*"]
+loops     = ["streaming:slots_frontdoor", "streaming:slots_ops"]
+requires  = ["livetv"]
+conflicts = ["livetv.inprocess"]
+settings  = ["rules.tv_staging", "toml:tv.slots"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+since     = "0.3.66"
+
+[[component]]
+id        = "livetv.inprocess"
+kind      = "loop"
+group     = "livetv"
+title_key = "components.livetv.inprocess.title"
+desc_key  = "components.livetv.inprocess.desc"
+loops     = ["streaming:channel_engine", "streaming:channel_fences", "streaming:channel_sweeper",
+             "streaming:push_relay", "streaming:viewings"]
+requires  = ["livetv"]
+conflicts = ["livetv.slots"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.66"
+
+[[component]]
+id        = "livetv.hdhomerun"
+kind      = "loop"
+group     = "livetv"
+title_key = "components.livetv.hdhomerun.title"
+desc_key  = "components.livetv.hdhomerun.desc"
+loops     = ["streaming:hdhr_ssdp"]
+requires  = ["livetv"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full"]
+since     = "0.3.66"
+
+# ---- remote access and the cluster ---------------------------------------------------
+
+[[component]]
+id        = "cloud.link"
+kind      = "process"
+group     = "system"
+title_key = "components.cloud.link.title"
+desc_key  = "components.cloud.link.desc"
+processes = ["relay/"]
+settings  = ["toml:cloud.enabled"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+# on as [cloud] enabled says (51.03); never licence-gated (51.19)
+bundles   = []
+features  = ["remote_access"]
+since     = "0.3.66"
+
+[[component]]
+id        = "cloud.relay"
+kind      = "loop"
+group     = "system"
+title_key = "components.cloud.relay.title"
+desc_key  = "components.cloud.relay.desc"
+loops     = ["api:cloudlink_reporter"]
+requires  = ["cloud.link"]
+settings  = ["rules.relay"]
+licence   = "cloud_relay"
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "0.3.66"
+
+[[component]]
+id        = "cluster"
+kind      = "loop"
+group     = "cluster"
+title_key = "components.cluster.title"
+desc_key  = "components.cluster.desc"
+loops     = ["api:cluster_housekeeping", "api:cluster_hub", "api:home_link",
+             "api:cluster_push_database", "api:cluster_ensure_access", "api:pairing_sweep",
+             "pipeline:health", "pipeline:cluster-agent"]
+settings  = ["rules.cluster"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "worker"]
+since     = "0.3.66"
+
+[[component]]
+id        = "discovery.mdns"
+kind      = "loop"
+group     = "cluster"
+title_key = "components.discovery.mdns.title"
+desc_key  = "components.discovery.mdns.desc"
+loops     = ["supervisor:mdns", "api:mdns"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core", "worker"]
+since     = "0.3.66"
+
+# ---- system --------------------------------------------------------------------------
+
+[[component]]
+id        = "queue_health"
+kind      = "loop"
+group     = "system"
+title_key = "components.queue_health.title"
+desc_key  = "components.queue_health.desc"
+loops     = ["pipeline:queue-health"]
+settings  = ["rules.queue_health"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core"]
+since     = "0.3.66"
+
+[[component]]
+id        = "analytics"
+kind      = "loop"
+group     = "system"
+title_key = "components.analytics.title"
+desc_key  = "components.analytics.desc"
+loops     = ["api:watch_reaper", "api:usage_counter"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core"]
+since     = "0.3.66"
+
+[[component]]
+id        = "telemetry"
+kind      = "loop"
+group     = "system"
+title_key = "components.telemetry.title"
+desc_key  = "components.telemetry.desc"
+loops     = ["api:telemetry_sender"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+# on as the owner's opt-in says (unchanged), in no bundle by default
+bundles   = []
+since     = "0.3.66"
+
+[[component]]
+id        = "backups"
+kind      = "loop"
+group     = "system"
+title_key = "components.backups.title"
+desc_key  = "components.backups.desc"
+loops     = ["supervisor:backups"]
+settings  = ["toml:backups.nightly"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core"]
+since     = "0.3.66"
+
+[[component]]
+id        = "updates.auto"
+kind      = "loop"
+group     = "system"
+title_key = "components.updates.auto.title"
+desc_key  = "components.updates.auto.desc"
+# a manual update always works (core.updates)
+loops     = ["api:update_checker", "api:updates_discoverer", "api:updates_scheduler",
+             "api:updates_driver"]
+settings  = ["rules.updates"]
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core", "worker"]
+since     = "0.3.66"
+
+# ---- runtimes, models, tools (assets: installed or not, nothing runs) ----------------
+
+[[component]]
+id         = "runtime.ml"
+kind       = "asset"
+group      = "runtimes"
+title_key  = "components.runtime.ml.title"
+desc_key   = "components.runtime.ml.desc"
+# today the venv downloads the wheels from PyPI on first run (constraints.txt); 51.15
+# makes it a wheelhouse pack
+source     = "pack:runtime.ml"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "runtime.ollama"
+kind       = "asset"
+group      = "runtimes"
+title_key  = "components.runtime.ollama.title"
+desc_key   = "components.runtime.ollama.desc"
+source     = "pack:runtime.ollama"
+# carried in the Mac's full payload; a pack elsewhere
+sources    = { darwin-arm64 = "payload:ollama" }
+in_payload = true
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full"]
+since      = "0.3.66"
+
+[[component]]
+id         = "model.whisper-turbo"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.whisper-turbo.title"
+desc_key   = "components.model.whisper-turbo.desc"
+requires   = ["runtime.ml"]
+source     = "hf:dropbox-dash/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf"
+sources    = { darwin-arm64 = "hf:mlx-community/whisper-large-v3-turbo" }
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "model.whisper-large-v3"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.whisper-large-v3.title"
+desc_key   = "components.model.whisper-large-v3.desc"
+requires   = ["runtime.ml"]
+source     = "hf:Systran/faster-whisper-large-v3@edaa852ec7e145841d8ffdb056a99866b5f0a478"
+sources    = { darwin-arm64 = "hf:mlx-community/whisper-large-v3-mlx" }
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.66"
+
+[[component]]
+id         = "model.whisper-medium"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.whisper-medium.title"
+desc_key   = "components.model.whisper-medium.desc"
+requires   = ["runtime.ml"]
+source     = "hf:Systran/faster-whisper-medium"
+sources    = { darwin-arm64 = "hf:mlx-community/whisper-medium-mlx" }
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.66"
+
+[[component]]
+id         = "model.cohere-arabic"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.cohere-arabic.title"
+desc_key   = "components.model.cohere-arabic.desc"
+requires   = ["runtime.ml"]
+source     = "hf:CohereLabs/cohere-transcribe-arabic-07-2026@c3e911b42149bf7a1e53d5cef9878aee87515a23"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "model.refine"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.refine.title"
+desc_key   = "components.model.refine.desc"
+requires   = ["runtime.ml"]
+# CAMeL Tools' Arabic dictionary, fetched with the ML runtime today
+source     = "pack:model.refine"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "model.embedder"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.embedder.title"
+desc_key   = "components.model.embedder.desc"
+requires   = ["runtime.ml"]
+source     = "hf:intfloat/multilingual-e5-small"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "model.llm.qwen2_5-7b"
+kind       = "asset"
+group      = "models"
+title_key  = "components.model.llm.qwen2_5-7b.title"
+desc_key   = "components.model.llm.qwen2_5-7b.desc"
+requires   = ["runtime.ollama"]
+source     = "ollama:qwen2.5:7b"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full"]
+since      = "0.3.66"
+
+[[component]]
+id         = "tool.yt-dlp"
+kind       = "asset"
+group      = "tools"
+title_key  = "components.tool.yt-dlp.title"
+desc_key   = "components.tool.yt-dlp.desc"
+# today the pipeline's [mediaintel] extra
+source     = "pack:tool.yt-dlp"
+in_payload = false
+platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles    = ["full", "worker"]
+since      = "0.3.66"
+
+[[component]]
+id         = "tool.ffmpeg"
+kind       = "asset"
+group      = "tools"
+title_key  = "components.tool.ffmpeg.title"
+desc_key   = "components.tool.ffmpeg.desc"
+# bundled (core) on the Mac and Windows; on Linux the system's, or this pack when the
+# distribution's is missing or too old
+source     = "pack:tool.ffmpeg"
+in_payload = false
+platforms  = ["linux-amd64", "linux-arm64"]
+bundles    = []
+since      = "0.3.66"
