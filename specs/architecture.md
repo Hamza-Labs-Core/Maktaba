@@ -2658,7 +2658,13 @@ run with one of three roles:
 - **`--role=api`** — public REST/JSON endpoints (auth, accounts,
   servers, billing, push ingest, admin). Fronted by Cloudflare for
   TLS + DDoS at `api.maktaba.tv`, `app.maktaba.tv`,
-  `admin.maktaba.tv`.
+  `admin.maktaba.tv`, reached only through a Cloudflare Tunnel;
+  the operator console and `/v1/admin/*` are served on
+  `admin.maktaba.tv` alone, to staff accounts with MFA (Epic 50 §15,
+  stories 50.30–50.34). `admin.maktaba.tv` hosts no plugin-store
+  review: the store is a separate service at `plugins.maktaba.tv`
+  (review and admin at `plugins.maktaba.tv/admin`), with its own
+  accounts and auth, on Cloudflare (Epic 54).
 - **`--role=relay`** — accepts WSS tunnels from servers and HTTPS
   from clients on `*.maktaba.tv`. TLS terminates at Hetzner LB
   (Cloudflare-bypass for cost on streaming bandwidth).

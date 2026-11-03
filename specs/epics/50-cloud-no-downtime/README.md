@@ -9,6 +9,9 @@
 > **Wiki:** [epic-50-cloud-no-downtime.md](../../../docs/wiki/epics/epic-50-cloud-no-downtime.md).
 > **Home broadcasting** (publishing a home's TV channels to people outside it, the Broadcaster
 > tier): §14, research in [research-broadcasting.md](research-broadcasting.md), stories 50.20–50.29.
+> **Cloudflare in front** (the user portal and the operator console on `admin.maktaba.tv`
+> behind the Cloudflare proxy, the origin only through a Tunnel, staff sign-in with MFA): §15,
+> stories 50.30–50.34.
 
 ## 1. Why
 
@@ -143,6 +146,10 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 - Only the edge (Caddy, ports 80/443) faces the internet. Postgres, etcd, Redis and the cloud
   processes listen on the **Hetzner private network** or loopback only. A Hetzner Cloud
   Firewall and UFW both enforce it.
+- **Caddy serves relay names only.** The API, the cloud web app and the operator console are
+  reached **only through Cloudflare**, by a Cloudflare Tunnel that `cloudflared` dials out from
+  the leader; the operator console is on `admin.maktaba.tv` alone, with staff accounts and
+  mandatory MFA (§15, 50.30–50.33).
 - Replication and etcd traffic use TLS and SCRAM, even on the private network.
 - Production lives in **its own Hetzner project**, so the API token on the nodes (needed to
   move the Floating IP) can't touch anything else. The Cloudflare token is scoped to DNS edits
@@ -268,6 +275,11 @@ moves the **Floating IP** to it (one Hetzner API call) and starts the cloud proc
 When it loses the lease it stops them and Postgres turns read-only. DNS never changes on
 failover, so no TTL wait.
 
+**Updated by §15 (50.31):** `api.maktaba.tv` and `app.maktaba.tv` (and `admin.maktaba.tv`) no
+longer point at the Floating IP. They reach the leader through a Cloudflare Tunnel, whose
+`cloudflared` the same role-change callback starts and stops. Only the relay names use the
+Floating IP.
+
 Why these choices (the alternatives we weighed are in 50.07):
 
 - **Patroni + etcd with a witness**, not keepalived (two nodes can't break a tie, so split
@@ -381,6 +393,11 @@ paid), and Pro is uncapped within its allowance (§13 decision 4).
 | 50.27 | [Guest viewers: the watch pages and the apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
 | 50.28 | [Viewer analytics and broadcast monitoring](story-50-28-analytics-monitoring.md) | B | 50.10, 50.21, 53.17 |
 | 50.29 | [The broadcast rehearsal and fan-out load test](story-50-29-broadcast-rehearsal.md) | B | 50.06, 50.21, 50.22, 50.25 |
+| 50.30 | [Cloudflare in front: TLS, WAF, rate limits and bot protection](story-50-30-cloudflare-edge-rules.md) | 1 | 50.01, 50.34 |
+| 50.31 | [The origin only through Cloudflare: the Tunnel and the trusted client IP](story-50-31-origin-through-cloudflare.md) | 1 | 50.01, 50.06, 50.07 |
+| 50.32 | [The operator console on admin.maktaba.tv](story-50-32-admin-hostname.md) | 1 | 50.34 |
+| 50.33 | [Staff sign-in for the operator console](story-50-33-staff-auth.md) | 1 | 50.32 |
+| 50.34 | [Cloudflare deploys from CI](story-50-34-cloudflare-deploys.md) | 1 | 50.01 |
 
 Phase **B** (home broadcasting, §14) comes after Phase 1's launch gate and doesn't depend on
 Phase 2.
@@ -438,6 +455,14 @@ graph LR
   S21 --> S29
   S22 --> S29
   S25 --> S29
+  S01 --> S34[50.34 Cloudflare deploys]
+  S34 --> S30[50.30 edge rules]
+  S01 --> S30
+  S01 --> S31[50.31 origin via Tunnel]
+  S06 --> S31
+  S07 --> S31
+  S34 --> S32[50.32 admin hostname]
+  S32 --> S33[50.33 staff sign-in]
 ```
 
 Work that can start at once, in parallel: **50.01, 50.03, 50.05** (and 50.15 after 50.01;
@@ -455,8 +480,8 @@ banner).
 
 Paid plans are switched on only when all of these hold:
 
-1. Stories **50.01 – 50.14** and **50.19** are merged, and their CI rehearsals pass on the
-   deployed sha.
+1. Stories **50.01 – 50.14**, **50.19** and **50.30 – 50.34** are merged, and their CI
+   rehearsals pass on the deployed sha.
 2. The production pair has run for **14 days** with the canary at ≥ 99.9 %, including one
    **planned switchover** and one **forced failover** (power off the leader in the Hetzner
    console, by the owner) that met the RTO.
@@ -489,6 +514,9 @@ Building this epic calls no Hetzner, Cloudflare, DNS, payment provider or VPS AP
    then creates at that provider the flat prices for Basic and Pro, the metered price for
    pay-as-you-go GB, and the per-unit price for extra streams, and puts their IDs in the
    `production` config (50.19 §6).
+7. Sets up Cloudflare in front of the portal and the console: the zone's plan, the CI token's
+   permissions, the Tunnel and its token, the Turnstile widget, and the first staff account
+   with its passkey and TOTP (§15.7 lists the steps and the estimated costs).
 
 ## 13. Decisions (2026-11-03)
 
@@ -1064,3 +1092,222 @@ Work that can start at once: **50.21** (after 50.01) and **50.20** (after 50.19)
 
 Until then `broadcast.enabled = false`, except for test publishers an admin grants on staging.
 `invite` can open before `open`: `broadcast.open_access.enabled` also needs items 4 and 5.
+
+## 15. Cloudflare in front: the user portal and the operator console
+
+> **Status:** spec (2026-11-03). **Stories:** 50.30–50.34. The decisions of 2026-11-03, stated
+> once here:
+>
+> - The **user portal** (account, billing, the cloud web app and the API on `maktaba.tv`'s user
+>   names) and the **operator console** both sit behind the **Cloudflare proxy**.
+> - The operator console has **its own hostname, `admin.maktaba.tv`**, and is never served on
+>   a user name.
+> - The origin is reachable **only through Cloudflare**, by a **Cloudflare Tunnel** by default.
+> - The operator console signs staff in with **Maktaba's own auth**, made stronger for staff
+>   (mandatory MFA, short sessions, re-authentication, lockout, audit). No Cloudflare Access or
+>   Zero Trust identity layer is used.
+>
+> The **plugin store** is a separate service on Cloudflare, at `plugins.maktaba.tv` with signed
+> files on `plugins-cdn.maktaba.tv`, with its own accounts, auth, payments and admin pages
+> (`plugins.maktaba.tv/admin`, Epic 54). It sits behind the same Cloudflare proxy, but none of
+> its routes, roles or accounts live in the cloud API or in this console.
+
+### 15.1 What it is, and what changes
+
+Today the cloud API (`cloud/cmd/maktaba-cloud --role api`) serves the user routes and the
+operator routes (`/v1/admin/*`, `RequireServiceAdmin`) from one listener, and the cloud web app
+(`web/cloud/`) ships the operator console inside the user bundle (`/admin` in `App.tsx`). The
+Phase 1 design (§6) points `api.maktaba.tv` and `app.maktaba.tv` at the Floating IP through the
+Cloudflare proxy, so the origin's port 443 is open to the whole internet and anyone who finds
+the address can skip Cloudflare. A service admin is a customer account with
+`users.role = 'service_admin'`, signed in with a password only (`cloud/docs/accounts-billing-admin.md`,
+*Still open*: no admin step-up, no MFA).
+
+After this section:
+
+| | Before | After |
+|---|---|---|
+| User names (`app.maktaba.tv`, `api.maktaba.tv`) | proxied; origin open on the Floating IP | proxied; **WAF managed rules, rate limits, Turnstile on the auth pages**; origin only through the **Tunnel** (50.30, 50.31) |
+| Operator console | `/admin` inside the user web app; `/v1/admin/*` on every API name | **`admin.maktaba.tv` only**, with its own bundle, listener, cookies and CSP; `/v1/admin/*` is **404 on every user name** (50.32) |
+| Who can operate | a customer account with `role = service_admin`, password only | a **staff account**, separate from customer accounts, **MFA required** (passkey or TOTP), 15-minute idle timeout, 8-hour cap, re-authentication for sensitive actions, lockout, an audit row for every sign-in and action, an optional IP allow-list (50.33) |
+| Client IP | `CF-Connecting-IP` when `trust_proxy_headers` is on, from any peer | `CF-Connecting-IP` **only from a trusted peer** (the local `cloudflared`, or the fallback's checked proxy); otherwise the TCP peer (50.31) |
+| Cloudflare deploys | the developer portal only (`devportal-deploy.yml`) | Workers, zone rules and the Tunnel's routes **from CI only**, with `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` (50.34) |
+
+### 15.2 The picture
+
+```
+  people, apps, homes                                          staff
+        │                                                        │
+        ▼                                                        ▼
+ ┌──────────────────────────── Cloudflare (maktaba.tv zone) ───────────────────────────────┐
+ │ app.maktaba.tv                             api.maktaba.tv         admin.maktaba.tv        │
+ │   TLS · WAF managed rules · custom rules · rate limits · Turnstile on the auth pages      │
+ │ Worker maktaba-cloud-web (user bundle)     (no Worker)            Worker maktaba-admin-web│
+ │   /v1/* passed to the origin ──┐               │                  (admin bundle)          │
+ │                                │               │                  /v1/* passed ───┐       │
+ │ watch. live. ingest. (50.21 Workers, R2, Durable Objects: no origin)               │       │
+ └────────────────────────────────┼───────────────┼────────────────────────────────────┼─────┘
+                                  │    Cloudflare Tunnel (outbound from the node; no open port)
+                                  ▼               ▼                                    ▼
+   node A (leader)   cloudflared ──► 127.0.0.1:8090 user listener      127.0.0.1:8091 admin listener
+                                     /v1/* except admin                 staff auth, /v1/admin/*
+                     Caddy :443 ───► relay.maktaba.tv, *.relay.maktaba.tv only (DNS only: video)
+
+   relayed video: apps ── <slug>.relay.maktaba.tv (DNS only) ──► Floating IP ──► Caddy ──► relay
+```
+
+- **Three kinds of name, three paths.** User and admin names go through the Cloudflare proxy
+  and the Tunnel. Relay names stay **DNS only** to the Floating IP (video, §15.5). The broadcast
+  names are Workers with no origin (50.21).
+- **Two listeners in the api role.** The user listener never mounts `/v1/admin/*`. The admin
+  listener mounts only the staff auth and `/v1/admin/*`, and answers only for
+  `Host: admin.maktaba.tv`. The Tunnel's ingress sends each name to its listener and everything
+  else to `http_status:404`.
+- **The relay's Caddy is the only public web listener** on the node (443, and 80 for the
+  redirect), next to UDP/TCP 53 for the direct-name responder (50.15). It serves relay names
+  only: any other `Host` gets no certificate and no answer.
+- **The plugin store** (Epic 54) is its own service on Cloudflare (`plugins.maktaba.tv`,
+  `plugins-cdn.maktaba.tv`), not on the Hetzner nodes and not behind this Tunnel. Its WAF and
+  rate-limit rules share the zone's rule budget, so the zone file (50.30) counts them; its
+  accounts, auth, review and admin pages are not part of this section.
+
+### 15.3 Requirements
+
+| ID | Requirement | Story |
+|---|---|---|
+| C1 | **Both hostnames proxied.** TLS 1.2+ at the edge (1.3 on), Always Use HTTPS, HSTS from the responses' headers. WAF managed rules on. Rate limits at the edge on sign-in, sign-up and the API, with the API's own limits behind them. Bot protection on the auth pages by Turnstile, checked by the API. | 50.30 |
+| C2 | **Origin only through Cloudflare.** A Cloudflare Tunnel from the leader, so the API has no inbound port. Fallbacks, in order: per-hostname Authenticated Origin Pulls with Maktaba's own client certificate **and** a Cloudflare IP allow-list in Caddy; never an IP allow-list alone. | 50.31 |
+| C3 | **Trusted client IP.** The API reads `CF-Connecting-IP` only from a peer in `server.trusted_proxies`; the relay never reads it. | 50.31 |
+| C4 | **Admin on its own name.** `/v1/admin/*` is served only on `admin.maktaba.tv`; on every user name it is **404**, at the edge and at the origin. | 50.32 |
+| C5 | **Separation.** Separate cookies (`__Host-` prefix, host-only; `SameSite=Strict` on admin), a separate CSP per hostname, separate bundles: **no admin code ships on a user name**, checked in CI. | 50.32 |
+| C6 | **Staff auth.** Staff accounts separate from customer accounts, created from the CLI only; MFA required (passkey/WebAuthn or TOTP, with recovery codes); 10-minute access tokens, a 15-minute idle timeout and an 8-hour cap; re-authentication within 5 minutes for sensitive actions; lockout and rate limits on staff sign-in; an audit row for every sign-in attempt and every admin action; an optional IP allow-list. | 50.33 |
+| C7 | **Roles enforced by the API.** Every admin route checks the staff role on each request. Role tests: no session (or a customer's token, which is no staff session) **401**; a staff account without the role **403**; a staff account without MFA **403 `mfa_required`**; any admin route on a user name **404**. | 50.32, 50.33 |
+| C8 | **Deploys from CI only**, with the org secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; each piece's token permissions are listed (§15.6); pull requests never call Cloudflare. | 50.34 |
+| C9 | **Every user-facing string in English and Arabic**: the edge's error responses, the Turnstile and rate-limit messages, and every staff sign-in screen. | 50.30, 50.32, 50.33 |
+
+### 15.4 Why these choices
+
+- **A Tunnel, not open ports.** `cloudflared` dials out to Cloudflare (4 connections to at least
+  2 data centres, research §3), so the API needs no inbound port and the Floating IP's 443 stays
+  the relay's alone. Nobody can reach the API by its address.
+  - It runs on the **leader only**, started and stopped by 50.07's role-change callback with the
+    cloud processes. Running it on the standby too would send part of the traffic to a stopped
+    API, because Cloudflare picks a connector by proximity, not by the origin's health.
+  - The reconnect after a failover takes seconds, inside the 3-minute RTO (§4.2).
+  - In Phase 2 (50.17) `cloudflared` runs on two API nodes and points at the LB11's private
+    address, so the LB keeps doing the balancing and health checks.
+- **Why the fallbacks are what they are.** Zone-level Authenticated Origin Pulls use a
+  certificate Cloudflare shares across its customers, so anyone's zone could pull from our
+  origin. Per-hostname AOP with **our own** certificate closes that. An IP allow-list alone has
+  the same hole (any Cloudflare customer's traffic comes from those ranges), so it is only ever
+  an extra check. Both put the API's names on Caddy, which is why the Tunnel is the default.
+- **Maktaba's own staff auth.** One sign-in system to build, test and audit. MFA, sessions and
+  re-authentication are enforced by the API itself, next to the role checks (hidden UI is never
+  a rule).
+- **Staff accounts separate from customer accounts.** A customer account can sign in with
+  Google or Apple, reset its password by email, and be linked to homes; none of that belongs on
+  an operator. A separate table, written only by the CLI, means a taken-over customer account
+  never becomes an operator, and staff sign-in has no OAuth and no email reset path.
+- **Turnstile, not Bot Fight Mode, on the auth pages.** Bot Fight Mode applies to the whole
+  zone and can't be skipped on the Free plan, so it would challenge homes and native apps calling
+  `api.maktaba.tv`. Turnstile is checked by the API on exactly the auth routes, from web clients
+  (50.30 §3).
+- **Separate bundles and listeners, not hidden routes.** A user page that can't load admin code,
+  and a user listener with no admin routes, can't leak either through a routing mistake.
+
+### 15.5 Video and streaming
+
+- **Relayed video never goes through the Cloudflare proxy or the Tunnel.** Cloudflare's terms
+  ask non-Enterprise customers to use its paid media products for video (research §3), and a
+  Tunnel is part of the same network. So `relay.maktaba.tv` and `*.relay.maktaba.tv` stay
+  **DNS only** to the Floating IP and Caddy (50.01), and the Tunnel's ingress lists no relay
+  name; a CI check fails if it ever does (50.31 T05).
+- **The API carries no media.** It serves JSON and small files (exports). The user and admin
+  Workers serve the web bundles as static assets.
+- **Home broadcasting (§14) is unchanged.** `watch.`, `live.` and `ingest.maktaba.tv` are
+  Workers with Durable Objects and R2 on Maktaba's account (50.21); they have no origin to hide.
+  Their calls to `api.maktaba.tv` (ingest tokens, reports, metering) go through the same proxy
+  and WAF. If a managed rule ever challenges them, a skip rule for the zone's own Workers
+  (`cf.worker.upstream_zone eq "maktaba.tv"`) is added to the zone file, and the API still
+  checks the edge's signature.
+- **The Cloudflare terms question stays where §14.10 question 8 puts it:** R2 + Worker delivery
+  waits for Cloudflare's written confirmation, and Stream is the switchable fallback
+  (`broadcast.delivery = stream`). Nothing in this section adds video to Cloudflare's network;
+  it only puts JSON and HTML behind it.
+
+### 15.6 Deploys and the token
+
+Every Cloudflare piece deploys **from CI only**, with the org secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`, as `devportal-deploy.yml` already does for maktaba.dev. Pull requests
+only build, test and check the files offline; a push to main deploys. Without the secrets a
+deploy job says so and skips, and main stays green (50.34).
+
+| Piece | Workflow | Token permissions it needs |
+|---|---|---|
+| Developer portal (maktaba.dev, existing) | `devportal-deploy.yml` | Account: Workers Scripts Edit. Zone `maktaba.dev`: Workers Routes Edit, Zone Read, DNS Edit. |
+| User web (`maktaba-cloud-web`) and admin web (`maktaba-admin-web`) Workers | `cloud-web-deploy.yml` (new) | Account: Workers Scripts Edit. Zone `maktaba.tv`: Workers Routes Edit, Zone Read. |
+| Zone security: WAF custom rules, managed rules, rate-limit rules, SSL/TLS settings | `cloudflare-zone.yml` (new) | Zone `maktaba.tv`: Zone WAF Edit, Zone Settings Edit, Zone Read. |
+| The Tunnel's ingress and its DNS records | `cloudflare-zone.yml` | Account: Cloudflare Tunnel Edit. Zone `maktaba.tv`: DNS Edit. |
+| Per-hostname Authenticated Origin Pulls certificate (50.31's fallback only) | `cloudflare-zone.yml` | Zone `maktaba.tv`: SSL and Certificates Edit. |
+| Broadcast edge (50.21, later) | `broadcast-edge.yml` | Account: Workers Scripts Edit, Workers R2 Storage Edit. Zone `maktaba.tv`: Workers Routes Edit, DNS Edit (custom domains). |
+| DNS-01 certificates on the nodes (50.02) | none: a **separate** token kept on the nodes | Zone `maktaba.tv`: DNS Edit only. Never the CI token. |
+| The plugin store (Epic 54) | the store's own workflows | **its own deploy token**, set up with Epic 54; separate from the nodes' DNS-edit token and not one of the cloud's rows here. |
+
+One token holds the CI rows (their union, limited to this account and the two zones). The
+Tunnel's own credential (`CLOUDFLARE_TUNNEL_TOKEN`) is not an API token: it only lets a
+`cloudflared` connect as that one tunnel. It lives in the GitHub `production` environment and on
+the nodes (`/opt/maktaba-cloud/secrets/tunnel.token`, 0600), written by 50.08's deploy.
+
+### 15.7 What the owner does, and what it costs
+
+Building 50.30–50.34 calls no Cloudflare API, DNS or VPS: CI uses Miniflare, a stand-in edge
+and fakes. When the owner is ready:
+
+1. **The zone.** Check that `maktaba.tv` is in the account `CLOUDFLARE_ACCOUNT_ID` names, and
+   pick its plan (below).
+2. **The token.** Add the permissions in §15.6 to `CLOUDFLARE_API_TOKEN` (or make a new token
+   and replace the org secret). The two secrets already exist for the developer portal.
+3. **The Tunnel.** Create one tunnel, `maktaba-cloud-production` (dashboard → Networks →
+   Tunnels). Cloudflare may ask to choose the free Zero Trust plan to open that page; that turns
+   on no access policy. Put the tunnel's token in the GitHub `production` environment as
+   `CLOUDFLARE_TUNNEL_TOKEN`. CI writes the ingress and the DNS records from the repo (50.34).
+4. **Turnstile.** Create one widget (managed mode) for `maktaba.tv`, `app.maktaba.tv` and
+   `admin.maktaba.tv`. Put the site key in the `production` config and the secret key in the
+   `production` environment as `TURNSTILE_SECRET_KEY`.
+5. **Staff accounts.** On the leader, over SSH: `maktaba-cloud staff add --email … --role
+   service_admin`. It prints a one-time enrolment link (valid 24 h). Open it on
+   `admin.maktaba.tv`, set a password, register a passkey and a TOTP app, and keep the 10
+   recovery codes in the password manager.
+6. **The optional IP allow-list.** Decide whether staff sign-in is limited to some networks
+   (`admin.ip_allowlist`; empty means off, the default; 50.33 §7).
+
+**Costs. Every figure is an estimate** (list prices as of 2026-11-03, USD a month; check the
+plan pages before buying):
+
+| Item | On the Free plan | On the Pro plan (recommended) |
+|---|---|---|
+| Zone plan for `maktaba.tv` | $0: the Free managed ruleset, 5 custom rules, 1 rate-limit rule | ≈ $20 billed yearly (≈ $25 billed monthly): the full Cloudflare managed ruleset, 20 custom rules, 2 rate-limit rules |
+| Cloudflare Tunnel | $0 | $0 |
+| Turnstile | $0 | $0 |
+| Workers for the two web bundles (static assets are free; the `/v1` pass-through counts as requests) | Workers Paid ≈ $5 (10 M requests included), shared with §14 | same |
+| Staff MFA, sessions and audit (Maktaba's own code) | $0 | $0 |
+| **Total** | **≈ $5** | **≈ $25–30** |
+
+**Pro is recommended** because C1 asks for WAF managed rules beyond the Free set and for more
+than one rate-limit rule. On Free, 50.30 §2 folds the edge's rate limits into one rule (the
+auth routes) and leaves the API's limits to the origin. Rule counts and prices change, so the
+zone file names its plan and CI fails a file that doesn't fit that plan's counts.
+
+### 15.8 Stories
+
+| # | Story | Phase | Depends on |
+|---|---|---|---|
+| 50.30 | [Cloudflare in front: TLS, WAF, rate limits and bot protection](story-50-30-cloudflare-edge-rules.md) | 1 | 50.01, 50.34 |
+| 50.31 | [The origin only through Cloudflare: the Tunnel and the trusted client IP](story-50-31-origin-through-cloudflare.md) | 1 | 50.01, 50.06, 50.07 |
+| 50.32 | [The operator console on admin.maktaba.tv: its own host, bundle, cookies and CSP](story-50-32-admin-hostname.md) | 1 | 50.34 |
+| 50.33 | [Staff sign-in for the operator console: MFA, short sessions, re-authentication](story-50-33-staff-auth.md) | 1 | 50.32 |
+| 50.34 | [Cloudflare deploys from CI](story-50-34-cloudflare-deploys.md) | 1 | 50.01 |
+
+They are part of the launch gate (§11 item 1): the console that suspends accounts and sets
+plans is protected before anyone pays. 50.34 can start at once, then 50.30 and 50.32 in
+parallel; 50.31 follows 50.07.

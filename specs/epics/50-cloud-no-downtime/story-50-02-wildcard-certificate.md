@@ -27,6 +27,9 @@ can sit on both nodes before it is needed, and costs two issuances every 60 days
   transition (§3).
 - `api.maktaba.tv` and `app.maktaba.tv` sit behind the Cloudflare proxy; their origin
   certificate is the same kind of DNS-01 certificate (Cloudflare "Full (strict)").
+  **Updated by 50.31:** by default they reach the origin through the Cloudflare Tunnel and need
+  no origin certificate; this one is needed only in 50.31's fallback mode (per-hostname
+  Authenticated Origin Pulls on Caddy).
 - The token is a Cloudflare API token with **Zone → DNS → Edit on `maktaba.tv` only**, stored as
   `/opt/maktaba-cloud/secrets/cloudflare.token` (0600) on each node.
 

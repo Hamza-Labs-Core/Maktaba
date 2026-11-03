@@ -34,6 +34,7 @@ someone remembering to update it, and it must still load when Hetzner is down.
 | Sign-in and accounts (API) | `https://api.maktaba.tv/readyz` | |
 | Notifications | `push_outbox_lag_seconds` (> 300 s = degraded) | From the witness's Prometheus. |
 | Payments | link to the payment provider's own status page (provider TBD, not Stripe) | We don't host it; we say where to look. |
+| Plugin store (optional) | the store's own health check, `https://plugins.maktaba.tv/healthz` (Epic 54) | Its own part, because the store runs on Cloudflare apart from the cloud: a cloud outage doesn't make it down, and the reverse. Listed once the store launches. |
 
 States: **operational**, **degraded** (slow, or failing from one network only, or a held
 request rate above 5 %), **outage** (both networks fail two probes in a row), **maintenance**
@@ -41,7 +42,7 @@ request rate above 5 %), **outage** (both networks fail two probes in a row), **
 
 ### 3. The page
 
-- Headline, the four components, a **90-day uptime bar** per component (one cell a day,
+- Headline, the components (four, and the plugin store once it launches), a **90-day uptime bar** per component (one cell a day,
   coloured by that day's uptime), current incidents, scheduled maintenance, and the past
   incidents of the last 90 days.
 - **The uptime target, with no credit.** Under the bars the page states the 99.9 % monthly
@@ -160,6 +161,7 @@ states and draws it. No app has two banners.
 | `status.component.api` | Sign-in and accounts | تسجيل الدخول والحسابات |
 | `status.component.push` | Notifications | الإشعارات |
 | `status.component.payments` | Payments | المدفوعات |
+| `status.component.plugins` | Plugin store | متجر الإضافات |
 | `status.state.operational` | Working | يعمل |
 | `status.state.degraded` | Slow | بطيء |
 | `status.state.outage` | Down | متوقف |

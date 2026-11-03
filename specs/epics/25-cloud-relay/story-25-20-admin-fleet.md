@@ -10,6 +10,13 @@ when something is on fire ("user X says relay is broken; let me look
 at their server's tunnel state, last 50 audit events, recent abuse
 flags").
 
+> **Superseded in part by Epic 50 §15 (2026-11-03):** the console is on `admin.maktaba.tv`
+> behind the Cloudflare proxy and a Tunnel, signed into with Maktaba's own staff accounts
+> (mandatory MFA, 15-minute idle timeout, 8-hour cap, re-authentication for sensitive actions,
+> an optional IP allow-list), not Google Workspace SSO; see stories 50.32 and 50.33.
+> `admin.maktaba.tv` hosts no plugin-store review: that is on the store's own host,
+> `plugins.maktaba.tv/admin` (Epic 54).
+
 Auth:
 
 - Mounted at `https://admin.maktaba.tv` — separate hostname,

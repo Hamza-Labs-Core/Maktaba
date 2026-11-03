@@ -106,7 +106,7 @@ async def test_the_rule_is_read_before_each_selection(
     selector = StageSelector(graph=GRAPH)
     await refresh_stages(db, GRAPH, ())
     selector.compute()
-    assert selector.stages_off["transcribe"] == "unavailable"
+    assert selector.stages_off["transcribe"].startswith("unavailable: the second listen")
     assert "second listen" in selector.detail["transcribe"]
 
     await _set_rule(db, True)  # Settings: Transcription, "Transcribe without the second listen"

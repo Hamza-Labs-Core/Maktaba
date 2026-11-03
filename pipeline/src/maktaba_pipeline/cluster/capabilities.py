@@ -1,7 +1,9 @@
 """What this machine can do (Epic 31 design section 7), reported at join and each start.
 
 Plain JSON: OS and version, architecture, CPU count, memory, Apple Silicon, MLX-Whisper
-importable, NVIDIA GPUs (when ``pynvml`` is installed), ffmpeg path and version
+importable, NVIDIA GPUs (name, memory, compute capability, driver: NVML, else
+``nvidia-smi``, :mod:`..gpu`; with none, why, in ``gpu_problem`` and the log), the Whisper
+engine this machine transcribes with (``stt_backend``), ffmpeg path and version
 (``MAKTABA_FFMPEG`` first), installed extras, Python and pipeline versions. Every probe
 is best effort: a missing piece is reported as absent, never raised.
 """
@@ -19,15 +21,31 @@ from typing import Any
 
 from .. import __version__
 from ..binaries import ffmpeg_binary
+from ..log import get_logger
 
-__all__ = ["EXTRAS", "capabilities", "has_module", "is_apple_silicon", "memory_bytes"]
+__all__ = [
+    "EXTRAS",
+    "capabilities",
+    "has_module",
+    "is_apple_silicon",
+    "memory_bytes",
+    "stt_backend",
+]
 
-#: extra -> the module whose presence means it is installed
+_log = get_logger()
+
+#: extra -> the module whose presence means it is installed (``stt``: :func:`stt_backend`,
+#: whose engine differs by machine)
 EXTRAS: dict[str, str] = {
-    "stt": "mlx_whisper",
     "search": "sentence_transformers",
     "mediaintel": "yt_dlp",
 }
+
+#: the Whisper engines (``stt_backend``): MLX on Apple Silicon; CTranslate2 elsewhere, on
+#: an NVIDIA GPU when the machine has one and the CUDA wheels, else on the CPU
+STT_MLX = "mlx"
+STT_CT2_CUDA = "ct2-cuda"
+STT_CT2_CPU = "ct2-cpu"
 
 
 def has_module(name: str) -> bool:
@@ -53,23 +71,55 @@ def memory_bytes() -> int | None:
     return None
 
 
-def _nvidia() -> list[dict[str, Any]]:
-    if not has_module("pynvml"):
-        return []
-    try:
-        import pynvml  # type: ignore[import-not-found,unused-ignore]  # optional
+def _nvidia() -> tuple[list[dict[str, Any]], str | None]:
+    """``(this machine's NVIDIA GPUs, why none)``: NVML, else nvidia-smi (:mod:`..gpu`).
+    A machine with none logs why: an empty list alone hid a GPU nvidia-smi could see."""
+    from ..gpu import GpuProbe, probe
 
-        pynvml.nvmlInit()
-        try:
-            out: list[dict[str, Any]] = []
-            for i in range(pynvml.nvmlDeviceGetCount()):
-                name = pynvml.nvmlDeviceGetName(pynvml.nvmlDeviceGetHandleByIndex(i))
-                out.append({"name": name.decode() if isinstance(name, bytes) else str(name)})
-            return out
-        finally:
-            pynvml.nvmlShutdown()
-    except Exception:  # noqa: BLE001 - no driver, no GPU: nothing to report
-        return []
+    found: GpuProbe | None = None
+    problem: str | None
+    try:
+        found = probe()
+        problem = found.problem
+    except Exception as exc:  # noqa: BLE001 - a probe that breaks reports no GPU, and why
+        problem = f"the GPU probe failed: {type(exc).__name__}: {exc}"
+    if found is None or not found.gpus:
+        _log.warning("capabilities_no_nvidia_gpu", reason=problem)
+        return [], problem
+    out: list[dict[str, Any]] = []
+    for g in found.gpus:
+        out.append(
+            {
+                "name": g.name,
+                "memory_gb": round(g.memory_gib, 1),
+                "compute_capability": None
+                if g.compute is None
+                else f"{g.compute[0]}.{g.compute[1]}",
+                "driver": g.driver,
+                "source": found.source,
+            }
+        )
+    return out, None
+
+
+def _cuda_wheels() -> bool:
+    """The stt extra's CUDA library for CTranslate2 (cuBLAS 12, ``nvidia-cublas-cu12``) is
+    installed, in site-packages (``stt/ct2.py`` loads it from there), without loading it."""
+    spec = importlib.util.find_spec("nvidia") if has_module("nvidia") else None
+    roots = list(spec.submodule_search_locations or []) if spec is not None else []
+    return any(os.path.isdir(os.path.join(root, "cublas")) for root in roots)
+
+
+def stt_backend(gpus: list[dict[str, Any]]) -> str | None:
+    """The Whisper engine this machine transcribes with, or None without one installed:
+    ``mlx`` on Apple Silicon with MLX-Whisper; elsewhere ``ct2-cuda`` with faster-whisper,
+    CTranslate2 and their CUDA wheels on a machine with an NVIDIA GPU, else ``ct2-cpu``.
+    Nothing is imported (the probe runs at every start)."""
+    if is_apple_silicon():
+        return STT_MLX if has_module("mlx_whisper") else None
+    if not (has_module("faster_whisper") and has_module("ctranslate2")):
+        return None
+    return STT_CT2_CUDA if gpus and _cuda_wheels() else STT_CT2_CPU
 
 
 def _ffmpeg() -> dict[str, str] | None:
@@ -92,6 +142,11 @@ def _ffmpeg() -> dict[str, str] | None:
 def capabilities() -> dict[str, Any]:
     """The capability report; key names are the ones the Machines page reads."""
     mem = memory_bytes()
+    gpus, gpu_problem = _nvidia()
+    backend = stt_backend(gpus)
+    extras = {extra for extra, mod in EXTRAS.items() if has_module(mod)}
+    if backend is not None:
+        extras.add("stt")
     return {
         "os": platform.system().lower(),
         "os_version": platform.release(),
@@ -100,9 +155,11 @@ def capabilities() -> dict[str, Any]:
         "memory_gb": None if mem is None else round(mem / 1024**3, 1),
         "apple_silicon": is_apple_silicon(),
         "mlx": has_module("mlx_whisper"),
-        "gpus": _nvidia(),
+        "gpus": gpus,
+        "gpu_problem": gpu_problem,
+        "stt_backend": backend,
         "ffmpeg": _ffmpeg(),
-        "extras": sorted(extra for extra, mod in EXTRAS.items() if has_module(mod)),
+        "extras": sorted(extras),
         "python": platform.python_version(),
         "pipeline_version": __version__,
     }

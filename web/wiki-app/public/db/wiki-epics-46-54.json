@@ -2723,6 +2723,144 @@
       }
     },
     {
+      "id": "story-50.30",
+      "type": "story",
+      "title": "Cloudflare in front: TLS, WAF, rate limits and bot protection",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.30 — Cloudflare in front: TLS, WAF, rate limits and bot protection\n\n> Epic 50 · Phase 1 · Depends on: 50.01 (names), 50.34 (deploys) · Needed by: the launch gate\n> (README §11), 50.32, 50.33\n\n## Why\n\nThe user portal (`app.maktaba.tv`, `api.maktaba.tv`) and the operator\nconsole (`admin.maktaba.tv`) sit behind the Cloudflare proxy (README §15). The proxy only helps\nif its settings are right and stay right: TLS on, the WAF's managed rules on, rate limits on the\nroutes attackers hammer (sign-in, sign-up, password reset, the API), and a bot check on the auth\npages. Settings changed by ha",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime",
+        "ep-post-auth-login",
+        "ep-post-auth-register"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-30-cloudflare-edge-rules.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "POST /auth/login",
+        "POST /auth/register"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cloudflare-edge-rules"
+      }
+    },
+    {
+      "id": "story-50.31",
+      "type": "story",
+      "title": "The origin only through Cloudflare: the Tunnel and the trusted client IP",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.31 — The origin only through Cloudflare: the Tunnel and the trusted client IP\n\n> Epic 50 · Phase 1 · Depends on: 50.01 (names), 50.06 (rehearsal), 50.07 (two nodes) ·\n> Needed by: 50.32, the launch gate (README §11)\n\n## Why\n\nA WAF, rate limits and a bot check at Cloudflare (50.30) mean nothing if the origin also answers\nanyone who connects to its address directly. Today's plan points `api.maktaba.tv` at the\nFloating IP with port 443 open, so the API can be reached around Cloudflare, and the API would\nthen trust a forged `CF-Connecting-IP` header whenever `server.trust_proxy_headers`",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-31-origin-through-cloudflare.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "origin-through-cloudflare"
+      }
+    },
+    {
+      "id": "story-50.32",
+      "type": "story",
+      "title": "The operator console on admin.maktaba.tv: its own host, bundle, cookies and CSP",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.32 — The operator console on admin.maktaba.tv: its own host, bundle, cookies and CSP\n\n> Epic 50 · Phase 1 · Depends on: 50.34 (deploys) · Needed by: 50.33, 50.30 (its admin rules),\n> the launch gate (README §11)\n\n## Why\n\nThe operator console can suspend accounts, set plans, revoke licenses, block IPs and delete a\nuser's data. Today it is the `/admin` part of the user web app (`web/cloud/src/App.tsx`), so its\ncode ships to every user's browser, and `/v1/admin/*` is served on every name the api role\nanswers. One cookie, one CSP and one bundle serve both.\n\nThis story puts the console o",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-32-admin-hostname.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "admin-hostname"
+      }
+    },
+    {
+      "id": "story-50.33",
+      "type": "story",
+      "title": "Staff sign-in for the operator console: MFA, short sessions, re-authentication",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.33 — Staff sign-in for the operator console: MFA, short sessions, re-authentication\n\n> Epic 50 · Phase 1 · Depends on: 50.32 (the admin host and listener) · Needed by: the launch\n> gate (README §11), 50.24 and 50.25 (their admin actions use the re-authentication here)\n\n## Why\n\nToday a service admin is a **customer account** with `users.role = 'service_admin'`, granted\nfrom the CLI and signed in with an email and password like any customer, with a 30-day refresh\nsession (`cloud/docs/accounts-billing-admin.md`). The docs list what is missing: no admin\nstep-up, no MFA. A customer accou",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime",
+        "entity-audit_log"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-33-staff-auth.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "audit_log"
+      ],
+      "metadata": {
+        "slug": "staff-auth"
+      }
+    },
+    {
+      "id": "story-50.34",
+      "type": "story",
+      "title": "Cloudflare deploys from CI",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.34 — Cloudflare deploys from CI\n\n> Epic 50 · Phase 1 · Depends on: 50.01 (names) · Needed by: 50.30, 50.31, 50.32, 50.21\n\n## Why\n\nREADME §15 puts four kinds of Cloudflare configuration in front of the cloud: two web Workers\n(50.32), the zone's security rules (50.30), the Tunnel's ingress and DNS records (50.31), and\nlater the broadcast edge (50.21). Changed by hand in a dashboard, they drift from the repo, can't\nbe reviewed and can't be rolled back. The developer portal already shows the pattern:\n`devportal-deploy.yml` builds and tests on pull requests, deploys from main with the or",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-34-cloudflare-deploys.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cloudflare-deploys"
+      }
+    },
+    {
       "id": "story-51.1",
       "type": "story",
       "title": "The component catalog",
