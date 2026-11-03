@@ -1,5 +1,5 @@
 // Epic 47: a library's YouTube sources (channels and playlists it follows), on
-// the Queues page. List, add by URL (the API resolves it with yt-dlp), set the
+// the Queues page and on Manage libraries. List, add by URL (the API resolves it with yt-dlp), set the
 // mode and download options, turn a source off, remove it, retry what was gone
 // or skipped, resume the back catalogue and import a Tartube database. Every
 // change only queues work; the API enforces admin.
@@ -11,6 +11,8 @@ import { queueApi, SOURCE_MODES } from "../../lib/queueApi";
 import type { SourceMode, YouTubeSource } from "../../lib/queueApi";
 import { useFmt } from "./format";
 import { useAction } from "./useAction";
+// its own styles: Manage libraries opens it too, without the Queues page
+import "../../styles/queue.css";
 
 export interface YouTubeSourcesDialogProps {
   library: { id: string; name: string } | null;

@@ -5,6 +5,7 @@
 //                               folders two libraries claim (conflict_groups)
 //
 // Each library has Scan (with progress, followed after a reload too), Edit,
+// YouTube sources… (the Queues page's dialog, components/queue),
 // Empty trash, Merge and Remove; "Folders claimed twice" offers a one-click
 // Merge into the library that holds the videos. The dialogs live in
 // ./libraries/. The API refuses all of it to anyone but an admin. A return
@@ -32,11 +33,13 @@ import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { Loading } from "../../components/Placeholders";
 import { LibraryForm } from "./libraries/LibraryForm";
 import { EmptyTrashDialog, MergeDialog, RemoveDialog } from "./libraries/ConfirmDialogs";
+import { YouTubeSourcesDialog } from "../../components/queue/YouTubeSourcesDialog";
 import "../../styles/libraryAdmin.css";
 
 type Dialog =
   | { kind: "add" }
   | { kind: "edit"; library: ManagedLibrary }
+  | { kind: "youtube"; library: ManagedLibrary }
   | { kind: "trash"; library: ManagedLibrary }
   | { kind: "merge"; library: ManagedLibrary; target?: string }
   | { kind: "remove"; library: ManagedLibrary };
@@ -135,6 +138,12 @@ function LibrariesInner() {
       {dialog?.kind === "edit" && (
         <LibraryForm library={dialog.library} onClose={() => setDialog(null)} onSaved={done} />
       )}
+      {dialog?.kind === "youtube" && (
+        <YouTubeSourcesDialog
+          library={{ id: dialog.library.id, name: dialog.library.name }}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog?.kind === "trash" && (
         <EmptyTrashDialog library={dialog.library} onClose={() => setDialog(null)} onDone={done} />
       )}
@@ -174,7 +183,7 @@ function LibrariesPlaceholder() {
           </ul>
           <Skeleton variant="text" className="mkt-ph-line" width="40%" />
           <div className="mkt-libadmin__actions">
-            {[0, 1, 2, 3, 4].map((b) => (
+            {[0, 1, 2, 3, 4, 5].map((b) => (
               <Skeleton key={b} variant="rect" className="mkt-ph-button" width="6rem" />
             ))}
           </div>
@@ -270,7 +279,7 @@ function LibraryCard({
   library: ManagedLibrary;
   onReload: () => void;
   canMerge: boolean;
-  onAction: (kind: "edit" | "trash" | "merge" | "remove") => void;
+  onAction: (kind: "edit" | "youtube" | "trash" | "merge" | "remove") => void;
 }) {
   const { t, n, formatDate } = useI18n();
   const c = lib.counts;
@@ -349,6 +358,9 @@ function LibraryCard({
         <ScanNow libraryId={lib.id} jobId={lib.scanning ? scan?.job_id : null} onDone={onReload} />
         <Button type="button" variant="secondary" onClick={() => onAction("edit")}>
           {t("common.edit")}
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => onAction("youtube")}>
+          {t("queue.offline.sources")}
         </Button>
         <Button
           type="button"
