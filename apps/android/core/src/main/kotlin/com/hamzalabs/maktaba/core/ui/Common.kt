@@ -154,7 +154,7 @@ fun AccountMenu(session: AppSession, user: User, themes: ThemeStore) {
             home?.let { DropdownMenuItem(text = { Text(it.label) }, onClick = {}, enabled = false) }
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text(stringResource(R.string.account_approve)) },
+                text = { Text(stringResource(R.string.approve_tv)) },
                 leadingIcon = { Icon(Icons.Outlined.PhonelinkLock, null) },
                 onClick = { open = false; approving = true },
                 modifier = Modifier.testTag("account-approve"),

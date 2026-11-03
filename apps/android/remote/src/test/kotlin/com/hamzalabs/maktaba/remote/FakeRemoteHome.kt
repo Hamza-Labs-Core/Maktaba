@@ -17,6 +17,7 @@ import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
+import com.hamzalabs.maktaba.core.ui.PendingSignInsHost
 import com.hamzalabs.maktaba.core.ui.ThemeMode
 import com.hamzalabs.maktaba.core.ui.ThemeStore
 import kotlinx.coroutines.CoroutineScope
@@ -129,12 +130,15 @@ fun adaptiveInfo(widthDp: Int, heightDp: Int) = WindowAdaptiveInfo(
 
 /** The Remote's frame as MainActivity shows it, dark, at [fontScale], for [home]. */
 @Composable
-fun RemoteForTest(home: FakeRemoteHome, info: WindowAdaptiveInfo, fontScale: Float = 1f) {
+fun RemoteForTest(home: FakeRemoteHome, info: WindowAdaptiveInfo, fontScale: Float = 1f, pendingEveryMs: Long = 1_000) {
     val density = LocalDensity.current
     CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
         MaktabaTheme(ThemeMode.Dark) {
             Surface {
-                RemoteFrame(home.remote, account = { RemoteAccount(home.session, home.user, home.themes, home.remote.client) }, adaptiveInfo = info)
+                // as RemoteHome: the waiting-devices banner above the frame
+                PendingSignInsHost(home.session, home.user, home.remote.client, intervalMs = pendingEveryMs) {
+                    RemoteFrame(home.remote, account = { RemoteAccount(home.session, home.user, home.themes, home.remote.client) }, adaptiveInfo = info)
+                }
             }
         }
     }

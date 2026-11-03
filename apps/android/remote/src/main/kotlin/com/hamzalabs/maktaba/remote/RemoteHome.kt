@@ -64,6 +64,7 @@ import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.AccountMenu
 import com.hamzalabs.maktaba.core.ui.ApproveTvButton
+import com.hamzalabs.maktaba.core.ui.PendingSignInsHost
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -165,7 +166,10 @@ data class ActionProblem(val what: String?, val failure: Failure)
 @Composable
 fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: ThemeStore) {
     val remote = remember(client) { Remote(client, session) }
-    RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client) })
+    // a TV waiting to sign in: a banner above every place, and a notification
+    PendingSignInsHost(session, user, client) {
+        RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client) })
+    }
 }
 
 /**

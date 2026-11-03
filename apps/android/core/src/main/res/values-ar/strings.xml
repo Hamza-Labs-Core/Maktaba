@@ -93,7 +93,6 @@
     <string name="code_unsupported">لا يدعم %1$s تسجيل الدخول برمز. استخدم اسم المستخدم وكلمة المرور.</string>
 
     <string name="approve_tv">الموافقة على تلفاز أو جهاز</string>
-    <string name="account_approve">الموافقة على تسجيل دخول</string>
     <string name="account">الحساب</string>
     <string name="theme_mode">السمة: %1$s</string>
     <string name="theme_system">النظام</string>
@@ -101,8 +100,8 @@
     <string name="theme_dark">داكن</string>
     <string name="switch_home">تبديل الجهاز الرئيسي</string>
     <string name="sign_out">تسجيل الخروج</string>
-    <string name="approve_title">الموافقة على تسجيل دخول</string>
-    <string name="approve_intro">يعرض الجهاز الذي يطلب تسجيل الدخول رمزًا. أدخله أو امسح رمز QR الخاص به.</string>
+    <string name="approve_title">الموافقة على تلفاز أو جهاز</string>
+    <string name="approve_intro">اكتب الرمز المكوّن من 8 خانات الذي يعرضه التلفاز، أو امسح رمز QR الخاص به.</string>
     <string name="approve_code_label">الرمز، مثل ABCD-1234</string>
     <string name="approve_code_invalid">الرمز ثمانية أحرف وأرقام، مثل ABCD-1234.</string>
     <string name="approve_look">متابعة</string>
@@ -115,11 +114,23 @@
     <string name="approve_expires">تنتهي صلاحيته خلال %1$d دقيقة</string>
     <string name="approve_warning">وافق فقط إذا بدأت تسجيل الدخول هذا بنفسك. سيُسجَّل دخول ذلك الجهاز باسم %1$s، وبصلاحياتك.</string>
     <string name="approve_unsupported">لا يستطيع %1$s أن يحدد الجهاز الذي يطلب. وافق فقط إذا كنت ترى هذا الرمز نفسه على جهازك.</string>
-    <string name="approve_unknown">لا يوجد جهاز ينتظر بهذا الرمز على %1$s. تحقّق منه، أو اطلب رمزًا جديدًا من الجهاز.</string>
+    <string name="approve_unknown">انتهت صلاحية هذا الرمز أو أنه غير صحيح. اطلب رمزًا جديدًا من التلفاز.</string>
+    <string name="approve_confirm">تسجيل دخول %1$s باسم %2$s؟</string>
+    <string name="pending_tv_named">تلفاز يطلب تسجيل الدخول: %1$s. وافق عليه بكتابة الرمز الذي يعرضه.</string>
+    <string name="pending_tv">تلفاز يطلب تسجيل الدخول. وافق عليه بكتابة الرمز الذي يعرضه.</string>
+    <string name="pending_device_named">جهاز يطلب تسجيل الدخول: %1$s. وافق عليه بكتابة الرمز الذي يعرضه.</string>
+    <string name="pending_device">جهاز يطلب تسجيل الدخول. وافق عليه بكتابة الرمز الذي يعرضه.</string>
+    <string name="pending_enter_code">أدخل الرمز</string>
+    <string name="pending_dismiss">إخفاء</string>
+    <string name="pending_channel">طلبات تسجيل الدخول</string>
+    <string name="pending_channel_description">تلفاز أو جهاز آخر ينتظر موافقتك على تسجيل دخوله.</string>
+    <string name="pending_notification_tv">تلفاز يطلب تسجيل الدخول</string>
+    <string name="pending_notification_device">جهاز يطلب تسجيل الدخول</string>
+    <string name="pending_notification_text">اضغط للموافقة عليه بالرمز الذي يعرضه.</string>
     <string name="approve_button">موافقة</string>
-    <string name="approve_done">تمت الموافقة. يجري تسجيل دخول %1$s.</string>
+    <string name="approve_done">تم تسجيل دخول %1$s.</string>
     <string name="approve_already">تمت الموافقة على هذا الرمز من قبل.</string>
-    <string name="approve_cloud">لا يمكن لتسجيل دخول عبر مكتبة السحابية الموافقة على جهاز. سجّل الدخول على الجهاز الرئيسي.</string>
+    <string name="approve_cloud">وافق من المنزل: اتصل بشبكة منزلك أولًا.</string>
     <string name="approve_another">الموافقة على جهاز آخر</string>
     <!-- story 42.7: through Maktaba Cloud -->
     <string name="cloud_title">عبر سحابة مكتبة</string>

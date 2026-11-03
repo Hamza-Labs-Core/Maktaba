@@ -253,7 +253,8 @@ class PairingTest {
         assertEquals(2, pending.count)
         assertEquals("Living room TV", pending.requests[0].name)
         assertTrue(pending.requests[0].isTv)
-        assertNull("nothing said: a device", pending.requests[1].name)
+        assertNull("nothing said: no name", pending.requests[1].name)
+        assertTrue("nothing said: an old TV", pending.requests[1].isTv)
         assertEquals("Bearer t", seen[0].headers["Authorization"])
         route = { MockResponse.Builder().code(404).body("404 page not found").build() }
         assertNull("an older home: nothing to say", client.pendingSignIns())

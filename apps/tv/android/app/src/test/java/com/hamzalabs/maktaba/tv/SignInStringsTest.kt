@@ -40,8 +40,8 @@ class SignInStringsTest {
         assertEquals("Approve a TV or device", coreEn.get("approve_tv"))
         assertEquals("الموافقة على تلفاز أو جهاز", coreAr.get("approve_tv"))
         // the older phone apps' entry: the TV names it as they show it
-        assertEquals(coreEn.get("account_approve"), tvEn.get("signin_code_old_label"))
-        assertEquals(coreAr.get("account_approve"), tvAr.get("signin_code_old_label"))
+        assertEquals("the label older phone apps show", "Approve a sign-in", tvEn.get("signin_code_old_label"))
+        assertEquals("الموافقة على تسجيل دخول", tvAr.get("signin_code_old_label"))
     }
 
     @Test

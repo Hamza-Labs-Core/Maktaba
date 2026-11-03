@@ -119,8 +119,8 @@ data class PendingSignIn(
     /** What to call it: its label, else its app ("tv"), else null (say "a device"). */
     val name: String? get() = deviceLabel.ifBlank { clientApp }.ifBlank { null }
 
-    /** A TV (the app says tv, or the device is one). */
-    val isTv: Boolean get() = clientApp == "tv" || device == "tv"
+    /** A TV: the app says tv, or the device is one, or it says nothing (only the TVs from before X-Maktaba-Client). */
+    val isTv: Boolean get() = clientApp == "tv" || device == "tv" || (clientApp.isBlank() && device.isBlank())
 }
 
 /** `GET /api/pairing/pending`: the devices waiting, newest first. */
