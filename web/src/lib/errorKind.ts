@@ -15,7 +15,9 @@ export type AppErrorKind =
   | "noAccess"
   | "unreachable"
   | "busy"
-  | "server";
+  | "server"
+  // the part of the home the route needs is turned off (409 component_off, Epic 51)
+  | "off";
 
 export interface ClassifiedError {
   kind: AppErrorKind;
@@ -49,6 +51,7 @@ const UNREACHABLE_SLUGS = new Set([
 /** The kind of an HTTP answer: its status, problem slug and machine code. */
 export function kindOfStatus(status: number, slug = "", code = ""): AppErrorKind {
   if (UNREACHABLE_SLUGS.has(slug)) return "unreachable";
+  if (status === 409 && code === "component_off") return "off";
   if (status === 503 && code === "home_unreachable") return "unreachable";
   if (status === 504 && code === "home_timeout") return "unreachable";
   if (status === 401) return "signedOut";

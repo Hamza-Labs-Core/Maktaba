@@ -1,0 +1,32 @@
+# maktaba.dev, the Maktaba developer portal: a Worker in front of static assets.
+# Build first (npm run build writes ./dist), then:
+#   npx wrangler dev        local preview on http://localhost:8787
+#   npx wrangler deploy     what .github/workflows/devportal-deploy.yml runs on main
+# No backend, no KV, no secrets. See README.md.
+name = "maktaba-devportal"
+main = "src/worker.ts"
+compatibility_date = "2026-09-01"
+# no workers.dev URL: the site lives on maktaba.dev only
+workers_dev = false
+
+# The custom domains (top-level keys: they must come before the [assets] table). Wrangler
+# attaches them on deploy and creates their DNS records and certificates itself; nothing
+# else needs pointing. Owner, check in the Cloudflare dashboard:
+#   - the maktaba.dev zone is in the account CLOUDFLARE_ACCOUNT_ID names, and is active;
+#   - no other DNS record (A/AAAA/CNAME) on maktaba.dev or www.maktaba.dev, and no other
+#     Worker or Pages project holding either name: a custom domain owns its hostname;
+#   - the API token has Workers Scripts:Edit (account) and, on the maktaba.dev zone,
+#     Workers Routes:Edit, Zone:Read and DNS:Edit (a custom domain writes its DNS record).
+routes = [
+  { pattern = "maktaba.dev", custom_domain = true },
+  { pattern = "www.maktaba.dev", custom_domain = true },
+]
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# a missing path gets dist/404.html with a 404 status (the Worker makes sure of it too)
+not_found_handling = "404-page"
+html_handling = "auto-trailing-slash"
+# every request goes through the Worker: the www/http redirects and the security headers
+run_worker_first = true

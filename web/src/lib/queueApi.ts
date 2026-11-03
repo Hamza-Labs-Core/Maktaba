@@ -100,6 +100,8 @@ export type WaitingReason =
   | "upstream"
   | "disabled"
   | "not_configured"
+  | "component_off"
+  | "component_held"
   | "awaiting_review"
   | "no_worker"
   | "idle"
@@ -129,6 +131,8 @@ export interface QueueSummary {
   no_worker?: boolean;
   /** External service ("plex", "dizquetv") whose failures put waiting rows into backoff. */
   retrying_service?: string | null;
+  /** Epic 51: the component that owns the stage, while it waits on it (component_off / component_held). */
+  component?: string | null;
   /** Epic 40: the tile's state (red only for a dominant new error) and the Needs-you count. */
   health?: StageHealth | null;
 }

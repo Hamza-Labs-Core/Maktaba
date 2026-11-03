@@ -265,6 +265,10 @@ class StageDef:
     #: local directory the home's API or search reads: the vector index, thumbnails,
     #: review pages)
     placement: Literal["any", "home"] = "any"
+    #: the storage check a stage needs besides its pool's (``nas_read`` reads, ``nas_write``
+    #: writes): one that reads the share from another pool (transcribe, ``gpu``) is not
+    #: claimed by a machine whose read check failed, where every job would fail
+    storage: Literal["read", "write"] | None = None
     #: a home-only stage that asks a language model at ``rules.<this>.url``: a node may
     #: run it too when that address is not the machine itself (localhost), since every
     #: machine then asks the same model server
@@ -772,6 +776,8 @@ GRAPH: tuple[StageDef, ...] = (
         ),
         may_request=("extract",),
         max_attempts=3,
+        # it decodes the video off the share: not where the share cannot be read
+        storage="read",
     ),
     StageDef(
         name="subtitle_gen",
@@ -987,6 +993,21 @@ GRAPH: tuple[StageDef, ...] = (
         lane_order=12,
         version=ENRICH_VERSION,
         placement="home",
+    ),
+    # Epic 51 (story 51.06): a component enabled again gets the jobs its stages missed
+    # while it was off (the edges logged skipped_component_off); its leader enqueues it with
+    # {"components": [{"component", "off_since"}]}. Core: never switched off itself. Hidden
+    # like the other bookkeeping stages; its job shows its progress
+    StageDef(
+        name="component_catchup",
+        label="Catch up",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="media",
+        lane_order=99,
+        version=1,
+        placement="home",
+        hidden=True,
     ),
 )
 

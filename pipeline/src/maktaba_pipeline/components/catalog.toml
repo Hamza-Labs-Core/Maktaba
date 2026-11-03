@@ -47,7 +47,8 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            # installs, removals and offline files (story 51.16)
            "index_missing", "index_expired", "index_wrong_version", "index_replayed",
            "download_failed", "disk_space", "unpack_refused", "offline_wrong_version",
-           "offline_wrong_platform", "packs_disabled", "pack_missing", "install_failed", "busy"]
+           "offline_wrong_platform", "packs_disabled", "pack_missing", "install_failed", "busy",
+           "not_configured"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
@@ -106,9 +107,9 @@ switchable = false
 group      = "core"
 title_key  = "components.core.pipeline.title"
 desc_key   = "components.core.pipeline.desc"
-# component_catchup (51.06) joins these when its StageDef lands
 stages     = ["scan", "probe", "content_hash", "thumb_hash", "link", "fingerprint",
-              "style_sample", "fp_gate", "access_check", "storage_canonicalize", "categorize"]
+              "style_sample", "fp_gate", "access_check", "storage_canonicalize", "categorize",
+              "component_catchup"]
 processes  = ["pipeline/", "pipeline/chroma-copy"]
 loops      = ["pipeline:worker-hb", "pipeline:stage-selection", "pipeline:reconciler",
               "pipeline:pruner", "pipeline:audio-cache-sweep", "pipeline:claim-lease",
@@ -395,6 +396,8 @@ settings  = ["rules.tv_staging", "toml:tv.slots"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full"]
+# one of livetv.slots / livetv.inprocess is enough for live_tv (they conflict)
+features  = ["live_tv"]
 since     = "0.3.66"
 
 [[component]]
@@ -409,6 +412,7 @@ conflicts = ["livetv.slots"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = []
+features  = ["live_tv"]
 since     = "0.3.66"
 
 [[component]]
@@ -454,6 +458,7 @@ licence   = "cloud_relay"
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = []
+features  = ["remote_access"]
 since     = "0.3.66"
 
 [[component]]

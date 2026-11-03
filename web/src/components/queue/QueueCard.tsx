@@ -8,6 +8,7 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { JobRef, Pool, QueueSummary, StageInfo } from "../../lib/queueApi";
 import { RingGauge } from "./RingGauge";
 import { STATE_GLYPH, pauseOwner, queueVisualState, useFmt } from "./format";
+import { componentTitle } from "../cluster/format";
 import { HelpIcon } from "../../help/HelpLink";
 import { hrefOf, stageHelp, tileHealthHelp, waitingHelp } from "../../help/registry";
 
@@ -133,6 +134,7 @@ export function QueueCard({
           time: fmt.dur(summary.oldest_waiting_sec),
           stage: info.label,
           service: service ?? "",
+          component: summary.component ? componentTitle(summary.component, t) : "",
         })}
       </Link>
     ) : null;

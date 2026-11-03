@@ -519,6 +519,19 @@ func TestInstallBusy(t *testing.T) {
 
 // T11: an offline file made from the network installs on a home with none, exactly as
 // online; a file of another version or platform is refused first.
+// The platform names the offline file on disk, so an unknown one (a path) is refused.
+func TestOfflineUnknownPlatform(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	for _, plat := range []string{"../../etc", "linux-amd64/../x", "plan9-386"} {
+		if _, err := f.m.OfflineItems(OfflineRequest{Bundle: "full", Platform: plat}); err == nil {
+			t.Fatalf("platform %q accepted", plat)
+		}
+	}
+	if _, err := f.m.OfflineItems(OfflineRequest{Bundle: "full", Platform: "linux-amd64"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOfflineFileAndImport(t *testing.T) {
 	f := newFixture(t, fixtureOpts{})
 	var buf bytes.Buffer

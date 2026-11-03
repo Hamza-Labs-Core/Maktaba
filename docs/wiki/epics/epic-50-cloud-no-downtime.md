@@ -122,3 +122,79 @@ witness, backups, Floating IP, Object Storage, an R2 copy), or about **€53** i
 back for A and B (the witness stays a CPX22), plus a few euros a month for the direct-name
 domains. Phase 2
 at about 10,000 homes is about **€481**. Details and sources: epic README §5 and research §4.
+
+## Home broadcasting (spec, 2026-11-03)
+
+The owner: *"the ability to stream TV from home servers to others, let's say an entertainment
+tier or a home streamer tier."* Epic README
+[§14](../../../specs/epics/50-cloud-no-downtime/README.md#14-home-broadcasting), research in
+[research-broadcasting.md](../../../specs/epics/50-cloud-no-downtime/research-broadcasting.md).
+
+A Maktaba home owner (the **publisher**) publishes chosen live TV channels to viewers outside the
+home through Maktaba Cloud, on `watch.maktaba.tv/<publisher>/<channel>` and in every Maktaba
+Player and TV app as a guest.
+
+**Owner decisions (2026-11-03):**
+
+- **Viewers never pay.** Access is open or by invite link only.
+- **"We charge for infra, not content."** Maktaba Cloud is an infrastructure and hosting
+  provider. It never selects, uploads, curates or recommends what airs. Channel building,
+  scheduling and YouTube intake stay on the publisher's home, and the publisher is responsible for
+  the rights.
+
+**Design:**
+
+- **Push to the edge.** The home pushes each finished HLS segment of each rendition **once** to
+  Maktaba's Cloudflare edge (Worker + Durable Object + R2). Viewers never reach the home or the
+  Hetzner relay.
+- **One fetch, any audience.** Segments are cached under token-free keys, so the home's upload
+  doesn't depend on the number of viewers.
+- **The ladder at home** (top rung `copy` of the channel's own encode). Cloudflare Stream is the
+  switchable fallback.
+- **Standard HLS** with 4 s segments: ≤ 20 s glass to glass at p95.
+- **Split planes.** The control plane (plans, ingest tokens, takedown queue, revocation signing,
+  billing) rides on the Hetzner pair. The data plane survives the pair being down for 24 h.
+
+**Plans:** Pro gains **guest sharing** (1 invite-only channel on demand, 5 viewers, 50
+viewer-hours). **Broadcaster** is an add-on to Pro: 3 channels, 100 concurrent viewers, 5,000
+viewer-hours, up to 1080p, then optional pay-as-you-go viewer-hours with a cap, then the lowest
+rung, then new viewers wait. Prices are TBD; the payment provider is TBD, never Stripe.
+
+**Estimated cost to Maktaba a month:**
+
+| Path | Broadcaster at its allowance |
+|---|---|
+| R2 + Worker | ≈ $46 |
+| Bunny fallback | ≈ $102 |
+| Cloudflare Stream fallback | ≈ $302 |
+
+Mux is ruled out: about $1,369 a month to encode one 24/7 channel.
+
+**Rights (not legal advice; confirm with a lawyer before launch):**
+
+- **Only publishable items air** on a published channel. This is a safety feature on the
+  publisher's home. Publishable means the owner's own recordings, CC BY items detected at YouTube
+  intake, or sources (a speaker, a channel, a reciter) with a recorded permission and proof link.
+- The scheduler skips everything else while the channel is published.
+- Quran recordings are treated like any other source.
+
+**Hosting status** needs, and the stories build: a designated agent, notice and takedown, a
+repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, and a short
+Broadcaster agreement that puts rights on the publisher. On top of that: a Report button, and a
+kill switch through a signed revocation list (the Epic 54 pattern). There is no Maktaba directory.
+
+| # | Story | Phase |
+|---|---|---|
+| 50.20 | [The Broadcaster tier and guest sharing](../../../specs/epics/50-cloud-no-downtime/story-50-20-broadcaster-tier.md) | B |
+| 50.21 | [The broadcast edge](../../../specs/epics/50-cloud-no-downtime/story-50-21-broadcast-edge.md) | B |
+| 50.22 | [The home's broadcaster](../../../specs/epics/50-cloud-no-downtime/story-50-22-home-broadcaster.md) | B |
+| 50.23 | [Publishable sources and geo](../../../specs/epics/50-cloud-no-downtime/story-50-23-publishable-sources.md) | B |
+| 50.24 | [Takedown, reports and repeat infringers](../../../specs/epics/50-cloud-no-downtime/story-50-24-takedown-reports.md) | B |
+| 50.25 | [Kill switch and the signed broadcast revocation list](../../../specs/epics/50-cloud-no-downtime/story-50-25-kill-switch.md) | B |
+| 50.26 | [Viewer access: invite and open](../../../specs/epics/50-cloud-no-downtime/story-50-26-viewer-access.md) | B |
+| 50.27 | [Guest viewers: watch pages and apps](../../../specs/epics/50-cloud-no-downtime/story-50-27-guest-viewers.md) | B |
+| 50.28 | [Viewer analytics and broadcast monitoring](../../../specs/epics/50-cloud-no-downtime/story-50-28-analytics-monitoring.md) | B |
+| 50.29 | [The broadcast rehearsal and fan-out load test](../../../specs/epics/50-cloud-no-downtime/story-50-29-broadcast-rehearsal.md) | B |
+
+The owner's open questions, each with a recommended default, are in README §14.10. The
+broadcasting gate is in §14.11.

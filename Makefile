@@ -223,10 +223,11 @@ catalog-sync:  ## Epic 51: copy the component catalog into the pipeline and rewr
 catalog-check:  ## Epic 51 (story 51.01): the catalog job: the copy is current, every stage, role and title is in it.
 	$(MAKE) --no-print-directory catalog-sync
 	git diff --exit-code -- shared/components $(PIPELINE_DIR)/src/maktaba_pipeline/components/catalog.toml
-	cd $(PIPELINE_DIR) && uv run --extra dev pytest tests/components/test_catalog.py -q -p no:cacheprovider
+	cd $(PIPELINE_DIR) && uv run --extra dev pytest tests/components/test_catalog.py tests/components/test_pipeline_loops.py -q -p no:cacheprovider
 	cd shared/components && go test -count=1 ./...
 	cd cmd/maktaba-server && CGO_ENABLED=0 go test -count=1 ./internal/supervisor -run TestCatalogRoles
 	cd api && CGO_ENABLED=0 go test -count=1 ./internal/components -run TestAPILoopsMatchTheCatalog
+	cd api && CGO_ENABLED=0 go test -count=1 ./internal/flags -run 'TestCatalogLicence|TestLicenceFeature'
 	cd streaming && CGO_ENABLED=0 go test -count=1 . -run TestStreamingLoopsMatchTheCatalog
 	node tools/ci/catalog_words.mjs
 	node --test tools/ci/catalog_words.test.mjs

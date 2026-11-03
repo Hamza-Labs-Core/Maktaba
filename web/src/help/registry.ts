@@ -66,6 +66,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/settings/models", { topic: "settings", anchor: "models-tab" }],
   ["/settings/about", { topic: "settings", anchor: "about-tab" }],
   ["/settings/storage", { topic: "storage" }],
+  ["/settings/components", { topic: "components" }],
   ["/settings/*", { topic: "settings" }],
   ["/account", { topic: "account", anchor: "profile" }],
   ["/account/devices", { topic: "account", anchor: "devices" }],
@@ -161,6 +162,8 @@ export function causeHelp(cause: string | null | undefined): HelpRef {
 export const WAITING_REASONS = [
   "disabled",
   "not_configured",
+  "component_off",
+  "component_held",
   "paused_all",
   "paused",
   "awaiting_review",

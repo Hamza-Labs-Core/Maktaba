@@ -45,11 +45,15 @@ public struct ConnectStrings: Sendable {
         // signing in
         case signInTitle, byPassword, byCode, username, password, signIn, homes, wrongPassword
         case codeIntro, codeOrOpen, waiting, codeChangesIn, codeUnsupported, qrLabel
+        case lookedUp, newCode
         // approving
         case approveMenu, approveTitle, approveIntro, codeField, lookUp, scanCode, notACode
         case asking, app, platform, device, deviceName, expires
         case approveWarning, approve, notThis, done
         case unknownOnThisHome, notFound, approved, alreadyApproved, expired
+        case confirmSignIn, approveFromHome
+        // a device waiting for an approval, on the approver's screen
+        case bannerTV, bannerTVUnnamed, bannerDevice, bannerDeviceUnnamed, enterCode, dismiss
         case anotherDevice, code
         case linkTitle, linkMessage
         // through Maktaba Cloud (story 42.7)
@@ -98,15 +102,17 @@ public struct ConnectStrings: Sendable {
         .signIn: "Sign in",
         .wrongPassword: "That username or password is not right.",
         .homes: "Homes",
-        .codeIntro: "On a phone or computer already signed in to %@, open Approve a sign-in (in Maktaba Remote, or the Player's account menu) and enter this code, or scan the QR code.",
+        .codeIntro: "To sign in, approve this device from your phone: in Maktaba Remote tap “%@” at the top, or in Maktaba Player open Profile and tap “%@”. On an older app it is “Approve a sign-in” under the person icon. Type this code, or scan the QR code.",
         .codeOrOpen: "Or open this page there:",
         .waiting: "Waiting for approval…",
         .codeChangesIn: "A new code in %@",
         .codeUnsupported: "This home signs in with a username and password only.",
         .qrLabel: "QR code of the sign-in page",
-        .approveMenu: "Approve a sign-in…",
-        .approveTitle: "Approve a sign-in",
-        .approveIntro: "A device that shows a code asks to be signed in to %@ as you. Enter its code or scan its QR code.",
+        .lookedUp: "Your phone found this device — tap Approve on it.",
+        .newCode: "Get a new code",
+        .approveMenu: "Approve a TV or device",
+        .approveTitle: "Approve a TV or device",
+        .approveIntro: "Type the 8-character code your TV shows, or scan its QR code.",
         .codeField: "Code, like ABCD-1234",
         .lookUp: "Continue",
         .scanCode: "Scan its QR code",
@@ -122,10 +128,18 @@ public struct ConnectStrings: Sendable {
         .notThis: "Not this one",
         .done: "Done",
         .unknownOnThisHome: "This home can't say what is asking. Approve only if this code is on a device in front of you right now.",
-        .notFound: "No device is waiting for that code. Check it, or ask the device for a new one.",
-        .approved: "Approved: %@ is signed in.",
+        .notFound: "That code has expired or is wrong. Ask the TV for a new one.",
+        .approved: "%@ is signed in.",
         .alreadyApproved: "That code was approved already.",
-        .expired: "The code has expired. Ask the device for a new one.",
+        .expired: "That code has expired or is wrong. Ask the TV for a new one.",
+        .confirmSignIn: "Sign in %@ as %@?",
+        .approveFromHome: "Approve from home: connect to your home's network first.",
+        .bannerTV: "A TV is asking to sign in: %@. Approve it by typing the code it shows.",
+        .bannerTVUnnamed: "A TV is asking to sign in. Approve it by typing the code it shows.",
+        .bannerDevice: "A device is asking to sign in: %@. Approve it by typing the code it shows.",
+        .bannerDeviceUnnamed: "A device is asking to sign in. Approve it by typing the code it shows.",
+        .enterCode: "Enter code",
+        .dismiss: "Dismiss",
         .anotherDevice: "The device",
         .code: "Code",
         .linkTitle: "Connect to this home?",
@@ -203,15 +217,17 @@ public struct ConnectStrings: Sendable {
         .signIn: "تسجيل الدخول",
         .wrongPassword: "اسم المستخدم أو كلمة المرور غير صحيحة.",
         .homes: "الأجهزة الرئيسية",
-        .codeIntro: "على هاتف أو حاسوب مسجَّل الدخول إلى %@، افتح «الموافقة على تسجيل دخول» (في Maktaba Remote، أو قائمة الحساب في المشغّل) وأدخل هذا الرمز، أو امسح رمز QR.",
+        .codeIntro: "لتسجيل الدخول، وافق على هذا الجهاز من هاتفك: في Maktaba Remote اضغط «%@» في الأعلى، أو في Maktaba Player افتح «الملف الشخصي» واضغط «%@». في التطبيقات الأقدم يكون الخيار «الموافقة على تسجيل دخول» تحت أيقونة الشخص. اكتب هذا الرمز، أو امسح رمز QR.",
         .codeOrOpen: "أو افتح هذه الصفحة هناك:",
         .waiting: "في انتظار الموافقة…",
         .codeChangesIn: "رمز جديد بعد %@",
         .codeUnsupported: "يسجّل هذا الجهاز الرئيسي الدخول باسم المستخدم وكلمة المرور فقط.",
         .qrLabel: "رمز QR لصفحة تسجيل الدخول",
-        .approveMenu: "الموافقة على تسجيل دخول…",
-        .approveTitle: "الموافقة على تسجيل دخول",
-        .approveIntro: "جهاز يعرض رمزًا يطلب تسجيل دخوله إلى %@ باسمك. أدخل رمزه أو امسح رمز QR الخاص به.",
+        .lookedUp: "عثر هاتفك على هذا الجهاز — اضغط «موافقة» عليه.",
+        .newCode: "احصل على رمز جديد",
+        .approveMenu: "الموافقة على تلفاز أو جهاز",
+        .approveTitle: "الموافقة على تلفاز أو جهاز",
+        .approveIntro: "اكتب الرمز المكوّن من 8 خانات الذي يعرضه التلفاز، أو امسح رمز QR الخاص به.",
         .codeField: "الرمز، مثل ABCD-1234",
         .lookUp: "متابعة",
         .scanCode: "مسح رمز QR الخاص به",
@@ -227,10 +243,18 @@ public struct ConnectStrings: Sendable {
         .notThis: "ليس هذا",
         .done: "تم",
         .unknownOnThisHome: "لا يستطيع هذا الجهاز الرئيسي أن يخبرك بما يطلب. وافق فقط إن كان هذا الرمز على جهاز أمامك الآن.",
-        .notFound: "لا يوجد جهاز ينتظر هذا الرمز. تحقّق منه، أو اطلب من الجهاز رمزًا جديدًا.",
-        .approved: "تمت الموافقة: سُجّل دخول %@.",
+        .notFound: "انتهت صلاحية هذا الرمز أو أنه غير صحيح. اطلب رمزًا جديدًا من التلفاز.",
+        .approved: "تم تسجيل دخول %@.",
         .alreadyApproved: "تمت الموافقة على هذا الرمز من قبل.",
-        .expired: "انتهت صلاحية الرمز. اطلب من الجهاز رمزًا جديدًا.",
+        .expired: "انتهت صلاحية هذا الرمز أو أنه غير صحيح. اطلب رمزًا جديدًا من التلفاز.",
+        .confirmSignIn: "تسجيل دخول %@ باسم %@؟",
+        .approveFromHome: "وافق من المنزل: اتصل بشبكة منزلك أولًا.",
+        .bannerTV: "تلفاز يطلب تسجيل الدخول: %@. وافق عليه بكتابة الرمز الذي يعرضه.",
+        .bannerTVUnnamed: "تلفاز يطلب تسجيل الدخول. وافق عليه بكتابة الرمز الذي يعرضه.",
+        .bannerDevice: "جهاز يطلب تسجيل الدخول: %@. وافق عليه بكتابة الرمز الذي يعرضه.",
+        .bannerDeviceUnnamed: "جهاز يطلب تسجيل الدخول. وافق عليه بكتابة الرمز الذي يعرضه.",
+        .enterCode: "أدخل الرمز",
+        .dismiss: "إخفاء",
         .anotherDevice: "الجهاز",
         .code: "الرمز",
         .linkTitle: "الاتصال بهذا الجهاز الرئيسي؟",
@@ -312,6 +336,25 @@ public struct ConnectStrings: Sendable {
             }
         default:
             error.localizedDescription
+        }
+    }
+
+    /// What the device signing in by code says (a TV, or any app signing in by code): where
+    /// on the phone to approve it, naming the approve button by its own words so the two
+    /// cannot drift apart.
+    public var codeIntro: String {
+        text(.codeIntro, text(.approveMenu), text(.approveMenu))
+    }
+
+    /// The banner's sentence for a device waiting for an approval: a TV or another device,
+    /// by its name when it has one.
+    public func banner(_ r: PendingSignIn) -> String {
+        let name = r.deviceLabel ?? r.clientApp.map(appName)
+        switch (r.isTV, name) {
+        case let (true, name?): return text(.bannerTV, name)
+        case (true, nil): return text(.bannerTVUnnamed)
+        case let (false, name?): return text(.bannerDevice, name)
+        case (false, nil): return text(.bannerDeviceUnnamed)
         }
     }
 

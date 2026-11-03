@@ -44,6 +44,8 @@ from .cluster.agent import enabled as cluster_agent_enabled
 from .cluster.capabilities import capabilities
 from .cluster.node import WorkerAgent, home_unreachable, stop_jobs_after
 from .cluster.stages import StageSelector, refresh_stages, select_stages
+from .components.runner import ComponentRunner, instance_part
+from .components.store import HOME
 from .db.jobs import DBConn, Job, Stage
 from .db.jobs_state import StageError, mark_done, mark_failed_or_retry
 from .db.pgtls import connect_args
@@ -131,6 +133,11 @@ class RuntimeConfig:
     node_id: str | None = None
     #: how often the served stages are re-evaluated (design section 5)
     stage_refresh_sec: float = 30.0
+    #: this process's supervisor instance (``stt-1``, ``index``; "" for the main worker):
+    #: its component status rows are part ``pipeline/<instance>`` (Epic 51). Default: from
+    #: ``MAKTABA_PIPELINE_INSTANCE``, else ``MAKTABA_STT_SLOT``, else ``index`` for a worker
+    #: that leaves the share to the others
+    instance: str | None = None
 
 
 _TX_CONN: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_tx_conn", default=None)
@@ -457,6 +464,7 @@ async def run(
     host = cfg.host or stable_hostname()
     selector: StageSelector | None = None
     agent: WorkerAgent | None = None
+    components: ComponentRunner | None = None
 
     if cfg.engine:
         started = await _start_engine(database, cfg, worker_id, host, shutdown, dispatch_overrides)
@@ -464,6 +472,7 @@ async def run(
         background.extend(started.tasks)
         selector = started.selector
         agent = started.agent
+        components = started.components
         stage_names = started.served
         # every graph stage: the served set changes while the worker runs
         stage_pools = {name: st.pool for name, st in engine_rt.graph.items()}
@@ -512,6 +521,9 @@ async def run(
         semaphores=(None if cfg.engine else {s: asyncio.Semaphore(1) for s in cfg.stages}),
         shutdown_event=shutdown,
     )
+    if components is not None:
+        # a component's drain cancels its stages' jobs still running at its deadline
+        components.claims = claim_loop
     if agent is not None:
         # a node that loses the home stops these jobs before their claim lease lapses
         agent.claims = claim_loop
@@ -573,6 +585,8 @@ class EngineStart:
     selector: StageSelector
     agent: WorkerAgent
     tasks: list[asyncio.Task[None]]
+    #: Epic 51: the stage groups' and loops' runner
+    components: ComponentRunner | None = None
 
     @property
     def served(self) -> tuple[str, ...]:
@@ -606,12 +620,38 @@ async def _start_engine(
     states = {e.manifest.name: await load_state(database, e) for e in extensions}
     graph = build_full_graph(extensions)
     register_extension_impls(extensions, states)
+
+    async def extension_states() -> dict[str, Any]:
+        # read again at each pass of the components' leader (an extension switched since)
+        return {e.manifest.name: await load_state(database, e) for e in extensions}
+
+    # Epic 51: the components' gates, read before the sync and the first selection, so a
+    # restarted worker never claims (nor the sync turns back on) a stage that is off
+    components = ComponentRunner(
+        database,
+        machine=cfg.node_id if is_node and cfg.node_id else HOME,
+        part=instance_part(_instance(cfg)),
+        role=cfg.role,
+        graph=graph,
+        worker_id=worker_id,
+        version=__version__,
+        extension_states=extension_states,
+    )
+    home_gates = await components.prime()
     if is_node:
         _log.info("node_leaves_the_stage_registry_to_the_home", node_id=cfg.node_id)
     else:
-        report = await sync_graph(database, graph, states)
+        report = await sync_graph(database, graph, states, gates=home_gates)
         if report.version_changes:
             _log.info("graph_versions_changed", changes=dict(report.version_changes))
+        # Epic 51 (story 51.13): every rules section moved to this release's shape, once,
+        # before any stage runs; one that cannot be moved keeps its component Failed
+        try:
+            from .components import settings_migrate
+
+            await settings_migrate.run_pass(database)
+        except Exception:  # noqa: BLE001 - the stages refuse a failed section themselves
+            _log.exception("settings_migrate_pass_failed")
     ahead = await stages_ahead(database, graph)
     for name, db_version in ahead.items():
         _log.warning("graph_version_ahead", stage=name, db_version=db_version)
@@ -644,6 +684,11 @@ async def _start_engine(
         explicit=path_map,
         runtime=runtime,
     )
+    components.selector = selector
+    components._apply_selection = agent.apply
+    components._paused = lambda: agent.paused
+    if components.reconcile:
+        selector.components = components.machine_reasons()
     caps = await asyncio.to_thread(capabilities)
     if is_node:
         await agent.start_node(caps)
@@ -719,6 +764,17 @@ async def _start_engine(
         body = _while_unpaused(agent, shutdown, loop, name) if is_node else loop(shutdown)
         return asyncio.create_task(body, name=name)
 
+    def switched(name: str, loop: WriterLoop) -> WriterLoop:
+        # a loop of a switchable component: the runner starts it with a stop event of its
+        # own (set when the component goes off, or at shutdown)
+        if not is_node:
+            return loop
+
+        async def body(stop: asyncio.Event) -> None:
+            await _while_unpaused(agent, stop, loop, name)
+
+        return body
+
     after_topup = tuple(s.name for s in graph if s.after_topup)
     tasks = [
         asyncio.create_task(
@@ -730,44 +786,71 @@ async def _start_engine(
         writer("pruner", lambda stop: run_pruner(database, stop)),
         # the WAVs nothing will read: this machine's cache, and rows no job needs
         writer("audio-cache-sweep", lambda stop: run_audio_cache_sweep(database, stop)),
-        writer(
-            "channel-topup",
-            lambda stop: run_topup_loop(database, stop, listeners=after_topup),
-        ),
     ]
+    components.declare(
+        "channel-topup",
+        switched(
+            "channel-topup", lambda stop: run_topup_loop(database, stop, listeners=after_topup)
+        ),
+    )
     if is_node:
         # a node stops its jobs before their claim lease lapses, however its beats hang
         tasks.append(asyncio.create_task(agent.run_lease_watch(), name="claim-lease"))
+    else:
+        # story 51.13: a section saved in full again takes its component out of Failed
+        from .components import settings_migrate
+
+        tasks.append(writer("settings-watch", lambda stop: settings_migrate.watch(database, stop)))
     if not is_node and cfg.share:
         # Epic 40: the dependency watchers release jobs parked on the model, a share or
         # disk space; the home's mounts are the ones that matter (one worker probes)
         from .engine.watchers import run_watchers
 
-        tasks.append(
-            writer("queue-health", lambda stop: run_watchers(database, runtime.graph, stop))
+        components.declare(
+            "queue-health",
+            switched("queue-health", lambda stop: run_watchers(database, runtime.graph, stop)),
         )
-    if cluster_agent_enabled():
-        # the live channel to the home (design-agent.md): metrics (the health numbers
-        # among them: workers never write health_samples), logs, job events, LLM
+    # the live channel to the home (design-agent.md): metrics (the health numbers among
+    # them: workers never write health_samples), logs, job events, LLM.
+    # MAKTABA_CLUSTER_AGENT=0 keeps both off on this machine (env_override)
+    agent_on = cluster_agent_enabled()
+
+    async def network_probes(stop: asyncio.Event) -> None:
+        await run_network_probes(collector, stop)
+
+    async def cluster_agent(stop: asyncio.Event) -> None:
         from .cluster.agent.service import run_for_worker
 
-        tasks.append(asyncio.create_task(run_network_probes(collector, shutdown), name="health"))
-
-        tasks.append(
-            asyncio.create_task(
-                run_for_worker(
-                    database,
-                    worker_id=worker_id,
-                    host=host,
-                    shutdown=shutdown,
-                    worker=agent,
-                    health=collector,
-                    on_share=cfg.share,
-                ),
-                name="cluster-agent",
-            )
+        await run_for_worker(
+            database,
+            worker_id=worker_id,
+            host=host,
+            shutdown=stop,
+            worker=agent,
+            health=collector,
+            on_share=cfg.share,
+            refused=shutdown,
         )
-    return EngineStart(runtime=runtime, selector=selector, agent=agent, tasks=tasks)
+
+    components.declare("health", network_probes, env_off=not agent_on)
+    components.declare("cluster-agent", cluster_agent, env_off=not agent_on)
+    # the loops start now, as before (the runner's passes stop and start them later);
+    # the worker's shutdown also stops these with the other tasks
+    tasks.extend(components.start_loops())
+    tasks.append(asyncio.create_task(components.run(shutdown), name="components"))
+    return EngineStart(
+        runtime=runtime, selector=selector, agent=agent, tasks=tasks, components=components
+    )
+
+
+def _instance(cfg: RuntimeConfig) -> str:
+    """This process's supervisor instance (see :attr:`RuntimeConfig.instance`)."""
+    if cfg.instance is not None:
+        return cfg.instance
+    named = os.environ.get("MAKTABA_PIPELINE_INSTANCE") or os.environ.get("MAKTABA_STT_SLOT")
+    if named:
+        return named
+    return "" if cfg.share else "index"
 
 
 def _served_stages(

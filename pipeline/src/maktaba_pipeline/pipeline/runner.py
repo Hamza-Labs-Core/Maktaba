@@ -40,9 +40,9 @@ import asyncio
 import os
 import signal
 import socket
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import uuid4
 
@@ -61,6 +61,7 @@ __all__ = [
     "WorkerConfig",
     "default_worker_id",
     "install_signal_handlers",
+    "local_pool_size",
 ]
 
 
@@ -95,6 +96,18 @@ def default_worker_id() -> str:
     a fresh ``default_worker_id()`` to recognise dead claims.
     """
     return f"{socket.gethostname()}/{os.getpid()}/{uuid4().hex[:8]}"
+
+
+def local_pool_size(pool: str) -> int | None:
+    """This process's own size for a per-worker pool, ``MAKTABA_POOL_<POOL>`` (a positive
+    integer), else None (the cluster's, ``worker_pools``). The supervisor sets
+    ``MAKTABA_POOL_GPU`` to the transcription batch it sized from this machine's NVIDIA
+    GPU (``supervisor/stt.go``): a per-worker pool is per machine, and the cluster's size,
+    set for the home's GPU, is not the one an 8 GB card holds."""
+    raw = os.environ.get(f"MAKTABA_POOL_{pool.upper()}", "").strip()
+    if not raw.isdigit() or int(raw) < 1:
+        return None
+    return int(raw)
 
 
 @dataclass(slots=True)
@@ -177,6 +190,8 @@ class ClaimLoop:
         self._pool_inflight: dict[str, int] = {}
         #: the jobs this loop dispatched that have not ended
         self.in_flight: set[asyncio.Task[None]] = set()
+        #: each one's stage (a component's drain cancels only its stages' jobs)
+        self._task_stage: dict[asyncio.Task[None], str] = {}
         self._drain_failed_logged = False
 
     def _default_wakeup(self) -> WakeupSource:
@@ -263,6 +278,26 @@ class ClaimLoop:
             task.cancel()
         return len(tasks)
 
+    def stop_stages(self, stages: Collection[str]) -> int:
+        """Cancel the jobs in flight of ``stages`` only (a component's drain, Epic 51,
+        after it force-paused them); the number cancelled."""
+        names = {str(s) for s in stages}
+        tasks = [t for t in self.in_flight if not t.done() and self._task_stage.get(t) in names]
+        for task in tasks:
+            task.cancel()
+        return len(tasks)
+
+    def _track(
+        self, task: asyncio.Task[None], job: Job, in_flight: set[asyncio.Task[None]]
+    ) -> None:
+        in_flight.add(task)
+        self._task_stage[task] = str(job.stage)
+        task.add_done_callback(in_flight.discard)
+        task.add_done_callback(self._forget)
+
+    def _forget(self, task: asyncio.Task[None]) -> None:
+        self._task_stage.pop(task, None)
+
     #: Pools are visited in a fixed order so a slow pool cannot starve the others.
     POOL_ORDER: tuple[str, ...] = (
         "gpu",
@@ -276,10 +311,21 @@ class ClaimLoop:
     async def reload_pools(self) -> None:
         """Re-read ``worker_pools``; resize per-worker semaphores whose size changed.
 
+        A per-worker pool this process was given a size of its own for
+        (:func:`local_pool_size`: the supervisor sizes the ``gpu`` pool from this machine's
+        GPU) takes that size instead of the cluster's.
+
         A resized semaphore is *replaced* (jobs in flight release into the one
         they acquired), sized so that in-flight plus free slots equals the new size.
         """
-        self._pools = await load_pools(self.db)
+        self._pools = {
+            name: (
+                replace(pool, size=own)
+                if pool.scope == "per_worker" and (own := local_pool_size(name)) is not None
+                else pool
+            )
+            for name, pool in (await load_pools(self.db)).items()
+        }
         for name, pool in self._pools.items():
             if pool.scope != "per_worker":
                 continue
@@ -341,8 +387,7 @@ class ClaimLoop:
                     self._run_pool_job(job, sem, pool_name),
                     name=f"job-{job.id}-{job.stage}",
                 )
-                in_flight.add(task)
-                task.add_done_callback(in_flight.discard)
+                self._track(task, job, in_flight)
         return count
 
     async def _run_pool_job(self, job: Job, sem: asyncio.Semaphore | None, pool_name: str) -> None:
@@ -392,8 +437,7 @@ class ClaimLoop:
                 self._run_job(job, sem),
                 name=f"job-{job.id}-{job.stage}",
             )
-            in_flight.add(task)
-            task.add_done_callback(in_flight.discard)
+            self._track(task, job, in_flight)
         return count
 
     def _stages_with_capacity(self) -> tuple[Stage | str, ...]:

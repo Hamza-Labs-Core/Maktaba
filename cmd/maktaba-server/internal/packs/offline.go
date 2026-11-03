@@ -64,6 +64,10 @@ func (m *Manager) OfflineItems(req OfflineRequest) ([]string, error) {
 	if plat == "" {
 		plat = m.Platform
 	}
+	// the platform names the offline file on disk: only a known one
+	if !slices.Contains(components.Platforms, plat) {
+		return nil, fail(ReasonOfflineWrongPlat, map[string]any{"platform": plat}, "unknown platform %q", plat)
+	}
 	want := map[string]bool{}
 	var add func(id string)
 	add = func(id string) {

@@ -6,18 +6,25 @@ reason is stored as a code in ``workers.stages_off`` (the Machines page translat
 1. ``not_selected``: not in ``--stages`` / in ``--exclude-stages``
 2. ``version_ahead``: newer version in the database (``stages_ahead``)
 3. ``unavailable``: cannot run here (no handler; ``StageImpl.unavailable()``; the
-   detail is logged and kept in :attr:`StageSelector.detail`)
+   detail is logged and kept in :attr:`StageSelector.detail`). A stage's own reason
+   (``StageImpl.unavailable()``) is stored with it, ``unavailable: <why>`` (at most
+   :data:`DETAIL_MAX` characters), so the Machines page says why (transcription: no
+   engine, or the second listen it waits for)
 4. ``home_only``: ``placement == "home"`` on a node (a stage with ``model_rules`` is
    lifted when those settings name a model server that is not localhost, a stage with
    ``relay`` while the home's extension relay is on: ``lifted``)
 5. ``storage``: storage not reachable (``nas_read`` stages need the read check,
-   ``nas_write`` the write check)
-6. ``switched_off``: ``cluster_node_stages.enabled = false`` for this machine
-7. ``draining``: ``cluster_nodes.drain``
+   ``nas_write`` the write check, a stage with ``StageDef.storage`` that check: transcribe
+   reads the file off the share from the ``gpu`` pool)
+6. ``component_off:<id>`` / ``component_held:<id>``: the stage's component (Epic 51) is
+   off for this machine (the home's desired state and this machine's override), or held
+   (stopped until an admin starts it); the runner of :mod:`..components.runner` sets them
+7. ``switched_off``: ``cluster_node_stages.enabled = false`` for this machine
+8. ``draining``: ``cluster_nodes.drain``
 
 A paused machine (its code needs migrations the home's database does not have, see
 :mod:`.schema`) keeps every stage off but the ``not_selected`` ones, with the reason
-``paused: <why>`` in place of 2-7.
+``paused: <why>`` in place of 2-8.
 
 :func:`select_stages` is the pure rule; :class:`StageSelector` holds a worker's inputs,
 re-reads the moving ones (versions, switches, drain, storage) at :meth:`refresh`, and
@@ -26,6 +33,7 @@ exposes the current set to the claim loop, which reads it on every poll.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -36,6 +44,8 @@ from ..log import get_logger
 
 __all__ = [
     "REASON_AHEAD",
+    "REASON_COMPONENT_HELD",
+    "REASON_COMPONENT_OFF",
     "REASON_DRAIN",
     "REASON_EXCLUDED",
     "REASON_HOME_ONLY",
@@ -57,10 +67,15 @@ REASON_UNAVAILABLE = "unavailable"
 REASON_HOME_ONLY = "home_only"
 REASON_STORAGE = "storage"
 REASON_SWITCHED_OFF = "switched_off"
+#: Epic 51: ``component_off:<id>``, ``component_held:<id>``
+REASON_COMPONENT_OFF = "component_off"
+REASON_COMPONENT_HELD = "component_held"
 REASON_DRAIN = "draining"
 
 #: pool -> the storage check it needs
 STORAGE_POOLS: dict[str, str] = {"nas_read": "read", "nas_write": "write"}
+#: the longest stage reason stored beside ``unavailable`` (``workers.stages_off``)
+DETAIL_MAX = 300
 
 _log = get_logger()
 
@@ -77,6 +92,16 @@ def _cannot_run(st: StageDef, handlers: Collection[str]) -> str | None:
     return impl.unavailable() if impl.unavailable is not None else None
 
 
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _steady(off: Mapping[str, str]) -> dict[str, str]:
+    """The reasons without their numbers: a reason that counts down ("next try in 9 min")
+    or reads a moving figure (the GPU's free memory) is no new selection, and is not
+    written to ``workers`` again at every refresh."""
+    return {stage: _NUMBER.sub("#", why) for stage, why in off.items()}
+
+
 def select_stages(
     graph: Iterable[StageDef],
     *,
@@ -91,15 +116,18 @@ def select_stages(
     detail: dict[str, str] | None = None,
     lifted: Collection[str] = (),
     paused: str | None = None,
+    components: Mapping[str, str] | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     """``(served stages in graph order, {stage: reason code} for the others)``.
 
     ``detail``, when given, receives the text behind each ``unavailable``; ``paused``
-    (``paused: <why>``) keeps every requested stage off with that reason.
+    (``paused: <why>``) keeps every requested stage off with that reason; ``components``
+    (stage -> ``component_off:<id>`` / ``component_held:<id>``) is the components' gate.
     """
     served: list[str] = []
     off: dict[str, str] = {}
     switches = switches or {}
+    components = components or {}
     for st in graph:
         reason: str | None = None
         if requested is not None and st.name not in requested:
@@ -112,6 +140,8 @@ def select_stages(
             reason = REASON_AHEAD
         elif (why := _cannot_run(st, handlers)) is not None:
             reason = REASON_UNAVAILABLE
+            if not st.legacy and why:
+                reason = f"{REASON_UNAVAILABLE}: {why[:DETAIL_MAX]}"
             if detail is not None:
                 detail[st.name] = why
             if requested is not None:
@@ -120,10 +150,12 @@ def select_stages(
             reason = REASON_HOME_ONLY
         elif (
             storage is not None
-            and st.pool in STORAGE_POOLS
-            and storage.get(STORAGE_POOLS[st.pool]) == "error"
+            and (check := st.storage or STORAGE_POOLS.get(st.pool)) is not None
+            and storage.get(check) == "error"
         ):
             reason = REASON_STORAGE
+        elif st.name in components:
+            reason = components[st.name]
         elif switches.get(st.name) is False:
             reason = REASON_SWITCHED_OFF
         elif drain:
@@ -221,6 +253,9 @@ class StageSelector:
     paused: str | None = None
     #: ``paused: <why>`` while a node cannot reach the home's database (``WorkerAgent.beat``)
     unreachable: str | None = None
+    #: the components' gate (Epic 51): stage -> ``component_off:<id>`` /
+    #: ``component_held:<id>``, set by the component runner
+    components: dict[str, str] = field(default_factory=dict)
     served: tuple[str, ...] = ()
     stages_off: dict[str, str] = field(default_factory=dict)
     #: the text behind each ``unavailable`` code
@@ -242,11 +277,13 @@ class StageSelector:
             detail=detail,
             lifted=self.lifted,
             paused=self.paused or self.unreachable,
+            components=self.components,
         )
         self.detail = detail
-        changed = tuple(served) != self.served or off != self.stages_off
+        changed = tuple(served) != self.served or _steady(off) != _steady(self.stages_off)
         self.served = tuple(served)
-        self.stages_off = off
+        if changed:
+            self.stages_off = off
         return changed
 
     def current(self) -> tuple[str, ...]:

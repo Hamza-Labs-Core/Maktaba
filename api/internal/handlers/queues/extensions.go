@@ -8,14 +8,18 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
 // Extensions (Plex, dizqueTV, Cloudflare Stream) are optional add-ons,
@@ -160,6 +164,28 @@ type Extension struct {
 	Settings    map[string]any `json:"settings"`
 	SecretsSet  []string       `json:"secrets_set"`
 	UpdatedAt   *string        `json:"updated_at"`
+	// Component is the catalog component a built-in extension is ("ext.plex", Epic 51
+	// story 51.07); its desired state is the switch, Enabled its mirror. Held: an admin
+	// stopped it for now (still enabled).
+	Component string `json:"component,omitempty"`
+	Held      bool   `json:"held"`
+}
+
+// withComponent fills e's component fields from the component's desired state; with no
+// desired row (a home not seeded yet) the extensions row answers, as before.
+func (h *Handler) withComponent(ctx context.Context, e Extension) Extension {
+	id := components.ExtensionComponent(e.Name)
+	if id == "" {
+		return e
+	}
+	e.Component = id
+	d, err := components.New(h.DB).DesiredOf(ctx, id)
+	if err != nil {
+		return e
+	}
+	e.Enabled = d.Want == comps.WantEnabled
+	e.Held = d.Hold != nil
+	return e
 }
 
 const extensionsSQL = `SELECT name, enabled, settings, updated_at FROM extensions`
@@ -344,7 +370,7 @@ func (h *Handler) Extensions(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]Extension, 0, len(extensionCatalog))
 	for _, d := range extensionCatalog {
-		out = append(out, buildExtension(d, rows[d.Name], h.secretSet(r.Context(), d)))
+		out = append(out, h.withComponent(r.Context(), buildExtension(d, rows[d.Name], h.secretSet(r.Context(), d))))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"extensions": out})
@@ -513,13 +539,38 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 	}
 	blob, _ := json.Marshal(cur.settings)
 	now := h.now()
-	if _, err := h.DB.ExecContext(r.Context(), upsertExtensionSQL, name, enabled, string(blob), now); err != nil {
+	if err := h.saveExtension(r.Context(), name, enabled, body.Enabled != nil, string(blob), now, by); err != nil {
 		writeErr(w, r, "save extension", err)
 		return
 	}
 	ts := now.Format(tsLayout)
-	common.WriteJSON(w, r, http.StatusOK,
-		buildExtension(def, extRow{enabled: enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def)))
+	common.WriteJSON(w, r, http.StatusOK, h.withComponent(r.Context(),
+		buildExtension(def, extRow{enabled: enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def))))
+}
+
+// saveExtension writes the extensions row and, when enabled was sent for a built-in
+// extension, its component's desired state (want enabled / installed, its hold kept) and
+// audit row, in one transaction (story 51.07): the two switches never disagree.
+func (h *Handler) saveExtension(ctx context.Context, name string, enabled, switched bool, settings string, now time.Time, by string) error {
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, upsertExtensionSQL, name, enabled, settings, now); err != nil {
+		return err
+	}
+	if id := components.ExtensionComponent(name); switched && id != "" {
+		who := by
+		if who == "" {
+			who = "admin"
+		}
+		if _, err := components.Switch(ctx, components.New(h.DB), tx, id, enabled,
+			store.Audit{By: who, ActorUserID: by, ActorSource: "admin"}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // TestExtension implements POST /api/extensions/{name}/test. An extension

@@ -35,6 +35,8 @@ export interface Problem {
   code?: string;
   /** with code `component_off`: the catalog id of the part that is off (Epic 51) */
   component?: string;
+  /** with code `component_off`: the feature that part serves (`live_tv`; story 51.09) */
+  feature?: string;
 }
 
 export class ApiError extends Error {

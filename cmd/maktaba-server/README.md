@@ -116,12 +116,15 @@ the log). A
 single `--role` and a SQLite database run no reconciler. `off` is the kill switch: the
 processes are the ones this file builds, as before Epic 51, status still says
 `reconcile_off`, and every role gets `MAKTABA_COMPONENTS_RECONCILE=off` so its own
-runner acts on nothing either.
+runner acts on nothing either. `capabilities_gate = "off"` (story 51.09) gives the api
+`MAKTABA_COMPONENTS_CAPABILITIES_GATE=off`: `GET /api/capabilities` answers every feature
+on and no route answers `409 component_off`.
 
 ```toml
 [components]
 reconcile = "on"         # on (default) | off: report only, act on nothing
 packs = "on"             # on (default) | off: install no pack or model (packs_disabled)
+capabilities_gate = "on" # on (default) | off: every feature on, no component_off
 ```
 
 **Asset components (Epic 51 story 51.16).** The supervisor installs and removes the

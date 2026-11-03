@@ -26,6 +26,7 @@
     "node_modules",
     "mockups",
     "wiki-app",
+    "packages/devportal",
     "design-system/build",
     "design-system/storybook",
     "design-system/**/*.stories.tsx"

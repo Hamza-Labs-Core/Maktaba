@@ -25,9 +25,11 @@ cleanup path.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import os
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from typing import Any
 
 from ..log import get_logger
@@ -36,6 +38,7 @@ from .signals import install_shutdown_handlers
 __all__ = [
     "DEFAULT_SHUTDOWN_GRACE_SEC",
     "ShutdownOrchestrator",
+    "drain_stages",
     "release_claims",
 ]
 
@@ -99,6 +102,35 @@ UPDATE processing_jobs
    AND state IN ('claimed', 'running', 'resuming')
 RETURNING id
 """
+
+
+# the stage-restricted twins of the statements above, for a component's drain (Epic 51,
+# story 51.06): the same flag, the same force-pause (with the drain's reason), only the
+# rows of the stages that stopped. $1 the worker, $2 the stages (a JSON list on SQLite)
+_STAGES_PG = (
+    "claimed_by = $1 AND stage = ANY($2::text[]) AND state IN ('claimed', 'running', 'resuming')"
+)
+_STAGES_SQLITE = (
+    "claimed_by = $1 AND stage IN (SELECT value FROM json_each($2))"
+    " AND state IN ('claimed', 'running', 'resuming')"
+)
+
+_DRAIN_ASK_PG = f"UPDATE processing_jobs SET pause_requested = true WHERE {_STAGES_PG} RETURNING id"
+_DRAIN_ASK_SQLITE = (
+    f"UPDATE processing_jobs SET pause_requested = 1 WHERE {_STAGES_SQLITE} RETURNING id"
+)
+_DRAIN_COUNT_PG = f"SELECT count(*) AS n FROM processing_jobs WHERE {_STAGES_PG}"
+_DRAIN_COUNT_SQLITE = f"SELECT count(*) AS n FROM processing_jobs WHERE {_STAGES_SQLITE}"
+_DRAIN_FORCE_PG = _FORCE_PAUSE_PG.replace("'shutdown'", "$3").replace(
+    "WHERE claimed_by = $1\n   AND state IN ('claimed', 'running', 'resuming')",
+    "WHERE " + _STAGES_PG,
+)
+_DRAIN_FORCE_SQLITE = _FORCE_PAUSE_SQLITE.replace("'shutdown'", "$3").replace(
+    "WHERE claimed_by = ?\n   AND state IN ('claimed', 'running', 'resuming')",
+    "WHERE " + _STAGES_SQLITE,
+)
+_DRAIN_UNASK_PG = f"UPDATE processing_jobs SET pause_requested = false WHERE {_STAGES_PG}"
+_DRAIN_UNASK_SQLITE = f"UPDATE processing_jobs SET pause_requested = 0 WHERE {_STAGES_SQLITE}"
 
 
 class ShutdownOrchestrator:
@@ -292,3 +324,75 @@ async def _fetch_all(db: Any, sql: str, *args: Any) -> list[Any]:
     if out is None:
         return []
     return [out]
+
+
+def _stages_arg(db: Any, stages: Collection[str]) -> Any:
+    names = sorted(set(stages))
+    return names if getattr(db, "dialect", "sqlite") == "postgres" else json.dumps(names)
+
+
+async def drain_stages(
+    db: Any,
+    *,
+    worker_id: str,
+    stages: Collection[str],
+    grace_sec: float,
+    reason: str = "component_off",
+    poll_sec: float = 1.0,
+    cancel: Callable[[Collection[str]], int] | None = None,
+) -> dict[str, int]:
+    """Drain this worker's jobs of ``stages`` (a component that stopped, Epic 51) the way
+    :meth:`ShutdownOrchestrator.drain` drains all of them: ask them to pause, wait up to
+    ``grace_sec`` for those that checkpoint, then force-pause the rest (state ``paused``,
+    ``paused_reason`` = ``reason``, the checkpoint kept, no attempt counted: the claim of
+    a paused job is not a new attempt) and cancel their tasks with ``cancel``. Jobs of the
+    other stages are not touched. Returns ``{cooperative, forced}``.
+
+    Cancelled meanwhile (the component came back within the grace), it clears the flag of
+    the jobs still running, which carry on."""
+    if not stages:
+        return {"cooperative": 0, "forced": 0}
+    pg = getattr(db, "dialect", "sqlite") == "postgres"
+    arg = _stages_arg(db, stages)
+    asked = await _fetch_all(db, _DRAIN_ASK_PG if pg else _DRAIN_ASK_SQLITE, worker_id, arg)
+    n_asked = len(asked)
+    if n_asked == 0:
+        return {"cooperative": 0, "forced": 0}
+    _log.info(
+        "component_drain_started",
+        worker_id=worker_id,
+        stages=sorted(stages),
+        jobs=n_asked,
+        grace_sec=grace_sec,
+    )
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + grace_sec
+    try:
+        while True:
+            row = await db.fetchrow(_DRAIN_COUNT_PG if pg else _DRAIN_COUNT_SQLITE, worker_id, arg)
+            if row is None or int(row["n"]) == 0:
+                _log.info("component_drain_clean", worker_id=worker_id, jobs=n_asked)
+                return {"cooperative": n_asked, "forced": 0}
+            if loop.time() >= deadline:
+                break
+            await asyncio.sleep(min(poll_sec, max(0.0, deadline - loop.time())))
+    except asyncio.CancelledError:
+        with contextlib.suppress(Exception):
+            await asyncio.shield(
+                db.execute(_DRAIN_UNASK_PG if pg else _DRAIN_UNASK_SQLITE, worker_id, arg)
+            )
+        raise
+    forced = await _fetch_all(
+        db, _DRAIN_FORCE_PG if pg else _DRAIN_FORCE_SQLITE, worker_id, arg, reason
+    )
+    n_forced = len(forced)
+    cancelled = cancel(stages) if cancel is not None and n_forced else 0
+    _log.warning(
+        "component_drain_forced",
+        worker_id=worker_id,
+        stages=sorted(stages),
+        ids=[int(r["id"]) for r in forced if r is not None],
+        cancelled=cancelled,
+        after_sec=grace_sec,
+    )
+    return {"cooperative": n_asked - n_forced, "forced": n_forced}

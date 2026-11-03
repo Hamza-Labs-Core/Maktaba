@@ -54,6 +54,11 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	if !cfg.Components.ReconcileOn() {
 		add(EnvComponentsReconcile, "off")
 	}
+	// story 51.09: [components] capabilities_gate = "off" turns the api's component_off
+	// check into a no-op (every feature answers on)
+	if !cfg.Components.CapabilitiesGateOn() {
+		add(EnvComponentsCapabilitiesGate, "off")
+	}
 
 	// The data volume (data_dir): the api keeps the Sigstore root it refreshes
 	// (<data_dir>/sigstore) and uploaded channel art there, and the streaming

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -24,12 +25,14 @@ func NewRunner(logger *slog.Logger) *runner.Runner {
 // Start reconciles r against the home's database for the rest of the process: the
 // desired state from the components tables (a LISTEN on dsn, a revision poll every
 // 30 s), the status in component_status rows with part "api". It never blocks: a
-// database that does not answer leaves every loop as it is until it does.
+// database that does not answer leaves every loop as it is until it does. Before the
+// first pass it repairs a mirror that disagrees with the desired state (RepairMirrors).
 func Start(r *runner.Runner, db *sql.DB, dsn string, logger *slog.Logger) {
 	if r == nil || db == nil {
 		return
 	}
-	src := runner.Source{Store: New(db)}
+	st := New(db)
+	src := runner.Source{Store: st}
 	if !store.IsSQLite(db) && dsn != "" {
 		l, err := pqlisten.New(dsn, nil)
 		if err != nil {
@@ -39,5 +42,14 @@ func Start(r *runner.Runner, db *sql.DB, dsn string, logger *slog.Logger) {
 			src.Listener = l
 		}
 	}
-	go r.Run(context.Background(), src)
+	go func() {
+		// a switch a release before 51.07 changed alone is put back in step first
+		rctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if _, err := RepairMirrors(rctx, st, logger); err != nil {
+			logger.Warn("components: the mirrors were not checked", "err", err.Error(),
+				"event", "component_mirror_repair_failed")
+		}
+		cancel()
+		r.Run(context.Background(), src)
+	}()
 }

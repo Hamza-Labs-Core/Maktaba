@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -338,6 +339,23 @@ class ProfileScreenTest {
         assertEquals(false, p.autoplayNext)
         assertEquals(SubtitleSize.Large, p.subtitleSize)
         assertEquals(1_500, p.qualityMobile.maxBitrateKbps)
+    }
+
+    // ---------- approving a TV (the owner could not find it: it was under Account) ----------
+
+    @Test
+    fun approveATvIsTheFirstRowUnderTheHeaderAndOpensApprove() {
+        open()
+        waitForTag("profile-root")
+        val label = app.getString(com.hamzalabs.maktaba.core.R.string.approve_tv)
+        assertEquals("Approve a TV or device", label)
+        val header = compose.onNodeWithTag("profile-header").fetchSemanticsNode().boundsInRoot
+        val approve = compose.onNodeWithTag("profile-approve").fetchSemanticsNode()
+        val history = compose.onNodeWithTag("profile-history").fetchSemanticsNode().boundsInRoot
+        assertTrue("right under the header: $header, ${approve.boundsInRoot}", approve.boundsInRoot.top >= header.bottom - 1f && approve.boundsInRoot.bottom <= history.top + 1f)
+        compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag("profile-approve")), useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("profile-approve").performClick()
+        waitForTag("approve-code")
     }
 
     // ---------- accessibility ----------

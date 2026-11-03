@@ -220,7 +220,8 @@
         "fp_gate",
         "access_check",
         "storage_canonicalize",
-        "categorize"
+        "categorize",
+        "component_catchup"
       ],
       "stop_grace_s": 5,
       "switchable": false,
@@ -1194,7 +1195,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "live_tv"
+      ],
       "gated": false,
       "group": "livetv",
       "id": "livetv.slots",
@@ -1253,7 +1256,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "live_tv"
+      ],
       "gated": false,
       "group": "livetv",
       "id": "livetv.inprocess",
@@ -1394,7 +1399,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "remote_access"
+      ],
       "gated": false,
       "group": "system",
       "id": "cloud.relay",
@@ -2365,7 +2372,8 @@
     "packs_disabled",
     "pack_missing",
     "install_failed",
-    "busy"
+    "busy",
+    "not_configured"
   ],
   "schema": 1
 }
