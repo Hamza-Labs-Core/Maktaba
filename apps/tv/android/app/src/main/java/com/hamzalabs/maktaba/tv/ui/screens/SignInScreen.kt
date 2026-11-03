@@ -3,6 +3,7 @@ package com.hamzalabs.maktaba.tv.ui.screens
 import android.os.Build
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -30,6 +32,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
@@ -46,6 +49,7 @@ import com.hamzalabs.maktaba.core.api.PairingCode
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.ui.sentence
+import com.hamzalabs.maktaba.core.session.ConnectProgress
 import com.hamzalabs.maktaba.core.session.Home
 import com.hamzalabs.maktaba.tv.MaktabaTVApp
 import com.hamzalabs.maktaba.tv.R
@@ -58,7 +62,9 @@ import com.hamzalabs.maktaba.tv.ui.components.SectionTitle
 import com.hamzalabs.maktaba.tv.ui.components.TvTextField
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaPalette
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
@@ -110,9 +116,10 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
     }
     var code by remember { mutableStateOf<DeviceCode?>(null) }
     var renewed by remember { mutableStateOf(false) }
+    var lookedUp by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
+    // a new attempt (Try again, Get a new code): the flow starts over with a fresh code
     var attempt by remember { mutableIntStateOf(0) }
-    val focus = remember { FocusRequester() }
     val unreachable = stringResource(CoreR.string.signin_unreachable, home.name)
     val resources = LocalResources.current
 
@@ -120,11 +127,15 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
     // TV's own tokens kept for this home's exact address and the session signed in
     LaunchedEffect(home.url, attempt) {
         problem = null
+        code = null
+        renewed = false
+        lookedUp = false
         try {
             app.session.signInWithCode(label, onCode = { c ->
                 renewed = code != null
+                lookedUp = false
                 code = c
-            })
+            }, onLookedUp = { lookedUp = true })
         } catch (e: CancellationException) {
             throw e
         } catch (e: DeviceSignIn.Unsupported) {
@@ -137,68 +148,143 @@ private fun CodeSignIn(app: MaktabaTVApp, home: Home, onPassword: () -> Unit, on
             problem = resources.getString(e.errorKind().sentence())
         }
     }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
-    val approve = code?.let { c -> app.session.client?.let { c.approveUrl(it.home) } }
-    Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
+    // when the code runs out: the session's deadline for it (the home's expiry on this TV's clock)
+    val progress by app.session.progress.collectAsState()
+    val deadline = (progress as? ConnectProgress.AwaitingApproval)?.takeIf { it.code == code?.code }?.expiresAt
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(deadline) {
+        while (deadline != null) {
+            now = System.currentTimeMillis()
+            delay(1_000)
+        }
+    }
+
+    CodeSignInContent(
+        homeName = home.name,
+        code = code,
+        approveUrl = code?.let { c -> app.session.client?.let { c.approveUrl(it.home) } },
+        expiresInSec = deadline?.let { ((it - now) / 1000).coerceAtLeast(0) },
+        lookedUp = lookedUp,
+        renewed = renewed,
+        problem = problem,
+        onNewCode = { attempt++ },
+        onPassword = onPassword,
+        onOtherHome = { app.session.switchHome() },
+    )
+}
+
+/** "9:58": minutes and seconds, in Latin digits in Arabic too (as the code is). */
+internal fun shownTimeLeft(seconds: Long): String = String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
+
+/**
+ * The code screen, without the home: what [CodeSignIn] shows for the state it holds. Where and
+ * how to approve the code (the phones' button, named by the phone apps' own string so the two
+ * cannot drift), the code large, how long it lasts, what the TV waits for, the QR, and the ways
+ * out (a new code, the password, another home).
+ */
+@Composable
+internal fun CodeSignInContent(
+    homeName: String,
+    code: DeviceCode?,
+    approveUrl: String?,
+    expiresInSec: Long?,
+    lookedUp: Boolean,
+    renewed: Boolean,
+    problem: String?,
+    onNewCode: () -> Unit,
+    onPassword: () -> Unit,
+    onOtherHome: () -> Unit,
+) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.CenterVertically) {
         ReadingPanel(Modifier.weight(1f), contentPadding = 24.dp) {
-            SectionTitle(stringResource(R.string.signin_code_title, home.name))
-            val c = code
+            SectionTitle(stringResource(R.string.signin_code_title, homeName))
             when {
                 problem != null -> {
                     Text(
-                        problem ?: "",
+                        problem,
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaktabaPalette.Gold,
                         modifier = Modifier.padding(vertical = 16.dp),
                     )
                 }
-                c == null -> Text(stringResource(R.string.loading), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted)
+                code == null -> Text(stringResource(R.string.loading), style = MaterialTheme.typography.bodyLarge, color = MaktabaPalette.Muted)
                 else -> {
                     Text(
-                        stringResource(R.string.signin_code_step1),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaktabaPalette.Muted,
-                        modifier = Modifier.padding(top = 12.dp),
+                        stringResource(
+                            R.string.signin_code_where,
+                            stringResource(CoreR.string.approve_tv),
+                            stringResource(R.string.signin_code_old_label),
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaktabaPalette.Text,
+                        modifier = Modifier.padding(top = 12.dp).testTag("signin-where"),
                     )
-                    // addresses and the code read left to right in Arabic too
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Column {
-                            approve?.let { Text(HomeChoices.shownApprovePage(it), style = MaterialTheme.typography.titleMedium, color = MaktabaPalette.Text) }
+                    val shown = PairingCode.shown(code.code)
+                    // the code large, and beside it how long it lasts
+                    Row(horizontalArrangement = Arrangement.spacedBy(32.dp), verticalAlignment = Alignment.CenterVertically) {
+                        // the code reads left to right in Arabic too
+                        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                            Text(
+                                shown,
+                                style = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Monospace, letterSpacing = 6.sp),
+                                color = MaktabaPalette.Gold,
+                                modifier = Modifier.padding(vertical = 4.dp).testTag("signin-code")
+                                    .semantics { contentDescription = shown.toCharArray().joinToString(" ") },
+                            )
+                        }
+                        expiresInSec?.let {
+                            Text(
+                                stringResource(R.string.signin_code_expires, shownTimeLeft(it)),
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaktabaPalette.Muted,
+                                modifier = Modifier.testTag("signin-expires"),
+                            )
                         }
                     }
-                    Text(stringResource(R.string.signin_code_step2), style = MaterialTheme.typography.bodyMedium, color = MaktabaPalette.Muted)
-                    val shown = PairingCode.shown(c.code)
-                    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                        Text(
-                            shown,
-                            style = MaterialTheme.typography.displayLarge.copy(fontFamily = FontFamily.Monospace, letterSpacing = 6.sp),
-                            color = MaktabaPalette.Gold,
-                            modifier = Modifier.padding(vertical = 4.dp).testTag("signin-code")
-                                .semantics { contentDescription = shown.toCharArray().joinToString(" ") },
-                        )
-                    }
                     Text(
-                        stringResource(if (renewed) R.string.signin_code_new else R.string.signin_code_waiting),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaktabaPalette.Faint,
+                        when {
+                            lookedUp -> stringResource(R.string.signin_code_looked_up, stringResource(CoreR.string.approve_button))
+                            renewed -> stringResource(R.string.signin_code_new)
+                            else -> stringResource(R.string.signin_code_waiting)
+                        },
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (lookedUp) MaktabaPalette.Gold else MaktabaPalette.Text,
+                        modifier = Modifier.testTag("signin-status"),
                     )
                 }
             }
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (problem != null) {
-                    MaktabaButton(onClick = { attempt++ }, modifier = Modifier.focusRequester(focus)) {
-                        Text(stringResource(R.string.try_again))
-                    }
+            FlowRow(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // the first focus: Try again after a problem, else the password (as before)
+                MaktabaButton(
+                    onClick = onNewCode,
+                    modifier = (if (problem != null) Modifier.focusRequester(focus) else Modifier).testTag("signin-renew"),
+                ) {
+                    Text(stringResource(if (problem != null) R.string.try_again else R.string.signin_code_renew))
                 }
                 MaktabaButton(
                     onClick = onPassword,
-                    modifier = if (problem == null) Modifier.focusRequester(focus) else Modifier,
+                    modifier = (if (problem == null) Modifier.focusRequester(focus) else Modifier).testTag("signin-password"),
                 ) { Text(stringResource(R.string.signin_with_password)) }
-                MaktabaButton(onClick = { app.session.switchHome() }) { Text(stringResource(CoreR.string.other_home)) }
+                MaktabaButton(onClick = onOtherHome, modifier = Modifier.testTag("signin-other-home")) { Text(stringResource(CoreR.string.other_home)) }
             }
         }
-        approve?.let { url -> QrCode(url, size = 260.dp) }
+        approveUrl?.let { url ->
+            // the QR, and under it the approve page for a computer (the address reads left to
+            // right inside Arabic)
+            Column(Modifier.width(232.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                QrCode(url, size = 200.dp)
+                Text(
+                    stringResource(R.string.signin_code_computer, "\u2066" + HomeChoices.shownApprovePage(url) + "\u2069"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaktabaPalette.Muted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag("signin-computer"),
+                )
+            }
+        }
     }
 }
 

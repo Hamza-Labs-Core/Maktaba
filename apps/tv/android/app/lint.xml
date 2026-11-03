@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- The shared core carries the phones' sign-in request notification
+         (core/ui/PendingSignIns.kt: SignInNotifications). The TV never shows it (it is the
+         device being approved, not the approver) and asks for no notifications, so it does
+         not declare POST_NOTIFICATIONS. Only that one class is let through. -->
+    <issue id="NotificationPermission">
+        <ignore regexp="com\.hamzalabs\.maktaba\.core\.ui\.SignInNotifications" />
+    </issue>
+</lint>
