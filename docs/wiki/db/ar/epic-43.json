@@ -1,0 +1,75 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 43 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-43-pgvector-search": {
+      "title": {
+        "hash": "2cd395f089f733b8",
+        "ar": "البحث الدلالي في Postgres ‏(pgvector)، وإحالة Chroma إلى التقاعد"
+      },
+      "content": {
+        "hash": "0bfe6df872c2bc3b",
+        "ar": "البحث الدلالي في Postgres ‏(pgvector)، وإحالة Chroma إلى التقاعد.\n\n1. يقرأ البحث الدلالي من Postgres ‏(`segment_embeddings`، وفهرس HNSW من pgvector، وتشابه جيب التمام): النتائج نفسها، والسرعة نفسها أو أفضل (المئين p95 لشق البحث الدلالي دون ميزانية الواجهة البرمجية البالغة 200 ms على جهاز Mac الرئيسي بالحجم الكامل). 2. تكتب مرحلة الفهرسة و`chapter_infer` في Postgres وتقرآن منه؛ وحذف فيديو أو نص مفرّغ أو مكتبة يحذف متجهاته (مفتاح أجنبي `ON DELETE CASCADE`). 3. تُنسخ المتجهات القائمة البالغة 13.9 مليون من Chroma مرة واحدة، دون حساب أي تضمين من جديد؛ ويظل البحث يعمل أثناء النسخ (يواصل Chroma الخدمة حتى يكتمل النسخ ويُتحقق منه). 4. يأتي pgvector مع كل Postgres مُضمَّن (ماك بمعمارية arm64، ولينكس بمعماريتي x86_64/aarch64، وويندوز بمعمارية x64) وهو موجود في Postgres الخاص بالتكامل المستمر وبـ Docker؛ ويُنفَّذ `CREATE EXTENSION vector` حيث تُنشئ الحزمة امتداداتها. 5. انتهى Chroma: اعتمادية `chromadb`، ومجلد `<StateDir>/chroma` (يُحذف بعد التحقق من النسخ)، وخدمة compose، وخدمة التكامل المستمر، ومتغيرات البيئة، والوثائق."
+      }
+    },
+    "story-43.1": {
+      "title": {
+        "hash": "0126f2ef4681212a",
+        "ar": "pgvector في كل Postgres نشغّله"
+      },
+      "content": {
+        "hash": "33513627390d76dc",
+        "ar": "pgvector في كل Postgres نشغّله. حزم التطبيق (ماك، ولينكس، وويندوز)، والتكامل المستمر، وcompose تُنشئ `vector`؛ وفحوص تثبت ذلك"
+      }
+    },
+    "story-43.2": {
+      "title": {
+        "hash": "98eec077d6b3cb0a",
+        "ar": "`segment_embeddings` والواجهة الخلفية في Postgres"
+      },
+      "content": {
+        "hash": "bf1a84ba28a9258f",
+        "ar": "`segment_embeddings` والواجهة الخلفية في Postgres. الترحيل 0152؛ و`semantic.py` على Postgres خلف الواجهة نفسها؛ ومرحلة الفهرسة و`chapter_infer` والبحث عبر gRPC مبنية عليه؛ واختبارات على Postgres مزوّد بـ pgvector"
+      }
+    },
+    "story-43.3": {
+      "title": {
+        "hash": "4104438f8e8df541",
+        "ar": "نسخ المتجهات القائمة"
+      },
+      "content": {
+        "hash": "10a4385e7b9df46a",
+        "ar": "نسخ المتجهات القائمة. نسخ قابل للاستئناف، وبناء الفهرس بعده، وفحص الاسترجاع، والتحويل، وحذف مجلد Chroma في تشغيل لاحق"
+      }
+    },
+    "story-43.4": {
+      "title": {
+        "hash": "c3a2694d81dd3cca",
+        "ar": "الأجهزة والتحويل"
+      },
+      "content": {
+        "hash": "3bcce8ba38bc6d47",
+        "ar": "الأجهزة والتحويل. استبعاد `segment_embeddings` من النسخ؛ ويعيد الجهاز الرئيسي الجديد فهرسة ما ينقصه"
+      }
+    },
+    "story-43.5": {
+      "title": {
+        "hash": "c0a47d6e339533c7",
+        "ar": "إحالة Chroma إلى التقاعد"
+      },
+      "content": {
+        "hash": "9804db942a5305a8",
+        "ar": "إحالة Chroma إلى التقاعد. إخراج `chromadb` من اعتماديات خط المعالجة وفحوص venv، وخدمات compose والتكامل المستمر، ومتغيرات البيئة، وأداة doctor، والإشارات إليه في devmigrate/adopt/uninstall، والوثائق"
+      }
+    },
+    "story-43.6": {
+      "title": {
+        "hash": "0f0deb865db338f9",
+        "ar": "القياس على جهاز Mac الرئيسي"
+      },
+      "content": {
+        "hash": "05d5f7dd3314b4b0",
+        "ar": "القياس على جهاز Mac الرئيسي. المئينان p50/p95 لشق البحث الدلالي عند 13.9 مليون صف، والقرص قبل/بعد، والاسترجاع مقارنةً بـ Chroma، في طلب الدمج"
+      }
+    }
+  }
+}

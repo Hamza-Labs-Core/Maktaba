@@ -29,6 +29,8 @@ import { EntryPage } from '@/components/EntryPage';
 import { SearchResults } from '@/components/SearchResults';
 import { TypeListPage } from '@/components/TypeListPage';
 import { GlossaryPage } from '@/components/GlossaryPage';
+import { LangSwitch } from '@/components/LangSwitch';
+import { DIR, LANG, t } from '@/lib/i18n';
 
 //
 // ─── Shared app context ──────────────────────────────────────────────
@@ -38,8 +40,6 @@ interface AppCtx {
   index: IndexedEntry[];
   theme: 'light' | 'dark';
   toggleTheme: () => void;
-  dir: 'ltr' | 'rtl';
-  toggleDir: () => void;
   query: string;
   setQuery: (q: string) => void;
   searchInputRef: React.RefObject<HTMLInputElement>;
@@ -78,8 +78,6 @@ function Layout() {
           bundle={app.bundle}
           theme={app.theme}
           toggleTheme={app.toggleTheme}
-          dir={app.dir}
-          toggleDir={app.toggleDir}
           query={app.query}
           onQueryChange={app.setQuery}
           searchInputRef={app.searchInputRef}
@@ -93,20 +91,21 @@ function Layout() {
           <button
             onClick={() => app.setSidebarOpen(!app.sidebarOpen)}
             className="inline-flex items-center justify-center h-8 w-8 rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900 transition-colors"
-            aria-label="Toggle sidebar"
+            aria-label={t('sidebar.toggle')}
           >
             {app.sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
-          <div className="flex items-center gap-2">
-            <div className="h-7 w-7 rounded-md bg-gradient-to-br from-brand-600 to-violet-500 text-white grid place-items-center font-extrabold text-xs">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="h-7 w-7 shrink-0 rounded-md bg-gradient-to-br from-brand-600 to-violet-500 text-white grid place-items-center font-extrabold text-xs">
               M
             </div>
-            <span className="font-bold text-slate-900 dark:text-slate-100">
-              Maktaba Wiki
+            <span className="font-bold text-slate-900 dark:text-slate-100 truncate">
+              {t('app.name')}
             </span>
           </div>
+          <LangSwitch className="ms-auto" />
         </div>
-        <div className="flex-1 px-6 sm:px-10 py-8 max-w-5xl w-full mx-auto">
+        <div className="flex-1 px-4 sm:px-10 py-8 max-w-5xl w-full mx-auto">
           <Outlet />
         </div>
       </main>
@@ -221,29 +220,21 @@ export function App() {
       ? 'dark'
       : 'light';
   });
-  const [dir, setDir] = useState<'ltr' | 'rtl'>(() => {
-    return ((typeof localStorage !== 'undefined' &&
-      localStorage.getItem('maktaba-wiki-dir')) as 'ltr' | 'rtl' | null) || 'ltr';
-  });
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     try {
       localStorage.setItem('maktaba-wiki-theme', theme);
     } catch {}
   }, [theme]);
+  // the language and direction come from the route (/ar/wiki/ is Arabic, right to left)
   useEffect(() => {
-    document.documentElement.setAttribute('dir', dir);
-    try {
-      localStorage.setItem('maktaba-wiki-dir', dir);
-    } catch {}
-  }, [dir]);
+    document.documentElement.setAttribute('lang', LANG);
+    document.documentElement.setAttribute('dir', DIR);
+    document.title = t('app.name');
+  }, []);
 
   const toggleTheme = useCallback(
-    () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
-    [],
-  );
-  const toggleDir = useCallback(
-    () => setDir((d) => (d === 'ltr' ? 'rtl' : 'ltr')),
+    () => setTheme((x) => (x === 'dark' ? 'light' : 'dark')),
     [],
   );
 
@@ -279,7 +270,7 @@ export function App() {
 
   // Debounced query → navigate to /search
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       const q = query.trim();
       const cur = router.state.location.pathname;
       if (!q) {
@@ -288,7 +279,7 @@ export function App() {
         router.navigate({ to: '/search', search: { q } });
       }
     }, 120);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
 
@@ -299,22 +290,20 @@ export function App() {
       index,
       theme,
       toggleTheme,
-      dir,
-      toggleDir,
       query,
       setQuery,
       searchInputRef,
       sidebarOpen,
       setSidebarOpen,
     };
-  }, [bundle, index, theme, dir, query, sidebarOpen, toggleTheme, toggleDir]);
+  }, [bundle, index, theme, query, sidebarOpen, toggleTheme]);
 
   if (loading) {
     return (
       <div className="grid place-items-center min-h-screen text-slate-500 dark:text-slate-400">
         <div className="flex items-center gap-3">
           <div className="h-6 w-6 rounded-full border-2 border-slate-200 dark:border-slate-700 border-t-brand-500 animate-spin" />
-          Loading wiki…
+          {t('app.loading')}
         </div>
       </div>
     );
@@ -325,12 +314,10 @@ export function App() {
       <div className="grid place-items-center min-h-screen p-6">
         <div className="max-w-md text-center">
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-            Could not load wiki
+            {t('app.error.title')}
           </h1>
-          <p className="text-slate-600 dark:text-slate-400 mb-4">{error}</p>
-          <p className="text-sm text-slate-500">
-            Run <code className="font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">npm run dev</code> from <code className="font-mono">web/wiki-app/</code>.
-          </p>
+          <p className="text-slate-600 dark:text-slate-400 mb-4 break-words">{error}</p>
+          <p className="text-sm text-slate-500">{t('app.error.hint')}</p>
         </div>
       </div>
     );

@@ -1,0 +1,15 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 39 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-39-linux-app": {
+      "title": {
+        "hash": "f381ea6590631f2b",
+        "ar": "مكتبة على Linux"
+      },
+      "content": {
+        "hash": "b90f3be4b5539c3a",
+        "ar": "مكتبة على نظام لينكس: تثبيت واحد يشغّل كل شيء.\n\nالمتطلب (2026-10-20): إعداد التطبيق الواحد نفسه كما هو على أجهزة ماك، على ويندوز وعلى لينكس."
+      }
+    }
+  }
+}

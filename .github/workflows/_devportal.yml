@@ -1,6 +1,6 @@
 # The developer portal (maktaba.dev, web/packages/devportal): build it, run its tests and
-# its public-safety scan. ci.yml runs it on a pull request that touches the portal or a
-# doc it publishes; devportal-deploy.yml runs it before every deploy and deploys
+# its public-safety scan. ci.yml runs it on a pull request that touches the portal, the
+# wiki or a doc it publishes; devportal-deploy.yml runs it before every deploy and deploys
 # the very dist/ it uploads.
 
 name: Developer portal
@@ -30,10 +30,15 @@ jobs:
         with:
           node-version-file: web/packages/devportal/.nvmrc
           cache: npm
-          cache-dependency-path: web/packages/devportal/package-lock.json
+          cache-dependency-path: |
+            web/packages/devportal/package-lock.json
+            web/wiki-app/package-lock.json
 
+      # the portal's tools, and the wiki app's (the build builds the wiki into /wiki/)
       - name: Install
-        run: npm ci --no-audit --no-fund
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix ../../wiki-app
 
       - name: Typecheck
         run: npm run typecheck

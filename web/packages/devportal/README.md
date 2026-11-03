@@ -1,47 +1,49 @@
 # maktaba.dev: the developer portal
 
 maktaba.dev is the developer domain, for people who extend Maktaba or contribute to it: the
-plugin guides, the contributing guides, security (the policy, `security.txt` and the rules
-plugins and contributors follow), the API reference and the changelog. The epics and specs
-are not on the site: they live on GitHub, and the site links there. (maktaba.tv is for
-users. maktaba.app is not ours.)
+wiki (every epic, story and plan, in English and Arabic), the plugin guides, the contributing
+guides, security (the policy, `security.txt` and the rules plugins and contributors follow),
+the API reference and the changelog. (maktaba.tv is for users. maktaba.app is not ours.)
 
 The site is a Cloudflare Worker (`src/worker.ts`) in front of static assets (`dist/`). It
 has no backend, no KV and no secrets. Every request goes through the Worker, which:
 
 - redirects `www.maktaba.dev` and plain http to `https://maktaba.dev`;
 - redirects `/security.txt` to `/.well-known/security.txt`, and the paths the site no longer
-  has (`MOVED` in `src/headers.ts`): `/wiki/…` to the specs on GitHub, `/plugins/story-54-…`
-  to `/plugins/`;
+  has (`MOVED` in `src/headers.ts`): `/plugins/story-54-…` to `/plugins/`;
 - serves the assets, and the 404 page with a 404 status for a missing path;
 - sets the headers on every response (`src/headers.ts`): a CSP for each part of the site,
   HSTS, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors 'none'` and
-  `X-Frame-Options: DENY`, and the cache policy (HTML revalidated, the rest an hour, with `?v=<hash>` on the portal's own scripts and styles).
+  `X-Frame-Options: DENY`, and the cache policy (HTML revalidated, the wiki's content-hashed
+  bundle for good, the rest an hour, with `?v=<hash>` on the portal's own scripts and styles).
 
 ## What is on the site
 
-| Path                                           | What                                            | From                                                         |
-| ---------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| `/`                                            | the landing page, English and Arabic            | `scripts/build.mjs`, `scripts/strings.mjs`                   |
-| `/plugins/`                                    | building plugins: guides                        | `docs/developers/plugins/` (the list in `build.mjs`)         |
-| `/contributing/`                               | working on Maktaba: guides                      | `docs/developers/contributing/`                              |
-| `/security/conformance/`                       | security rules for plugins and contributors     | `docs/developers/security/conformance.md`                    |
-| `/api/`                                        | the API reference: Redoc, served from this site | `shared/api/openapi.json`, the `redoc` package               |
-| `/changelog/`                                  | the changelog                                   | `CHANGELOG.md`                                               |
-| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                           | `scripts/strings.mjs`                                        |
-| `/.well-known/security.txt`                    | RFC 9116                                        | `api/internal/security/disclosure.go` (the API's own policy) |
-| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                    | the build                                                    |
+| Path                                           | What                                             | From                                                         |
+| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| `/`                                            | the landing page, English and Arabic             | `scripts/build.mjs`, `scripts/strings.mjs`                   |
+| `/wiki/`, `/ar/wiki/`                          | the wiki: every epic, story and plan, no mockups | `web/wiki-app` (its allow-list, `WIKI_ALLOW` in `build.mjs`) |
+| `/plugins/`                                    | building plugins: guides                         | `docs/developers/plugins/` (the list in `build.mjs`)         |
+| `/contributing/`                               | working on Maktaba: guides                       | `docs/developers/contributing/`                              |
+| `/security/conformance/`                       | security rules for plugins and contributors      | `docs/developers/security/conformance.md`                    |
+| `/api/`                                        | the API reference: Redoc, served from this site  | `shared/api/openapi.json`, the `redoc` package               |
+| `/changelog/`                                  | the changelog                                    | `CHANGELOG.md`                                               |
+| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                            | `scripts/strings.mjs`                                        |
+| `/.well-known/security.txt`                    | RFC 9116                                         | `api/internal/security/disclosure.go` (the API's own policy) |
+| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                     | the build                                                    |
 
 Every page is in English and Arabic: `/x/` in English, `/ar/x/` in Arabic, right to left
 (`<html lang="ar" dir="rtl">`), each with a link to the other (the language switch, and
 `rel="alternate" hreflang` for crawlers). Where each language comes from:
 
-| What                    | English                        | Arabic                                           |
-| ----------------------- | ------------------------------ | ------------------------------------------------ |
-| the portal's own pages  | `scripts/strings.mjs` (`en`)   | `scripts/strings.mjs` (`ar`)                     |
-| a guide                 | `docs/developers/<group>/x.md` | its twin, `docs/developers/<group>/x.ar.md`      |
-| the changelog           | `CHANGELOG.md`                 | `CHANGELOG.ar.md`                                |
-| the API reference prose | `shared/api/openapi.json`      | `shared/api/openapi.ar.json`, an overlay (below) |
+| What                    | English                               | Arabic                                                             |
+| ----------------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| the portal's own pages  | `scripts/strings.mjs` (`en`)          | `scripts/strings.mjs` (`ar`)                                       |
+| a guide                 | `docs/developers/<group>/x.md`        | its twin, `docs/developers/<group>/x.ar.md`                        |
+| the changelog           | `CHANGELOG.md`                        | `CHANGELOG.ar.md`                                                  |
+| the API reference prose | `shared/api/openapi.json`             | `shared/api/openapi.ar.json`, an overlay (below)                   |
+| the wiki                | `web/wiki-app/public/db/`             | `web/wiki-app/public/db/ar/`, from the store in `docs/wiki/db/ar/` |
+| the wiki app's own text | `web/wiki-app/src/lib/i18n.ts` (`EN`) | `web/wiki-app/src/lib/i18n.ts` (`AR`)                              |
 
 The API reference's Arabic is an overlay: `shared/api/openapi.ar.json` maps the JSON pointer
 of every `summary` and `description` (and the info title, and each tag's name) to the English
@@ -54,8 +56,16 @@ in English: Redoc has no way to translate them.
 **The parity checks** (`scripts/parity.mjs`) fail the build when the languages drift: a guide
 without its `.ar.md` (or the other way round); a release, section or entry in one changelog
 and not the other; an OpenAPI string with no Arabic, or whose English changed since it was
-translated; an English page with no `/ar/` page (or the other way round); and an Arabic page
-that is mostly English (over 20% of its prose letters, outside code, in Latin script).
+translated; a wiki entry with no Arabic, or whose English changed since it was translated
+(each Arabic entry records the hash of the English it translates, `i18n.source`); an English
+page with no `/ar/` page (or the other way round); and an Arabic page or wiki file that is
+mostly English (over 20% of its prose letters, outside code, in Latin script).
+
+**The wiki** is built once (`web/wiki-app`, base `/wiki/`, `VITE_WIKI_NO_MOCKUPS=1`) and
+published twice: `/wiki/` reads `/wiki/db/`, and `/ar/wiki/` (the same bundle, which picks
+its language from the path) reads `/ar/wiki/db/`. The build writes `/ar/wiki/index.html` with
+`lang="ar" dir="rtl"` and its own Arabic title. Its CSP (`CSP_WIKI`) allows Google Fonts and
+the diagrams.net viewer frame. CI needs `npm ci` in `web/wiki-app` as well as here.
 
 ### The public-safety filter
 

@@ -1,0 +1,2035 @@
+{
+  "version": "2.0",
+  "part": "wiki-epics-37-45.json",
+  "lang": "ar",
+  "entries": [
+    {
+      "id": "story-40.1",
+      "type": "story",
+      "title": "فئات الفشل والركن",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "فئات الفشل والركن. الترحيل 0143؛ رموز جديدة في `causes.py`؛ و`engine/failure_classes.py` (جدول + تجاوزات)؛ و`rules.queue_health` + schema.json؛ ويقرر `mark_failed_or_retry` بحسب الفئة على اتصال المحرك (ركن / إعادة محاولة ضمن ميزانية الفئة / فشل)؛ ويسجّل `on_failure` الفئة ويكتب `parked` في السجل؛ وتمسح المطالبة بالمهمة `parked_on`؛ وتحمل أحداث المهام `class`. **معايير القبول:** فشل `model_unavailable` والنموذج غير سليم يُركن دون تغيير عدد المحاولات؛ والنموذج سليم يُعاد كـ `unknown`؛ و`nas_timeout` يُعاد حتى 5 مرات؛ و`ffmpeg_decode` يفشل فورًا؛ وصف تجاوز يغيّر فئ",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "failure-classes-and-parking",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "16e3ab0ad7ca97a7",
+          "content": "809c7755ab0acf5a"
+        }
+      }
+    },
+    {
+      "id": "story-40.2",
+      "type": "story",
+      "title": "مراقبو الاعتماديات",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "مراقبو الاعتماديات. حلقة القائد: فحوص النموذج والمشاركة والقرص، وفترة تهدئة shm، و`dependency_health`، وإطلاق المهام المركونة عند عودة السلامة، والحد الاحتياطي `park_max_hours`. **معايير القبول:** تُطلق المهمة المركونة خلال فاصل واحد من عودة اعتماديتها سليمة؛ والاعتمادية المعطّلة لا تُطلق شيئًا؛ وعامل واحد فقط يُجري الفحص.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "dependency-watchers",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "3c12479e61aeb3d7",
+          "content": "3dd16066779b11c6"
+        }
+      }
+    },
+    {
+      "id": "story-40.3",
+      "type": "story",
+      "title": "الملفات المفقودة عند الفحص، وفحوص الوصول، وطلبات إعادة التنزيل",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "الملفات المفقودة عند الفحص، وفحوص الوصول، وطلبات إعادة التنزيل. ‏`file_missing` ← `dependency:share:<root>` حين يكون الجذر معطّلًا؛ وفحص الماسح بعد المسح (إصلاح وإعادة إلى الطابور، أو تأكيد)؛ ومرحلة `access_check`؛ ويقبل `repair_broken` طلبات `item_requests` (`redownload`) حتى لو كان الإصلاح التلقائي معطّلًا. **معايير القبول:** الملف الذي يعود إلى المشاركة يُعاد إلى الطابور في المسح التالي؛ والملف المؤكَّد فقده يحصل على `missing_confirmed_at`؛ وفحص الوصول الناجح يعيد حالات فشل الفيديو إلى الطابور.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "missing-files-at-the-scan-access-checks-requested-re-downloa",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "827bf928e1cb9bdb",
+          "content": "944ecb2affff16b5"
+        }
+      }
+    },
+    {
+      "id": "story-40.4",
+      "type": "story",
+      "title": "الواجهة البرمجية: سلامة البلاطات وقائمة حالات الفشل",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "الواجهة البرمجية: سلامة البلاطات وقائمة حالات الفشل. ‏`QueueSummary.health {state, failed_window, finished_window, failure_share, waiting[], needs_you, failing?}`؛ و`GET /api/queues/failures` (عوامل تصفية، وترقيم صفحات بالمفاتيح، وأوجه تصنيف)؛ و`POST /api/queues/failures/actions` (`retry`، و`ignore`، و`unignore`، و`rescan`، و`remove`، و`redownload`، و`fix_path`، و`path_map`، و`check_access`) مع التدقيق؛ والعناصر المتجاهَلة تخرج من كل العدّادات. **معايير القبول:** اختبارات معالِج لكل إجراء (للمسؤول فقط، ومدقَّق، والعدّادات)، وبلاطة حمراء فقط لتوقيع فشل غالب يتجاوز النسبة.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health",
+        "ep-get-queues"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /queues"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "api-tile-health-and-the-failures-list",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "558ac18f0891c430",
+          "content": "f54b55844547b5d3"
+        }
+      }
+    },
+    {
+      "id": "story-40.5",
+      "type": "story",
+      "title": "الويب: البلاطات وصفحة حالات الفشل",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "الويب: البلاطات وصفحة حالات الفشل. حالات `QueueCard` من `health` (فاشل، بانتظار، سليم) مع شارة يحتاج إليك والروابط؛ و`/queue/failures` مع عوامل تصفية في الرابط، ومجموعات، وتحديد، وإجراءات جماعية ولكل عنصر، ونوافذ إصلاح المسار / خريطة المسارات / الوصول، وعامل تصفية المتجاهَلة؛ ونصوص بالإنجليزية والعربية. **معايير القبول:** اختبارات vitest لكل حالة وإجراء، وإمكانية الوصول.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-tiles-and-the-failures-page",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "a0271e4bb17c177b",
+          "content": "c9b4bb0b6e0e804b"
+        }
+      }
+    },
+    {
+      "id": "story-40.6",
+      "type": "story",
+      "title": "نقل حالات الفشل الحالية",
+      "epic": "40-queue-health",
+      "phase": 5,
+      "content": "نقل حالات الفشل الحالية. ملء رجعي لمرة واحدة على القائد (المفتاح `queue_health.backfill` في `app_settings`): يُصنَّف كل صف فشل مفتوح بلا فئة؛ وتحصل فئات الاعتماديات/الموارد على صف ركن جديد (يطلقه المراقب فورًا إذا كانت الاعتمادية تعمل)، وتُعاد الفئات العابرة التي لم تستنفد ميزانيتها إلى الطابور، ويحتفظ الباقي بصف فشله مع الفئة (يحتاج إليك). **معايير القبول:** تصبح حالات فشل النموذج بانتظار، والملفات المفقودة يحتاج إليك، وتُعاد محاولة قراءات البصمة الجزئية؛ والعملية متساوية الأثر عند تكرارها.",
+      "tags": [
+        "story",
+        "40-queue-health",
+        "phase-5"
+      ],
+      "related": [
+        "epic-40-queue-health"
+      ],
+      "files": {
+        "story": "specs/epics/40-queue-health/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "move-today-s-failures",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "8baf4ad4d998dd2c",
+          "content": "7d3a649deafb5e5e"
+        }
+      }
+    },
+    {
+      "id": "story-41.1",
+      "type": "story",
+      "title": "هذه المواصفة",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "هذه المواصفة. التدقيق، وبنية المعلومات، ومخطط الروابط، والقصص",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "this-spec",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "ba4416fd2f6811d1",
+          "content": "64b853d7168aa2cc"
+        }
+      }
+    },
+    {
+      "id": "story-41.2",
+      "type": "story",
+      "title": "قسم المساعدة",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "قسم المساعدة. فهرس `/help` مع البحث (باللغتين، مع توحيد أشكال الحروف العربية وإهمال التشكيل)، وصفحات موضوعات بقائمة محتويات، ومراسٍ تمرّر الصفحة إليها وتُبرزها، وزر نسخ الرابط لكل قسم، وتخطيط للهاتف، ودعم الاتجاه من اليمين إلى اليسار؛ و\"المساعدة\" في شريط التنقل",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help-area",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "e0ef884f81ec9470",
+          "content": "cc1e2dad90c09841"
+        }
+      }
+    },
+    {
+      "id": "story-41.3",
+      "type": "story",
+      "title": "الروابط والسجل",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "الروابط والسجل. ‏`helpLink`، والسجل، و`PageHelp` بجانب عنوان كل صفحة، وروابط حقول القواعد، وروابط بلاطة الطابور / السبب / سبب الانتظار / سجل العنصر / التفريغ النصي",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "links-and-registry",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "e7594ddfc469c295",
+          "content": "f4e40e8a97d80e73"
+        }
+      }
+    },
+    {
+      "id": "story-41.4",
+      "type": "story",
+      "title": "اختبارات التغطية",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "اختبارات التغطية. الاختبارات الستة المذكورة أعلاه، في مجموعات اختبارات الويب وخط المعالجة والواجهة البرمجية",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "coverage-tests",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "1329140c9725a6e7",
+          "content": "7cdc7246d04da319"
+        }
+      }
+    },
+    {
+      "id": "story-41.5",
+      "type": "story",
+      "title": "المحتوى",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "المحتوى. الموضوعات الثلاثة والثلاثون بالإنجليزية والعربية",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "content",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "47bd29075f8b8019",
+          "content": "3f56ad28f99649cd"
+        }
+      }
+    },
+    {
+      "id": "story-41.6",
+      "type": "story",
+      "title": "فئات سلامة الطابور",
+      "epic": "41-help-guide",
+      "phase": 5,
+      "content": "فئات سلامة الطابور. ربط فئات الفشل في ملحمة سلامة الطابور (\"العناصر الفاشلة\") عبر `failureClassHelp()` بمجرد دمجها في main",
+      "tags": [
+        "story",
+        "41-help-guide",
+        "phase-5"
+      ],
+      "related": [
+        "epic-41-help-guide"
+      ],
+      "files": {
+        "story": "specs/epics/41-help-guide/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "queue-health-classes",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "20d23fde1d3fa301",
+          "content": "539d220262cde675"
+        }
+      }
+    },
+    {
+      "id": "story-42.1",
+      "type": "story",
+      "title": "المشغّل والتحكم عن بُعد على أجهزة Apple",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "المشغّل والتحكم عن بُعد على أجهزة Apple. ‏`apps/apple` (SwiftUI، `MaktabaKit`): الجهاز الرئيسي عبر العنوان، وتسجيل الدخول، والمكتبات، وصفحة الفيديو، والمشاهدة (جلسات البث، والتقدم)، وما يحتاج إلى انتباه مع زر إعادة المحاولة. على iPhone ‏(iPhone Duo) وiPad وMac؛ مع التوقيع التلقائي في Xcode. (بدأ العمل.)",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "apple-player-and-remote",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "90fc7be14f176fed",
+          "content": "bbef7c75da1d5a4c"
+        }
+      }
+    },
+    {
+      "id": "story-42.2",
+      "type": "story",
+      "title": "منتقي الجهاز الرئيسي",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "منتقي الجهاز الرئيسي. عبر mDNS ‏(Bonjour على Apple، وNSD على Android)، أو بالعنوان، أو برمز QR؛ مع عدة أجهزة رئيسية. (بُني الخادم والويب، 2026-10-27: سجل TXT ‏`home`/`id`/`name`/`tls`/`path`، و`GET /api/discovery/home`، ورابط `maktaba://connect` وصفحة ربط تطبيق؛ انظر العقد. التطبيقات: المساران A وD.) على Apple (المشغّل، والتحكم عن بُعد؛ iPhone وiPad وMac): على هذه الشبكة (`role=home` فقط، مع إزالة التكرار عبر `home` في TXT، و`id`، والمضيف:المنفذ؛ و`path` للويب)، والأجهزة الرئيسية الأخيرة (إعادة التسمية، والإزالة)، أو بالعنوان أو برابط `maktaba://connect` ملصوق (يُتحقق منه عبر `/api/discovery/home`، و`/api/system/version` على الأجهزة الرئيسية الأقدم)، أو برمز QR ممسوح (iPhone وiPad)؛ و`m",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server",
+        "ep-get-system-version"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /system/version"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "home-picker",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "703cb8179849b6ae",
+          "content": "7b81df339a405915"
+        }
+      }
+    },
+    {
+      "id": "story-42.3",
+      "type": "story",
+      "title": "المشغّل والتحكم عن بُعد على Android",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "المشغّل والتحكم عن بُعد على Android. بتقنية Compose، للهاتف / الجهاز القابل للطي / الجهاز اللوحي، مع المشاركة مع Android TV. (بدأ العمل: `apps/android`، المشغّل والتحكم عن بُعد لكل شكل من أشكال الأجهزة على `core` مشترك.)",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "android-player-and-remote",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "f0df717b2837a665",
+          "content": "fae695b6d4fbad42"
+        }
+      }
+    },
+    {
+      "id": "story-42.4",
+      "type": "story",
+      "title": "مشغّل سطح المكتب على Windows وLinux",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "مشغّل سطح المكتب على Windows وLinux. بتقنية Compose for Desktop، مع مسارات الإصدار، و`latest-player.json`. (بُني، 2026-10-27: `apps/desktop-player`، فوق `apps/android/client`، إذ نُقل الجزء المكتوب بلغة Kotlin الخالصة من نواة Android إلى وحدة JVM تبني عليها تطبيقات Android وAndroid TV ومشغّل سطح المكتب جميعًا (عميل الواجهة البرمجية، وتسجيل الدخول بكلمة المرور وبالرمز، وتشفير الرموز المميزة، وقواعد المنتقي، والموافقة على تسجيل دخول، وتفويض البث). المنتقي (JmDNS، والأجهزة الرئيسية المحفوظة، والعنوان أو رابط `maktaba://connect`، مع التأكيد أولًا)، وتسجيل الدخول، والمكتبات والبحث، والمشاهدة (JavaFX عبر وكيل على الحلقة المحلية يضيف",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "desktop-player-on-windows-and-linux",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "aacd0f45ee34afc1",
+          "content": "2109a2b1ccd2e8f8"
+        }
+      }
+    },
+    {
+      "id": "story-42.5",
+      "type": "story",
+      "title": "إصدارات الويب",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "إصدارات الويب. ‏`VITE_MAKTABA_EDITION`، ومسارات خادم تُحمَّل عند الحاجة، و\"الإدارة\" في `full`. (بُني، 2026-10-27: `web/src/lib/edition.ts`؛ و`pnpm build` هو `full`، دون تغيير بالنسبة إلى الخادم؛ و`pnpm build:player` و`build:remote` ‏(`vite build --mode player|remote`، من `web/.env.player|remote`)؛ والقيمة المجهولة تُفشل البناء. تقع مسارات الخادم في `web/src/serverRoutes.tsx`، ولكل صفحة جزء خاص بها يُحمَّل عند الحاجة؛ ويستبعد بناء المشغّل هذه الوحدة، ويُفشله `vite.config.ts` إن وُجدت أي شيفرة لصفحات الخادم في الحزمة (التكامل المستمر: `_unit.yml`). ويُخفي المشغّل روابط المسؤول في صفحات المشاهد أيضًا (إدارة المكتبات، ",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server",
+        "ep-get-system-version"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /system/version"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web-editions",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "a9552e3e214b5a48",
+          "content": "84cf72aa45ee8f42"
+        }
+      }
+    },
+    {
+      "id": "story-42.6",
+      "type": "story",
+      "title": "تسجيل الدخول بالرمز",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "تسجيل الدخول بالرمز. نقاط الوصول، وشاشة الموافقة، والهاتف وسطح المكتب والتلفاز. (بُني الخادم والويب، 2026-10-27: يُسجَّل الطالب من `X-Maktaba-Client`، و`GET /api/pairing/device/{code}`، و`verify_url`، وجلسات موسومة باسم التطبيق، وتعرض صفحة `/pair` الجهاز وتتطلب موافقة صريحة؛ واختبارات الأدوار في `handlers/discovery/device42_test.go`. انظر العقد.) على Apple: يعرض تسجيل الدخول كلمة مرور أو رمزًا (كبيرًا، مع رمز QR لـ `verify_url`، يتجدد عند انتهاء صلاحيته)؛ و\"الموافقة على تسجيل دخول\" في قائمتي الحساب في التحكم عن بُعد والمشغّل (اكتب الرمز أو امسحه، وانظر من يطلب، ثم وافق صراحة). تطبيقات التلفاز: تخ",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "sign-in-by-code",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "d3e6ad7db85ea658",
+          "content": "e200f58774e15689"
+        }
+      }
+    },
+    {
+      "id": "story-42.7",
+      "type": "story",
+      "title": "الحسابات المرتبطة والسحابة",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "الحسابات المرتبطة والسحابة. الربط (صفحة الحساب في الجهاز الرئيسي، و`home_user_links`)، وتوكيد السحابة للجهاز الرئيسي، و`POST /api/auth/cloud`، وتسجيل الدخول السحابي في التطبيق وقائمة الأجهزة الرئيسية، وكلا العنوانين لكل جهاز رئيسي (المحلي وعبر المُرحِّل). (بُني، 2026-10-27. الواجهة البرمجية للجهاز الرئيسي وللسحابة، مع اختبارات الأدوار: PR 327 ‏(`api/internal/handlers/auth/cloud.go`، و`cloud_pg_test.go`؛ و`cloud/internal/handlers/homes`). *الربط:* الحساب ← الحسابات المرتبطة (`web/src/pages/Profile/CloudLink.tsx`): رمز nonce الخاص بالجهاز الرئيسي، ثم `GET {cloud_api}/v1/homes/{id}/link`، الذي يعيد التوجيه إلى صفحة `/link-home` الخاصة بويب السحابة (ولا مكان سواها): تو",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server",
+        "entity-users"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "users"
+      ],
+      "metadata": {
+        "slug": "linked-accounts-and-the-cloud",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "45bc1ccc058a7dcd",
+          "content": "d12231f4ea940324"
+        }
+      }
+    },
+    {
+      "id": "story-42.8",
+      "type": "story",
+      "title": "الجهاز اللوحي والجهاز القابل للطي",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "الجهاز اللوحي والجهاز القابل للطي. تخطيطات بلوحين ومراعية للطيّ، ولكل منها قائمته الخاصة. (بُني، 2026-10-27. على Android: `core/layout/Panes.kt` (لوح واحد دون 600 dp، والقائمة بجانب الصفحة من 600 dp، وتقسيم وضعَي الطاولة والكتاب عند المفصل، مع عكس نصفي الكتاب من اليمين إلى اليسار)، يستخدمه متصفح المشغّل وكل شاشات التحكم عن بُعد؛ و`PanesTest`، واختبار `HingeSplitTest` المُجهَّز؛ ونكهات البناء `phone` و`foldable` و`tablet`، التي أُزيلت في 2026-11-01 لصالح حزمة Google Play واحدة لكل تطبيق). على Apple: ‏`NavigationSplitView` في المشغّل (iPad وMac؛ و`ArrangementView` عند الطي النصفي)؛ ويعرض طابور التحكم عن بُعد المراحل بجانب مرحلة",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tablet-and-foldable",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "76957d2371a629ad",
+          "content": "70c8b6786434c8a0"
+        }
+      }
+    },
+    {
+      "id": "story-42.9",
+      "type": "story",
+      "title": "المشغّل والتحكم عن بُعد عبر ويب السحابة",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "المشغّل والتحكم عن بُعد عبر ويب السحابة. تقدّم السحابة إصدارات تطبيق الصفحة الواحدة لجهاز رئيسي متصل. (بُني، 2026-10-27. يقدّم المُرحِّل إصدارَي المشغّل والتحكم عن بُعد من تطبيق الويب على عنوان المُرحِّل الخاص بكل جهاز رئيسي مُطالَب به، `https://<slug>.<relay>/play/` و`/manage/` ‏(`cloud/internal/handlers/relay/editions.go`، و`relay.editions_dir`؛ وتبنيهما الصورة في مرحلة ويب: `pnpm build:player:cloud`، و`build:remote:cloud`، وخيار `--base` في Vite، و`basename` الخاص بالموجّه من `web/src/lib/basePath.ts`، ولا عامل خدمة تحت مسار أساسي). وكل مسار آخر على ذلك المضيف (`/api`، و`/stream/`، وواجهة الجهاز الرئيسي نفسها في الجذر) يذ",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "cloud-web-player-and-remote",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "4bac58d05629115b",
+          "content": "278304dc89c1f4bb"
+        }
+      }
+    },
+    {
+      "id": "story-42.10",
+      "type": "story",
+      "title": "التلفاز",
+      "epic": "42-apps-player-remote-server",
+      "phase": 5,
+      "content": "التلفاز. منتقي الجهاز الرئيسي وتسجيل الدخول بالرمز على tvOS وAndroid TV. (بُني، 2026-10-27.) *Apple TV* ‏(`apps/tv/tvos`، فوق `AppSession` و`HomeBrowser` و`CodeSignIn` من MaktabaKit؛ وكلمات التلفاز وخياراته في `MaktabaKit/TVStart.swift`): الأجهزة الرئيسية الأخيرة (اضغط مطولًا على Select: إعادة التسمية، والإزالة)، وعلى هذه الشبكة (`role=home` فقط، صف واحد لكل `home` في TXT)، وبالعنوان أو برابط `maktaba://connect` ملصوق (يُتحقق منه عبر `/api/discovery/home`)؛ الرمز أولًا (كبيرًا، مع رمز QR لـ `verify_url`، ورمز جديد عند 410 أو انتهاء الصلاحية)، واسم المستخدم وكلمة المرور كما يسمح الجهاز الرئيسي؛ ويسأل مخطط الروابط `maktaba` أولًا (مع التركيز على إلغاء). الإنجليزية والعرب",
+      "tags": [
+        "story",
+        "42-apps-player-remote-server",
+        "phase-5"
+      ],
+      "related": [
+        "epic-42-apps-player-remote-server"
+      ],
+      "files": {
+        "story": "specs/epics/42-apps-player-remote-server/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "tv",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "ca62d5e073f52f3c",
+          "content": "a79fb5393287d4f8"
+        }
+      }
+    },
+    {
+      "id": "story-43.1",
+      "type": "story",
+      "title": "pgvector في كل Postgres نشغّله",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "pgvector في كل Postgres نشغّله. حزم التطبيق (ماك، ولينكس، وويندوز)، والتكامل المستمر، وcompose تُنشئ `vector`؛ وفحوص تثبت ذلك",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "pgvector-in-every-postgres-we-run",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "0126f2ef4681212a",
+          "content": "33513627390d76dc"
+        }
+      }
+    },
+    {
+      "id": "story-43.2",
+      "type": "story",
+      "title": "`segment_embeddings` والواجهة الخلفية في Postgres",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "`segment_embeddings` والواجهة الخلفية في Postgres. الترحيل 0152؛ و`semantic.py` على Postgres خلف الواجهة نفسها؛ ومرحلة الفهرسة و`chapter_infer` والبحث عبر gRPC مبنية عليه؛ واختبارات على Postgres مزوّد بـ pgvector",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "segment-embeddings-and-the-postgres-backend",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "98eec077d6b3cb0a",
+          "content": "bf1a84ba28a9258f"
+        }
+      }
+    },
+    {
+      "id": "story-43.3",
+      "type": "story",
+      "title": "نسخ المتجهات القائمة",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "نسخ المتجهات القائمة. نسخ قابل للاستئناف، وبناء الفهرس بعده، وفحص الاسترجاع، والتحويل، وحذف مجلد Chroma في تشغيل لاحق",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "copy-the-existing-vectors",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "4104438f8e8df541",
+          "content": "10a4385e7b9df46a"
+        }
+      }
+    },
+    {
+      "id": "story-43.4",
+      "type": "story",
+      "title": "الأجهزة والتحويل",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "الأجهزة والتحويل. استبعاد `segment_embeddings` من النسخ؛ ويعيد الجهاز الرئيسي الجديد فهرسة ما ينقصه",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "machines-and-switchover",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "c3a2694d81dd3cca",
+          "content": "3bcce8ba38bc6d47"
+        }
+      }
+    },
+    {
+      "id": "story-43.5",
+      "type": "story",
+      "title": "إحالة Chroma إلى التقاعد",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "إحالة Chroma إلى التقاعد. إخراج `chromadb` من اعتماديات خط المعالجة وفحوص venv، وخدمات compose والتكامل المستمر، ومتغيرات البيئة، وأداة doctor، والإشارات إليه في devmigrate/adopt/uninstall، والوثائق",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "chroma-retired",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "c0a47d6e339533c7",
+          "content": "9804db942a5305a8"
+        }
+      }
+    },
+    {
+      "id": "story-43.6",
+      "type": "story",
+      "title": "القياس على جهاز Mac الرئيسي",
+      "epic": "43-pgvector-search",
+      "phase": 5,
+      "content": "القياس على جهاز Mac الرئيسي. المئينان p50/p95 لشق البحث الدلالي عند 13.9 مليون صف، والقرص قبل/بعد، والاسترجاع مقارنةً بـ Chroma، في طلب الدمج",
+      "tags": [
+        "story",
+        "43-pgvector-search",
+        "phase-5"
+      ],
+      "related": [
+        "epic-43-pgvector-search"
+      ],
+      "files": {
+        "story": "specs/epics/43-pgvector-search/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "measured-on-the-home-mac",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "0f0deb865db338f9",
+          "content": "05d5f7dd3314b4b0"
+        }
+      }
+    },
+    {
+      "id": "story-44.1",
+      "type": "story",
+      "title": "المخطط (الخانة 0158)",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "المخطط (الخانة 0158): أعمدة `watch_sessions`، و`tv_watch_sessions`، و`api_usage_daily`، و`api_usage_people_daily`، وأعمدة الكاتب في `hdhr_tuner_leases`",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "schema-slot-0158",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "58a96b9ce5739836",
+          "content": "8cb5ae01c34d4885"
+        }
+      }
+    },
+    {
+      "id": "story-44.2",
+      "type": "story",
+      "title": "`X-Maktaba-Client`: الوسيط",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "`X-Maktaba-Client`: الوسيط؛ ويرسله كل تطبيق (الويب، وأغلفة سطح المكتب والهاتف، وتطبيقات Apple، وتطبيقات Android، وAndroid TV، وtvOS)",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "x-maktaba-client-the-middleware",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "f6f8c646be1f0850",
+          "content": "f9680234db37f805"
+        }
+      }
+    },
+    {
+      "id": "story-44.3",
+      "type": "story",
+      "title": "التشغيلات من جلسة البث (`/progress`، والإغلاق، والحاصد)",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "التشغيلات من جلسة البث (`/progress`، والإغلاق، والحاصد)؛ وإزالة استدعاءات `/api/watch/*` الخاصة بالويب؛ ووسم استدعاءات Android TV",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plays-from-the-stream-session-progress-close-reaper",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "17bbefda7763ac32",
+          "content": "934c40a3f63a85e5"
+        }
+      }
+    },
+    {
+      "id": "story-44.4",
+      "type": "story",
+      "title": "مشاهدات التلفاز المباشر: متتبّع البوابة الأمامية، وحجوزات الموالف؛ والتلفاز البعيد يُقرأ كما هو",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "مشاهدات التلفاز المباشر: متتبّع البوابة الأمامية، وحجوزات الموالف؛ والتلفاز البعيد يُقرأ كما هو",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "live-tv-viewings-the-front-door-s-tracker-the-tuner-s-leases",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "e6a94679c8081807",
+          "content": "e6a94679c8081807"
+        }
+      }
+    },
+    {
+      "id": "story-44.5",
+      "type": "story",
+      "title": "استخدام الواجهة البرمجية لكل تطبيق: العدّادات، والتفريغ كل دقيقة، ومدة الاحتفاظ، ووسم Prometheus",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "استخدام الواجهة البرمجية لكل تطبيق: العدّادات، والتفريغ كل دقيقة، ومدة الاحتفاظ، ووسم Prometheus",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "api-use-per-app-the-counters-the-minute-flush-the-retention-",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "d61bbf5688da8eb4",
+          "content": "d61bbf5688da8eb4"
+        }
+      }
+    },
+    {
+      "id": "story-44.6",
+      "type": "story",
+      "title": "واجهة برمجية للتحليلات على التشغيلات والمشاهدات واستخدام التطبيقات (للمسؤول، مع اختبارات الأدوار)",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "واجهة برمجية للتحليلات على التشغيلات والمشاهدات واستخدام التطبيقات (للمسؤول، مع اختبارات الأدوار)",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "analytics-api-over-plays-viewings-and-app-use-admin-role-tes",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "67f501d1979572b0",
+          "content": "67f501d1979572b0"
+        }
+      }
+    },
+    {
+      "id": "story-44.7",
+      "type": "story",
+      "title": "صفحة التحليلات (التبويبات، وعوامل التصفية، والآن، والتصدير)، بالإنجليزية والعربية، وصفحة مساعدة",
+      "epic": "44-viewing-analytics",
+      "phase": 5,
+      "content": "صفحة التحليلات (التبويبات، وعوامل التصفية، والآن، والتصدير)، بالإنجليزية والعربية، وصفحة مساعدة",
+      "tags": [
+        "story",
+        "44-viewing-analytics",
+        "phase-5"
+      ],
+      "related": [
+        "epic-44-viewing-analytics"
+      ],
+      "files": {
+        "story": "specs/epics/44-viewing-analytics/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-analytics-page-tabs-filters-now-export-english-and-arabi",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "a6d533c42a0097e0",
+          "content": "a6d533c42a0097e0"
+        }
+      }
+    },
+    {
+      "id": "story-45.1",
+      "type": "story",
+      "title": "محلّل المسارات",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "محلّل المسارات؛ والتحقق من المجلد عبر خريطة المسارات. اختبارات الأدوار دون تغيير.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "path-resolver",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "8e4457113444f162",
+          "content": "53ed98f9d91cea6f"
+        }
+      }
+    },
+    {
+      "id": "story-45.2",
+      "type": "story",
+      "title": "`GET /api/libraries/manage`",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "`GET /api/libraries/manage`، والتعارضات، و`GET /api/libraries/folders`، و`impact`، و`merge`، و`empty-trash`؛ مع اختبارات دور المسؤول لكل منها.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui",
+        "ep-get-libraries",
+        "ep-post-libraries"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /libraries",
+        "POST /libraries"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "get-api-libraries-manage",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0ee75e48e4845b4b"
+        }
+      }
+    },
+    {
+      "id": "story-45.3",
+      "type": "story",
+      "title": "‏`/config/` في المشرف (الإعدادات، والتحقق، وإعادة التشغيل) ووكيل `/api/server/*` في الواجهة البرمجية",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "‏`/config/` في المشرف (الإعدادات، والتحقق، وإعادة التشغيل) ووكيل `/api/server/*` في الواجهة البرمجية؛ واختبارات دور المسؤول؛ واختبارات ذهاب وإياب للإعدادات (مع الإبقاء على المفاتيح المجهولة).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "supervisor-config-settings-validation-restart-and-the-api-s-",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "48da58e13aea1f28",
+          "content": "8eb9ffbba3c0e161"
+        }
+      }
+    },
+    {
+      "id": "story-45.4",
+      "type": "story",
+      "title": "الترحيل 0159",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "الترحيل 0159؛ و`summary`، والتثبيتات، و`home`، و`hub`، وخيارات الفرز والتصفية في `/api/videos`؛ واختبارات أدوار لصلاحيات المكتبات (لا يرى المشاهد أبدًا فيديوهات مكتبة أخرى في أي صف أو عدد).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui",
+        "ep-get-videos"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /videos"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "migration-0159",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "8ba1bc92fec487ed",
+          "content": "d1c2af9cc1ee74eb"
+        }
+      }
+    },
+    {
+      "id": "story-45.5",
+      "type": "story",
+      "title": "الويب",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "الويب: صفحة إدارة المكتبات ونوافذها؛ وإعدادات التخزين والاكتشاف.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "2975104784a401e3",
+          "content": "6be8a7f598ae5ff9"
+        }
+      }
+    },
+    {
+      "id": "story-45.6",
+      "type": "story",
+      "title": "الويب",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "الويب: الرئيسية، والمكتبات، وصفحة المكتبة، وكل الفيديوهات، والتنقل المثبّت.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "web",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "2975104784a401e3",
+          "content": "c210d94e745adfce"
+        }
+      }
+    },
+    {
+      "id": "story-45.7",
+      "type": "story",
+      "title": "المساعدة (en/ar)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "المساعدة (en/ar)، والتدويل، والتحقق من الاتجاه من اليمين إلى اليسار، والتحقق في المتصفح على حزمة خدمات من الفرع (وليس قاعدة البيانات الحية أبدًا)، وإصلاح المكتبات المكررة الثلاث في الجهاز الرئيسي عبر الدمج الجديد، على يد المالك.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "help-en-ar",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "2b1c7f81bbe6682e",
+          "content": "6fc364182bbe3bb2"
+        }
+      }
+    },
+    {
+      "id": "story-45.8",
+      "type": "story",
+      "title": "التعليم كمُشاهد / غير مُشاهد، لعنصر واحد أو لعدة عناصر",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "التعليم كمُشاهد / غير مُشاهد، لعنصر واحد أو لعدة عناصر؛ وعلامات المشاهدة وأشرطة التقدم في الشبكة.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "mark-watched-unwatched-one-and-many",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "92d928581d34c3a2",
+          "content": "2bc436dd64102266"
+        }
+      }
+    },
+    {
+      "id": "story-45.9",
+      "type": "story",
+      "title": "المفضلة (لكل مستخدم)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "المفضلة (لكل مستخدم): المسار، وعامل التصفية في الشبكة، وصف الرئيسية، والزر في صفحة الفيديو.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "favorites-per-user",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "9a88b06a68fd5f05",
+          "content": "344e22dfc21d2f9a"
+        }
+      }
+    },
+    {
+      "id": "story-45.10",
+      "type": "story",
+      "title": "قوائم التشغيل (لكل مستخدم)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "قوائم التشغيل (لكل مستخدم): المسارات، وصفحات قوائم التشغيل، والإضافة إلى قائمة تشغيل من صفحة الفيديو ومن تحديد.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "playlists-per-user",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "705d3354fc7ad92c",
+          "content": "11ddc2bf233a6535"
+        }
+      }
+    },
+    {
+      "id": "story-45.11",
+      "type": "story",
+      "title": "أوجه التصنيف وعوامل التصفية في الشبكة",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "أوجه التصنيف وعوامل التصفية في الشبكة: مربع البحث، والوسم، والمتحدث، واللغة.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "facets-and-the-grid-s-filters",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "b37ce228f9856786",
+          "content": "0a671cc860b00284"
+        }
+      }
+    },
+    {
+      "id": "story-45.12",
+      "type": "story",
+      "title": "شريط القفز الأبجدي (`letter=`، وفهرس الحرف الأول)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "شريط القفز الأبجدي (`letter=`، وفهرس الحرف الأول).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-a-to-z-jump-bar-letter-the-first-character-index",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "c52c1b66bbc9e8ce",
+          "content": "15f9afa37594de07"
+        }
+      }
+    },
+    {
+      "id": "story-45.13",
+      "type": "story",
+      "title": "تشغيل الكل، والتشغيل العشوائي، والتشغيل من هنا، والطابور، و\"التالي\" في المشغّل",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "تشغيل الكل، والتشغيل العشوائي، والتشغيل من هنا، والطابور، و\"التالي\" في المشغّل.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "play-all-shuffle-play-from-here-the-queue-and-the-player-s-u",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "ef07e12fd5ce1294",
+          "content": "29fb21c2afa2b0ad"
+        }
+      }
+    },
+    {
+      "id": "story-45.14",
+      "type": "story",
+      "title": "إجراءات صفحة الفيديو وموضعه في المسلسل (السابق، والتالي، والتقدم)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "إجراءات صفحة الفيديو وموضعه في المسلسل (السابق، والتالي، والتقدم).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "the-video-page-s-actions-and-series-position-previous-next-p",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "d8c9ed96ff77ee53",
+          "content": "91ef35b707a233f6"
+        }
+      }
+    },
+    {
+      "id": "story-45.15",
+      "type": "story",
+      "title": "التالي للمشاهدة (الرئيسية وصفحة المكتبة)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "التالي للمشاهدة (الرئيسية وصفحة المكتبة).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "on-deck-home-and-the-library-page",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "5ead5fb7fb33e842",
+          "content": "a29cdf80b6b9d123"
+        }
+      }
+    },
+    {
+      "id": "story-45.16",
+      "type": "story",
+      "title": "التحديد المتعدد في الشبكة مع الإجراءات الجماعية",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "التحديد المتعدد في الشبكة مع الإجراءات الجماعية.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "multi-select-on-the-grid-with-the-bulk-actions",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "c1e58f17b95bdabc",
+          "content": "e20b195f3ede607a"
+        }
+      }
+    },
+    {
+      "id": "story-45.17",
+      "type": "story",
+      "title": "المجموعات في الويب",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "المجموعات في الويب: صف وصفحة للمجموعات في كل مكتبة، وصفحة لكل مجموعة، ينسّقها المسؤولون (إنشاء، وإعادة تسمية، وإضافة، وإزالة، وإعادة ترتيب، وحذف)؛ والمجموعات الذكية كعوامل تصفية محفوظة.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "collections-in-the-web",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "af15495325d1c034",
+          "content": "cc110e1604277fd7"
+        }
+      }
+    },
+    {
+      "id": "story-45.18",
+      "type": "story",
+      "title": "المضاف حديثًا مجمّعًا حسب المسلسل (\"12 درسًا جديدًا في التفسير\") في الرئيسية والمركز",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "المضاف حديثًا مجمّعًا حسب المسلسل (\"12 درسًا جديدًا في التفسير\") في الرئيسية والمركز.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "recently-added-grouped-by-series-12-new-lessons-in-tafsir-on",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "5cde3c372a115325",
+          "content": "d6487bf643ad633e"
+        }
+      }
+    },
+    {
+      "id": "story-45.19",
+      "type": "story",
+      "title": "صور التمرير المصغّرة (trickplay)",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "صور التمرير المصغّرة (trickplay): ورقة صور مجمّعة وفهرسها لكل فيديو من مرحلة الصور المصغّرة، تقدّمها الواجهة البرمجية، وتُعرض فوق شريط التقدم في المشغّل.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "scrub-thumbnails-trickplay",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "80d185918a12bd0a",
+          "content": "7dbeed38fc152cd0"
+        }
+      }
+    },
+    {
+      "id": "story-45.20",
+      "type": "story",
+      "title": "عوامل تصفية المدة وتاريخ الإضافة (قصير / متوسط / طويل",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "عوامل تصفية المدة وتاريخ الإضافة (قصير / متوسط / طويل؛ الأسبوع / الشهر / السنة الماضية) وعامل تصفية للدقة من `media_info`.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui",
+        "entity-media_info"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [
+        "media_info"
+      ],
+      "metadata": {
+        "slug": "length-and-added-date-filters-short-medium-long",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "56203a631b524fdc",
+          "content": "9b93195d232da6b2"
+        }
+      }
+    },
+    {
+      "id": "story-45.21",
+      "type": "story",
+      "title": "واجهة عرض مميزة في الرئيسية",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "واجهة عرض مميزة في الرئيسية: أحدث مسلسل، أو درس يختاره المسؤول.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "a-featured-hero-on-home",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "b22c0cb9c07a9204",
+          "content": "6d337884cd41a971"
+        }
+      }
+    },
+    {
+      "id": "story-45.22",
+      "type": "story",
+      "title": "تقييمات بالنجوم لكل مستخدم، إن تبيّن أن المفضلة غير دقيقة بما يكفي",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "تقييمات بالنجوم لكل مستخدم، إن تبيّن أن المفضلة غير دقيقة بما يكفي.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "per-user-star-ratings-if-favorites-prove-too-coarse",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "380b911971c16983",
+          "content": "c935c3d865935196"
+        }
+      }
+    },
+    {
+      "id": "story-45.23",
+      "type": "story",
+      "title": "ملفات شخصية برمز PIN في نافذة تطبيق Mac، وقيود أبوية تتجاوز صلاحيات المكتبات (منخفضة",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "ملفات شخصية برمز PIN في نافذة تطبيق Mac، وقيود أبوية تتجاوز صلاحيات المكتبات (أولوية منخفضة: كل شخص يسجّل دخوله بنفسه).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "profiles-with-a-pin-in-the-mac-app-s-window-and-parental-lim",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "1d9f89e3174f4c98",
+          "content": "6b0fecb71ffdd176"
+        }
+      }
+    },
+    {
+      "id": "story-45.24",
+      "type": "story",
+      "title": "تبويبا المسلسلات والمجموعات في المكتبة",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "تبويبا المسلسلات والمجموعات في المكتبة: المسلسلات مع تقدّم المستخدم، وقائمة واحدة بمجموعات المكتبة، التلقائية (الموضوع، والمقطع) والمنسّقة، مع وسم كل نوع؛ وصفحة للمجموعة التلقائية؛ وصفحة المجموعات القديمة تعيد التوجيه إلى التبويب.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "a-library-s-series-and-collections-tabs",
+        "inline": true
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "title": "5bcf4b2073613f38",
+          "content": "683892ab38cae911"
+        }
+      }
+    }
+  ]
+}

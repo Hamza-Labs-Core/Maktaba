@@ -1,0 +1,95 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 30 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-30-relay-analytics": {
+      "title": {
+        "hash": "fae03cff42ee793d",
+        "ar": "تحليلات مجهولة الهوية للمُرحِّل السحابي"
+      },
+      "content": {
+        "hash": "5c79fa183a0cf32b",
+        "ar": "تحليلات مجهولة الهوية للمُرحِّل السحابي.\n\nيتوسّط المُرحِّل السحابي (`cloud/`، الملحمة 25) حركة البيانات بين الخوادم المنزلية وعملائها. وبوصف Hamza Labs مشغّلة لهذه البنية التحتية المشتركة، فهي تحتاج إلى الإجابة عن أسئلة على مستوى الأسطول كله — *كم خادمًا متصلًا، وكم من عرض النطاق يتدفق، وكيف تصل الإشعارات الفورية، وأين يوجد المستخدمون* — لإدارة السعة والدعم والفوترة. ويجب أن تفعل ذلك **دون أن تجمع أي بيانات فردية عن المستخدمين قط**، لأن المُرحِّل يرى حركة بيانات بيوت لا يملكها. تبني هذه الملحمة قابلية مراقبة تقتصر على البيانات المجمّعة، مع موقف من اللائحة العامة لحماية البيانات (GDPR) مدمج منذ أول عملية كتابة، لا ملحق لاحقًا."
+      }
+    },
+    "story-30.1": {
+      "title": {
+        "hash": "22228f3ef1b21f80",
+        "ar": "جمع مقاييس المُرحِّل"
+      },
+      "content": {
+        "hash": "c66938765696858d",
+        "ar": "# القصة 30.1 — جمع مقاييس المُرحِّل\n\n> الملحمة 30 · تحليلات مجهولة الهوية للمُرحِّل السحابي · المرحلة 1 (الجمع)\n\n## الوصف\n\nيجمع المُرحِّل مقاييس تشغيلية **مجمّعة فقط** عن حركة بياناته\nويخزّنها في قاعدة Postgres السحابية مع تجميع كل ساعة. ولا تُكتب أي\nبيانات فردية عن المستخدمين قط — انظر [30.2](story-30-02-gdpr-compliance.md).\n\nالمقاييس المجموعة:\n\n- **`connected_servers`** / **`active_tunnels`** (مقاييس لحظية) — تؤخذ عيّنتها من\n  `relay.Registry` الحي عند كل نبضة للجامع.\n- **`bandwidth_in_bytes`** / **`bandwidth_out_bytes`** (عدّادات) —\n  تتراكم من كل طلب "
+      }
+    },
+    "story-30.2": {
+      "title": {
+        "hash": "c43a86a178d6c4c9",
+        "ar": "طبقة الامتثال للائحة GDPR"
+      },
+      "content": {
+        "hash": "76d176d8b24bc3a5",
+        "ar": "# القصة 30.2 — طبقة الامتثال للائحة GDPR\n\n> الملحمة 30 · تحليلات مجهولة الهوية للمُرحِّل السحابي · المرحلة 2 (الخصوصية)\n\n## الوصف\n\nتجعل طبقة الخصوصية تحليلات المُرحِّل قابلة للدفاع عنها وفق GDPR\nبحكم تصميمها. وهي منفّذة في `cloud/internal/privacy/`.\n\nالضوابط:\n\n- **تجزئة مُعرّف الخادم.** كل موضع يحتاج إلى الإشارة إلى خادم في\n  أثر محفوظ يستخدم `privacy.HashServerID(salt, id)` — وهو SHA-256 مملّح\n  مقتطع إلى 16 خانة ست عشرية — ولا يستخدم أبدًا مُعرّف UUID الخام. (جداول المقاييس\n  المجمّعة لا تشير إلى أي خادم إطلاقًا؛ والدالة المساعدة موجودة للسجلات\n  ولأي تفصيل مستقبلي لكل خادم.)\n- **لا تخزين لعناو"
+      }
+    },
+    "story-30.3": {
+      "title": {
+        "hash": "37cf2f4944e14988",
+        "ar": "لوحة المسؤول للمُرحِّل"
+      },
+      "content": {
+        "hash": "b5360b744a09b796",
+        "ar": "# القصة 30.3 — لوحة المسؤول للمُرحِّل\n\n> الملحمة 30 · تحليلات مجهولة الهوية للمُرحِّل السحابي · المرحلة 3 (واجهة المشغّل)\n\n## الوصف\n\nتعرض نقاط وصول HTTP مقصورة على المشغّل المقاييسَ المجموعة للوحة\nالأسطول. وتُركَّب على **دور api** (الذي فيه `RequireUser` +\nحاجز المسؤول القائم على نطاق البريد الإلكتروني) تحت `/v1/admin/metrics/*` وتقرأ\nجداول `relay_metrics_*` التي يكتبها دور relay (README D8).\n\nنقاط الوصول (وكلها محمية بـ `RequireAdmin`):\n\n- **`GET /v1/admin/metrics/overview`** — القيم الحية لـ `connected_servers` /\n  `active_tunnels` (من المقياس اللحظي للجامع حين يكونان في الموضع نفسه، وإلا فمن\n  آخر عيّنة)، وإجما"
+      }
+    },
+    "story-30.4": {
+      "title": {
+        "hash": "a42bb91e1ab3c3b3",
+        "ar": "تصدير المقاييس"
+      },
+      "content": {
+        "hash": "e4b3cb65edb2c177",
+        "ar": "# القصة 30.4 — تصدير المقاييس\n\n> الملحمة 30 · تحليلات مجهولة الهوية للمُرحِّل السحابي · المرحلة 4 (التصدير والتكامل)\n\n## الوصف\n\nواجهتا تصدير تتيحان للمشغّلين إخراج البيانات من اللوحة\nإلى أدواتهم الخاصة.\n\n- **تصدير المشغّل.** يبثّ `GET /v1/admin/metrics/export?format=csv|json&range=`\n  (مقصور على المسؤول، دور api) صفوف التجميع الساعي للنافذة\n  بصيغة CSV أو JSON. تحمل CSV صفًّا للعناوين؛ وJSON مصفوفة من\n  `{hour, metric, country, sum_value, max_value, samples}`.\n- **نقطة وصول Prometheus / OpenMetrics.** `GET /metrics` (دور relay، دون\n  مصادقة — تُسحب بياناتها على "
+      }
+    },
+    "plan-30.01-relay-metrics-collection": {
+      "title": {
+        "hash": "faea3b03347fcfd7",
+        "ar": "خطة التنفيذ — القصة 30.1 جمع مقاييس المُرحِّل"
+      },
+      "content": {
+        "hash": "c0dffb93f598fc3c",
+        "ar": "# خطة التنفيذ — القصة 30.1 جمع مقاييس المُرحِّل\n\n> مرافقة لـ [story-30-01-relay-metrics-collection.md](story-30-01-relay-metrics-collection.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| الترحيل | `cloud/migrations/00110001_relay_metrics.sql`: `relay_metrics_raw` + `relay_metrics_hourly`. |\n| الحزمة | `cloud/internal/metrics/` (الجامع، والمخزن، والتجميع، والأسماء، وprometheus، والتصدير). |\n| التوصيل | `cmd/maktaba-cloud/role_relay.go`: بناء `Store` + `Collector` + `Runner`؛ وتمرير `Collector` إلى `Deps` في وكيل المُرحِّل. |\n| المسار الساخن | `handlers/relay/proxy.go` يُسج"
+      }
+    },
+    "plan-30.02-gdpr-compliance": {
+      "title": {
+        "hash": "02f0097ca1aefa78",
+        "ar": "خطة التنفيذ — القصة 30.2 طبقة الامتثال للائحة GDPR"
+      },
+      "content": {
+        "hash": "b1dcdf5e6d07ca2b",
+        "ar": "# خطة التنفيذ — القصة 30.2 طبقة الامتثال للائحة GDPR\n\n> مرافقة لـ [story-30-02-gdpr-compliance.md](story-30-02-gdpr-compliance.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| الحزمة | `cloud/internal/privacy/` (التجزئة، والبلد، والاحتفاظ، والحذف، والسياسة). |\n| نقطة الوصول العامة | `GET /privacy` مركّبة على دور relay (قبل المسار الشامل للوكيل). |\n| نقطة وصول المشغّل | `GET /v1/admin/privacy/processing-records` على دور api (مقصورة على المسؤول). |\n| اتفاقية معالجة البيانات (DPA) | `cloud/docs/dpa-template.md`. |\n\n## 1. privacy.go — اللبنات الأساسية (مختبرة باختبارات الوحدة، دون قاعدة بيانات)\n\n```go\nconst RetentionDays ="
+      }
+    },
+    "plan-30.03-relay-admin-dashboard": {
+      "title": {
+        "hash": "99c52445a372e5fc",
+        "ar": "خطة التنفيذ — القصة 30.3 لوحة المسؤول للمُرحِّل"
+      },
+      "content": {
+        "hash": "422c4b4b6a31c999",
+        "ar": "# خطة التنفيذ — القصة 30.3 لوحة المسؤول للمُرحِّل\n\n> مرافقة لـ [story-30-03-relay-admin-dashboard.md](story-30-03-relay-admin-dashboard.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| الحزمة | `cloud/internal/handlers/metrics/` (المعالج + حاجز المسؤول). |\n| التركيب | `cmd/maktaba-cloud/role_api.go` داخل مجموعة `RequireUser`. |\n| المصادقة | `RequireAdmin` — فحص نطاق البريد الإلكتروني نفسه الذي في `handlers/admin`. |\n| القراءات | دوال الاستعلام المساعدة في `metrics.Store` فوق `relay_metrics_hourly` و`relay_metrics_raw` و`push_dispatch_log` و`users`. |\n\n## 1. Deps + التركيب\n\n```go\ntype Deps struct "
+      }
+    },
+    "plan-30.04-metrics-export": {
+      "title": {
+        "hash": "8e3dde4c37c8be5e",
+        "ar": "خطة التنفيذ — القصة 30.4 تصدير المقاييس"
+      },
+      "content": {
+        "hash": "49d10ab12bcf3666",
+        "ar": "# خطة التنفيذ — القصة 30.4 تصدير المقاييس\n\n> مرافقة لـ [story-30-04-metrics-export.md](story-30-04-metrics-export.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| نقطة وصول التصدير | `GET /v1/admin/metrics/export` في `handlers/metrics` (مقصورة على المسؤول، دور api). |\n| Prometheus | `metrics.PrometheusHandler(collector)` مركّب على `GET /metrics` في دور relay (قبل المسار الشامل للوكيل). |\n| التصيير | `metrics/export.go` (CSV/JSON) و`metrics/prometheus.go` (العرض النصي) — وكلاهما خالص ومختبر باختبارات الوحدة. |\n\n## 1. export.go — تصيير CSV/JSON (خالص)\n\n```go\ntype Exp"
+      }
+    }
+  }
+}
