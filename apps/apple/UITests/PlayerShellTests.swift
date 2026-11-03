@@ -95,6 +95,8 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(ShellLaunch.section(arguments: ["-maktaba-section", "live"]), .liveTV)
         XCTAssertNil(ShellLaunch.section(arguments: ["-maktaba-section"]))
         XCTAssertEqual(ShellLaunch.route(arguments: ["-maktaba-open", "watch/v1@90"]), .watch(videoID: "v1", at: 90))
+        XCTAssertEqual(ShellLaunch.liveMode(arguments: ["-maktaba-live", "guide"]), "guide")
+        XCTAssertNil(ShellLaunch.liveMode(arguments: ["-maktaba-section", "live"]))
     }
 
     func testRoutesRoundTripThroughTheirPaths() {

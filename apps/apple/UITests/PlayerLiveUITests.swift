@@ -65,8 +65,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
     /// The guide: channels × time with the now-line at the right x; it scrolls sideways
     /// through the time; a programme's sheet opens, and Watch tunes what is on now.
     func testGuideNowLineScrollAndProgrammeSheet() {
-        launchSignedIn(section: "live")
-        openGuide()
+        launchOnTheGuide()
         let onNow = element("live.guide.ch-1.now")
         XCTAssertTrue(onNow.waitForExistence(timeout: 15), "the guide; the home saw \(home.seen)")
         let ask = home.requests.first { $0.path == "/api/channels/guide" }
@@ -115,14 +114,27 @@ final class PlayerLiveUITests: PlayerUITestCase {
     /// Up and down through many channels.
     func testGuideScrollsThroughTheChannels() {
         home.stub("GET", "/api/channels/guide", body: Self.bigGuide(channels: 16))
-        launchSignedIn(section: "live")
-        openGuide()
+        launchOnTheGuide()
         let top = element("live.guide.g-1.now")
         XCTAssertTrue(top.waitForExistence(timeout: 15), "the guide of 16 channels")
         let before = top.frame.minY
         drag(top, by: CGVector(dx: 0, dy: -300))
         XCTAssertTrue(wait { top.frame.minY < before - 100 }, "the channels scrolled up (\(before) → \(top.frame.minY))")
         XCTAssertTrue(element("live.guide.g-16.now").waitForExistence(timeout: 5))
+    }
+
+    /// The Now | Guide switch: a tap on Guide shows the guide, a tap on Now the list again.
+    func testNowGuideSwitch() {
+        launchSignedIn(section: "live")
+        XCTAssertTrue(element("live.channel.ch-1").waitForExistence(timeout: 15), "Now first")
+        openGuide()
+        XCTAssertTrue(element("live.guide.ch-1.now").waitForExistence(timeout: 10), "the guide")
+        XCTAssertFalse(element("live.channel.ch-1").exists, "Now's list gone")
+        let now = app.segmentedControls.buttons["Now"].firstMatch
+        now.tap()
+        XCTAssertTrue(wait(timeout: 5) { now.isSelected }, "the tap on Now selected it")
+        XCTAssertTrue(element("live.channel.ch-1").waitForExistence(timeout: 10), "Now's list again")
+        XCTAssertFalse(element("live.guide").exists, "the guide gone")
     }
 
     // MARK: the live player
@@ -291,11 +303,24 @@ final class PlayerLiveUITests: PlayerUITestCase {
         return title.exists
     }
 
+    /// The Guide segment tapped, and checked at once that it took: a tap the switch dropped
+    /// fails here, by name, not later as a guide that never showed.
     private func openGuide(label: String = "Guide") {
         let seg = app.segmentedControls.buttons[label].firstMatch
         let b = seg.waitForExistence(timeout: 15) ? seg : app.buttons[label].firstMatch
         XCTAssertTrue(b.waitForExistence(timeout: 5), "the Guide segment")
         b.tap()
+        XCTAssertTrue(wait(timeout: 5) { b.isSelected }, "the tap on the Guide segment selected it")
+    }
+
+    /// Live TV opened on the guide (`-maktaba-live guide`): a guide test starts on it, not on
+    /// a tap on the switch (`testNowGuideSwitch` covers the switch). CI: one such tap's
+    /// selection never held, so the guide never showed and its first cell "did not appear".
+    private func launchOnTheGuide() {
+        launchSignedIn(section: "live", extra: ["-maktaba-live", "guide"])
+        let guide = app.segmentedControls.buttons["Guide"].firstMatch
+        XCTAssertTrue(guide.waitForExistence(timeout: 15), "the Now | Guide switch")
+        XCTAssertTrue(guide.isSelected, "Live TV opened on the guide")
     }
 
     /// The player's banner names a channel (number · name), within a few seconds.
