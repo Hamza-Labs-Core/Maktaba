@@ -2000,7 +2000,7 @@
       "title": "Admin: user & server fleet console",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "# Story 25.20 — Admin: user & server fleet console\n\n> Epic 25 · Cloud relay · Phase 5 (admin)\n\n## Description\n\nThe HamzaLabs operator console — searchable, filterable view of every\ncloud user and every linked server. The single most important screen\nwhen something is on fire (\"user X says relay is broken; let me look\nat their server's tunnel state, last 50 audit events, recent abuse\nflags\").\n\nAuth:\n\n- Mounted at `https://admin.maktaba.tv` — separate hostname,\n  separate Cloudflare zone with stricter WAF rules.\n- SSO via Google Workspace `@hamzalabs.com` only. No password\n  fallback. Sessions a",
+      "content": "# Story 25.20 — Admin: user & server fleet console\n\n> Epic 25 · Cloud relay · Phase 5 (admin)\n\n## Description\n\nThe HamzaLabs operator console — searchable, filterable view of every\ncloud user and every linked server. The single most important screen\nwhen something is on fire (\"user X says relay is broken; let me look\nat their server's tunnel state, last 50 audit events, recent abuse\nflags\").\n\n> **Superseded in part by Epic 50 §15 (2026-11-03):** the console is on `admin.maktaba.tv`\n> behind the Cloudflare proxy and a Tunnel, signed into with Maktaba's own staff accounts\n> (mandatory MFA, 15-mi",
       "tags": [
         "story",
         "25-cloud-relay",
