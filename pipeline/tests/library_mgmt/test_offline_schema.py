@@ -1,6 +1,7 @@
 """Story 47.1: slot 0166 (Epic 47) up and down on SQLite and Postgres, the stage rows the
-graph defines (all shipped and on, also in the stage registry the help reads), the ``convert`` pool, the
-``dup_group`` subject, and the youtube_sources backfill (mode ``off``)."""
+graph defines (all shipped and on, also in the stage registry the help reads), the
+``convert`` pool, the ``dup_group`` subject, and the youtube_sources backfill (mode
+``off``)."""
 
 from __future__ import annotations
 
