@@ -6222,5 +6222,8 @@
   "components.licence.refused": "This part is not in this home's plan. Apply a licence in Settings → Subscription.",
   "components.licence.waiting": "Paused until the plan includes it again. Your choice is kept.",
   "components.licence.locked": "Needs a plan",
-  "components.licence.openSubscription": "Open Subscription"
+  "components.licence.openSubscription": "Open Subscription",
+  "components.reason.components_unavailable": "This machine's Maktaba server does not answer, so nothing can be installed or imported right now.",
+  "components.reason.offline_unknown": "That offline file is not on this machine. Files are kept for 24 hours; make it again.",
+  "components.reason.import_too_large": "The file is too large to import (at most 64 GB)."
 }

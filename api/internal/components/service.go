@@ -209,6 +209,29 @@ type View struct {
 	Machines      []MachineView `json:"machines"`
 	RequiredBy    []string      `json:"required_by"`
 	InstallSizeMB int64         `json:"install_size_mb"`
+	// Progress is this machine's last or running install or removal of an asset, as its
+	// supervisor reports it (story 51.16); nil when there was none or no supervisor answers.
+	Progress *InstallProgress `json:"progress,omitempty"`
+}
+
+// InstallProgress is the supervisor's progress of an asset's install or removal
+// (GET /components/{id}/progress on its loopback admin). Busy is true while it runs; a
+// failure has Busy false and a Reason (components.reason.<reason>, with Params). Percent
+// is 0 to 100 and Detail a step code (components.detail.<detail>).
+type InstallProgress struct {
+	Phase   string         `json:"phase"`
+	Percent int            `json:"percent"`
+	Detail  string         `json:"detail,omitempty"`
+	Name    string         `json:"name,omitempty"`
+	Done    int64          `json:"done"`
+	Total   int64          `json:"total"`
+	Reason  string         `json:"reason,omitempty"`
+	Params  map[string]any `json:"params,omitempty"`
+	Busy    bool           `json:"busy"`
+	Started time.Time      `json:"started"`
+	Updated time.Time      `json:"updated"`
+	// Installed is whether the asset is on this machine now.
+	Installed bool `json:"installed"`
 }
 
 // BundleLine is "Based on Full, minus YouTube": the bundle the home is based on and the
