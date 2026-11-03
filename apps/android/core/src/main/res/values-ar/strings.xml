@@ -156,6 +156,18 @@
     <string name="error_unreachable">تعذّر الوصول إلى الجهاز الرئيسي. تأكد من أنه يعمل ومتصل بالشبكة.</string>
     <string name="error_busy">الجهاز الرئيسي مشغول الآن. حاول مجددًا بعد قليل.</string>
     <string name="error_server">حدث خطأ في الجهاز الرئيسي. حاول مجددًا بعد قليل.</string>
+    <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
+    <string name="error_off">هذه الميزة متوقفة على الجهاز الرئيسي.</string>
+    <string name="error_off_admin">%1$s متوقفة على الجهاز الرئيسي. شغّلها من صفحة المكوّنات.</string>
+    <string name="feature_live_tv">البث المباشر</string>
+    <string name="feature_transcripts">نصوص الفيديو</string>
+    <string name="feature_subtitles">الترجمة</string>
+    <string name="feature_semantic_search">البحث بالمعنى</string>
+    <string name="feature_chapters">الفصول</string>
+    <string name="feature_youtube">يوتيوب</string>
+    <string name="feature_plex">Plex</string>
+    <string name="feature_remote_access">الوصول من خارج المنزل</string>
+    <string name="feature_recommendations">الاقتراحات</string>
     <string name="error_back">رجوع</string>
     <string name="error_sign_in_again">سجّل الدخول مجددًا</string>
     <string name="error_details">التفاصيل</string>

@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -44,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/transcription"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
@@ -113,6 +115,12 @@ type P6Deps struct {
 	// OnQueues, when set, is called with the queue/extensions handler
 	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
 	OnQueues func(*queues.Handler)
+	// OnBus, when set, is called with the cross-replica event bus once it is wired
+	// (nil when it is not): Epic 51 story 51.09 publishes /ws/home on it.
+	OnBus func(*eventbus.Bus)
+	// Capabilities is the home's capabilities snapshot (Epic 51 story 51.09): search
+	// skips its semantic leg while search.semantic is off. nil: always asked.
+	Capabilities *components.Capabilities
 }
 
 // modelPipelineClient adapts the gRPC pipeline.Client to the models
@@ -225,6 +233,12 @@ func MountP6(r chi.Router, d P6Deps) {
 		// hides the section.
 		YouTube: ytdlp,
 	}
+	if caps := d.Capabilities; caps != nil {
+		searchHandler.SemanticOn = func() bool {
+			_, off := caps.Snapshot().ComponentOff("search.semantic")
+			return !off
+		}
+	}
 	searchHandler.Mount(r)
 
 	streamSvc := streamingServiceAdapter{client: d.StreamingClient}
@@ -336,6 +350,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	// receives an event published on *any* replica. The handler also
 	// replays missed events on reconnect.
 	bus := wireEventBus(d, hub, wsHandler)
+	if d.OnBus != nil {
+		d.OnBus(bus)
+	}
 
 	// Plan 06-11 queue control centre. The bus (when wired) carries the
 	// durable queue.control / pool.updated events; snapshots go straight

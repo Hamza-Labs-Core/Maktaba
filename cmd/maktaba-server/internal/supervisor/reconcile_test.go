@@ -751,3 +751,22 @@ func TestBootConfig(t *testing.T) {
 		t.Fatal("slots still on")
 	}
 }
+
+// Story 51.09: [components] capabilities_gate = "off" reaches the api as its env.
+func TestCapabilitiesGateOffEnv(t *testing.T) {
+	cfg := config.Defaults()
+	env, err := ChildEnv(RoleAPI, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(env, func(s string) bool { return strings.HasPrefix(s, EnvComponentsCapabilitiesGate+"=") }) {
+		t.Fatalf("%s set with the gate on: %v", EnvComponentsCapabilitiesGate, env)
+	}
+	cfg.Components.CapabilitiesGate = "off"
+	if env, err = ChildEnv(RoleAPI, cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(env, EnvComponentsCapabilitiesGate+"=off") {
+		t.Fatalf("no %s=off: %v", EnvComponentsCapabilitiesGate, env)
+	}
+}

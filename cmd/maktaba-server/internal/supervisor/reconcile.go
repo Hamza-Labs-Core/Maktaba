@@ -35,6 +35,10 @@ import (
 // reconcile = "off": its own runner reports and acts on nothing (stories 51.05, 51.06).
 const EnvComponentsReconcile = "MAKTABA_COMPONENTS_RECONCILE"
 
+// EnvComponentsCapabilitiesGate is `[components] capabilities_gate = "off"` as the
+// roles read it (the api's components.EnvCapabilitiesGate, story 51.09).
+const EnvComponentsCapabilitiesGate = "MAKTABA_COMPONENTS_CAPABILITIES_GATE"
+
 // StatusPart is the part the supervisor's status rows carry.
 const StatusPart = "supervisor"
 

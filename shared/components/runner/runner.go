@@ -359,32 +359,53 @@ func (r *Runner) notify() {
 }
 
 // computeGates sets every component's gate from the desired state (r.mu held).
-// Requirements come first in the catalog's order, so each sees its requirements' gates.
 func (r *Runner) computeGates() {
 	out := map[string]gate{}
-	for _, id := range r.cat.Order() {
-		c, _ := r.cat.Get(id)
-		d, has := r.desired[id]
-		g := gate{on: true, generation: d.Generation}
+	for id, g := range Gates(r.cat, r.desired, r.noReconcile) {
+		out[id] = gate{on: g.On, phase: g.Phase, reason: g.Reason, missing: g.Missing, generation: g.Generation}
+	}
+	r.gates.Store(&out)
+}
+
+// Gate is one component's switch as the desired state alone decides it: the rule every
+// Go runner applies, and the API's capabilities and component_off answer (story 51.09).
+type Gate struct {
+	On         bool
+	Phase      string   // when off: off, stopped or waiting
+	Reason     string   // held, dependency_off
+	Missing    []string // dependency_off: the ids of the unmet groups
+	Generation int64
+}
+
+// Gates is every catalog component's gate for desired (nil: nothing read yet, all on).
+// A core component, a component with no row, and every component under the kill switch
+// (noReconcile) are on. Off: want is not enabled, a hold, or a requirement is off.
+// Requirements come first in the catalog's order, so each sees its requirements' gates.
+func Gates(cat *components.Catalog, desired map[string]store.Desired, noReconcile bool) map[string]Gate {
+	out := make(map[string]Gate, len(cat.Order()))
+	for _, id := range cat.Order() {
+		c, _ := cat.Get(id)
+		d, has := desired[id]
+		g := Gate{On: true, Generation: d.Generation}
 		switch {
-		case !c.Switchable || r.noReconcile || !has:
+		case !c.Switchable || noReconcile || !has:
 		case d.Want != components.WantEnabled:
-			g.on, g.phase = false, components.PhaseOff
+			g.On, g.Phase = false, components.PhaseOff
 		case d.Hold != nil:
-			g.on, g.phase, g.reason = false, components.PhaseStopped, "held"
+			g.On, g.Phase, g.Reason = false, components.PhaseStopped, "held"
 		default:
-			for _, req := range r.cat.Requires(id) {
-				if !slices.ContainsFunc(req.AnyOf, func(x string) bool { return out[x].on }) {
-					g.missing = append(g.missing, req.AnyOf...)
+			for _, req := range cat.Requires(id) {
+				if !slices.ContainsFunc(req.AnyOf, func(x string) bool { return out[x].On }) {
+					g.Missing = append(g.Missing, req.AnyOf...)
 				}
 			}
-			if len(g.missing) > 0 {
-				g.on, g.phase, g.reason = false, components.PhaseWaiting, "dependency_off"
+			if len(g.Missing) > 0 {
+				g.On, g.Phase, g.Reason = false, components.PhaseWaiting, "dependency_off"
 			}
 		}
 		out[id] = g
 	}
-	r.gates.Store(&out)
+	return out
 }
 
 // apply starts what should run and stops what should not (r.mu held).

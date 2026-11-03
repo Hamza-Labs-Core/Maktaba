@@ -207,6 +207,20 @@ type ComponentsSection struct {
 	// stop components as their desired state says; "off" is the kill switch: every
 	// runner reports, none acts (the processes are the ones server.toml builds).
 	Reconcile string `toml:"reconcile,omitempty"`
+	// CapabilitiesGate: "on" (default) answers 409 component_off on a route whose
+	// component is off and GET /api/capabilities as the desired state says; "off" turns
+	// the check into a no-op and answers every feature on (story 51.09).
+	CapabilitiesGate string `toml:"capabilities_gate,omitempty"`
+}
+
+// CapabilitiesGateOn reports whether the component_off check is on (anything but
+// off/false/no/0).
+func (c ComponentsSection) CapabilitiesGateOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.CapabilitiesGate)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
 }
 
 // ReconcileOn reports whether the runners act on desired state (anything but
