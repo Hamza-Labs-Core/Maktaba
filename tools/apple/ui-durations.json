@@ -126,6 +126,7 @@
     "PlayerWatchUITests/testQualityReopensAtTheSamePositionWithMaxBitrate": 49.3,
     "PlayerWatchUITests/testThePickerListsTheSessionsRenditionsAndShowsTheChosenOne": 34.2,
     "PlayerWatchUITests/testUpNextCountsDownAndPlaysTheNextEpisode": 51.2,
+    "PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd": 50.0,
     "PlayerWatchUITests/testWithAutoplayOffItStopsAtTheEndAndNextStays": 38.8
   },
   "ipad": {
@@ -255,6 +256,7 @@
     "PlayerWatchUITests/testQualityReopensAtTheSamePositionWithMaxBitrate": 52.7,
     "PlayerWatchUITests/testThePickerListsTheSessionsRenditionsAndShowsTheChosenOne": 39.8,
     "PlayerWatchUITests/testUpNextCountsDownAndPlaysTheNextEpisode": 35.4,
+    "PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd": 70.0,
     "PlayerWatchUITests/testWithAutoplayOffItStopsAtTheEndAndNextStays": 48.8
   }
 }

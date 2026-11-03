@@ -25,6 +25,9 @@ struct PlayerApp: App {
         #endif
         // once per process, before any view: the UI tests' first-run reset of the walkthrough
         PermissionsModel.applyLaunchArguments()
+        // and of the playback settings and the theme (`-maktaba-settings-reset`), before any
+        // screen reads them: a setting one test changed never reaches the next test's player
+        PlaybackPreferences.resetIfAsked()
         #if os(macOS)
         // the View menu's full-screen item is the Player's own (`PlayerViewCommands`: in the
         // app's language, on ⌃⌘F, Exit while full screen); without this AppKit adds its own

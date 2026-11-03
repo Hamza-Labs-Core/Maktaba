@@ -569,6 +569,9 @@ final class Playback {
                 guard !Task.isCancelled, video?.id == v.id, let id = WatchLogic.next(after: v.id, in: keys) else { return }
                 next = all.first { $0.videoID == id }
                 NowPlaying.shared.update(self, handlers: remoteHandlers())
+                // found after the end (or after a pause in the last seconds): the time observer
+                // no longer ticks, so Up next is checked here too
+                checkUpNext()
             } catch {
                 // not an episode, or the home could not say: no Up next
             }

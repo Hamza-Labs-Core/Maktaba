@@ -9,13 +9,14 @@ import XCTest
 ///   Sign out returns to the start screen;
 /// - Favorites, playlists, the playback settings and Help; the accessibility audit.
 ///
-/// Each launch passes `-maktaba-settings-reset` (the theme and the playback settings as on a
-/// fresh install) and `-maktaba-record-opens` (a link's address is shown, not opened). The
-/// theme is not forced dark here, so the stored choice is the one the app reads.
+/// Each launch starts with the theme and the playback settings as on a fresh install (the
+/// harness's `-maktaba-settings-reset`) and passes `-maktaba-record-opens` (a link's address
+/// is shown, not opened). The theme is not forced dark here, so the stored choice is the one
+/// the app reads.
 final class PlayerProfileUITests: PlayerUITestCase {
     private func launchProfile(_ language: String = "en", extra: [String] = []) {
         launch(language, sections: ["libraries", "profile"], section: "profile", theme: nil,
-               extra: ["-maktaba-settings-reset", "-maktaba-record-opens"] + extra)
+               extra: ["-maktaba-record-opens"] + extra)
         signIn()
         XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15), "the Profile")
     }
@@ -185,7 +186,8 @@ final class PlayerProfileUITests: PlayerUITestCase {
 
         // kept on this device: a relaunch without the reset reads it back
         app.terminate()
-        launch(sections: ["libraries", "profile"], section: "profile", theme: nil, extra: ["-maktaba-record-opens"])
+        launch(sections: ["libraries", "profile"], section: "profile", resetSettings: false, theme: nil,
+               extra: ["-maktaba-record-opens"])
         signIn()
         XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15))
         scrollTo(element("profile.playback"))

@@ -151,8 +151,8 @@ final class PlaybackPreferences {
     func maxBitrateKbps(expensive: Bool) -> Int? { quality(expensive: expensive).maxBitrateKbps }
 
     /// Back to the defaults (and the theme to dark), once per launch: a Debug launch with
-    /// `-maktaba-settings-reset`, so a UI test starts as a fresh install. The Profile calls it
-    /// as it appears.
+    /// `-maktaba-settings-reset`, so a UI test starts as a fresh install. `PlayerApp` calls it
+    /// as it starts (the Profile again as it appears: a no-op by then).
     static func resetIfAsked(arguments: [String] = CommandLine.arguments) {
         #if DEBUG
         guard !didReset, arguments.contains("-maktaba-settings-reset") else { return }
