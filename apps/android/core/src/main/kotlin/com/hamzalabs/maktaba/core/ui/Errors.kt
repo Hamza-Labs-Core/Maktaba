@@ -55,6 +55,25 @@ fun ErrorKind.sentence(video: Boolean = false): Int = when (this) {
     ErrorKind.Unreachable -> R.string.error_unreachable
     ErrorKind.Busy -> R.string.error_busy
     ErrorKind.Server -> R.string.error_server
+    ErrorKind.Off -> R.string.error_off
+}
+
+/**
+ * The name of a feature of the home (`live_tv`, the `feature` of a 409 `component_off` and the
+ * keys of `GET /api/capabilities`; story 51.09), or null for one this app does not know.
+ */
+@StringRes
+fun featureName(feature: String): Int? = when (feature) {
+    "live_tv" -> R.string.feature_live_tv
+    "transcripts" -> R.string.feature_transcripts
+    "subtitles" -> R.string.feature_subtitles
+    "semantic_search" -> R.string.feature_semantic_search
+    "chapters" -> R.string.feature_chapters
+    "youtube" -> R.string.feature_youtube
+    "plex" -> R.string.feature_plex
+    "remote_access" -> R.string.feature_remote_access
+    "recommendations" -> R.string.feature_recommendations
+    else -> null
 }
 
 /** The picture beside the sentence. */
@@ -67,6 +86,7 @@ val ErrorKind.icon: ImageVector
         ErrorKind.Unreachable -> Icons.Outlined.CloudOff
         ErrorKind.Busy -> Icons.Outlined.Schedule
         ErrorKind.Server -> Icons.Outlined.ErrorOutline
+        ErrorKind.Off -> Icons.Outlined.Block
     }
 
 /** What a person can do about a failure, the first being what most helps (a TV focuses it). */
@@ -83,7 +103,8 @@ fun errorActions(
     canChooseHome: Boolean,
     canGoBack: Boolean,
 ): List<ErrorAction> = buildList {
-    val retryHelps = kind != ErrorKind.NotFound && kind != ErrorKind.NoAccess && kind != ErrorKind.SignedOut
+    val retryHelps = kind != ErrorKind.NotFound && kind != ErrorKind.NoAccess && kind != ErrorKind.SignedOut &&
+        kind != ErrorKind.Off
     if (kind == ErrorKind.SignedOut && canSignIn) add(ErrorAction.SignIn)
     if (retryHelps && canRetry) add(ErrorAction.TryAgain)
     if (kind == ErrorKind.Unreachable && canChooseHome) add(ErrorAction.OtherHome)

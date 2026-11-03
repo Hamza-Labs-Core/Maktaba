@@ -39,6 +39,13 @@ final class TVConnectUITests: XCTestCase {
         XCTAssertEqual(code.label, spelled)
         XCTAssertTrue(home.seen.contains("GET /api/discovery/home"))
         XCTAssertTrue(home.seen.contains("POST /api/pairing/device"))
+        // it says where to approve it: the phones' own button, in each app
+        let intro = app.staticTexts["pairing-intro"]
+        XCTAssertTrue(intro.exists, "the code screen says where to approve it")
+        for part in ["Approve a TV or device", "Maktaba Remote", "Maktaba Player", "Approve a sign-in"] {
+            XCTAssertTrue(intro.label.contains(part), "\(intro.label) names \(part)")
+        }
+        XCTAssertTrue(app.buttons["pairing-new-code"].exists, "Get a new code")
         shot("tv-code-en")
 
         home.approve()
@@ -71,6 +78,8 @@ final class TVConnectUITests: XCTestCase {
         type(home.url, into: app.textFields["picker.address"])
         pressIfStillThere(app.buttons["picker.connect"], with: .right)
         XCTAssertTrue(app.staticTexts["pairing-code"].waitForExistence(timeout: 20))
+        let intro = app.staticTexts["pairing-intro"]
+        XCTAssertTrue(intro.label.contains("الموافقة على تلفاز أو جهاز"), "\(intro.label) names the phones' button")
         shot("tv-code-ar")
         // the password is the other way
         let password = app.buttons["signin.password"]

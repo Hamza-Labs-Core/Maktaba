@@ -27,5 +27,7 @@ export default defineConfig({
       "design-system/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
     ],
+    // the developer portal has its own vitest (node, over its built site): packages/devportal
+    exclude: ["**/node_modules/**", "packages/devportal/**"],
   },
 });

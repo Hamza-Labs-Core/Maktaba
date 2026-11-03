@@ -124,6 +124,41 @@ describe("component_off (Epic 51)", () => {
     );
   });
 
+  // story 51.09: the feature's name comes first; an admin is told where to turn it on
+  const offFeature = (feature: string, component = "livetv") =>
+    new ApiError({
+      type: "https://maktaba.tv/problems/component-off",
+      title: "This feature is off",
+      status: 409,
+      code: "component_off",
+      component,
+      feature,
+    });
+
+  it("names the feature, and tells an admin where to turn it on, in both languages", () => {
+    const enT = words(en as Record<string, string>);
+    const arT = words(ar as Record<string, string>);
+    expect(errorText(offFeature("semantic_search", "search.semantic"), enT)).toBe(
+      "Search by meaning is turned off on this home"
+    );
+    expect(errorText(offFeature("live_tv"), enT, { admin: true })).toBe(
+      "Live TV is off on this home. Turn it on in Components."
+    );
+    expect(errorText(offFeature("live_tv"), arT, { admin: true })).toBe(
+      "البث المباشر متوقفة على الجهاز الرئيسي. شغّلها من صفحة المكوّنات."
+    );
+    expect(userErrorKind(offFeature("live_tv"))).toBe("off");
+  });
+
+  it("with no name at all is the kind's sentence", () => {
+    expect(componentOffText(off(), words(en as Record<string, string>))).toBe(
+      "This feature is turned off on this home."
+    );
+    expect(componentOffText(off(), words(ar as Record<string, string>))).toBe(
+      "هذه الميزة متوقفة على الجهاز الرئيسي."
+    );
+  });
+
   it("is nothing for another 409", () => {
     expect(
       componentOffText(problem(409, "a playlist with this name already exists"), t)

@@ -3,6 +3,9 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A TV asking to sign in (the "Sign-in requests" channel). Never asked for just for
+         this: without it the app shows its banner only. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Wi-Fi or mobile data: Settings' quality for each (FR-31). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- A video's sound goes on with the screen off (FR-39, story 48.33): the media session's

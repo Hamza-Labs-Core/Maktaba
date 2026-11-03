@@ -211,11 +211,25 @@ type ComponentsSection struct {
 	// offline files (story 51.16); "off" installs nothing new (packs_disabled), and what
 	// is on disk keeps working and is reported.
 	Packs string `toml:"packs,omitempty"`
+	// CapabilitiesGate: "on" (default) answers 409 component_off on a route whose
+	// component is off and GET /api/capabilities as the desired state says; "off" turns
+	// the check into a no-op and answers every feature on (story 51.09).
+	CapabilitiesGate string `toml:"capabilities_gate,omitempty"`
 }
 
 // PacksOn reports whether packs may be installed (anything but off/false/no/0).
 func (c ComponentsSection) PacksOn() bool {
 	switch strings.ToLower(strings.TrimSpace(c.Packs)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
+}
+
+// CapabilitiesGateOn reports whether the component_off check is on (anything but
+// off/false/no/0).
+func (c ComponentsSection) CapabilitiesGateOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.CapabilitiesGate)) {
 	case "off", "false", "no", "0":
 		return false
 	}

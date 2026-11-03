@@ -170,6 +170,13 @@ jobs:
         working-directory: pipeline
         run: uv sync --frozen --all-extras
 
+      # Epic 51 (story 51.13): a rules section that removes a field or changes its kind
+      # bumps its major version (compared with schema.json at the last release tag; the
+      # checkout's fetch-depth 0 brings the tags)
+      - name: Rules schema versions
+        if: inputs.pipeline
+        run: python3 tools/ci/rules_schema_versions.py
+
       - name: golangci-lint (api)
         if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1

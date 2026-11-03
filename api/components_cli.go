@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/user"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"golang.org/x/term"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -39,8 +41,12 @@ const componentsUsage = `Usage:
   maktaba-server components start <id>
   maktaba-server components install <id>                    put it on disk, off
   maktaba-server components remove <id> [--yes]             take it off disk
-  maktaba-server components import <file>                   (available from the release with packs)
+  maktaba-server components reset-settings <id> [--yes]     its settings back to the defaults
+  maktaba-server components import <file> [--yes]           install what an offline file holds (off)
+  maktaba-server components offline [<full|core|worker> | <id>...] [--platform=<os-arch>] [--out=<path>]
+                                                            make an offline file on this machine and save it
   maktaba-server components bundle [<full|core|worker>] [--yes]   no name: the bundle this home is based on
+  --machine <name|id> on show, enable, disable, stop and start: that machine only (its override)
 
 Every write shows what it changes first and asks, unless --yes. --dsn overrides $DATABASE_URL.`
 
@@ -50,15 +56,35 @@ type componentsService interface {
 	Show(ctx context.Context, id string) (components.Detail, error)
 	Preview(ctx context.Context, req components.Request) (components.Preview, error)
 	Apply(ctx context.Context, req components.Request, actor components.Actor) (components.Result, error)
+	Imported(ctx context.Context, ids []string, file string, actor components.Actor) (components.Result, error)
+	Record(ctx context.Context, actor components.Actor, action, target string, payload map[string]any) error
+}
+
+// componentsPacks is this machine's pack installer (its supervisor): *componentsh.Packs is one.
+type componentsPacks interface {
+	ProgressOf(ctx context.Context, ids []string) map[string]*components.InstallProgress
+	ImportPath(ctx context.Context, path string) ([]string, error)
+	MakeOffline(ctx context.Context, req componentsh.OfflineRequest) (string, error)
+	FetchOffline(ctx context.Context, name string, header http.Header) (*http.Response, *components.InstallProgress, error)
+}
+
+// settingsService is what reset-settings asks: *components.Service is one.
+type settingsService interface {
+	SettingsOf(ctx context.Context, id string) (components.SettingsReset, error)
+	ResetSettings(ctx context.Context, id string, actor components.Actor) (components.SettingsReset, error)
 }
 
 type componentsCLI struct {
-	svc    componentsService
-	in     io.Reader
-	out    io.Writer
-	errOut io.Writer
-	tty    bool   // there is a terminal to ask on
-	user   string // the OS user: the audit's actor
+	svc      componentsService
+	settings settingsService
+	packs    componentsPacks // nil: no supervisor answers on this machine
+	in       io.Reader
+	out      io.Writer
+	errOut   io.Writer
+	tty      bool              // there is a terminal to ask on
+	user     string            // the OS user: the audit's actor
+	values   map[string]string // --out, --platform
+	wait     func(time.Duration)
 }
 
 // runComponents is `maktaba-api components …`: the components' desired state from the
@@ -73,10 +99,6 @@ func runComponents(argv []string) int {
 		}
 		return exitComponentsFailed
 	}
-	if args[0] == "import" {
-		fmt.Fprintln(os.Stderr, "components import: available from the release with packs")
-		return exitComponentsFailed
-	}
 	dsn := componentsDSN(argv)
 	if dsn == "" {
 		dsn = os.Getenv("DATABASE_URL")
@@ -85,7 +107,11 @@ func runComponents(argv []string) int {
 		fmt.Fprintln(os.Stderr, "components: no database: pass --dsn or set DATABASE_URL")
 		return exitComponentsFailed
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	limit := 5 * time.Minute
+	if args[0] == "import" || args[0] == "offline" {
+		limit = 12 * time.Hour // gigabytes, on this machine's disk
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	db, err := sql.Open("postgres", pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping))
 	if err != nil {
@@ -115,9 +141,31 @@ func runComponents(argv []string) int {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		name = u.Username
 	}
-	c := &componentsCLI{svc: s, in: os.Stdin, out: os.Stdout, errOut: os.Stderr,
-		tty: term.IsTerminal(int(os.Stdin.Fd())), user: name}
+	c := &componentsCLI{svc: s, settings: s, in: os.Stdin, out: os.Stdout, errOut: os.Stderr,
+		tty: term.IsTerminal(int(os.Stdin.Fd())), user: name, values: componentsValues(argv), wait: time.Sleep}
+	// the supervisor maktaba-server names in the environment it passes (nil: none)
+	if pk := componentsh.PacksFromEnv(); pk != nil {
+		c.packs = pk
+	}
 	return c.run(ctx, flags, args)
+}
+
+// componentsValueFlags are the flags that take a value (--name value or --name=value).
+var componentsValueFlags = []string{"dsn", "out", "platform", "machine"}
+
+// valueFlag reports whether a is a value flag, and whether its value is the next word.
+func valueFlag(a string) (name string, next bool, ok bool) {
+	t := strings.TrimLeft(a, "-")
+	if t == a {
+		return "", false, false
+	}
+	n, _, hasEq := strings.Cut(t, "=")
+	for _, f := range componentsValueFlags {
+		if n == f {
+			return f, !hasEq, true
+		}
+	}
+	return "", false, false
 }
 
 // splitComponentsArgs separates the flags (anywhere on the line) from the words.
@@ -126,10 +174,13 @@ func splitComponentsArgs(argv []string) (map[string]bool, []string) {
 	var args []string
 	for i := 0; i < len(argv); i++ {
 		a := argv[i]
+		if _, next, ok := valueFlag(a); ok {
+			if next {
+				i++ // its value
+			}
+			continue
+		}
 		switch {
-		case a == "--dsn" || a == "-dsn":
-			i++ // its value
-		case strings.HasPrefix(a, "--dsn=") || strings.HasPrefix(a, "-dsn="):
 		case a == "-h" || a == "--help" || a == "-help":
 			flags["help"] = true
 		case strings.HasPrefix(a, "-"):
@@ -141,18 +192,24 @@ func splitComponentsArgs(argv []string) (map[string]bool, []string) {
 	return flags, args
 }
 
-func componentsDSN(argv []string) string {
-	for i, a := range argv {
+func componentsDSN(argv []string) string { return componentsValues(argv)["dsn"] }
+
+// componentsValues are the value flags of argv.
+func componentsValues(argv []string) map[string]string {
+	out := map[string]string{}
+	for i := 0; i < len(argv); i++ {
+		name, next, ok := valueFlag(argv[i])
 		switch {
-		case (a == "--dsn" || a == "-dsn") && i+1 < len(argv):
-			return argv[i+1]
-		case strings.HasPrefix(a, "--dsn="):
-			return strings.TrimPrefix(a, "--dsn=")
-		case strings.HasPrefix(a, "-dsn="):
-			return strings.TrimPrefix(a, "-dsn=")
+		case !ok:
+		case next && i+1 < len(argv):
+			out[name] = argv[i+1]
+			i++
+		case !next:
+			_, v, _ := strings.Cut(argv[i], "=")
+			out[name] = v
 		}
 	}
-	return ""
+	return out
 }
 
 var componentsFlags = map[string]bool{"json": true, "yes": true, "y": true, "with-conflicts": true, "purge": true}
@@ -165,6 +222,10 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 	}
 	yes := flags["yes"] || flags["y"]
 	verb, rest := args[0], args[1:]
+	node, code, ok := c.resolveMachine(ctx, verb)
+	if !ok {
+		return code
+	}
 	one := func() (string, bool) {
 		if len(rest) != 1 {
 			return "", false
@@ -182,6 +243,9 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 		if !ok {
 			return c.usage("show <id>")
 		}
+		if node != "" {
+			return c.showMachine(ctx, id, node, flags["json"])
+		}
 		return c.show(ctx, id, flags["json"])
 	case "enable", "disable", "stop", "start", "install", "remove":
 		id, ok := one()
@@ -192,7 +256,7 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 			fmt.Fprintln(c.errOut, "components remove --purge: available from the release with packs")
 			return exitComponentsFailed
 		}
-		ch := components.Change{ID: id}
+		ch := components.Change{ID: id, Machine: node}
 		on, off := true, false
 		switch verb {
 		case "enable":
@@ -219,6 +283,19 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 		req := components.Request{Changes: []components.Change{ch}, WithConflicts: flags["with-conflicts"]}
 		// start only brings back what was stopped: nothing to ask
 		return c.write(ctx, req, yes || verb == "start" || verb == "install")
+	case "reset-settings":
+		id, ok := one()
+		if !ok {
+			return c.usage("reset-settings <id>")
+		}
+		return c.resetSettings(ctx, id, yes)
+	case "import":
+		if len(rest) != 1 {
+			return c.usage("import <file>")
+		}
+		return c.importFile(ctx, rest[0], yes)
+	case "offline":
+		return c.offline(ctx, rest)
 	case "bundle":
 		switch len(rest) {
 		case 0:
@@ -277,6 +354,7 @@ func (c *componentsCLI) list(ctx context.Context, asJSON bool) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	c.withProgress(ctx, l.Components)
 	if asJSON {
 		return c.json(l)
 	}
@@ -287,7 +365,13 @@ func (c *componentsCLI) list(ctx context.Context, asJSON bool) int {
 		if v.Hold != nil {
 			want += " (stopped)"
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", v.ID, v.Group, want, v.Phase, v.Reason)
+		phase, reason := v.Phase, v.Reason
+		if p := v.Progress; p != nil && p.Busy {
+			phase = fmt.Sprintf("%s %d%%", p.Phase, p.Percent)
+		} else if p != nil && p.Reason != "" {
+			reason = p.Reason
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", v.ID, v.Group, want, phase, reason)
 	}
 	if err := tw.Flush(); err != nil {
 		return c.fail(err)
@@ -301,6 +385,9 @@ func (c *componentsCLI) show(ctx context.Context, id string, asJSON bool) int {
 	if err != nil {
 		return c.fail(err)
 	}
+	if c.packs != nil && d.Kind == catalog.KindAsset {
+		d.Progress = c.packs.ProgressOf(ctx, []string{d.ID})[d.ID]
+	}
 	if asJSON {
 		return c.json(d)
 	}
@@ -310,6 +397,9 @@ func (c *componentsCLI) show(ctx context.Context, id string, asJSON bool) int {
 		fmt.Fprintf(c.out, "  stopped:    by %s at %s, until it is started\n", d.Hold.By, d.Hold.At.Format(time.RFC3339))
 	}
 	fmt.Fprintf(c.out, "  phase:      %s %s\n", d.Phase, d.Reason)
+	if p := d.Progress; p != nil {
+		fmt.Fprintf(c.out, "  on disk:    %s\n", progressWords(p))
+	}
 	var req []string
 	for _, g := range d.Requires {
 		req = append(req, strings.Join(g, " or "))
@@ -411,6 +501,124 @@ func (c *componentsCLI) write(ctx context.Context, req components.Request, yes b
 			state += ", stopped until started"
 		}
 		fmt.Fprintf(c.out, "%s: %s (generation %d)\n", d.ID, state, d.Generation)
+	}
+	for _, o := range res.Overrides {
+		state := o.Want
+		if state == "" {
+			state = "follows the home"
+		}
+		if o.Hold != nil {
+			state += ", stopped on this machine until started"
+		}
+		fmt.Fprintf(c.out, "%s on machine %s: %s (generation %d)\n", o.ID, o.Node, state, o.Generation)
+	}
+	fmt.Fprintln(c.out, "Done.")
+	return 0
+}
+
+// machineService is what --machine asks (story 51.12): *components.Service is one.
+type machineService interface {
+	ResolveMachine(ctx context.Context, nameOrID string) (string, error)
+	ListMachine(ctx context.Context, node string) (components.MachineList, error)
+}
+
+// machineVerbs are the commands that take --machine.
+var machineVerbs = map[string]bool{"show": true, "enable": true, "disable": true, "stop": true, "start": true}
+
+// resolveMachine is --machine's id ("" without the flag), or the exit code of a refusal.
+func (c *componentsCLI) resolveMachine(ctx context.Context, verb string) (string, int, bool) {
+	name := strings.TrimSpace(c.values["machine"])
+	if name == "" {
+		return "", 0, true
+	}
+	if !machineVerbs[verb] {
+		return "", c.usage(verb + " does not take --machine (show, enable, disable, stop and start do)"), false
+	}
+	ms, ok := c.svc.(machineService)
+	if !ok {
+		return "", c.usage("--machine is not available here"), false
+	}
+	id, err := ms.ResolveMachine(ctx, name)
+	if err != nil {
+		return "", c.fail(err), false
+	}
+	return id, 0, true
+}
+
+// showMachine is `show <id> --machine <m>`: the component as that machine has it.
+func (c *componentsCLI) showMachine(ctx context.Context, id, node string, asJSON bool) int {
+	l, err := c.svc.(machineService).ListMachine(ctx, node)
+	if err != nil {
+		return c.fail(err)
+	}
+	for _, mc := range l.Components {
+		if mc.ID != id {
+			continue
+		}
+		if asJSON {
+			return c.json(mc)
+		}
+		h := mc.Here
+		fmt.Fprintf(c.out, "%s on %s (%s)\n", id, l.Machine.Name, l.Machine.ID)
+		want := h.Want
+		if h.Override == nil || h.Override.Want == "" {
+			want += " (follows the home: " + mc.Want + ")"
+		} else {
+			want += " (home: " + mc.Want + ")"
+		}
+		fmt.Fprintf(c.out, "  want:       %s\n", want)
+		if h.Hold != nil {
+			fmt.Fprintf(c.out, "  stopped:    by %s at %s, until it is started\n", h.Hold.By, h.Hold.At.Format(time.RFC3339))
+		}
+		phase := strings.TrimSpace(h.Phase + " " + h.Reason)
+		if h.Stale && h.UpdatedAt != nil {
+			phase += fmt.Sprintf(" (not heard from since %s)", h.UpdatedAt.Format(time.RFC3339))
+		}
+		fmt.Fprintf(c.out, "  phase:      %s\n", phase)
+		if len(h.StagesOff) > 0 {
+			fmt.Fprintf(c.out, "  stages off: %s\n", strings.Join(h.StagesOff, ", "))
+		}
+		if h.CannotRun != "" {
+			fmt.Fprintf(c.out, "  cannot run: %s\n", h.CannotRun)
+		}
+		return 0
+	}
+	return c.fail(components.ErrUnknown)
+}
+
+// resetSettings is `components reset-settings <id>` (story 51.13): what a reset loses,
+// asked first unless yes, then the component's rules sections back to the defaults.
+func (c *componentsCLI) resetSettings(ctx context.Context, id string, yes bool) int {
+	if c.settings == nil {
+		return c.fail(errors.New("no settings service"))
+	}
+	cur, err := c.settings.SettingsOf(ctx, id)
+	if err != nil {
+		return c.fail(err)
+	}
+	if len(cur.Sections) == 0 {
+		fmt.Fprintf(c.out, "%s has no settings of its own.\n", id)
+		return 0
+	}
+	fmt.Fprintf(c.out, "Reset %s's settings to the defaults? Your changes to %d settings will be lost.\n", id, cur.Changed)
+	if !yes {
+		if !c.tty {
+			fmt.Fprintln(c.errOut, "components: no terminal to ask on: add --yes to make the change")
+			return exitComponentsNeedYes
+		}
+		fmt.Fprint(c.out, "Continue? [y/N] ")
+		line, _ := bufio.NewReader(c.in).ReadString('\n')
+		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+			fmt.Fprintln(c.out, "Nothing changed.")
+			return exitComponentsFailed
+		}
+	}
+	res, err := c.settings.ResetSettings(ctx, id, components.Actor{By: c.user, Source: "cli"})
+	if err != nil {
+		return c.fail(err)
+	}
+	for _, sec := range res.Sections {
+		fmt.Fprintf(c.out, "rules.%s: defaults (%d changed settings deleted)\n", sec.Section, sec.Changed)
 	}
 	fmt.Fprintln(c.out, "Done.")
 	return 0

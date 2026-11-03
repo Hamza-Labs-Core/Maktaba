@@ -94,7 +94,7 @@
     <string name="code_renews">The code is renewed when it runs out.</string>
     <string name="code_unsupported">%1$s cannot sign in with a code. Use your username and password.</string>
 
-    <string name="account_approve">Approve a sign-in</string>
+    <string name="approve_tv">Approve a TV or device</string>
     <string name="account">Account</string>
     <string name="theme_mode">Theme: %1$s</string>
     <string name="theme_system">System</string>
@@ -102,8 +102,8 @@
     <string name="theme_dark">Dark</string>
     <string name="switch_home">Switch home</string>
     <string name="sign_out">Sign out</string>
-    <string name="approve_title">Approve a sign-in</string>
-    <string name="approve_intro">A device asking to sign in shows a code. Enter it, or scan its QR code.</string>
+    <string name="approve_title">Approve a TV or device</string>
+    <string name="approve_intro">Type the 8-character code your TV shows, or scan its QR code.</string>
     <string name="approve_code_label">Code, like ABCD-1234</string>
     <string name="approve_code_invalid">A code is eight letters and digits, like ABCD-1234.</string>
     <string name="approve_look">Continue</string>
@@ -116,11 +116,26 @@
     <string name="approve_expires">Runs out in %1$d min</string>
     <string name="approve_warning">Approve only if you started this sign-in yourself. That device will be signed in as %1$s, with your rights.</string>
     <string name="approve_unsupported">%1$s cannot say which device is asking. Approve only if you see this exact code on your own device.</string>
-    <string name="approve_unknown">No device is waiting with this code on %1$s. Check it, or ask the device for a new one.</string>
+    <string name="approve_unknown">That code has expired or is wrong. Ask the TV for a new one.</string>
+    <string name="approve_confirm">Sign in %1$s as %2$s?</string>
+    <string name="pending_tv_named">A TV is asking to sign in: %1$s. Approve it by typing the code it shows.</string>
+    <string name="pending_tv">A TV is asking to sign in. Approve it by typing the code it shows.</string>
+    <string name="pending_device_named">A device is asking to sign in: %1$s. Approve it by typing the code it shows.</string>
+    <string name="pending_device">A device is asking to sign in. Approve it by typing the code it shows.</string>
+    <string name="pending_app_tv" translatable="false">Maktaba TV</string>
+    <string name="pending_app_player" translatable="false">Maktaba Player</string>
+    <string name="pending_app_remote" translatable="false">Maktaba Remote</string>
+    <string name="pending_enter_code">Enter code</string>
+    <string name="pending_dismiss">Dismiss</string>
+    <string name="pending_channel">Sign-in requests</string>
+    <string name="pending_channel_description">A TV or another device is waiting for you to approve its sign-in.</string>
+    <string name="pending_notification_tv">A TV is asking to sign in</string>
+    <string name="pending_notification_device">A device is asking to sign in</string>
+    <string name="pending_notification_text">Tap to approve it with the code it shows.</string>
     <string name="approve_button">Approve</string>
-    <string name="approve_done">Approved. %1$s is signing in.</string>
+    <string name="approve_done">%1$s is signed in.</string>
     <string name="approve_already">This code was already approved.</string>
-    <string name="approve_cloud">A sign-in through Maktaba Cloud cannot approve a device. Sign in on the home.</string>
+    <string name="approve_cloud">Approve from home: connect to your home\'s network first.</string>
     <string name="approve_another">Approve another</string>
     <!-- story 42.7: through Maktaba Cloud -->
     <string name="cloud_title">Through Maktaba Cloud</string>
@@ -160,6 +175,18 @@
     <string name="error_unreachable">Your home can\'t be reached. Check that it\'s on and connected to the network.</string>
     <string name="error_busy">Your home is busy right now. Try again in a moment.</string>
     <string name="error_server">Something went wrong on your home. Try again in a moment.</string>
+    <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
+    <string name="error_off">This feature is turned off on this home.</string>
+    <string name="error_off_admin">%1$s is off on this home. Turn it on in Components.</string>
+    <string name="feature_live_tv">Live TV</string>
+    <string name="feature_transcripts">Transcripts</string>
+    <string name="feature_subtitles">Subtitles</string>
+    <string name="feature_semantic_search">Search by meaning</string>
+    <string name="feature_chapters">Chapters</string>
+    <string name="feature_youtube">YouTube</string>
+    <string name="feature_plex">Plex</string>
+    <string name="feature_remote_access">Access away from home</string>
+    <string name="feature_recommendations">Recommendations</string>
     <string name="error_back">Back</string>
     <string name="error_sign_in_again">Sign in again</string>
     <string name="error_details">Details</string>

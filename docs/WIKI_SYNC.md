@@ -37,7 +37,7 @@ ships its wiki update in the same review. No drift, one history.
 |---|---|
 | **Browsing markdown directly** | Open [`docs/wiki/INDEX.md`](wiki/INDEX.md) on GitHub or in your editor. |
 | **Interactive (search, cross-refs, diagrams, mockups)** | `cd web/wiki-app && ./serve.sh` — Vite starts on http://localhost:5173. |
-| **Machine consumption** | Read [`docs/wiki/db/wiki.json`](wiki/db/wiki.json) directly. Schema at [`docs/wiki/db/wiki-schema.json`](wiki/db/wiki-schema.json). |
+| **Machine consumption** | Read [`web/wiki-app/public/db/wiki.json`](../web/wiki-app/public/db/wiki.json) and the part files its `parts` names. Schema at [`docs/wiki/db/wiki-schema.json`](wiki/db/wiki-schema.json). |
 
 ## What lives where
 
@@ -47,14 +47,14 @@ docs/wiki/                            # Human-readable derived markdown
 ├── linear-map.md, stories-map.md     # Cross-reference catalogs
 ├── epics/epic-NN-*.md                # Per-epic pages (25 of them)
 └── db/
-    ├── wiki.json                     # Unified, canonical source
-    ├── wiki-schema.json              # JSON schema
-    ├── wiki-cross-refs.json          # Linear ↔ file cross-refs
-    └── generate_wiki.py              # Regenerates the markdown shards
+    ├── generate_wiki.py              # Generates the wiki database from specs/
+    ├── curated.json                  # Hand-kept data the specs do not carry
+    └── wiki-schema.json              # JSON schema (generated)
 
 web/wiki-app/                         # React + Vite wiki reader
 ├── src/                              # App code
-├── public/                           # Static assets
+├── public/db/                        # The wiki database (generated): wiki.json,
+│                                     #   wiki-epics-NN-MM.json, wiki-cross-refs.json
 └── serve.sh                          # ./serve.sh → dev; ./serve.sh build → preview
 ```
 
@@ -76,17 +76,18 @@ follows an old link.
 
 ## Regenerating the wiki
 
-The derived markdown under `docs/wiki/` is produced from
-`docs/wiki/db/wiki.json`. Edit the JSON and re-run the generator:
+The wiki database (`web/wiki-app/public/db/*.json`) is generated from the specs
+(`specs/epics/`, `specs/*.md`, `specs/diagrams/`), `shared/api/openapi.yaml`, `web/mockups/`
+and the hand-kept `docs/wiki/db/curated.json`. Change a spec, then regenerate and commit
+the result in the same pull request:
 
 ```sh
-cd docs/wiki/db
-python3 generate_wiki.py
+python3 docs/wiki/db/generate_wiki.py
 ```
 
-Then commit the regenerated `.md` files alongside the JSON change. CI
-verifies the markdown matches the JSON, so don't hand-edit the derived
-pages.
+CI (ci.yml's wiki job) runs `generate_wiki.py --check` and fails when the committed
+database does not match the specs, so never hand-edit the generated JSON: put hand-kept
+data in `curated.json`. The markdown pages under `docs/wiki/` are written by hand.
 
 ## Seeding the GitHub Wiki redirect page (one-time, for maintainers)
 

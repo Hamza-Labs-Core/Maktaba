@@ -123,6 +123,45 @@ func TestIngestUpsertAndForget(t *testing.T) {
 	}
 }
 
+// Epic 51 story 51.14 T10: the bundle and the enabled component ids are stored, and the
+// usage view counts the bundles and the share of homes per component.
+func TestIngestComponents(t *testing.T) {
+	s, ctx := testStore(t)
+	a := serverBatch()
+	a["report"].(map[string]any)["bundle"] = "core"
+	a["report"].(map[string]any)["components"] = []any{"transcription", "backups"}
+	b := serverBatch()
+	b["install_id"] = "HomeInstall0000002"
+	b["report"].(map[string]any)["bundle"] = "full"
+	b["report"].(map[string]any)["components"] = []any{"backups"}
+	old := serverBatch()
+	old["install_id"] = "HomeInstall0000003"
+	ingest(ctx, t, s, testNow, a, b, old)
+	var bundle string
+	var comps []byte
+	if err := s.DB.QueryRow(`SELECT bundle, array_to_string(components, ',') FROM telemetry_server_reports WHERE install_id = $1`,
+		homeID).Scan(&bundle, &comps); err != nil {
+		t.Fatal(err)
+	}
+	if bundle != "core" || string(comps) != "backups,transcription" {
+		t.Fatalf("stored %q %q", bundle, comps)
+	}
+	u, err := QueryUsage(ctx, s.DB, testNow, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(u.Bundles) != 2 || u.Bundles[0].Homes != 1 {
+		t.Fatalf("bundles %+v (an older home's report names none)", u.Bundles)
+	}
+	share := map[string]ComponentShare{}
+	for _, c := range u.Components {
+		share[c.Component] = c
+	}
+	if share["backups"].Homes != 2 || share["backups"].Share != 1 || share["transcription"].Share != 0.5 {
+		t.Fatalf("components %+v", u.Components)
+	}
+}
+
 // One envelope is kept whole or not at all.
 func TestIngestIsAtomic(t *testing.T) {
 	s, ctx := testStore(t)

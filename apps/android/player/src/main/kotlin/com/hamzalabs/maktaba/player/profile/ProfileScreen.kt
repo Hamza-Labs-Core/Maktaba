@@ -46,7 +46,7 @@ import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.PhonelinkLock
+import androidx.compose.material.icons.outlined.ConnectedTv
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -206,6 +206,9 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
                 modifier = Modifier.testTag("profile-header"),
             )
         }
+        // first, where a person looks when a TV shows a sign-in code (the TV's own screen
+        // names this row: "in Maktaba Player open Profile and tap Approve a TV or device")
+        item { LinkRow(Icons.Outlined.ConnectedTv, CoreR.string.approve_tv, tag = "profile-approve") { approving = true } }
 
         group(R.string.profile_library)
         item { LinkRow(Icons.Outlined.History, R.string.profile_history, tag = "profile-history") { state.page = ProfilePage.History } }
@@ -214,7 +217,6 @@ private fun RootPage(home: PlayerHome, state: ProfileState) {
 
         group(R.string.profile_account)
         item { LinkRow(Icons.Outlined.Devices, R.string.profile_sessions, tag = "profile-sessions") { state.page = ProfilePage.Sessions } }
-        item { LinkRow(Icons.Outlined.PhonelinkLock, CoreR.string.account_approve, tag = "profile-approve") { approving = true } }
         item { LinkRow(Icons.Outlined.Home, CoreR.string.switch_home, tag = "profile-switch-home") { home.session.switchHome() } }
         item { LinkRow(Icons.AutoMirrored.Outlined.Logout, CoreR.string.sign_out, tag = "profile-sign-out") { confirmSignOut = true } }
 

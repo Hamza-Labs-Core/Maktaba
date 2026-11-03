@@ -3,13 +3,18 @@
 //	GET    /api/components                 every component, the revision and the bundle line
 //	GET    /api/components/{id}            one component, its parts per machine and its last 20 audit rows
 //	PUT    /api/components/{id}            {want, generation?, with_conflicts?}
-//	DELETE /api/components/{id}            want absent (?purge=true: not yet, 409 purge_not_ready)
+//	DELETE /api/components/{id}            want absent (?purge=true: and its settings reset)
+//	POST   /api/components/{id}/settings/reset  its rules sections back to the defaults
 //	POST   /api/components/{id}/install    want installed, when it is absent
 //	POST   /api/components/{id}/stop       hold {by, at} until start; a body with until is 400 hold_has_no_until
 //	POST   /api/components/{id}/start      clear the hold
 //	POST   /api/components/preview         {changes, with_conflicts?, bundle?}: the effect, changing nothing
 //	POST   /api/components/apply           {changes, generation?, with_conflicts?, bundle?}: all in one transaction, or none
+//	POST   /api/components/offline         build an offline file on this machine (story 51.16, packs.go)
+//	GET    /api/components/offline/{name}  its progress, then the file
+//	POST   /api/components/import          the offline file as the body: install what it holds
 //
+// The lists carry each asset's install or removal progress from this machine's supervisor.
 // Every route is a home admin's (an admin's cloud link with scope manage included): no
 // sign-in is 401, anyone else 403. The checks and the audit rows are the components
 // service's, the same the CLI uses. Errors are problem+json with a top-level code.
@@ -42,6 +47,9 @@ type Handler struct {
 	// DB names the admin in a hold and an audit row (users.username); nil: user:<id>.
 	DB     *sql.DB
 	Logger *slog.Logger
+	// Packs is this machine's pack installer (its supervisor); nil: none, so no progress
+	// and the offline and import routes answer 503.
+	Packs *Packs
 }
 
 // Mount wires the routes behind adminOnly.
@@ -53,12 +61,17 @@ func (h *Handler) Mount(r chi.Router) {
 		r.Post("/api/components/apply", h.apply)
 		r.Get("/api/components/bundles", h.bundles)
 		r.Post("/api/components/bundle", h.bundle)
+		r.Post("/api/components/offline", h.offlineMake)
+		r.Get("/api/components/offline/{name}", h.offlineGet)
+		r.Post("/api/components/import", h.importFile)
 		r.Get("/api/components/{id}", h.show)
 		r.Put("/api/components/{id}", h.put)
 		r.Delete("/api/components/{id}", h.remove)
 		r.Post("/api/components/{id}/install", h.install)
 		r.Post("/api/components/{id}/stop", h.stop)
 		r.Post("/api/components/{id}/start", h.start)
+		r.Post("/api/components/{id}/settings/reset", h.resetSettings)
+		h.mountMachines(r)
 	})
 }
 
@@ -99,34 +112,7 @@ func (h *Handler) log() *slog.Logger {
 // fail writes err: a refusal as its problem, anything else as 503 (the database) or 500.
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if ref, ok := svc.AsRefusal(err); ok {
-		e := problem(ref.Status, ref.Code, strings.ReplaceAll(ref.Code, "_", " "), ref.Detail)
-		if ref.Code == svc.CodeLicence {
-			// the licence's own problem (story 51.19): clients that read
-			// license-required keep working; code and component added
-			e = subscriptions.ComponentRefusal(ref.ID, subscriptions.Feature(ref.Licence), ref.Tier)
-			if ref.Components != nil {
-				e = e.With("components", ref.Components)
-			}
-		}
-		if ref.ID != "" {
-			e = e.With("id", ref.ID)
-		}
-		if ref.RequiredBy != nil {
-			e = e.With("required_by", ref.RequiredBy)
-		}
-		if ref.Conflicts != nil {
-			e = e.With("conflicts", ref.Conflicts)
-		}
-		if ref.Licence != "" {
-			e = e.With("licence", ref.Licence)
-		}
-		if ref.Current != nil {
-			e = e.With("current", ref.Current)
-		}
-		if ref.Revision != nil {
-			e = e.With("revision", *ref.Revision)
-		}
-		httperror.Write(w, r, e)
+		httperror.Write(w, r, refusalProblem(ref))
 		return
 	}
 	if errors.Is(err, svc.ErrUnknown) {
@@ -139,6 +125,38 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	httperror.Write(w, r, httperror.Internal("components"))
+}
+
+// refusalProblem is a refusal as its problem+json, with its extras.
+func refusalProblem(ref *svc.Refusal) *httperror.Error {
+	e := problem(ref.Status, ref.Code, strings.ReplaceAll(ref.Code, "_", " "), ref.Detail)
+	if ref.Code == svc.CodeLicence {
+		// the licence's own problem (story 51.19): clients that read
+		// license-required keep working; code and component added
+		e = subscriptions.ComponentRefusal(ref.ID, subscriptions.Feature(ref.Licence), ref.Tier)
+		if ref.Components != nil {
+			e = e.With("components", ref.Components)
+		}
+	}
+	if ref.ID != "" {
+		e = e.With("id", ref.ID)
+	}
+	if ref.RequiredBy != nil {
+		e = e.With("required_by", ref.RequiredBy)
+	}
+	if ref.Conflicts != nil {
+		e = e.With("conflicts", ref.Conflicts)
+	}
+	if ref.Licence != "" {
+		e = e.With("licence", ref.Licence)
+	}
+	if ref.Current != nil {
+		e = e.With("current", ref.Current)
+	}
+	if ref.Revision != nil {
+		e = e.With("revision", *ref.Revision)
+	}
+	return e
 }
 
 func isDBDown(err error) bool {
@@ -175,11 +193,20 @@ func (h *Handler) actor(r *http.Request) svc.Actor {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+	if node := r.URL.Query().Get("machine"); node != "" {
+		h.listMachine(w, r, node)
+		return
+	}
 	v, err := h.Service.List(r.Context())
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
+	views := make([]*svc.View, len(v.Components))
+	for i := range v.Components {
+		views[i] = &v.Components[i]
+	}
+	WithProgress(r.Context(), h.Packs, views...)
 	common.WriteJSON(w, r, http.StatusOK, v)
 }
 
@@ -189,6 +216,7 @@ func (h *Handler) show(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	WithProgress(r.Context(), h.Packs, &d.View)
 	common.WriteJSON(w, r, http.StatusOK, d)
 }
 
@@ -242,8 +270,18 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("purge") == "true" {
-		httperror.Write(w, r, problem(http.StatusConflict, "purge_not_ready", "purge not ready",
-			"resetting a component's settings and data comes with the release with packs"))
+		// story 51.13: the settings part of a purge. Removed first (a refusal leaves the
+		// settings as they are), then its settings reset; its data (caches, models) is
+		// story 51.16's.
+		if _, err := h.Service.Apply(r.Context(), svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}}, h.actor(r)); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		if _, err := h.Service.ResetSettings(r.Context(), id, h.actor(r)); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		h.show(w, r)
 		return
 	}
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}})

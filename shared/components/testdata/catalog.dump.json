@@ -1195,7 +1195,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "live_tv"
+      ],
       "gated": false,
       "group": "livetv",
       "id": "livetv.slots",
@@ -1254,7 +1256,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "live_tv"
+      ],
       "gated": false,
       "group": "livetv",
       "id": "livetv.inprocess",
@@ -1395,7 +1399,9 @@
         "checkpoint": false,
         "grace_s": 30
       },
-      "features": [],
+      "features": [
+        "remote_access"
+      ],
       "gated": false,
       "group": "system",
       "id": "cloud.relay",

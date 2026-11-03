@@ -1,0 +1,59 @@
+# The developer portal (maktaba.dev, web/packages/devportal): build it, run its tests and
+# its public-safety scan. ci.yml runs it on a pull request that touches the portal or a
+# doc it publishes; devportal-deploy.yml runs it before every deploy and deploys
+# the very dist/ it uploads.
+
+name: Developer portal
+
+on:
+  workflow_call:
+    inputs:
+      upload:
+        description: upload the built site (dist/) as the devportal-site artifact
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  devportal:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web/packages/devportal
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/packages/devportal/.nvmrc
+          cache: npm
+          cache-dependency-path: web/packages/devportal/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # the allow-list assembly; it fails on any public-safety finding
+      - name: Build
+        run: npm run build
+
+      - name: Public-safety scan
+        run: npm run scan
+
+      - name: Tests (the Worker, the build, the built site)
+        run: npm test
+
+      - name: Upload the built site
+        if: inputs.upload
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: devportal-site
+          path: web/packages/devportal/dist/
+          include-hidden-files: true # dist/.well-known/security.txt
+          if-no-files-found: error
+          retention-days: 7

@@ -10,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 // Store writes and reads the telemetry tables.
@@ -78,15 +80,16 @@ func putServer(ctx context.Context, tx execer, installID string, r *ServerReport
 	}
 	if _, err := tx.ExecContext(ctx, `
         INSERT INTO telemetry_server_reports (install_id, day, version, os, arch, install_kind,
-            library_size, libraries, users, machines, apps, features, received_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+            library_size, libraries, users, machines, apps, features, received_at, bundle, components)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
         ON CONFLICT (install_id, day) DO UPDATE SET
             version = EXCLUDED.version, os = EXCLUDED.os, arch = EXCLUDED.arch,
             install_kind = EXCLUDED.install_kind, library_size = EXCLUDED.library_size,
             libraries = EXCLUDED.libraries, users = EXCLUDED.users, machines = EXCLUDED.machines,
-            apps = EXCLUDED.apps, features = EXCLUDED.features, received_at = EXCLUDED.received_at`,
+            apps = EXCLUDED.apps, features = EXCLUDED.features, received_at = EXCLUDED.received_at,
+            bundle = EXCLUDED.bundle, components = EXCLUDED.components`,
 		installID, r.Day, r.Version, r.OS, r.Arch, r.InstallKind, r.LibrarySize, r.Libraries,
-		r.Users, r.Machines, apps, features, now); err != nil {
+		r.Users, r.Machines, apps, features, now, r.Bundle, pq.Array(nonNilStrings(r.Components))); err != nil {
 		return err
 	}
 	// The resent day replaces the day's server errors too.
@@ -105,6 +108,13 @@ func putServer(ctx context.Context, tx execer, installID string, r *ServerReport
 		}
 	}
 	return nil
+}
+
+func nonNilStrings(s []string) []string {
+	if s == nil {
+		return []string{}
+	}
+	return s
 }
 
 func putApp(ctx context.Context, tx execer, installID string, a *AppBatch, now time.Time) error {

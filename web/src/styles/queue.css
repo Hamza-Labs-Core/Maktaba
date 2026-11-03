@@ -1622,6 +1622,10 @@ summary.mkt-q-lane__title {
 .mkt-q-card__flag--waiting {
   color: var(--q-running);
 }
+/* Epic 51: a stage its component holds back: grey, a choice and not a problem */
+.mkt-q-card__flag--off {
+  color: var(--q-waiting);
+}
 .mkt-q-card__flag--paused {
   color: var(--color-warn);
 }

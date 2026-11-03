@@ -18,12 +18,15 @@ public enum ErrorKind: Equatable, Hashable, Sendable {
     case busy(retryAfter: Int?)
     /// Anything else: a 5xx, an unknown 4xx, an answer that did not decode.
     case server
+    /// The part of the home this needs is turned off: 409 `component_off` (Epic 51 story 51.09).
+    case off
 
     /// The kind of an answer with `status` and its problem+json (nil: not one).
     public static func of(status: Int, problem: Problem?, retryAfter: Int? = nil) -> ErrorKind {
         let slug = problem?.slug
         let code = problem?.code
         if slug == "home-unreachable" || slug == "video-unavailable-offline" { return .unreachable }
+        if status == 409 && code == "component_off" { return .off }
         switch status {
         case 401: return .signedOut
         case 403: return .noAccess
@@ -45,7 +48,8 @@ public enum ErrorAction: Hashable, Sendable {
 // MARK: the home's answers when it refuses
 
 /// A problem+json answer (RFC 7807: `{"type", "title", "status", "detail"}`, with the
-/// home's `code` and `attempts_left`), read from `APIError.status`.
+/// home's `code` and `attempts_left`), read from `APIError.status`. With code
+/// `component_off`: the `component` that is off and the `feature` it serves (story 51.09).
 public struct Problem: Decodable, Equatable, Sendable {
     public let code: String?
     public let title: String?
@@ -53,19 +57,23 @@ public struct Problem: Decodable, Equatable, Sendable {
     public let attemptsLeft: Int?
     public let type: String?
     public let status: Int?
+    public let component: String?
+    public let feature: String?
 
     public init(code: String? = nil, title: String? = nil, detail: String? = nil, attemptsLeft: Int? = nil,
-                type: String? = nil, status: Int? = nil) {
+                type: String? = nil, status: Int? = nil, component: String? = nil, feature: String? = nil) {
         self.code = code
         self.title = title
         self.detail = detail
         self.attemptsLeft = attemptsLeft
         self.type = type
         self.status = status
+        self.component = component
+        self.feature = feature
     }
 
     enum CodingKeys: String, CodingKey {
-        case code, title, detail, type, status
+        case code, title, detail, type, status, component, feature
         case attemptsLeft = "attempts_left"
     }
 
@@ -181,7 +189,7 @@ public struct HomeFailure: Equatable, Sendable {
         case .signedOut: [.signInAgain, .back]
         case .unreachable: [.tryAgain, .chooseAnotherHome, .back]
         case .notReady, .busy, .server: [.tryAgain, .back]
-        case .notFound, .noAccess: [.back]
+        case .notFound, .noAccess, .off: [.back]
         }
     }
 
@@ -195,6 +203,7 @@ public struct HomeFailure: Equatable, Sendable {
         case .unreachable: "wifi.exclamationmark"
         case .busy: "clock"
         case .server: "exclamationmark.triangle"
+        case .off: "poweroff"
         }
     }
 }

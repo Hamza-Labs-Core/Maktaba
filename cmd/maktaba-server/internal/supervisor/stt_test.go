@@ -59,7 +59,7 @@ func noSTTEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{"MAKTABA_STT_AUDIO_HOURS", "MAKTABA_STT_GPU_GB", "MAKTABA_STT_GPU_CACHE_GB",
 		"MAKTABA_STT_MIN_FREE_PCT", "MAKTABA_STT_BATCH", "MAKTABA_STT_DEVICE", "MAKTABA_STT_COMPUTE_TYPE",
-		"MAKTABA_STT_CPU_THREADS", "MAKTABA_STT_REFINE", "MAKTABA_PIPELINE_EXCLUDE_STAGES", "MAKTABA_PIPELINE_STAGES"} {
+		"MAKTABA_STT_CPU_THREADS", "MAKTABA_STT_REFINE", "MAKTABA_PIPELINE_EXCLUDE_STAGES", "MAKTABA_PIPELINE_STAGES", "MAKTABA_POOL_GPU"} {
 		t.Setenv(k, "")
 	}
 }
@@ -537,7 +537,7 @@ func TestPlanSTTOnAnNvidiaGPU(t *testing.T) {
 	fakeMachine(t, false, 64)
 	fakeGPU(t, rtx2080Super, nil)
 	host := PlanForRAM(64)
-	want := STTPlan{Workers: 1, Batch: 8, AudioHours: host.AudioHours, MinFreePct: host.MinFreePct, ct2: true}
+	want := STTPlan{Workers: 1, Batch: 8, AudioHours: host.AudioHours, MinFreePct: host.MinFreePct, ct2: true, gpu: true}
 	if p := PlanSTT(cfg); p != want {
 		t.Errorf("RTX 2080 SUPER = %+v, want %+v", p, want)
 	}
