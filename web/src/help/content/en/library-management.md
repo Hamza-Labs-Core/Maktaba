@@ -25,6 +25,17 @@ Removing or merging a library never deletes a file from your disk. Maktaba only 
 
 Click **Edit** to rename it, add or remove folders, or open **Advanced settings**. The advanced settings are shown as JSON; leave them alone unless you know what each one does.
 
+Two of them belong to **Convert to MP4**, and both are off unless you add them:
+
+- `"convert": {"allow_reencode": true}` lets the library re-encode files whose video an MP4 cannot hold (VP9, AV1 and so on) to H.264. Re-encoding loses a little quality, so without it those files are skipped.
+- `"convert": {"auto": true}` is kept for automatic conversion after a scan. No scan queues a conversion in this version, so start it from the library's menu on the Processing page.
+
+See [How a conversion decides](/help/processing#convert-decides).
+
+### YouTube sources {#youtube-sources}
+
+Click **YouTube sources…** on a library's card to see the YouTube channels and playlists it follows, add one by its link, turn one on or off, and set how it downloads. It is the same dialog as **YouTube sources…** in the library's menu on the Processing page. The channels a library already had start **Off**: nothing downloads until you set a source to **New uploads and back catalogue** or **New uploads only**. See [YouTube sources](/help/processing#youtube-sources) for the modes and options.
+
 ### Scan {#scan}
 
 **Scan now** looks for new, changed and missing files right away. A bar shows the scan while it runs, even if you reload the page.
