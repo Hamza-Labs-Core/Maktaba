@@ -19,6 +19,7 @@ func TestSecondListenOn(t *testing.T) {
 		return hostinfo.GPU{Name: name, MemoryMB: mib, ComputeCap: compute, Driver: driver}
 	}
 	rtx2080 := gpu("NVIDIA GeForce RTX 2080 SUPER", 8192, "7.5", "581.57") // this PC
+	rtx2060 := gpu("NVIDIA GeForce RTX 2060", 6144, "7.5", "581.57")
 	rtx3080 := gpu("NVIDIA GeForce RTX 3080", 10240, "8.6", "580.82")
 	gtx1080 := gpu("NVIDIA GeForce GTX 1080 Ti", 11264, "6.1", "581.57")
 	oldDriver := gpu("NVIDIA RTX A4000", 16376, "8.6", "552.22")
@@ -33,7 +34,10 @@ func TestSecondListenOn(t *testing.T) {
 		{"Apple Silicon", "darwin", "arm64", nil, true, ""},
 		{"an Intel Mac", "darwin", "amd64", nil, false, "second_listen_intel_mac"},
 		{"no GPU", "windows", "amd64", nil, false, "second_listen_no_gpu"},
-		{"8 GB on Windows", "windows", "amd64", []hostinfo.GPU{rtx2080}, false, "second_listen_gpu_small"},
+		// an 8 GB card under Windows runs it, taking turns with Whisper on the GPU
+		{"8 GB on Windows", "windows", "amd64", []hostinfo.GPU{rtx2080}, true, ""},
+		{"6 GB on Windows", "windows", "amd64", []hostinfo.GPU{rtx2060}, false, "second_listen_gpu_small"},
+		{"6 GB on Linux", "linux", "amd64", []hostinfo.GPU{rtx2060}, true, ""},
 		{"8 GB on Linux", "linux", "amd64", []hostinfo.GPU{rtx2080}, true, ""},
 		{"10 GB on Windows", "windows", "amd64", []hostinfo.GPU{rtx3080}, true, ""},
 		{"a pre-Turing GPU", "windows", "amd64", []hostinfo.GPU{gtx1080}, false, "second_listen_gpu_old"},
@@ -41,7 +45,7 @@ func TestSecondListenOn(t *testing.T) {
 		{"no compute capability or driver said", "windows", "amd64", []hostinfo.GPU{unknown}, true, ""},
 		// the GPU transcription uses decides: the first, as the supervisor's and the pipeline's
 		{"the first of two can", "windows", "amd64", []hostinfo.GPU{rtx3080, rtx2080}, true, ""},
-		{"only the second of two can", "windows", "amd64", []hostinfo.GPU{rtx2080, rtx3080}, false, "second_listen_gpu_small"},
+		{"only the second of two can", "windows", "amd64", []hostinfo.GPU{rtx2060, rtx3080}, false, "second_listen_gpu_small"},
 		{"Linux on arm64", "linux", "arm64", []hostinfo.GPU{rtx3080}, false, "second_listen_arch"},
 		{"Windows on arm64", "windows", "arm64", nil, false, "second_listen_arch"},
 	} {
@@ -56,9 +60,9 @@ func TestSecondListenOn(t *testing.T) {
 	if arm := secondListenOn("linux", "arm64", nil); arm.Params["arch"] != "arm64" {
 		t.Errorf("the arch's value: %v", arm.Params)
 	}
-	small := secondListenOn("windows", "amd64", []hostinfo.GPU{rtx2080})
-	if small.Params["have_bytes"] != uint64(8192)<<20 || small.Params["need_bytes"] != uint64(secondListenMinMiBWindows)<<20 ||
-		small.Params["gpu"] != rtx2080.Name {
+	small := secondListenOn("windows", "amd64", []hostinfo.GPU{rtx2060})
+	if small.Params["have_bytes"] != uint64(6144)<<20 || small.Params["need_bytes"] != uint64(secondListenMinMiBWindows)<<20 ||
+		small.Params["gpu"] != rtx2060.Name {
 		t.Errorf("the small GPU's values: %v", small.Params)
 	}
 }

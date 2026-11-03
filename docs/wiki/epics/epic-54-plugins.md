@@ -5,9 +5,9 @@
 
 ## Goal
 
-The owner, 2026-11-03: *"Spec a third-party no internet calling plugging queue extender that
-allows new functions by interacting with queues and maktaba API and a store for such
-plugins/jobs"*.
+Requirement: a plugin system for third-party queue extenders that never call the internet and
+add new functions by working with the queues and the Maktaba API, and a store for those
+plugins.
 
 Other people can add functions to Maktaba. A plugin adds queue stages that run after stable
 events (a video was added, a transcript is ready…) or on a schedule, reads what the admin let it
@@ -17,7 +17,7 @@ its own data. It can never reach the internet or see the disk. Maktaba runs a st
 switch a bad one off in every home. The store is independent of Maktaba Cloud: its own
 accounts, database, deploy and payments, all on Cloudflare with no VPS.
 
-The owner added on the same day: **all of Maktaba's own stages become first-party plugins** on
+Added on the same day: **all of Maktaba's own stages become first-party plugins** on
 the same interface (README §15). They run as native Python in supervised runners, not as
 WebAssembly, with a trusted capability set that only Maktaba's release signature unlocks, and
 move stage by stage with a switch per stage and a CI proof that each writes exactly what it

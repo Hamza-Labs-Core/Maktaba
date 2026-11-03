@@ -492,7 +492,7 @@
       "title": "Canonical share paths",
       "epic": "31-multi-instance",
       "phase": 5,
-      "content": "# Story 31.3 — Canonical share paths\n\n## Description\n\n**Today.** `videos.path`, the library roots and the other path columns hold the home's local\npaths. The Mac home stores `/Volumes/Originals/Backup/Youtube/...` for 148,593 videos. Each\nnode guesses a prefix map (`{\"/Volumes/Originals/\": \"O:/\"}`) by looking for sample files under\nits mounts (`cluster/storage.py`, design §6). That has three problems:\n\n- The map depends on which machine scanned the library.\n- A guess can be wrong or missing. A new node needs files to find before it works.\n- Names the Mac stored NFD (decomposed) do not open on ",
+      "content": "# Story 31.3 — Canonical share paths\n\n## Description\n\n*As the owner of a Maktaba cluster (a Mac home, a Windows node, Linux machines), I want each\nmedia path stored once, in a form every machine works out for itself from the share's network\naddress, so that a file stored by one machine opens on any other without anyone typing a\npath map: to be cross-platform, every path is the share's IP address with the full path.*\n\n**Today.** `videos.path`, the library roots and the other path columns hold the home's local\npaths. The Mac home stores `/Volumes/Originals/Backup/Youtube/...` for 148,593 videos.",
       "tags": [
         "story",
         "31-multi-instance",
@@ -1216,14 +1216,17 @@
       ],
       "related": [
         "epic-33-tv-staging-hot-swap",
-        "plan-33.12-producers-review-mode"
+        "plan-33.12-producers-review-mode",
+        "ep-get-queues"
       ],
       "files": {
         "story": "specs/epics/33-tv-staging-hot-swap/story-33-12-producers-review-mode.md",
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-12-producers-review-mode.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /queues"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "producers-review-mode"
@@ -1710,7 +1713,7 @@
       "title": "Update policy, discovery and scheduling",
       "epic": "35-cluster-full-nodes-and-updates",
       "phase": 5,
-      "content": "# Story 35.3 — Update policy, discovery and scheduling\n\n## Description\n\nThe API's `Updater` (Epic 28.2, `api/internal/system/updater.go`) stays the discoverer. It now keeps a\ncatalog of releases newer than the watermark, verifies each one's signed files as soon as it sees them,\nchooses the target by policy (`rules.updates`) and starts a run in the quiet window by asking the\nsupervisor (35.4).\n\nDesign: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.\n\n## Acceptance criteria\n\n## Test cases\n\n- **TC1** `TestChooseTarget` — table: channel, pin, skip, watermark, age, withdrawn, bloc",
+      "content": "# Story 35.3 — Update policy, discovery and scheduling\n\n## Description\n\nThe API's `Updater` (Epic 28.2, `api/internal/system/updater.go`) stays the discoverer. It now keeps a\ncatalog of releases newer than the watermark, verifies each one's signed files as soon as it sees them,\nchooses the target by policy (`rules.updates`) and starts a run in the quiet window by asking the\nsupervisor (35.4).\n\nDesign: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.\n\n## Acceptance criteria\n\n- **AC1** Settings `rules.updates` (schema.json, settings UI, `app_settings`) with the README defaults:\n",
       "tags": [
         "story",
         "35-cluster-full-nodes-and-updates",
@@ -1794,7 +1797,7 @@
       "title": "TV during updates",
       "epic": "35-cluster-full-nodes-and-updates",
       "phase": 5,
-      "content": "# Story 35.6 — TV during updates\n\n## Description\n\n*As the owner, I want the nightly automatic update to install the new streaming software without\nanyone watching TV noticing, and without me approving it at 03:00.*\n\nStep 10 of the home's run (design §5.3) hands TV to Epic 33: the new streaming binary becomes a\n`binary` TV change with `source.kind = auto_update`, which the change controller stages, verifies and\nswaps at programme boundaries without waiting for an admin (the owner's override of Epic 33 decision\n2, for this source and this kind only). Before the two-slot runtime exists, the step ",
+      "content": "# Story 35.6 — TV during updates\n\n## Description\n\n*As the owner, I want the nightly automatic update to install the new streaming software without\nanyone watching TV noticing, and without me approving it at 03:00.*\n\nStep 10 of the home's run (design §5.3) hands TV to Epic 33: the new streaming binary becomes a\n`binary` TV change with `source.kind = auto_update`, which the change controller stages, verifies and\nswaps at programme boundaries without waiting for an admin (an override of Epic 33 decision\n2, for this source and this kind only). Before the two-slot runtime exists, the step restarts ",
       "tags": [
         "story",
         "35-cluster-full-nodes-and-updates",
@@ -3050,7 +3053,7 @@
       "title": "Cost, limits and budget — implementation",
       "epic": "32-tv-streaming-cluster-remote",
       "phase": 5,
-      "content": "# Plan 32.10 — Cost, limits and budget — implementation\n\n> Implementation plan for [story-32-10](story-32-10-cost-limits-budget.md).\n> Uses slot 0125 (`tv_remote_usage_daily`). Design: [design.md](design.md) §9.\n\n## 0. Decisions\n\n## 1. Files\n\n**Create**\n- `api/internal/tvremote/usage.go` — hourly GraphQL poll (video ids of this month's pushes, 31-day span limit respected), session fallback, `tv_remote_usage_daily` upsert\n- `api/internal/tvremote/budget.go` — `Estimate(month)`, thresholds, notifications (existing notifications/log events), `Exhausted()`\n- `api/internal/tvremote/storage_guard.go",
+      "content": "# Plan 32.10 — Cost, limits and budget — implementation\n\n> Implementation plan for [story-32-10](story-32-10-cost-limits-budget.md).\n> Uses slot 0125 (`tv_remote_usage_daily`). Design: [design.md](design.md) §9.\n\n## 0. Decisions\n\n| # | Decision | Rationale |\n|---|---|---|\n| D1 | The estimate uses Cloudflare's own minutes (`streamMinutesViewedAdaptiveGroups`) when the token can read analytics, session minutes otherwise. | Cloudflare's number is what is billed; sessions are a safe upper bound. |\n| D2 | Between hourly polls, add running sessions' minutes. | The estimate errs high, never low. |\n| ",
       "tags": [
         "plan",
         "32-tv-streaming-cluster-remote"
@@ -3710,7 +3713,7 @@
       "title": "Docs and runbook — implementation",
       "epic": "34-tv-public-site",
       "phase": 5,
-      "content": "# Plan 34.11 — Docs and runbook — implementation\n\n> Implementation plan for [story-34-11](story-34-11-docs-runbook.md).\n\n## 0. Decisions\n\n| # | Decision | Rationale |\n|---|---|---|\n| D1 | One runbook in English and Arabic next to the Epic 32 runbook. | The owner's working languages; remote and public share the Cloudflare account. |\n| D2 | Costs explained with the pricing page link and the setting that holds the price. | Prices change; the doc stays correct. |\n\n## 1. Files\n\n**Create**\n- `docs/tv-public-site.md`, `docs/ar/tv-public-site.md`\n- `docs/diagrams/tv-public-site.svg` (from the README a",
+      "content": "# Plan 34.11 — Docs and runbook — implementation\n\n> Implementation plan for [story-34-11](story-34-11-docs-runbook.md).\n\n## 0. Decisions\n\n| # | Decision | Rationale |\n|---|---|---|\n| D1 | One runbook in English and Arabic next to the Epic 32 runbook. | The project's working languages; remote and public share the Cloudflare account. |\n| D2 | Costs explained with the pricing page link and the setting that holds the price. | Prices change; the doc stays correct. |\n\n## 1. Files\n\n**Create**\n- `docs/tv-public-site.md`, `docs/ar/tv-public-site.md`\n- `docs/diagrams/tv-public-site.svg` (from the README",
       "tags": [
         "plan",
         "34-tv-public-site"
@@ -4062,7 +4065,7 @@
       "title": "The cluster link: machine-to-machine TLS — implementation",
       "epic": "35-cluster-full-nodes-and-updates",
       "phase": 5,
-      "content": "# Plan 35.16 — The cluster link: machine-to-machine TLS — implementation\n\n> Implementation plan for [story-35-16-cluster-link-tls](story-35-16-cluster-link-tls.md). Design: [design.md](design.md) §18, §11.5.\n\n## 0. Decisions\n\n## 1. Files\n\n**Create**\n- `api/internal/cluster/ca/` — `ca.go` (create, load, sign CSR, rotate), `store.go` (`cluster_certs`), tests.\n- `api/internal/cluster/link/` — `listener.go` (TLS sniffing `net.Listener` splitting TLS and plain\n  HTTP), `control.go` (control channel server: auth, hello, framing, class scheduler), `tickets.go`\n  (issue, verify, single use, alert), `s",
+      "content": "# Plan 35.16 — The cluster link: machine-to-machine TLS — implementation\n\n> Implementation plan for [story-35-16-cluster-link-tls](story-35-16-cluster-link-tls.md). Design: [design.md](design.md) §18, §11.5.\n\n## 0. Decisions\n\n| # | Decision | Rationale |\n|---|---|---|\n| D1 | WebSockets over mutual TLS on the API's existing port, TLS sniffed on the first byte. | Chosen; reuses the Epic 31 hub and libraries; no new port or firewall rule. |\n| D2 | One control channel per machine, authenticated first; every data stream on its own `wss://` with a single-use ticket. | Authenticate first, then stream",
       "tags": [
         "plan",
         "35-cluster-full-nodes-and-updates"

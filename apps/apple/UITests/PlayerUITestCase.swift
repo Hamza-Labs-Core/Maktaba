@@ -130,7 +130,7 @@ class PlayerUITestCase: XCTestCase {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale, "-maktaba-secrets-in-file"]
-        // the dark theme (the owner's screenshots are dark; FR-2)
+        // the dark theme (screenshots are dark by default; FR-2)
         if let theme { args += ["-theme", theme] }
         if fresh {
             args += ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]

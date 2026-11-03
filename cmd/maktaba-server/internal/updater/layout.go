@@ -200,7 +200,7 @@ func (li *LayoutInstaller) Commit(ctx context.Context, j *Journal) error {
 	// what a prune leaves is pruned by the next commit; the release is kept either way,
 	// and so is every release a running process uses (story 35.6 AC6, the TV processes
 	// handed over: story 35.7), and the one whose streaming software the live TV runs (a
-	// TV held there when its change's check failed, the owner's decision of 2026-10-28)
+	// TV held there when its change's check failed, decided 2026-10-28)
 	inUse := append([]string{layout.NormalizeVersion(j.From)}, j.TV.keeps()...)
 	if li.InUse != nil {
 		inUse = append(inUse, li.InUse()...)

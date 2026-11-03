@@ -14,8 +14,8 @@ import (
 // release directories are named (layout.NormalizeVersion: the supervisor's bareVersion).
 
 // sourceCheckoutVersion is what a pipeline run from a source checkout records: its
-// package's placeholder version, not any streaming binary's (the owner's live release
-// said it from 2026-10-22). It names no binary, so it is held to none, like a release
+// package's placeholder version, not any streaming binary's (a live release said it
+// from 2026-10-22). It names no binary, so it is held to none, like a release
 // that records no version at all.
 const sourceCheckoutVersion = "0.0.1"
 

@@ -232,7 +232,7 @@ Ultra VideoToolbox) and the PC (NVENC, session cap from `feat/tv-core`), balance
 `free = Σ capacity − Σ placed − reserve_slots`; when making a channel public would leave `free < 0`
 it warns and asks for confirmation; a channel that cannot be placed reports `off_air(no_capacity)`.
 The Streaming hosts page (E32 README R5) shows public placements with a "public" badge. **Capacity, not
-uplink, is the limit** at the owner's 1 Gbps: 22 × 6.5 Mb/s ≈ 143 Mb/s.
+uplink, is the limit** at the home's 1 Gbps: 22 × 6.5 Mb/s ≈ 143 Mb/s.
 
 ### 5.5 A/B rotation (R3.3)
 

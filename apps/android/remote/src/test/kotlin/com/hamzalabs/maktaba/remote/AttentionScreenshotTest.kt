@@ -14,8 +14,8 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
 /**
- * Needs attention on foldables' cover screens (the owner's report on build 0.3.62: a Razr Fold
- * closed), dark, English and Arabic, at font scales 1.0, 1.3 and 2.0, against the owner's
+ * Needs attention on foldables' cover screens (a report on build 0.3.62: a Razr Fold
+ * closed), dark, English and Arabic, at font scales 1.0, 1.3 and 2.0, against a real home's
  * groups. Each shot also checks the bar: one-line labels, lined up, inside the screen; and the
  * rows: no grouping key in a title, no backslash-n. `recordRoborazziDebug` writes the references
  * under `src/test/screenshots`; CI's `verifyRoborazziDebug` fails when one no longer matches.

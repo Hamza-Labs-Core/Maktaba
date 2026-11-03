@@ -13,7 +13,7 @@
 
 ## Goal
 
-The owner's decisions (2026-10-25):
+Decisions (2026-10-25):
 
 1. **Three kinds of app.**
    - **Player:** browse and watch, nothing else, like the TV apps.

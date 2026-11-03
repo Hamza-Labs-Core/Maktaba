@@ -260,7 +260,7 @@ describe("codedText", () => {
   });
 });
 
-// The owner's request: the restart shows its progress, not just a sentence. The backup
+// Required: the restart shows its progress, not just a sentence. The backup
 // before an update says how much it has written of about how much (the newest finished
 // dump's size), on a bar; without an earlier dump it says how much so far.
 describe("the backup's progress", () => {

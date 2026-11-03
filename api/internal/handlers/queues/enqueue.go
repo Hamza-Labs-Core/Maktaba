@@ -16,7 +16,7 @@ const (
 	OutcomeCoalesced      = "coalesced"
 	OutcomeRerunRequested = "rerun_requested"
 	OutcomeDisabled       = "disabled"
-	// OutcomeSkippedComponentOff: the stage's component is off (Epic 51, slot 0176);
+	// OutcomeSkippedComponentOff: the stage's component is off (Epic 51, slot 0177);
 	// no job is made, and the component's catch-up queues it when it is on again.
 	OutcomeSkippedComponentOff = "skipped_component_off"
 	OutcomeUnknownStage        = "unknown_stage"

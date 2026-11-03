@@ -71,7 +71,7 @@ type Policy struct {
 	Wheelhouse bool `json:"wheelhouse"`
 }
 
-// DefaultPolicy is the README defaults (auto_install true: owner decision).
+// DefaultPolicy is the README defaults (auto_install true).
 func DefaultPolicy() Policy {
 	return Policy{
 		AutoInstall:              true,

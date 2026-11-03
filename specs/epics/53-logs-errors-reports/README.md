@@ -10,16 +10,14 @@
 > (cloud monitoring, status page, incidents: see §9 for who owns what) and Epic 51
 > (configurable components, §10). **Research:** [research.md](research.md).
 > **Wiki:** [epic-53-logs-errors-reports.md](../../../docs/wiki/epics/epic-53-logs-errors-reports.md).
-> **Decisions:** the owner answered the open questions on 2026-11-03 (§12).
+> **Decisions:** the open questions were answered on 2026-11-03 (§12).
 
 ## 1. Why
 
-The owner, 2026-11-03:
-
-> "log reporting, bug reporting, error reporting, server, app, cloud, api, all customer facing,
-> and the server admin ui to view, analytics, ui, logs, how to view logs, search, dashboards,
-> every part of the server need to be reportable, no crash that breaks all, makes the server not
-> accessible, i mean ui here"
+Requirement: log, bug and error reporting across the server, the apps, the cloud and the API,
+all customer facing, with a server admin UI to view, search and analyse logs and dashboards.
+Every part of the server must be reportable, and no crash may break everything or make the UI
+unreachable.
 
 Maktaba logs well inside each process (PR #291, PRs #378–#387), but:
 
@@ -138,7 +136,7 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 
 ### 4.4 Privacy
 
-- **Crash reports to the home are opt-in** (owner's decision, 2026-11-03): off by default, asked
+- **Crash reports to the home are opt-in** (decided 2026-11-03): off by default, asked
   once during each app's initial setup with two equal buttons, and a Settings → Privacy switch
   afterwards (53.14). Crashes stay on the device until the person says yes.
 - **The home is the boundary.** Logs, crash reports and problem reports stay on the home unless
@@ -203,8 +201,8 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 | D6 | **tvOS uses PLCrashReporter**; iOS, iPadOS and macOS use MetricKit (already in the app); Android uses `CrashLog` (already) plus `ApplicationExitInfo` for ANRs and native crashes. | Crashlytics everywhere; KSCrash (tvOS support only in a 2026 beta). | MetricKit has no tvOS. PLCrashReporter supports tvOS 12+ and is MIT-licensed. |
 | D7 | **One id per request: `X-Request-Id` (UUIDv7)**, made by the client per user action, carried as `request_id` everywhere; W3C `traceparent` only when OTLP export is on. | Trace ids everywhere. | The id already exists in the API and the logger; adding it to clients, the pipeline and streaming closes the gap with the least new code. |
 | D8 | **Error fingerprint = the cloud's existing one** (`telemetry_error_groups`: source, app, scrubbed message, first own frame), extended with the component and the error code. | A new algorithm. | The same error has the same fingerprint at the home and in the cloud, so a forwarded group joins its anonymous twin. |
-| D9 | **Metric history = 1-minute rollups in `logs.db`** scraped from the existing `/metrics` endpoints by the `logs` role; 7 days at 1 min, 30 days at 1 h (owner's retention decision, 2026-11-03). | Prometheus; storing every sample. | Dashboards need trends, not raw series; ~200 series × 1,440 a day is a few MB, inside `logs.db`'s share of the cap. |
-| D10 | **Safe mode is one start**, like Home Assistant's: Postgres, API, web only. A crash-looping child stops at its cut-off and raises a repair item. | Endless retries; stopping everything. | The owner's rule: recovery is automatic or one click, never a terminal. |
+| D9 | **Metric history = 1-minute rollups in `logs.db`** scraped from the existing `/metrics` endpoints by the `logs` role; 7 days at 1 min, 30 days at 1 h (retention decided 2026-11-03). | Prometheus; storing every sample. | Dashboards need trends, not raw series; ~200 series × 1,440 a day is a few MB, inside `logs.db`'s share of the cap. |
+| D10 | **Safe mode is one start**, like Home Assistant's: Postgres, API, web only. A crash-looping child stops at its cut-off and raises a repair item. | Endless retries; stopping everything. | The project rule: recovery is automatic or one click, never a terminal. |
 
 ### 5.3 Performance budget (home Mac)
 
@@ -356,11 +354,11 @@ into it as two fields (`status.features`, `status.banner`); nothing else changes
 - Stories that touch the supervisor or the launcher (53.02, 53.03, 53.04, 53.05) fall under the
   rule that `update-rehearsal` must pass on the exact commit before a release; 53.07 adds the
   fault rehearsal to the same tag guard.
-- One release at a time on the live Mac (the owner's rule).
+- One release at a time on the live Mac (project rule).
 
 ## 12. Decisions (2026-11-03)
 
-The owner answered the three open questions:
+The three open questions were answered:
 
 1. **Crash reports to the home: off by default.** Each app asks during its initial setup
    (onboarding), with "Send crash reports" and "Not now" as equal choices and neither

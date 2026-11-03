@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The home's pre-update dump, on the side (the owner, 2026-10-27: an update never blocks
+// The home's pre-update dump, on the side (decided 2026-10-27: an update never blocks
 // the library for a backup). An apply on the home first asks the database how many of the
 // staged release's migrations it lacks. None: no dump at all; the switch is a restart, and
 // so is going back from it (the release before knows the database as it is). Some, or

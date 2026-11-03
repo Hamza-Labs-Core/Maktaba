@@ -5,7 +5,7 @@
 *As the owner of a Maktaba cluster (a Mac home, a Windows node, Linux machines), I want each
 media path stored once, in a form every machine works out for itself from the share's network
 address, so that a file stored by one machine opens on any other without anyone typing a
-path map ("for it to be cross platform, shouldn't all use ip with full path").*
+path map: to be cross-platform, every path is the share's IP address with the full path.*
 
 **Today.** `videos.path`, the library roots and the other path columns hold the home's local
 paths. The Mac home stores `/Volumes/Originals/Backup/Youtube/...` for 148,593 videos. Each
@@ -52,7 +52,7 @@ Example: `smb://home-nas/Originals/Backup/Youtube/AntiShubohat/a.mp4`.
 
 ### Server identity, not the literal IP (recommended)
 
-The user asked for "ip with full path". Two options:
+The requirement is the IP with the full path. Two options:
 
 | | Stored form | IP change | Machines that use a host name (Windows: `Home-NAS`) | Several addresses (LAN IP, `.local`, a second NIC) |
 |---|---|---|---|---|
@@ -60,11 +60,11 @@ The user asked for "ip with full path". Two options:
 | **B. server record** | `smb://home-nas/Originals/...` | **one edit** of `storage_servers.addresses` | matched by name or by the IPs it resolves to | all of them |
 
 **Decision: B.** A `storage_servers` row holds the server's **name**, which is what paths
-store. It also holds its **addresses**: the IP the user asked for, plus host names and the
+store. It also holds its **addresses**: the IP the requirement names, plus host names and the
 mDNS name (`192.168.50.94`, `Home-NAS`, `home-nas.local`). A mount matches a server when its
 host is one of those addresses, case-insensitively. Failing that, it matches when the host
-resolves to one of the IPs the addresses resolve to. The IP is still the anchor, as the
-user asked: `storage server-add --from-mounts` creates the record from the mount's IP. But
+resolves to one of the IPs the addresses resolve to. The IP is still the anchor, as
+required: `storage server-add --from-mounts` creates the record from the mount's IP. But
 the stored form does not change when the IP does. With a DHCP lease or a new router, the
 admin edits one row (Machines page, "Storage servers") and every machine follows within 5
 minutes.

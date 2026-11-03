@@ -10,7 +10,7 @@ First-party packs only fit the server version they were built with (H5, 51.15: t
 after every update. A rollback to 0.4.2 must find 0.4.2's packs again. And old packs must not
 pile up: `runtime.ml` is about 2 GB per version.
 
-The update path is where the owner lost the site twice on 2026-10-28. The standing rule
+The update path is where the site went down twice on 2026-10-28. The standing rule
 since: every update, rollback and restore path is **proven in the update rehearsal in CI**,
 never tried on the live Mac (`docs/update-rehearsal.md`). This story changes that path, so it
 ships with its rehearsal scenarios.

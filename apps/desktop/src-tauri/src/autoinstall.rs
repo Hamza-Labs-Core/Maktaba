@@ -1,4 +1,4 @@
-// The home's order to install a release (Epic 35, install-kinds.md "No click", owner
+// The home's order to install a release (Epic 35, install-kinds.md "No click",
 // decision D1 of 2026-10-27): a desktop app that runs the server (the home, or a full
 // node) installs the release the home's update ordered by itself, with no click here.
 // The server writes <state>/updates/app-install.json ({run_id, version, feed, kind,
@@ -32,7 +32,7 @@ pub const INSTALL_URL: &str = "maktaba://install-update";
 /// The order's states (the server writes ordered and go, this app the others).
 pub const ORDERED: &str = "ordered";
 pub const STAGED: &str = "staged";
-/// What an app from before the click was removed (owner decision D1, 2026-10-27) wrote
+/// What an app from before the click was removed (decision D1, 2026-10-27) wrote
 /// once someone clicked: read as staged (the go needs no click).
 pub const CLICKED: &str = "clicked";
 pub const GO: &str = "go";
@@ -200,7 +200,7 @@ pub fn decide(
 }
 
 /// What the tray and the notifications say of an order: never a thing to click (it
-/// installs by itself; owner decision D1, 2026-10-27).
+/// installs by itself; decision D1, 2026-10-27).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Shown {
     /// Staged here: Maktaba will update to it and restart, by `by` (an automatic run's
@@ -282,7 +282,7 @@ pub fn catch_up(app: &str, running: &str, watermark: &str) -> Option<String> {
     (valid_version(v) && !same_version(app, v)).then(|| v.strip_prefix('v').unwrap_or(v).into())
 }
 
-/// Why this app may not install `version`, or None when it may (the owner's rule,
+/// Why this app may not install `version`, or None when it may (the rule of
 /// 2026-10-28: a machine joined to a home never goes ahead of it; on that day windows-pc
 /// ran 0.3.42 while its home rolled back to 0.3.41, paused until the home's next release).
 /// `joined` is what this machine's server says of its home: None when the app runs no
@@ -695,7 +695,7 @@ mod tests {
     use super::*;
 
     /// A machine joined to a home never updates past the release its home committed (the
-    /// owner's rule, 2026-10-28: windows-pc ran 0.3.42 while its home went back to 0.3.41).
+    /// rule of 2026-10-28: windows-pc ran 0.3.42 while its home went back to 0.3.41).
     #[test]
     fn a_joined_machine_never_updates_past_its_home() {
         use crate::status::Joined;
@@ -905,7 +905,7 @@ mod tests {
         assert_eq!(decide_on(&app, false, false), stage());
     }
 
-    /// Owner decision D1 (2026-10-27): the order goes ordered, staged (this app), go (the
+    /// Decision D1 (2026-10-27): the order goes ordered, staged (this app), go (the
     /// server), installing: the release is installed at the go with nobody clicking here,
     /// and this app never writes clicked.
     #[test]

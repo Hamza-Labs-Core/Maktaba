@@ -4,7 +4,7 @@
 
 ## Why
 
-The owner asked for a "queue extender". Maktaba's queue already knows how to claim, retry,
+The requirement is a queue extender. Maktaba's queue already knows how to claim, retry,
 drain, park and explain jobs (Epics 6, 40, 51). A plugin stage should be a normal stage in that
 queue, shown on the Queues page with its own tile, with nothing new to learn for the owner,
 while its code runs in the plugin host instead of the worker.

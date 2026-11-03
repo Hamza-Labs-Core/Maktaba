@@ -4,22 +4,21 @@
 > (subtitles), Epic 49 (Arabic-aware search, for the normaliser it shares), Epic 51
 > (configurable components: language packs install as components). Research:
 > [research.md](research.md). Build order and DAG: [plan.md](plan.md).
-> Owner's decisions of 2026-11-03 are in §8: admins only review, every existing transcript is
+> Decisions of 2026-11-03 are in §8: admins only review, every existing transcript is
 > checked in the background, there is **no LLM judge** (story 52.7 removed), and Quran verse runs
 > are checked against the Quran text (story 52.15).
 
 ## 1. Why
 
-The owner's words (2026-11-03): *"transcription was done after some hearing tests i made, we can
-make this so that a queue review each transcript, or the same step that sends for the 2nd llm
-review, to save the location of a word and if its not available in dictionary or think its not
-correct, or not confident, to save for human review and to provide correct spelling, also this
-needs to be done so that it can support all languages, added as addons or whatever."*
+Requirement: transcription was chosen after hearing tests. Next, a queue job (or the step that
+runs the second review) reviews each transcript and saves the location of every word that is not
+in the dictionary, looks wrong or has low confidence, for a person to review and give the correct
+spelling. It must support every language, with languages added as add-ons.
 
 The hearing tests (2026-10-19, trail §2 "Transcription and search", [#113]) settled how the
 library is transcribed: Whisper large-v3-turbo, then a **second listen** by Cohere Transcribe
 Arabic over each stretch, merged word by word (`pipeline/src/maktaba_pipeline/stt/refine.py`). On
-20 disputed spots the owner's ears scored Cohere 17, turbo 0. **An LLM judge had favoured turbo's
+20 disputed spots checked by ear, Cohere scored 17 and turbo 0. **An LLM judge had favoured turbo's
 tidy spelling and was wrong.** That result is the first design rule of this epic: a machine may
 *point at* a word; a person decides what it is.
 
@@ -36,7 +35,7 @@ What we have today, read from the code on 2026-11-03:
 | Spelling of Cohere's words uses the CAMeL Tools MSA analyser as a dictionary | `stt/cohere.py:312` `dictionary()` | Arabic morphology is already a dependency |
 | Arabic folding (hamza forms, ة/ه, ى/ي, harakat, tatweel) | `text/arabic.py` `light`/`fold` | The first language pack's normaliser exists |
 | Names and terms bias Whisper through the library's `stt.initial_prompt` | `engine/stages/transcribe.py:852` `library_prompt` | A vocabulary channel into STT exists, **but the prompt is part of the transcribe fingerprint** (`input_fingerprint`, line 836): changing it queues the whole library again |
-| There is no LLM anywhere in the transcript path; `llm.cluster_llm()` (Ollama / OpenAI-compatible runtimes on the cluster) is used only by enrich | `llm/__init__.py`, `enrich/reader.py:258` | "The 2nd LLM review" the owner names is today the second *listen*. The owner decided (2026-11-03) that no LLM judges words: every check is deterministic |
+| There is no LLM anywhere in the transcript path; `llm.cluster_llm()` (Ollama / OpenAI-compatible runtimes on the cluster) is used only by enrich | `llm/__init__.py`, `enrich/reader.py:258` | The "second review" in the requirement is today the second *listen*. Decided 2026-11-03: no LLM judges words, every check is deterministic |
 | Roles: `users.is_admin` and `library_acl.role IN ('read','write','admin')` | `0029_users.sql:31`, `0072_library_acl_role.sql:20` | Reviewing is for home admins only (decision 1); `library_acl` roles grant nothing here |
 | Verse runs are found by exact folded match against the bundled Tanzil "Simple Clean" text | `classify/quran.py` `verse_runs`, `data/quran/` (CC BY 3.0) | The canonical text is already on every home; one wrong word breaks today's exact run, so the Quran check (52.15) aligns with tolerance |
 
@@ -76,7 +75,7 @@ spelling, and **let a person fix them fast**, with every fix teaching the next t
   click.
 - Training or fine-tuning STT models on corrections. Corrections are exported for that
   (story 52.10) but no training happens here.
-- An LLM judge or any LLM in the word path (owner, 2026-11-03). Story 52.7 is removed.
+- An LLM judge or any LLM in the word path (decided 2026-11-03). Story 52.7 is removed.
 - Third-party add-ons beyond language packs. Plugins are Epic 54's (a third-party plugin system
   with no internet access and a store, built on Epic 51's component model); this epic only uses
   Epic 51 components for its packs.
@@ -94,9 +93,8 @@ There is no third place: the `word_judge` LLM stage of the first draft is remove
 
 Why not only in the transcribe step: the GPU is the home's scarcest resource (every hour of audio costs GPU time),, dictionaries and vocabularies change weekly, and a re-check must not need
 the GPU. Why not only a separate stage: the confidence and second-listen evidence die with the
-transcribe job. So transcribe *captures*, `word_check` *decides*. This answers the owner's "a queue
-review each transcript, or the same step that sends for the 2nd review": both, each doing the half
-it is placed for.
+transcribe job. So transcribe *captures*, `word_check` *decides*. This answers whether a queue job or
+the second-review step should do the check: both, each doing the half it is placed for.
 
 Existing transcripts (~45k videos, about 23 M sentences on the home) have no word evidence. **All
 of them** are checked in the background at the lowest priority (decision 2) with text-only signals
@@ -205,7 +203,7 @@ class LanguagePack(Protocol):
 
 ### 4.5 Who reviews (enforced by the API): home admins only
 
-The owner decided (2026-11-03, decision 1): **only home admins review.**
+Decided 2026-11-03 (decision 1): **only home admins review.**
 
 | Who | May | Rule |
 |---|---|---|
@@ -269,7 +267,7 @@ A fix is a **transcript edit**, never a new STT run (story 52.9):
 
 ### 4.8 The Quran check (story 52.15)
 
-The first draft never flagged a word inside a verse run. The owner decided (decision 4) to
+The first draft never flagged a word inside a verse run. Decision 4 changes that: we
 **check** verse runs against the Quran text instead, so a misheard word in a recitation is caught
 while a correctly heard verse is never shown.
 
@@ -375,7 +373,7 @@ created_at`.
 | Flag precision (flagged words that are really wrong) | Arabic ≥ 0.50, English ≥ 0.60 at phase 1; ≥ 0.65 / 0.70 after calibration (phase 2) | Gold set, word-level alignment of hypothesis to reference |
 | Flag recall (wrong words that are flagged) | Arabic ≥ 0.60, English ≥ 0.60 at the default budget | Same |
 | Flag rate | ≤ 3% of words (≤ 40 per audio hour at the default budget) | Live sample, read-only |
-| Hearing-test spots | ≥ 18 of the owner's 20 disputed spots flagged | The 20-spot set, kept as a fixture |
+| Hearing-test spots | ≥ 18 of the 20 disputed spots flagged | The 20-spot set, kept as a fixture |
 | Quran check | No flag on a correctly heard verse run (0 false flags on the gold set's matching runs); ≥ 0.80 of seeded word errors inside runs flagged `quran_mismatch` | Gold set's Quran clips plus seeded-error fixtures (52.15) |
 | Backfill | All ~45k existing transcripts checked; never runs while `transcribe` has pending jobs | Backfill progress on the queue tile |
 | Queue latency | Flags visible ≤ 2 min after the transcript is stored (p95, idle queue) | Job timestamps |
@@ -412,7 +410,7 @@ Full notes with sources: [research.md](research.md).
   signals, with its reasons, its sentence and its clip, and a few keys.
 - **LLM correction:** generative error correction can fix ASR text, but it also over-corrects and
   hallucinates fluent wrong text. Our own hearing test saw exactly that. The first draft let an
-  LLM flag and suggest; the owner decided against any LLM judge (2026-11-03), so every check is
+  LLM flag and suggest; decision 3 (2026-11-03) removed any LLM judge, so every check is
   deterministic.
 - **Quran text:** Tanzil publishes verified Quran texts (Simple and Uthmani scripts) under CC BY
   3.0 with verbatim copying only; Maktaba already bundles "Simple Clean". Comparing on folded and
@@ -435,7 +433,7 @@ component model with no change to the contract (story 52.3).
 
 ## 8. Decisions (2026-11-03)
 
-The owner answered the four open questions on 2026-11-03.
+The four open questions were answered on 2026-11-03.
 
 1. **Reviewers: home admins only.** A user with `write` (or the library `admin` role) on a
    library may **not** review its words, see its flags or edit its vocabulary. §4.5, §4.11, the

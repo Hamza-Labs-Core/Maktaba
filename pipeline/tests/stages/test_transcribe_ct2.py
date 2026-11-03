@@ -12,6 +12,7 @@ import pytest
 
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.sql import loads
+from maktaba_pipeline.engine.stages import second_listen as sl
 from maktaba_pipeline.engine.stages import transcribe as tr
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import engine, model_share
@@ -67,9 +68,15 @@ async def test_a_pc_s_transcript_names_its_engine_and_keeps_whisper_s_words(
     )
     assert t is not None and t["backend"] == "ct2-batched" and t["backend_version"] == VERSION
     meta = t["metadata"] if isinstance(t["metadata"], dict) else loads(t["metadata"])
-    refine = meta["refine"]
+    # the second listen is a stage of its own: Whisper's transcript keeps its words for it
+    assert "refine" not in meta and meta.get("words") is True
+    job = await db.fetchrow(
+        "SELECT state FROM processing_jobs WHERE video_id = $1 AND stage = 'second_listen'",
+        str(vid),
+    )
+    assert job is not None and job["state"] == "pending"
     # no GPU here for the second listen (tests/stt/test_cohere_cuda.py: with one)
-    assert refine["source"] == "skipped" and NO_TEST_GPU in refine["skipped"]
+    assert NO_TEST_GPU in str(sl.unavailable())
 
 
 @pytest.mark.asyncio

@@ -731,3 +731,21 @@ func TestEveryKindHasHelp(t *testing.T) {
 		}
 	}
 }
+
+// A GPU worker runs Whisper and the second listen (its own stage since the split): it is
+// still a transcription worker, not a main one.
+func TestWorkerRoleKnowsTheSecondListen(t *testing.T) {
+	for _, c := range []struct {
+		stages []string
+		want   string
+	}{
+		{[]string{"transcribe", "second_listen"}, "transcription"},
+		{[]string{"second_listen"}, "transcription"},
+		{[]string{"transcribe", "index"}, "main"},
+		{nil, "main"},
+	} {
+		if got := workerRole(c.stages); got != c.want {
+			t.Errorf("workerRole(%v) = %q, want %q", c.stages, got, c.want)
+		}
+	}
+}

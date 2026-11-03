@@ -9,7 +9,7 @@
 
 ## Goal
 
-The owner's decisions (2026-10-20):
+Decisions (2026-10-20):
 
 1. **One Mac installation runs everything.** A home Mac installs Maktaba once and gets the API,
    streaming (Live TV), the pipeline workers *including MLX transcription and the second listen*,

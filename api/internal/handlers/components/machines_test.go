@@ -151,7 +151,7 @@ func TestMachineOffWritesTheStageSwitches(t *testing.T) {
 	if o, _ := f.override(t, nodeN, "transcription"); o.Want != components.WantInstalled {
 		t.Fatalf("override %+v", o)
 	}
-	if sw := f.switches(t, nodeN); len(sw) != 2 || sw["extract"] || sw["transcribe"] {
+	if sw := f.switches(t, nodeN); len(sw) != 3 || sw["extract"] || sw["transcribe"] || sw["second_listen"] {
 		t.Fatalf("stage switches %v", sw)
 	}
 	var action, payload string
@@ -347,7 +347,7 @@ func TestWorkerChoice(t *testing.T) {
 }
 
 // An admin's stage switch turned back on (the Machines page's stage table) makes an
-// override that kept the component off follow the home: "On, 1 stage off", naming the
+// override that kept the component off follow the home: "On, 2 stages off", naming the
 // stage still off.
 func TestStageSwitchOnFollowsTheHome(t *testing.T) {
 	f := machineFixture(t)
@@ -362,7 +362,7 @@ func TestStageSwitchOnFollowsTheHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	tr := f.machineList(t, nodeN)["transcription"]
-	if tr.Here.Want != components.WantEnabled || !slices.Equal(tr.Here.StagesOff, []string{"extract"}) {
+	if tr.Here.Want != components.WantEnabled || !slices.Equal(tr.Here.StagesOff, []string{"extract", "second_listen"}) {
 		t.Fatalf("transcription here %+v", tr.Here)
 	}
 	// turning a stage off changes no override

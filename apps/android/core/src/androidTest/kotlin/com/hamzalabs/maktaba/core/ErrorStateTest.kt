@@ -26,7 +26,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The error screen a player shows for the home's raw answer the owner saw: the plain title and
+ * The error screen a player shows for the home's raw answer a player once showed: the plain title and
  * sentence and the actions that fit, the home's words only under Details, mirrored right to left.
  */
 @RunWith(AndroidJUnit4::class)

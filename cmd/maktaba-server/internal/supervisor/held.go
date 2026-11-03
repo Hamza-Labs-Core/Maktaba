@@ -1,8 +1,7 @@
 package supervisor
 
-// A TV held on the streaming software it ran (story 35.6, the owner's decision of
-// 2026-10-28: "when only the TV test fails, keep the update installed, leave TV on the old
-// version"). An update restarts the TV slots with the rest of the server (the desktop
+// A TV held on the streaming software it ran (story 35.6, decided 2026-10-28: when only
+// the TV check fails, the update stays installed and the TV stays on the old version). An update restarts the TV slots with the rest of the server (the desktop
 // apps always; a plain server when its slots cannot be handed over): a slot the front door
 // has not bound to a release would start on the newly installed streaming binary, so the
 // live TV would be on the new software before its change was ever checked, and stay there

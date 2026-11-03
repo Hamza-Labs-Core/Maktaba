@@ -216,7 +216,7 @@ export type RunTVState =
   | "gone"
   | "pending";
 
-/** A TV held at the home's commit (the owner's decision, 2026-10-28): its change's check
+/** A TV held at the home's commit (decided 2026-10-28): its change's check
  * failed before any swap, so the release installed and the live TV stayed on `held_on`. */
 export interface RunTV {
   outcome: "held";
@@ -306,7 +306,7 @@ export const RUN_CANCELLABLE = new Set([
 
 /** The states of a desktop app that runs the server, ordered the release before its go: its app
  * downloads it (ordered), then it waits for its turn (app_staged). It installs and restarts by
- * itself, with no click there (owner decision D1, 2026-10-27); the click states are those two as
+ * itself, with no click there (decision D1, 2026-10-27); the click states are those two as
  * older runs name them. */
 export const APP_ORDERED = new Set(["ordered", "waiting_click", "awaiting_click"]);
 export const APP_STAGED = new Set(["app_staged", "clicked"]);

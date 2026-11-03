@@ -99,8 +99,8 @@ NOT_IN_CI: dict[str, str] = {
 }
 
 MARKERS = {"always-run", "push-only", "pr-only", "not-a-gate"}
-# The Claude trail: a pull request that changes only this file runs no job (the owner,
-# 2026-11-02: "Update trail on its own PRs, no ci no test"). The changes job's `repo` output
+# The Claude trail: a pull request that changes only this file runs no job (trail updates go
+# in their own pull requests, with no CI and no tests). The changes job's `repo` output
 # (its own paths-filter step, where every glob must match) is true when any other file
 # changed, and an always-run job is gated by it. No filter may match the trail, so `repo` is
 # true whenever a filter is.

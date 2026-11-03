@@ -5,7 +5,7 @@
 ## Why
 
 A lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times
-unless the system learns it. The owner wants each fix to count. This story turns fixes into a
+unless the system learns it. Each fix must count. This story turns fixes into a
 vocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second
 listen and new transcriptions spell it right. It never re-transcribes the library
 by itself.

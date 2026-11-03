@@ -36,7 +36,7 @@ can fix it: the home's admin.
    - the last 20 request ids and their results;
    - recent crash reports of this app kept on the device, if any (a separate tick box, on, shown
      even when crash reports to the home are off: sending a report is itself the person's choice);
-   - **a screenshot** of the screen before the form (owner's decision, 2026-11-03, README §12):
+   - **a screenshot** of the screen before the form (decided 2026-11-03, README §12):
      **offered, off by default**. The "Include a screenshot" box starts unticked. Ticking it shows
      the screenshot itself in the preview, full width, before Send, with "Remove" next to it;
      unticking removes it from the payload. A screenshot is never sent unless it was shown in the
@@ -89,7 +89,7 @@ The API:
 
 ### 6. Retention and deletion
 
-Reports are kept **90 days** by default (owner's decision, 2026-11-03; README §4.2), then deleted
+Reports are kept **90 days** by default (decided 2026-11-03; README §4.2), then deleted
 with their files. The admin can change it (Admin → Logs → Retention, 53.11) and reports count
 toward the home's 1 GB diagnostics cap (reports' share ≤ 100 MB; over it, the oldest closed
 reports go first, then the oldest). Deleting a user deletes

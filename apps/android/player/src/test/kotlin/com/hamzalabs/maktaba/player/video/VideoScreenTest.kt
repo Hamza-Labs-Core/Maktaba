@@ -35,6 +35,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * A video's page (48.28, as 48.19; FR-18, FR-9) against the fake home: Resume from
@@ -187,6 +189,43 @@ class VideoScreenTest {
         compose.onNodeWithTag("video-favorite").performClick()
         compose.settledUntil(5_000) { !videos.favorite }
         compose.onNodeWithTag("video-favorite").assertIsNotSelected()
+    }
+
+    /**
+     * A toggle while the page is read again wins over that read: the read was answered before
+     * the saves, so it still has the old favorite and watched, and must not put them back.
+     */
+    @Test
+    fun aToggleWhileThePageIsReadAgainIsKept() {
+        open("v1")
+        waitForTag("video-favorite")
+        val episodes = count("/api/series/s1/episodes")
+        // the next read of the caller's own state: answered as the home has it now, then held
+        // until both toggles are saved
+        val asked = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        fake.answer("/api/me/videos/v1") {
+            val before = FakeHome.json("""{"video_id":"v1","position_sec":754,"completed":false,"favorite":false,"playlists":[],"series":{"id":"s1","name":"Omar"}}""")
+            asked.countDown()
+            release.await(10, TimeUnit.SECONDS)
+            before
+        }
+        compose.onNodeWithTag("video-resume").performClick()
+        waitForTag("watch")
+        back()
+        waitForTag("video-favorite")
+        compose.settledUntil(5_000) { asked.count == 0L }
+        compose.onNodeWithTag("video-favorite").performClick()
+        compose.onNodeWithTag("video-watched").performClick()
+        compose.settledUntil(5_000) { videos.favorite && videos.watched }
+        release.countDown()
+        // the read is applied before it asks for the series' episodes
+        compose.settledUntil(5_000) { count("/api/series/s1/episodes") > episodes }
+        compose.onNodeWithTag("video-favorite").assertIsSelected()
+        compose.onNodeWithTag("video-watched").assertIsSelected()
+        // and watched still starts it over: Play, not Resume
+        compose.onNodeWithTag("video-play").assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasTestTag("video-resume")).fetchSemanticsNodes().isEmpty())
     }
 
     @Test

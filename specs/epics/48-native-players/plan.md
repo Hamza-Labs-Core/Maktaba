@@ -131,7 +131,7 @@ entry goes in a trail-only PR of its own (`CLAUDE.md`), never in the story's PR.
 5. 48.34 and 48.35 any time after 48.3 and their client.
 6. 48.36 last.
 
-The owner's PR flow applies to each story (implement, test, CI green, review, fix, merge).
+The project's PR flow applies to each story (implement, test, CI green, review, fix, merge).
 No story cuts a release; they ride the next approved one (one release at a time).
 
 ## 4. Risks
@@ -145,7 +145,7 @@ No story cuts a release; they ride the next approved one (one release at a time)
 | **G2 widens what a signed URL can do.** | Only session and direct paths, only with a `sig` the streaming service verifies (audience, expiry, library guard); channel paths still need a session. Role tests in 48.12. |
 | **AirPlay through the loopback proxy.** | 48.24 hands the receiver the signed URL; the phone keeps playing through the proxy otherwise. |
 | **Cast SDK needs Google Play Services.** | Cast hides when Play Services is missing (de-Googled phones); everything else works. Open question 3. |
-| **Simulator crashes in front of the owner** (SpringBoard, 2026-10-31). | Throwaway simulators only (`xcrun simctl create`, delete after); stop any log stream you start. |
+| **Simulator crashes on the shared desktop** (SpringBoard, 2026-10-31). | Throwaway simulators only (`xcrun simctl create`, delete after); stop any log stream you start. |
 | **Seventeen parallel agents in phase 3.** | Folder-per-screen ownership; the coordinator merges one PR at a time and re-runs CI on the rebased tip (main has no branch protection; confirm green yourself). |
 | **Screenshot tests flake on fonts and time.** | Fixed clock, fixed fixtures, bundled fonts only, animations off; a reference changes only in a reviewed PR. |
 | **Mock fixtures drift from the real API.** | Fixtures are recorded from a branch stack's API (scratch Postgres) in 48.6 / 48.8, and a Go test in each of those PRs decodes the same JSON shape from the handlers' tests. |

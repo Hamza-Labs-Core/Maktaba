@@ -92,7 +92,7 @@ class FakeRemoteHome : ExternalResource() {
 
     companion object {
         /**
-         * The owner's Needs attention on build 0.3.62 (2026-11-03): what the home sent, with the
+         * A real home's Needs attention on build 0.3.62 (2026-11-03): what the home sent, with the
          * generated causes ("kind:normalised message") and an ffmpeg tail with a repr's `\n`.
          */
         val ISSUES = """{"groups":[
@@ -115,7 +115,7 @@ enum class RemoteWindow(val widthDp: Int, val heightDp: Int, val qualifiers: Str
     FoldCover(344, 882, "w344dp-h882dp-420dpi"),
     /**
      * Motorola Razr Fold (2026) cover: 1080 × 2520 px, 6.6" (~415 ppi). Its density is not
-     * published: 440 dpi (2.75) is an estimate from the owner's screenshot (the bar's 80 dp and
+     * published: 440 dpi (2.75) is an estimate from a device screenshot (the bar's 80 dp and
      * the list's 20 sp lines measure ~2.7 px per dp).
      */
     RazrFoldCover(393, 916, "w393dp-h916dp-440dpi"),

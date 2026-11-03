@@ -24,7 +24,7 @@ import (
 // orders the exact release it verified (app-install.json, which the app's status poller
 // reads; the app is started with maktaba://install-update when it does not answer); the
 // app stages it and says when it installs, and installs it at the home's go with no
-// click (owner decision D1, 2026-10-27; request.go). Tauri keeps no previous app, so
+// click (decision D1, 2026-10-27; request.go). Tauri keeps no previous app, so
 // before the install the server keeps a copy of the payload it runs
 // (<launcher root>/updates/payloads/<v>); a rollback makes the launcher run that copy
 // (payload-override), and the launcher's guard does the same when the new server cannot
@@ -593,7 +593,7 @@ func (ai *AppInstaller) appTouched(j *Journal) bool {
 // Commit implements Installer: the guard and the request gone, the app's own payload
 // runs (no override), the kept copy of the release before stays (the one to go back
 // to), and so does the copy of any release a TV slot runs (a TV held on the release
-// before when its change's check failed: the owner's decision of 2026-10-28); older kept
+// before when its change's check failed: decided 2026-10-28); older kept
 // copies go.
 func (ai *AppInstaller) Commit(_ context.Context, j *Journal) error {
 	ai.requests().remove()

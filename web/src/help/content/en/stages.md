@@ -171,15 +171,19 @@ Pulls the audio out of a video for transcription. It runs after **Length** and f
 
 ### Transcribe {#transcribe}
 
-Turns speech into text, sentence by sentence with its time, using a Whisper speech model on the machine's GPU. It runs after **Extract audio** or **File identity** and feeds **Subtitle files**, **Search index** and **Tag topics**. Progress for the whole library is on the [Transcription](/help/transcription) page.
+Turns speech into text, sentence by sentence with its time, using a Whisper speech model on the machine's GPU. It runs after **Extract audio** or **File identity** and feeds **Second listen**. Progress for the whole library is on the [Transcription](/help/transcription) page.
+
+### Second listen {#second-listen}
+
+Listens to the speech again with a second model, Cohere Transcribe Arabic, and corrects Whisper's words. It runs on the machines that can: a Mac with Apple silicon, or a PC whose NVIDIA GPU holds the model (8 GB or more on Windows). Where the GPU is too small for both models at once, Whisper and the second listen take turns on it. A machine that cannot run it still transcribes, and one that can corrects its transcripts. With the second listen turned off it passes Whisper's transcript on as it is. Runs after **Transcribe** and feeds **Subtitle files**, **Search index** and **Tag topics**.
 
 ### Subtitle files {#subtitle-gen}
 
-Writes the transcript as subtitle files (.srt and .vtt) next to the video, so Plex, VLC and TVs pick them up. It never overwrites a subtitle file Maktaba did not write. It writes to your share, so it offers **Review first**. Runs after **Transcribe**.
+Writes the transcript as subtitle files (.srt and .vtt) next to the video, so Plex, VLC and TVs pick them up. It never overwrites a subtitle file Maktaba did not write. It writes to your share, so it offers **Review first**. Runs after **Second listen**.
 
 ### Search index {#index}
 
-Adds the transcript to search, so you can find a video by what is said in it. The old text of a video is removed first. Runs after **Transcribe**, on the main machine, and feeds **Chapters**.
+Adds the transcript to search, so you can find a video by what is said in it. The old text of a video is removed first. Runs after **Second listen**, on the main machine, and feeds **Chapters**.
 
 ### Chapters {#chapter-infer}
 

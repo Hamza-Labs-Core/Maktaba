@@ -14,7 +14,7 @@
 > **Used by:** [Epic 52](../52-transcript-word-review/README.md) lists language packs as
 > add-on components of this epic. Epic 54 (being specced) builds a
 > third-party plugin system, with no internet access and a store, on this component model.
-> **Decisions:** the owner's answers of 2026-11-03 are in §13.
+> **Decisions:** the answers of 2026-11-03 are in §13.
 
 ## 1. Why
 
@@ -683,7 +683,7 @@ processes, no shared files). 51.15 can start right after 51.01. After 51.08: 51.
 
 ## 13. Decisions (2026-11-03)
 
-The owner answered the open questions on 2026-11-03. Each one is applied in the stories named.
+The open questions were answered on 2026-11-03. Each one is applied in the stories named.
 
 1. **Core's contents: transcription stays out of Core.** Core keeps thumbnails, convert, dedup,
    keyword search, queue health, analytics and backups. Transcription, semantic search, Live TV,

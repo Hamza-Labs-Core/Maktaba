@@ -12,7 +12,7 @@ import (
 // change of the binary alone (source auto_update), staged, verified and swapped at
 // programme boundaries. The release commits once that change is live (or there was
 // nothing to swap), or once its check failed before any swap: then the TV is held on the
-// streaming software it runs and the release commits all the same (the owner's decision,
+// streaming software it runs and the release commits all the same (decided
 // 2026-10-28: the admin retries or drops the change from the Updates page). A change whose
 // swap fails, or that fails on the air after it switched, rolls the release back; a
 // rollback for any reason takes the change back (cancelled, or rolled back on the air).
@@ -248,7 +248,7 @@ func (m *Machine) tvStep(ctx context.Context) tvResult {
 	case TVHeld:
 		// its check failed before any swap: the TV stays on the streaming software it
 		// runs, the release commits all the same, and the admin retries or drops the
-		// change (the owner's decision, 2026-10-28)
+		// change (decided 2026-10-28)
 		on := st.LiveStreaming
 		if on == "" {
 			on = "its streaming software"

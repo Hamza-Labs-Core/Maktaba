@@ -110,7 +110,7 @@ dependency's hashes from `uv.lock` (`build-release.sh` refuses to publish one wi
 are two: `maktaba-pipeline-<ver>-constraints.txt`, PyPI's alone (torch's CPU build on Windows,
 124 MB), and `maktaba-pipeline-<ver>-constraints-cuda.txt`, the same with torch's CUDA build for
 Windows from PyTorch's index, which it names (2.0 GB). `install-node.ps1` takes the cuda set
-when this machine's NVIDIA GPU runs the second listen (9.5 GiB or more, compute capability 7.5
+when this machine's NVIDIA GPU runs the second listen (7.5 GiB or more, compute capability 7.5
 or more, driver R580 or later, as `nvidia-smi` says) and the `stt` or `search` extra brings
 torch, else the default set (`-Torch cpu|cuda` chooses); `install-node.sh` (Linux, macOS) the
 default set, whose Linux torch is the CUDA build already. The installers install with

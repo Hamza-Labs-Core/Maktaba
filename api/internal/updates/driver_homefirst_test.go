@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Machines update only after the home has committed (the owner's decision, 2026-10-28:
+// Machines update only after the home has committed (decided 2026-10-28:
 // on that day windows-pc took v0.3.42 while the home still watched it, and the home's
 // rollback left it on a release whose schema the home's database no longer had). The
 // home goes first: stage, migrations, restart, watch, commit; only its commit lets the

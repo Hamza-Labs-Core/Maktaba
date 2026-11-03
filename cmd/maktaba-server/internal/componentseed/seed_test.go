@@ -209,7 +209,7 @@ url = "http://h:1#x"
 	}
 }
 
-// sqliteHome is a SQLite database with the tables the seed reads and writes (slot 0174's
+// sqliteHome is a SQLite database with the tables the seed reads and writes (slot 0175's
 // twin, and the older tables' columns it touches).
 func sqliteHome(t *testing.T) *sql.DB {
 	t.Helper()
@@ -239,7 +239,7 @@ func sqliteHome(t *testing.T) *sql.DB {
 			t.Fatal(err)
 		}
 	}
-	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0174_components.sqlite.sql"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0175_components.sqlite.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}

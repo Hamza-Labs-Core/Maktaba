@@ -47,14 +47,22 @@ jobs:
         with:
           packages: platform-tools platforms;android-37.0
 
+      # Gradle's own cache action (Enhanced Caching: free on a public repository): the Gradle
+      # User Home's dependencies, plugins, wrapper and compiled scripts, restored before the build
+      # so it resolves nothing it resolved before from the network. Each dependency is its own
+      # entry, shared between runs. The entry's key is the wrapper, the version catalogs and the
+      # build scripts (not the commit), so a run on the same inputs reuses it and writes nothing
+      # new; after a version change it restores the newest entry for this job and fetches only
+      # what changed. Only main writes (the action's default): the repository's Actions cache is
+      # over its 10 GB limit, and entries a pull request writes would push main's out sooner.
       - name: Gradle caches
-        uses: actions/cache@v4
+        uses: gradle/actions/setup-gradle@v6.4.0
+        env:
+          GRADLE_BUILD_ACTION_CACHE_KEY_JOB_EXECUTION: ${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties', 'apps/android/**/*.gradle.kts', 'apps/android/gradle.properties') }}
         with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: android-gradle-${{ hashFiles('apps/android/gradle/libs.versions.toml', 'apps/android/gradle/wrapper/gradle-wrapper.properties', 'apps/android/**/*.gradle.kts') }}
-          restore-keys: android-gradle-
+          add-job-summary: on-failure
+          # the step above checks the wrapper jar
+          validate-wrappers: false
 
       - name: Play versionCode from the tag
         working-directory: .

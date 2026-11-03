@@ -26,7 +26,7 @@ import java.io.IOException
 
 /** The home's problem JSON as a person reads it: a kind, never the JSON. */
 class HomeErrorTest {
-    /** What the owner's Player showed raw. */
+    /** What a Player showed raw. */
     private val renditionGone =
         """{"type":"https://maktaba.invalid/problems/rendition-not-found","title":"rendition index not on disk","status":404,"detail":"open /Volumes/x/index.m3u8: no such file or directory"}"""
 

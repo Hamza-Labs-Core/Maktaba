@@ -382,6 +382,11 @@ type execRunner struct {
 	filters func(ctx context.Context, ffmpeg string) (map[string]bool, error)
 	// poll and stall override outputPoll and outputStall (the tests)
 	poll, stall time.Duration
+	// ticks and now replace the output watch's ticker and its start's clock
+	// (the tests: they step time themselves, so a loaded runner's scheduling
+	// cannot pass for an encoder that wrote nothing)
+	ticks func(poll time.Duration) (<-chan time.Time, func())
+	now   func() time.Time
 	// toneMapMu guards canToneMap, known once a look at the filters succeeded
 	toneMapMu  sync.Mutex
 	toneKnown  bool
@@ -637,7 +642,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	}
 	started := time.Now()
 	poll, stall := e.stallLimits()
-	go e.watchOutput(proc, job, hw, started, poll, stall)
+	go e.watchOutput(proc, job, hw, e.clock(), poll, stall)
 	go func() {
 		werr := proc.Wait()
 		stderr := proc.stderrAfterExit(2 * time.Second)
@@ -702,22 +707,24 @@ func (e *execRunner) stallLimits() (poll, stall time.Duration) {
 }
 
 // watchOutput stops proc when its output has not changed for outputStall, logged
-// as `vod_transcode_stalled`; it returns when proc exits.
+// as `vod_transcode_stalled`; it returns when proc exits. started is when the
+// watch began, on the runner's clock (e.clock); each look is judged at its
+// tick's time.
 func (e *execRunner) watchOutput(proc *Process, job Job, hw string, started time.Time, poll, stall time.Duration) {
-	t := time.NewTicker(poll)
-	defer t.Stop()
+	ticks, stop := e.ticker(poll)
+	defer stop()
 	last := started
-	for range t.C {
+	for now := range ticks {
 		if !proc.Active() {
 			return
 		}
 		if w := newestWrite(job.OutputDir); w.After(last) {
 			last = w
 		}
-		if idle := time.Since(last); idle >= stall {
+		if idle := now.Sub(last); idle >= stall {
 			e.logger().Error("vod transcode wrote nothing for too long: its input is likely stuck; stopping it",
 				"session_id", job.SessionID, "input", job.InputPath, "hwaccel", hw,
-				"idle_ms", idle.Milliseconds(), "ran_ms", time.Since(started).Milliseconds(),
+				"idle_ms", idle.Milliseconds(), "ran_ms", now.Sub(started).Milliseconds(),
 				"event", "vod_transcode_stalled")
 			if err := proc.Stop(context.Background()); err != nil {
 				e.logger().Error("vod transcode did not stop", "session_id", job.SessionID, "pid", proc.PID(),
@@ -726,6 +733,23 @@ func (e *execRunner) watchOutput(proc *Process, job Job, hw string, started time
 			return
 		}
 	}
+}
+
+// ticker is the output watch's ticker (execRunner.ticks overrides) and its stop.
+func (e *execRunner) ticker(poll time.Duration) (<-chan time.Time, func()) {
+	if e.ticks != nil {
+		return e.ticks(poll)
+	}
+	t := time.NewTicker(poll)
+	return t.C, t.Stop
+}
+
+// clock is when the output watch starts (execRunner.now overrides).
+func (e *execRunner) clock() time.Time {
+	if e.now != nil {
+		return e.now()
+	}
+	return time.Now()
 }
 
 // newestWrite is the latest modification time of a file under dir (zero for none).

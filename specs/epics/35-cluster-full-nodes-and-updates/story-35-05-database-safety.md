@@ -9,7 +9,7 @@
 > row-cache test); AC8 is `maktaba-server restore` and the
 > Updates page's *Backups* (`serve_restore.go`, `api/internal/updates/backups.go`). One change
 > to AC8: the page restores itself, behind a dialog where the backup's name is typed, instead of
-> showing the command (the owner's rule: a behaviour is a feature, never a manual step); the
+> showing the command (the rule: a behaviour is a feature, never a manual step); the
 > command stays for a home whose web does not answer.
 
 ## Description

@@ -237,7 +237,7 @@ pub fn entries_with_model(
 
 /// entries_with_model with the release the home ordered: its item in the update's place,
 /// saying when Maktaba updates and restarts (by the window's end, shortly, or now at the
-/// home's go). It is no button: the order installs by itself (owner decision D1,
+/// home's go). It is no button: the order installs by itself (decision D1,
 /// 2026-10-27).
 pub fn entries_with_order(
     lang: Lang,
@@ -271,7 +271,7 @@ pub fn entries_with_order(
         out.push(Entry::Separator);
     } else if update_ready {
         // an app that runs no server updates from its own feed (the Intel Mac app, an app
-        // connected to another Maktaba, the Windows portable: owner decision D1)
+        // connected to another Maktaba, the Windows portable: decision D1)
         out.push(item("update", w.update_ready));
         out.push(Entry::Separator);
     }
@@ -684,7 +684,7 @@ mod tests {
         assert_eq!(ids(&e)[..2], ["status", "update"]);
     }
 
-    /// Owner decision D1 (2026-10-27): the home's order is said, never a button: Maktaba
+    /// Decision D1 (2026-10-27): the home's order is said, never a button: Maktaba
     /// updates and restarts by itself, by the window's end, shortly, or now at the go.
     #[test]
     fn the_home_s_order_says_when_it_installs_and_is_no_button() {

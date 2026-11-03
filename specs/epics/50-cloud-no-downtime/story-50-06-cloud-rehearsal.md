@@ -4,8 +4,8 @@
 
 ## Why
 
-The owner's rule since 2026-10-28: update, rollback, restore and migration paths are **proven
-in CI first** (`docs/update-rehearsal.md`, "THIS NEED TO BE ON CI"). The same goes for the cloud.
+The rule since 2026-10-28: update, rollback, restore and migration paths are **proven
+in CI first** (`docs/update-rehearsal.md`). The same goes for the cloud.
 Failover, deploys and restores are exactly the paths that run rarely and break silently; the
 first time a Patroni failover runs must not be on the VPS with paying users on it.
 
@@ -67,7 +67,7 @@ Later stories add their own scenarios to the same harness, under these names:
 
 Each scenario writes a JSON result (`downtime_ms`, `failed_requests`, `reconnect_p50/p95/p99`,
 `budget`), shown in the run summary, and keeps every container's log, Patroni's history and the
-stream generator's request log as an artifact **whether it passes or not** (the owner's rule:
+stream generator's request log as an artifact **whether it passes or not** (the project rule:
 tests keep their logs).
 
 ### 3. When it runs, and what it gates
@@ -130,7 +130,7 @@ The scenarios with 1,000 homes need about 4 vCPU and 8 GB; GitHub's standard Lin
 
 - **Flaky timings on shared runners.** Budgets are checked on the scenario's own measurements,
   with generous margins (C02's 3 min against an expected ~90 s). A timing failure is fixed at
-  the root, never re-run to green (owner's rule).
+  the root, never re-run to green (project rule).
 - **The previous release doesn't exist yet** (first cloud release): C05–C07 use the merge base
   of `main` built in the job as "previous".
 - **Image pulls rate-limited.** Images come from GHCR with the workflow token.

@@ -85,7 +85,7 @@ func TestSchedulerStartsDueRun(t *testing.T) {
 }
 
 // TC3 (story 35.3): an active run, a crashed role, a deferral - and a TV change in
-// flight, which no longer holds a run (the owner's rule of 2026-10-28).
+// flight, which no longer holds a run (rule of 2026-10-28).
 func TestSchedulerBlockers(t *testing.T) {
 	t.Parallel()
 	enableAutoInstall(t)

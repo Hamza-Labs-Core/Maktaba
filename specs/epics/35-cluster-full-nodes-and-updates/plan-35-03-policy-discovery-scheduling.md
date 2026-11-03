@@ -48,5 +48,5 @@ Story TCs; `TestMigrationS1Revoked` (role cannot select the new tables).
 
 ## 4. Rollout
 
-Phase A ships with `auto_install` forced false by a build flag until 35.4–35.7 are in; the owner default
+Phase A ships with `auto_install` forced false by a build flag until 35.4–35.7 are in; the decided default
 `true` takes effect at phase B.

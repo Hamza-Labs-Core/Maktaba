@@ -1,6 +1,6 @@
 # The update rehearsal (docs/update-rehearsal.md): every update path the owner's Mac app
-# runs, rehearsed on a Linux runner before any release. The owner, 2026-10-28, after two
-# outages in one day: "THIS NEED TO BE ON CI".
+# runs, rehearsed on a Linux runner before any release. Required since 2026-10-28, after
+# two outages in one day: every update path is proven in CI.
 #
 # The Mac app's install kind is driven through the same code on Linux: the app bundle's
 # layout (Maktaba.app/Contents/Resources/server, the launcher run from its bin/, which

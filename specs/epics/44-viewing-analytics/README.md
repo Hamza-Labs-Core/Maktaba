@@ -2,7 +2,7 @@
 
 ## Why
 
-The owner asked for every app and the API to record their use, shown on a better analytics page.
+Requirement: every app and the API record their use, shown on a better analytics page.
 Analytics today reads `watch_sessions` alone, and only two players write it:
 
 - **Plays.** The web (and the desktop and mobile shells, which run the web bundle) and Android TV
@@ -17,7 +17,7 @@ Analytics today reads `watch_sessions` alone, and only two players write it:
 - **Apps.** No request says which app sent it: the API's metrics are by route and status only, and
   only the native apps send `X-Maktaba-Client: native` (for the sign-in response).
 
-Plex's own library plays stay out (the owner: "don't want plex usage in itself, just the tv"): Plex
+Plex's own library plays stay out (only Plex's use of the TV counts, not Plex itself): Plex
 counts only as one more way of watching Maktaba's channels, through the tuner.
 
 ## Goals

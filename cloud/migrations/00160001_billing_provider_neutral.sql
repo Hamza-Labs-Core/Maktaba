@@ -1,5 +1,5 @@
 -- +goose Up
--- Billing goes provider-neutral (owner's rule of 2026-11-03: the
+-- Billing goes provider-neutral (decided 2026-11-03: the
 -- payment provider is not chosen yet, and the cloud names none). The
 -- columns and the event ledger that 0006 and 0012 named after one
 -- provider are renamed, and each billing table gets a `provider`

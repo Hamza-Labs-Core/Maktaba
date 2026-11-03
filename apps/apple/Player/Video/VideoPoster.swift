@@ -4,8 +4,8 @@ import SwiftUI
 import UIKit
 #endif
 
-/// A video page's poster (FR-18; the owner's TestFlight report on 0.3.44: "no thumbnail on
-/// video page"), at the top of the page **at its own shape**: a portrait video's poster stays
+/// A video page's poster (FR-18; a TestFlight report on 0.3.44: a video page showed no
+/// thumbnail), at the top of the page **at its own shape**: a portrait video's poster stays
 /// portrait, never cropped to 16:9. The box takes the picture's own width-to-height once it
 /// decodes, as wide as the page allows and at most `maxHeight` tall, centred.
 ///

@@ -39,7 +39,7 @@ key a panel uses, and every app's renderer escapes again.
 
 ### 3. Who sees a panel
 
-Owner decision 2026-11-03: **panels are shown to everyone in the home, viewers included,
+Decided 2026-11-03: **panels are shown to everyone in the home, viewers included,
 once the plugin is installed.** There is no `audience` field and no separate viewer approval
 step.
 

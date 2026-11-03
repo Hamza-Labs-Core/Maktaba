@@ -50,7 +50,7 @@ CREATE VIRTUAL TABLE lines_fts USING fts5(msg, text, err, content='', tokenize='
   removed hourly in 10,000-row batches; `VACUUM` never runs in the foreground (incremental
   vacuum).
 - **Cap:** `logs.db`'s share of the 1 GB diagnostics total: **350 MB** by default (README §4.2,
-  owner's decision 2026-11-03; it holds the line index, error groups and metric rollups, and
+  decided 2026-11-03; it holds the line index, error groups and metric rollups, and
   scales when an admin changes the total); over it, the oldest `debug` then `info` rows go first,
   then the oldest error hours, then the 1-hour metric rollups.
 

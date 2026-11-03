@@ -6,7 +6,7 @@
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | One runbook in English and Arabic next to the Epic 32 runbook. | The owner's working languages; remote and public share the Cloudflare account. |
+| D1 | One runbook in English and Arabic next to the Epic 32 runbook. | The project's working languages; remote and public share the Cloudflare account. |
 | D2 | Costs explained with the pricing page link and the setting that holds the price. | Prices change; the doc stays correct. |
 
 ## 1. Files

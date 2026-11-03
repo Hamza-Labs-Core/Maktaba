@@ -160,25 +160,43 @@ func shareGPU(p STTPlan, gb float64, n int, ownPrecision bool) STTPlan {
 	return p
 }
 
-// refineMinGB is the smallest NVIDIA GPU (GiB) the second listen (Cohere Transcribe
-// through torch, story 38.9) fits on beside Whisper: the pipeline's own threshold
-// (MIN_GPU_GB in stt/cohere_cuda.py), from what it took on the RTX 2080 SUPER. On
-// Windows the driver's budget (WDDM) leaves a process about 1 GiB short of the card,
-// and loading the model beside Whisper takes 1.6 GiB more than its 3.85 GiB of
-// weights: an 8 GB card has 5.8 GiB left once Whisper is loaded, short of the 6.4 the
-// model, a batch of its stretches and Whisper's room need. Elsewhere an 8 GB card
-// holds both. Tests replace it.
-var refineMinGB = func() float64 {
+// refineTogetherGB is the smallest NVIDIA GPU (GiB) the second listen (Cohere
+// Transcribe through torch, story 38.9) fits on beside Whisper: the pipeline's own
+// threshold (TOGETHER_GPU_GB in stt/cohere_cuda.py), from what it took on the RTX
+// 2080 SUPER. On Windows the driver's budget (WDDM) leaves a process about 1 GiB short
+// of the card, and loading the model beside Whisper takes 1.6 GiB more than its 3.85
+// GiB of weights: an 8 GB card has 5.8 GiB left once Whisper is loaded, short of the
+// 6.4 the model, a batch of its stretches and Whisper's room need. Elsewhere an 8 GB
+// card holds both. Tests replace it.
+var refineTogetherGB = func() float64 {
 	if runtime.GOOS == "windows" {
 		return 9.5
 	}
 	return 7.5
 }()
 
-// SecondListenFits reports whether the second listen fits beside Whisper on an
-// NVIDIA GPU of gb GiB (on a smaller one the pipeline keeps Whisper's words and says
-// why, and does not download its model).
+// refineMinGB is the smallest NVIDIA GPU (GiB) the second listen runs on at all: the
+// pipeline's MIN_GPU_GB. Below refineTogetherGB the two models take turns on the GPU
+// (stt/gpu_turns.py: one on it at a time, the pipeline's choice from the GPU's
+// measured free memory): Cohere alone needs 6.1 GiB on Windows, which an 8 GB card
+// holds, 5.0 elsewhere (a 6 GB card). Tests replace it.
+var refineMinGB = func() float64 {
+	if runtime.GOOS == "windows" {
+		return 7.5
+	}
+	return 6
+}()
+
+// SecondListenFits reports whether the second listen runs on an NVIDIA GPU of gb GiB,
+// beside Whisper or taking turns with it (on a smaller one the pipeline keeps
+// Whisper's words and says why, and does not download its model).
 func SecondListenFits(gb float64) bool { return gb >= refineMinGB }
+
+// SecondListenTogether reports whether the second listen fits beside Whisper on an
+// NVIDIA GPU of gb GiB, both loaded at once (then Whisper's batch leaves it room:
+// refineGPUTiers). On a GPU that fits it only alone, Whisper keeps its own tiers and
+// the two take turns.
+func SecondListenTogether(gb float64) bool { return gb >= refineTogetherGB }
 
 // cohereGB is what the second listen holds on the GPU in each worker that loads it
 // (GiB): Cohere's weights, what loading them adds (more on Windows) and its smallest
@@ -239,10 +257,11 @@ var refineGPUTiers = []struct {
 }
 
 // PlanForGPUWithRefine is the tier for a GPU with gb GiB of memory that Whisper
-// shares with the second listen; false when the second listen does not fit on it
-// (Whisper then has the GPU to itself: PlanForGPU).
+// shares with the second listen, both loaded; false when the second listen does not
+// fit beside it (Whisper then has the GPU to itself: PlanForGPU, and the second
+// listen, where it fits alone, takes turns with it).
 func PlanForGPUWithRefine(gb float64) (STTPlan, bool) {
-	if !SecondListenFits(gb) {
+	if !SecondListenTogether(gb) {
 		return STTPlan{}, false
 	}
 	for _, t := range refineGPUTiers {
@@ -285,11 +304,10 @@ var numCPU = runtime.NumCPU
 // one under gpuMinGB, or no CUDA build of CTranslate2 for the machine) or
 // [transcription] device = "cpu", with the audio budget from the RAM.
 //
-// The workers it sizes run only where the second listen runs too, while
-// [transcription] refine is on (secondListenRuns): elsewhere the main worker
-// transcribes, and only when the home's rules let a machine without the second
-// listen do so (rules transcription, without_second_listen), so by default the
-// machines that can run it (the Mac) transcribe the home's files.
+// The workers it sizes run Whisper (transcribe) and the second listen
+// (second_listen, a stage of its own since the two were split): Whisper wherever
+// it runs, the second listen where it fits too (secondListenRuns; the pipeline says
+// why not on Admin > Machines).
 //
 // Then [pipeline] instances when server.toml sets it (a converted node keeps its
 // installer's workers), else [transcription] workers (-1: none), set the number of
@@ -350,9 +368,6 @@ func planSTT(cfg config.Config, venvTorchRuns func() bool) STTPlan {
 	}
 	// the budget is the plan's own workers' (the main worker's, without any)
 	base := max(1, plan.Workers)
-	if refineOn(t) && !secondListenHere() {
-		plan.Workers = 0
-	}
 	switch {
 	case cfg.PipelineInstancesSet || cfg.Pipeline.Instances > 0:
 		plan.Workers = cfg.Pipeline.Instances
@@ -628,13 +643,19 @@ func probeSTT(python string) sttAnswer {
 	return a
 }
 
+// GPUStages are the stages a transcription worker runs: Whisper and the second
+// listen, on the same GPU (where it holds one model at a time they take turns in
+// the one process, stt/gpu_turns.py).
+const GPUStages = "transcribe,second_listen"
+
 // mainEnv is the main worker's share of the plan: with transcription workers it
-// leaves transcribe to them (added to the stages the operator's own environment
-// excludes); without them on the CTranslate2 engine it gets their knobs, for when
-// it transcribes itself.
+// leaves transcribe and the second listen to them (added to the stages the
+// operator's own environment excludes); without them on the CTranslate2 engine it
+// gets their knobs, for when it transcribes itself.
 func (p STTPlan) mainEnv(env []string) []string {
 	if p.Workers > 0 {
-		env = setEnv(env, "MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe"))
+		exclude := withStage(os.Getenv("MAKTABA_PIPELINE_EXCLUDE_STAGES"), "transcribe")
+		env = setEnv(env, "MAKTABA_PIPELINE_EXCLUDE_STAGES", withStage(exclude, "second_listen"))
 	}
 	return append(env, p.mainKnobEnv()...)
 }
@@ -687,6 +708,9 @@ func (p STTPlan) knobEnv() []string {
 	if p.gpu {
 		// the gpu pool is per worker: this GPU's batch, not the cluster's size
 		add("MAKTABA_POOL_GPU", num(float64(p.Batch)))
+		// ...and so is the second listen's: a turn of it on a GPU that holds one model
+		// at a time hears as many files as Whisper's turn made (stt/gpu_turns.py)
+		add("MAKTABA_POOL_LISTEN", num(float64(p.Batch)))
 	}
 	return env
 }

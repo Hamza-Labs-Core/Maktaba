@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// How updates to the TV add up in one change (the owner's rule, story 33.12 AC3).
+// How updates to the TV add up in one change (story 33.12 AC3).
 //
 // An update starts a change; every update after it joins that same change (same id,
 // same number, updated_at bumped, an "append" event naming it) until the change is
@@ -340,7 +340,7 @@ func (s *Store) LiveDefs(ctx context.Context, q queryer) (map[string]map[string]
 	return out, rows.Err()
 }
 
-// failToDraft is a failed verification (story 33.12 AC3, the owner's rule): the change
+// failToDraft is a failed verification (story 33.12 AC3): the change
 // goes back to draft - the open change again, its report and reasons kept, its
 // approval withdrawn (the owner fixes it or approves it again), no stage asked - with
 // a fail event. A change opened while it was in flight joins it (Store.CollapseOpen),

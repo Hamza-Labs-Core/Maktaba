@@ -34,7 +34,7 @@ const (
 	StateAborted       = "aborted"        // stopped before the switch; nothing changed
 	// An install its desktop app installs (Orderer): ordered from the app, which stages
 	// the release and says when it installs (ordered); staged there, it waits for the
-	// home's go (app_staged). No click on the machine (owner decision D1, 2026-10-27).
+	// home's go (app_staged). No click on the machine (decision D1, 2026-10-27).
 	// Nothing changed yet, and a newer run takes its place.
 	StateOrdered     = "ordered"
 	StateAppStaged   = "app_staged"
@@ -332,7 +332,7 @@ func LoadJournal(dir string) (*Journal, error) {
 	return &j, nil
 }
 
-// What a journal from before owner decision D1 was replaced (2026-10-27) may say: its
+// What a journal from before decision D1 was replaced (2026-10-27) may say: its
 // order waited for a click on this machine (awaiting_click, step ask), then for the go
 // (clicked).
 const (

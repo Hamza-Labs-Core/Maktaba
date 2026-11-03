@@ -23,7 +23,7 @@ import (
 // <runtime>/current again, and falls back to `previous` when it cannot stay up (its
 // guard, <launcher root>/updates/pending.json). The Linux app's runtime is ordered from
 // the app first (it says when it installs) and switches at the home's go, with no click
-// (owner decision D1, request.go); a headless one by itself (D3: the server updates its
+// (decision D1, request.go); a headless one by itself (D3: the server updates its
 // runtime either way, no root needed).
 type RuntimeInstaller struct {
 	Runtime appruntime.Runtime

@@ -11,7 +11,7 @@ import (
 	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
-// componentBase are the older slots' tables slot 0174 touches (the columns it reads).
+// componentBase are the older slots' tables slot 0175 touches (the columns it reads).
 const componentBase = `
 CREATE TABLE cluster_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '');
 CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, action TEXT NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 	placement TEXT NOT NULL DEFAULT 'any', enabled INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL)`
 
-// componentTables adds slot 0174's SQLite twin (and what it needs) to db.
+// componentTables adds slot 0175's SQLite twin (and what it needs) to db.
 func componentTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, s := range strings.Split(componentBase, ";\n") {
@@ -34,7 +34,7 @@ func componentTables(t *testing.T, db *sql.DB) {
 			t.Fatalf("%v\n%s", err, s)
 		}
 	}
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0174_components.sqlite.sql"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0175_components.sqlite.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func componentTables(t *testing.T, db *sql.DB) {
 		if i := strings.Index(block, "-- +goose StatementEnd"); i >= 0 {
 			if s := strings.TrimSpace(block[:i]); s != "" {
 				if _, err := db.Exec(s); err != nil {
-					t.Fatalf("0174: %v\n%s", err, s)
+					t.Fatalf("0175: %v\n%s", err, s)
 				}
 			}
 		}

@@ -17,7 +17,7 @@ DROP TRIGGER IF EXISTS components_generation_upd;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- slot 0174's trigger, except for an update that changed only what the licence allows
+-- slot 0175's trigger, except for an update that changed only what the licence allows
 CREATE TRIGGER IF NOT EXISTS components_generation_upd
     AFTER UPDATE ON components
     FOR EACH ROW

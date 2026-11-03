@@ -907,11 +907,62 @@ function transcriptionState(node: ClusterNode): {
   const [head, ...rest] = reason.split(":");
   const detail = rest.join(":").trim();
   if (head.trim() === "unavailable") {
+    // a machine on a version from before the second listen had its own stage
     if (detail.includes("second listen does not run here"))
       return { key: "machines.stt.waitsSecondListen", detail, tone: "warn" };
     return { key: "machines.stt.cannot", detail: detail || undefined, tone: "warn" };
   }
   return { key: "machines.stt.off", vars: { reason }, tone: "muted" };
+}
+
+/** Whether this machine gives transcripts their second listen, and how it shares the GPU
+ * with Whisper (`capabilities.second_listen_gpu`: both loaded, or taking turns), or why
+ * not (`stages_off.second_listen`, with the pipeline's own reason after "unavailable:"). */
+function secondListenState(node: ClusterNode): {
+  key: string;
+  vars?: Record<string, string>;
+  detail?: string;
+  tone: "ok" | "warn" | "muted";
+} | null {
+  const workers = node.workers ?? [];
+  const c = node.capabilities ?? {};
+  if (workers.some((w) => (w.stages ?? []).includes("second_listen"))) {
+    const sharing = typeof c.second_listen_gpu === "string" ? c.second_listen_gpu : null;
+    if (sharing === "sequential") return { key: "machines.listen.turns", tone: "ok" };
+    if (sharing === "together") return { key: "machines.listen.together", tone: "ok" };
+    return { key: "machines.listen.ready", tone: "ok" };
+  }
+  const reason = workers
+    .map((w) => w.stages_off?.second_listen)
+    .find((r): r is string => typeof r === "string" && r !== "");
+  if (!reason) return null;
+  const [head, ...rest] = reason.split(":");
+  if (head.trim() !== "unavailable") return null; // switched off, not chosen: as any stage
+  const detail = rest.join(":").trim();
+  return { key: "machines.listen.cannot", detail: detail || undefined, tone: "muted" };
+}
+
+/** The machine's second-listen line (Admin > Machines). */
+function SecondListenNote({ node }: { node: ClusterNode }) {
+  const { t } = useI18n();
+  const s = secondListenState(node);
+  if (!s) return null;
+  return (
+    <div
+      className={`mkt-mc-note${s.tone === "warn" ? " mkt-mc-note--warn" : ""}`}
+      data-testid="machine-second-listen"
+    >
+      <p>{t(s.key, s.vars)}</p>
+      {s.detail && (
+        <details>
+          <summary>{t("machines.stt.why")}</summary>
+          <p className="mkt-mc-muted" dir="ltr">
+            {s.detail}
+          </p>
+        </details>
+      )}
+    </div>
+  );
 }
 
 /** The machine's transcription line (Admin > Machines). */
@@ -1122,6 +1173,7 @@ const MachineCard = memo(function MachineCard({
           </ul>
         )}
         {active && <TranscriptionNote node={node} />}
+        {active && <SecondListenNote node={node} />}
         {active && (
           <>
             <StorageCheck storage={node.storage} />

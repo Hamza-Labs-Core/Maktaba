@@ -12,3 +12,5 @@
    (`ci-success` passes in seconds), so merge it as soon as it is open. Any other file in the
    same PR runs its jobs as usual.
 4. Never write secrets there or anywhere in the repo.
+5. **Never quote the owner's words in repo text** (specs, docs, the trail, comments, tests): state
+   each requirement or decision neutrally, with no attribution to the owner.

@@ -13,7 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
-// A machine joined to a home never goes ahead of it (the owner's rule, 2026-10-28: that
+// A machine joined to a home never goes ahead of it (rule of 2026-10-28: that
 // day windows-pc ran 0.3.42 while its home rolled back to 0.3.41 and put its database back
 // to schema 167, and updates only go up). Its new releases come from the home's order,
 // after the home committed them; `maktaba-server update` on such a machine installs none

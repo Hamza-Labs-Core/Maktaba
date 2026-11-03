@@ -19,7 +19,7 @@ var copyReviewed = []string{
 	"channel_programs", "channel_runtime", "channel_schedule_state", "channels", "chapters",
 	"clip_checks", "clip_group_items", "clip_groups", "cluster_replica_beat", "cluster_switchovers",
 	"cluster_terms", "collection_items",
-	// slot 0174 (Epic 51): what should run is no secret, and a promoted copy needs it;
+	// slot 0175 (Epic 51): what should run is no secret, and a promoted copy needs it;
 	// the status rows are every machine's health, rewritten by each runner's next report
 	"component_meta", "component_overrides", "component_status", "components",
 	"collection_suggestions", "collections", "dependency_health", "display_title_llm",

@@ -117,7 +117,7 @@ Unicode form of NAS paths are in #373.
   - The web Live TV player does not report playback failures to the server. That needs a channel variant of `POST /api/stream/sessions/{id}/errors`.
   - "Choose another home" is missing from the web bundle, which has no home picker. The desktop menu's switch-server event has no handler.
   - Four web profile tabs offer Retry but not Sign in again on a 401.
-  - Desktop error dialogs show the program's own error under the translated sentence. The owner chose this in the review of #202.
+  - Desktop error dialogs show the program's own error under the translated sentence. This was chosen in the review of #202.
   - A failed rules read in node mode is not logged.
 
 ### Low (mostly deferred)

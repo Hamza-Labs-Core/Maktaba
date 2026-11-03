@@ -1538,6 +1538,60 @@
       }
     },
     {
+      "id": "story-45.22",
+      "type": "story",
+      "title": "Per-user star ratings, if favorites prove too coarse",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Per-user star ratings, if favorites prove too coarse.",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "per-user-star-ratings-if-favorites-prove-too-coarse",
+        "inline": true
+      }
+    },
+    {
+      "id": "story-45.23",
+      "type": "story",
+      "title": "Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low",
+      "epic": "45-libraries-ui",
+      "phase": 5,
+      "content": "Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low: each person signs in).",
+      "tags": [
+        "story",
+        "45-libraries-ui",
+        "phase-5"
+      ],
+      "related": [
+        "epic-45-libraries-ui"
+      ],
+      "files": {
+        "story": "specs/epics/45-libraries-ui/README.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "profiles-with-a-pin-in-the-mac-app-s-window-and-parental-lim",
+        "inline": true
+      }
+    },
+    {
       "id": "story-45.24",
       "type": "story",
       "title": "A library's Series and Collections tabs",

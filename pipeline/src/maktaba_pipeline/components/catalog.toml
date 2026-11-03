@@ -218,8 +218,9 @@ kind      = "stages+process"
 group     = "processing"
 title_key = "components.transcription.title"
 desc_key  = "components.transcription.desc"
-# refine, second listen and word merge run inside transcribe
-stages    = ["extract", "transcribe"]
+# refine and word merge run inside transcribe; the second listen (Cohere, the wanted
+# model) is a stage of its own since slot 0174
+stages    = ["extract", "transcribe", "second_listen"]
 processes = ["pipeline/stt-*"]
 requires  = ["runtime.ml", "any:model.whisper-turbo|model.whisper-large-v3|model.whisper-medium"]
 wants     = ["model.cohere-arabic"]

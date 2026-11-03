@@ -10,8 +10,7 @@
 
 ## Goal
 
-The owner's decision (2026-10-20): *"also need the same one app setup on windows similar to mac … and
-another for linux"*.
+Requirement (2026-10-20): the same one-app setup as on the Mac, on Windows and on Linux.
 
 1. **One Linux installation runs everything**: the API, streaming (Live TV), the pipeline workers
    *including transcription and the second listen*, semantic search, the web app and the database,
@@ -62,7 +61,7 @@ Maktaba_<v>_amd64.AppImage  ·  maktaba_<v>_amd64.deb  ·  maktaba-<v>-1.x86_64.
 maktaba-linux-payload-<v>-<arch>.tar.gz    the same server/ tree, for a machine without a desktop
 ```
 
-**ffmpeg is the distribution's** (the owner's decision, 2026-10-21: the ffmpeg.martin-riedl.de
+**ffmpeg is the distribution's** (decided 2026-10-21: the ffmpeg.martin-riedl.de
 Linux builds pinned before are configured with `--enable-nonfree`, which FFmpeg says makes them
 unredistributable, so none is bundled). The .deb `Depends: ffmpeg`, the
 .rpm `Requires: ffmpeg` (RPM Fusion's on Fedora and RHEL: their own `ffmpeg-free` lacks libx264 and

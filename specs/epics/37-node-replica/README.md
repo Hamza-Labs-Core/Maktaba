@@ -3,14 +3,12 @@
 A full node (Epic 35) used to depend on its home for everything a person does: checking a
 sign-in, reading the library, playing, watching TV. PR #145 made a node degrade to read-only
 on the home's last answers for ten minutes; PR #157 kept a playback catalog for the home's
-database being down. This epic replaces both with what the user asked for:
+database being down. This epic replaces both with this requirement: a joined node has a
+passive/active relation with the home. It holds the whole database of the home, read-only and
+replicated at once, so sign-in, TV, playback and the rest work offline from that node, without the
+home's full features.
 
-> the joined node should have a passive/active relation with the home node: it has all the
-> database of the main node, so it can function as read only; the database in the joined node
-> is read only, replicated immediately, so login and all, TV, play, all work in offline mode,
-> but from that node and not from the home node with its full features.
-
-Decisions the user made: **sign-in works offline**; a **full live copy**, by **logical
+Decisions made: **sign-in works offline**; a **full live copy**, by **logical
 replication** (it replaced the physical standby first built: a copy that is its own database
 can leave the home's secrets out and can become the home); **one feature branch, merged
 once**; and **nothing is a manual step** — joining sets the copy up, already-joined nodes
@@ -304,8 +302,8 @@ reloads itself every two minutes and once the home answers again.
 
 ## Switching the home
 
-The user asked for a way "to switch the main node, to a joined node", carrying "all external
-connections, plex, cloudflare to that node". A **planned switch** is one button on the Machines
+Requirement: a way to switch the home to a joined node, moving every external connection (Plex,
+Cloudflare) to that node. A **planned switch** is one button on the Machines
 tab ("Make B the home", after a confirm step) and runs by itself to the end. A is the old home,
 B the machine taking over, C the other machines.
 

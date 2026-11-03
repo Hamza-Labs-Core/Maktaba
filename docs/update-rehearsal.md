@@ -1,8 +1,7 @@
 # The update rehearsal
 
-> The owner, 2026-10-28, after losing the site twice in one day: **"THIS NEED TO BE ON CI"**.
-> Every update path that was only exercised live on the owner's Mac is proven in CI before
-> any release.
+> Requirement (after two outages in one day, 2026-10-28): every update path that was only
+> exercised live on the owner's Mac is proven in CI before any release.
 
 The update rehearsal (`.github/workflows/update-rehearsal.yml`, its verdict job
 **update-rehearsal**) updates a seeded home from the **latest published release** to **this

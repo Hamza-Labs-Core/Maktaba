@@ -44,7 +44,7 @@ func appends(t *testing.T, s *Store, id string) []string {
 
 var admin1 = &principal.Principal{UserID: "11111111-1111-4111-8111-111111111111", IsAdmin: true}
 
-// Story 33.12 AC3 (the owner's rule): an editor or filler save joins the open change
+// Story 33.12 AC3: an editor or filler save joins the open change
 // whatever opened it - here a channel plan - keeping its number; the plan stays.
 func TestSaveJoinsTheOpenChange(t *testing.T) {
 	for _, be := range tvchangetest.Backends(t) {
@@ -93,7 +93,7 @@ func TestSaveJoinsTheOpenChange(t *testing.T) {
 	}
 }
 
-// An approved draft takes no more updates (the owner's rule): the next save opens the
+// An approved draft takes no more updates (story 33.12 AC3): the next save opens the
 // next change, and the approval stays on the one it was given to.
 func TestApprovedDraftTakesNoMoreUpdates(t *testing.T) {
 	for _, be := range tvchangetest.Backends(t) {
