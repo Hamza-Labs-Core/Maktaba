@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "maktaba.dev, the Maktaba developer portal: a Cloudflare Worker with static assets (landing page, wiki, API reference, plugin docs, changelog, security.txt).",
+  "description": "maktaba.dev, the Maktaba developer portal: a Cloudflare Worker with static assets (landing page, the wiki in English and Arabic, API reference, developer guides, changelog, security.txt).",
   "scripts": {
     "build": "node scripts/build.mjs",
     "scan": "node scripts/scan.mjs dist",

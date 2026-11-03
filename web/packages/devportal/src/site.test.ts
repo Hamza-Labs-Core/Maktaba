@@ -12,7 +12,10 @@ import {
   DOCS,
   MAX_EXPIRY_MONTHS,
   REPO,
+  WIKI_ALLOW,
+  arabicWikiIndex,
   checkSources,
+  wikiSitePath,
   expiresAt,
   readDisclosurePolicy,
   rewriteHref,
@@ -30,10 +33,13 @@ import {
   checkGuides,
   checkOverlay,
   checkPages,
+  checkWiki,
   htmlProse,
   latinShare,
   openapiProse,
+  wikiHash,
 } from "../scripts/parity.mjs";
+import { STRINGS as WIKI_UI, dbBase, langFrom } from "../../../wiki-app/src/lib/i18n";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 
 type Element = DefaultTreeAdapterMap["element"];
@@ -119,14 +125,76 @@ describe("the allow-list", () => {
     for (const d of DOCS) expect(fs.existsSync(path.join(DIST, d.out, "index.html"))).toBe(true);
   });
 
-  // the epics and specs live on GitHub: no epics wiki, no spec or story page on this site
-  it("carries no epics wiki and no spec pages", () => {
+  // the epics are on the site as the wiki (its database), never as spec or story pages
+  it("carries no spec pages: the epics are in the wiki", () => {
     const all = files(DIST);
-    expect(all.some((f) => f.startsWith("wiki/"))).toBe(false);
     expect(all.some((f) => /story-\d\d-|specs\/epics/.test(f))).toBe(false);
-    for (const p of all.filter((f) => f.endsWith(".html"))) {
-      expect(read(p), p).not.toMatch(/href="\/wiki\//);
+  });
+
+  it("every wiki file is one the wiki's allow-list names, and no mockup", () => {
+    const wiki = files(DIST).filter((f) => f.startsWith("wiki/") || f.startsWith("ar/wiki/"));
+    expect(wiki.length).toBeGreaterThan(5);
+    for (const f of wiki) {
+      expect(f.includes("mockups"), f).toBe(false);
+      if (f === "ar/wiki/index.html") continue; // written by the build from wiki/index.html
+      const rel = f.startsWith("ar/wiki/db/")
+        ? `db/ar/${f.slice("ar/wiki/db/".length)}`
+        : f.slice("wiki/".length);
+      expect(wikiSitePath(rel), f).toBe(f);
     }
+    // the allow-list maps the Arabic database under /ar/wiki/db/, and drops the rest
+    expect(wikiSitePath("db/ar/wiki.json")).toBe("ar/wiki/db/wiki.json");
+    expect(wikiSitePath("db/wiki-epics-01-09.json")).toBe("wiki/db/wiki-epics-01-09.json");
+    expect(wikiSitePath("mockups/home.html")).toBeNull();
+    expect(wikiSitePath("db/wiki-schema.json")).toBeNull();
+    expect(WIKI_ALLOW.length).toBeGreaterThan(0);
+  });
+
+  it("the wiki is at /wiki/ in English and /ar/wiki/ in Arabic, right to left", () => {
+    const en = read("wiki/index.html");
+    expect(en).toContain('<html lang="en" dir="ltr">');
+    expect(en).toMatch(/src="\/wiki\/assets\/index-[^"]+\.js"/);
+    expect(en).toContain('hreflang="ar" href="https://maktaba.dev/ar/wiki/"');
+    const ar = read("ar/wiki/index.html");
+    expect(ar).toContain('<html lang="ar" dir="rtl">');
+    expect(ar).toContain(`<title>${STRINGS.ar["wiki.title"]}</title>`);
+    // the same bundle: it picks the language from the path and loads /ar/wiki/db/
+    expect(ar.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]).toBe(en.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]);
+    expect(ar).toContain('rel="canonical" href="https://maktaba.dev/ar/wiki/"');
+    expect(ar).toContain('hreflang="en" href="https://maktaba.dev/wiki/"');
+    // the portal links the wiki in each language
+    expect(read("index.html")).toContain('href="/wiki/"');
+    expect(read("ar/index.html")).toContain('href="/ar/wiki/"');
+  });
+
+  it("the wiki's database is served in both languages, the Arabic in Arabic", () => {
+    for (const f of ["wiki.json", "wiki-cross-refs.json"]) {
+      expect(fs.existsSync(path.join(DIST, "wiki/db", f)), f).toBe(true);
+      expect(fs.existsSync(path.join(DIST, "ar/wiki/db", f)), f).toBe(true);
+    }
+    const en = JSON.parse(read("wiki/db/wiki.json"));
+    const ar = JSON.parse(read("ar/wiki/db/wiki.json"));
+    expect(ar.lang).toBe("ar");
+    expect(ar.entries.map((e: { id: string }) => e.id)).toEqual(
+      en.entries.map((e: { id: string }) => e.id)
+    );
+    const epic = ar.entries.find((e: { type: string }) => e.type === "epic");
+    expect(/[؀-ۿ]/.test(epic.title), epic.title).toBe(true);
+    expect(/[؀-ۿ]/.test(epic.content)).toBe(true);
+    // the bundle reads the database where the build put it
+    const bundle = files(DIST)
+      .filter((f) => /^wiki\/assets\/.+\.js$/.test(f))
+      .map(read)
+      .join("\n");
+    expect(bundle).toContain("/ar");
+  });
+
+  it("no Linear: no linear.app link or Linear field anywhere on the site", () => {
+    for (const f of files(DIST).filter((f) => /\.(html|json|js)$/.test(f))) {
+      expect(read(f).includes("linear.app"), f).toBe(false);
+    }
+    const ar = JSON.parse(read("ar/wiki/db/wiki.json"));
+    for (const e of ar.entries) expect("linear" in e, e.id).toBe(false);
   });
 
   it("has the plugin, contributing and security guides, each in its group's contents", () => {
@@ -296,6 +364,12 @@ describe("English and Arabic", () => {
       const sitePath = "/" + p.replace(/index\.html$/, "").replace(/\.html$/, "");
       const html = read(p);
       expect(html, p).toContain('<html lang="en" dir="ltr">');
+      // the wiki's language switch is drawn by its app (LangSwitch.tsx), not in its HTML
+      if (p === "wiki/index.html") {
+        expect(read(`ar/${p}`)).toContain('<html lang="ar" dir="rtl">');
+        expect(html).toContain(`hreflang="ar" href="https://maktaba.dev/ar${sitePath}"`);
+        continue;
+      }
       expect(html, p).toMatch(new RegExp(`id="lang-switch"[^>]*href="/ar${sitePath}"`));
       const arHtml = read(`ar/${p}`);
       expect(arHtml, p).toContain('<html lang="ar" dir="rtl">');
@@ -405,6 +479,112 @@ describe("English and Arabic", () => {
     expect(checkOverlay(doc, { strings: english })[0]).toMatch(/not Arabic/);
   });
 
+  it("the wiki's Arabic database: a missing, stale or English entry fails, naming the entry and field", () => {
+    const content = "Plays a `video.mp4` from the start.";
+    const en = {
+      "wiki.json": {
+        entries: [
+          { id: "epic-01", type: "epic", epic: "01", title: "Playback", content, engine: "" },
+          { id: "glossary-x", type: "glossary", title: "Queue", content: "The jobs, in order." },
+        ],
+      },
+    };
+    const good = () => ({
+      "wiki.json": {
+        lang: "ar",
+        entries: [
+          {
+            id: "epic-01",
+            title: "التشغيل",
+            content: "يشغّل `video.mp4` من البداية.",
+            i18n: { lang: "ar", source: { title: wikiHash("Playback"), content: wikiHash(content) } },
+          },
+          {
+            id: "glossary-x",
+            title: "الطابور",
+            content: "المهام، بالترتيب.",
+            i18n: {
+              lang: "ar",
+              source: { title: wikiHash("Queue"), content: wikiHash("The jobs, in order.") },
+            },
+          },
+        ],
+      },
+    });
+    expect(checkWiki(en, good(), "db")).toEqual([]);
+    // the English changed since it was translated
+    const changed = structuredClone(en);
+    changed["wiki.json"].entries[0].content = "Plays a `video.mp4` from where you left it.";
+    expect(checkWiki(changed, good(), "db")).toEqual([
+      "db/ar/wiki.json: epic-01 content: the English changed since it was translated: " +
+        "translate it again in docs/wiki/db/ar/epic-01.json, then run python3 docs/wiki/db/generate_wiki.py",
+    ]);
+    // an entry with no Arabic for a field, a missing entry, an English "translation"
+    const missing = good();
+    delete (missing["wiki.json"].entries[1].i18n.source as Record<string, string>).title;
+    expect(checkWiki(en, missing, "db")[0]).toBe(
+      "db/ar/wiki.json: glossary-x title has no Arabic: translate it in docs/wiki/db/ar/common.json, then run python3 docs/wiki/db/generate_wiki.py"
+    );
+    const gone = good();
+    gone["wiki.json"].entries.pop();
+    expect(checkWiki(en, gone, "db")[0]).toMatch(/glossary-x has no Arabic entry/);
+    const english = good();
+    english["wiki.json"].entries[1].content = "The jobs, in order.";
+    expect(checkWiki(en, english, "db")[0]).toMatch(/glossary-x content: the Arabic is English/);
+    // a file with no Arabic twin, or not marked Arabic
+    expect(checkWiki({ ...en, "wiki-epics-01-09.json": { entries: [] } }, good(), "db")[0]).toMatch(
+      /^db\/ar\/wiki-epics-01-09\.json: missing/
+    );
+    const unmarked = good() as Record<string, { lang?: string }>;
+    delete unmarked["wiki.json"].lang;
+    expect(checkWiki(en, unmarked, "db")[0]).toMatch(/not marked "lang": "ar"/);
+    // the hash is the generator's (wiki_ar.text_hash: sha256 of the UTF-8, 16 hex digits)
+    expect(wikiHash("Playback")).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("an Arabic wiki page whose prose is mostly Latin script fails", () => {
+    const en = { "wiki.json": { entries: [] as Record<string, string>[] } };
+    const ar = { "wiki.json": { lang: "ar", entries: [] as Record<string, unknown>[] } };
+    for (let i = 0; i < 4; i++) {
+      const text = `Entry ${i} was left in English, every word of it.`;
+      en["wiki.json"].entries.push({ id: `g${i}`, type: "glossary", title: "", content: text });
+      ar["wiki.json"].entries.push({
+        id: `g${i}`,
+        content: `مدخل ${i}: Entry was left in English, every word of it.`,
+        i18n: { lang: "ar", source: { content: wikiHash(text) } },
+      });
+    }
+    expect(checkWiki(en, ar, "db")).toEqual(["db/ar/wiki.json: 89% of its Arabic prose is Latin script"]);
+  });
+
+  it("the wiki app's own strings are in both languages, the Arabic in Arabic", () => {
+    expect(Object.keys(WIKI_UI.ar).sort()).toEqual(Object.keys(WIKI_UI.en).sort());
+    for (const [k, v] of Object.entries(WIKI_UI.ar) as [string, string][]) {
+      // the switch and its label are in the language it opens: English
+      if (k.startsWith("lang.switch")) continue;
+      if (k === "nav.issues.hint") continue; // a product name: GitHub
+      expect(/[؀-ۿ]/.test(v), k).toBe(true);
+    }
+    expect(langFrom("/ar/wiki/")).toBe("ar");
+    expect(langFrom("/wiki/")).toBe("en");
+    expect(langFrom("/", "?lang=ar")).toBe("ar");
+    expect(dbBase("ar", "/wiki/")).toBe("/ar/wiki/db");
+    expect(dbBase("en", "/wiki/")).toBe("/wiki/db");
+  });
+
+  it("the Arabic wiki page is the English one in Arabic, right to left", () => {
+    const en = read("wiki/index.html");
+    const ar = arabicWikiIndex(
+      '<html lang="en" dir="ltr">\n<head><title>Maktaba Wiki</title><meta name="description" content="x" /></head>' +
+        "<body><noscript>needs JS</noscript></body></html>"
+    );
+    expect(ar).toContain('<html lang="ar" dir="rtl">');
+    expect(ar).toContain(`<noscript>${STRINGS.ar["wiki.noscript"]}</noscript>`);
+    expect(ar).toContain(`content="${STRINGS.ar["wiki.description"]}"`);
+    expect(() => arabicWikiIndex("<html><head></head></html>")).toThrow(/no <html lang dir>/);
+    expect(en).toContain("<noscript>");
+  });
+
   it("the portal's pages carry no inline script (the CSP allows none)", () => {
     // parsed as a browser would (parse5): every script has a src and no body, and no element
     // carries an event handler or a javascript: URL
@@ -506,7 +686,8 @@ describe("security.txt, robots.txt, sitemap", () => {
     const xml = read("sitemap.xml");
     const locs = [...xml.matchAll(/<loc>https:\/\/maktaba\.dev(\/[^<]*)<\/loc>/g)].map((m) => m[1]);
     expect(locs).toContain("/");
-    expect(locs).not.toContain("/wiki/");
+    expect(locs).toContain("/wiki/");
+    expect(locs).toContain("/ar/wiki/");
     expect(locs).toContain("/plugins/");
     expect(locs).toContain("/contributing/");
     expect(locs).toContain("/changelog/");

@@ -1,0 +1,119 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 4 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-04-subtitles": {
+      "title": {
+        "hash": "0ee695bdeb26a296",
+        "ar": "الترجمات"
+      },
+      "content": {
+        "hash": "6a5692cf93a213a5",
+        "ar": "إنشاء ملفات SRT وVTT مرافقة سليمة البنية من النصوص المفرّغة المكتملة. واكتشاف ملفات الترجمات الخارجية تلقائيًا. واستخراج مسارات الترجمات المضمّنة في ملفات MKV عند الحاجة. ويمكن لخدمة البث عرض VTT حي مباشرة من transcript_segments.\n\nتحويل النصوص المفرّغة المكتملة إلى ملفات `.srt` و`.vtt` مرافقة سليمة البنية؛ واكتشاف ملفات الترجمات الخارجية المرفقة بالفيديو تلقائيًا؛ واستخراج مسارات الترجمات المضمّنة في ملفات MKV عند الطلب. تستطيع خدمة البث عرض VTT حي من `transcript_segments` مباشرة (البنية §4.5)، ولذلك فإن ملفات الترجمات **المحفوظة على القرص** هي لقابلية النقل (مستخدم Plex أو VLC يفتح المجلد نفسه) وللعملاء الذين يفضّلون روابط الملفات على الترجمات المضمّنة في البيان."
+      },
+      "engine": {
+        "hash": "5a410c39f593f282",
+        "ar": "خط المعالجة (Python)"
+      }
+    },
+    "story-4.1": {
+      "title": {
+        "hash": "7774f6c366076968",
+        "ar": "إنشاء SRT وVTT من `transcript_segments`"
+      },
+      "content": {
+        "hash": "99cf447b0b8ca66c",
+        "ar": "# القصة 4.1 — إنشاء SRT وVTT من `transcript_segments`\n\n## الوصف\n\nعند اكتمال التفريغ النصي (`state = TRANSCRIBED`)، يُنتَج كلا تنسيقَي\nالترجمات من المقاطع المرجعية — وليس أبدًا من ملف كُتب سابقًا.\n\nتتولى هذه القصة مرحلة `subtitle_gen` التي تعرّفها آلة الحالات في\n[الملحمة 1 القصة 1.6](../01-scanner/story-01-06-video-state-machine.md).\nتعمل المرحلة بعد أن تبلغ `transcribe` الحالة `done` لنص مفرّغ، و\nيجب أن تكتمل (إلى جانب `index`) قبل أن ينتقل الفيديو إلى\n`INDEXED`.\n\n## معايير القبول\n\n- **بافتراض** فيديو حالته `state = TRANSCRIBED`،\n  **عندما** "
+      }
+    },
+    "story-4.2": {
+      "title": {
+        "hash": "52134bcd6115c0c2",
+        "ar": "تنسيق SRT/VTT وتقسيم الأسطر"
+      },
+      "content": {
+        "hash": "3e64ff4798d35165",
+        "ar": "# القصة 4.2 — تنسيق SRT/VTT وتقسيم الأسطر\n\n## الوصف\n\nيجب أن تكون الترجمات مقروءة على الهاتف، وعلى تلفاز 4K، وعبر المشغّلات\nالخارجية. وقواعد طول السطر وكسره لا تقل أهمية عن محتوى النص.\n\n## معايير القبول\n\n- لا يتجاوز عرض كل مقطع ترجمة `max_line_chars = 42` حرفًا ولا يتجاوز\n  `max_lines = 2` سطرين (قابل للضبط لكل مكتبة).\n- تفضّل فواصل الأسطر:\n  1. علامات ترقيم نهاية الجملة (`.`، `?`، `!`، `؟`).\n  2. علامات ترقيم نهاية شبه الجملة (`,`، `;`، `،`، `؛`، `:`).\n  3. حدود الكلمات (لا كسر في منتصف الكلمة أبدًا).\n- لا تتداخل مقاطع الترجمة أبدًا؛ وإذا كان مقطعان متجاوران ضمن\n  `merge_"
+      }
+    },
+    "story-4.3": {
+      "title": {
+        "hash": "cc0bd6105f1257b6",
+        "ar": "الاكتشاف التلقائي للترجمات الخارجية"
+      },
+      "content": {
+        "hash": "8ecc33173c06a829",
+        "ar": "# القصة 4.3 — الاكتشاف التلقائي للترجمات الخارجية\n\n## الوصف\n\nينبغي أن تظهر الملفات مثل `Lecture 1.ar.srt` المرفقة بالفيديو\nفي المكتبة دون أن يشغّل أحد خط معالجة صريحًا.\n\n## معايير القبول\n\n- أثناء المسح ([الملحمة 1](../01-scanner/README.md))، يطابق الماسح أيضًا لكل ملف\n  فيديو التعبير النمطي\n  `^<basename>(?:\\.(?P<lang>[a-z]{2,3}))?\\.(?P<ext>srt|vtt|ass|ssa)$`\n  مع الملفات المجاورة في المجلد نفسه.\n- كل تطابق يُنشئ صفًا في `subtitle_files` مع `is_external = true`،\n  و`is_embedded = false`، و`language = <lang or 'und'>`، و`format = <ext>`،\n  و`transcri"
+      }
+    },
+    "story-4.4": {
+      "title": {
+        "hash": "c27d9df9952738b5",
+        "ar": "استخراج الترجمات المضمّنة (مع مخطط `is_embedded`)"
+      },
+      "content": {
+        "hash": "b9a1e5849aafe685",
+        "ar": "# القصة 4.4 — استخراج الترجمات المضمّنة (مع مخطط `is_embedded`)\n\n## الوصف\n\nتأتي بعض ملفات MKV بترجمات مضمّنة بصيغة `S_TEXT/UTF8` أو تدفقات PGS. و\nتطلبها خدمة البث من خط المعالجة عند الحاجة.\n\n> **يحسم REVIEW §1.1.c.** تعريف `subtitle_files` في مخطط البنية\n> (`(id, video_id, transcript_id, format, language, path,\n> is_external, created_at)`) لا يتضمن `is_embedded`، غير أن\n> `is_embedded` هو السبيل الوحيد للتمييز بين مسار مضمّن استخرجه خط المعالجة\n> وملف نص مفرّغ أنشأه خط المعالجة (فلكليهما\n> `is_external = false`). هـ"
+      }
+    },
+    "story-4.5": {
+      "title": {
+        "hash": "10d3ea024db2a80f",
+        "ar": "تقديم VTT الحي (جانب القراءة، العقد فقط)"
+      },
+      "content": {
+        "hash": "f5f5a18944241cf5",
+        "ar": "# القصة 4.5 — تقديم VTT الحي (جانب القراءة، العقد فقط)\n\n## الوصف\n\nتعرض خدمة البث VTT حيًا مباشرة من `transcript_segments`\n(البنية §4.5). تتولى هذه القصة **العقد** الذي يجب أن يلتزم به خط المعالجة،\nلا شيفرة البث نفسها (الموجودة في\n[`02-api-streaming.md`](../../02-api-streaming.md)).\n\n## معايير القبول\n\n- يُنشأ عرض SQL للقراءة فقط `transcript_segments_v` بالأعمدة\n  `(video_id, transcript_id, seq, start_sec, end_sec, text, speaker,\n  is_active)` وفهرس على `(video_id, start_sec)`.\n- لا تُدرج إلا المقاطع التي يكون لنصها المفرّغ الأصلي `is_acti"
+      }
+    },
+    "plan-04.01-generate-from-segments": {
+      "title": {
+        "hash": "1c8ab4143a824d01",
+        "ar": "إنشاء SRT وVTT من `transcript_segments` — التنفيذ"
+      },
+      "content": {
+        "hash": "b86fd502df1f71cf",
+        "ar": "# الخطة 4.1 — إنشاء SRT وVTT من `transcript_segments` — التنفيذ\n\n> خطة التنفيذ لـ [story-04-01-generate-from-segments.md](story-04-01-generate-from-segments.md).\n> قائمة بذاتها: ينبغي أن يتمكن المطوّر من إنجاز القصة اعتمادًا على هذه\n> الوثيقة وحدها. روابط متقاطعة: تستهلك المقاطع المرجعية التي تنتجها\n> [الخطة 3.6](../03-transcription/plan-03-06-segment-commit.md) (مسار\n> القراءة هو `transcript_segments` مصفّاة حسب `transcripts.is_active`،\n> وهو المرشّح نفسه الذي تستخدمه [القصة 4.5](story-04-05-live-vtt-contract.md) في\n> عرض VTT الحي)؛ وتعمل مرحلة `subtitle_gen` في "
+      }
+    },
+    "plan-04.02-formatting-wrapping": {
+      "title": {
+        "hash": "d4177802fef86427",
+        "ar": "تنسيق SRT/VTT وتقسيم الأسطر — التنفيذ"
+      },
+      "content": {
+        "hash": "c09a8608d44c1352",
+        "ar": "# الخطة 4.2 — تنسيق SRT/VTT وتقسيم الأسطر — التنفيذ\n\n> خطة التنفيذ لـ [story-04-02-formatting-wrapping.md](story-04-02-formatting-wrapping.md).\n> قائمة بذاتها: ينبغي أن يتمكن المطوّر من إنجاز القصة اعتمادًا على هذه\n> الوثيقة وحدها. روابط متقاطعة: تستهلك مُكرِّر المقاطع المرجعي\n> الذي تعرّفه [القصة 4.1](story-04-01-generate-from-segments.md) و\n> تكتب عبر أداة التسلسل نفسها ذات الاستبدال الذرّي؛ وتعكس\n> عقد الوسم `<v Speaker N>` للنصوص المفرّغة المميّزة المتحدثين التي تنتجها\n> [الخطة 3.9](../03-transcription/plan-03-09-diarization.md)؛ وتحافظ على\n> النص العربـ"
+      }
+    },
+    "plan-04.03-external-discovery": {
+      "title": {
+        "hash": "1d2660864e60813f",
+        "ar": "الاكتشاف التلقائي للترجمات الخارجية — التنفيذ"
+      },
+      "content": {
+        "hash": "b86469698e932322",
+        "ar": "# الخطة 4.3 — الاكتشاف التلقائي للترجمات الخارجية — التنفيذ\n\n> خطة التنفيذ لـ [story-04-03-external-discovery.md](story-04-03-external-discovery.md).\n> قائمة بذاتها: ينبغي أن يتمكن المطوّر من إنجاز القصة اعتمادًا على هذه\n> الوثيقة وحدها. روابط متقاطعة: ترتبط بمرور الماسح من\n> [القصة 1.1](../01-scanner/story-01-01-file-discovery.md) (وتتشارك\n> دورة إشعار `videos.new`)، وتتشارك جدول `subtitle_files`\n> مع [القصة 4.4](story-04-04-embedded-extraction.md) (التي\n> تملك العمود `is_embedded` وفهرسًا إضافيًا)، وتغذّي\n> مسار القراءة في خدمة البث"
+      }
+    },
+    "plan-04.04-embedded-extraction": {
+      "title": {
+        "hash": "7d00938bbbe97b16",
+        "ar": "استخراج الترجمات المضمّنة (مع مخطط `is_embedded`) — التنفيذ"
+      },
+      "content": {
+        "hash": "4727c6a84bbcc738",
+        "ar": "# الخطة 4.4 — استخراج الترجمات المضمّنة (مع مخطط `is_embedded`) — التنفيذ\n\n> خطة التنفيذ لـ [story-04-04-embedded-extraction.md](story-04-04-embedded-extraction.md).\n> قائمة بذاتها: ينبغي أن يتمكن المطوّر من إنجاز القصة اعتمادًا على هذه\n> الوثيقة وحدها. روابط متقاطعة: تتشارك جدول `subtitle_files` مع\n> [القصة 4.3](story-04-03-external-discovery.md) (تملك هذه القصة\n> ترحيل `is_embedded` الإضافي وفق [ملف README للملحمة](README.md))،\n> وتعيد استخدام لبنات FFmpeg الأساسية للعمليات الفرعية ومعالجة الإشارات من\n> [الخطة 2.3](../02-audio-extraction/plan-02-03-stream-extraction"
+      }
+    },
+    "plan-04.05-live-vtt-contract": {
+      "title": {
+        "hash": "6939c300587d08d9",
+        "ar": "تقديم VTT الحي (عقد جانب القراءة) — التنفيذ"
+      },
+      "content": {
+        "hash": "b372b18265105328",
+        "ar": "# الخطة 4.5 — تقديم VTT الحي (عقد جانب القراءة) — التنفيذ\n\n> خطة التنفيذ لـ [story-04-05-live-vtt-contract.md](story-04-05-live-vtt-contract.md).\n> قائمة بذاتها: ينبغي أن ينجز المطوّر القصة اعتمادًا على هذه الوثيقة\n> وحدها. روابط متقاطعة: جانب المُنتِج هو\n> [الخطة 3.6 — حفظ المقاطع + LISTEN/NOTIFY](../03-transcription/plan-03-06-segment-commit.md)؛\n> ومخطط المقاطع تملكه القصة 3.5 (`transcripts.is_active`)؛ و\n> ملفات الترجمات المحفوظة على القرص (ملفات SRT/VTT المرافقة) هي\n> [الخطة 4.1](plan-04-01-generate-from-segments.md)؛ وقواعد التنسيق\n> والاتجاه الثنائي هي\n> [الخطة 4.2"
+      }
+    }
+  }
+}

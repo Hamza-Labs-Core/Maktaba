@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { CSP_API, CSP_DEFAULT, cacheControl, movedTo } from "./headers";
+import { CSP_API, CSP_DEFAULT, CSP_WIKI, cacheControl, cspFor, movedTo } from "./headers";
 import worker, { type Env } from "./worker";
 
 // an assets binding over a few files: what wrangler's [assets] would serve from dist/
@@ -11,6 +11,11 @@ const FILES: Record<string, [string, string]> = {
   "/ar/plugins/": ["<!doctype html>الإضافات", "text/html; charset=utf-8"],
   "/plugins/": ["<!doctype html>plugins", "text/html; charset=utf-8"],
   "/api/": ["<!doctype html>api", "text/html; charset=utf-8"],
+  "/wiki/": ['<!doctype html><html lang="en" dir="ltr">wiki', "text/html; charset=utf-8"],
+  "/ar/wiki/": ['<!doctype html><html lang="ar" dir="rtl">ويكي', "text/html; charset=utf-8"],
+  "/wiki/db/wiki.json": ['{"entries":[]}', "application/json"],
+  "/ar/wiki/db/wiki.json": ['{"lang":"ar","entries":[]}', "application/json"],
+  "/wiki/assets/index-Dy6jf78D.js": ["export{}", "text/javascript"],
   "/assets/portal.css": ["body{}", "text/css"],
   "/.well-known/security.txt": ["Contact: mailto:security@maktaba.dev\n", "text/plain"],
 };
@@ -53,15 +58,14 @@ describe("redirects", () => {
     expect((await get("http://www.maktaba.dev/", env)).status).toBe(200);
   });
 
-  it("sends the old epics wiki to the specs on GitHub", async () => {
-    for (const p of ["/wiki", "/wiki/", "/wiki/assets/index-Dy6jf78D.js", "/wiki/db/wiki.json"]) {
+  it("serves the wiki in both languages, with no redirect", async () => {
+    for (const p of ["/wiki", "/wiki/", "/wiki/db/wiki.json", "/ar/wiki/", "/ar/wiki/db/wiki.json"]) {
+      expect(movedTo(p), p).toBeNull();
       const res = await get(`https://maktaba.dev${p}`);
-      expect(res.status, p).toBe(301);
-      expect(res.headers.get("Location"), p).toBe(
-        "https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics"
-      );
+      expect(res.status, p).not.toBe(301);
     }
-    expect(movedTo("/wikis")).toBeNull();
+    for (const p of ["/wiki/", "/ar/wiki/", "/ar/wiki/db/wiki.json"])
+      expect((await get(`https://maktaba.dev${p}`)).status, p).toBe(200);
   });
 
   it("sends the old Epic 54 story pages to the plugin guides", async () => {
@@ -115,6 +119,20 @@ describe("security headers", () => {
     expect(csp).toContain("worker-src 'self' blob:");
     expect(csp).not.toMatch(/https:\/\//);
   });
+
+  it("the wiki, in both languages, may load Google Fonts and frame the diagram viewer only", async () => {
+    for (const p of ["/wiki/", "/ar/wiki/", "/ar/wiki/db/wiki.json"]) {
+      const csp = (await get(`https://maktaba.dev${p}`)).headers.get("Content-Security-Policy")!;
+      expect(csp, p).toBe(CSP_WIKI);
+    }
+    expect(CSP_WIKI).toContain("script-src 'self';");
+    expect(CSP_WIKI).toContain("font-src 'self' https://fonts.gstatic.com");
+    expect(CSP_WIKI).toContain("frame-src https://viewer.diagrams.net");
+    expect(CSP_WIKI).toContain("frame-ancestors 'none'");
+    // a path that only starts with the letters "wiki" is not the wiki
+    expect(cspFor("/wikis/")).toBe(CSP_DEFAULT);
+    expect(cspFor("/ar/plugins/")).toBe(CSP_DEFAULT);
+  });
 });
 
 describe("caching", () => {
@@ -126,6 +144,15 @@ describe("caching", () => {
   it("other files cache for an hour", async () => {
     const res = await get("https://maktaba.dev/assets/portal.css");
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=3600");
+  });
+
+  it("the wiki's content-hashed bundle caches for good; its database for an hour", async () => {
+    const js = await get("https://maktaba.dev/wiki/assets/index-Dy6jf78D.js");
+    expect(js.headers.get("Cache-Control")).toBe("public, max-age=31536000, immutable");
+    for (const p of ["/wiki/db/wiki.json", "/ar/wiki/db/wiki.json"]) {
+      const res = await get(`https://maktaba.dev${p}`);
+      expect(res.headers.get("Cache-Control"), p).toBe("public, max-age=3600");
+    }
   });
 
   it("errors are not cached", () => {
