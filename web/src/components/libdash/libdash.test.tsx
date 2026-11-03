@@ -20,7 +20,7 @@ import {
 import { activityById, activityOf } from "./useLibraryBoard";
 import { ActivityChart, StatusBar } from "./charts";
 import { StageChart, stageNeedsWork } from "./StageChart";
-import { LibraryTile, libraryPath } from "./LibraryTile";
+import { LibraryTile, libraryPath, ringState } from "./LibraryTile";
 import { LibrariesAttention, ATTENTION_SHOWN } from "./LibrariesAttention";
 
 const cell = (
@@ -219,6 +219,46 @@ describe("charts", () => {
   it("a library with every queue done says so", () => {
     renderAt(<StageChart row={done("a", "A")} stages={[]} />, "/");
     expect(screen.getByText("All 1 queues are done.")).toBeInTheDocument();
+  });
+});
+
+describe("the progress ring", () => {
+  it("is the done colour whether the library fails, works, waits or is done; failures stay off it", () => {
+    const libs = [
+      failing("f", "Failing", 40),
+      lib("r", "Running", [cell("probe", 1, 5, 2, 2)]),
+      lib("w", "Waiting", [cell("probe", 1, 5, 0, 4)]),
+      done("d", "Done"),
+    ];
+    const classes = libs.map((row) => {
+      const h = libraryHealth(row);
+      const { container, unmount } = renderAt(
+        <ul>
+          <LibraryTile h={h} />
+        </ul>,
+        "/"
+      );
+      const ring = container.querySelector("[data-testid=ring-gauge]")!;
+      const cls = ring.getAttribute("class");
+      unmount();
+      return cls;
+    });
+    expect(new Set(classes)).toEqual(new Set(["mkt-q-ring mkt-q-ring--done"]));
+    expect(ringState(libraryHealth(failing("f", "F")))).toBe("done");
+    // only a library with nothing to do has the off ring
+    expect(ringState(libraryHealth(lib("e", "Empty", [])))).toBe("off");
+  });
+
+  it("on the failing tile, the failure is the red line and the edge, not the ring", () => {
+    const { container } = renderAt(
+      <ul>
+        <LibraryTile h={libraryHealth(failing("f", "Failing", 40))} />
+      </ul>,
+      "/"
+    );
+    expect(container.querySelector(".mkt-ld-tile")).toHaveAttribute("data-state", "failing");
+    expect(container.querySelector(".mkt-ld-state--failing")).toHaveTextContent("41 failed");
+    expect(container.querySelector(".mkt-q-ring--failing")).toBeNull();
   });
 });
 

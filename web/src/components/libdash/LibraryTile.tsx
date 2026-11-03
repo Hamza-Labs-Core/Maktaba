@@ -11,15 +11,16 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { RingGauge } from "../queue/RingGauge";
 import { useFmt, type QueueVisualState } from "../queue/format";
 import { ActivityChart, StatusBar, useStatusText } from "./charts";
-import type { LibraryHealth, LibraryState } from "./health";
+import type { LibraryHealth } from "./health";
 
-export const RING_STATE: Record<LibraryState, QueueVisualState> = {
-  failing: "failing",
-  working: "running",
-  waiting: "waiting",
-  done: "done",
-  empty: "off",
-};
+/**
+ * The progress ring's colour: always the done colour, so its percentage reads
+ * as work done; failures show in the red "N failed" line and the tile's edge,
+ * never in the ring. Only a library with nothing to do has the off ring.
+ */
+export function ringState(h: Pick<LibraryHealth, "total">): QueueVisualState {
+  return h.total > 0 ? "done" : "off";
+}
 
 export function libraryPath(id: string, section?: string): string {
   return `/admin/libraries/${encodeURIComponent(id)}${section ? `#${section}` : ""}`;
@@ -71,7 +72,7 @@ export function LibraryTile({ h, activity, selected, onSelect, onSources }: Libr
         <RingGauge
           done={h.done}
           total={Math.max(h.total, 1)}
-          state={RING_STATE[h.state]}
+          state={ringState(h)}
           size={64}
           centre={`${n(h.pct)}%`}
           label={t("libdash.gauge", { pct: n(h.pct), name: h.name })}

@@ -18,7 +18,7 @@ import { OFFLINE_ACTIONS, useBytes, type OfflineAction } from "../../../componen
 import { RingGauge } from "../../../components/queue/RingGauge";
 import { ActivityChart, StatusBar, useStatusText } from "../../../components/libdash/charts";
 import { StageChart } from "../../../components/libdash/StageChart";
-import { RING_STATE } from "../../../components/libdash/LibraryTile";
+import { ringState } from "../../../components/libdash/LibraryTile";
 import type { LibraryHealth } from "../../../components/libdash/health";
 import type { Activity } from "../../../components/libdash/useLibraryBoard";
 
@@ -221,7 +221,7 @@ export function QueueSection({
             <RingGauge
               done={h.done}
               total={Math.max(h.total, 1)}
-              state={RING_STATE[h.state]}
+              state={ringState(h)}
               size={96}
               centre={`${n(h.pct)}%`}
               label={t("libdash.gauge", { pct: n(h.pct), name: h.name })}
