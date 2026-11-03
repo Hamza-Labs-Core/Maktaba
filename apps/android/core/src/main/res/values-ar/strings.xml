@@ -92,6 +92,8 @@
     <string name="code_renews">يتجدد الرمز عند انتهاء صلاحيته.</string>
     <string name="code_unsupported">لا يدعم %1$s تسجيل الدخول برمز. استخدم اسم المستخدم وكلمة المرور.</string>
 
+    <string name="approve_tv">الموافقة على تلفاز</string>
+    <string name="approve_tv_or_device">الموافقة على تلفاز أو جهاز</string>
     <string name="account_approve">الموافقة على تسجيل دخول</string>
     <string name="account">الحساب</string>
     <string name="theme_mode">السمة: %1$s</string>

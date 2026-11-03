@@ -102,6 +102,31 @@ data class DeviceCode(
     }
 }
 
+/**
+ * One device waiting for an approval (`GET /api/pairing/pending`): what it is and when it
+ * asked, never its code. The person still types or scans the code from its screen.
+ */
+@Serializable
+data class PendingSignIn(
+    val id: String,
+    @SerialName("client_app") val clientApp: String = "",
+    val platform: String = "",
+    val device: String = "",
+    @SerialName("device_label") val deviceLabel: String = "",
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("expires_at") val expiresAt: String? = null,
+) {
+    /** What to call it: its label, else its app ("tv"), else null (say "a device"). */
+    val name: String? get() = deviceLabel.ifBlank { clientApp }.ifBlank { null }
+
+    /** A TV (the app says tv, or the device is one). */
+    val isTv: Boolean get() = clientApp == "tv" || device == "tv"
+}
+
+/** `GET /api/pairing/pending`: the devices waiting, newest first. */
+@Serializable
+data class PendingSignIns(val count: Int = 0, val requests: List<PendingSignIn> = emptyList())
+
 private fun epochMillis(s: String): Long? = runCatching { OffsetDateTime.parse(s).toInstant().toEpochMilli() }.getOrNull()
 
 /**
@@ -132,6 +157,9 @@ class DeviceSignIn(
             poll(code)?.let { return it }
         }
     }
+
+    @Serializable
+    private data class Waiting(@SerialName("looked_up") val lookedUp: Boolean = false)
 
     internal suspend fun start(): DeviceCode {
         var unreachable = 0
@@ -167,8 +195,13 @@ class DeviceSignIn(
     fun deadline(code: DeviceCode): Long =
         code.expiresMillis?.takeIf { it - now() in 1..DEFAULT_TTL_MS } ?: (now() + DEFAULT_TTL_MS)
 
-    /** Polls one code until approved (the tokens) or gone (null: ask for a new code). */
-    internal suspend fun poll(code: DeviceCode): AuthTokens? {
+    /**
+     * Polls one code until approved (the tokens) or gone (null: ask for a new code).
+     * [onLookedUp] once a phone signed in on the home has read the code (the home's
+     * `looked_up`): the device can say "your phone found this TV".
+     */
+    internal suspend fun poll(code: DeviceCode, onLookedUp: () -> Unit = {}): AuthTokens? {
+        var told = false
         val until = deadline(code)
         val every = code.interval.coerceIn(1, 30) * 1000L
         val body = buildJsonObject {
@@ -188,7 +221,13 @@ class DeviceSignIn(
                 } catch (e: Exception) {
                     throw ApiException.Decoding(e.message ?: e.toString())
                 }
-                202 -> continue
+                202 -> {
+                    if (!told && runCatching { ApiClient.json.decodeFromString(Waiting.serializer(), text).lookedUp }.getOrDefault(false)) {
+                        told = true
+                        onLookedUp()
+                    }
+                    continue
+                }
                 429 -> sleep(every) // polled too fast: one more turn
                 // expired, made under another key, or already collected: a new code
                 404, 409, 410 -> return null

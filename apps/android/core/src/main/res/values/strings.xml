@@ -94,6 +94,8 @@
     <string name="code_renews">The code is renewed when it runs out.</string>
     <string name="code_unsupported">%1$s cannot sign in with a code. Use your username and password.</string>
 
+    <string name="approve_tv">Approve a TV</string>
+    <string name="approve_tv_or_device">Approve a TV or device</string>
     <string name="account_approve">Approve a sign-in</string>
     <string name="account">Account</string>
     <string name="theme_mode">Theme: %1$s</string>

@@ -63,6 +63,10 @@ import com.hamzalabs.maktaba.core.layout.Panes
 import com.hamzalabs.maktaba.core.layout.currentPanes
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.core.ui.AccountMenu
+import com.hamzalabs.maktaba.core.ui.ApproveTvButton
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.BoxWithConstraints
 import com.hamzalabs.maktaba.core.ui.Message
 import com.hamzalabs.maktaba.core.ui.ThemeStore
 import com.hamzalabs.maktaba.core.ui.sentence
@@ -161,7 +165,17 @@ data class ActionProblem(val what: String?, val failure: Failure)
 @Composable
 fun RemoteHome(session: AppSession, user: User, client: ApiClient, themes: ThemeStore) {
     val remote = remember(client) { Remote(client, session) }
-    RemoteFrame(remote, account = { AccountMenu(session, user, themes) })
+    RemoteFrame(remote, account = { RemoteAccount(session, user, themes, client) })
+}
+
+/**
+ * The end of every Remote place's top bar: "Approve a TV" in sight (a TV showing a sign-in
+ * code is approved here), then the account menu, which keeps its own "Approve a sign-in".
+ */
+@Composable
+fun RemoteAccount(session: AppSession, user: User, themes: ThemeStore, client: ApiClient) {
+    ApproveTvButton(session, user, client)
+    AccountMenu(session, user, themes)
 }
 
 /**
@@ -244,7 +258,21 @@ fun AdminScreen(
     val list: @Composable (Modifier) -> Unit = { modifier ->
         Scaffold(
             modifier = modifier,
-            topBar = { TopAppBar(title = { Text(title) }, actions = { actions(); account() }) },
+            topBar = {
+                // a cover screen at a large text size: the title ends in "…" and the place's
+                // own action (Retry all, Pause all) gets at most 40% of the bar, so "Approve a
+                // TV" and the account menu (measured first: the weight) never leave the bar
+                BoxWithConstraints {
+                    val most = maxWidth * 0.4f
+                    TopAppBar(
+                        title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("bar-title")) },
+                        actions = {
+                            Box(Modifier.weight(1f, fill = false).widthIn(max = most)) { actions() }
+                            account()
+                        },
+                    )
+                }
+            },
         ) { padding ->
             PullToRefreshBox(
                 isRefreshing = refreshing,

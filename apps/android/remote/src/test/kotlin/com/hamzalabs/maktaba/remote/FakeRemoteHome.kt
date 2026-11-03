@@ -16,7 +16,6 @@ import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.session.AppSession
-import com.hamzalabs.maktaba.core.ui.AccountMenu
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.ThemeMode
 import com.hamzalabs.maktaba.core.ui.ThemeStore
@@ -135,7 +134,7 @@ fun RemoteForTest(home: FakeRemoteHome, info: WindowAdaptiveInfo, fontScale: Flo
     CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
         MaktabaTheme(ThemeMode.Dark) {
             Surface {
-                RemoteFrame(home.remote, account = { AccountMenu(home.session, home.user, home.themes) }, adaptiveInfo = info)
+                RemoteFrame(home.remote, account = { RemoteAccount(home.session, home.user, home.themes, home.remote.client) }, adaptiveInfo = info)
             }
         }
     }
