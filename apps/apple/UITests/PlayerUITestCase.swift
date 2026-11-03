@@ -121,8 +121,12 @@ class PlayerUITestCase: XCTestCase {
     /// `controlsStay`: the player's controls stay up once shown instead of hiding 4 s after the
     /// last touch (`WatchView.hideAfter`), so a test that shows them and taps one does not race
     /// the 4 s on a slow runner; the test of the 4 s turns it off.
+    /// `resetSettings` (with `fresh`): the playback settings and the theme as on a fresh install
+    /// (`-maktaba-settings-reset`), so a setting a test changed (Profile's autoplay switch) is
+    /// never the next test's; off only for a relaunch that checks a setting was kept.
     func launch(_ language: String = "en", sections: [String]? = nil, section: String? = nil, open: String? = nil,
-                fresh: Bool = true, theme: String? = "dark", controlsStay: Bool = true, extra: [String] = []) {
+                fresh: Bool = true, resetSettings: Bool = true, theme: String? = "dark", controlsStay: Bool = true,
+                extra: [String] = []) {
         self.language = language
         let locale = language == "ar" ? "ar_JO" : "en_US"
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale, "-maktaba-secrets-in-file"]
@@ -130,6 +134,7 @@ class PlayerUITestCase: XCTestCase {
         if let theme { args += ["-theme", theme] }
         if fresh {
             args += ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
+            if resetSettings { args.append("-maktaba-settings-reset") }
         }
         if let sections { args += ["-maktaba-sections", sections.joined(separator: ",")] }
         if let section { args += ["-maktaba-section", section] }

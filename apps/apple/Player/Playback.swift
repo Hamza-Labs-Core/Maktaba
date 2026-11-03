@@ -481,7 +481,7 @@ final class Playback {
         if s != sound { sound = s }
     }
 
-    private func playedToEnd() {
+    func playedToEnd() {
         ended = true
         isPlaying = false
         if let d = player?.currentItem?.duration.seconds, d.isFinite { position = d }
@@ -567,12 +567,19 @@ final class Playback {
                 let all = try await client.episodes(series: series.id).episodes
                 let keys = all.map { WatchLogic.EpisodeKey(id: $0.videoID, season: $0.season, episode: $0.episode, absolute: $0.absoluteNumber) }
                 guard !Task.isCancelled, video?.id == v.id, let id = WatchLogic.next(after: v.id, in: keys) else { return }
-                next = all.first { $0.videoID == id }
-                NowPlaying.shared.update(self, handlers: remoteHandlers())
+                if let episode = all.first(where: { $0.videoID == id }) { nextFound(episode) }
             } catch {
                 // not an episode, or the home could not say: no Up next
             }
         }
+    }
+
+    /// The series' next episode, once the home has said. Found after the end (or during a
+    /// pause in the last seconds), the time observer no longer ticks: Up next is checked here.
+    func nextFound(_ episode: Episode) {
+        next = episode
+        NowPlaying.shared.update(self, handlers: remoteHandlers())
+        checkUpNext()
     }
 
     /// In the last seconds (or at the end), with autoplay on: count down, then play next.

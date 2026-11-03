@@ -45,6 +45,7 @@
     "PlayerLiveUITests/testGuideScrollsThroughTheChannels": 36.9,
     "PlayerLiveUITests/testLiveTVInArabic": 56.0,
     "PlayerLiveUITests/testNoChannelsHidesTheSection": 30.4,
+    "PlayerLiveUITests/testNowGuideSwitch": 35.0,
     "PlayerLiveUITests/testNowListsTheChannelsWithProgress": 29.7,
     "PlayerLiveUITests/testPlayerPlaysSurfsAndGoesBackToLive": 59.9,
     "PlayerMockHomeTests/testADelayKeepsTheQuerysAnswer": 3.4,
@@ -125,6 +126,7 @@
     "PlayerWatchUITests/testQualityReopensAtTheSamePositionWithMaxBitrate": 49.3,
     "PlayerWatchUITests/testThePickerListsTheSessionsRenditionsAndShowsTheChosenOne": 34.2,
     "PlayerWatchUITests/testUpNextCountsDownAndPlaysTheNextEpisode": 51.2,
+    "PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd": 50.0,
     "PlayerWatchUITests/testWithAutoplayOffItStopsAtTheEndAndNextStays": 38.8
   },
   "ipad": {
@@ -173,6 +175,7 @@
     "PlayerLiveUITests/testGuideScrollsThroughTheChannels": 57.4,
     "PlayerLiveUITests/testLiveTVInArabic": 48.7,
     "PlayerLiveUITests/testNoChannelsHidesTheSection": 37.8,
+    "PlayerLiveUITests/testNowGuideSwitch": 50.0,
     "PlayerLiveUITests/testNowListsTheChannelsWithProgress": 47.6,
     "PlayerLiveUITests/testPlayerPlaysSurfsAndGoesBackToLive": 62.6,
     "PlayerMockHomeTests/testADelayKeepsTheQuerysAnswer": 3.7,
@@ -253,6 +256,7 @@
     "PlayerWatchUITests/testQualityReopensAtTheSamePositionWithMaxBitrate": 52.7,
     "PlayerWatchUITests/testThePickerListsTheSessionsRenditionsAndShowsTheChosenOne": 39.8,
     "PlayerWatchUITests/testUpNextCountsDownAndPlaysTheNextEpisode": 35.4,
+    "PlayerWatchUITests/testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd": 70.0,
     "PlayerWatchUITests/testWithAutoplayOffItStopsAtTheEndAndNextStays": 48.8
   }
 }

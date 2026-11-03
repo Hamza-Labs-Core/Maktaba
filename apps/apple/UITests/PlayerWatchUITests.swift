@@ -53,6 +53,19 @@ final class PlayerWatchUITests: PlayerUITestCase {
         waitFor("the next episode opens", timeout: 25) { sessions().contains { $0["video_id"] as? String == "v3" } }
     }
 
+    /// The next episode found only after the video ended (the home slow to list the
+    /// season): Up next still counts down and plays it. The time observer stops at the end,
+    /// so finding it must check Up next itself (CI: a busy runner's slow answer meant no Up
+    /// next at all).
+    func testUpNextShowsWhenTheNextEpisodeIsFoundAfterTheEnd() {
+        home.delay("GET", "/api/series/s-seerah/episodes", by: 15)
+        watch("v2", at: 3112)
+        waitFor("it plays to its end", timeout: 30) { state["ended"] == "true" }
+        XCTAssertFalse(sessions().contains { $0["video_id"] as? String == "v3" }, "the next episode not known yet")
+        XCTAssertTrue(element("player.upNext").waitForExistence(timeout: 25), "Up next once the next episode is found")
+        waitFor("the next episode opens", timeout: 25) { sessions().contains { $0["video_id"] as? String == "v3" } }
+    }
+
     func testWithAutoplayOffItStopsAtTheEndAndNextStays() {
         launch("en", sections: ["home"], open: "watch/v2@3110", extra: ["-playback.autoplay_next", "NO"])
         signIn()

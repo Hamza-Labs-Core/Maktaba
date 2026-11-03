@@ -14,7 +14,8 @@ struct LiveTVScreen: View {
     @State private var model = LiveModel()
     /// A channel opened from a programme's sheet (Watch).
     @State private var watching: String?
-    @SceneStorage("live.mode") private var mode = Mode.now
+    /// Now or Guide; a UI test may open on the guide (`ShellLaunch.liveMode`).
+    @SceneStorage("live.mode") private var mode = ShellLaunch.liveMode().flatMap(Mode.init(rawValue:)) ?? .now
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {

@@ -44,6 +44,38 @@ import MaktabaKit
         #expect(live.player.audiovisualBackgroundPlaybackPolicy == .continuesIfPossible)
     }
 
+    /// Up next at the end of a video whose next episode the home named only after it ended:
+    /// the time observer has stopped, so finding the episode counts down by itself (shared
+    /// Player code; on iPad CI a slow answer meant no Up next). Autoplay as on a fresh install.
+    @Test func upNextCountsDownForANextEpisodeFoundAfterTheEnd() throws {
+        let defaults = UserDefaults.standard
+        let kept = defaults.object(forKey: PlaybackSettings.autoplayNextKey)
+        defaults.removeObject(forKey: PlaybackSettings.autoplayNextKey)
+        defer { defaults.set(kept, forKey: PlaybackSettings.autoplayNextKey) }
+        let home = URL(string: "http://127.0.0.1:9")!
+        let playback = Playback(client: APIClient(home: home, tokens: TokenStore(app: "test.mac.upnext", home: home)))
+        playback.playedToEnd()
+        #expect(playback.ended)
+        #expect(playback.upNextCountdown == nil, "no next episode yet: nothing to count down to")
+        let next = try JSONDecoder().decode(Episode.self, from: Data(#"{"video_id":"v3","title":"Lesson 12","season":1,"episode":12}"#.utf8))
+        playback.nextFound(next)
+        #expect(playback.upNextCountdown == WatchLogic.upNextSeconds, "Up next counts down once the episode is found")
+        playback.cancelUpNext()
+    }
+
+    /// A UI test's `-maktaba-settings-reset` puts autoplay back on as the app starts (PlayerApp
+    /// applies it, not only the Profile), so a test that turned it off never leaves the next
+    /// test's player without Up next.
+    @Test func theSettingsResetPutsAutoplayBackOn() {
+        let defaults = UserDefaults.standard
+        defaults.set(false, forKey: PlaybackSettings.autoplayNextKey)
+        PlaybackPreferences.shared.reload()
+        #expect(!PlaybackSettings.read().autoplayNext)
+        PlaybackPreferences.resetIfAsked(arguments: ["-maktaba-settings-reset"])
+        #expect(PlaybackSettings.read().autoplayNext, "the player reads autoplay on")
+        #expect(PlaybackPreferences.shared.autoplayNext)
+    }
+
     static func find<V: NSView>(_: V.Type, in view: NSView) -> V? {
         if let v = view as? V { return v }
         for sub in view.subviews { if let v = find(V.self, in: sub) { return v } }
