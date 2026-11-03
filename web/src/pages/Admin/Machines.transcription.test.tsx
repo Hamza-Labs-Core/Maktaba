@@ -213,7 +213,9 @@ describe("Machines: the second-listen line", () => {
       " the second listen needs a GPU of 7.5 GB or more here)";
     show(pc({}, ["transcribe"], { second_listen: why }));
     const note = await screen.findByTestId("machine-second-listen");
-    expect(note).toHaveTextContent(/Second listen: doesn't run here\. This machine still transcribes/);
+    expect(note).toHaveTextContent(
+      /Second listen: doesn't run here\. This machine still transcribes/
+    );
     expect(within(note).getByText(/has 6\.0 GB/)).toBeInTheDocument();
     expect(await screen.findByTestId("machine-transcription")).toHaveTextContent(
       /Transcription: ready/

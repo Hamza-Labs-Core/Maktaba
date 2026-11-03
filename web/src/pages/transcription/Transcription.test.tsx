@@ -44,6 +44,7 @@ const summaryFixture: TranscriptionSummary = {
   },
   stages: [
     { stage: "transcribe", pending: 75, running: 3, done: 40, failed: 2 },
+    { stage: "second_listen", pending: 4, running: 1, done: 39, failed: 0 },
     { stage: "subtitle_gen", pending: 0, running: 1, done: 38, failed: 0 },
     { stage: "index", pending: 5, running: 0, done: 30, failed: 1 },
   ],
@@ -156,6 +157,14 @@ describe("Transcription", () => {
     expect(within(card).getByText("Waiting").nextSibling).toHaveTextContent("75");
     expect(within(card).getByText("Failed").nextSibling).toHaveTextContent("2");
     expect(screen.getByRole("link", { name: "Search index" })).toBeInTheDocument();
+    // the second listen is a stage of its own, between Whisper and the subtitles
+    const listen = screen.getByRole("link", { name: "Second listen" });
+    expect(listen).toHaveAttribute("href", "/queue/second_listen");
+    const names = screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+    expect(names.slice(0, 3)).toEqual(["Transcribe", "Second listen", "Subtitles"]);
+    expect(
+      within(listen.closest("li") as HTMLElement).getByText("Waiting").nextSibling
+    ).toHaveTextContent("4");
   });
 
   it("shows what the workers decode now and times the rest by it", async () => {
