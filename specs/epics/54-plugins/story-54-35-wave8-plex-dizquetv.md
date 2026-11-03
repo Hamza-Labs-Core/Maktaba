@@ -36,7 +36,9 @@ paths today's extension code calls, listed in the manifest's `service` table and
 ### 3. Extensions become plugins
 
 The `extensions` rows (enabled, configured, settings) stay; the component (`ext.plex`,
-`ext.dizquetv`) keeps its id and becomes `kind = plugin` (54.27 §3). `is_configured()` reads
+`ext.dizquetv`) keeps its id and its kind, `extension`, and gains `plugin = "tv.maktaba.plex"`
+/ `"tv.maktaba.dizquetv"` (54.27 §3). Epic 51.07's write-through (`extensions.enabled` kept in
+step with the desired row, `api/internal/components/writethrough.go`) is unchanged. `is_configured()` reads
 the same settings through `settings.read`. Cloudflare Stream has no stage and stays an
 extension component (README §15.2).
 

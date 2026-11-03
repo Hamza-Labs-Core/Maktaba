@@ -1,7 +1,7 @@
 # Epic 50 — Maktaba Cloud with no downtime
 
 > **Status:** spec (2026-11-03). **Source:** [`specs/epics/50-cloud-no-downtime/`](../../../specs/epics/50-cloud-no-downtime/README.md).
-> **Anchors:** [`architecture.md` §13](../../../specs/architecture.md#13-cloud-relay-architecture) · [Epic 25](epic-25-cloud-relay.md) · [Epic 53](epic-53-logs-errors-reports.md) (the cloud's logs, errors and application metrics) · [`deploy/cloud-relay/`](../../../deploy/cloud-relay/README.md) · [research](../../../specs/epics/50-cloud-no-downtime/research.md).
+> **Anchors:** [`architecture.md` §13](../../../specs/architecture.md#13-cloud-relay-architecture) · [Epic 25](epic-25-cloud-relay.md) · [Epic 53](epic-53-logs-errors-reports.md) (the cloud's logs, errors and application metrics) · [Epic 51](epic-51-configurable-components.md) (the home's cloud parts are components) · [`deploy/cloud-relay/`](../../../deploy/cloud-relay/README.md) · [research](../../../specs/epics/50-cloud-no-downtime/research.md).
 
 ## Goal
 
@@ -30,7 +30,7 @@ of relays** (Phase 2).
   cloud processes. Synchronous replication, a wildcard certificate on each node, blue-green
   deploys where homes move their tunnels before the old process stops, pgBackRest backups to
   Object Storage and Cloudflare R2, a canary home probed from outside, a status page off
-  Hetzner, and the Free / Basic / Pro plans enforced by the relay and billed through a payment provider TBD (not Stripe).
+  Hetzner, and the Free / Basic / Pro plans enforced by the relay and billed through a payment provider TBD.
 - **Phase 1b:** direct remote access like Plex, **free on every plan**: UPnP / NAT-PMP, an
   outside reachability check, per-home HTTPS names on several separate direct-name domains
   (never under `maktaba.tv`).
@@ -61,6 +61,7 @@ of relays** (Phase 2).
 | 50.17 | [A stateless API pool](../../../specs/epics/50-cloud-no-downtime/story-50-17-api-pool.md) | 2 |
 | 50.18 | [The database on its own nodes](../../../specs/epics/50-cloud-no-downtime/story-50-18-database-nodes.md) | 2 |
 | 50.19 | [Plans: Free, Basic and Pro, enforced by the relay and billed by usage](../../../specs/epics/50-cloud-no-downtime/story-50-19-plans-relay-billing.md) | 1 |
+| 50.35 | [Remote access is on when any remote path is on](../../../specs/epics/50-cloud-no-downtime/story-50-35-remote-access-capability.md) | 1b |
 
 The dependency graph and launch gate are in the [epic README](../../../specs/epics/50-cloud-no-downtime/README.md#10-stories).
 50.10 depends on [Epic 53.17](../../../specs/epics/53-logs-errors-reports/story-53-17-cloud-observability.md)
@@ -83,7 +84,7 @@ The answers to the epic's open questions (epic README §13):
    home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use (then slower,
    never stopped). **Pro:** full quality within a monthly allowance and N streams, optional
    pay-as-you-go GB (off by default, capped by the user), then Basic's quality, never cut off;
-   extra streams are a paid add-on. Family is dropped; prices are TBD by the owner. The payment provider (TBD, not Stripe) bills
+   extra streams are a paid add-on. Family is dropped; prices are TBD by the owner. The payment provider (TBD) bills
    a flat price per plan, a metered price for pay-as-you-go and a per-unit price for extra
    streams; old code names migrate `pro`→`basic`, `family`→`pro`.
 5. **Direct certificates on several separate domains** (3–4 to start, never under
@@ -113,6 +114,14 @@ The answers to the epic's open questions (epic README §13):
   lapsed plan (no plan) ends relayed play.
 - **Names:** users get `maktaba.tv`, dev gets `maktaba.dev`. `maktaba.app` is not ours; older
   specs that say it are fixed by story 50.01. Direct names use their own separate domains.
+- **The home's side is Epic 51 components** (README §4.6). `cloud.link` (the relay agent, never
+  licence-gated) and `cloud.relay` (relayed play, licence flag `cloud_relay`, which Basic and Pro
+  carry) exist. 50.15 adds `cloud.direct` (free, no flag) and 50.22 adds `livetv.broadcast`
+  (flag `broadcast`, added by 50.20 for Pro and Broadcaster). On a Free home `cloud.relay` waits
+  with `licence_missing` and keeps its wish.
+- **Gap in Epic 51, closed by 50.35:** a capability is on only when every component listing it is
+  on, so a Free home would read `remote_access: off` while direct remote works. 50.35 adds
+  `feature_any` to the catalog: `cloud.relay` or `cloud.direct` is enough.
 
 ## Costs (as of 2026-11-03)
 
@@ -137,7 +146,7 @@ Player and TV app as a guest.
 **Decisions (2026-11-03):**
 
 - **Viewers never pay.** Access is open or by invite link only.
-- **We charge for infrastructure, not content.** Maktaba Cloud is an infrastructure and hosting
+- **Maktaba charges for infrastructure, not content.** Maktaba Cloud is an infrastructure and hosting
   provider. It never selects, uploads, curates or recommends what airs. Channel building,
   scheduling and YouTube intake stay on the publisher's home, and the publisher is responsible for
   the rights.
@@ -158,7 +167,7 @@ Player and TV app as a guest.
 **Plans:** Pro gains **guest sharing** (1 invite-only channel on demand, 5 viewers, 50
 viewer-hours). **Broadcaster** is an add-on to Pro: 3 channels, 100 concurrent viewers, 5,000
 viewer-hours, up to 1080p, then optional pay-as-you-go viewer-hours with a cap, then the lowest
-rung, then new viewers wait. Prices are TBD; the payment provider is TBD, never Stripe.
+rung, then new viewers wait. Prices are TBD; the payment provider is TBD.
 
 **Estimated cost to Maktaba a month:**
 

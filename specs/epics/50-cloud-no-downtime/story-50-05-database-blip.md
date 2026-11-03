@@ -27,7 +27,7 @@ story makes it use that, and writes down what Redis is for (very little).
   outage it uses the last total it read plus the delta: a home near its cap can go slightly
   over, never more than the bytes of the outage. The Pro cap is 100 GB a month; a few minutes of
   one stream is a few hundred MB.
-- **Invalidation.** The billing webhook handler (story 25.14; payment provider TBD, not Stripe) already plans `NOTIFY
+- **Invalidation.** The billing webhook handler (story 25.14; payment provider TBD) already plans `NOTIFY
   tier_changed`; nothing listens yet. The relay `LISTEN`s on `tier_changed` and `server_changed`
   (suspension, revocation, slug change) and drops the affected entries at once. Suspension and
   revocation therefore apply within a second while the database is up.

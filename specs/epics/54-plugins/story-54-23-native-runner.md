@@ -1,6 +1,6 @@
 # Story 54.23 — The native plugin runner
 
-> Epic 54 · Phase 4 · Depends on: 54.02, 54.22 · Needed by: 54.25
+> Epic 54 · Phase 4 · Depends on: 54.02, 54.22, 54.37, Epic 51 (51.01, 51.04) · Needed by: 54.25
 
 ## Why
 
@@ -14,8 +14,21 @@ the queue worker treats every plugin the same and imports no stage code.
 ### 1. The process
 
 `maktaba-plugin-runner` is a Python entry point in the pipeline venv
-(`python -m maktaba_plugin_runner --group <name>`), started by the supervisor as an Epic 51
-`process` component per runner group: `plugins.runner.<group>`. Its environment has **no**
+(`python -m maktaba_plugin_runner --group <name>`), started by the supervisor as role
+`plugin-runner`, one instance per group. Epic 51's catalog check
+(`cmd/maktaba-server/internal/supervisor/catalog_roles_test.go`) needs every role/instance in
+exactly one component, so the instances are split by what they serve:
+
+| Instance | Catalog component | Why |
+|---|---|---|
+| `plugin-runner/ml-*` (one per today's stt slot) | `transcription` (its `processes` change from `pipeline/stt-*` in wave 3, 54.30) | it exists only for transcription |
+| `plugin-runner/index` | `search.semantic` (beside `pipeline/index`, which keeps the query server) | it exists only for semantic search |
+| `plugin-runner/light`, `plugin-runner/net`, `plugin-runner/service`, `plugin-runner/fp` | a new core component, `core.plugin_runners` (`kind = "process"`, `switchable = false`, `on_demand = true`, 54.37 §4) | they serve several components each (`light` carries `core.pipeline`'s core-media) |
+
+On demand, a group's process runs only while at least one component whose first-party plugin
+it serves is enabled and passes its gates; `net` does not run on a home with `youtube`,
+`library.repair` and `enrich` all off. Switching a served component off drains its stages
+(Epic 51 §4.5) and the runner stops when its last one is off. Its environment has **no**
 `DATABASE_URL`, no home secrets path, and no cloud or extension secrets; the supervisor strips
 them (a test asserts the child environment).
 
@@ -70,14 +83,16 @@ statements only.
 
 The `ml` runner accepts up to the `gpu` pool's size of concurrent `Run`s for `transcribe` and
 feeds them to one batched Whisper (today's `stt/batched.py` moves into the transcription
-plugin). The supervisor's `pipeline/stt-N` instances become `plugins.runner.ml` instances with
+plugin). The supervisor's `pipeline/stt-N` instances become `plugin-runner/ml-N` instances with
 the same count, slot names and metrics series (`MAKTABA_STT_SLOT` keeps its meaning).
 
 ### 6. Crashes
 
 A runner that dies is restarted with Epic 51's backoff. The queue worker returns its in-flight
-jobs to the queue without spending an attempt (§4.9). Five crashes in 10 minutes put the group
-*Failed* `runner_crash_loop` and its stages wait as `dependency:plugin`.
+jobs to the queue without spending an attempt (§4.9). Five crashes in 10 minutes put the
+runner's component *Failed* `runner_crash_loop` (an Epic 51 reason code, 54.37 §3; for
+`core.plugin_runners` the failed group is in the condition's `params`), and its stages wait as
+`dependency:plugin`.
 
 ## Acceptance criteria
 
@@ -129,8 +144,8 @@ jobs to the queue without spending an attempt (§4.9). Five crashes in 10 minute
 | `pipeline/src/maktaba_plugin_runner/` (new) | §1–§6: main, protocol, sandbox per OS, groups, fingerprints. |
 | `shared/plugins/dispatch.proto` | `Hello`, `Fingerprints`, `StillCurrent`. |
 | `plugins/sdk/python/maktaba_plugin_sdk/native/` (new) | Generated `PluginAPI` binding, `maktaba:trusted` client. |
-| `cmd/maktaba-server/internal/supervisor/` | `plugins.runner.<group>` roles; env stripping; `stt-N` → `ml` instances. |
-| `shared/components/catalog.toml` | `plugins.runner.*` process entries. |
+| `cmd/maktaba-server/internal/supervisor/` | `plugin-runner` role and instances; env stripping; `stt-N` → `ml-N` instances (wave 3); `catalog_roles_test.go`. |
+| `shared/components/catalog.toml` | The `core.plugin_runners` entry; `plugin-runner/index` in `search.semantic` (wave 3 moves `transcription` to `plugin-runner/ml-*`). |
 | `web/src/i18n/{en,ar}.json` | Reason codes. |
 
 ### Tests

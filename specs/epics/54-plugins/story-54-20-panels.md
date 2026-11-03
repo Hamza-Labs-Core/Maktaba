@@ -55,8 +55,18 @@ step.
 
 `GET /api/panels?subject=video:<id>` answers the panels for the signed-in user: the schema,
 strings in the user's language, and values. Filtered by library ACL and plugin phase (a
-disabled, held or revoked plugin's panels disappear). ≤ 30 ms p95, ≤ 64 KB. Capabilities
-(Epic 51 51.09) gain `plugin_panels: true|false` so older apps skip the call.
+disabled, held or revoked plugin's panels disappear). ≤ 30 ms p95, ≤ 64 KB.
+
+Apps learn whether to call it from `GET /api/capabilities` (Epic 51 51.09). Its `features` are
+the catalog's top-level `features` list (nine today), each `"on"` or `"off"`. This story adds a
+tenth, `plugin_panels`, to that list in `shared/components/catalog.toml` and lists it in the
+`features` of `plugins.host`, so it is `"on"` while `plugins.host` is enabled and passes its
+gates; its words are `components.feature.plugin_panels` in en and ar (web, Android
+`R.string.feature_plugin_panels`, Apple `ErrorStrings.featureName`). A change moves the
+capabilities ETag and sends `capabilities_changed` on `/ws/home` like any other. Epic 51's
+client rule reads a known feature missing from the answer as `"on"` (an older server); for
+`plugin_panels` the apps read a missing key as off and treat `404` from `/api/panels` as no
+panels, so they never call an older server for nothing.
 
 ### 5. Every app
 
@@ -120,7 +130,7 @@ override characters) and asserts plain text, truncation and no network request.
 | `web/src/components/PluginPanel/` (new) | Web renderer. |
 | `apps/apple/.../PluginPanelView.swift` (new) + String Catalog `ar` | Apple renderer. |
 | `apps/android/.../PluginPanel.kt` (new) + `values-ar` | Android renderer. |
-| Epic 51 capabilities | `plugin_panels`. |
+| `shared/components/catalog.toml`, `web/src/i18n/{en,ar}.json`, Android and Apple strings | The `plugin_panels` feature and its words. |
 
 ### Tests
 

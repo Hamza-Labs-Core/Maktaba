@@ -1,6 +1,7 @@
 # Story 50.22 — The home's broadcaster: publish, ladder at home, uplink and encoder checks
 
-> Epic 50 · Phase B · Depends on: 50.21, Epic 34.1 (public flag), Epic 34.3 (public mux, slates)
+> Epic 50 · Phase B · Depends on: 50.20 (the `broadcast` licence flag), 50.21, Epic 34.1 (public
+> flag), Epic 34.3 (public mux, slates), Epic 51 (built), Epic 52.17 (rows for new component ids)
 > · Needed by: 50.23, 50.25, 50.29
 
 ## Why
@@ -124,6 +125,55 @@ The home publishes the channel's guide with Epic 34.2's publisher, to the edge's
 through `POST /v1/ingest/<channel>/guide` (the same blobs, `schema: 1`). Publishable programmes
 only; there is nothing else on the schedule. CC BY items carry their attribution fields (50.23).
 
+### 7. An Epic 51 component
+
+The broadcaster is a new part of the home, so it is a component in
+[`shared/components/catalog.toml`](../../../shared/components/catalog.toml) (README §4.6). The
+`catalog` CI job fails without it, because its loops would belong to none.
+
+```toml
+[[component]]
+id        = "livetv.broadcast"
+kind      = "loop"
+group     = "livetv"
+title_key = "components.livetv.broadcast.title"
+desc_key  = "components.livetv.broadcast.desc"
+# one broadcaster per published channel runs under these; its ffmpeg children are streaming's
+loops     = ["streaming:broadcast_uploader", "streaming:broadcast_control"]
+requires  = ["livetv", "cloud.link"]
+settings  = ["rules.broadcast"]
+licence   = "broadcast"
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = []
+since     = "<the release that ships this story>"
+```
+
+- **Off until an admin turns it on.** It is in no bundle; 52.17's seed gives it `want =
+  installed` on homes already seeded. The Broadcast page's first "Publish" asks to turn it on
+  (`PUT /api/components/livetv.broadcast`, `want = enabled`, through the same preview as the
+  Components page) when it is off. This replaces a home `broadcast.enabled` rule (the cloud's
+  `broadcast.enabled` flag, README §14.11, is a different switch and stays).
+- **Licence.** `licence = "broadcast"`, the flag 50.20 adds to
+  `api/internal/flags/declarations.go` (Pro for guest sharing, Broadcaster). Without it, turning
+  it on answers `403 licence_missing`; a lapsed plan makes it *Waiting* (`licence_missing`) and
+  keeps the wish (story 51.19).
+- **Requirements.** With `livetv` or `cloud.link` off it is *Waiting* (`dependency_off`) and
+  every published channel goes to its offline slate at the edge.
+- **Routes.** `GET/PUT /api/tv/broadcast/...` are added to `ComponentRoutes`
+  (`api/internal/router/components_routes.go`): while `livetv.broadcast` is off they answer
+  `409 component_off` with `"component": "livetv.broadcast"`.
+- **Stop and hold.** `POST /api/components/livetv.broadcast/stop` (a hold, until start) stops
+  every broadcaster within the loops' stop grace (default 5 s) and sends `offline_slate` to the
+  edge; no published channel is deleted. Turning it off (`want = installed`) does the same.
+  Desired state is the home admin's alone: the cloud's kill switch (50.25) never writes it.
+- **Settings.** `broadcast.uplink_share`, `broadcast.rung_slot_weight` and
+  `broadcast.allow_software_rungs` are the `rules.broadcast` section, with a `SCHEMA_VERSION`
+  (`pipeline/src/maktaba_pipeline/settings.py`, story 51.13); they survive turning it off.
+- **Words.** `components.livetv.broadcast.title` = Broadcasting / البث للعموم,
+  `components.livetv.broadcast.desc` = Publishes chosen Live TV channels to viewers outside the
+  home, through Maktaba Cloud. / ينشر قنوات بث مباشر مختارة لمشاهدين خارج المنزل عبر سحابة مكتبة.
+
 ## Acceptance criteria
 
 - **Given** a Pro home with a channel that is 80 % publishable for the next 24 h,
@@ -225,18 +275,20 @@ only; there is nothing else on the schedule. CC BY items carry their attribution
 
 ### Rollout
 
-1. Behind `broadcast.enabled` (home rule, default off).
+1. Behind the `livetv.broadcast` component (§7: in no bundle, so off until an admin turns it on).
 2. Staging home with the canary publisher.
-3. The owner's home with one invite-only channel.
+3. The live home with one invite-only channel.
 4. The broadcasting gate.
 
 ### Rollback
 
-- Unpublish all: one button, and the `broadcast.enabled = false` rule. The broadcaster stops;
-  nothing else on the home changes.
+- Unpublish all: one button, or turn the component off (`maktaba-server components disable
+  livetv.broadcast`). The broadcaster stops; nothing else on the home changes.
 - The migration is additive (new tables only).
 
 ### Dependencies
 
-50.21 (edge, ingest tokens). Epic 34.1 (the public flag the channel reuses). Epic 34.3 (the
+50.20 (the `broadcast` flag), 50.21 (edge, ingest tokens). Epic 51 (built: the catalog, the
+streaming loop runner 51.05, `component_off` 51.09, licence gating 51.19) and Epic 52.17 (rows
+for new ids). Epic 34.1 (the public flag the channel reuses). Epic 34.3 (the
 public mux and the slate path).

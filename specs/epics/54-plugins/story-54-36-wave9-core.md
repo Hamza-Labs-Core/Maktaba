@@ -13,8 +13,11 @@ plugin (README §15.3, F19).
 
 ### 1. The stages
 
-All in **`tv.maktaba.core-media`** (`switchable = false`, the `core.pipeline` component),
-runner group `light`:
+All in **`tv.maktaba.core-media`**, the plugin of the `core.pipeline` component (kind
+`stages+process+loop`, `switchable = false`, 54.27 §3), runner group `light` (the
+`plugin-runner/light` instance of `core.plugin_runners`, 54.23). `component_catchup` stays in
+`core.pipeline` as an engine stage; the main worker (`pipeline/`), `pipeline/chroma-copy` and
+the pipeline loops stay too:
 
 | Stage | Today | Pool | Trusted needs |
 |---|---|---|---|
@@ -85,7 +88,7 @@ say which and why.
 | T02 | parity | legacy `scan`, `probe`, `categorize` before and after §2, in-process | run | same jobs and states |
 | T03 | e2e (`plugins-e2e`) | real watcher, runner, API | drop a file | same states and downstream jobs as before |
 | T04 | CI | removal release | wheel content, import contract, golden graph | no stage code; all stages served |
-| T05 | role test (go) | `PUT /api/components/core.pipeline` | admin | 409 |
+| T05 | role test (go) | `PUT /api/components/core.pipeline` | admin | `409 not_switchable` |
 | T06 | update rehearsal scenario 16.9 | mid-scan | update and rollback | as AC |
 | T07 | unit (`fp-core-media`) | moved tests | run | green |
 
@@ -97,9 +100,10 @@ say which and why.
   is gone while its stages were never flipped.
 - **The light runner fails to start on a home** (a broken sandbox on an old kernel): before the
   removal release, the stages fall back to `inproc` automatically and the Components page says
-  why; after it, the home's `core.pipeline` component is *Failed* with the runner's reason, and
-  the update path's pre-check (Epic 51.18) refuses to install the removal release on a home
-  whose runner check fails.
+  why; after it, `core.plugin_runners` is *Failed* with the runner's reason
+  (`sandbox_unavailable` or `runner_crash_loop`) and `core.pipeline` reads *Degraded*, and the
+  updater's pre-check (Epic 35, beside 51.18's packs step) refuses to install the removal
+  release on a home whose runner check fails.
 
 ## Build plan
 

@@ -1,6 +1,6 @@
 # Story 53.06 — A status strip in every app
 
-> Epic 53 · Phase 1 · Depends on: 53.03 · Needed by: 53.07, Epic 50.11
+> Epic 53 · Phase 1 · Depends on: 53.03, Epic 51 (51.09 capabilities, 51.11 clients; built) · Needed by: 53.07, Epic 50.11
 
 ## Why
 
@@ -26,6 +26,21 @@ place.
 
 Only the highest one shows; a "1 more" tap shows the rest. Admins also get a **Details** link
 (System health, or `/recovery` when the API is down).
+
+**A feature that is off is not an outage.** Epic 51 already tells the apps what is switched off:
+`GET /api/capabilities` (`features`: `live_tv`, `transcripts`, `semantic_search`, …, `on` or
+`off`), refreshed on `capabilities_changed` from `/ws/home`, and a `409 component_off` problem
+(`code`, `component`, `feature`) from a route whose component is off. Story 51.11 hides those
+features from viewers and explains them to admins (`error.kind.off`, `error.kind.offAdmin`;
+Android `ErrorKind.Off`, Apple `ErrorKind.off`). The strip never repeats that:
+
+- `/status.json` reports a switched-off, held or not-installed component as `off` (53.03 §2a),
+  and `off` has no banner key;
+- a `409 component_off` is not "a request failed": it does not trigger an early `/status.json`
+  read, and the strip shows nothing for it;
+- a feature the capabilities answer says is `off` gets no strip line, even when its status group
+  is `degraded` for another reason (the TV part of `streaming_down` is left out of the sentence
+  when `live_tv` is `off`: `status.streamingNoTv`).
 
 ### 2. Behaviour
 
@@ -63,6 +78,7 @@ fetcher; this story draws it.
 | `status.restarting` | Maktaba is restarting. Some things won't work for a moment. | مكتبة تُعاد تشغيلها. قد لا تعمل بعض الميزات للحظات. |
 | `status.database` | Maktaba is having trouble with its database. Playback and browsing may not work. | تواجه مكتبة مشكلة في قاعدة البيانات. قد لا يعمل التشغيل والتصفح. |
 | `status.streaming` | Playback and Live TV are unavailable right now. | التشغيل والبث المباشر غير متاحين الآن. |
+| `status.streamingNoTv` | Playback is unavailable right now. | التشغيل غير متاح الآن. |
 | `status.search` | Search is unavailable right now. | البحث غير متاح الآن. |
 | `status.processing` | Processing is paused: new videos won't be added for now. | المعالجة متوقفة مؤقتًا: لن تُضاف فيديوهات جديدة الآن. |
 | `status.details` | Details | التفاصيل |
@@ -84,6 +100,9 @@ fetcher; this story draws it.
   **then** the strip shows 50.11's maintenance title; on the LAN it shows nothing.
 - **Given** a pipeline worker is down,
   **then** viewers see nothing and admins see "Processing is paused".
+- **Given** an admin turned Live TV off (`PUT /api/components/livetv` with `want = installed`),
+  **when** a viewer opens any app,
+  **then** no strip shows (Live TV is hidden by 51.11), and a `409 component_off` from a TV route adds no strip line.
 - **Given** the strip is closed,
   **when** the state changes,
   **then** it shows again.
@@ -97,6 +116,7 @@ fetcher; this story draws it.
 | T01 | unit (web, Swift, Kotlin ×2) | fixture documents for every state | render | the priority table |
 | T02 | unit | feed 404 / timeout | start | no strip, no error |
 | T03 | unit | viewer vs admin | admin-only key | shown only to admins |
+| T03b | unit | a `/status.json` with `off` groups; a capabilities answer with `live_tv: off`; a `409 component_off` | render | no strip; `status.streamingNoTv` when streaming is down and TV is off |
 | T04 | unit | strings | en/ar parity checks on each platform | pass |
 | T05 | UI (**CI only**: Apple and Android UI shards, web Playwright) | mock home serving each `/status.json` | open the app | the strip; RTL screenshot in Arabic (dark theme) |
 | T06 | **CI only** (53.07) | real faults | | strip within 15 s |

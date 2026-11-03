@@ -146,7 +146,7 @@ by 50.05) is extended:
 - At 80 % and 100 % of the cap the user gets an email and an in-app notice
   (`payg.nearCap`, `payg.capReached`); at 100 % streams drop to capped quality.
 
-### 6. Billing through a payment provider TBD (not Stripe)
+### 6. Billing through a payment provider (TBD)
 
 Decided 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
 Stripe-owned services). The payment provider is **TBD**; this story builds against a
@@ -193,6 +193,14 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
   Whatever else the license already gates on the home keeps its meaning under the new names
   (Basic gets what `home` gave, Pro what `pro` gave), with one change from decision 6: **remote
   access over the direct path is no longer gated on any tier** (50.15 §5).
+- **On the home, as Epic 51 components** (README §4.6). The relay agent `cloud.link` is never
+  licence-gated. Relayed play, `cloud.relay`, names the licence flag `cloud_relay`
+  (`licence = "cloud_relay"` in `shared/components/catalog.toml`, story 51.19): Basic and Pro
+  carry it, Free does not. On a Free home `cloud.relay` is *Waiting* with reason
+  `licence_missing`; its desired state (`want = enabled`) is kept, so buying Basic turns it on
+  with nobody touching the Components page. The rename changes no flag: `home` read as `basic`
+  during the grace still carries `cloud_relay`. Stream counts and the bitrate cap are the relay's
+  to enforce (§3); the home has no flag for them.
 - **Billing**: existing subscriptions on the old `pro` / `family` prices are moved to the new
   Basic / Pro prices at their next renewal through the payment provider's API from the worker (no charge
   change before renewal); Family's seats end. Paid plans aren't switched on before the launch
@@ -321,7 +329,7 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 | `cloud/internal/billing/modes.go` (new) | §3 mode function. |
 | `cloud/internal/billing/streams.go` (new), `cloud/cmd/maktaba-cloud/role_worker.go` | `relay_streams` counting and the sweeper. |
 | `cloud/internal/billing/usage_report.go` (new) | Hourly usage reports, queue, clamp, reconciliation. |
-| `cloud/internal/billing/provider.go`, `provider_fake.go` (new) | The `billing.Provider` interface (checkout, plan changes, usage reports, items 2 and 3, webhook parsing) and its fake; the real provider (TBD, not Stripe) is added after the owner picks it. |
+| `cloud/internal/billing/provider.go`, `provider_fake.go` (new) | The `billing.Provider` interface (checkout, plan changes, usage reports, items 2 and 3, webhook parsing) and its fake; the real provider (TBD) is added after the owner picks it. |
 | `cloud/internal/handlers/billing/` (plans API and the billing webhook) | Plans API (new fields), PAYG on/off and cap, extra streams; webhook for items 2 and 3. |
 | `cloud/internal/handlers/relay/proxy.go` | Modes: `402 relay_needs_plan`, cap header, pacing, `429 stream_limit`. |
 | `cloud/internal/license/license.go` | `TierForPlan` identity; `home` read as `basic` within grace. |
@@ -345,7 +353,7 @@ Today: cloud plans `free` / `pro` / `family` in `users.plan`, `servers.plan` and
 1. Expand migration and the new catalog, with paid plans still off (launch gate).
 2. Home release that honours the cap header and reads the new tier names.
 3. Relay modes on in staging; then production with `relay.plans.enforce = true`.
-4. The owner picks the payment provider (not Stripe), sets prices, Pro's allowance and N, and
+4. The owner picks the payment provider, sets prices, Pro's allowance and N, and
    creates the prices there (README §12); the launch gate (T12) then allows paid plans on.
 5. Contract migration (drop `family`) one release later.
 

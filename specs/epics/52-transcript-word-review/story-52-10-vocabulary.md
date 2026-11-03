@@ -12,7 +12,7 @@ by itself.
 
 ## Description
 
-### 1. Tables (slot 0173+)
+### 1. Tables (slot 0182+)
 
 - `vocabulary (id, scope 'home'|'library', library_id NULL, language, term, key, kind
   'word'|'name'|'term', variants TEXT[], source 'review'|'manual'|'import', uses INT, added_by,
@@ -105,7 +105,7 @@ sees the page.
 
 ### Files
 
-- `shared/db/migrations/0173+_vocabulary.sql` and `.sqlite.sql`.
+- `shared/db/migrations/0182+_vocabulary.sql` and `.sqlite.sql`.
 - `api/internal/handlers/vocabulary/vocabulary.go`: CRUD, import and export. Mounted in
   `router/p6.go`, using `review.canReview` for library scope and `p.IsAdmin` for home scope.
 - `api/internal/handlers/review/review.go`: the vocabulary writes on `name`, `dictionary` and

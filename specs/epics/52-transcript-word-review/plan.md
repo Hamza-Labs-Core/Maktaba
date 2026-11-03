@@ -12,6 +12,15 @@ graph TD
   S2[52.2 evaluation set] --> S6
   S3[52.3 pack contract + fallback] --> S4[52.4 Arabic pack]
   S3 --> S5[52.5 English pack]
+  E51a[Epic 51: 51.01 catalog, 51.15 packs, 51.16 install, 51.18 updates] --> S16[52.16 catalog entries + lang packs]
+  E51b[Epic 51: 51.03 seed, 51.17 bundles] --> S17[52.17 new components follow the bundle]
+  E51c[Epic 51: 51.06 stage groups, 51.13 settings, 51.14 health] --> S6
+  S3 --> S16
+  S16 --> S4
+  S16 --> S5
+  S16 --> S6
+  S17 --> S6
+  S16 --> S14
   S4 --> S6
   S5 --> S6
   S6 --> S8[52.8 review API]
@@ -31,19 +40,22 @@ graph TD
 ```
 
 52.7 (LLM judge) is **removed** (decision 3, 2026-11-03) and has no node. 52.15 (Quran
-check) is new (decision 4).
+check) is new (decision 4). 52.16 and 52.17 fill what Epic 51 as built does not give (README
+§4.12): the catalog entries and data packs, and a default for components a later release adds.
 
 | Story | Depends on | Can run in parallel with |
 |---|---|---|
 | 52.1 | — | 52.2, 52.3 |
 | 52.2 | — (uses 52.1's output for its confidence curves once it lands) | 52.1, 52.3 |
 | 52.3 | — | 52.1, 52.2 |
-| 52.4 | 52.3 | 52.5 |
-| 52.5 | 52.3 | 52.4 |
-| 52.6 | 52.1, 52.2, 52.3, 52.4, 52.5 | — |
+| 52.16 | 52.3, Epic 51 (51.01, 51.15, 51.16, 51.18) | 52.1, 52.2, 52.17 |
+| 52.17 | Epic 51 (51.03, 51.17) | 52.1 to 52.5, 52.16 |
+| 52.4 | 52.3, 52.16 | 52.5 |
+| 52.5 | 52.3, 52.16 | 52.4 |
+| 52.6 | 52.1, 52.2, 52.3, 52.4, 52.5, 52.16, 52.17, Epic 51 (51.06) | — |
 | 52.15 | 52.4, 52.6 | 52.8 |
 | 52.8 | 52.6 | 52.14, 52.15 |
-| 52.14 | 52.6, 52.15 (its reason switch) | 52.8 |
+| 52.14 | 52.6, 52.15 (its reason switch), 52.16, Epic 51 (51.13, 51.14) | 52.8 |
 | 52.9 | 52.1, 52.8 | — |
 | 52.11 | 52.8, 52.9, 52.14, 52.15 (its reason label) | 52.12, 52.10 |
 | 52.12 | 52.9 | 52.11, 52.10 |
@@ -58,7 +70,8 @@ one integration branch, one PR per phase, not one PR per story.
 |---|---|
 | A: pipeline evidence | 52.1 → 52.6 (with C's packs) → 52.15 |
 | B: evaluation | 52.2 (then feeds A and E) |
-| C: language packs | 52.3 (contract, generic Hunspell, fallback) → 52.4 ∥ 52.5 |
+| C: language packs | 52.3 (contract, generic Hunspell, fallback) → 52.16 (catalog, packs) → 52.4 ∥ 52.5 |
+| G: components | 52.17 (any time before the release that ships 52.6) |
 | D: API and web | 52.8 ∥ 52.14 → 52.9 → 52.11 ∥ 52.12 |
 | E: learning | 52.10 |
 | F: native | 52.13 |
@@ -71,22 +84,26 @@ one integration branch, one PR per phase, not one PR per story.
 2. **`word_flags` schema and status values** (52.6). The API (52.8) and the web (52.11) use the
    same reason and status codes (including `quran_mismatch` and the candidate source `quran`;
    no `llm_disagrees`, no `llm`); a test in each fails on an unknown code.
-3. **Pack contract** (52.3): the `LanguagePack` protocol (with the optional `scripture()` for
+3. **Component ids** (52.16): `review.words` (stages), `runtime.lang`, `lang.ar`, `lang.en`,
+   `lang.hunspell.<code>` (assets), and the section `rules.word_review`. Code and the catalog
+   name the same ids; the `catalog` CI job checks it.
+4. **Pack contract** (52.3): the `LanguagePack` protocol (with the optional `scripture()` for
    52.15) and its conformance test suite, which every pack must pass, including any third-party
    pack that later arrives through Epic 54's plugin store. Every pack is deterministic.
-4. **Edit semantics** (52.9): character-span edits, revision bump, undo rules. Go owns the write;
+5. **Edit semantics** (52.9): character-span edits, revision bump, undo rules. Go owns the write;
    Python owns the carry-over at re-transcription. Both are tested against the same fixtures.
 
 ## 3. Migrations
 
-Slot numbers are taken at merge time (0172 is the highest on main on 2026-11-03). Each has a
+Slot numbers are taken at merge time; the next free slot is 0182 (`0181_component_licence.sql` is the highest once
+Epic 51 merges). Each has a
 Postgres file and a SQLite twin, passes `tools/migration-lint`, and is additive (no table
 rewrite on the 23 M-row `transcript_segments`: `ADD COLUMN` without a default is metadata-only).
 
 | Story | Change |
 |---|---|
 | 52.1 | `transcript_segments.word_data BYTEA NULL` |
-| 52.3 | `language_packs (code PK, version, enabled, source, data_sha256, installed_at, settings JSONB)` |
+| 52.3 | `language_packs (code PK, component, version, data_sha256, tokenizer, state, error, loaded_at)`: a report, no switch (the switch is the component's) |
 | 52.6 | `word_flags` and its indexes |
 | 52.8 | `word_flags.locked_by`, `word_flags.locked_until` |
 | 52.9 | `transcripts.revision INT NOT NULL DEFAULT 0`, `transcript_edits` |
@@ -101,7 +118,8 @@ release, so `update-rehearsal` runs on the tag as for every release.
 | Step | What changes live | Guard |
 |---|---|---|
 | R1 (52.1) | New transcripts keep `word_data`. Nothing reads it yet | Storage per word measured read-only on the live DB after a day; if > 12 bytes a word, stop and revisit |
-| R2 (52.3-52.6, 52.15) | `word_check` with the Quran check runs on new transcripts (`word_review.enabled` default on) | Flags visible only to admins on a read-only page; the flag rate is checked against ≤ 3% of words on a read-only sample, and `quran_mismatch` flags on recitation libraries are spot-checked |
+| R1b (52.16, 52.17) | The catalog gains `review.words`, `runtime.lang` and `lang.*`; the release's index lists the `lang.*` and `runtime.lang` packs; a Full home gets `review.words` enabled and the assets `installed` (downloaded), a Core home gets `review.words` `installed` (off) and the assets `absent` | `update-rehearsal` (Epic 51 story 51.18) proves an update keeps every component's phase and adds the new ones as the bundle says; `GET /api/components` read-only on the live home after the update |
+| R2 (52.3-52.6, 52.15) | `word_check` with the Quran check runs on new transcripts (`review.words` enabled, `word_review.enabled` default on) | Flags visible only to admins on a read-only page; the flag rate is checked against ≤ 3% of words on a read-only sample, and `quran_mismatch` flags on recitation libraries are spot-checked |
 | R3 | Backfill of **all ~45k existing transcripts** (decision 2), lowest priority, idle-only (`backfill` default on) | Queue health tile with progress; never runs while `transcribe` has pending work |
 | R4 (52.8-52.14) | The review queue, for home admins only (decision 1) | Role tests in CI (`write` → 403); Arabic + English strings |
 | R5 (52.10) | Vocabulary on; derived prompt for new transcriptions | A CI test proves a vocabulary change does not change `transcribe`'s input fingerprint |

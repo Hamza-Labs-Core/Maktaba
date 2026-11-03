@@ -21,12 +21,15 @@ Every `error` and `fatal` line, and every crash (53.14), gets a **fingerprint** 
   `cloud/internal/telemetry/scrub.go` rules, moved to `shared/redact` so the home and the cloud
   compute the same fingerprint.
 - Lines with the same `fp` are one group; `warn` lines are not grouped (they are searchable).
+- The fingerprint keeps `service`, not the Epic 51 `component` (53.01), so it stays equal to the
+  cloud's for the same error. The group records the component of its first line, for the
+  filters and for the Components page's Errors link (53.11).
 
 ### 2. Tables (in `logs.db`)
 
 ```sql
 CREATE TABLE error_groups (
-  fp TEXT PRIMARY KEY, source TEXT, service TEXT, code TEXT,
+  fp TEXT PRIMARY KEY, source TEXT, service TEXT, component TEXT, code TEXT,
   title TEXT,                         -- the first scrubbed message
   first_seen INTEGER, last_seen INTEGER,
   count INTEGER, count_24h INTEGER,   -- count_24h refreshed every minute from hourly buckets
@@ -55,7 +58,7 @@ in total ("and N more" in the last one). Muted groups never notify.
 
 ### 4. API
 
-Admin only: `GET /api/admin/errors?status=&service=&since=&q=`, `GET /api/admin/errors/{fp}`
+Admin only: `GET /api/admin/errors?status=&service=&component=&since=&q=`, `GET /api/admin/errors/{fp}`
 (the group, its hourly chart for 30 days, samples with their lines, affected app versions and
 users count), `POST /api/admin/errors/{fp}/status` (`seen|resolved|muted`, `muted_until`). Each
 status change is written to `audit_log`.

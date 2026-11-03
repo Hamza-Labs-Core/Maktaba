@@ -1,6 +1,6 @@
 # Story 53.12 — Dashboards and home analytics
 
-> Epic 53 · Phase 2 · Depends on: 53.09 · Needed by: 53.13
+> Epic 53 · Phase 2 · Depends on: 53.09, Epic 51 (51.14 component metrics, built) · Needed by: 53.13
 
 ## Why
 
@@ -29,12 +29,18 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
   2026-11-03, to match the errors' 30 days). About 200 × 1,440 rows a day: a few MB, inside
   `logs.db`'s share of the 1 GB cap.
 - Error counts per component come from 53.10's hours, not from metrics.
+- The allow-list includes Epic 51's component series, which the supervisor's `/metrics` already
+  serves (merged into the API's; story 51.14): `maktaba_component_up{id,machine,phase}`,
+  `maktaba_component_restarts_total{id,machine}` and
+  `maktaba_component_transition_seconds{id,to}`. `id` is a catalog id, so its label values are
+  bounded by the catalog (45 ids today); the per-series cap of 50 does not apply to `id`, whose
+  cap is the catalog's own size.
 
 ### 2. The dashboards (`/admin/dashboards`)
 
 | Board | Panels |
 |---|---|
-| **Overview** | the 53.03 states now; errors per hour by component (14 d); requests per minute and p95 latency (API); CPU, memory, disk free of the home and each machine |
+| **Overview** | the 53.03 states now; errors per hour by component (14 d); components by phase over time and restarts per component (from `maktaba_component_*`), with turn-off and hold times marked from the `components` audit rows (`component.disable`, `component.hold`, …); requests per minute and p95 latency (API); CPU, memory, disk free of the home and each machine |
 | **Queue** | jobs done and failed per hour per stage; queue depth per stage; time in queue p50/p95; per machine throughput (from `job_events` and the queue metrics) |
 | **Processing** | transcription hours of audio per hour and real-time factor; thumbnails per hour; MP4 conversions and dedup (Epic 47); failures by class (Epic 40) |
 | **Streaming** | sessions now and per hour, direct play vs transcode, transcode real-time factor, bandwidth out (LAN, relay), TV channels on air and their restarts |
@@ -125,4 +131,4 @@ Revert the pages and the scraper; the tables stay in `logs.db`.
 
 ### Dependencies
 
-53.09 (the role that hosts it). Needed by 53.13.
+53.09 (the role that hosts it); Epic 51 story 51.14 (the `maktaba_component_*` series). Needed by 53.13.

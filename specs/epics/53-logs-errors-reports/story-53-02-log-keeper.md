@@ -7,7 +7,10 @@
 Today every child inherits the supervisor's stderr and launchd writes the whole tree into one
 `server.log` (50 MB, one `.1` copy). A chatty pipeline pushes a crash of the API out of the file
 within hours, and the in-memory rings die with their process. Logs must be on disk, per
-component, capped, and written by something that needs nothing else running (README D1).
+service, capped, and written by something that needs nothing else running (README D1). Each
+line also names the Epic 51 component it comes from, so an admin can read one component's lines
+across the processes it spans (`transcription` runs in `pipeline` and in the `pipeline/stt-*`
+workers).
 
 ## Description
 
@@ -21,9 +24,11 @@ reader goroutine per pipe:
    a Python traceback) as `{"msg":"raw_line","level":<guessed>,"attrs":{"text":…}}`, reusing the
    level guess of `cmd/maktaba-server/internal/logfiles` (`panic:`, `fatal error:`, `Traceback` →
    `error`, since #383);
-3. fills `service` (the role), `node`, and `ts` when missing; applies the 53.01 rules once more
-   (defence in depth for raw lines);
-4. appends to the component's current segment; and also writes the line to the supervisor's
+3. fills `service` (the role), `node`, and `ts` when missing; fills `component` when missing
+   with the catalog's owner of the child, `ByProcess(role, instance)` in
+   `shared/components/catalog.go` (a `pipeline/stt-0` raw line gets `transcription`); applies
+   the 53.01 rules once more (defence in depth for raw lines);
+4. appends to the service's current segment; and also writes the line to the supervisor's
    stderr **only if** it is `warn` or above (so `server.log` keeps the important lines for the
    tray and old tools, at a fraction of the volume).
 
@@ -40,7 +45,7 @@ writes.
 <data>/logs/segments/<service>/<yyyymmdd-hh>.idx            (byte offset every 1,000 lines + first/last ts)
 ```
 
-- One file per component per hour; a file that reaches 64 MB rolls early (`-1`, `-2`).
+- One file per service per hour; a file that reaches 64 MB rolls early (`-1`, `-2`).
 - `fsync` every second and on roll; a crash loses at most one second.
 - `<data>` is the data folder the home already uses (on the big disk on the live Mac,
   PRs #350–#353); joined machines write their own under their data folder (and their share
@@ -55,14 +60,14 @@ A janitor goroutine runs every 5 minutes:
 | Rule | Default | Setting (`[logs]` in `server.toml`, and the admin page in 53.11) |
 |---|---|---|
 | `debug` lines | 24 h (they are written to `<service>/debug/`, so dropping is deleting files) | `debug_retention` |
-| everything else | **7 days** (decided 2026-11-03) | `retention` |
-| all diagnostics on disk (segments + `logs.db` + reports) | **1 GB** in all (decided 2026-11-03) | `max_total_size` |
+| everything else | **7 days** (decided 2026-11-03, README §12) | `retention` |
+| all diagnostics on disk (segments + `logs.db` + reports) | **1 GB** in all (decided 2026-11-03, README §12) | `max_total_size` |
 | the segments' share of it | 550 MB (55 %; `logs.db` gets 35 % = 350 MB, reports 10 % = 100 MB) | `max_segments_size` (follows `max_total_size` unless set) |
 | data volume free space floor | 5 GB: below it, stop writing `debug` and delete the oldest hour until above | `min_free` |
 | hard floor | 1 GB free: write only `warn` and above | — |
 
-Oldest files go first, across all components, except the newest 24 h of `warn`+ lines of every
-component, which go last (a component that logged little is never wiped out by a noisy one);
+Oldest files go first, across all services, except the newest 24 h of `warn`+ lines of every
+service, which go last (a service that logged little is never wiped out by a noisy one);
 only when those alone pass the segments' share do the oldest of them go, so the 1 GB total holds.
 
 All of these are adjustable by an admin (53.11's Retention page, or `server.toml`): retention
@@ -72,7 +77,7 @@ compressed) 7 days fits in the share; a noisy day hits the cap first, and the ca
 
 ### 4. Reading without the index
 
-`cmd/maktaba-server/internal/logfiles` gains a reader over segments: by component, level and a
+`cmd/maktaba-server/internal/logfiles` gains a reader over segments: by service, Epic 51 component, level and a
 time window, newest first, using the `.idx` offsets, bounded to 50 MB read per request. The
 recovery console (53.04) and the existing `/api/admin/logs/files` use it. It works with the
 `logs` role, the API and Postgres all down.
@@ -95,7 +100,7 @@ little); the viewer moves to the index in 53.11.
   **then** the pipeline never blocks, debug lines are dropped, every `warn`+ line is kept, and `log_lines_dropped` says how many.
 - **Given** segments total 600 MB with the default 1 GB total,
   **when** the janitor runs,
-  **then** the oldest hours are deleted until ≤ 550 MB, and each component's newest 24 h of `warn`+ lines remain.
+  **then** the oldest hours are deleted until ≤ 550 MB, and each service's newest 24 h of `warn`+ lines remain.
 - **Given** the data volume has 900 MB free,
   **when** a child logs `info`,
   **then** the line is not written, a `warn` line still is, and System health shows "Low disk: logs reduced".
