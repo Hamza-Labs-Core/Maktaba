@@ -159,7 +159,9 @@ describe("the allow-list", () => {
     expect(ar).toContain('<html lang="ar" dir="rtl">');
     expect(ar).toContain(`<title>${STRINGS.ar["wiki.title"]}</title>`);
     // the same bundle: it picks the language from the path and loads /ar/wiki/db/
-    expect(ar.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]).toBe(en.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]);
+    expect(ar.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]).toBe(
+      en.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]
+    );
     expect(ar).toContain('rel="canonical" href="https://maktaba.dev/ar/wiki/"');
     expect(ar).toContain('hreflang="en" href="https://maktaba.dev/wiki/"');
     // the portal links the wiki in each language
@@ -497,7 +499,10 @@ describe("English and Arabic", () => {
             id: "epic-01",
             title: "التشغيل",
             content: "يشغّل `video.mp4` من البداية.",
-            i18n: { lang: "ar", source: { title: wikiHash("Playback"), content: wikiHash(content) } },
+            i18n: {
+              lang: "ar",
+              source: { title: wikiHash("Playback"), content: wikiHash(content) },
+            },
           },
           {
             id: "glossary-x",
@@ -554,7 +559,9 @@ describe("English and Arabic", () => {
         i18n: { lang: "ar", source: { content: wikiHash(text) } },
       });
     }
-    expect(checkWiki(en, ar, "db")).toEqual(["db/ar/wiki.json: 89% of its Arabic prose is Latin script"]);
+    expect(checkWiki(en, ar, "db")).toEqual([
+      "db/ar/wiki.json: 89% of its Arabic prose is Latin script",
+    ]);
   });
 
   it("the wiki app's own strings are in both languages, the Arabic in Arabic", () => {

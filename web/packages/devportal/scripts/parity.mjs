@@ -225,7 +225,11 @@ export function applyOverlay(doc, overlay) {
 // Arabic. The rules mirror wiki_ar.py.
 
 /** The fields of an entry the wiki shows as text, per type (wiki_ar.FIELDS). */
-export const WIKI_FIELDS = { epic: ["title", "content", "engine"], endpoint: ["content"], entity: ["content"] };
+export const WIKI_FIELDS = {
+  epic: ["title", "content", "engine"],
+  endpoint: ["content"],
+  entity: ["content"],
+};
 const WIKI_DEFAULT_FIELDS = ["title", "content"];
 
 const FENCE = /^[ \t]*```[^\n]*\n[\s\S]*?^[ \t]*```/gm;
@@ -245,7 +249,8 @@ export function wikiProse(text) {
 }
 
 /** The hash a translation records of the English it translates (wiki_ar.text_hash). */
-export const wikiHash = (text) => createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+export const wikiHash = (text) =>
+  createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
 
 /** The translation store file an entry's Arabic is kept in (wiki_ar.store_file). */
 export const wikiStoreFile = (e) =>
@@ -259,7 +264,8 @@ export function checkWiki(en, ar, dir = "web/wiki-app/public/db") {
   const findings = [];
   const regen = "run python3 docs/wiki/db/generate_wiki.py";
   for (const name of Object.keys(en))
-    if (!(name in ar)) findings.push(`${dir}/ar/${name}: missing (the Arabic of ${dir}/${name}): ${regen}`);
+    if (!(name in ar))
+      findings.push(`${dir}/ar/${name}: missing (the Arabic of ${dir}/${name}): ${regen}`);
   for (const name of Object.keys(ar))
     if (!(name in en)) findings.push(`${dir}/ar/${name}: an Arabic file with no English one`);
   for (const [name, doc] of Object.entries(en)) {
@@ -290,14 +296,19 @@ export function checkWiki(en, ar, dir = "web/wiki-app/public/db") {
               `translate it again in ${store}, then ${regen}`
           );
         else if (a[field] === text || !(String(a[field]).match(ARABIC) ?? []).length)
-          findings.push(`${dir}/ar/${name}: ${e.id} ${field}: the Arabic is English or empty (${store})`);
+          findings.push(
+            `${dir}/ar/${name}: ${e.id} ${field}: the Arabic is English or empty (${store})`
+          );
         else prose.push(wikiProse(String(a[field])));
       }
     }
-    for (const id of arById.keys()) findings.push(`${dir}/ar/${name}: ${id} is not in the English database`);
+    for (const id of arById.keys())
+      findings.push(`${dir}/ar/${name}: ${id} is not in the English database`);
     const share = latinShare(prose.join("\n"));
     if (share > MAX_LATIN_SHARE)
-      findings.push(`${dir}/ar/${name}: ${Math.round(share * 100)}% of its Arabic prose is Latin script`);
+      findings.push(
+        `${dir}/ar/${name}: ${Math.round(share * 100)}% of its Arabic prose is Latin script`
+      );
   }
   return findings;
 }

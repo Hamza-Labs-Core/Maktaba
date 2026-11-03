@@ -19,31 +19,31 @@ has no backend, no KV and no secrets. Every request goes through the Worker, whi
 
 ## What is on the site
 
-| Path                                           | What                                            | From                                                         |
-| ---------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
-| `/`                                            | the landing page, English and Arabic            | `scripts/build.mjs`, `scripts/strings.mjs`                   |
+| Path                                           | What                                             | From                                                         |
+| ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| `/`                                            | the landing page, English and Arabic             | `scripts/build.mjs`, `scripts/strings.mjs`                   |
 | `/wiki/`, `/ar/wiki/`                          | the wiki: every epic, story and plan, no mockups | `web/wiki-app` (its allow-list, `WIKI_ALLOW` in `build.mjs`) |
-| `/plugins/`                                    | building plugins: guides                        | `docs/developers/plugins/` (the list in `build.mjs`)         |
-| `/contributing/`                               | working on Maktaba: guides                      | `docs/developers/contributing/`                              |
-| `/security/conformance/`                       | security rules for plugins and contributors     | `docs/developers/security/conformance.md`                    |
-| `/api/`                                        | the API reference: Redoc, served from this site | `shared/api/openapi.json`, the `redoc` package               |
-| `/changelog/`                                  | the changelog                                   | `CHANGELOG.md`                                               |
-| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                           | `scripts/strings.mjs`                                        |
-| `/.well-known/security.txt`                    | RFC 9116                                        | `api/internal/security/disclosure.go` (the API's own policy) |
-| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                    | the build                                                    |
+| `/plugins/`                                    | building plugins: guides                         | `docs/developers/plugins/` (the list in `build.mjs`)         |
+| `/contributing/`                               | working on Maktaba: guides                       | `docs/developers/contributing/`                              |
+| `/security/conformance/`                       | security rules for plugins and contributors      | `docs/developers/security/conformance.md`                    |
+| `/api/`                                        | the API reference: Redoc, served from this site  | `shared/api/openapi.json`, the `redoc` package               |
+| `/changelog/`                                  | the changelog                                    | `CHANGELOG.md`                                               |
+| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                            | `scripts/strings.mjs`                                        |
+| `/.well-known/security.txt`                    | RFC 9116                                         | `api/internal/security/disclosure.go` (the API's own policy) |
+| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                     | the build                                                    |
 
 Every page is in English and Arabic: `/x/` in English, `/ar/x/` in Arabic, right to left
 (`<html lang="ar" dir="rtl">`), each with a link to the other (the language switch, and
 `rel="alternate" hreflang` for crawlers). Where each language comes from:
 
-| What                    | English                        | Arabic                                           |
-| ----------------------- | ------------------------------ | ------------------------------------------------ |
-| the portal's own pages  | `scripts/strings.mjs` (`en`)   | `scripts/strings.mjs` (`ar`)                     |
-| a guide                 | `docs/developers/<group>/x.md` | its twin, `docs/developers/<group>/x.ar.md`      |
-| the changelog           | `CHANGELOG.md`                 | `CHANGELOG.ar.md`                                |
-| the API reference prose | `shared/api/openapi.json`      | `shared/api/openapi.ar.json`, an overlay (below) |
-| the wiki                | `web/wiki-app/public/db/`      | `web/wiki-app/public/db/ar/`, from the store in `docs/wiki/db/ar/` |
-| the wiki app's own text | `web/wiki-app/src/lib/i18n.ts` (`EN`) | `web/wiki-app/src/lib/i18n.ts` (`AR`)      |
+| What                    | English                               | Arabic                                                             |
+| ----------------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| the portal's own pages  | `scripts/strings.mjs` (`en`)          | `scripts/strings.mjs` (`ar`)                                       |
+| a guide                 | `docs/developers/<group>/x.md`        | its twin, `docs/developers/<group>/x.ar.md`                        |
+| the changelog           | `CHANGELOG.md`                        | `CHANGELOG.ar.md`                                                  |
+| the API reference prose | `shared/api/openapi.json`             | `shared/api/openapi.ar.json`, an overlay (below)                   |
+| the wiki                | `web/wiki-app/public/db/`             | `web/wiki-app/public/db/ar/`, from the store in `docs/wiki/db/ar/` |
+| the wiki app's own text | `web/wiki-app/src/lib/i18n.ts` (`EN`) | `web/wiki-app/src/lib/i18n.ts` (`AR`)                              |
 
 The API reference's Arabic is an overlay: `shared/api/openapi.ar.json` maps the JSON pointer
 of every `summary` and `description` (and the info title, and each tag's name) to the English

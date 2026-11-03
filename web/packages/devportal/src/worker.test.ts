@@ -59,7 +59,13 @@ describe("redirects", () => {
   });
 
   it("serves the wiki in both languages, with no redirect", async () => {
-    for (const p of ["/wiki", "/wiki/", "/wiki/db/wiki.json", "/ar/wiki/", "/ar/wiki/db/wiki.json"]) {
+    for (const p of [
+      "/wiki",
+      "/wiki/",
+      "/wiki/db/wiki.json",
+      "/ar/wiki/",
+      "/ar/wiki/db/wiki.json",
+    ]) {
       expect(movedTo(p), p).toBeNull();
       const res = await get(`https://maktaba.dev${p}`);
       expect(res.status, p).not.toBe(301);

@@ -136,7 +136,11 @@ export function arabicWikiIndex(html) {
     `<meta name="description" content="${esc(tr("ar", "wiki.description"))}"`,
     "description"
   );
-  swap(/<noscript>[\s\S]*?<\/noscript>/, `<noscript>${esc(tr("ar", "wiki.noscript"))}</noscript>`, "<noscript>");
+  swap(
+    /<noscript>[\s\S]*?<\/noscript>/,
+    `<noscript>${esc(tr("ar", "wiki.noscript"))}</noscript>`,
+    "<noscript>"
+  );
   return wikiAlternates(html, "/ar/wiki/");
 }
 
