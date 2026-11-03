@@ -49,7 +49,10 @@ CREATE VIRTUAL TABLE lines_fts USING fts5(msg, text, err, content='', tokenize='
 - **Retention:** rows older than the segments' retention, and rows whose segment was deleted, are
   removed hourly in 10,000-row batches; `VACUUM` never runs in the foreground (incremental
   vacuum).
-- **Cap:** 1.5 GB (README §4.2); over it, the oldest `debug` then `info` rows go first.
+- **Cap:** `logs.db`'s share of the 1 GB diagnostics total: **350 MB** by default (README §4.2,
+  owner's decision 2026-11-03; it holds the line index, error groups and metric rollups, and
+  scales when an admin changes the total); over it, the oldest `debug` then `info` rows go first,
+  then the oldest error hours, then the 1-hour metric rollups.
 
 ### 3. Search API (loopback, the API proxies it)
 
@@ -77,7 +80,7 @@ machines didn't answer.
 
 ## Acceptance criteria
 
-- **Given** 14 days of lines (30 M) on the reference machine,
+- **Given** 7 days of lines (15 M) on the reference machine,
   **when** an admin searches a word with no filters,
   **then** the first page comes back in ≤ 1.5 s p95.
 - **Given** a request id,
@@ -108,7 +111,7 @@ machines didn't answer.
 | T04 | unit | retention, deleted segments | sweep | rows gone in batches |
 | T05 | role test (API) | nobody, viewer, admin | the three routes | 401, 403, 200 |
 | T06 | integration | corrupt db file | start | rebuilt |
-| T07 | bench (53.13) | 30 M lines | the latency targets | within budget |
+| T07 | bench (53.13) | 15 M lines | the latency targets | within budget |
 
 ## Edge cases
 

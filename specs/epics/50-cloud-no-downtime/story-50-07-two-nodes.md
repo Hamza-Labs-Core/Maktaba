@@ -20,6 +20,17 @@ never both think they are.
 | **B** | NBG1 | the same; the cloud processes are stopped while B is the standby |
 | **W** (witness) | HEL1 | etcd only for this story (50.10 adds monitoring and the canary home, 50.09 the restore drill) |
 
+**The witness machine (owner decision, 2026-11-03; README §13 decision 3):** a **Hetzner
+CPX22** (€19.99 a month), ordered now rather than waiting for CX23 to come back. Its witness
+job is **etcd only**, the third vote, which needs about **1–2 vCPU, 1–2 GB RAM and ~20 GB
+disk**; a CPX22 covers that with room. The monitoring, canary home and restore drill that later
+stories put on the same machine are **guests, not part of the witness role**: they run under
+systemd with lower `CPUWeight` / `IOWeight` than etcd and their own disk quota, so they can
+never starve etcd's heartbeats; if they outgrow it they move to their own machine and W stays
+etcd only. **Cloudflare can't host the witness**: Cloudflare sells no VMs, and Cloudflare
+Tunnel is only a connector into a machine that already exists, so W must be a server we run
+(on Hetzner, in a third data centre).
+
 All three sit on one **Hetzner private network** in the eu-central zone. A Floating IP can only
 move inside one network zone, which is why A and B are in two data centres of the same zone.
 
@@ -99,14 +110,15 @@ reconnect with tickets.
 1. A Hetzner project **maktaba-prod** with only these resources.
 2. Private network `10.50.0.0/16`, subnet eu-central.
 3. Servers A (FSN1), B (NBG1), W (HEL1), Ubuntu 24.04, SSH key only, backups on for A and B.
-   Plans per README §5.
+   Plans per README §5; W is a CPX22.
 4. One Floating IPv4 in eu-central, first assigned to A.
 5. A project API token (read/write), stored on A and B only in
    `/etc/maktaba/hcloud-token` (0600, root) and as a GitHub `production` secret.
 6. DNS (50.01): `relay`, `*.relay` and the origin of `api` pointed at the Floating IP.
    When 50.15 lands, nodes A and B also run `--role=dns` on port 53 (UDP and TCP, opened in the
-   Hetzner firewall and UFW) for the `direct.maktaba.tv` delegation, on their own addresses so
-   it answers from both nodes at once.
+   Hetzner firewall and UFW) for the direct-name domains' delegation, on their own addresses so
+   it answers from both nodes at once. The delegation is for **each separate direct-name
+   domain** (50.15 §4), never for a name under `maktaba.tv`.
 
 ### 8. Alternatives weighed
 

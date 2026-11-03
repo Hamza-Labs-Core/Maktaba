@@ -10,6 +10,7 @@
 > (cloud monitoring, status page, incidents: see §9 for who owns what) and Epic 51
 > (configurable components, §10). **Research:** [research.md](research.md).
 > **Wiki:** [epic-53-logs-errors-reports.md](../../../docs/wiki/epics/epic-53-logs-errors-reports.md).
+> **Decisions:** the owner answered the open questions on 2026-11-03 (§12).
 
 ## 1. Why
 
@@ -58,12 +59,14 @@ From [research.md](research.md) §1 (the code on `main` at `7aa1af482`):
    English and Arabic, and an admin can reach a recovery page with logs and one-click fixes.
 2. **Every part writes the same log line**, with ids that let one request be followed from the
    app through the API and the pipeline to streaming.
-3. **Logs are kept, searchable and live** on the home itself, with retention and a disk cap,
+3. **Logs are kept, searchable and live** on the home itself, with short retention (logs 7 days,
+   errors 30, reports 90) and a 1 GB cap in all, both adjustable by an admin,
    and readable even when Postgres is down.
 4. **The same error is one row** with a count, first and last seen, and the requests it hit.
 5. **Anyone can report a problem** from any app, sees what will be sent, and it reaches the
    home's admin; with consent, Maktaba too.
-6. **Crashes are reported** from every app to the home, with no Google or third-party service.
+6. **Crashes can be reported** from every app to the home, with no Google or third-party service:
+   off by default, asked during each app's initial setup, with a switch in Settings.
 7. **Admins see dashboards** of the home's work and use over time, inside Maktaba, with no
    Grafana, Loki or Sentry to install.
 8. **The cloud uses the same model**, and its logs, errors and metrics feed Epic 50's monitoring.
@@ -96,8 +99,8 @@ From [research.md](research.md) §1 (the code on `main` at `7aa1af482`):
 | F10 | Error groups: deduped, counts, first/last seen, status (new, seen, resolved, muted), regressions reopen. | 53.10 |
 | F11 | Admin pages: Logs (live tail, search, follow a request), Errors, and the recovery console's links. Admin-only, enforced by the API. | 53.11 |
 | F12 | Dashboards: queue throughput, transcription and thumbnail rates, streaming sessions, errors over time, storage, use of the home. | 53.12 |
-| F13 | Crash reports from every app to the home; Android TV and tvOS covered. | 53.14 |
-| F14 | "Report a problem" in every app: describe, preview, consent, send to the home's admin; reports inbox. | 53.15 |
+| F13 | Crash reports from every app to the home, **off by default**: each app asks during its initial setup (onboarding) and keeps a Settings switch afterwards; Android TV and tvOS covered. | 53.14 |
+| F14 | "Report a problem" in every app: describe, preview, consent, send to the home's admin; a screenshot offered, off by default, shown in the preview before sending; reports inbox. | 53.15 |
 | F15 | With the admin's opt-in and the user's consent, reports and error groups go on to Maktaba through the cloud link; a service admin view across homes. | 53.16 |
 | F16 | The cloud's processes on the same schema, store and error groups; their logs, errors and metrics feed Epic 50.10. | 53.17 |
 
@@ -113,12 +116,12 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 | **Supervisor down** | back by launchd ≤ 15 s; after **3** failed starts in 2 min, the Mac app shows its own "can't start" page (bundled, no server) within 20 s, with the last lines of the log and Restart / Safe mode / Roll back | 53.05, 53.07 |
 | **Log ingest** | sustained **500 lines/s** per machine with index lag p95 **≤ 2 s**; a burst of **5,000 lines/s for 60 s** loses **0** lines to the segment files (the index catches up ≤ 2 min after) | 53.13 |
 | **Live tail** | a line appears in the viewer **≤ 2 s** after it is written | 53.13 |
-| **Search latency** | filters only (component, level, 24 h): p95 **≤ 300 ms**; full text over **14 days / 30 M lines**: p95 **≤ 1.5 s**; follow one request id: p95 **≤ 300 ms** | 53.13 |
-| **Retention** | info and above **14 days**; debug **24 h**; error occurrences **90 days**; reports **180 days**; whichever comes first with the disk cap | 53.02, 53.10 |
-| **Disk cap** | segments **2 GB** + index **1.5 GB** by default (settable); oldest dropped first; debug dropped first when the data volume has < 5 GB free; never fills the disk | 53.02 |
+| **Search latency** | filters only (component, level, 24 h): p95 **≤ 300 ms**; full text over **7 days / 15 M lines**: p95 **≤ 1.5 s**; follow one request id: p95 **≤ 300 ms** | 53.13 |
+| **Retention** | info and above **7 days**; debug **24 h**; error groups and their hours **30 days**; reports **90 days**; metric rollups 7 days at 1 min, 30 days at 1 h; whichever comes first with the disk cap; each adjustable by an admin (53.11) | 53.02, 53.10, 53.12, 53.15 |
+| **Disk cap** | **1 GB in all** by default (segments 550 MB + `logs.db` 350 MB + reports 100 MB; the admin sets the total, the shares scale); oldest dropped first; debug dropped first when the data volume has < 5 GB free; never fills the disk | 53.02, 53.09, 53.15 |
 | **Error group** | a new group visible ≤ **10 s** after its first line | 53.10 |
-| **Report size** | the app's part ≤ **512 KB** compressed (≤ 2,000 log lines) + optional screenshot ≤ 1 MB; the home's part ≤ **5 MB** compressed; to Maktaba ≤ **8 MB**. 10 reports a day per device | 53.15 |
-| **Crash upload** | ≤ 1 MB per crash envelope, ≤ 50 per device per hour, ≤ 3 retries over 7 days, then dropped | 53.14 |
+| **Report size** | the app's part ≤ **512 KB** compressed (≤ 2,000 log lines) + optional screenshot ≤ 1 MB (off by default, sent only after it was shown in the preview); the home's part ≤ **5 MB** compressed; to Maktaba ≤ **8 MB**. 10 reports a day per device | 53.15 |
+| **Crash upload** | only from devices that turned crash reports on; ≤ 1 MB per crash envelope, ≤ 50 per device per hour, ≤ 3 retries over 7 days, then dropped | 53.14 |
 | **Arabic** | every user-facing string ships English and Arabic in the same PR; RTL checked | the existing missing-Arabic tests on each platform |
 | **Roles** | logs, errors, dashboards, reports inbox, recovery console: admin only, enforced by the API and the supervisor; a viewer sees only their own reports | role tests per route (try as nobody and as a viewer) |
 
@@ -135,6 +138,9 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 
 ### 4.4 Privacy
 
+- **Crash reports to the home are opt-in** (owner's decision, 2026-11-03): off by default, asked
+  once during each app's initial setup with two equal buttons, and a Settings → Privacy switch
+  afterwards (53.14). Crashes stay on the device until the person says yes.
 - **The home is the boundary.** Logs, crash reports and problem reports stay on the home unless
   the home's admin turned on sharing with Maktaba (53.16) **and** the person sending a report
   ticks the box for that report. Anonymous error groups to Maktaba stay governed by the
@@ -148,10 +154,12 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
   Media paths and titles are kept at home (admins need them) and **removed** from anything sent
   to Maktaba.
 - **Consent is visible:** the report screen shows the exact files and a preview of their text
-  before sending (Emby anonymises on download; Home Assistant asks authors to review by hand:
+  before sending; a screenshot is offered, off by default, and shown in the preview before it can
+  be sent (53.15) (Emby anonymises on download; Home Assistant asks authors to review by hand:
   we let the sender review).
-- **Store disclosures:** Apple "Crash Data" and "Other Diagnostic Data" (crashes to the home are
-  automatic, so disclosed); Google Play Data safety "Crash logs" and "Diagnostics", optional.
+- **Store disclosures:** Apple "Crash Data" and "Other Diagnostic Data", optional (crashes go to
+  the home only after the user opts in); Google Play Data safety "Crash logs" and "Diagnostics",
+  optional.
   53.14 updates both.
 - **Deletion:** a user deleted at the home has their reports deleted; "Forget my device"
   (existing) also deletes its crash reports. Maktaba deletes a home's reports when the home
@@ -195,18 +203,19 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 | D6 | **tvOS uses PLCrashReporter**; iOS, iPadOS and macOS use MetricKit (already in the app); Android uses `CrashLog` (already) plus `ApplicationExitInfo` for ANRs and native crashes. | Crashlytics everywhere; KSCrash (tvOS support only in a 2026 beta). | MetricKit has no tvOS. PLCrashReporter supports tvOS 12+ and is MIT-licensed. |
 | D7 | **One id per request: `X-Request-Id` (UUIDv7)**, made by the client per user action, carried as `request_id` everywhere; W3C `traceparent` only when OTLP export is on. | Trace ids everywhere. | The id already exists in the API and the logger; adding it to clients, the pipeline and streaming closes the gap with the least new code. |
 | D8 | **Error fingerprint = the cloud's existing one** (`telemetry_error_groups`: source, app, scrubbed message, first own frame), extended with the component and the error code. | A new algorithm. | The same error has the same fingerprint at the home and in the cloud, so a forwarded group joins its anonymous twin. |
-| D9 | **Metric history = 1-minute rollups in `logs.db`** scraped from the existing `/metrics` endpoints by the `logs` role; 7 days at 1 min, 90 days at 1 h. | Prometheus; storing every sample. | Dashboards need trends, not raw series; ~200 series × 1,440 a day is a few MB. |
+| D9 | **Metric history = 1-minute rollups in `logs.db`** scraped from the existing `/metrics` endpoints by the `logs` role; 7 days at 1 min, 30 days at 1 h (owner's retention decision, 2026-11-03). | Prometheus; storing every sample. | Dashboards need trends, not raw series; ~200 series × 1,440 a day is a few MB, inside `logs.db`'s share of the cap. |
 | D10 | **Safe mode is one start**, like Home Assistant's: Postgres, API, web only. A crash-looping child stops at its cut-off and raises a repair item. | Endless retries; stopping everything. | The owner's rule: recovery is automatic or one click, never a terminal. |
 
 ### 5.3 Performance budget (home Mac)
 
 | Piece | CPU (average, one core) | Memory | Disk |
 |---|---|---|---|
-| Capture in the supervisor | ≤ 1 % at 500 lines/s | ≤ 20 MB | ≤ 2 GB/day written at 500 lines/s compressed (zstd) |
-| `logs` role (index, tail, rollups) | ≤ 3 % | ≤ 120 MB RSS | index ≤ 1.5 GB |
+| Capture in the supervisor | ≤ 1 % at 500 lines/s | ≤ 20 MB | segments ≤ 550 MB kept (at 500 lines/s ~2 GB/day is written, so the cap, not the 7 days, governs; at the normal < 50 lines/s, 7 days fits) |
+| `logs` role (index, tail, rollups) | ≤ 3 % | ≤ 120 MB RSS | `logs.db` ≤ 350 MB (index, error groups, rollups) |
 | Logging in each service | ≤ 20 µs per line p99, ≤ 2 % CPU | — | — |
-| Apps (crash sender, report) | idle unless sending | ≤ 5 MB | ≤ 2 MB of pending crashes |
-| **Total** | **≤ 5 %** | **≤ 200 MB** | **≤ 3.5 GB** (cap) |
+| Problem reports at the home | — | — | ≤ 100 MB |
+| Apps (crash sender, report) | idle unless sending | ≤ 5 MB | ≤ 2 MB of pending crashes (only when crash reports are on) |
+| **Total** | **≤ 5 %** | **≤ 200 MB** | **≤ 1 GB** at the home (cap, admin-adjustable) |
 
 At the expected normal rate of the live home (well under 50 lines/s) the real numbers are a
 tenth of these. 53.13 measures them in CI and fails the build above budget.
@@ -229,19 +238,19 @@ and the cloud on the same model, feeding Epic 50.
 
 | | Plex | Jellyfin | Home Assistant | Maktaba today | Maktaba after this epic |
 |---|---|---|---|---|---|
-| Server log files | `Plex Media Server.log` + `.1`–`.5` (forum), rolled on restart and size | daily files, retention days setting | one log + raw | one `server.log`, 50 MB + `.1` | per-component segments, 14 days, capped (53.02) |
+| Server log files | `Plex Media Server.log` + `.1`–`.5` (forum), rolled on restart and size | daily files, retention days setting | one log + raw | one `server.log`, 50 MB + `.1` | per-component segments, 7 days, 1 GB cap in all (53.02) |
 | View logs in the UI | no (download only) | Logs page lists files | System log (condensed + raw) | ring viewer, polled; file window | live tail, full-text search, follow a request (53.09, 53.11) |
 | Download logs | zip from Troubleshooting; no crash dumps or plugin logs | files | per-integration diagnostics, redacted | tar.gz (admin), user-scoped bundle | same, plus redaction and a preview (53.04, 53.15) |
 | Grouped errors with counts | no | no | yes (condensed log) | no | yes, with first/last seen and status (53.10) |
-| Crash reporting | server uploads on next start (opt-in) | none found | Sentry, opt-in, Supervisor only | local only (Apple, Android phone) | every app to the home; to Maktaba with consent (53.14, 53.16) |
+| Crash reporting | server uploads on next start (opt-in) | none found | Sentry, opt-in, Supervisor only | local only (Apple, Android phone) | every app to the home, opt-in (off by default, asked at setup); to Maktaba with consent (53.14, 53.16) |
 | "Report a problem" | no (forums) | no | no (issue tracker) | no | every app, with preview and consent (53.15) |
-| Dashboard | Now Playing, bandwidth, CPU/RAM, history, alerts (Plex Pass); alerts last one browser session | activity | energy, system | queue tiles, System health | dashboards over 90 days (53.12) |
+| Dashboard | Now Playing, bandwidth, CPU/RAM, history, alerts (Plex Pass); alerts last one browser session | activity | energy, system | queue tiles, System health | dashboards over 30 days (53.12) |
 | UI when the DB breaks | users restore or rebuild by hand (forum) | "database is locked" errors | **recovery mode keeps the UI, logs and restore** | sign-in fails; nothing works | recovery console, safe mode, banner (53.03–53.05) |
 | Third-party tools needed | Tautulli for history and alerts | Webhook plugin for alerts | none | — | none |
 
 **Copy:** Home Assistant's recovery and safe modes (the UI must not depend on what failed),
 Emby's anonymised download, Plex's next-start crash upload (but to the home first, and opt-in
-beyond it). **Avoid:** Plex's download-only logs and session-only alerts, needing a third-party
+there too). **Avoid:** Plex's download-only logs and session-only alerts, needing a third-party
 tool for history, and anything that needs a 16 GB monitoring stack at home.
 
 ## 8. Stories
@@ -349,11 +358,22 @@ into it as two fields (`status.features`, `status.banner`); nothing else changes
   fault rehearsal to the same tag guard.
 - One release at a time on the live Mac (the owner's rule).
 
-## 12. Open questions for the owner
+## 12. Decisions (2026-11-03)
 
-1. **Crash reports to the home on by default?** Recommended: yes, for apps signed in to a home
-   (the home is the household's own server), with a notice at first launch and a switch in
-   Settings. Beyond the home: always opt-in.
-2. **Retention defaults** (14 days of logs, 90 days of errors, 180 days of reports, 3.5 GB):
-   fine for the live home's big disk?
-3. **Screenshots in reports:** offered, off by default. Keep, or leave out entirely?
+The owner answered the three open questions:
+
+1. **Crash reports to the home: off by default.** Each app asks during its initial setup
+   (onboarding), with "Send crash reports" and "Not now" as equal choices and neither
+   pre-selected, and keeps a switch in Settings → Privacy afterwards. Apps updated from an earlier
+   release ask once on first launch, with the switch off until the person says yes. Anything
+   that leaves the home stays opt-in (usage data, Epic 16.7; reports to Maktaba, 53.16).
+   Changed: F13, §4.2 crash upload, §4.4, 53.14 (§1–§4, criteria, tests, rollback), 53.15
+   (crashes kept on the device can be attached with consent).
+2. **Retention: shorter.** Logs 7 days (debug still 24 h), errors 30 days, reports 90 days, at
+   most **1 GB in all** (segments 550 MB, `logs.db` 350 MB, reports 100 MB), each adjustable by
+   an admin. Metric rollups shortened to 30 days at 1 h to match the errors. Changed: goals,
+   §4.2 (search corpus 7 days / 15 M lines, retention, disk cap), D9, §5.3 budget, §7, 53.02,
+   53.09, 53.10, 53.11 (Retention settings, strings, role test), 53.12, 53.13 (benches), 53.15.
+3. **Screenshots in reports: offered, off by default, shown in the preview before sending.** The
+   box starts unticked; ticking shows the screenshot in the preview with "Remove"; the API
+   refuses a screenshot that wasn't previewed. Changed: §4.2 report size, §4.4, 53.15, 53.16.

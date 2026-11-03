@@ -1,6 +1,6 @@
 # Story 50.16 — A pool of relays
 
-> Epic 50 · Phase 2 · Depends on: 50.08, 50.14 · Needed by: Phase 3
+> Epic 50 · Phase 2 · Depends on: 50.08, 50.14, 50.19 · Needed by: Phase 3
 
 ## Why
 
@@ -96,16 +96,18 @@ dead relay needs no drain: its homes are already on their standby tunnels.
 
 ### 7. Limits that must be global
 
-- **Bandwidth caps** (25.12): `Meter.Allow` reads Postgres plus its own in-memory delta
-  (`cloud/internal/billing/meter.go`). With N relays the cap can overshoot by at most what N
-  relays carry in one 30 s flush. Accepted; documented in the plan page.
-- **Concurrent streams** (`MaxConcurrentStreams` in `cloud/internal/billing/plans.go`): the
-  relay doesn't enforce it today; only the billing API reports it. In the pool it must be
-  counted across relays: a `relay_streams` row per open stream (home, relay, opened_at), written
-  at stream open and deleted at close, with a 2-minute expiry swept by the worker. A stream is
-  refused with `429 stream_limit` when the home's open count is at its plan's limit. Rows are
-  written only for media streams (HLS sessions), not every request, so the write rate stays
-  low.
+- **Plan modes** (50.19: Free refused; Basic capped; Pro full, then pay-as-you-go, then
+  capped): the mode comes from `Meter` reading Postgres plus its own in-memory delta
+  (`cloud/internal/billing/meter.go`). With N relays a mode switch can lag by at most what N
+  relays carry in one 30 s flush. Accepted: a lag only delays a step **down in quality**, never
+  a cut-off, and the pay-as-you-go report to Stripe is clamped to the user's cap (50.19 §4), so
+  no one is billed past it.
+- **Concurrent relayed streams** (Basic 2; Pro N plus paid extra streams; 50.19 §3): 50.19
+  already counts them in Postgres (`relay_streams`, one row per open media stream, with the
+  relay that carries it, swept after 2 minutes of silence), so the pool needs no new mechanism:
+  each relay writes its own rows, and a new stream past the home's limit gets
+  `429 stream_limit` whichever relay it arrives at. Rows are written only for media streams
+  (HLS sessions), so the write rate stays low.
 
 ## Acceptance criteria
 
@@ -127,7 +129,7 @@ dead relay needs no drain: its homes are already on their standby tunnels.
 - **Given** a dead relay,
   **when** 30 s have passed,
   **then** its IP is gone from `relay.maktaba.tv`'s round robin.
-- **Given** a Pro home at its concurrent-stream limit split across two relays,
+- **Given** a Basic home with its 2 relayed streams split across two relays,
   **when** a third device opens a stream on a third relay,
   **then** it gets `429 stream_limit`.
 - **Given** the witness is down,
@@ -170,13 +172,11 @@ dead relay needs no drain: its homes are already on their standby tunnels.
 
 | File | Change |
 |---|---|
-| `cloud/migrations/` (new migration) | `relays`, `relay_streams`; `relay_tunnels` (from 50.04) gains `role` (`primary` / `standby`). |
+| `cloud/migrations/` (new migration) | `relays`; `relay_streams` (from 50.19) is reused; `relay_tunnels` (from 50.04) gains `role` (`primary` / `standby`). |
 | `cloud/internal/relay/pool.go` (new) | Heartbeat, healthy list cache, weighted rendezvous. |
 | `cloud/internal/relay/ws.go` | `X-Maktaba-Relays` on handshake; rebalance drain for wrongly placed homes. |
 | `cloud/internal/relay/registry.go`, `directory.go` (50.04) | Standby tunnels; prefer primary; fall to standby. |
 | `cloud/internal/relay/rebalance.go` (new) | Periodic check, rate-limited drains. |
-| `cloud/internal/handlers/relay/proxy.go` | Stream counting and `429 stream_limit` for media streams. |
-| `cloud/internal/billing/streams.go` (new), `cloud/cmd/maktaba-cloud/role_worker.go` | Global stream count; sweeper. |
 | `cloud/internal/handlers/homes/homes.go` | `relay_hint` connection. |
 | `cloud/internal/cloudlink/health.go`, `conn.go` | Primary + standby tunnels from the assignment. |
 | `deploy/cloud-ha/relay-pool/` (new) | Relay node role (Caddy with per-relay and shared certificates, cloud `--role=relay`), private-network firewall. |
@@ -209,4 +209,5 @@ dead relay needs no drain: its homes are already on their standby tunnels.
 
 50.08 (deploys that drain, which the pool reuses) and 50.14 (the measured capacity that
 weights the hash and triggers the phase). Builds on 50.02 (certificates), 50.03 (`DRAIN`) and
-50.04 (directory and forwarding).
+50.04 (directory and forwarding), and 50.19 (plan modes and the `relay_streams` count it keeps
+right across the pool).

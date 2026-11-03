@@ -12,7 +12,9 @@
 > signed package indexes, with sources.
 > **Wiki:** [epic-51-configurable-components.md](../../../docs/wiki/epics/epic-51-configurable-components.md).
 > **Used by:** [Epic 52](../52-transcript-word-review/README.md) lists language packs as
-> add-on components of this epic.
+> add-on components of this epic. Epic 54 (being specced) builds a
+> third-party plugin system, with no internet access and a store, on this component model.
+> **Decisions:** the owner's answers of 2026-11-03 are in §13.
 
 ## 1. Why
 
@@ -76,8 +78,8 @@ and one answer the apps can read to know what is on.
 2. **Desired and actual state, kept apart.** Admins set what they want; each machine reports
    what is true, with a reason. One loop per machine closes the gap.
 3. **Enable/disable and start/stop are different controls.** *Enabled* means "this should run
-   on this home". *Stopped* means "hold it now", and lasts until someone starts it again or a
-   chosen time passes.
+   on this home". *Stopped* means "hold it now", and lasts until someone starts it again.
+   There are no timed holds (§13, decision 2).
 4. **Live.** Turning a component on or off never restarts the server, the API or other
    components. In-flight jobs are drained, never lost.
 5. **Install, remove, add later.** A component that is not in the payload can be downloaded,
@@ -91,8 +93,9 @@ and one answer the apps can read to know what is on.
 
 ### Not in this epic
 
-- A third-party component store or marketplace. Pipeline extensions loaded through Python
-  entry points stay a developer feature (§9, H5).
+- A third-party component store or marketplace, and third-party plugins. Those are
+  Epic 54, built on this epic's component model. Until it lands,
+  pipeline extensions loaded through Python entry points stay a developer feature (§9, H5).
 - New paid tiers or new paywalls. Gating reuses the existing licence flags only (H10).
 - Moving the database out of the bundle. `[postgres] enabled = off` (an external Postgres)
   stays as it is: Postgres is a bootstrap component, not a switchable one.
@@ -178,7 +181,7 @@ writes it:
 | Field | Values | Meaning |
 |---|---|---|
 | `want` | `absent` · `installed` · `enabled` | not on disk · on disk but off · should run |
-| `hold` | null · `{by, at, until}` | stopped by an admin; `until` null means until started again |
+| `hold` | null · `{by, at}` | stopped by an admin, until an admin starts it again; it has no end time (§13) |
 | `generation` | integer | bumped on every change; actual state echoes the generation it acted on |
 
 **Actual state**, per component, per machine. Only the machine writes it. It is reported as
@@ -256,7 +259,7 @@ in order:
    of enqueueing. Jobs already queued **stay queued**, shown on the Queues page as "waiting:
    transcription is off". They are never cancelled or deleted. Nothing writes `parked_on`
    (Epic 40's `park_max_hours` would release them); the disabled stage is what holds them.
-   A *hold* differs in one way: new jobs still queue and wait, because a hold is short.
+   A *hold* differs in one way: new jobs still queue and wait, because a hold is a temporary stop that lasts until Start.
 
 When the component is enabled again, its runner first resumes what was paused, then runs a
 **catch-up** with the existing reconciler: every item whose upstream finished while the
@@ -584,10 +587,10 @@ Sources in [research.md](research.md) §2.
 | # | Call | Rejected, and why |
 |---|---|---|
 | H1 | **Desired state in Postgres, actual state per machine with conditions.** | *Everything in `server.toml`*: not live, not per-cluster, not editable from the web. *A `phase` column only*: loses the reason, can't show "running but degraded". *etcd / a new store*: one more thing to run on a home. |
-| H2 | **Enable and Stop are two controls. A hold persists across restarts** until Start or its `until`. | *systemd's "stop lasts until reboot"*: an update restarts the server, so "stop transcription tonight" would undo itself at 3 a.m. *One switch*: the owner asked for both. |
+| H2 | **Enable and Stop are two controls. A hold persists across restarts** until Start. There are no timed holds. | *systemd's "stop lasts until reboot"*: an update restarts the server, so "stop transcription" would undo itself at 3 a.m. *One switch*: the owner asked for both. *Timed holds (1 hour, tonight, until tomorrow 06:00)*: the owner chose only "until I turn it on" (§13, decision 2); fewer choices, and no time zones to get wrong. |
 | H3 | **Disabling a requirement keeps the dependents' wish; they wait.** | *Cascade-disable the dependents* (systemd `Requires=` stop): turning one thing back on would mean finding and re-ticking five others. *Refuse while dependents are on*: annoying for a temporary stop. Refusal is kept only for remove. |
 | H4 | **Disable = stop claiming, drain, force-pause what is left, keep the queue, don't feed; enable = resume + catch-up.** | *Keep enqueueing and park everything*: a home with transcription off for months would grow millions of parked rows. *Cancel queued jobs*: loses work and history. *Fail in-flight jobs*: pollutes Epic 40's failure classes. |
-| H5 | **First-party components and packs are versioned with the server.** No third-party store in this epic. | *Independent component versions*: a compatibility matrix for each pair, and the update rehearsal would have to cover every mix. *A public store*: needs review, signing for others, and support. A later epic can add it on this model. |
+| H5 | **First-party components and packs are versioned with the server.** No third-party store in this epic. | *Independent component versions*: a compatibility matrix for each pair, and the update rehearsal would have to cover every mix. *A public store*: needs review, signing for others, and support. Epic 54 adds third-party plugins and a store on this model. |
 | H6 | **Packs are signed by the existing Sigstore release identity; models are pinned by revision + sha256 in the signed index; the index expires and can't go back.** | *A new minisign key*: a second key to guard and rotate. *Trusting Hugging Face TLS alone*: a changed model would load. *TUF in full*: the four roles are more than one publisher needs; we take its expiry and anti-rollback rules. |
 | H7 | **Settings stay in `app_settings` `rules.*` and `server.toml`**; components point at them; versions and migrations are added. `server.toml` switches are imported once, then the DB wins. | *A new JSON blob per component*: migrates every existing section for no gain. *`server.toml` keeps winning*: a web switch that the file silently overrides is worse than one documented one-time move. |
 | H8 | **The upgrade seeds desired state from what runs today, as `full`.** Proven by a rehearsal that diffs processes and stages. | *Start everyone on Core*: would switch off features people use. *Ask at update time*: updates have no UI moment on headless homes. |
@@ -677,14 +680,22 @@ processes, no shared files). 51.15 can start right after 51.01. After 51.08: 51.
   installs already have everything in their payload, so nothing is downloaded on update until
   an admin asks for something new.
 
-## 13. Open questions for the owner
+## 13. Decisions (2026-11-03)
 
-None block the build. These are the defaults the spec picks. Each can be changed later.
+The owner answered the open questions on 2026-11-03. Each one is applied in the stories named.
 
-1. **Core's contents.** The spec puts thumbnails, convert, dedup, keyword search, queue
-   health, analytics and backups in Core, and leaves transcription, semantic search, Live TV, YouTube,
-   LLM and enrichment out. Should transcription be in Core for Arabic-first homes? (Default:
-   no. It needs about 2 GB of downloads.)
-2. **Hold expiry choices in the UI:** until I start it, 1 hour, until tomorrow 06:00. Other
-   choices?
-3. **New paid gating** (for example Live TV in Home and Pro only) is left out on purpose (H10).
+1. **Core's contents: transcription stays out of Core.** Core keeps thumbnails, convert, dedup,
+   keyword search, queue health, analytics and backups. Transcription, semantic search, Live TV,
+   YouTube, LLM and enrichment stay out, and can be added later as packs (51.15–51.17). No
+   change to the bundles in §5 or 51.17.
+2. **Stop has one choice: "until I turn it on".** The timed holds (1 hour, tonight, until
+   tomorrow 06:00) are removed from the design (§3 goal 3, §4.2, H2), the data model (no
+   `hold_until` column, a hold is `{by, at}`: 51.02, 51.04), the API and CLI (`stop` takes no
+   `until`, a body with one is `400 hold_has_no_until`: 51.08, 51.12) and the UI (one Stop
+   button, "Stopped until you turn it on" / «متوقف حتى تشغّله»: 51.10, 51.12). A hold still
+   survives restarts and updates (H2).
+3. **No new paid gating.** Gating stays as it is: existing licence flags only (H10, 51.19).
+4. **Plugins are Epic 54.** A separate epic (being specced) specs a
+   third-party plugin system with no internet access and a store, built on this epic's
+   component model. This epic only points to it (§3 "Not in this epic", H5, 51.01, 51.07,
+   51.14) and specs no plugins.

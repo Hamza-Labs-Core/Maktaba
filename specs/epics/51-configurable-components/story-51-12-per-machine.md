@@ -35,7 +35,7 @@ Rules:
 |---|---|---|
 | `GET /api/components?machine=<node_id>` | — | the list with that machine's effective wish, override and status |
 | `PUT /api/components/{id}/machines/{node_id}` | `{"want":"enabled"\|"installed"\|null, "generation":N?}` | set or clear the override |
-| `POST /api/components/{id}/machines/{node_id}/stop` | `{"until":…\|null}` | per-machine hold |
+| `POST /api/components/{id}/machines/{node_id}/stop` | — | per-machine hold, until `start` (no timed holds) |
 | `POST /api/components/{id}/machines/{node_id}/start` | — | clear it |
 | `POST /api/components/preview`, `/apply` | changes may carry `"machine": "<node_id>"` | same effect walk, on that machine's graph |
 
@@ -98,8 +98,8 @@ Components on old-laptop                               Worker machine: 3 of 8
   Thumbnails        ● Running · 1 stage off    [Follow home ▾]
 ```
 
-The menu offers *Follow home*, *Off on this machine*, *Stop on this machine…* (the hold
-choices of 51.10). Changes go through the same preview dialog as 51.10. Every string in
+The menu offers *Follow home*, *Off on this machine*, *Stop on this machine* (held until
+someone starts it, as 51.10). Changes go through the same preview dialog as 51.10. Every string in
 `en.json` and `ar.json` together (المكوّنات على هذا الجهاز، يتبع الجهاز الرئيسي، متوقف على هذا
 الجهاز); the section is checked in Arabic and right to left.
 

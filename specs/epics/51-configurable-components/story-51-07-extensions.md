@@ -85,7 +85,8 @@ required settings are missing → **Waiting, `not_configured`** (today: stages s
 - No route answers `409 component_off` here: these routes manage the component.
 - Third-party extensions loaded through Python entry points (H5) are **not** components:
   they keep today's `extensions` row as their only switch, and are listed by
-  `GET /api/extensions` as before.
+  `GET /api/extensions` as before. Third-party plugins (no internet access, a store) are
+  Epic 54, which builds on this component model; this story specs none.
 
 ### 6. Roles
 

@@ -34,8 +34,14 @@ can fix it: the home's admin.
    - the app's log for the last 30 minutes (≤ 2,000 lines, ≤ 512 KB), with a **preview** of the
      lines (scrollable, already redacted);
    - the last 20 request ids and their results;
-   - recent crash reports of this app, if any;
-   - a screenshot of the screen before the form, **off** by default (owner's open question 3).
+   - recent crash reports of this app kept on the device, if any (a separate tick box, on, shown
+     even when crash reports to the home are off: sending a report is itself the person's choice);
+   - **a screenshot** of the screen before the form (owner's decision, 2026-11-03, README §12):
+     **offered, off by default**. The "Include a screenshot" box starts unticked. Ticking it shows
+     the screenshot itself in the preview, full width, before Send, with "Remove" next to it;
+     unticking removes it from the payload. A screenshot is never sent unless it was shown in the
+     preview first. TV apps offer it too: the preview shows it on screen and the remote's select
+     toggles it.
 4. **Send to:** {home}'s admin (always). And **"Also send to Maktaba so the developers can look"**:
    shown only when the home's admin turned on sharing with Maktaba (53.16); unticked by default;
    ticking shows one more sentence ("Maktaba gets the same report, without your name, video
@@ -49,12 +55,15 @@ sender's name.
 
 The form is a list of categories and a single "Describe it" field using the platform's dictation
 or keyboard (optional). The preview is a summary ("Your TV app's log for the last 30 minutes,
-1,240 lines") with "Show" to scroll it.
+1,240 lines") with "Show" to scroll it. The screenshot box sits below it, unticked; ticking
+shows the screenshot full screen before Send.
 
 ### 4. At the home
 
 `POST /api/reports` (any signed-in user), a multipart envelope (the app's part ≤ 512 KB + an
-optional screenshot ≤ 1 MB), 10 a day per device.
+optional screenshot ≤ 1 MB, present only when the sender ticked the box), 10 a day per device.
+The API rejects a screenshot part whose envelope header lacks `screenshot_previewed: true`
+(400), so a client bug can't send one silently.
 
 The API:
 
@@ -80,7 +89,10 @@ The API:
 
 ### 6. Retention and deletion
 
-Reports are kept 180 days (README §4.2), then deleted with their files. Deleting a user deletes
+Reports are kept **90 days** by default (owner's decision, 2026-11-03; README §4.2), then deleted
+with their files. The admin can change it (Admin → Logs → Retention, 53.11) and reports count
+toward the home's 1 GB diagnostics cap (reports' share ≤ 100 MB; over it, the oldest closed
+reports go first, then the oldest). Deleting a user deletes
 their reports. The sender can delete their report from My reports at any time.
 
 ### 7. Strings
@@ -100,6 +112,9 @@ their reports. The sender can delete their report from My reports at any time.
 | `report.sent.log` | This app's log for the last 30 minutes ({count} lines) | سجل هذا التطبيق لآخر 30 دقيقة ({count} سطرًا) |
 | `report.sent.device` | App version, device model and system version | إصدار التطبيق وطراز الجهاز وإصدار النظام |
 | `report.screenshot` | Include a screenshot | إرفاق لقطة شاشة |
+| `report.screenshot.help` | Off unless you tick it. You'll see the screenshot here before sending. | متوقف ما لم تحدده. سترى لقطة الشاشة هنا قبل الإرسال. |
+| `report.screenshot.remove` | Remove screenshot | إزالة لقطة الشاشة |
+| `report.crashes` | Include recent crashes of this app ({count}) | إرفاق الأعطال الأخيرة لهذا التطبيق ({count}) |
 | `report.to.home` | Send to the admin of {home} | الإرسال إلى مشرف {home} |
 | `report.to.maktaba` | Also send to Maktaba so the developers can look | الإرسال إلى مكتبة أيضًا ليطّلع عليه المطوّرون |
 | `report.to.maktaba.note` | Maktaba gets the same report, without your name, video titles or file names, and keeps it for 90 days. | تتلقى مكتبة التقرير نفسه، دون اسمك أو عناوين الفيديوهات أو أسماء الملفات، وتحتفظ به 90 يومًا. |
@@ -132,7 +147,13 @@ their reports. The sender can delete their report from My reports at any time.
   **then** 403.
 - **Given** the admin writes back,
   **then** the sender sees the reply and status in My reports in their language.
-- **Given** a report is 181 days old,
+- **Given** the form opens,
+  **then** "Include a screenshot" is unticked and no screenshot is in the payload.
+- **Given** the sender ticks "Include a screenshot",
+  **then** the screenshot is shown in the preview before Send, and unticking or "Remove" drops it from the payload.
+- **Given** a screenshot part without `screenshot_previewed: true`,
+  **then** the API answers 400 and stores nothing.
+- **Given** a report is 91 days old (default retention),
   **then** it and its files are gone.
 - **Given** Arabic,
   **then** the form, preview header and statuses are Arabic and right to left; log lines stay left to right.
@@ -145,7 +166,9 @@ their reports. The sender can delete their report from My reports at any time.
 | T02 | role test | nobody, viewer A/B, admin | every report route | as the criteria |
 | T03 | unit | limits | 11th report in a day | 429 + `report.limit` |
 | T04 | unit (web, Swift ×2 incl. tvOS, Kotlin ×2 incl. TV, Rust) | form | preview, send, Maktaba box rules | right payload |
-| T05 | unit | retention | sweep | deleted at 180 d |
+| T05 | unit | retention, admin-changed retention, reports over 100 MB | sweep | deleted at 90 d / at the admin's value; oldest closed first over the cap |
+| T08 | unit (each platform) | form | open; tick screenshot; untick | unticked at open; preview shows the image; payload has it only while ticked |
+| T09 | unit (Go) | screenshot without the preview flag | POST | 400 |
 | T06 | unit | strings | en/ar parity on each platform | pass |
 | T07 | UI (**CI only**) | each app against a mock home | send a report | received; screenshots dark, en and ar |
 

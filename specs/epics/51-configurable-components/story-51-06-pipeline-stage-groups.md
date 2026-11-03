@@ -82,7 +82,7 @@ SQL with `ShutdownOrchestrator`.
   `disabled_reason = 'component_off'`, return `EnqueueResult(None, "skipped_component_off")`
   instead of `"disabled"`. `propagate.py` logs the edge with `kind = "skipped"`, message
   `component off`. No row is inserted.
-- When `disabled_reason = 'component_held'`, enqueue **as usual**: a hold is a short stop,
+- When `disabled_reason = 'component_held'`, enqueue **as usual**: a hold is a temporary stop (it lasts until Start),
   so new work waits in the queue and runs when the component is started (H2, H4).
 - Jobs already queued (`pending`, `paused`) **stay**. Nothing cancels, deletes or parks them:
   the disabled stage is the gate. No `parked_on` is written, so Epic 40's `park_max_hours`

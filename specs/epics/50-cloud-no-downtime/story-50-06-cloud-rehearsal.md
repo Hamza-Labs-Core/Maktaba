@@ -50,7 +50,7 @@ that errored or took longer than 10 s.
 | C06 | `deploy-bad-release-rollback` | deploy an image built with `-tags rehearsalbad` (fails readiness after 20 s) | the deploy stops, green is removed, blue keeps serving; 0 failed requests; the deploy exits non-zero | 0 s |
 | C07 | `migration-n-minus-1` | migrate to this commit's schema, then run the **previous release's** binary on it for its test suite subset (`go test -tags rehearsal ./internal/...` against the DB) | the old binary works on the new schema (expand/contract rule, 50.08) | — |
 | C08 | `db-blip` | 300 homes streaming; Patroni switchover only (cloud processes stay) | 0 failed requests for known homes; metering totals equal what the stream generator counted (± 1 %) | 0 s |
-| C09 | `restore-pitr` | write rows for 3 min with pgBackRest archiving to MinIO; destroy both nodes' data; restore to a timestamp 30 s before the end on a fresh node by `deploy/cloud-ha/restore.sh` (50.09) | every row before the target time is there, none after; restore time recorded against the 4 h RTO | 4 h (expected minutes) |
+| C09 | `restore-pitr` | write rows for 3 min with pgBackRest archiving to two MinIO buckets (standing in for Object Storage and R2); destroy both nodes' data; restore to a timestamp 30 s before the end on a fresh node by `deploy/cloud-ha/restore.sh` (50.09) | every row before the target time is there, none after; restore time recorded against the 4 h RTO | 4 h (expected minutes) |
 | C10 | `cert-on-standby` | fresh cluster | both nodes hold the wildcard before any failover; Pebble saw no per-home certificate (50.02) | — |
 
 Later stories add their own scenarios to the same harness, under these names:
@@ -60,9 +60,10 @@ Later stories add their own scenarios to the same harness, under these names:
 | C11 | `status-feed` | 50.11: the prober's `summary.json` flips to outage and back within its budget |
 | C12 | `runbook-switchover`, `runbook-forced-failover`, `runbook-dns-swap` | 50.12: each runbook's script runs as written |
 | C13 | `apps-cloud-down` | 50.13: client libraries with the cloud unreachable; local play works, cached direct entry is used |
-| C14 | `direct-remote` | 50.15: UPnP mapping on a fake gateway, outside check, IP-encoded name answers |
+| C14 | `direct-remote` | 50.15: UPnP mapping on a fake gateway, outside check, IP-encoded name answers on each configured direct-name domain; overflow CA used when the weekly budget is spent |
 | C15 | `relay-pool-kill-one`, `rebalance-add-relay` | 50.16: three relays; one killed, one added |
 | C16 | `logs-survive-node` | Epic 53.17: during C02, the killed node's last `warn`+ lines (≤ 1 s before the kill) are on W and found by the cloud log search; and a 53.16 problem report sent through the canary home arrives |
+| C17 | `relay-plans` | 50.19: a home stack behind the relay and a fake Stripe; Free refused with the tunnel kept, Basic capped and transcoded with a third stream refused, Pro past its allowance falls back to capped quality; no stream stops; meter events sent once |
 
 Each scenario writes a JSON result (`downtime_ms`, `failed_requests`, `reconnect_p50/p95/p99`,
 `budget`), shown in the run summary, and keeps every container's log, Patroni's history and the

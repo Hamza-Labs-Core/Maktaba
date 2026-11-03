@@ -43,7 +43,8 @@ CREATE TABLE error_hours (fp TEXT, hour INTEGER, count INTEGER, PRIMARY KEY (fp,
 - **Status:** `new` → `seen` when an admin opens it; `resolved` by an admin (records the current
   version); a resolved group that happens again **on a later version** goes back to `new` and is
   marked "came back"; `muted` for 24 h, 7 days or until resolved.
-- Retention: groups not seen for 90 days are deleted with their hours; samples point at lines
+- Retention: groups not seen for **30 days** (owner's decision, 2026-11-03; admin-adjustable,
+  53.11) are deleted with their hours; hourly counts older than 30 days are dropped; samples point at lines
   that may have aged out (the UI says "line no longer kept").
 
 ### 3. Notifications
@@ -55,7 +56,7 @@ in total ("and N more" in the last one). Muted groups never notify.
 ### 4. API
 
 Admin only: `GET /api/admin/errors?status=&service=&since=&q=`, `GET /api/admin/errors/{fp}`
-(the group, its hourly chart for 14 days, samples with their lines, affected app versions and
+(the group, its hourly chart for 30 days, samples with their lines, affected app versions and
 users count), `POST /api/admin/errors/{fp}/status` (`seen|resolved|muted`, `muted_until`). Each
 status change is written to `audit_log`.
 
@@ -121,7 +122,7 @@ T01–T06 in unit and integration jobs.
 ### Rollout
 
 Grouping starts with the release; old lines are not grouped back (the index may group the last
-14 days once at first start, in the background).
+7 days once at first start, in the background).
 
 ### Rollback
 

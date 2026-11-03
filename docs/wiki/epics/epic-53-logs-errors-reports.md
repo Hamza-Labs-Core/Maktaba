@@ -25,10 +25,10 @@ Crashes stay on the devices, and nobody can report a problem. This epic covers f
 | Banner after a part goes down | ≤ 15 s, in English and Arabic, in every app |
 | Recovery console with Postgres or the API down | signed in ≤ 10 s |
 | Log ingest | 500 lines/s sustained; 5,000/s burst for 60 s with 0 lines lost to disk |
-| Search | filters p95 ≤ 300 ms; full text over 14 days / 30 M lines p95 ≤ 1.5 s; live tail ≤ 2 s |
-| Retention | logs 14 days (debug 24 h), errors 90 days, reports 180 days; 3.5 GB cap |
-| Report size | app ≤ 512 KB, home ≤ 5 MB, to Maktaba ≤ 8 MB |
-| Cost on the home Mac | ≤ 5 % of one core, ≤ 200 MB RAM |
+| Search | filters p95 ≤ 300 ms; full text over 7 days / 15 M lines p95 ≤ 1.5 s; live tail ≤ 2 s |
+| Retention | logs 7 days (debug 24 h), errors 30 days, reports 90 days; at most 1 GB in all; an admin can change each |
+| Report size | app ≤ 512 KB (+ a screenshot ≤ 1 MB only if ticked), home ≤ 5 MB, to Maktaba ≤ 8 MB |
+| Cost on the home Mac | ≤ 5 % of one core, ≤ 200 MB RAM, ≤ 1 GB disk |
 
 ## Key decisions
 
@@ -54,6 +54,20 @@ Crashes stay on the devices, and nobody can report a problem. This epic covers f
   - `ApplicationExitInfo` for Android ANRs.
 - **The home is the privacy boundary.** User ids are hashed in logs. Reports go to Maktaba only
   when the admin enabled it and the sender ticked the box for that report.
+- **Crash reports to the home are off by default.** Each app asks during its initial setup and
+  keeps a switch in Settings → Privacy. Anything that leaves the home stays opt-in.
+- **Screenshots in reports are offered, off by default**, and shown in the preview before
+  sending.
+
+## Decisions (2026-11-03)
+
+The owner answered the open questions:
+
+1. Crash reports to the home: **off by default**, asked during onboarding, a Settings switch
+   afterwards (53.14).
+2. Retention: **shorter**. Logs 7 days, errors 30, reports 90, at most 1 GB in all, adjustable
+   by an admin (53.02, 53.09–53.13, 53.15).
+3. Screenshots in reports: **offered, off by default, shown in the preview** (53.15, 53.16).
 - **A fault rehearsal in CI** kills each part and checks the UI, the banner and the console. It
   gates releases like the update rehearsal.
 
@@ -111,6 +125,6 @@ for history. It uploads crashes on the next start. Maktaba:
 
 - shows logs live and searchable;
 - groups errors with counts;
-- has dashboards over 90 days;
-- sends crashes to the home first, and to Maktaba only with consent;
+- has dashboards over 30 days;
+- sends crashes to the home only after the user opts in, and to Maktaba only with consent;
 - keeps a recovery page that works when the database is broken (Home Assistant's model).

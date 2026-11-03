@@ -30,11 +30,11 @@ A new Go package **`api/internal/components`** holds the logic: read the catalog
 
 | Method and path | Body | Answer |
 |---|---|---|
-| `GET /api/components` | — | every component: catalog fields, desired (`want`, `hold`, `generation`), the home-wide phase and reason, per-machine status, `required_by`, `install_size_mb`, the bundle line ("Based on Full, minus YouTube"), the home's time zone (`home_tz`, for hold times) |
+| `GET /api/components` | — | every component: catalog fields, desired (`want`, `hold`, `generation`), the home-wide phase and reason, per-machine status, `required_by`, `install_size_mb`, the bundle line ("Based on Full, minus YouTube") |
 | `GET /api/components/{id}` | — | one component, plus conditions per machine and its last 20 audit rows |
 | `PUT /api/components/{id}` | `{"want":"enabled"\|"installed"\|"absent", "generation":N?, "with_conflicts":bool?}` | the component after the change |
 | `DELETE /api/components/{id}` | — | the same as `PUT {"want":"absent"}`, with its refusals; `?purge=true` also resets settings (51.13) and data (51.16) |
-| `POST /api/components/{id}/stop` | `{"until":"2026-11-04T06:00:00+03:00"\|null}` | sets `hold = {by, at, until}` |
+| `POST /api/components/{id}/stop` | — | sets `hold = {by, at}`; it lasts until `start` |
 | `POST /api/components/{id}/start` | — | clears `hold` |
 | `POST /api/components/{id}/restart` | — | `process`: supervisor `Restart`; `loop`: cancel and start again. Other kinds: `409 not_restartable` |
 | `POST /api/components/preview` | `{"changes":[{"id","want"?,"hold"?}]}` | the effect, changing nothing (§3) |
@@ -43,8 +43,9 @@ A new Go package **`api/internal/components`** holds the logic: read the catalog
 - `generation` is optional. When given and the row has moved on, the answer is
   `409 stale_generation` with the current row, so two admins never overwrite each other
   silently.
-- `until` must be in the future and at most 30 days away (`400 bad_until`). `null` means
-  "until someone starts it". The web offers three choices (51.10); the API takes any time.
+- A hold has **no end time** (README §13, decision 2: only "until I turn it on"). `stop`
+  takes no body; a body with `until` is refused with `400 hold_has_no_until`, so an older
+  client never thinks it set a timed hold. A hold survives restarts and updates (H2).
 - `core.*` components answer `409 not_switchable` to every write.
 - An unknown id is `404`. A machine override is 51.12; settings are 51.13.
 - `want = installed` or `absent` on a component whose files must be downloaded or deleted
@@ -97,7 +98,7 @@ Every change writes one `audit_log` row per component, in the same transaction a
 with 51.02's shape: `category = 'components'`, `action = component.<verb>` with the verb one of
 `enable`, `disable` (to `installed`), `remove`, `hold`, `release`, `restart`, `bundle_apply`;
 `actor_user_id`, `actor_source` (`web`, `cli`, `remote`), `target_kind = 'component'`,
-`target_id = <id>`, and `payload = {before, after, batch_id, until?}`. `restart` changes no
+`target_id = <id>`, and `payload = {before, after, batch_id}`. `restart` changes no
 desired row but is audited the same way. The `components` category must be in
 `audit_log_category_check`; 51.02's migration `0173_components` adds it (the pattern of
 `0157_feature_flags.sql` and `0160_audit_server.sql`). The Audit log page shows the rows with
@@ -111,7 +112,7 @@ maktaba-server components show <id> [--json]     conditions per machine, require
 maktaba-server components enable <id> [--with-conflicts] [--yes]
 maktaba-server components disable <id> [--yes]
 maktaba-server components start <id>
-maktaba-server components stop <id> [--until 06:00|1h|2026-11-04T06:00]
+maktaba-server components stop <id>                  (held until `start`; no timed holds)
 maktaba-server components install <id> | remove <id> [--purge] | import <file>   (wired by 51.16)
 maktaba-server components bundle [<full|core|worker>] [--yes]   (wired by 51.17; no name: show)
 ```
@@ -143,10 +144,12 @@ maktaba-server components bundle [<full|core|worker>] [--yes]   (wired by 51.17;
 - **Given** `livetv.slots` is enabled,
   **when** `livetv.inprocess` is enabled without `with_conflicts`,
   **then** `409 component_conflicts`; with `with_conflicts: true` both change in one transaction.
-- **Given** an admin stops `transcription` until tomorrow 06:00,
-  **when** that time passes,
-  **then** the runners (51.04–51.06) treat it as no hold and start the component, the next
-  API write clears the expired hold columns (51.02), and the hold's audit row shows `until`.
+- **Given** an admin stops `transcription`,
+  **when** the server restarts for an update and a day passes,
+  **then** it is still Stopped, and it starts only when an admin sends `start`.
+- **Given** an older client,
+  **when** it sends `POST /api/components/transcription/stop {"until":"…"}`,
+  **then** the answer is `400 hold_has_no_until` and no hold is written.
 - **Given** no sign-in, a viewer, or a cloud-linked play sign-in (even an admin's),
   **when** any route of §2 is called,
   **then** the answer is `401` (no sign-in) or `403` (the others) and no row changes.
@@ -163,14 +166,14 @@ maktaba-server components bundle [<full|core|worker>] [--yes]   (wired by 51.17;
 | T02 | unit | `transcription` enabled | `Effect(remove runtime.ml)` | refused `component_required_by` [transcription, subtitles] |
 | T03 | unit | `livetv.slots` enabled | batch: disable slots, enable inprocess | passes; reverse order without `with_conflicts` refused |
 | T04 | unit | stale generation | `PUT` with old `generation` | `409 stale_generation` with current row |
-| T05 | unit | `until` 31 days away / in the past | stop | `400 bad_until` |
+| T05 | unit | stop body with `until` | stop | `400 hold_has_no_until`; no row change |
 | T06 | unit | `core.api` | every write route | `409 not_switchable` |
 | T07 | role | every route in §2 | as nil, viewer, play (admin user), machine cert, token without admin scope | `401` for nil, `403` for the rest; rows unchanged (`TestAdminOnly` pattern) |
 | T08 | role | every route | as admin, as cloud `manage` link | `2xx` |
 | T09 | integration (Postgres) | scratch DB, 51.02 tables | `PUT`, then read `audit_log` | one row, payload has before and after; `NOTIFY components_changed` seen |
 | T10 | integration | `apply` with a bad third change | apply 3 changes | none written |
 | T11 | unit | CLI with a fake service | `disable llm` without a terminal and without `--yes` | refuses, exit 2 |
-| T12 | integration | server running in the test harness | `components list --json`, `stop youtube --until 1h` | matches `GET /api/components`; hold set |
+| T12 | integration | server running in the test harness | `components list --json`, `stop youtube` | matches `GET /api/components`; hold set |
 | T13 | contract | routes | `TestEveryRouteHasPlacementClass` | the new routes are `home` placement |
 
 ## Edge cases
@@ -178,7 +181,7 @@ maktaba-server components bundle [<full|core|worker>] [--yes]   (wired by 51.17;
 - **Two admins, two tabs.** Without `generation` the last write wins and both are audited. The
   web always sends it (51.10).
 - **A hold on a component that is off.** Allowed: it takes effect when the component is enabled.
-  The page shows "Off (held until 06:00)".
+  The page shows "Off (stopped)".
 - **Restart of a component that is not running** starts it if it is enabled and not held,
   otherwise `409 not_running`.
 - **A batch of 200 changes** (a bundle switch) runs in one transaction. The trigger sends one
@@ -222,5 +225,4 @@ for the runners. `[components] reconcile = off` (§12) stops any effect.
 
 ### Dependencies
 
-51.02 (tables, store, the `components` audit category), 51.03 (seeded rows), 51.04–51.06 (runners that act on the rows and clear
-expired holds).
+51.02 (tables, store, the `components` audit category), 51.03 (seeded rows), 51.04–51.06 (runners that act on the rows).

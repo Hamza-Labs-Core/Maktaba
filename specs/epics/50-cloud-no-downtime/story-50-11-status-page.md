@@ -44,6 +44,11 @@ request rate above 5 %), **outage** (both networks fail two probes in a row), **
 - Headline, the four components, a **90-day uptime bar** per component (one cell a day,
   coloured by that day's uptime), current incidents, scheduled maintenance, and the past
   incidents of the last 90 days.
+- **The uptime target, with no credit.** Under the bars the page states the 99.9 % monthly
+  target for Remote access and last month's measured figure, and says plainly that it is a
+  target, not a guarantee, with **no credit or refund** for downtime (owner decision,
+  2026-11-03; README §13 decision 1; wording `uptime.policy` from 50.12). The page never shows a
+  credit amount, a credit schedule or a "you're owed" message.
 - **English and Arabic**: the language follows `Accept-Language` on first load, with a switch;
   Arabic pages are `dir="rtl"`. Times in UTC with the viewer's local time beside them.
 - Works without JavaScript (the build writes the HTML); the switch and local time are
@@ -106,6 +111,10 @@ states and draws it. No app has two banners.
 - **Given** a component recovers,
   **when** two probes in a row pass,
   **then** the state goes back to operational and the banner disappears on the next fetch.
+- **Given** last month's Remote access uptime was below 99.9 %,
+  **when** someone opens the page,
+  **then** it shows the measured figure against the target and the `uptime.policy` text, and
+  nothing on the page mentions or offers a credit.
 - **Given** an incident file has an English title and no Arabic one,
   **when** the status workflow builds,
   **then** the build fails.
@@ -123,6 +132,7 @@ states and draws it. No app has two banners.
 | T07 | unit (Android, Robolectric) | as T05 | banner composable | same |
 | T08 | unit (all apps) | `summary.json` 404 / timeout | start | no banner, no error |
 | T09 | Arabic | every new key | strings check | each English key has Arabic (web `ar.json`, Android `values-ar`, Apple catalog) |
+| T11 | unit | status builder, a month at 99.7 % | build | target, measured figure and `uptime.policy` (EN and AR) shown; no credit wording in the HTML |
 | T10 | rehearsal (CI, 50.06 `status-feed`) | prober + fake GitHub | kill the relay container | summary shows outage within 2 probe rounds |
 
 ## Edge cases
@@ -154,6 +164,7 @@ states and draws it. No app has two banners.
 | `status.state.degraded` | Slow | بطيء |
 | `status.state.outage` | Down | متوقف |
 | `status.state.maintenance` | Maintenance | صيانة |
+| `status.target` | Target: {target} each month. Last month: {percent}. | الهدف: {target} كل شهر. الشهر الماضي: {percent}. |
 | `status.uptime90` | Uptime, last 90 days: {percent} | مدة التشغيل في آخر 90 يومًا: {percent} |
 | `status.pastIncidents` | Past incidents | حوادث سابقة |
 | `status.noIncidents` | No incidents in the last 90 days. | لا حوادث في آخر 90 يومًا. |
