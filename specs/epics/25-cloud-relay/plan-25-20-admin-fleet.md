@@ -117,9 +117,9 @@ router.With(adminSession, adminACL).Group(func(r chi.Router) {
 
 ```sql
 -- Single SELECT with multiple subqueries (cheap with trigram indexes).
--- stripe_customer_id lives on subscriptions (slot 0006); join through it.
+-- provider_customer_id lives on subscriptions (slot 0006); join through it.
 SELECT u.*,
-       (SELECT stripe_customer_id FROM subscriptions WHERE user_id = u.id) AS stripe_customer_id,
+       (SELECT provider_customer_id FROM subscriptions WHERE user_id = u.id) AS provider_customer_id,
        (SELECT json_agg(s2) FROM servers s2 WHERE s2.owner_user_id = u.id) AS servers,
        (SELECT json_agg(s3) FROM subscriptions s3 WHERE s3.user_id = u.id) AS subs,
        (SELECT json_agg(a) FROM audit_events a WHERE a.actor_user_id = u.id ORDER BY a.occurred_at DESC LIMIT 200) AS audit,
@@ -216,7 +216,7 @@ func auditExport(s *Service) http.HandlerFunc {
 
 ## 8. Front-end
 
-`web/admin/` is a separate Vite + React app sharing UI primitives with `web/`. Uses `useQuery` against the admin API, identical patterns to the main app but no Stripe/Auth views.
+`web/admin/` is a separate Vite + React app sharing UI primitives with `web/`. Uses `useQuery` against the admin API, identical patterns to the main app but no billing/auth views.
 
 ## 9. Test plan
 

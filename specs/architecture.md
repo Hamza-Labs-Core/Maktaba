@@ -2594,7 +2594,7 @@ The cloud has **five jobs**:
    tokens; servers POST `{user_id, payload}`; the cloud fans out.
    Servers never see device tokens; APNs/FCM keys never leave
    the cloud.
-5. **Billing** — Stripe-hosted checkout / customer portal; cloud
+5. **Billing** — the payment provider's hosted checkout / customer portal; cloud
    is the system-of-record for entitlements (free / pro /
    family); signed entitlement blobs are pushed to servers.
 
@@ -2637,7 +2637,7 @@ The cloud explicitly **does not** do:
    │                                                                             │
    │   Redis (sliding-window counters, rate limits, dedup)                       │
    │                                                                             │
-   │   External: Stripe (billing), APNs / FCM (push), Postmark (email)           │
+   │   External: payment provider (TBD), APNs / FCM (push), Postmark (email)     │
    └────────────────────────────────────────────────────────────────────────────┘
 
                                 Self-hosted server (the user's box)
@@ -2662,7 +2662,7 @@ run with one of three roles:
 - **`--role=relay`** — accepts WSS tunnels from servers and HTTPS
   from clients on `*.maktaba.tv`. TLS terminates at Hetzner LB
   (Cloudflare-bypass for cost on streaming bandwidth).
-- **`--role=worker`** — non-request work: Stripe webhook
+- **`--role=worker`** — non-request work: payment-provider webhook
   application, push outbox drainer (APNs + FCM), bandwidth
   rollups, ACME renewals, abuse scoring.
 
@@ -2800,8 +2800,20 @@ out of v1.
 
 ### 13.10 Billing & entitlements
 
-The cloud is the system-of-record for billing state; Stripe is the
-processor. Three plans for v1 (final list in story 25.15):
+The cloud is the system-of-record for billing state; the payment
+provider (TBD) is the processor, reached only through the
+`billing.Provider` interface (`cloud/internal/billing/provider.go`):
+create a checkout, open the customer portal, and verify a webhook into
+provider-neutral events (`checkout_completed`, `subscription_started` /
+`subscription_changed` / `subscription_cancelled`, `payment_succeeded`,
+`payment_failed`, `payment_disputed`). The only provider shipped is
+`none` (`[billing] provider = "none"`, env
+`MAKTABA_CLOUD_BILLING_PROVIDER`; unknown providers fail config
+validation): paid plans show "Payments coming soon", checkout and the
+portal answer `503 payments_not_set_up`, `/v1/billing/webhook/{provider}`
+is a 404, and service admins set a user's plan by hand
+(`POST /v1/admin/accounts/{id}/plan`, reason required, audited as
+`admin.account.set_plan`, provider `manual`, not counted as revenue). Three plans for v1 (final list in story 25.15):
 
 | Plan      | Price          | Relay GB / mo | Concurrent streams | Servers |
 |-----------|----------------|---------------|--------------------|---------|
@@ -2827,7 +2839,7 @@ not authoritative for billing. Counters live in Redis (per
 `server_id × utc-day`), flushed to Postgres every 60 s, rolled up
 monthly into invoice rows. Concurrent-stream limits are enforced
 at stream-open in the relay, against a 60-s LRU tier cache
-invalidated by `LISTEN tier_changed` from the Stripe webhook
+invalidated by `LISTEN tier_changed` from the payment-provider webhook
 handler.
 
 ### 13.11 Trust boundaries & threat model
@@ -2852,7 +2864,7 @@ handler.
 - **Open-proxy via relay:** Host header must match a claimed
   subdomain; non-Maktaba paths trip `relay_host_abuse`; abuse
   scoring → auto-suspend at threshold 50.
-- **Stripe webhook replay:** `cloud_webhook_events.stripe_event_id`
+- **Payment-provider webhook replay:** `cloud_webhook_events.provider_event_id`
   PK = idempotency. Signature verification happens before the DB
   hit.
 - **Cert key compromise:** sealed in Postgres with KMS-managed
@@ -2876,7 +2888,7 @@ gauges aligned with the stories:
 - Push: `apns_sent_total{result}`,
   `fcm_sent_total{result}`,
   `push_outbox_lag_seconds`.
-- Billing: `stripe_webhook_total{event,result}`.
+- Billing: `billing_webhook_total{event,result}`.
 - Abuse: `abuse_events_total{kind,severity}`.
 
 Logs are structured JSON (`slog`) with `request_id`, `user_id`,
@@ -2894,7 +2906,7 @@ Per active paying user, monthly:
 | Cloudflare (free-tier bandwidth)       | $0        | $0          |
 | Hetzner egress @ €1.20/TB              | $0.12     | $0.60       |
 | APNs / FCM                             | $0        | $0          |
-| Stripe fees (2.9% + 30¢)               | $0.59     | $1.06       |
+| Payment-provider fees (est. 2.9%+30¢)  | $0.59     | $1.06       |
 | **Total cost per user / month**        | **$1.16** | **$2.51**   |
 | **List price**                         | **$9.99** | **$24.99**  |
 | **Gross margin**                       | **88%**   | **90%**     |

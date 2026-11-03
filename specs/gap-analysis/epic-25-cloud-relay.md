@@ -95,11 +95,11 @@ Legend: ✅ complete · 🟡 partial · ❌ missing · 🔌 unwired · 🧱 stub
 | 25.11 Bandwidth | Per-server byte counts, 5-min samples | 🟡 | `cloud/internal/billing/meter.go`; `bandwidth_samples/_monthly` tables (mig 00050001); `proxy.go:79-81` records. Roll-up worker job NOT implemented (`role_worker.go` only cleanup+purge) |
 | 25.11 | Cloud-side counting only (not client) | ✅ | Metered at edge in `proxy.go` |
 | 25.12 Tier enforce | Free=0 relay GB hard cap | 🟡 | `meter.Allow` (`proxy.go:49-53`) returns 402; thresholds/Family-500GB/5-stream gauge not all verified; concurrent-stream gauge absent |
-| 25.13 Stripe checkout | `POST /billing/checkout` → URL | ✅ | `cloud/internal/handlers/billing/billing.go:108`, `billing/stripe.go CreateCheckoutSession`, wired `role_api.go:115` |
+| 25.13 Checkout | `POST /billing/checkout` → URL | ✅ | `cloud/internal/handlers/billing/billing.go:108`, `billing.Provider.CreateCheckout` (only the `none` provider ships; 503 `payments_not_set_up`), wired `role_api.go:115` |
 | 25.13 | `POST /billing/portal` | ❌ | No portal handler in `billing.go` (only checkout+webhook+plans+me) |
-| 25.14 Stripe webhook | Signature verify | ✅ | `billing.go:158 VerifyWebhookSignature`, mounted unauthenticated `role_api.go:129` |
-| 25.14 | Idempotent via `stripe_events` PK | ✅ | `billing.go:171-186` INSERT dedupe |
-| 25.14 | `customer.subscription.*` → entitlement | 🟡 | `billing.go:190 applyEvent` upserts `subscriptions`; does NOT issue/sign an entitlement blob (25.26 unwired) |
+| 25.14 Payment-provider webhook | Signature verify | ✅ | `billing.go:158 VerifyWebhookSignature`, mounted unauthenticated `role_api.go:129` |
+| 25.14 | Idempotent via `provider_events` PK | ✅ | `billing.go:171-186` INSERT dedupe |
+| 25.14 | `subscription_*` events → entitlement | 🟡 | `billing.go:190 applyEvent` upserts `subscriptions`; does NOT issue/sign an entitlement blob (25.26 unwired) |
 | 25.15 Plan UI | Marketing/upgrade page | n/a-web | `web/` not in scope of this cloud audit; `GET /v1/billing/plans` exists `billing.go:44` |
 | 25.16 Server status | Online/offline/last-seen/version | 🟡 | `servers.go:165 Heartbeat` + `server_health` table; but heartbeat is POST-from-server which requires cloudlink (absent). "updates available" field not implemented |
 
@@ -120,7 +120,7 @@ Legend: ✅ complete · 🟡 partial · ❌ missing · 🔌 unwired · 🧱 stub
 |-------|------------|--------|----------|
 | 25.20 Admin fleet | Search users / servers / last-seen | 🟡 | `cloud/internal/handlers/admin/admin.go:61 Fleet`, wired `role_api.go:123` |
 | 25.20 | Admin SSO `@hamzalabs.com` + audit on every action | 🟡 | `admin.go:33 RequireAdmin` checks email domain; **no fresh re-auth ≤5min** (threat model); **no `audit_events` table** so no admin-action audit |
-| 25.21 Admin revenue | MRR/ARR/churn/LTV from Stripe | 🟡 | `admin.go:76 Revenue` sums `users.plan` locally — spec requires *pulled from Stripe*; no churn/LTV/ARR |
+| 25.21 Admin revenue | MRR/ARR/churn/LTV from the payment provider | 🟡 | `admin.go:76 Revenue` sums `users.plan` locally — spec requires *pulled from the payment provider*; no churn/LTV/ARR |
 | 25.22 Subdomain | Username uniqueness + reserved list | 🟡 | `cloud/internal/handlers/servers/subdomain.go:42 Check/76 Claim`, `reserved_slugs` table |
 | 25.22 | **DNS via Cloudflare API** | ❌ | `subdomain.go:20-22` comment "DNS provisioning … happens out-of-band in a worker"; **no Cloudflare API code anywhere** (`grep cloudflare cloud/internal` → none) |
 | 25.22 | handler reachable | 🔌 | `MountSubdomains` defined (`subdomain.go:23`) but **never called** in any role (`grep MountSubdomains cmd/` → none) — dead code |
@@ -169,9 +169,9 @@ All distribution stories ship **config/script artifacts, not built+signed binari
 
 9. **[MED] Push token not encrypted at rest + dead no-device branch (25.17).** Raw token stored (`push.go:60`); `errors.Is(err, errors.New(...))` (`push.go:107`) is a永-false sentinel bug.
 
-10. **[MED] Admin: revenue not Stripe-sourced; no fresh re-auth; no audit table (25.20/25.21).** Revenue sums local `users.plan`; `audit_events` table absent so no admin action is audited (also PLAN_REVIEW_25 §1.5 shape-drift).
+10. **[MED] Admin: revenue not provider-sourced; no fresh re-auth; no audit table (25.20/25.21).** Revenue sums local `users.plan`; `audit_events` table absent so no admin action is audited (also PLAN_REVIEW_25 §1.5 shape-drift).
 
-11. **[MED] Worker role is hollow (25.11/25.14/25.22).** Only token cleanup + account purge; no bandwidth roll-up, no Stripe reconciliation, no DNS worker, no push fanout job — contradicting its own doc comment.
+11. **[MED] Worker role is hollow (25.11/25.14/25.22).** Only token cleanup + account purge; no bandwidth roll-up, no payment-provider reconciliation, no DNS worker, no push fanout job — contradicting its own doc comment.
 
 12. **[LOW/CONFIRMED-RESOLVED] Migration slot collision (PLAN_REVIEW_25 §1.1).** The *plans* collided, but shipped `cloud/migrations/*.sql` are collision-free and match README slots. However README-promised tables `audit_events`, `server_endpoints`, `rate_overrides` were never created (consistent with stories 25.20/25.10/25.24 being unimplemented).
 

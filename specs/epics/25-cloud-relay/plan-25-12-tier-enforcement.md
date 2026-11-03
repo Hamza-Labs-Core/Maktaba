@@ -6,13 +6,13 @@
 
 | Concern | Decision |
 |---|---|
-| Source of truth | `subscriptions` (slot 0006, plan-25-13; Stripe webhook 25.14 writes here). Free is the implicit fallback if no row. |
+| Source of truth | `subscriptions` (slot 0006, plan-25-13; payment-provider webhook 25.14 writes here). Free is the implicit fallback if no row. |
 | Tier vocabulary | `tier IN ('free','pro','family')` × `interval IN ('monthly','yearly')`. Matches `architecture.md` §13.10 and `subscriptions` schema. Suspension is `status='canceled'` plus `suspended_at` on the user, not a tier value. |
 | Hot cache | Per-pod LRU `user_id → TierState` with 60s TTL + capacity 50,000 entries. Invalidated by Postgres `LISTEN tier_changed`. |
 | Gate location | `TierGate.Acquire(ctx, userID, isStream) (release, error)` called inside relay proxy (25.9) before tunneling. |
 | Concurrent streams | `HLEN streams:{server_id}` (25.11) with caveat — counts per-server. Cross-server enforcement uses a second Redis key `streams:user:{user_id}`. |
 | Bandwidth caps | 105% soft (email warning), 110% hard (402), 200% circuit-breaker (forcibly close streams). |
-| Out of scope | Tier *changes* (25.13/25.14). Stripe stuff (25.13). Customer portal (25.13). |
+| Out of scope | Tier *changes* (25.13/25.14). Payment-provider integration (25.13). Customer portal (25.13). |
 
 ## 1. Tier table
 
@@ -208,7 +208,7 @@ Webhook 25.14 issues `pg_notify('tier_changed', user_id)` at COMMIT. The LRU cac
 
 | Test | Pins |
 |---|---|
-| `TestWebhookDowngradeWithin5s` | Stripe webhook → notify → relay refuses next stream within 5s. |
+| `TestWebhookDowngradeWithin5s` | Payment-provider webhook → notify → relay refuses next stream within 5s. |
 | `TestConcurrentOpenBySecondDevice` | 2 streams via device A; device B opens 3rd → 429. |
 | `TestStaleStreamReaperUnblock` | Phantom row reaped → next open succeeds. |
 | `TestYearlyEquivCap` | Family yearly cap = 500 GB/mo. |
@@ -224,7 +224,7 @@ Webhook 25.14 issues `pg_notify('tier_changed', user_id)` at COMMIT. The LRU cac
 | Family invitees | Payer's plan inherited by members. | `TestFamilyMember`. |
 | Server suspended | 503 across all that user's servers. | `TestSuspendedPlanRejects`. |
 | Refund mid-cycle | Subscription stays active until period_end; honored. | Spec. |
-| Webhook delivery delay | Cloud state is the truth, not Stripe; reconciliation cron (25.14). | Cross-story. |
+| Webhook delivery delay | Cloud state is the truth, not the payment provider; reconciliation cron (25.14). | Cross-story. |
 | Pricing change | Applies at next renewal; current row is contract. | Spec. |
 | Free-tier 100MB/day API | Excluded from media; enforced here. | `TestFreeDailyAPIQuota`. |
 | Soft-cap email spam | Send at most one per 24h per user via `notifier.WarnSoftCap` dedup. | Notifier dedup key. |
@@ -235,7 +235,7 @@ Webhook 25.14 issues `pg_notify('tier_changed', user_id)` at COMMIT. The LRU cac
 - 25.6 (`servers` for server cap check, if surfaced).
 - 25.9 (proxy is the call site).
 - 25.11 (Redis stream registration + monthly-to-date counter).
-- 25.13/25.14 (Stripe rows; notify channel).
+- 25.13/25.14 (billing rows; notify channel).
 - 25.17 (push notify of soft-cap warnings).
 
 ## 10. Acceptance checklist

@@ -3,298 +3,122 @@
 > Companion to [story-16-03-subscription-management.md](story-16-03-subscription-management.md).
 > The story states *what* and *why*; this plan states *how*.
 
+> **Payment provider: TBD.** Billing lives in Maktaba Cloud
+> (Epic 25, stories 25.13 / 25.14) behind the `billing.Provider`
+> interface (`cloud/internal/billing/provider.go`). The only provider
+> shipped is `none` (the default): paid plans show "Payments coming
+> soon", checkout and the portal answer `503 payments_not_set_up`, and
+> service admins set a user's plan by hand
+> (`POST /v1/admin/accounts/{id}/plan`). This plan describes the home
+> side, which is the same whichever provider ships.
+
 ## 0. Scope and placement
 
 | Concern | Decision |
 |---|---|
-| Settings UI | `web/src/features/settings/Subscription.tsx` (canonical); native shells deep-link out to the same web view via embedded WebView so we don't duplicate the billing portal. |
-| Stripe portal session minting | `api/internal/billing/portal.go` — `POST /api/billing/portal-session` returns a one-time `url` to Stripe Customer Portal. |
-| Webhook receiver | `api/internal/billing/webhook.go` mounted at `POST /api/billing/webhook` — verifies Stripe signature; updates `licenses` table. |
-| Reconciliation | `api/internal/billing/reconcile.go` — daily cron against Stripe API for source-of-truth. |
-| Cancellation copy | Localized strings in `api/internal/i18n/locales/{en,ar}.toml` under `billing.cancel.*`. |
+| Settings UI | `web/src/features/settings/Subscription.tsx` (canonical); native shells deep-link out to the same web view so we don't duplicate the billing pages. |
+| Manage plan | Deep-links to the cloud's billing page; the provider's customer portal (once a provider ships) is one click from there. |
+| Webhook receiver | In the cloud: `POST /v1/billing/webhook/{provider}` (25.14). The home never receives payment-provider webhooks. |
+| Tier on the home | The cloud turns a paid plan into a signed license (16.4); the home polls for it every minute. |
+| Cancellation copy | Localized strings (English + Arabic) under `billing.cancel.*`. |
 | Out of scope | Pricing decisions (open question in epic README); Apple/Google IAP (deferred). |
 
-## 1. Architecture diagram
+## 1. Flow
 
 ```
-   user (admin)                     Stripe                       server
-       │                              │                            │
-       │ GET /api/billing/portal-session                            │
-       │ ─────────────────────────────────────────────────────────► │
-       │                                                            │  Stripe.PortalSessions.Create
-       │                                                            │ ───────────► Stripe
-       │ ◄────────────────────────── { url }                        │
-       │                                                            │
-       │ open url (Stripe-hosted)                                   │
-       │ ─────────► Stripe                                          │
-       │                                                            │
-       │           change plan / cancel / update card               │
-       │ ◄─────────                                                 │
-       │                                                            │
-       │                              │  webhook  customer.subscription.updated
-       │                              │ ─────────────────────────► │
-       │                                                            │  verify sig
-       │                                                            │  upsert license row
-       │                                                            │  bump tier
-       │ flags reload (Story 16.6)                                  │
-       │ ◄────────────────────────────────────────────────────────  │
+   user (admin)                 cloud                       payment provider (TBD)
+       │                          │                                │
+       │ Manage plan              │                                │
+       │ ───────────────────────► │  POST /v1/billing/portal       │
+       │                          │ ── Provider.CreatePortal ────► │
+       │ ◄──────────── { portal_url } (503 under "none")           │
+       │                                                           │
+       │ change plan / cancel / update payment method              │
+       │ ────────────────────────────────────────────────────────► │
+       │                          │ ◄── webhook (verified by       │
+       │                          │     Provider.ParseWebhook)     │
+       │                          │  subscription_changed          │
+       │                          │  → plan mirrored, license      │
+       │                          │    re-issued                   │
+   home│ ── license poll (60 s) ─►│                                │
+       │ ◄── new license; flags reload (Story 16.6)                │
 ```
 
-## 2. Schema additions
+## 2. Data
 
-`shared/db/migrations/0062_billing.sql`:
+The cloud owns all billing tables (`subscriptions`, `invoices`,
+`provider_events`; see plan-25-13 §1). Their provider-specific ids are
+`provider_customer_id`, `provider_subscription_id`, `provider_price_id`
+and `provider_invoice_id`; each row carries the `provider` that wrote
+it (`manual` for a plan a service admin set by hand). The home stores
+only the license it was issued.
 
-```sql
--- +goose Up
--- +goose StatementBegin
-CREATE TABLE billing_customers (
-    user_id           UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-    stripe_customer   TEXT NOT NULL UNIQUE,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+## 3. Webhook events that move the home's tier
 
-CREATE TABLE billing_subscriptions (
-    stripe_subscription TEXT PRIMARY KEY,
-    stripe_customer     TEXT NOT NULL
-        REFERENCES billing_customers(stripe_customer) ON DELETE CASCADE,
-    tier                TEXT NOT NULL CHECK (tier IN ('free','home','pro')),
-    status              TEXT NOT NULL,           -- active, canceled, past_due, etc.
-    current_period_end  TIMESTAMPTZ NOT NULL,
-    cancel_at_period_end BOOLEAN NOT NULL DEFAULT false,
-    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
-);
+Neutral events (25.14):
 
-CREATE TABLE billing_invoices (
-    stripe_invoice    TEXT PRIMARY KEY,
-    stripe_customer   TEXT NOT NULL
-        REFERENCES billing_customers(stripe_customer) ON DELETE CASCADE,
-    amount_due_cents  BIGINT NOT NULL,
-    currency          TEXT NOT NULL,
-    status            TEXT NOT NULL,
-    pdf_url           TEXT,
-    issued_at         TIMESTAMPTZ NOT NULL,
-    paid_at           TIMESTAMPTZ
-);
+- `subscription_started` / `subscription_changed`: new plan → new
+  license (upgrades immediate).
+- `subscription_cancelled`: at period end the account falls back to
+  free; the license is not renewed and the home returns to Free.
+- `payment_failed`: subscription `past_due`; the payer is mailed.
+- `payment_disputed`: the cloud suspends the account; its homes'
+  licenses are refused (`license_revoked`) and lock; after the dispute
+  the same license comes back and unlocks. No data is destroyed.
 
-CREATE TABLE billing_webhook_events (
-    stripe_event_id   TEXT PRIMARY KEY,
-    received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
-    processed_at      TIMESTAMPTZ
-);
--- +goose StatementEnd
+Retries and replays are absorbed by the cloud's `provider_events`
+ledger; out-of-order events older than the last applied one are
+ignored.
 
--- +goose Down
--- +goose StatementBegin
-DROP TABLE IF EXISTS billing_webhook_events;
-DROP TABLE IF EXISTS billing_invoices;
-DROP TABLE IF EXISTS billing_subscriptions;
-DROP TABLE IF EXISTS billing_customers;
--- +goose StatementEnd
-```
+## 4. Cancellation flow (UX)
 
-`billing_webhook_events` is the dedupe table — a Stripe webhook can be retried; the primary key prevents double-processing.
-
-## 3. Portal session
-
-```go
-// api/internal/billing/portal.go
-func (b *Service) CreatePortalSession(ctx context.Context, userID uuid.UUID) (string, error) {
-    cust, err := b.ensureCustomer(ctx, userID)   // upsert
-    if err != nil { return "", err }
-    sess, err := b.stripe.BillingPortalSessions.Create(&stripe.BillingPortalSessionParams{
-        Customer:  &cust.StripeCustomer,
-        ReturnURL: stripe.String(b.cfg.AppOrigin + "/settings/subscription"),
-    })
-    if err != nil { return "", err }
-    return sess.URL, nil
-}
-```
-
-`ensureCustomer` looks up `billing_customers`; on miss, calls `Stripe.Customers.Create` with the user's email and inserts the row. Stripe customer creation is idempotent on email by Stripe's recommendation; we additionally guard at the DB layer.
-
-## 4. Webhook handler
-
-```go
-// api/internal/billing/webhook.go
-func (b *Service) HandleWebhook(w http.ResponseWriter, r *http.Request) {
-    body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))   // 1 MB cap
-    event, err := webhook.ConstructEvent(body, r.Header.Get("Stripe-Signature"), b.cfg.WebhookSecret)
-    if err != nil { w.WriteHeader(400); return }
-
-    // Dedupe.
-    if _, err := b.db.InsertWebhookEvent(r.Context(), event.ID); err != nil {
-        // duplicate
-        w.WriteHeader(200); return
-    }
-
-    switch event.Type {
-    case "customer.subscription.created", "customer.subscription.updated":
-        var sub stripe.Subscription
-        json.Unmarshal(event.Data.Raw, &sub)
-        b.upsertSubscription(r.Context(), &sub)
-    case "customer.subscription.deleted":
-        var sub stripe.Subscription
-        json.Unmarshal(event.Data.Raw, &sub)
-        b.markCancelled(r.Context(), &sub)
-    case "invoice.payment_succeeded":
-        var inv stripe.Invoice
-        json.Unmarshal(event.Data.Raw, &inv)
-        b.upsertInvoice(r.Context(), &inv)
-    case "charge.dispute.created":
-        // Story EC: Disputed payment → tier flips to free until resolved.
-        b.handleDispute(r.Context(), event)
-    }
-    b.db.MarkWebhookProcessed(r.Context(), event.ID)
-    w.WriteHeader(200)
-}
-```
-
-The handler updates `billing_subscriptions` and then **issues a fresh license** by calling the license-server (or the embedded license signer for self-hosted Maktaba editions). The license arrival flips the tier downstream (Story 16.4).
-
-## 5. Reconciliation cron
-
-`api/internal/billing/reconcile.go`:
-
-```go
-// Runs daily at 04:00 server local time.
-func (b *Service) Reconcile(ctx context.Context) error {
-    // Status filter: "all" pulls indefinite history (canceled rows
-    // from years ago); we only need active states for tier-rotation
-    // reconciliation. Stripe's enum lets us OR with comma-separated
-    // statuses.
-    iter := b.stripe.Subscriptions.List(&stripe.SubscriptionListParams{
-        Status: stripe.String("active,past_due,trialing,canceled"),
-    })
-    for iter.Next() {
-        sub := iter.Subscription()
-        b.upsertSubscription(ctx, sub)
-    }
-    return iter.Err()
-}
-```
-
-This catches webhook delivery failures: the AC says "we retry with backoff; reconcile via daily cron against Stripe's source of truth." Stripe's webhook retry already does the first pass; the daily reconcile is the safety net.
-
-## 6. Cancellation flow (UX)
-
-The Settings page calls Stripe via the portal; Stripe handles "downgrade takes effect on next renewal" semantically. Our local `billing_subscriptions.cancel_at_period_end = true` mirrors Stripe's flag. The UI reads:
+The provider's customer portal handles "downgrade takes effect on next
+renewal". The cloud mirrors the flag as `cancel_at_period_end`, and the
+UI reads:
 
 ```tsx
 {sub.cancel_at_period_end && (
     <Banner intent="info">
-        Cancels on {fmt(sub.current_period_end)}. <a onClick={resume}>Restore subscription</a>
+        Cancels on {fmt(sub.current_period_end)}.
     </Banner>
 )}
 ```
 
-`resume` calls `POST /api/billing/cancel?action=undo` which calls Stripe's `Subscriptions.Update(id, cancel_at_period_end=false)`. AC: "Restore a cancelled subscription before expiry: feature parity preserved."
+Restoring a cancelled subscription before expiry is done in the portal;
+the resulting `subscription_changed` event clears the flag.
 
-## 7. Receipts & VAT
+## 5. Receipts & VAT
 
-Invoices come from Stripe with `invoice_pdf` URL. We store the URL in `billing_invoices.pdf_url`. The Settings → Subscription page lists the last 12 invoices with download links.
+Invoices and tax are the payment provider's; the cloud records each
+invoice outcome (`payment_succeeded` / `payment_failed`) and the
+Settings → Subscription page links to the provider's receipts. We do
+not parse invoice line items.
 
-VAT/tax: Stripe Tax (where the merchant has it configured) places VAT on the invoice line items; the invoice PDF shows it. We display `invoice.amount_paid` (post-tax) on the list, and the download link for the legal PDF — we do not parse line items.
-
-## 8. Disputed payment
-
-```go
-func (b *Service) handleDispute(ctx context.Context, event stripe.Event) {
-    var disp stripe.Dispute
-    json.Unmarshal(event.Data.Raw, &disp)
-    cust := disp.PaymentIntent.Customer.ID
-    // Flip tier to free; preserve data per Story 16.1.
-    sub, _ := b.db.GetActiveSubscriptionForCustomer(ctx, cust)
-    b.db.UpdateSubscriptionTier(ctx, sub.StripeSubscription, "free")
-    // Trigger a fresh license issue so the resolver downstream picks
-    // up the new tier. Without this the local `tier='free'` row
-    // contradicts the cached license file (still says `home`/`pro`),
-    // and the resolver will keep returning the cached premium tier
-    // until the next 24h refresh.
-    if err := b.license.RotateForCustomer(ctx, cust, "free"); err != nil {
-        b.log.Warn("dispute_license_rotate_failed", "cust", cust, "err", err.Error())
-        // The reconcile cron's daily pass + the existing webhook retry
-        // policy will recover; the audit row tells operators what
-        // happened.
-    }
-    b.audit(ctx, "subscription-disputed", sub.StripeSubscription)
-}
-```
-
-The AC says "License tier flips to `free` until resolved; no data is
-destroyed." Resolution comes via the next Stripe webhook
-(`charge.dispute.closed`), which calls `RotateForCustomer` again with
-the restored tier.
-
-## 9. Test plan
-
-### 9.1 Portal
+## 6. Test plan
 
 | Test | What it pins |
 |---|---|
-| `TestPortalSessionRequiresAuth` | Anon → 401. |
-| `TestPortalSessionEnsuresCustomer` | First call inserts a `billing_customers` row; second reuses it. |
-| `TestPortalSessionReturnsStripeURL` | Stub Stripe; response contains a `url`. |
-
-### 9.2 Webhook
-
-| Test | What it pins |
-|---|---|
-| `TestWebhookSignatureRequired` | Bad signature → 400. |
-| `TestWebhookDedupesByEventID` | Same event twice → first processes, second 200 no-op. |
-| `TestWebhookSubUpdatedUpsertsRow` | `customer.subscription.updated` → `billing_subscriptions` reflects new period_end. |
-| `TestWebhookSubDeletedFlipsToFree` | `customer.subscription.deleted` → tier=free; license rotated. |
-| `TestWebhookInvoiceAdded` | `invoice.payment_succeeded` → invoice row with `paid_at`. |
-| `TestWebhookDisputeFlipsTier` | `charge.dispute.created` → `billing_subscriptions.tier = 'free'`. |
-
-### 9.3 Reconcile
-
-| Test | What it pins |
-|---|---|
-| `TestReconcileFillsMissedWebhook` | Stripe has sub state X; local has Y. After reconcile, local = X. |
-| `TestReconcileNoOpWhenInSync` | Local matches Stripe; reconcile produces no DB writes. |
-
-### 9.4 UI
-
-| Test | What it pins |
-|---|---|
+| `TestManagePlanDeepLink` | Manage plan opens the cloud billing page. |
+| `TestPortalNotSetUp` | Under provider `none`, the portal answers 503 `payments_not_set_up` and the UI says payments are coming soon. |
+| `TestManualPlanIssuesLicense` | Admin sets a plan by hand → the home's next poll gets the matching license. |
 | `testCancelBannerShows` | `cancel_at_period_end = true` → banner visible. |
-| `testRestoreCancelsCancellation` | Click Restore → POST → `cancel_at_period_end = false`. |
-| `testInvoiceListRendersLast12` | 15 invoices → first 12 shown. |
-| `testUpgradeUIUnlocksWithin60s` | Stub webhook delivers `home → pro`; flag refresh happens within 60 s; UI shows new entries. |
+| `testUpgradeUIUnlocksWithin60s` | Fake provider delivers `subscription_changed` home → pro; the home's flags refresh within 60 s. |
+| `TestDisputeLocksHome` | `payment_disputed` → license refused; home locks; data intact. |
 
-## 10. Edge cases — handling table
+## 7. Edge cases — handling table
 
-| Case | Behaviour | Where pinned |
-|---|---|---|
-| Webhook delivery failure | Stripe retries; we also reconcile daily. | `TestReconcileFillsMissedWebhook` |
-| Double-purchase (two devices) | Stripe customer dedupe by email; second purchase auto-refunded by Stripe; we just see two subs and pick the most recent active. | `TestDoublePurchaseHandled` |
-| Disputed payment | Tier → free; data preserved; resolved on dispute close. | `TestWebhookDisputeFlipsTier` |
-| User deleted in our DB but lingering Stripe customer | Cascade in our DB removes `billing_customers`; Stripe customer remains (we never delete from Stripe). Reconcile ignores customers without local row. | `TestUserDeleteCascadesBilling` |
-| Receipt PDF requires re-auth at Stripe | The PDF URL is short-lived; we proxy through `GET /api/billing/invoices/{id}/pdf` that mints a fresh URL on demand. | `TestInvoicePDFProxyMintsFresh` |
-| VAT change mid-renewal | Stripe issues a new invoice with the correct rate; we just persist it. | `TestVATInvoiceStored` |
-| Webhook payload > 1 MB | Truncated by `io.LimitReader`; signature fails on truncated body → 400. Stripe retries; if persistent, manual triage. | `TestWebhookOversizeRejected` |
-| Stripe customer email collision | If a user changes email and another user takes the old email, Stripe's customer search may match the wrong one. We index by `user_id ↔ stripe_customer` (PK), not email. | `TestEmailReuseSafe` |
-| Multiple active subs per customer | Stripe shouldn't allow this normally; if it happens, we pick the highest tier. | `TestPickHighestTier` |
+| Case | Behaviour |
+|---|---|
+| Webhook delivery failure | The provider retries; the cloud's ledger makes retries safe. |
+| Double purchase (two devices) | Checkout refuses a second subscription (`409 already_subscribed`). |
+| Disputed payment | Account suspended; licenses refused; restored after the dispute. |
+| User deleted | The cloud cascades billing rows; the provider's customer record is left alone. |
+| No provider (`none`) | No purchases possible; plans come only from a service admin's manual set. |
 
-## 11. Acceptance checklist
+## 8. Acceptance checklist
 
-**Schema**
-- [ ] All four `billing_*` tables exist; cascades on `users.delete`.
-
-**API**
-- [ ] `POST /api/billing/portal-session` returns a Stripe URL.
-- [ ] `POST /api/billing/webhook` validates signature, dedupes, updates state.
-- [ ] `POST /api/billing/cancel?action=undo` works.
-
-**UI**
-- [ ] Subscription page shows tier, cancel banner, invoice list.
-
-**Reconciliation**
-- [ ] Daily cron registered.
-
-**Tests**
-- [ ] All §9 tests pass.
-
-**Docs**
-- [ ] `docs/operations/billing.md` covers webhook URL, signing secret rotation.
-- [ ] `specs/epics/16-subscriptions/README.md` ticks story 16.3.
+- [ ] Subscription page shows tier, seats, holder, renewal/expiry, cancel banner.
+- [ ] Manage plan deep-links to the cloud billing page.
+- [ ] A plan change (webhook or manual admin set) reaches the home within 60 s.
+- [ ] Strings ship in English and Arabic.
+- [ ] Tests in §6 pass.

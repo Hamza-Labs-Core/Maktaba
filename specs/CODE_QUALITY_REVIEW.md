@@ -40,7 +40,7 @@ path, a fragile billing route, an account-linking weakness, dead code, and 31 li
 violations) accumulated unnoticed. The lint half of this gap is now closed.
 
 No CRITICAL issues were found. No SQL injection, no hardcoded credentials, auth fails
-closed, the Stripe webhook verifies HMAC signatures, and the admin-token bypass is opt-in
+closed, the payment-provider webhook verifies HMAC signatures, and the admin-token bypass is opt-in
 with a minimum-length check.
 
 ---
@@ -68,10 +68,10 @@ whenever the feature is enabled**. Fails safe (no auth bypass) but is broken fun
 #### H2 — Duplicate `/v1/billing/webhook` route relied on chi ordering to dodge auth ✅ fixed
 `internal/handlers/billing/billing.go` `Mount()` registered `POST /v1/billing/webhook`
 **inside** the `RequireUser` group, while `role_api.go` *also* registers it **outside** the
-group (correct, since Stripe carries no bearer token). chi's `Group` shares one routing
+group (correct, since the payment provider carries no bearer token). chi's `Group` shares one routing
 tree and silently lets the **last** registration win, so billing worked **only** because
 `role_api.go` mounts the unauthenticated handler after `billingh.Mount`. A reorder — or a
-future chi version that changes dedup semantics — would route Stripe through `RequireUser`
+future chi version that changes dedup semantics — would route payment-provider deliveries through `RequireUser`
 → `401` → silent, retry-exhausting billing breakage. Verified empirically (chi v5.3.0
 does not panic; outer registration wins).
 - **Fix applied:** removed the in-group registration from `Mount()`; the webhook is now
@@ -80,7 +80,7 @@ does not panic; outer registration wins).
 #### H3 — `cloud/` control-plane excluded from all CI Go gating ✅ lint half closed
 `GO_MODULES` in the `Makefile` (used by `lint-go`, `test-unit-go`, and `test-coverage`)
 **omits `cloud`**, and `_lint.yml` had `golangci-lint` steps only for `api`, `streaming`,
-and `shared/health/go`. The result: the security-critical control-plane (OAuth, Stripe
+and `shared/health/go`. The result: the security-critical control-plane (OAuth, payment-provider
 billing, relay tunnel, admin) had **no lint, vet, format, test, or coverage gate**. This is
 the root cause of H1, H2, M1, M2, and the M5 coverage gap below.
 - **Fix applied:** added `cloud/.golangci.yml` (mirrors the tuned api/streaming config) and
@@ -133,7 +133,7 @@ signed/stored `state` to be consistent with the Google path.
 
 #### M5 — Untested payment / auth / control-plane paths in `cloud/`
 There are **no `_test.go` files** for the billing or OAuth *handlers*, and many cloud
-packages report 0 % statement coverage. The Stripe webhook, `federate()`, and the admin
+packages report 0 % statement coverage. The payment-provider webhook, `federate()`, and the admin
 endpoints — all security- or money-sensitive — are exercised only indirectly. Combined with
 H3 (no CI test gate), regressions here would ship silently.
 - **Remediation:** add handler-level tests (webhook signature accept/reject + idempotency,
@@ -157,8 +157,8 @@ Clients get a success response while nothing happens — a misleading partial im
 - **Remediation:** implement persistence + the verification-email worker, or return
   `501 Not Implemented` until then so callers aren't misled.
 
-#### M8 — Stripe webhook dedup does not actually short-circuit reprocessing
-`billing.go` `Webhook` inserts into `stripe_events … ON CONFLICT DO NOTHING` for dedup, but
+#### M8 — Payment-provider webhook dedup does not actually short-circuit reprocessing
+`billing.go` `Webhook` inserts into `provider_events … ON CONFLICT DO NOTHING` for dedup, but
 then runs `applyEvent` **unconditionally** (it never checks rows-affected). Reprocessing is
 prevented only by `applyEvent` being idempotent (it is, today). The dedup row is currently
 advisory.

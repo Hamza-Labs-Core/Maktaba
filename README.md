@@ -57,8 +57,8 @@ data flow, and rationale behind the language split.
 - **Cloud relay for remote access** — optional hosted layer that links a
   self-hosted server to a Maktaba Cloud account, tunnels HTTP through WSS, and
   fans out APNs / FCM push without exposing the home box to the internet. Free
-  tier; paid tiers through a payment provider (TBD, not Stripe; until
-  then paid plans are "coming soon").
+  tier; paid tiers through a payment provider (TBD; until then paid
+  plans are "coming soon").
 
 ---
 

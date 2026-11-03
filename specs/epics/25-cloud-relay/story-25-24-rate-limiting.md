@@ -28,7 +28,7 @@ Limits (default; can be raised in admin):
 | `POST /api/auth/verify-email/resend`     | user                   | 5 / hour           |
 | `POST /api/servers/claim`                | IP                     | 10 / minute        |
 | `POST /api/billing/checkout`             | user                   | 30 / hour          |
-| `POST /api/billing/webhook`              | (none — Stripe only)   | n/a                |
+| `POST /api/billing/webhook/{provider}`   | (none — provider only) | n/a                |
 | Relay-via-`{user}.maktaba.tv` (any)     | IP per subdomain       | 600 / minute       |
 | Relay (free tier, total)                 | user                   | 100 / day (any)    |
 | Relay streaming open                     | user                   | tier-specific (25.12) |
@@ -123,7 +123,7 @@ Operator overrides:
 - **Bots learning thresholds.** Limits aren't secret; we
   publish them in API docs. Defense-in-depth via abuse
   signals (25.25), not via obscurity.
-- **Stripe webhooks bypass limits.** Verified by signature;
+- **payment-provider webhooks bypass limits.** Verified by signature;
   rate-limiting them would risk dropping legitimate
   events. They have an internal queue instead.
 - **Sliding-window edge case.** Bucket-per-minute keys

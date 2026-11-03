@@ -35,7 +35,7 @@ Detectors:
   rotation (25.2).
 - **`signup_velocity`.** > 10 sign-ups from one /24 in 5 min;
   often bots.
-- **`payment_chargeback`.** Stripe `charge.dispute.created`
+- **`payment_chargeback`.** Payment-provider `payment_disputed`
   (25.14).
 - **`tunnel_flap`.** > 100 tunnel reconnects/hour for one
   server (often a misconfigured server but sometimes a

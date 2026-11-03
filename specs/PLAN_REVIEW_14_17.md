@@ -642,7 +642,7 @@ categories) and §1.8 (new routes) cover the largest items. Plan-specific:
 ### 4.3 [plan-16-03](specs/epics/16-subscriptions/plan-16-03-subscription-management.md) — multiple issues
 
 - `billing_subscriptions` (lines 56-64) has no FK to `billing_customers`;
-  `stripe_customer` is a TEXT column with no `REFERENCES`. Orphan rows on
+  `provider_customer` is a TEXT column with no `REFERENCES`. Orphan rows on
   customer delete are possible. Add FK + ON DELETE CASCADE.
 - `billing_invoices` (lines 67-75) similarly has no FK to `billing_customers`.
 - Line 142-144: dispute handler updates `billing_subscriptions.tier =
@@ -650,14 +650,14 @@ categories) and §1.8 (new routes) cover the largest items. Plan-specific:
   plan relies on (lines 150). A flipped `tier` in the local table without a
   fresh license = the resolver still reads the old license. The dispute
   branch is incomplete.
-- Line 119: `webhook.ConstructEvent(body, ...)` validates Stripe's signature.
-  Good. The 1 MB cap (line 118) is reasonable but Stripe's max payload is
-  ~256 KB; the cap is roomy but the signature check happens *after* reading
+- Line 119: the webhook handler validates the payment provider's signature.
+  Good. The 1 MB cap (line 118) is reasonable for typical provider
+  payloads; the cap is roomy but the signature check happens *after* reading
   to memory — fine for 1 MB but worth a comment.
-- §10 EC "User deleted in our DB but lingering Stripe customer" — the
-  reconciliation code (§5) iterates *all* Stripe subscriptions; for orphan
+- §10 EC "User deleted in our DB but lingering provider customer" — the
+  reconciliation code (§5) iterates *all* provider subscriptions; for orphan
   customers this works, but plan-16-03 hard-codes
-  `Status: stripe.String("all")` — should be `active|past_due|canceled` to
+  status `"all"` — should be `active|past_due|canceled` to
   bound the iteration.
 
 ### 4.4 [plan-16-04](specs/epics/16-subscriptions/plan-16-04-license-validation.md) — beyond §1.3
@@ -990,7 +990,7 @@ Roughly in priority order:
 26. Extend `audit_log.category` enum to include `pair`, `federation`,
     `flags`, `subscription`, `device` (§1.4).
 27. Stage list canonicalization across Epic 17 / Epic 9 / Epic 11 (§1.9).
-28. Foreign keys on Stripe-related tables (§4.3).
+28. Foreign keys on billing tables (§4.3).
 29. `tier_grace` upgrade-cleanup bug (§4.2).
 30. Two-source-of-truth telemetry vocabulary (§4.5).
 31. Compose `lightColors()`/`darkColors()` Style Dictionary format (§5.1).

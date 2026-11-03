@@ -18,7 +18,7 @@ the new `cloud/` Go module. The on-prem `api/` module is untouched.
 - `internal/db` — `*sql.DB` pool + goose migrator with the embedded
   migration FS.
 - `migrations/` — slots 0001-0010 reserved + filled (system, identity,
-  account, servers/claims/health, bandwidth, billing/Stripe events,
+  account, servers/claims/health, bandwidth, billing/payment-provider events,
   push, subdomains, abuse, entitlement keys).
 - Identity: argon2id (PHC strings), password policy (NIST 800-63B + a
   small embedded leaked-corpus check), refresh tokens hashed at rest,
@@ -53,11 +53,11 @@ the new `cloud/` Go module. The on-prem `api/` module is untouched.
 - `internal/billing/meter.go` — in-memory counters + 30s flush to
   Postgres. `Allow()` is the tier gate consulted by the relay before
   each proxied request.
-- `internal/billing/stripe.go` — hand-rolled minimal Stripe client
+- `internal/billing/provider.go` — the provider-neutral `billing.Provider` interface (payment provider TBD; only the `none` provider ships)
   (CheckoutSession only) + webhook HMAC-SHA256 verification with
   freshness window. Tests cover the webhook signature path.
 - `handlers/billing` — `/v1/billing/{plans,me,checkout,webhook}`.
-  Webhook is dedupe'd via `stripe_events` PK.
+  Webhook is dedupe'd via `provider_events` PK.
 
 ### Phase 4-6 — Ops + Distribution (25.16–25.36)
 
@@ -118,7 +118,7 @@ green; no shared code was modified.
 
 ## Out of scope for this PR
 
-- Live integration tests against Postgres + Stripe + APNs + FCM —
+- Live integration tests against Postgres + payment provider + APNs + FCM —
   these need real credentials and live infra. CI matrix entries land
   separately.
 - DNS provisioning side of subdomain claim (Cloudflare API call).

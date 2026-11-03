@@ -753,13 +753,13 @@
     </div>
 
     <div class="ss-card">
-      <div class="ss-label">Stripe webhook failed <span class="stag error">CRITICAL</span></div>
+      <div class="ss-label">Payment webhook failed <span class="stag error">CRITICAL</span></div>
       <div class="ss-preview">
         <div class="alert error">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
           <div>
-            <strong>Stripe webhook signature failure</strong>
-            <span>3 events rejected in last 5 min · check STRIPE_WEBHOOK_SECRET</span>
+            <strong>Payment-provider webhook signature failure</strong>
+            <span>3 events rejected in last 5 min · check the provider's webhook secret</span>
           </div>
         </div>
       </div>
@@ -818,7 +818,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="14" rx="2"/></svg>
           <div>
             <strong>Failed payments above threshold</strong>
-            <span>14 failures in last hour (3.1%) · usually under 1%. Check Stripe dashboard.</span>
+            <span>14 failures in last hour (3.1%) · usually under 1%. Check the payment provider's dashboard.</span>
           </div>
         </div>
       </div>

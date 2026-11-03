@@ -1079,7 +1079,7 @@
       "epic": "25-cloud-relay",
       "phase": 5,
       "engine": "Cloud (Go) + Distribution",
-      "content": "Maktaba Cloud \u2014 hosted SaaS layer (HamzaLabs): identity, server linking, WSS-tunneled HTTP relay, push fanout, Stripe billing, plus native installers for macOS / Windows / Linux / NAS / ARM / VPS.",
+      "content": "Maktaba Cloud \u2014 hosted SaaS layer (HamzaLabs): identity, server linking, WSS-tunneled HTTP relay, push fanout, provider-neutral billing (payment provider TBD), plus native installers for macOS / Windows / Linux / NAS / ARM / VPS.",
       "tags": [
         "epic",
         "25-cloud-relay",
@@ -1134,8 +1134,8 @@
         "plan-25.10-direct-connection-fallback",
         "plan-25.11-bandwidth-metering",
         "plan-25.12-tier-enforcement",
-        "plan-25.13-stripe-checkout",
-        "plan-25.14-stripe-webhook",
+        "plan-25.13-checkout",
+        "plan-25.14-payment-webhook",
         "plan-25.15-plan-comparison-ui",
         "plan-25.16-server-status-dashboard",
         "plan-25.17-push-notification-ingest",
@@ -6625,7 +6625,7 @@
       "title": "Subscription management",
       "epic": "16-subscriptions",
       "phase": 3,
-      "content": "# Story 16.3 \u2014 Subscription management\n\nThe user can manage their subscription from Settings \u2192 Subscription:\nview tier, expiry, payment method, change tier, cancel.\n\n**Anchors:** [`architecture.md` \u00a710.4](../../architecture.md).\n\n## AC\n\n- Read-only by default; \"Manage\" deep-links to the billing portal\n  (Stripe Customer Portal or equivalent).\n- Cancellation flow: confirm modal with \"downgrade takes effect on next\n  renewal\" copy.\n- Upgrades are immediate; downgrades take effect at renewal.\n- Receipts: list of past invoices with downloadable PDF (Stripe-issued).\n- VAT / tax indication where app",
+      "content": "# Story 16.3 \u2014 Subscription management\n\nThe user can manage their subscription from Settings \u2192 Subscription:\nview tier, expiry, payment method, change tier, cancel.\n\n**Anchors:** [`architecture.md` \u00a710.4](../../architecture.md).\n\n## AC\n\n- Read-only by default; \"Manage\" deep-links to the billing portal\n  (the provider's customer portal or equivalent).\n- Cancellation flow: confirm modal with \"downgrade takes effect on next\n  renewal\" copy.\n- Upgrades are immediate; downgrades take effect at renewal.\n- Receipts: list of past invoices with downloadable PDF (issued by the payment provider).\n- VAT /",
       "tags": [
         "story",
         "16-subscriptions",
@@ -12396,7 +12396,7 @@
       "title": "Implementation Plan \u2014 Story 16.3 Subscription management",
       "epic": "16-subscriptions",
       "phase": 3,
-      "content": "# Implementation Plan \u2014 Story 16.3 Subscription management\n\n> Companion to [story-16-03-subscription-management.md](story-16-03-subscription-management.md).\n> The story states *what* and *why*; this plan states *how*.\n\n## 0. Scope and placement\n\n| Concern | Decision |\n|---|---|\n| Settings UI | `web/src/features/settings/Subscription.tsx` (canonical); native shells deep-link out to the same web view via embedded WebView so we don't duplicate the billing portal. |\n| Stripe portal session minting | `api/internal/billing/portal.go` \u2014 `POST /api/billing/portal-session` returns a one-time `url` to S",
+      "content": "# Implementation Plan \u2014 Story 16.3 Subscription management\n\n> Companion to [story-16-03-subscription-management.md](story-16-03-subscription-management.md).\n> The story states *what* and *why*; this plan states *how*.\n\n> **Payment provider: TBD.** Billing lives in Maktaba Cloud\n> (Epic 25, stories 25.13 / 25.14) behind the `billing.Provider`\n> interface (`cloud/internal/billing/provider.go`). The only provider\n> shipped is `none` (the default): paid plans show \"Payments coming\n> soon\", checkout and the portal answer `503 payments_not_set_up`, and\n> service admins set a user's plan ",
       "tags": [
         "plan",
         "16-subscriptions"
@@ -18028,10 +18028,10 @@
     {
       "id": "story-25.13",
       "type": "story",
-      "title": "Stripe checkout",
+      "title": "Checkout",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "# Story 25.13 \u2014 Stripe checkout \u2014 plan comparison + idempotent session creation\n\nSee specs/epics/25-cloud-relay/story-25-13-stripe-checkout.md for full acceptance criteria.",
+      "content": "# Story 25.13 \u2014 Checkout \u2014 provider-neutral checkout and portal; default provider `none` (payments coming soon, admins set plans by hand)\n\nSee specs/epics/25-cloud-relay/story-25-13-checkout.md for full acceptance criteria.",
       "tags": [
         "story",
         "25-cloud-relay",
@@ -18039,27 +18039,27 @@
       ],
       "related": [
         "epic-25-cloud-relay",
-        "plan-25.13-stripe-checkout"
+        "plan-25.13-checkout"
       ],
       "files": {
-        "story": "specs/epics/25-cloud-relay/story-25-13-stripe-checkout.md",
-        "plan": "specs/epics/25-cloud-relay/plan-25-13-stripe-checkout.md",
+        "story": "specs/epics/25-cloud-relay/story-25-13-checkout.md",
+        "plan": "specs/epics/25-cloud-relay/plan-25-13-checkout.md",
         "mockups": []
       },
       "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
-        "slug": "stripe-checkout"
+        "slug": "checkout"
       }
     },
     {
       "id": "story-25.14",
       "type": "story",
-      "title": "Stripe webhook",
+      "title": "Payment-provider webhook",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "# Story 25.14 \u2014 Stripe webhook \u2014 subscription lifecycle, signature verification, idempotent event log\n\nSee specs/epics/25-cloud-relay/story-25-14-stripe-webhook.md for full acceptance criteria.",
+      "content": "# Story 25.14 \u2014 Payment-provider webhook \u2014 provider-neutral events, signature verification, idempotent event log\n\nSee specs/epics/25-cloud-relay/story-25-14-payment-webhook.md for full acceptance criteria.",
       "tags": [
         "story",
         "25-cloud-relay",
@@ -18067,18 +18067,18 @@
       ],
       "related": [
         "epic-25-cloud-relay",
-        "plan-25.14-stripe-webhook"
+        "plan-25.14-payment-webhook"
       ],
       "files": {
-        "story": "specs/epics/25-cloud-relay/story-25-14-stripe-webhook.md",
-        "plan": "specs/epics/25-cloud-relay/plan-25-14-stripe-webhook.md",
+        "story": "specs/epics/25-cloud-relay/story-25-14-payment-webhook.md",
+        "plan": "specs/epics/25-cloud-relay/plan-25-14-payment-webhook.md",
         "mockups": []
       },
       "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
-        "slug": "stripe-webhook"
+        "slug": "payment-webhook"
       }
     },
     {
@@ -18255,7 +18255,7 @@
       "title": "Admin revenue dashboard",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "# Story 25.21 \u2014 Admin revenue dashboard \u2014 MRR, churn, plan distribution, Stripe sync status\n\nSee specs/epics/25-cloud-relay/story-25-21-admin-revenue.md for full acceptance criteria.",
+      "content": "# Story 25.21 \u2014 Admin revenue dashboard \u2014 MRR, churn, plan distribution, payment-provider sync status\n\nSee specs/epics/25-cloud-relay/story-25-21-admin-revenue.md for full acceptance criteria.",
       "tags": [
         "story",
         "25-cloud-relay",
@@ -18974,12 +18974,12 @@
       }
     },
     {
-      "id": "plan-25.13-stripe-checkout",
+      "id": "plan-25.13-checkout",
       "type": "plan",
-      "title": "Plan 25.13 \u2014 Stripe checkout",
+      "title": "Plan 25.13 \u2014 Checkout",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "Implementation plan for story 25.13. See specs/epics/25-cloud-relay/plan-25-13-stripe-checkout.md.",
+      "content": "Implementation plan for story 25.13. See specs/epics/25-cloud-relay/plan-25-13-checkout.md.",
       "tags": [
         "plan",
         "25-cloud-relay",
@@ -18990,19 +18990,19 @@
         "story-25.13"
       ],
       "files": {
-        "plan": "specs/epics/25-cloud-relay/plan-25-13-stripe-checkout.md"
+        "plan": "specs/epics/25-cloud-relay/plan-25-13-checkout.md"
       },
       "metadata": {
-        "slug": "stripe-checkout"
+        "slug": "checkout"
       }
     },
     {
-      "id": "plan-25.14-stripe-webhook",
+      "id": "plan-25.14-payment-webhook",
       "type": "plan",
-      "title": "Plan 25.14 \u2014 Stripe webhook",
+      "title": "Plan 25.14 \u2014 Payment-provider webhook",
       "epic": "25-cloud-relay",
       "phase": 5,
-      "content": "Implementation plan for story 25.14. See specs/epics/25-cloud-relay/plan-25-14-stripe-webhook.md.",
+      "content": "Implementation plan for story 25.14. See specs/epics/25-cloud-relay/plan-25-14-payment-webhook.md.",
       "tags": [
         "plan",
         "25-cloud-relay",
@@ -19013,10 +19013,10 @@
         "story-25.14"
       ],
       "files": {
-        "plan": "specs/epics/25-cloud-relay/plan-25-14-stripe-webhook.md"
+        "plan": "specs/epics/25-cloud-relay/plan-25-14-payment-webhook.md"
       },
       "metadata": {
-        "slug": "stripe-webhook"
+        "slug": "payment-webhook"
       }
     },
     {
@@ -19872,7 +19872,7 @@
       "id": "phase-17",
       "type": "phase",
       "title": "Phase 17 \u2014 Cloud Relay (Epic 25)",
-      "content": "Maktaba Cloud SaaS layer: identity, server claim, WSS tunnel, HTTP relay proxy, bandwidth metering, Stripe billing, push fanout, admin consoles, installers, entitlement signing.",
+      "content": "Maktaba Cloud SaaS layer: identity, server claim, WSS tunnel, HTTP relay proxy, bandwidth metering, provider-neutral billing, push fanout, admin consoles, installers, entitlement signing.",
       "tags": [
         "phase",
         "phase-17"

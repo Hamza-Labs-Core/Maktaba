@@ -54,7 +54,7 @@ Tier source:
 - The user's effective tier is loaded into the relay's per-pod LRU
   cache (key: `user_id`, TTL 60s, max 50k entries). Cache is
   invalidated by Postgres `LISTEN tier_changed` notifications
-  pushed by the Stripe webhook handler (25.14). Cache miss falls
+  pushed by the payment-provider webhook handler (25.14). Cache miss falls
   through to Postgres `cloud_subscriptions WHERE user_id=...`.
 
 ## Acceptance criteria
@@ -73,7 +73,7 @@ Tier source:
   **when** the relay checks tier,
   **then** the response is `402 quota_exceeded` regardless
   of monthly counters.
-- **Given** Stripe sends `subscription.canceled` for user U,
+- **Given** the payment provider sends `subscription_cancelled` for user U,
   **when** the webhook completes,
   **then** within 5s the per-pod LRU cache is invalidated and
   the next stream-open returns `402`.
@@ -119,18 +119,18 @@ Tier source:
 - **Trial / promo codes.** Out for v1.
 - **Family plan invitees.** Each invitee is a separate
   cloud user; the payer's `family_plan` membership is in
-  `cloud_subscriptions.metadata` (Stripe metadata). All
+  `cloud_subscriptions.metadata` (payment-provider metadata). All
   member users inherit Family caps. Implementation in
   25.13/25.14.
 - **Server suspended.** Suspension at 110% of cap blocks
   the user across all their servers, not just the
   offending one.
-- **Refund in middle of cycle.** Stripe refunds keep the
+- **Refund in middle of cycle.** Payment-provider refunds keep the
   subscription active until period_end; we honor the
   unrefunded period.
-- **Stripe webhook delivery delay.** Up to 24h is possible
+- **Payment-provider webhook delivery delay.** Up to 24h is possible
   in degraded modes. We gate enforcement on the *cloud's
-  recorded* state, not on Stripe — webhooks are how we
+  recorded* state, not on the payment provider — webhooks are how we
   learn, but the source of truth is `cloud_subscriptions`.
 - **Pricing change mid-cycle.** New rates apply only at
   next renewal; the user's current row is the contract.
@@ -152,5 +152,5 @@ Tier source:
 - **Soft vs. hard cap defaults.** Currently 105% soft, 110%
   hard, 200% circuit breaker. Numbers picked as a starting
   point; revisit after 3 months of operation.
-- **"Pause subscription" feature.** Stripe supports it;
+- **"Pause subscription" feature.** Payment providers usually support it;
   defer.

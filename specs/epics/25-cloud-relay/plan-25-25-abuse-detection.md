@@ -57,11 +57,11 @@ DROP TABLE IF EXISTS blocklist, abuse_signals;
 | `oauth_state_mismatch` | bad state cookie | 2 |
 | `refresh_token_replay` | rotated token reused | 4 |
 | `signup_velocity` | >10 signups/5min from one /24 | 3 |
-| `payment_chargeback` | Stripe dispute.created | 5 |
+| `payment_chargeback` | `payment_disputed` webhook event | 5 |
 | `tunnel_flap` | >100 reconnects/hour | 2 |
 | `stream_path_oddity` | path > 1 KiB or unusual shape | 2 |
 | `cross_user_push` | server pushing to non-owner | 4 |
-| `stripe_signature_forgery` | bad webhook sig | 4 |
+| `billing_webhook_forgery` | bad webhook sig | 4 |
 | `lan_probe_id_mismatch` | client-reported server-id mismatch | 3 |
 | `tier_circuit_breaker` | >200% cap | 4 |
 

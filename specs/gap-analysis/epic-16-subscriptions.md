@@ -98,7 +98,7 @@ on any live path (nil deps / no caller / no persistence).
 
 | AC | Status | Evidence |
 |---|---|---|
-| Read-only by default; "Manage" deep-links to Stripe portal | missing | No `api/internal/billing/portal.go`, no `POST /api/billing/portal-session`. (cloud `/v1/billing/checkout` is Epic 13, wrong epic/tiers/routes.) |
+| Read-only by default; "Manage" deep-links to the provider's customer portal | missing | No `api/internal/billing/portal.go`, no `POST /api/billing/portal-session`. (cloud `/v1/billing/checkout` is Epic 13, wrong epic/tiers/routes.) |
 | Cancellation confirm modal copy | missing | No UI; no `billing.cancel.*` i18n strings. |
 | Upgrades immediate / downgrades at renewal | missing | No Epic-16 webhook handler updating a `licenses` row; no tier flip. |
 | Receipts: invoice list + downloadable PDF | missing | No `billing_invoices` table/migration; no invoice-PDF proxy endpoint. |

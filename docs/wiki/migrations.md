@@ -144,7 +144,7 @@ These slot numbers / filenames appear in `plan-*.md` files for epics 07–24. **
 |---|---|---|
 | `0060` | `0060_seat_counter.sql` | plan-16-02. |
 | `0061` | `0061_tier_grace.sql` | plan-16-02 — downgrade grace tracking. |
-| `0062` | `0062_billing.sql` | plan-16-03 — Stripe webhook + reconciliation. |
+| `0062` | `0062_billing.sql` | plan-16-03 — payment-provider webhook + reconciliation. |
 | `0063` | `0063_licenses.sql` | plan-16-04 — `licenses(raw_sealed, ...)`, `license_revocations`. |
 | `0064` | `0064_telemetry.sql` | plan-16-07 — `telemetry_events`, `telemetry_web_vitals`. |
 | `0065` | `0065_feature_flags.sql` | plan-16-08 — `feature_flag_overrides`, `beta_cohorts`. |

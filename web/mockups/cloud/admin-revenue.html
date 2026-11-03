@@ -123,7 +123,7 @@
   .cohort td.cell { color: #fff; font-weight: 600; }
   .cohort td.label { font-weight: 500; color: var(--text-dim); text-align: left; padding-left: 10px; font-family: -apple-system, "Inter", sans-serif; }
 
-  /* Stripe payment table */
+  /* Provider payment table */
   .pay-table { width: 100%; border-collapse: collapse; }
   .pay-table th { text-align: left; padding: 10px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); font-weight: 600; background: var(--panel-2); border-bottom: 1px solid var(--border); }
   .pay-table td { padding: 10px 12px; font-size: 12px; border-bottom: 1px solid var(--border); }
@@ -137,7 +137,7 @@
   .pay-table .status.refunded { color: var(--text-muted); }
   .pay-table .status.pending { color: var(--warn); }
   .pay-table .amt { font-family: ui-monospace, monospace; font-weight: 600; }
-  .stripe-id { font-family: ui-monospace, monospace; color: var(--text-muted); font-size: 11px; }
+  .provider-id { font-family: ui-monospace, monospace; color: var(--text-muted); font-size: 11px; }
   .card-brand-mini {
     display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
   }
@@ -236,7 +236,7 @@
           <option selected>Last 90 days</option>
           <option>This year (YTD)</option>
         </select>
-        <button class="btn">Open Stripe →</button>
+        <button class="btn">Open payment provider →</button>
         <button class="btn primary">Export CSV</button>
         <div class="av-admin">AD</div>
       </div>
@@ -513,7 +513,7 @@
       </div>
     </div>
 
-    <!-- Failed payments + Stripe history -->
+    <!-- Failed payments + payment history -->
     <div class="grid grid-2">
       <div class="card failed-card">
         <div class="card-h">
@@ -562,50 +562,50 @@
 
       <div class="card">
         <div class="card-h">
-          <div class="card-title">Recent Stripe payments</div>
+          <div class="card-title">Recent payments</div>
           <span class="card-meta"><a href="#">Open dashboard →</a></span>
         </div>
         <table class="pay-table">
           <thead><tr><th>User</th><th>Card</th><th>Amount</th><th>Status</th></tr></thead>
           <tbody>
             <tr>
-              <td>sara.k@example.com<div class="stripe-id">pi_3PqLxK...</div></td>
+              <td>sara.k@example.com<div class="provider-id">pay_LxK...</div></td>
               <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 4242</div></td>
               <td class="amt">$9.99</td>
               <td><span class="status paid">● Paid</span></td>
             </tr>
             <tr>
-              <td>omar.farouk@example.com<div class="stripe-id">pi_3PqMtA...</div></td>
+              <td>omar.farouk@example.com<div class="provider-id">pay_MtA...</div></td>
               <td><div class="card-brand-mini"><span class="brand mc">MC</span>•• 8821</div></td>
               <td class="amt">$4.99</td>
               <td><span class="status paid">● Paid</span></td>
             </tr>
             <tr>
-              <td>yusuf.q@example.com<div class="stripe-id">pi_3PqK8L...</div></td>
+              <td>yusuf.q@example.com<div class="provider-id">pay_K8L...</div></td>
               <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 0987</div></td>
               <td class="amt">$9.99</td>
               <td><span class="status paid">● Paid</span></td>
             </tr>
             <tr>
-              <td>karim.elsayed@example.com<div class="stripe-id">pi_3PqJ4G...</div></td>
+              <td>karim.elsayed@example.com<div class="provider-id">pay_J4G...</div></td>
               <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 4242</div></td>
               <td class="amt">$4.99</td>
               <td><span class="status failed">● Failed</span></td>
             </tr>
             <tr>
-              <td>fhassan@example.com<div class="stripe-id">pi_3PqHzX...</div></td>
+              <td>fhassan@example.com<div class="provider-id">pay_HzX...</div></td>
               <td><div class="card-brand-mini"><span class="brand amex">AMEX</span>•• 3401</div></td>
               <td class="amt">$119.88</td>
               <td><span class="status paid">● Paid · yearly</span></td>
             </tr>
             <tr>
-              <td>jdoe@example.com<div class="stripe-id">pi_3PqGfV...</div></td>
+              <td>jdoe@example.com<div class="provider-id">pay_GfV...</div></td>
               <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 1199</div></td>
               <td class="amt">$4.99</td>
               <td><span class="status refunded">● Refunded</span></td>
             </tr>
             <tr>
-              <td>p.albrecht@example.com<div class="stripe-id">pi_3PqFmW...</div></td>
+              <td>p.albrecht@example.com<div class="provider-id">pay_FmW...</div></td>
               <td><div class="card-brand-mini"><span class="brand">VISA</span>•• 6612</div></td>
               <td class="amt">$9.99</td>
               <td><span class="status pending">● 3DS pending</span></td>
@@ -621,18 +621,18 @@
 <div class="all-states">
   <div class="heading">
     <h2>All UI states · revenue</h2>
-    <div class="desc">Stripe sync alerts, refunds, dunning &amp; chargebacks</div>
+    <div class="desc">Payment-provider sync alerts, refunds, dunning &amp; chargebacks</div>
   </div>
 
   <div class="states-grid">
 
     <div class="ss-card">
-      <div class="ss-label">Stripe sync error <span class="stag error">CRITICAL</span></div>
+      <div class="ss-label">Provider sync error <span class="stag error">CRITICAL</span></div>
       <div class="ss-preview">
         <div class="alert error">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/></svg>
           <div>
-            <strong>Stripe sync stalled · 22 events queued</strong>
+            <strong>Provider sync stalled · 22 events queued</strong>
             <span>Last successful webhook 14 min ago. Revenue numbers may be stale. Check dashboard for backlog.</span>
           </div>
         </div>
@@ -732,7 +732,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/></svg>
           <div>
             <strong>Q2 sales-tax filing due May 31</strong>
-            <span>Stripe Tax has 14 jurisdictions ready · download report and forward to accountant.</span>
+            <span>The tax report has 14 jurisdictions ready · download report and forward to accountant.</span>
           </div>
         </div>
       </div>

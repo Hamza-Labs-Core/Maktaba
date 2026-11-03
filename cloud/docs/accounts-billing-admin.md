@@ -89,7 +89,7 @@ Signing in during the 30-day hold is allowed and the account page offers
 | `GET /.well-known/maktaba-entitlement-key` | public | `{fingerprint, public_key}` (base64 Ed25519): the license-signing key, whose public half release builds of the home embed |
 | `POST /v1/billing/webhook/{provider}` | the provider's signature | `200`; `400 invalid_signature`; `404` unless `{provider}` is the configured provider and it takes payments |
 
-**Payment provider: TBD (not Stripe).** Payments go through the
+**Payment provider: TBD.** Payments go through the
 `billing.Provider` interface (`internal/billing/provider.go`): open a
 checkout, open the customer portal, verify and translate a webhook into a
 provider-neutral event. `[billing] provider` (env
@@ -250,7 +250,7 @@ and the cloud web app.
 
 ### Still open (not in this change)
 
-- **Payment provider.** Not chosen yet (TBD, not Stripe). It plugs in behind
+- **Payment provider.** Not chosen yet (TBD). It plugs in behind
   `billing.Provider`; until then `[billing] provider = "none"` and plans are
   set by hand.
 - **Mail provider.** Mails go to the log (`mail.driver = "log"`). A real

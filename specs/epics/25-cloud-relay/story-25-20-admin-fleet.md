@@ -25,11 +25,11 @@ Auth:
 
 Pages:
 
-1. **Users.** Search by email, name, Stripe customer id, or
+1. **Users.** Search by email, name, provider customer id, or
    user id. Columns: email, plan, created, last login, # of
    servers, MTD bandwidth GB, abuse-score. Click → user detail.
 2. **User detail.** Profile (read-only), servers (mini list),
-   subscriptions (Stripe link), audit (last 200 rows),
+   subscriptions (payment-provider link; Set plan by hand), audit (last 200 rows),
    abuse events (open + resolved), buttons:
    - Suspend / unsuspend
    - Force re-verify email
@@ -58,7 +58,7 @@ Performance:
 
 - Indexes for fast search:
   `cloud_users(email gin_trgm)`,
-  `cloud_users(stripe_customer_id)`,
+  `cloud_users(provider_customer_id)`,
   `cloud_servers(subdomain)`,
   `cloud_audit(ts DESC, actor_user_id)`.
 - Pagination: cursor-based, 50 rows / page.
@@ -82,7 +82,7 @@ Performance:
   **when** they confirm with a reason,
   **then** `cloud_users.suspended_at = now()`, the reason
   is in `cloud_audit`, all sessions revoked, all servers
-  receive tunnel `revoke`, billing left untouched (Stripe
+  receive tunnel `revoke`, billing left untouched (payment-provider
   cancels separately).
 - **Given** an operator force-disconnects a server,
   **when** the action posts,
