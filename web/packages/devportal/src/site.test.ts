@@ -398,7 +398,8 @@ describe("English and Arabic", () => {
     // the English changed: translate again; a string left out, or left in English, fails
     const changed = { ...doc, info: { ...doc.info, description: "About, new." } };
     expect(checkOverlay(changed, { strings })[0]).toMatch(/the English changed/);
-    const { ["/info/title"]: _dropped, ...rest } = strings;
+    const rest: Record<string, { en: string; ar: string }> = { ...strings };
+    delete rest["/info/title"];
     expect(checkOverlay(doc, { strings: rest })[0]).toMatch(/has no Arabic/);
     const english = { ...strings, "/info/description": { en: "About.", ar: "About." } };
     expect(checkOverlay(doc, { strings: english })[0]).toMatch(/not Arabic/);
