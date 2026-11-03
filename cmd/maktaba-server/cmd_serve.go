@@ -367,6 +367,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		}
 	}
 
+	// Epic 51 story 51.03: the components' desired state, seeded once from what this
+	// home runs today, before the roles start (serve_components.go)
+	if wholeMachine && containsRole(roles, supervisor.RoleAPI) {
+		procs = componentsAtBoot(ctx, cfg, opts, releaseDir, llmProc, node, procs, os.Stderr)
+	}
+
 	// Run children. Each one is restarted on its own when it crashes or
 	// hangs ([supervisor] in server.toml, Story 22.9); Run returns on a
 	// signal, or on a child exit with restart = "never". Then drain the

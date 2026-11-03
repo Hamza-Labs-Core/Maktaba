@@ -1,0 +1,35 @@
+# The loops the previous release starts on the update rehearsal's home (scenario 12,
+# api/rehearsal_components_e2e_test.go; docs/update-rehearsal.md): the TV slots on, the
+# relay off, the HDHomeRun device off, mDNS off (serve --no-mdns, MAKTABA_DISCOVERY_MDNS=0).
+# After the update every one of them must be running in component_status (its component,
+# on the part of its host), and no other switchable loop of those hosts. Only the API's
+# and streaming's: the pipeline is the rehearsal's stand-in, and the always-on core.*
+# loops are not switchable. One "<host>:<name>" per line, as the catalog names them.
+
+# livetv
+api:tvchange_controller
+api:tvremote_controller
+api:tvremote_publisher
+api:tvremote_health_sampler
+# livetv.slots
+streaming:slots_frontdoor
+streaming:slots_ops
+# enrich
+api:enrichment_auto_accept
+# cluster
+api:cluster_housekeeping
+api:cluster_hub
+api:home_link
+api:cluster_push_database
+api:cluster_ensure_access
+api:pairing_sweep
+# analytics
+api:watch_reaper
+api:usage_counter
+# telemetry
+api:telemetry_sender
+# updates.auto
+api:update_checker
+api:updates_discoverer
+api:updates_scheduler
+api:updates_driver

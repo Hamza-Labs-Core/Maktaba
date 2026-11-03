@@ -43,7 +43,7 @@ phases = ["not_installed", "installing", "removing", "off", "stopped", "waiting"
 reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_enough_memory",
            "verify_failed", "crash_loop", "held", "stop_timeout", "settings_invalid",
            "env_override", "boot_flag", "reconcile_off", "not_in_payload", "component_off",
-           "component_held", "required_by"]
+           "component_held", "required_by", "toml_superseded"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".

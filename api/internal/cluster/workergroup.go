@@ -118,6 +118,8 @@ REVOKE ALL ON components, component_overrides, component_status, component_meta
     FROM maktaba_worker;
 GRANT SELECT ON components, component_overrides, component_status, component_meta
     TO maktaba_worker;
+-- slot 0174
+GRANT EXECUTE ON FUNCTION component_override_seed(uuid, jsonb) TO maktaba_worker;
 `
 
 // groupNameRe is a group role's name groupSQL accepts.

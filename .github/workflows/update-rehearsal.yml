@@ -41,6 +41,8 @@ on:
       - 'cmd/maktaba-server/internal/nodecopy/**'
       - 'cmd/maktaba-server/internal/selfupdate/**'
       - 'cmd/maktaba-server/internal/machineagent/**'
+      - 'cmd/maktaba-server/internal/componentseed/**'
+      - 'shared/components/**'
       - 'cmd/maktaba-server/serve*.go'
       - 'cmd/maktaba-server/stream_gate*.go'
       - 'cmd/maktaba-server/cmd_serve.go'
@@ -317,6 +319,7 @@ jobs:
           - { id: '10a', name: machines after the home (the driver), test: TestUpdateRehearsal10aMachinesAfterHomeDriver, profile: small }
           - { id: '10b', name: machines after the home (their own updater), test: TestUpdateRehearsal10bMachineOwnUpdater, profile: small }
           - { id: '11', name: the TV's change restarts a slot left on the old release, test: TestUpdateRehearsal11TVChangeRestartsARunningSlot, profile: small }
+          - { id: '12', name: no behaviour change (the components seeded from today), test: TestUpdateRehearsal12NoBehaviourChange, profile: small }
     steps:
       - uses: actions/checkout@v6.0.2
 
