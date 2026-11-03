@@ -2,7 +2,10 @@
 # Build a release's component packs for one platform (Epic 51, story 51.15).
 #
 #   tools/release/packs/build.sh --version 0.4.2 --platform linux-amd64 --out OUT
-#       [--catalog FILE] [--recipes DIR] [--part-size BYTES]
+#       [--catalog FILE] [--recipes DIR] [--part-size BYTES] [--only ID]
+#
+# --only builds that one of the platform's packs (the update rehearsal's tool.yt-dlp,
+# story 51.18).
 #
 # The packs are the ones the catalog asks of the platform (gen-components-index --list):
 # each one's recipe (recipes/<id>.sh STAGE PLATFORM VERSION) fills a folder, and build-pack
@@ -17,7 +20,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$here/../../.." && pwd)"
-VERSION="" PLATFORM="" OUT="" CATALOG="" RECIPES="$here/recipes" PART_SIZE=0
+VERSION="" PLATFORM="" OUT="" CATALOG="" RECIPES="$here/recipes" PART_SIZE=0 ONLY=""
 
 die() { echo "packs/build.sh: $*" >&2; exit 1; }
 
@@ -29,6 +32,7 @@ while [ $# -gt 0 ]; do
         --catalog) CATALOG="$2"; shift 2 ;;
         --recipes) RECIPES="$2"; shift 2 ;;
         --part-size) PART_SIZE="$2"; shift 2 ;;
+        --only) ONLY="$2"; shift 2 ;;
         *) die "unknown option $1" ;;
     esac
 done
@@ -48,6 +52,12 @@ list=(--list --platform "$PLATFORM")
 [ -z "$CATALOG" ] || list+=(--catalog "$CATALOG")
 ids=()
 while IFS= read -r id; do [ -z "$id" ] || ids+=("$id"); done < <("$WORK/bin/gen-components-index" "${list[@]}")
+if [ -n "$ONLY" ]; then
+    found=""
+    for id in ${ids[@]+"${ids[@]}"}; do [ "$id" != "$ONLY" ] || found="$id"; done
+    [ -n "$found" ] || die "$ONLY is not one of $PLATFORM's packs (${ids[*]:-none})"
+    ids=("$found")
+fi
 echo "packs for $PLATFORM: ${ids[*]:-none}"
 
 for id in ${ids[@]+"${ids[@]}"}; do
