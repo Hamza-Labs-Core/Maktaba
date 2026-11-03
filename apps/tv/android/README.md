@@ -13,7 +13,7 @@ TV Material, ZXing for the QR).
 | Screen | What | API |
 |---|---|---|
 | Choose a home | homes announcing `_maktaba._tcp` on the network (mDNS), saved homes, or a typed address | — |
-| Sign in | **a code**: the TV shows `ABCD-1234` and a QR of `<home>/pair?code=…`; a person signed in on a phone or the web approves, and the TV is signed in as them. Fallback: username and password on the on-screen keyboard (and straight there on a home without sign-in by code) | `POST /api/pairing/device`, `POST /api/pairing/device/token` (approved with `POST /api/pairing/approve`, the web's `/pair`); `POST /api/auth/login` (`X-Maktaba-Client: native`) |
+| Sign in | **a code**: the TV shows `ABCD-1234` (large, with how long it lasts and a "Get a new code" button), a QR of `<home>/pair?code=…`, and where to approve it: in Maktaba Remote "Approve a TV or device" at the top, in Maktaba Player Profile → the same button ("Approve a sign-in" under the person icon on older phone apps; the label is the phones' own `approve_tv` string), or the approve page on a computer. Once a phone has read the code the TV says "Your phone found this TV — tap Approve on it". The person approves, and the TV is signed in as them. Fallback: username and password on the on-screen keyboard (and straight there on a home without sign-in by code) | `POST /api/pairing/device`, `POST /api/pairing/device/token` (approved with `POST /api/pairing/approve`, the web's `/pair`); `POST /api/auth/login` (`X-Maktaba-Client: native`) |
 | Home | Continue Watching (where you stopped), Recently added, For you; the library scene behind | `GET /api/recommendations`, `GET /api/videos?sort=created_at` |
 | Libraries | the libraries you can read, then a library's videos, a page at a time | `GET /api/libraries`, `GET /api/videos?library=` |
 | Search | videos by name, as you type | `GET /api/videos?q=` |
@@ -42,8 +42,12 @@ that scale up with a 3 dp gold ring on focus, buttons that turn gold. English an
 
 ```bash
 cd apps/tv/android
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+./gradlew :app:testDebugUnitTest :app:verifyRoborazziDebug :app:lintDebug :app:assembleDebug
 ```
+
+The sign-in code screen has screenshot references on a 1080p TV, English and Arabic
+(`app/src/test/screenshots`, Robolectric + Roborazzi); after a deliberate change to it, record
+them again with `./gradlew :app:testDebugUnitTest -Proborazzi.test.record=true` and look at each.
 
 CI runs the same, plus an unsigned `:app:bundleRelease` (R8 on), on every change to this app or
 the shared core (`_android-tv.yml`). A `v*` tag builds the sideload APK (`tv-release.yml`) and the
