@@ -6,7 +6,7 @@ Maktaba Player and Maktaba Remote bring your home to Android phones, foldables a
 
 There are two apps:
 
-- **Maktaba Player**: browse your home's libraries and watch.
+- **Maktaba Player**: watch your home. It has **Home**, **Libraries**, **Live TV** (only when you may watch a channel), **Search** and **Profile**: a bar at the bottom on a phone, a rail or a drawer on a wider screen. A video keeps its sound with the screen off, and going Home while it plays opens it in picture in picture.
 - **Maktaba Remote**: run your home from your phone. It opens on **Needs attention** (with **Retry** and **Retry all**), then **Queue** (pause and resume a stage or everything), **Libraries** (scan) and **Machines** (drain). Only the home's admins can use it; the home refuses everyone else.
 
 Each app is one app for phones, foldables and tablets, and needs Android 8 or later. The screen follows the window, not the device:
@@ -19,13 +19,32 @@ Both apps are in English and Arabic. Android's per-app language setting (Setting
 
 ## How to use it {#how-to-use}
 
+### Get the app {#get-the-app}
+
+The apps are in testing, so they come from **Google Play's internal testing**, not the public Play Store yet.
+
+1. Ask the home's owner to add your Google account to the apps' testers list in Play Console. They send you an opt-in link.
+2. Open the link on your phone, with the same Google account, and accept.
+3. Install **Maktaba Player** and **Maktaba Remote** from Google Play. Updates come through Google Play, like any app.
+
+A release page can also list `maktaba-<version>.apk`: that is the older web app in an Android shell, not these apps. Installed by hand, it shows **New version available** when a newer release exists, with **Get update**.
+
 ### Choose a home and sign in {#choose-home}
 
 1. Open the app. On Android 17 and later, the first time, it shows **Before you start** (see [Permissions](/help/android-apps#permissions)).
-2. Choose your home. **On this network** lists the homes that announce themselves on your network. **Your homes** lists the homes you used before. If yours is not listed, tap **Enter an address** and type its address, like `192.168.1.20:8088`, then **Connect**.
-3. Sign in with your Maktaba **Username** and **Password**. The app stays signed in to that home until you sign out.
+2. Choose your home. **On this network** lists the homes that announce themselves on your network. **Your homes** lists the homes you used before. If yours is not listed, tap **Enter an address** and type its address, like `192.168.1.20:8088`, then **Connect**, or tap **Scan a QR code** and point the camera at the code on the home's **Connect an app** page.
+3. Sign in with your Maktaba **Username** and **Password**, or choose **With a code**: the app shows a code to approve on a device that is already signed in (see [Approve a TV or another device](#approve)). The app stays signed in to that home until you sign out.
 
 To use another home, tap **Choose another home** on the sign-in screen.
+
+### Approve a TV or another device {#approve}
+
+A TV, or a phone that signs in **With a code**, shows a code like `ABCD-1234` and a QR code. Approve it from an app you are already signed in to:
+
+- **Maktaba Player**: open **Profile** and tap **Approve a sign-in**.
+- **Maktaba Remote**: tap the person icon (**Account**) at the top, then **Approve a sign-in**.
+
+Type the code, or scan the QR code the device shows. Check which device is asking, then tap **Approve**. The device is signed in as you, with your own role. The web app's **Sign in a device** page does the same.
 
 ### Through Maktaba Cloud {#through-cloud}
 
@@ -40,7 +59,7 @@ The home decides what you can do: you are your own account there, and through th
 
 ### Permissions {#permissions}
 
-The apps ask Android for one permission, and only on Android 17 and later. On Android 16 and earlier they need none, and **Before you start** never shows.
+**Before you start** asks for one permission, and only on Android 17 and later. On Android 16 and earlier it never shows. The camera is asked for only when you tap **Scan a QR code** (see [Camera](#permission-camera)).
 
 The first time you open an app, **Before you start** lists the permission with why the app needs it, whether it is **Required** or **Optional**, and where it stands. It comes back every time you return to the app while a required permission is missing. **Not now** puts it away until the next time you return. When a home is chosen, **Learn more** opens this page on your home.
 
@@ -53,7 +72,13 @@ The first time you open an app, **Before you start** lists the permission with w
 - **Without it:** the app cannot find homes on your network or reach a home's local address. Only a home's internet address works.
 - **If you refused it:** Android asks twice at most. After the first **Don't allow**, the row says **Not allowed** and **Allow** asks again. After the second, it says **Not allowed, and Android will not ask again** and the button is **Open settings**. It opens the app's page in Settings: tap **Permissions**, then **Nearby devices**, then **Allow**. Go back to the app; it checks again by itself.
 
-The apps ask for nothing else. They post no notifications, play nothing in the background (a video pauses when you leave the app), and do not use your location, microphone or contacts.
+#### Camera (optional) {#permission-camera}
+
+- **Why:** to scan a home's QR code, or the QR code of a device asking to sign in. No picture is kept or sent.
+- **When it is asked:** the first time you tap **Scan a QR code**, not at the first start.
+- **Without it:** type the address or the code instead; everything else works.
+
+The apps ask for nothing else. They do not use your location, microphone or contacts. Maktaba Player keeps a video's sound playing with the screen off and shows the usual playback controls while it plays; that needs no permission.
 
 ## What the states and messages mean {#states}
 
@@ -87,7 +112,7 @@ Yes, with a home's internet address. Choose **Not now**, then **Enter an address
 
 ### Why don't the apps ask to send notifications? {#faq-notifications}
 
-They post none. Nothing plays or runs in the background, so they also need no battery exemption.
+They send no alerts. The Player's playback controls, shown while a video plays, need no permission, and the apps need no battery exemption.
 
 ## When something goes wrong {#troubleshooting}
 

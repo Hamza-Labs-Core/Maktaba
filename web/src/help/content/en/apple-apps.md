@@ -6,19 +6,41 @@ Maktaba Player and Maktaba Remote on iPhone, iPad and the Mac: what each one doe
 
 There are two apps, each talking to your Maktaba home over its address:
 
-- **Maktaba Player** (iPhone, iPad and Mac): browse your home's libraries and watch. On iPhone and iPad its name under the icon is **Maktaba**; on the Mac it is **Maktaba Player**.
+- **Maktaba Player** (iPhone, iPad and Mac): watch your home. It has **Home**, **Libraries**, **Live TV** (only when you may watch a channel), **Search** and **Profile**: a tab bar on iPhone, a sidebar on iPad and the Mac. Videos and live TV play with AirPlay, Picture in Picture and the lock screen's controls. On iPhone and iPad its name under the icon is **Maktaba**; on the Mac it is **Maktaba Player**.
 - **Maktaba Remote** (iPhone and iPad): run your home from your phone. It opens on what needs attention and can retry failed work. Only the home's admins can use it; anyone else is told to use Maktaba Player.
 
 Both keep your sign-in for each home in the device's Keychain and remember the homes you have used.
 
 ## How to use it {#how-to-use}
 
+### Get the app {#get-the-app}
+
+The apps are in testing, so they come from **TestFlight**, not the App Store yet.
+
+1. Ask the home's owner to add your Apple ID to the apps' testers group in TestFlight (App Store Connect). You get an email invitation.
+2. Install **TestFlight** from the App Store, on the device you want the app on.
+3. Open the invitation, or TestFlight, and tap **Install** next to the app. iPhone: **Maktaba Player** and **Maktaba Remote**. iPad: **Maktaba Player for iPad**. Mac: **Maktaba Player for Mac**, in TestFlight for Mac. Maktaba Remote's own iPad app is not in TestFlight yet.
+
+Each new Maktaba release arrives in TestFlight as an update.
+
+### Connect and sign in {#connect}
+
 1. Open the app. The first time, it shows **Before you start**: the permission it needs and why (see [Permissions](#permissions)). Read it, tap **Allow access**, then **Continue**.
 2. Pick your home. **On this network** lists the homes the app finds by itself. You can also type the home's address, like `192.168.1.20:8088` or `mac.local:8088` (the address you open the web app at), or, on iPhone and iPad, tap **Scan a QR code** and point the camera at the code on the home's **Connect an app** page (account menu in the web app). On the Mac, paste the link from that page.
-3. Sign in with your Maktaba user name and password, or choose **With a code**: the app shows a short code and a QR code. On a device that is already signed in, open the QR (or the web app's **Sign in a device** page, or **Approve a sign-in** in the account menu of the Player or the Remote), check which device is asking, and tap **Approve**. The new device gets your account, never more.
+3. Sign in with your Maktaba user name and password, or choose **With a code**: the app shows a short code and a QR code. On a device that is already signed in, open the QR (or the web app's **Sign in a device** page, or **Approve a sign-in…** in an app, see [Approve a TV or another device](#approve)), check which device is asking, and tap **Approve**. The new device gets your account, never more.
 4. Next time the app opens on that home. **Recent homes** lists every home you have added; rename one or swipe it to forget it. A sign-in belongs to the address it was made at: the same home at a new address asks you to sign in again.
 
 A `maktaba://connect` link opened from elsewhere always asks before it adds or switches a home.
+
+### Approve a TV or another device {#approve}
+
+A TV, or a phone that signs in **With a code**, shows a code like `ABCD-1234` and a QR code. Approve it from an app you are already signed in to:
+
+- **Maktaba Player** on iPhone and iPad: open **Profile** and tap **Approve a sign-in…**.
+- **Maktaba Player** on the Mac: the **Account** menu → **Approve a sign-in…**.
+- **Maktaba Remote**: tap the person icon (**Account**) at the top of any screen, then **Approve a sign-in…**.
+
+Type the code and tap **Continue**, or tap **Scan its QR code** and point the camera at it. Check which device is asking, then tap **Approve**. The device is signed in as you, with your own role. The web app's **Sign in a device** page does the same.
 
 ### Through Maktaba Cloud {#through-cloud}
 
