@@ -307,15 +307,22 @@ export function rewriteHref(href, fromSrc, published) {
   return `${GITHUB}/${kind}/main/${target}` + (hash ? `#${hash}` : "");
 }
 
-function renderDoc(doc, published, group) {
-  const md = scrubMarkdown(fs.readFileSync(path.join(REPO, doc.src), "utf8"));
+/**
+ * Markdown to HTML with raw HTML off: an HTML block or tag in the source is shown as escaped
+ * text (`<version>` in the changelog reads as written), never passed into the page. Links
+ * are rewritten (rewriteHref), and only http(s), mailto and in-site links are kept.
+ */
+export function markdownToHtml(md, fromSrc, published) {
   const marked = new Marked({ gfm: true });
   marked.use({
     renderer: {
+      html({ text }) {
+        return esc(text);
+      },
       link({ href, title, tokens }) {
         const text = this.parser.parseInline(tokens);
-        const to = rewriteHref(href, doc.src, published);
-        if (to === null) return text;
+        const to = rewriteHref(href, fromSrc, published);
+        if (to === null || !/^(https?:|mailto:|\/|#)/i.test(to)) return text;
         return `<a href="${esc(to)}"${title ? ` title="${esc(title)}"` : ""}>${text}</a>`;
       },
       // a heading's id is its text, so in-page links (#5-the-no-internet-guarantee) work
@@ -324,7 +331,12 @@ function renderDoc(doc, published, group) {
       },
     },
   });
-  const html = marked.parse(md);
+  return /** @type {string} */ (marked.parse(md, { async: false }));
+}
+
+function renderDoc(doc, published, group) {
+  const md = scrubMarkdown(fs.readFileSync(path.join(REPO, doc.src), "utf8"));
+  const html = markdownToHtml(md, doc.src, published);
   const title = doc.title ?? (md.match(/^# (.+)$/m)?.[1] ?? doc.src).replace(/[*`]/g, "");
   const src = `${GITHUB}/blob/main/${doc.src}`;
   const article = `<article class="doc" dir="ltr" lang="en">\n${html}\n<p class="note"><a href="${src}" data-i18n="doc.source">${esc(t("doc.source"))}</a></p>\n</article>`;

@@ -12,9 +12,26 @@ import {
   readDisclosurePolicy,
   rewriteHref,
   scrubMarkdown,
+  markdownToHtml,
   securityTxt,
   slug,
 } from "../scripts/build.mjs";
+import { parse, type DefaultTreeAdapterMap } from "parse5";
+
+type Element = DefaultTreeAdapterMap["element"];
+type ParentNode = DefaultTreeAdapterMap["parentNode"];
+
+/** Every element under a parsed document, in document order. */
+function elements(node: ParentNode): Element[] {
+  const out: Element[] = [];
+  for (const child of node.childNodes) {
+    if ("tagName" in child) out.push(child);
+    if ("childNodes" in child) out.push(...elements(child as ParentNode));
+  }
+  if ("content" in node) out.push(...elements((node as DefaultTreeAdapterMap["template"]).content));
+  return out;
+}
+const attr = (e: Element, name: string) => e.attrs.find((a) => a.name === name)?.value;
 import { STRINGS as RAW } from "../scripts/strings.mjs";
 
 const STRINGS = RAW as Record<"en" | "ar", Record<string, string>>;
@@ -186,18 +203,38 @@ describe("English and Arabic", () => {
   });
 
   it("the portal's pages carry no inline script (the CSP allows none)", () => {
-    // every `<script` (any case) opens a tag with a src and closes at once: no inline code
+    // parsed as a browser would (parse5): every script has a src and no body, and no element
+    // carries an event handler or a javascript: URL
     for (const p of files(DIST).filter((f) => f.endsWith(".html"))) {
-      const html = read(p).toLowerCase();
-      let seen = 0;
-      for (let i = html.indexOf("<script"); i !== -1; i = html.indexOf("<script", i + 1)) {
-        const end = html.indexOf(">", i);
-        expect(html.slice(i, end), p).toMatch(/\ssrc="/);
-        expect(html.slice(end + 1, end + 10), p).toBe("</script>");
-        seen++;
+      const els = elements(parse(read(p)));
+      const scripts = els.filter((e) => e.tagName === "script");
+      expect(scripts.length, p).toBeGreaterThan(0);
+      for (const s of scripts) {
+        expect(attr(s, "src"), p).toBeTruthy();
+        expect(s.childNodes.length, p).toBe(0);
       }
-      expect(seen, p).toBeGreaterThan(0);
+      for (const e of els) {
+        for (const a of e.attrs) {
+          expect(a.name.startsWith("on"), `${p}: <${e.tagName} ${a.name}>`).toBe(false);
+          if (a.name === "href" || a.name === "src") {
+            expect(a.value.trim().toLowerCase().startsWith("javascript:"), p).toBe(false);
+          }
+        }
+      }
     }
+  });
+
+  it("markdown's raw HTML is shown as text, never rendered", () => {
+    const html = markdownToHtml(
+      'Install <version> now.\n\n<script>alert(1)</script>\n\n<img src=x onerror="alert(1)">\n\n[x](javascript:alert(1))\n',
+      "CHANGELOG.md",
+      new Map()
+    );
+    const els = elements(parse(html));
+    expect(els.some((e) => ["script", "img", "version"].includes(e.tagName))).toBe(false);
+    expect(els.some((e) => e.attrs.some((a) => a.name.startsWith("on")))).toBe(false);
+    expect(els.some((e) => e.tagName === "a")).toBe(false);
+    expect(html).toContain("Install &lt;version&gt; now.");
   });
 });
 
