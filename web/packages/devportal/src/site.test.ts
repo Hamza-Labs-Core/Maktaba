@@ -13,6 +13,7 @@ import {
   rewriteHref,
   scrubMarkdown,
   securityTxt,
+  slug,
 } from "../scripts/build.mjs";
 import { STRINGS as RAW } from "../scripts/strings.mjs";
 
@@ -144,6 +145,14 @@ describe("scrubbing markdown", () => {
   });
 });
 
+describe("heading ids", () => {
+  it("are letters, digits and hyphens, from the heading's text", () => {
+    expect(slug('5. The "no internet" guarantee')).toBe("5-the-no-internet-guarantee");
+    expect(slug("`StageDef` and edges")).toBe("stagedef-and-edges");
+    expect(slug('x" onmouseover="alert(1)')).toMatch(/^[\p{L}\p{N}-]+$/u);
+  });
+});
+
 describe("English and Arabic", () => {
   it("every string has both languages", () => {
     const en = Object.keys(STRINGS.en).sort();
@@ -178,7 +187,7 @@ describe("English and Arabic", () => {
 
   it("the portal's pages carry no inline script (the CSP allows none)", () => {
     for (const p of files(DIST).filter((f) => f.endsWith(".html"))) {
-      for (const m of read(p).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
+      for (const m of read(p).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
         expect(m[1], p).toMatch(/\bsrc=/);
         expect(m[2].trim(), p).toBe("");
       }

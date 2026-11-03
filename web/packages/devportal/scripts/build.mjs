@@ -282,6 +282,18 @@ function siteUrl(out) {
   return "/" + out;
 }
 
+/**
+ * A heading's id, GitHub-style, from its markdown source: letters, digits and hyphens only
+ * (markup and punctuation dropped), so it is safe in an attribute as it is.
+ */
+export function slug(markdown) {
+  return markdown
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .trim()
+    .replace(/\s+/g, "-");
+}
+
 /** The link a doc's relative href becomes: a published page, else the file on GitHub. */
 export function rewriteHref(href, fromSrc, published) {
   if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("#") || href.startsWith("//"))
@@ -307,16 +319,8 @@ function renderDoc(doc, published, group) {
         return `<a href="${esc(to)}"${title ? ` title="${esc(title)}"` : ""}>${text}</a>`;
       },
       // a heading's id is its text, so in-page links (#5-the-no-internet-guarantee) work
-      heading({ tokens, depth }) {
-        const text = this.parser.parseInline(tokens);
-        const id = text
-          .replace(/<[^>]+>/g, "")
-          .toLowerCase()
-          .replace(/&[a-z#0-9]+;/g, "")
-          .replace(/[^\p{L}\p{N}\s-]/gu, "")
-          .trim()
-          .replace(/\s+/g, "-");
-        return `<h${depth} id="${id}">${text}</h${depth}>\n`;
+      heading({ tokens, depth, text }) {
+        return `<h${depth} id="${slug(text)}">${this.parser.parseInline(tokens)}</h${depth}>\n`;
       },
     },
   });
