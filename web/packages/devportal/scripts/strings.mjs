@@ -7,9 +7,9 @@ export const STRINGS = {
   en: {
     "site.name": "Maktaba for developers",
     "nav.home": "Home",
-    "nav.wiki": "Wiki",
     "nav.api": "API",
     "nav.plugins": "Plugins",
+    "nav.contributing": "Contributing",
     "nav.changelog": "Changelog",
     "nav.security": "Security",
     "nav.source": "Source",
@@ -21,35 +21,33 @@ export const STRINGS = {
     "home.lead":
       "Maktaba is a self-hosted video library. It transcribes your videos, finds what is said in them, and streams them to the web, phones and TVs, from a computer you own.",
     "home.lead2":
-      "This site is for the people who build on it and with it: the source, the wiki, the API, the plugin model and what changed in each release.",
+      "This site is for developers who extend Maktaba or work on it: how to build a plugin, how to contribute, the API reference, security and what changed in each release.",
     "home.cta.source": "Source on GitHub",
-    "home.cta.wiki": "Open the wiki",
+    "home.cta.plugins": "Build a plugin",
+    "home.cta.contributing": "Contribute",
     "home.cards": "Where to start",
     "card.source.title": "Source code",
     "card.source.body":
       "The whole project: the API, the pipeline, the web app and the native apps.",
-    "card.wiki.title": "Wiki",
-    "card.wiki.body": "The project map: every epic, story, entity, screen and diagram, searchable.",
     "card.specs.title": "Specs and epics",
-    "card.specs.body": "What each part of Maktaba must do and why, epic by epic.",
-    "card.plugins.title": "Plugin developers",
+    "card.specs.body": "What each part of Maktaba must do and why, epic by epic, on GitHub.",
+    "card.plugins.title": "Build a plugin",
     "card.plugins.body":
-      "Plugins add functions from the queue, with no internet: the manifest, the API, the SDK and the store.",
+      "Plugins add functions from the queue, with no internet: the manifest, the sandbox, the API, testing, packaging and the store.",
+    "card.contributing.title": "Contribute to Maktaba",
+    "card.contributing.body":
+      "The architecture, the repo, a local setup, the tests, the conventions, CI and how to send a pull request.",
     "card.api.title": "API reference",
     "card.api.body": "The Maktaba API from its OpenAPI description: every endpoint and type.",
     "card.changelog.title": "Changelog",
     "card.changelog.body": "Every release and what is waiting for the next one.",
     "card.security.title": "Security",
     "card.security.body": "How to report a vulnerability, and our disclosure policy.",
-    "home.lang.note": "The wiki and the reference pages are in their source language, English.",
+    "home.lang.note": "The guides and the reference pages are in their source language, English.",
     "footer.text": "Maktaba is built by Hamza Labs.",
     "footer.security": "Report a vulnerability",
 
-    "plugins.title": "Plugin developer docs",
-    "plugins.lead":
-      "Epic 54: plugins take jobs from the Maktaba queue, read what they are granted through the Maktaba API, and write results back. They can never reach the internet. These pages are the parts of the epic a plugin developer needs.",
-    "plugins.status":
-      "The plugin system is specified and being built; the details can change until it ships.",
+    "guides.lang": "This guide is in English.",
     "doc.source": "View the source of this page on GitHub",
     "changelog.title": "Changelog",
     "api.title": "API reference",
@@ -68,6 +66,10 @@ export const STRINGS = {
     "security.rules.title": "Good faith",
     "security.rules.body":
       "Test only against your own Maktaba installation. Do not access other people's data, do not degrade a service for others, and give us reasonable time to fix a problem before you share it.",
+    "security.conform.title": "Rules for plugins and contributors",
+    "security.conform.body":
+      "Plugins run sandboxed with no internet and only the access they are granted. Code sent to Maktaba carries no secrets and checks every role on the server.",
+    "security.conform.link": "Read the security rules for plugins and contributors",
     "security.txt": "Machine-readable: /.well-known/security.txt",
     "hof.title": "Thanks",
     "hof.body":
@@ -81,9 +83,9 @@ export const STRINGS = {
   ar: {
     "site.name": "مكتبة للمطوّرين",
     "nav.home": "الرئيسية",
-    "nav.wiki": "الويكي",
     "nav.api": "الواجهة البرمجية",
     "nav.plugins": "الإضافات",
+    "nav.contributing": "المساهمة",
     "nav.changelog": "سجل التغييرات",
     "nav.security": "الأمان",
     "nav.source": "الشيفرة المصدرية",
@@ -95,34 +97,33 @@ export const STRINGS = {
     "home.lead":
       "مكتبة خادمُ فيديو تستضيفه بنفسك: يُفرّغ نصوص مقاطعك، ويجد ما قيل فيها، ويبثّها إلى الويب والهواتف والتلفزيونات، من حاسوب تملكه.",
     "home.lead2":
-      "هذا الموقع لمن يبني عليها ومعها: الشيفرة المصدرية، والويكي، والواجهة البرمجية، ونموذج الإضافات، وما تغيّر في كل إصدار.",
+      "هذا الموقع للمطوّرين الذين يوسّعون مكتبة أو يعملون عليها: كيف تبني إضافة، وكيف تساهم، ومرجع الواجهة البرمجية، والأمان، وما تغيّر في كل إصدار.",
     "home.cta.source": "الشيفرة على GitHub",
-    "home.cta.wiki": "افتح الويكي",
+    "home.cta.plugins": "ابنِ إضافة",
+    "home.cta.contributing": "ساهم",
     "home.cards": "من أين تبدأ",
     "card.source.title": "الشيفرة المصدرية",
     "card.source.body":
       "المشروع كاملاً: الواجهة البرمجية، وخط المعالجة، وتطبيق الويب، والتطبيقات الأصلية.",
-    "card.wiki.title": "الويكي",
-    "card.wiki.body": "خريطة المشروع: كل ملحمة وقصة وكيان وشاشة ومخطط، مع البحث.",
     "card.specs.title": "المواصفات والملاحم",
-    "card.specs.body": "ما يجب أن يفعله كل جزء من مكتبة ولماذا، ملحمةً ملحمة.",
-    "card.plugins.title": "لمطوّري الإضافات",
+    "card.specs.body": "ما يجب أن يفعله كل جزء من مكتبة ولماذا، ملحمةً ملحمة، على GitHub.",
+    "card.plugins.title": "ابنِ إضافة",
     "card.plugins.body":
-      "تضيف الإضافات وظائف من طابور المهام، بلا إنترنت: البيان، والواجهة البرمجية، وحزمة التطوير، والمتجر.",
+      "تضيف الإضافات وظائف من طابور المهام، بلا إنترنت: البيان، والعزل، والواجهة البرمجية، والاختبار، والتحزيم، والمتجر.",
+    "card.contributing.title": "ساهم في مكتبة",
+    "card.contributing.body":
+      "البنية، والمستودع، والإعداد المحلي، والاختبارات، والأعراف، والتكامل المستمر، وكيف ترسل طلب دمج.",
     "card.api.title": "مرجع الواجهة البرمجية",
     "card.api.body": "واجهة مكتبة البرمجية من وصف OpenAPI: كل نقطة وصول وكل نوع.",
     "card.changelog.title": "سجل التغييرات",
     "card.changelog.body": "كل إصدار، وما ينتظر الإصدار التالي.",
     "card.security.title": "الأمان",
     "card.security.body": "كيف تبلّغ عن ثغرة، وسياستنا في الإفصاح.",
-    "home.lang.note": "الويكي والصفحات المرجعية بلغتها الأصلية، الإنجليزية.",
+    "home.lang.note": "الأدلة والصفحات المرجعية بلغتها الأصلية، الإنجليزية.",
     "footer.text": "تبني مكتبةَ Hamza Labs.",
     "footer.security": "بلّغ عن ثغرة",
 
-    "plugins.title": "وثائق مطوّري الإضافات",
-    "plugins.lead":
-      "الملحمة 54: تأخذ الإضافات المهام من طابور مكتبة، وتقرأ ما مُنحت من خلال واجهة مكتبة البرمجية، وتكتب النتائج. ولا تصل إلى الإنترنت أبداً. هذه الصفحات هي ما يحتاجه مطوّر الإضافة من الملحمة.",
-    "plugins.status": "نظام الإضافات موصوف وقيد البناء، وقد تتغيّر التفاصيل حتى يصدر.",
+    "guides.lang": "هذا الدليل بالإنجليزية.",
     "doc.source": "اعرض مصدر هذه الصفحة على GitHub",
     "changelog.title": "سجل التغييرات",
     "api.title": "مرجع الواجهة البرمجية",
@@ -141,6 +142,10 @@ export const STRINGS = {
     "security.rules.title": "حسن النية",
     "security.rules.body":
       "اختبر على تثبيت مكتبة الخاص بك فقط. لا تصل إلى بيانات الآخرين، ولا تُضعف خدمة لغيرك، وامنحنا وقتاً معقولاً لإصلاح المشكلة قبل أن تنشرها.",
+    "security.conform.title": "قواعد للإضافات والمساهمين",
+    "security.conform.body":
+      "تعمل الإضافات معزولةً بلا إنترنت، ولا تصل إلا إلى ما مُنحت. والشيفرة المرسلة إلى مكتبة لا تحمل أسراراً، وتتحقّق من كل دور على الخادم.",
+    "security.conform.link": "اقرأ قواعد الأمان للإضافات والمساهمين",
     "security.txt": "للآلات: ‎/.well-known/security.txt",
     "hof.title": "شكراً",
     "hof.body": "نذكر هنا، بإذنهم، من بلّغوا عن مشكلة أمنية بمسؤولية.",

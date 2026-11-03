@@ -9,11 +9,10 @@ interface State {
   error: string | null;
 }
 
-const FILES = [
-  'wiki.json',
-  'wiki-epics-07-13.json',
-  'wiki-epics-14-24.json',
-];
+// wiki.json names its part files (the stories and plans, by epic range) in `parts`;
+// docs/wiki/db/generate_wiki.py writes them all.
+const PRIMARY = 'wiki.json';
+const PART = /^wiki-epics-\d\d-\d\d\.json$/;
 
 async function fetchJSON<T>(url: string): Promise<T | null> {
   try {
@@ -37,20 +36,22 @@ export function useWikiDB(): State {
     let cancelled = false;
     (async () => {
       const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/db`;
-      const results = await Promise.all(
-        FILES.map((f) => fetchJSON<WikiDB>(`${base}/${f}`)),
-      );
-      const primary = results[0];
+      const primary = await fetchJSON<WikiDB>(`${base}/${PRIMARY}`);
       if (!primary || !Array.isArray(primary.entries)) {
         if (!cancelled)
           setState({
             bundle: null,
             index: [],
             loading: false,
-            error: `Could not load wiki database from ${base}/wiki.json`,
+            error: `Could not load wiki database from ${base}/${PRIMARY}`,
           });
         return;
       }
+      const parts = await Promise.all(
+        (primary.parts || [])
+          .filter((f) => PART.test(f))
+          .map((f) => fetchJSON<WikiDB>(`${base}/${f}`)),
+      );
       const bundle = buildBundle(
         {
           entries: primary.entries,
@@ -62,7 +63,7 @@ export function useWikiDB(): State {
             generated_from: primary.generated_from || [],
           },
         },
-        results.slice(1).filter((x): x is WikiDB => !!x && Array.isArray(x.entries)),
+        parts.filter((x): x is WikiDB => !!x && Array.isArray(x.entries)),
       );
       const index = buildIndex(bundle.entries);
       if (!cancelled) setState({ bundle, index, loading: false, error: null });

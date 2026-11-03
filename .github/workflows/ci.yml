@@ -93,6 +93,7 @@ jobs:
       desktop_player: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_player == 'true' }}
       apple_apps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple_apps == 'true' }}
       devportal: ${{ github.event_name != 'pull_request' || steps.filter.outputs.devportal == 'true' }}
+      wiki: ${{ github.event_name != 'pull_request' || steps.filter.outputs.wiki == 'true' }}
       # the Player's own files, or a Player object among the project file's changes
       apple_player_ui: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple_player_ui == 'true' || steps.apple.outputs.player_ui == 'true' }}
     steps:
@@ -312,6 +313,32 @@ jobs:
     with:
       upload: ${{ github.event_name == 'pull_request' }}
 
+  # The in-repo wiki app (web/wiki-app): its database matches the specs it is generated
+  # from (docs/wiki/db/generate_wiki.py --check, and the generator's tests), and it builds.
+  wiki:
+    needs: [changes]
+    if: needs.changes.outputs.wiki == 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: The wiki database matches the specs
+        run: python3 docs/wiki/db/generate_wiki.py --check
+      - name: The generator's tests
+        run: python3 -m unittest discover -s docs/wiki/db -p 'test_*.py' -v
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/packages/devportal/.nvmrc
+          cache: npm
+          cache-dependency-path: web/wiki-app/package-lock.json
+      - name: The wiki app builds
+        working-directory: web/wiki-app
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
   pr-body-check:
     # ci-paths: always-run, pr-only
     needs: [changes]
@@ -408,6 +435,7 @@ jobs:
       - desktop-player
       - apple-apps
       - devportal
+      - wiki
       - pr-body-check
       - affected-tests
     if: always()
