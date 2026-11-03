@@ -18,6 +18,44 @@ BASE = bundle_size.load_baseline()
 FULL = BASE["full_dmg_bytes"]
 
 
+class FootprintTest(unittest.TestCase):
+    """N7 is on footprints after setup: payload + first-run downloads."""
+
+    CAT = {"component": [
+        {"id": "model.a", "kind": "asset", "bundles": ["full"], "platforms": ["darwin-arm64", "linux-amd64"],
+         "source": "hf:x/a@1", "sources": {"darwin-arm64": "hf:x/a-mlx@1"},
+         "files": [{"path": "w.bin", "size": 1000},
+                   {"source": "hf:x/a-mlx@1", "path": "w.safetensors", "size": 700}]},
+        {"id": "runtime.ollama", "kind": "asset", "bundles": ["full"], "in_payload": True,
+         "files": [{"path": "ollama", "size": 5000}]},
+        {"id": "model.core", "kind": "asset", "bundles": ["full", "core"], "source": "hf:x/c@1",
+         "files": [{"path": "c.bin", "size": 30}]},
+        {"id": "transcription", "kind": "stages+process", "bundles": ["full"]},
+    ]}
+
+    def test_downloads_follow_the_platform_source_and_skip_the_payload(self) -> None:
+        self.assertEqual(bundle_size.first_run_bytes(self.CAT, "full", "darwin-arm64"), 730)
+        self.assertEqual(bundle_size.first_run_bytes(self.CAT, "full", "linux-amd64"), 1030)
+        self.assertEqual(bundle_size.first_run_bytes(self.CAT, "core", "darwin-arm64"), 30)
+
+    def test_full_downloads_count_toward_the_share(self) -> None:
+        # a Core dmg at 84% of the Full dmg fails dmg-to-dmg, and passes once Full's
+        # first-run downloads (the models) are counted
+        core = int(FULL * 0.84)
+        self.assertFalse(bundle_size.checks(BASE, core)[0].ok)
+        cs = bundle_size.checks(BASE, core, full_downloads=2_000_000_000)
+        self.assertTrue(all(c.ok for c in cs), cs)
+
+    def test_core_downloads_count_toward_its_cap(self) -> None:
+        cs = bundle_size.checks(BASE, 300_000_000, full_downloads=10**10, core_downloads=150_000_000)
+        self.assertFalse(cs[1].ok)
+
+    def test_the_real_catalog_has_full_downloads_on_the_mac(self) -> None:
+        cat = bundle_size.load_catalog()
+        self.assertGreater(bundle_size.first_run_bytes(cat, "full", "darwin-arm64"), 1_000_000_000)
+        self.assertEqual(bundle_size.first_run_bytes(cat, "core", "darwin-arm64"), 0)
+
+
 class BudgetTest(unittest.TestCase):
     def test_baseline_is_v0362(self) -> None:
         self.assertEqual(BASE["version"], "v0.3.62")
@@ -73,11 +111,12 @@ class BudgetTest(unittest.TestCase):
     def test_main_exit_codes(self) -> None:
         with redirect_stdout(io.StringIO()) as out:
             self.assertEqual(bundle_size.main(["--core-bytes", "60000000"]), 0)
-            self.assertEqual(bundle_size.main(["--core-bytes", str(FULL)]), 1)
-        self.assertIn("FAIL core / full", out.getvalue())
+            # past the 400 MB cap whatever the share
+            self.assertEqual(bundle_size.main(["--core-bytes", "401000000"]), 1)
+        self.assertIn("FAIL core footprint", out.getvalue())
         with redirect_stdout(io.StringIO()) as out:
             bundle_size.main(["--core-bytes", "60000000", "--summary"])
-        self.assertIn("| core size | 60.0 MB | 400.0 MB | ok |", out.getvalue())
+        self.assertIn("| core footprint | 60.0 MB | 400.0 MB | ok |", out.getvalue())
 
 
 if __name__ == "__main__":
