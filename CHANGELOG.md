@@ -18,6 +18,12 @@ build fails when the two differ.
   tapped.** Coming back to a video's page reads it again behind the page shown; a tap on
   Favorite or Mark watched before that read came back was saved, but the read then put the old
   state back on screen. The page now keeps what was tapped since the read began.
+- **The same fix everywhere else a page is read again while you change it.** On iPhone, iPad
+  and Mac, Favorite and Mark watched on a video's page, and a series' watched marks (on Android
+  too); on the web, the library grid's Mark watched and Add to favorites; in Maktaba Remote on
+  iPhone, iPad and Android, Pause, Resume, Machines may ask to join and Drain. A change made while the
+  page's read was on its way stays on screen as the home has it, instead of the old state
+  coming back.
 
 - **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
   transcribe.** Its capability report looked for the GPU only through `pynvml`, which no

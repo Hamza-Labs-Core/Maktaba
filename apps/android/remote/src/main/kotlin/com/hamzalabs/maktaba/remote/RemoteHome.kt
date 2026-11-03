@@ -73,6 +73,7 @@ import com.hamzalabs.maktaba.core.ui.ThemeStore
 import com.hamzalabs.maktaba.core.ui.sentence
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
@@ -121,16 +122,34 @@ class Remote(val client: ApiClient, private val session: AppSession) {
         actionProblems = emptyList()
     }
 
+    /**
+     * Bumped as each action starts and once it is done. A read that began before an action
+     * ended was answered before its save, so it is dropped (null, no problem shown): applied,
+     * it would put the old state back on screen while the home has the new one. The screen
+     * reads again after the action.
+     */
+    private val actions = AtomicInteger()
+
     /** Reads the home's state: a failure shows until a read works again. */
-    suspend fun <T> load(block: suspend ApiClient.() -> T): T? =
-        attempt("remote load", block).also { loadProblem = if (it != null) null else lastError }
+    suspend fun <T> load(block: suspend ApiClient.() -> T): T? {
+        val seen = actions.get()
+        val got = attempt("remote load", block)
+        if (actions.get() != seen) return null
+        loadProblem = if (got != null) null else lastError
+        return got
+    }
 
     /** Changes the home: each failure is kept and shown, labelled by [what] when given. */
     suspend fun act(what: String? = null, block: suspend ApiClient.() -> Unit): Boolean {
-        if (attempt("remote action", block) != null) return true
-        val why = lastError ?: return false
-        actionProblems = actionProblems + ActionProblem(what, why)
-        return false
+        actions.incrementAndGet()
+        try {
+            if (attempt("remote action", block) != null) return true
+            val why = lastError ?: return false
+            actionProblems = actionProblems + ActionProblem(what, why)
+            return false
+        } finally {
+            actions.incrementAndGet()
+        }
     }
 
     /** A new action starts with a clean slate. */

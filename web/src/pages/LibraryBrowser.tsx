@@ -364,6 +364,10 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   // Bumped whenever the list starts over (new sort, library, filter or a
   // retry): a Load more answer for an older list is dropped.
   const listGen = useRef(0);
+  // The marks (watched, favorite) saved since the list's read began: that read
+  // was answered before them, so its answer gets them too (else the old marks
+  // come back on the cards while the home has the new ones).
+  const marksSinceRead = useRef<((v: Video) => Video)[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [facets, setFacets] = useState<Facets>(EMPTY_FACETS);
   // Select mode: the checked videos, in the order they were checked.
@@ -469,6 +473,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
   useEffect(() => {
     let cancelled = false;
     listGen.current += 1;
+    marksSinceRead.current = [];
     loadingMoreRef.current = false;
     setLoadingMore(false);
     setErr(null);
@@ -502,6 +507,7 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
           next = [...fresh, ...kept.videos.slice(limit).filter((v) => !seen.has(v.id))];
           nextCursor = kept.cursor;
         }
+        next = marksSinceRead.current.reduce((vs, mark) => vs.map(mark), next);
         // a Load more asked for before this answer belongs to the old list
         listGen.current += 1;
         loadingMoreRef.current = false;
@@ -669,31 +675,29 @@ export function LibraryBrowser(props: LibraryBrowserProps = {}) {
     if (ids.length === 0) return;
     setBulkBusy(true);
     try {
+      let mark: (v: Video) => Video;
       if (kind === "watched" || kind === "unwatched") {
         const done = kind === "watched";
         await markWatched(ids, done);
         const now = new Date().toISOString();
-        setVideos((vs) =>
-          (vs ?? []).map((v) =>
-            ids.includes(v.id)
-              ? {
-                  ...v,
-                  playback_state: {
-                    position_sec: 0,
-                    completed: done,
-                    updated_at: v.playback_state?.updated_at ?? now,
-                  },
-                }
-              : v
-          )
-        );
+        mark = (v) =>
+          ids.includes(v.id)
+            ? {
+                ...v,
+                playback_state: {
+                  position_sec: 0,
+                  completed: done,
+                  updated_at: v.playback_state?.updated_at ?? now,
+                },
+              }
+            : v;
       } else {
         const fav = kind === "favorite";
         await setFavorite(ids, fav);
-        setVideos((vs) =>
-          (vs ?? []).map((v) => (ids.includes(v.id) ? { ...v, favorite: fav } : v))
-        );
+        mark = (v) => (ids.includes(v.id) ? { ...v, favorite: fav } : v);
       }
+      marksSinceRead.current.push(mark);
+      setVideos((vs) => (vs ?? []).map(mark));
       // every other view of these videos is stale (this list keeps itself)
       forgetAnswers(...VIDEO_ANSWERS);
       toast.show({ tone: "success", message: t(`browse.bulk.done.${kind}`, { n: n(ids.length) }) });

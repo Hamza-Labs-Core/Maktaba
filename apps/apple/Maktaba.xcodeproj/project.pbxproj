@@ -502,7 +502,6 @@
 		98AF81355E56718565C73082 /* library-series-lectures.json in Resources */ = {isa = PBXBuildFile; fileRef = D61208FA2DD8C7F537DE384A /* library-series-lectures.json */; };
 		98E057030FF2F148C3BEBAE7 /* video-v3.json in Resources */ = {isa = PBXBuildFile; fileRef = 9C597463B3D151244BC108BB /* video-v3.json */; };
 		98ED643C57336A3E7BAEBC45 /* me-video-v7.json in Resources */ = {isa = PBXBuildFile; fileRef = 668F58D5C274795590DE0C27 /* me-video-v7.json */; };
-		995B345BB6121E2D68015188 /* RemoteModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FE31850DAA6C8094E0C331 /* RemoteModel.swift */; };
 		9A3A7433E224848D17479C4F /* Video.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = A525332F62424FB900584753 /* Video.xcstrings */; };
 		9A55250AE164203BA3D89967 /* picture-0.ts in Resources */ = {isa = PBXBuildFile; fileRef = E3FBB727A4EE8A2516B22A50 /* picture-0.ts */; };
 		9A9F4494F01310C198A8DC30 /* StatusUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5255A0CC016A88186A34BE14 /* StatusUITests.swift */; };
@@ -646,7 +645,6 @@
 		C5C2741F2E3C9737F97CC54F /* Mac.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = EE158B4C745F3A93A2D726B6 /* Mac.xcstrings */; };
 		C62819FA4E1BE3CA7C1DD177 /* ChannelScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D63AF1B0CF5FCA57085067 /* ChannelScreen.swift */; };
 		C716E9408C1640A92C454B86 /* stream-session.json in Resources */ = {isa = PBXBuildFile; fileRef = 3829504997E4728687756463 /* stream-session.json */; };
-		C72D6E85F9B86544B645048F /* RemoteModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26FE31850DAA6C8094E0C331 /* RemoteModel.swift */; };
 		C733528FB55DB086C905C807 /* MaktabaTVUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F4B5ABCCB67B2EADC26918 /* MaktabaTVUITests.swift */; };
 		C740C2F5C5978BDBA686C0E7 /* videos.json in Resources */ = {isa = PBXBuildFile; fileRef = 3FC50884BA24F8F3AA96B863 /* videos.json */; };
 		C74B813EF2D19CCBDBF4F3E8 /* tv-info.json in Resources */ = {isa = PBXBuildFile; fileRef = 5F6660AB2A255BBDB8375FC7 /* tv-info.json */; };
@@ -914,7 +912,6 @@
 		22FA18A5DB4D65FDBA2D9BC9 /* VideoPoster.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoPoster.swift; sourceTree = "<group>"; };
 		244F476719945F3486166FCC /* TypingInFields.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingInFields.swift; sourceTree = "<group>"; };
 		26B8917AAB897DEB44B6AF68 /* MaktabaTVApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaktabaTVApp.swift; sourceTree = "<group>"; };
-		26FE31850DAA6C8094E0C331 /* RemoteModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteModel.swift; sourceTree = "<group>"; };
 		2921E190B765E8F2F9A3C332 /* TVConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TVConnectUITests.swift; sourceTree = "<group>"; };
 		29B33B1848E746CEBB7D5E19 /* CachedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedImage.swift; sourceTree = "<group>"; };
 		2A0A65DCD283B8ECB2A1BC71 /* PlayerMacUITests.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PlayerMacUITests.entitlements; sourceTree = "<group>"; };
@@ -1402,7 +1399,6 @@
 				A2CFA6753C3C4451A4B46020 /* ProcessesView.swift */,
 				C7CF3F653F8E0BF0DCFD0D63 /* QueueView.swift */,
 				5E7C782FE57543EEFC505FBD /* RemoteApp.swift */,
-				26FE31850DAA6C8094E0C331 /* RemoteModel.swift */,
 				3E5BE31D685ECEDF892595AD /* RemoteRoot.swift */,
 				3778308DD4F7209391FA5071 /* UpdatesView.swift */,
 			);
@@ -2673,7 +2669,6 @@
 				3206DDDCA854C841C9CBE022 /* ProcessesView.swift in Sources */,
 				2638E1C13AA0226C38DBF50E /* QueueView.swift in Sources */,
 				1FC3DC895B1B1685ABC4A27A /* RemoteApp.swift in Sources */,
-				C72D6E85F9B86544B645048F /* RemoteModel.swift in Sources */,
 				C4B017ECF5FFC90DD08793B2 /* RemoteRoot.swift in Sources */,
 				C97B44941D2AAC3B9F3A92D9 /* UpdatesView.swift in Sources */,
 			);
@@ -2710,7 +2705,6 @@
 				7ABE7A5C9902484ABCD0AD1F /* ProcessesView.swift in Sources */,
 				676D599F8129B51DD231B3F2 /* QueueView.swift in Sources */,
 				80E256576FD19547D635B132 /* RemoteApp.swift in Sources */,
-				995B345BB6121E2D68015188 /* RemoteModel.swift in Sources */,
 				9029E7DCCA4E29D0826D9786 /* RemoteRoot.swift in Sources */,
 				FE46EABC4FB279D6AE1ED715 /* UpdatesView.swift in Sources */,
 			);
