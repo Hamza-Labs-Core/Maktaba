@@ -63,7 +63,7 @@ index (`--extra-index-url https://download.pytorch.org/whl/cu130`, 2.0 GB; uv.lo
 dependency group). With `--payload` (a folder holding both) the bootstrap takes the cuda set on
 Windows x86_64 when the machine's NVIDIA GPU runs the second listen, as `nvidia-smi` reports it
 (`--query-gpu=name,memory.total,compute_cap,driver_version`, before R510 without
-`compute_cap`): 9.5 GiB or more, compute capability 7.5 or more, driver R580 or later, the
+`compute_cap`): 7.5 GiB or more, compute capability 7.5 or more, driver R580 or later, the
 pipeline's own thresholds (`stt/cohere_cuda.py`; a test keeps the copies equal, here and in
 the Windows installer and the supervisor), what `nvidia-smi` does not report not held against
 it; else the default set, and always elsewhere (Linux's PyPI torch is the CUDA build already;
@@ -238,7 +238,8 @@ wheel; `morphology-db-msa-r13` is 39 MB). Never on the CPU: there the 2 B model 
 hours for an hour of audio. `stt/cohere.py` `unavailable()` (and so `models`) says why a machine
 has none: transcription set to the CPU; torch, transformers, accelerate or librosa missing;
 a torch without CUDA (read from torch's own `version.py`); no NVIDIA GPU; a GPU smaller than
-**9.5 GiB on Windows** (a 10 GB card) **or 7.5 GiB elsewhere** (an 8 GB card); one older than
+**7.5 GiB on Windows** (an 8 GB card, Whisper and the second listen taking turns on it; both
+loaded from 9.5 GiB, a 10 GB card) **or 6 GiB elsewhere** (together from 7.5 GiB); one older than
 torch's build runs on (CUDA 13: compute capability **7.5**, Turing, and newer); a driver older
 than **R580**. The answer comes from the driver (NVML, through ctypes) without importing torch
 or starting CUDA, since a worker asks it on its event loop at each stage selection and at a

@@ -180,8 +180,8 @@ def test_the_machine_is_asked_without_importing_torch(
     """Review of #209, item 5: a worker asks it on its event loop at its first file, and
     in every stage selection: the driver answers in milliseconds, torch takes seconds."""
     monkeypatch.delitem(sys.modules, "torch")
-    gpu.gpus = [("NVIDIA GeForce RTX 2060", 6.0, (7, 5))]
-    assert "RTX 2060 has 6.0 GB" in str(cohere.unavailable())  # its size first
+    gpu.gpus = [("NVIDIA GeForce GTX 1660", 5.0, (7, 5))]
+    assert "GTX 1660 has 5.0 GB" in str(cohere.unavailable())  # its size first
     assert "torch" not in sys.modules
 
 
@@ -253,10 +253,12 @@ def test_a_gpu_older_than_the_torch_build(gpu: FakeCuda) -> None:
 
 
 def test_the_thresholds_are_the_supervisor_s_and_setup_s() -> None:
-    """The supervisor (supervisor/stt.go) and setup (#213) read the same: a GPU of 9.5 GiB
-    or more on Windows, 7.5 elsewhere, Turing or newer, driver R580 or later."""
-    want_gb = 9.5 if sys.platform == "win32" else 7.5
-    assert want_gb == cohere_cuda.MIN_GPU_GB
+    """The supervisor (supervisor/stt.go) and setup (#213) read the same: a GPU of 7.5 GiB
+    or more on Windows (6 elsewhere) runs the second listen, taking turns with Whisper; one
+    of 9.5 GiB (7.5) holds both. Turing or newer, driver R580 or later."""
+    win = sys.platform == "win32"
+    assert (7.5 if win else 6.0) == cohere_cuda.MIN_GPU_GB
+    assert (9.5 if win else 7.5) == cohere_cuda.TOGETHER_GPU_GB
     assert cohere_cuda.MIN_COMPUTE == (7, 5) and cohere_cuda.MIN_DRIVER == 580
 
 
@@ -275,14 +277,16 @@ def test_a_missing_package(gpu: FakeCuda, monkeypatch: pytest.MonkeyPatch) -> No
     assert cohere.unavailable() == "librosa is not installed (the stt extra)"
 
 
-def test_the_windows_threshold_leaves_out_an_8_gb_card() -> None:
+def test_the_windows_threshold_lets_an_8_gb_card_take_turns() -> None:
     """Measured on an RTX 2080 SUPER under Windows: the driver's budget leaves 5.8 GiB
-    once Whisper is loaded, short of the 6.4 the second listen needs beside it."""
-    need = cohere_cuda.need_gb(cohere_cuda.WEIGHTS_GB, 4)
+    once Whisper is loaded, short of the 6.4 the second listen needs beside it; with
+    Whisper off the GPU the process has 6.95 GiB, which holds it alone."""
+    beside = cohere_cuda.need_gb(cohere_cuda.WEIGHTS_GB, 4)
     if sys.platform == "win32":
-        assert cohere_cuda.MIN_GPU_GB > 8.0 and need > 5.8
+        assert beside > 5.8 and cohere_cuda.alone_gb() < 6.95
+        assert cohere_cuda.MIN_GPU_GB < 7.9 < cohere_cuda.TOGETHER_GPU_GB  # 8 GB: turns
     else:
-        assert cohere_cuda.MIN_GPU_GB <= 7.6  # an 8 GB card's reported size
+        assert cohere_cuda.MIN_GPU_GB <= 6.0 and cohere_cuda.TOGETHER_GPU_GB <= 7.6
 
 
 # --- room on the GPU now ------------------------------------------------------------------
@@ -311,6 +315,83 @@ def test_room_needs_the_weights_a_batch_and_whisper_s_files(gpu: FakeCuda, tmp_p
 
 def test_a_model_not_downloaded_yet_counts_as_the_default_s_size(gpu: FakeCuda) -> None:
     assert cohere_cuda.weights_gb("someone/not-here", None) == cohere_cuda.WEIGHTS_GB
+
+
+def test_room_with_whisper_off_the_gpu_keeps_none_for_it(gpu: FakeCuda) -> None:
+    alone = cohere_cuda.need_gb(cohere_cuda.WEIGHTS_GB, 0)
+    gpu.free_gb = alone + 0.01
+    settings = WhisperSettings(max_batch=8)
+    assert cohere_cuda.room(MODEL, settings, beside_whisper=False) is None
+    assert "room for Whisper's 8 files" in str(cohere_cuda.room(MODEL, settings))
+    gpu.free_gb = alone - 0.01
+    assert "Whisper off the GPU" in str(cohere_cuda.room(MODEL, settings, beside_whisper=False))
+
+
+# --- together or taking turns: from the free memory ---------------------------------------
+
+
+class _Whisper:
+    def __init__(self, on: bool) -> None:
+        self.on = on
+
+    def on_gpu(self) -> bool:
+        return self.on
+
+
+@pytest.fixture
+def nothing_loaded(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    whispers: list[Any] = []
+    monkeypatch.setattr(ct2, "shared_transcribers", lambda: list(whispers))
+    return whispers
+
+
+@pytest.mark.parametrize(
+    ("card", "free_gb", "want"),
+    [
+        # the PC: WDDM leaves the process 6.95 of the 8 GiB
+        (("NVIDIA GeForce RTX 2080 SUPER", 8.0, (7, 5)), 6.95, "sequential"),
+        (("NVIDIA GeForce RTX 3080 Ti", 12.0, (8, 6)), 10.9, "together"),
+        (("NVIDIA GeForce RTX 4090", 24.0, (8, 9)), 22.5, "together"),
+        # another program holds most of it: not even alone
+        (("NVIDIA GeForce RTX 3080 Ti", 12.0, (8, 6)), 2.0, None),
+    ],
+)
+def test_the_mode_comes_from_the_gpu_s_free_memory(
+    gpu: FakeCuda, nothing_loaded: list[Any], card: Any, free_gb: float, want: str | None
+) -> None:
+    gpu.gpus, gpu.free_gb = [card], free_gb
+    settings = WhisperSettings(max_batch=8, device="cuda:0")
+    assert cohere_cuda.mode(MODEL, settings) == want
+
+
+def test_what_the_process_holds_already_counts_as_free(
+    gpu: FakeCuda, nothing_loaded: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Asked once Whisper is loaded (its first file), the driver reports 3.3 GiB free on
+    the PC: Whisper's own share is the process's to give, so the answer stays the same."""
+    gpu.gpus = [("NVIDIA GeForce RTX 2080 SUPER", 8.0, (7, 5))]
+    settings = WhisperSettings(max_batch=8, device="cuda:0")
+    gpu.free_gb = 6.95 - ct2.gpu_need_gb("float16", 8)
+    nothing_loaded.append(_Whisper(on=False))  # off the GPU: its memory is the driver's
+    assert cohere_cuda.mode(MODEL, settings) is None
+    nothing_loaded[0].on = True
+    assert cohere_cuda.mode(MODEL, settings) == "sequential"
+
+    class Loaded:
+        off_gpu = False
+
+    # and so does a second listen loaded already
+    gpu.free_gb = 6.95 - ct2.gpu_need_gb("float16", 8) - cohere_cuda.alone_gb()
+    monkeypatch.setattr(cohere, "loaded_recogniser", lambda m: Loaded())
+    assert cohere_cuda.mode(MODEL, settings) == "sequential"
+
+
+def test_a_driver_that_cannot_say_leaves_both_loaded(
+    gpu: FakeCuda, nothing_loaded: list[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ct2, "gpu_info", lambda index: None)
+    assert cohere_cuda.mode(MODEL, WhisperSettings(device="cuda:0")) == "together"
+    assert cohere_cuda.mode(MODEL, WhisperSettings(device="cpu")) is None
 
 
 # --- hearing ------------------------------------------------------------------------------
@@ -427,6 +508,28 @@ def test_an_older_gpu_hears_in_float16(
     assert transformers["loads"][0][1] == "torch.float16"
     assert rec.runtime.endswith("cuda:0 float16")
     assert rec.batch == cohere_cuda.MAX_BATCH  # 10 GB free: the most refine hands it
+
+
+def test_its_turn_over_it_moves_off_the_gpu_and_back(
+    gpu: FakeCuda, transformers: dict[str, Any], tmp_path: Path
+) -> None:
+    """Taking turns with Whisper (gpu_turns): no room is kept for Whisper's files while it
+    runs, its weights go to the host's memory for Whisper's turn, and its batch is sized
+    again when they are back."""
+    moved: list[str] = []
+    transformers["model"].to = lambda where: moved.append(str(where))
+    gpu.free_gb = cohere_cuda.MARGIN_GB + 4.5 * cohere_cuda.STRETCH_GB
+    rec = cohere_cuda.CudaRecogniser(
+        "m", tmp_path, settings=WhisperSettings(max_batch=8, device="cuda:0"),
+        beside_whisper=False,
+    )  # fmt: skip
+    assert rec.batch == 4  # Whisper's 8 files are not on the GPU meanwhile
+    emptied = gpu.emptied
+    assert rec.offload() and rec.off_gpu and moved == ["cpu"] and gpu.emptied == emptied + 1
+    assert not rec.offload()  # once
+    gpu.free_gb = cohere_cuda.MARGIN_GB + 2.5 * cohere_cuda.STRETCH_GB
+    assert rec.onload() and not rec.off_gpu and moved == ["cpu", "cuda:0"]
+    assert rec.batch == 2 and not rec.onload()
 
 
 def test_a_batch_that_does_not_fit_is_halved(
@@ -557,9 +660,9 @@ def test_a_gpu_without_room_waits_like_a_failed_load(
     asked: list[float] = []
     real_room = cohere_cuda.room
 
-    def room(model_id: str, settings: WhisperSettings) -> str | None:
+    def room(model_id: str, settings: WhisperSettings, **_k: Any) -> str | None:
         asked.append(clock[0])
-        return real_room(model_id, settings)
+        return real_room(model_id, settings, **_k)
 
     monkeypatch.setattr(cohere_cuda, "room", room)
     settings = WhisperSettings(max_batch=8)
@@ -574,7 +677,7 @@ def test_a_gpu_without_room_waits_like_a_failed_load(
     # the driver cannot say: the same, one try more
     clock[0] += cohere.RETRY_AFTER_S + 1
 
-    def broken(model_id: str, settings: WhisperSettings) -> str | None:
+    def broken(model_id: str, settings: WhisperSettings, **_k: Any) -> str | None:
         asked.append(clock[0])
         raise OSError("NVML: driver not loaded")
 

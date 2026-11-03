@@ -205,11 +205,18 @@ def test_a_gpu_node_that_can_transcribe_serves_transcribe(
     assert _transcribe_off(storage={"read": "ok", "write": "ok"}) is None
 
 
+def _listen_off(**kw: Any) -> str | None:
+    graph = [st for st in REAL_GRAPH if st.name == "second_listen"]
+    served, off = select_stages(graph, role="node", **kw)
+    return None if served == ["second_listen"] else off["second_listen"]
+
+
 def test_the_reason_it_cannot_reaches_the_machines_page(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``workers.stages_off`` said only ``unavailable``: the Machines page could not say
-    that the PC waits for the second listen, nor how to let it transcribe."""
+    why the PC has no second listen. Since the second listen is a stage of its own, a
+    machine without it still transcribes; only ``second_listen`` is off, with the reason."""
     for var in ("MAKTABA_STT_REFINE", "MAKTABA_STT_REFINE_MODEL"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(engine, "current", lambda: engine.CT2)
@@ -217,16 +224,16 @@ def test_the_reason_it_cannot_reaches_the_machines_page(
     monkeypatch.setattr(
         tr,
         "second_listen_problem",
-        lambda: "NVIDIA GeForce RTX 2080 SUPER has 8.0 GB: the second listen needs 9.5 GB",
+        lambda: "NVIDIA GeForce RTX 2060 has 6.0 GB: the second listen needs 7.5 GB",
     )
     monkeypatch.setattr(tr, "_RULES", TranscriptionConfig())
-    off = _transcribe_off()
+    assert _transcribe_off() is None  # Whisper runs whatever the second listen does
+    off = _listen_off()
     assert off is not None and off.startswith("unavailable: the second listen does not run here")
-    assert "RTX 2080 SUPER" in off and "without_second_listen" in off
-    # the rule lets it: then it transcribes (Whisper alone; a machine with the second
-    # listen gives those transcripts theirs later)
+    assert "RTX 2060" in off and "without_second_listen" in off
+    # the rule lets it take the jobs: it passes them on with Whisper's words after a wait
     monkeypatch.setattr(tr, "_RULES", TranscriptionConfig(without_second_listen=True))
-    assert _transcribe_off() is None
+    assert _listen_off() is None
 
 
 def test_no_engine_is_named(monkeypatch: pytest.MonkeyPatch) -> None:

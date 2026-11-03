@@ -720,12 +720,46 @@ class CT2Transcriber(BatchedTranscriber):
         self._loader = loader or load
         #: where the model runs, once loaded ("cuda", "cpu")
         self.device: str | None = None
+        self._loaded: Loaded | None = None
+        #: the model's weights are in the host's memory, not on the GPU (:meth:`release_gpu`)
+        self.off_gpu = False
+
+    def on_gpu(self) -> bool:
+        """The model is loaded on a CUDA device now."""
+        return (
+            self._loaded is not None
+            and not self.off_gpu
+            and str(self.device or "").startswith("cuda")
+        )
+
+    def release_gpu(self) -> bool:
+        """Move the model's weights to the host's memory and give the GPU's memory back
+        (the second listen's turn, :mod:`.gpu_turns`). Called only while no file is in
+        flight. False when there was nothing on the GPU."""
+        if not self.on_gpu():
+            return False
+        assert self._loaded is not None
+        model = self._loaded.model
+        model.unload_model(to_cpu=True)
+        _clear_cuda_cache()
+        self.off_gpu = True
+        return True
+
+    def restore_gpu(self) -> bool:
+        """Put the weights :meth:`release_gpu` moved back on the GPU. False when they were
+        not moved."""
+        if self._loaded is None or not self.off_gpu:
+            return False
+        self._loaded.model.load_model()
+        self.off_gpu = False
+        return True
 
     def _load(self) -> None:
         if self._decode is not None and self._mel_of is not None:
             return
         t0 = time.monotonic()
         ld = self._loader(self.settings)
+        self._loaded = ld
         hooks = Hooks(ld)
         self.device, self.backend_version = ld.device, ld.version
         self._tokenizer = ld.tokenizer
@@ -748,7 +782,23 @@ class CT2Transcriber(BatchedTranscriber):
         )
 
 
+def _clear_cuda_cache() -> None:
+    """CTranslate2's cached CUDA buffers back to the driver, where this build can."""
+    try:
+        import ctranslate2  # type: ignore[import-untyped,import-not-found,unused-ignore]
+    except ImportError:
+        return
+    clear = getattr(ctranslate2, "clear_caches", None)
+    if callable(clear):
+        clear()
+
+
 _SHARED: dict[WhisperSettings, CT2Transcriber] = {}
+
+
+def shared_transcribers() -> list[CT2Transcriber]:
+    """The process's transcribers (one per settings)."""
+    return list(_SHARED.values())
 
 
 def get_transcriber(settings: WhisperSettings) -> CT2Transcriber:

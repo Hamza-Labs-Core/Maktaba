@@ -168,20 +168,25 @@ detection bug, not the PC** (fixed in the release after v0.3.62):
 
 The report was only the visible part. The PC still did not transcribe, for a reason the report
 did not show: the **second listen** is on by default, and while it is on only the machines that
-run it transcribe. On Windows the second listen needs a GPU of 9.5 GiB or more (Windows' driver
-keeps ~1 GiB of the card from a process, and the 8 GB card has 5.8 GiB left once Whisper is
-loaded, short of the 6.4 GiB Cohere needs: measured on this PC, `stt/cohere_cuda.py`). So the
-PC leaves transcription to the Mac, and its stage table said only "cannot run here".
+run it transcribe. On Windows the second listen needed a GPU of 9.5 GiB or more beside Whisper
+(Windows' driver keeps ~1 GiB of the card from a process, and the 8 GB card has 5.8 GiB left once
+Whisper is loaded, short of the 6.4 GiB Cohere needs: measured on this PC, `stt/cohere_cuda.py`).
+So the PC left transcription to the Mac, and its stage table said only "cannot run here". Since
+the second listen became a stage of its own, the two take turns on that card (below).
 
 How a Windows NVIDIA worker transcribes, from that release on:
 
 - **Admin > Machines** says, per machine: "Transcription: ready on NVIDIA GeForce RTX 2080
   SUPER", "installing…" while an update builds its environment, or the exact reason it cannot
-  (the pipeline's own words: the second listen it waits for, a missing engine, the share).
-- **With the second listen on** (the default) an 8 GB card on Windows waits for the machines
-  that run it. Turn on Settings > Transcription > *Transcribe without the second listen* and it
-  transcribes with Whisper alone on its GPU; a machine that runs the second listen (the Mac)
-  gives those transcripts theirs later, a few at a time, after new files.
+  (the pipeline's own words: a missing engine, the share), and a line of its own for the second
+  listen.
+- **The second listen is a stage of its own** (`second_listen`, after `transcribe`), and the
+  8 GB card runs it: Whisper and Cohere **take turns** on the GPU, one loaded at a time (section
+  4). Whisper's transcript is stored with its words; the second listen reads it and the file's
+  audio, and the stages that read a transcript (subtitles, the index, tags) follow it. Admin >
+  Machines says "Second listen: runs here, taking turns with Whisper". A machine that cannot run
+  it at all still transcribes, and one that can corrects its transcripts; *Transcribe without
+  the second listen* now only lets such a machine pass a transcript on after 15 minutes.
 - **The batch is the GPU's own:** the `gpu` pool is per worker, and its cluster size (2 on live)
   was set for the Mac. A worker whose supervisor sized a batch from its NVIDIA GPU takes that
   many files at once instead (`MAKTABA_POOL_GPU`): 8 on the 2080 SUPER, the batch that ran at
@@ -209,11 +214,12 @@ is the same sum for the new videos of a day.
 | Machine | Speed | Source |
 |---|---|---|
 | M3 Ultra, 60 GPU cores, second listen on | **47×** | **measured** (production, above) |
+| M3 Ultra, each stage on its own, one file | Whisper **43–48×**, second listen **91–116×**, one after the other **29–34×** | **measured** on a fixture (8.8 min of synthetic Arabic speech, one worker, model loads excluded; two runs, while the live pipeline was busy on the same GPU). Production runs 2 workers with 2 files each, hence its 47× |
 | Apple Silicon, 40 GPU cores | ~31× | **estimate**: 47× × 40/60 (linear in GPU cores, same generation; not measured) |
 | Apple Silicon, 20 GPU cores | ~16× | **estimate**, as above |
 | Apple Silicon, 10 GPU cores | ~8× | **estimate**, as above |
 | NVIDIA RTX 2080 SUPER (8 GB), Whisper alone | 72× | **code**: story 38.8 benchmark, batch 8 (`supervisor/stt.go`) |
-| NVIDIA RTX 2080 SUPER, Whisper + second listen | Linux: ~27×; **Windows: does not run** | **estimate** (Linux): the second listen alone ran 43× on that card at batch 4 (`stt/cohere_cuda.py`); the two share the GPU one after the other, 1 ÷ (1/72 + 1/43). On Windows an 8 GB card does not hold both (9.5 GiB needed, section 4): it transcribes with Whisper alone when the rules let it |
+| NVIDIA RTX 2080 SUPER, Whisper + second listen | ~26–27×, Windows and Linux | **estimate, not measured on the PC**: the second listen alone ran 43× on that card at batch 4 (`stt/cohere_cuda.py`) and Whisper 72× at batch 8; the GPU runs one after the other, 1 ÷ (1/72 + 1/43) ≈ 27×. On Windows the two take turns (section 4): a swap moves ~5.5 GB over PCIe, ~1–3 s (estimate), once per turn of 8 files (~2 h of audio at this library's mean, ~270 s of GPU work), so ~1–2% |
 | CPU only, 10 threads (the story 38.8 PC, 20 logical CPUs) | **2.6×** | **code**: measured with a batch of 4 (`supervisor/stt.go`, `cpuBatch`) |
 | Other NVIDIA cards, other CPUs | **not measured** | — |
 
@@ -232,7 +238,7 @@ lower than its benchmark too, by an amount we have not measured.
 | Apple Silicon 20-core GPU, ~16× (estimate) | ~3 days | ~33 days | ~99 days |
 | Apple Silicon 10-core GPU, ~8× (estimate) | ~7 days | ~66 days | ~200 days |
 | RTX 2080 SUPER, Whisper alone, 72× (benchmark) | <1 day | ~7 days | ~22 days |
-| RTX 2080 SUPER + second listen, ~27× (estimate; Linux only) | ~2 days | ~19 days | ~57 days |
+| RTX 2080 SUPER + second listen, ~27× (estimate) | ~2 days | ~19 days | ~57 days |
 | CPU only, 2.6× (measured) | ~20 days | ~200 days | ~600 days |
 
 **Steady state** is small by comparison: 50 new videos a day of 15 minutes is 12.5 audio-hours,
@@ -248,8 +254,8 @@ These are **recommendations**, built from the measurements above and the plans i
 | | Small (~5k, no live TV) | Medium (~50k, a few channels) | Large (~150k, 20+ channels) |
 |---|---|---|---|
 | **macOS (Apple Silicon)** | any M-series, 16–24 GB (plan: 1 transcription worker) | M-series Max-class GPU, 36–64 GB (plan: 1–2 workers) | Ultra-class GPU, 96 GB or more (the measured home; plan: 2 workers) |
-| **Windows** (x86_64, 10 1809+ / 11) | 16 GB RAM; NVIDIA 4 GB+ for Whisper, **10 GB+** to also run the second listen; CPU only works (slow) | 32 GB RAM; NVIDIA 10 GB+ | 64 GB+ RAM; NVIDIA 20 GB+ (plan: 2 workers), or several machines |
-| **Linux** (x86_64, glibc 2.35+) | 16 GB RAM; NVIDIA 4 GB+, **8 GB+** for the second listen; CPU only works (slow) | 32 GB RAM; NVIDIA 8 GB+ | 64 GB+ RAM; NVIDIA 20 GB+, or several machines |
+| **Windows** (x86_64, 10 1809+ / 11) | 16 GB RAM; NVIDIA 4 GB+ for Whisper, **8 GB+** to also run the second listen (taking turns; 10 GB+ keeps both loaded); CPU only works (slow) | 32 GB RAM; NVIDIA 10 GB+ | 64 GB+ RAM; NVIDIA 20 GB+ (plan: 2 workers), or several machines |
+| **Linux** (x86_64, glibc 2.35+) | 16 GB RAM; NVIDIA 4 GB+, **6 GB+** for the second listen (taking turns; 8 GB+ keeps both loaded); CPU only works (slow) | 32 GB RAM; NVIDIA 8 GB+ | 64 GB+ RAM; NVIDIA 20 GB+, or several machines |
 | CPU | any 4+ cores | 8+ cores | 8+ cores (the home's CPU was 72% idle at full transcription load) |
 | Disk for Maktaba's data (estimate) | ~20 GB + backups | ~60 GB + backups | ~150 GB + backups |
 | NAS and network | NAS mounted (SMB or NFS); 1 Gb LAN | 1 Gb LAN | 1 Gb LAN; plan ~10 Mbps per watched channel |
@@ -297,9 +303,10 @@ about 34 Mbps on average.
   | 4 GB+ | 1 | 4 (int8_float16) |
   | under 4 GB | CPU plan | 4 |
 
-  With the second listen on the same card the batches are smaller (`refineGPUTiers`: 40 GB+
-  2 × 24, 20 GB+ 1 × 32, 14 GB+ 16, 11 GB+ 8, 9.5 GB+ 4). On the 2080 SUPER a batch of 8 ran at
-  72× and one of 12 no faster (69×).
+  With the second listen loaded beside Whisper on the same card the batches are smaller
+  (`refineGPUTiers`: 40 GB+ 2 × 24, 20 GB+ 1 × 32, 14 GB+ 16, 11 GB+ 8, 9.5 GB+ 4). A card too
+  small for both keeps Whisper alone's batch: the two take turns (below). On the 2080 SUPER a
+  batch of 8 ran at 72× and one of 12 no faster (69×).
 
 ### The transcription plan on Apple Silicon (from the RAM)
 
@@ -319,16 +326,32 @@ A job waits while free memory is under `min_free_pct`.
 ### The second listen
 
 - On by default (`[transcription] refine`). It runs Cohere Transcribe Arabic (3.8 GB on disk)
-  after Whisper and corrects its words.
-- Where it runs (code): Apple Silicon; an NVIDIA GPU of **9.5 GiB+ on Windows** (a 10 GB card;
-  Windows' driver keeps ~1 GiB of the card) or **7.5 GiB+ on Linux** (an 8 GB card). It holds
-  3.85 GB of weights + 1.6 GB (Windows) or 0.5 GB (Linux) to load + 0.09 GB per stretch on the
-  GPU of each worker.
-- Speed (code): 43× at a batch of 4 on the 2080 SUPER, 11× alone. On the Mac: not measured on
-  its own (live always runs it).
-- **While it is on, a Windows or Linux machine that cannot run it does not transcribe**, unless
-  Settings > Transcription > *Transcribe without the second listen* is on. Then it transcribes
-  with Whisper alone, and a machine that can gives those transcripts their second listen later.
+  as the `second_listen` stage after Whisper's `transcribe` and corrects its words. Whisper's
+  transcript is stored with each sentence's words (their timings, which the alignment needs);
+  the stage reads it, decodes the file's audio off the share again, and stores the corrected
+  transcript as the active one. Subtitles, the index and tags follow the second listen, so they
+  run once. Its own pool (`listen`) is per machine: a machine's worker takes its batch.
+- Where it runs (code): Apple Silicon; an NVIDIA GPU of **7.5 GiB+ on Windows** (an 8 GB card;
+  Windows' driver keeps ~1 GiB of the card) or **6 GiB+ on Linux**. It holds 3.85 GB of
+  weights + 1.6 GB (Windows) or 0.5 GB (Linux) to load + 0.09 GB per stretch on the GPU of each
+  worker: 6.1 GiB on Windows with Whisper off the GPU (`cohere_cuda.alone_gb`).
+- **Together or taking turns**, from the GPU's measured free memory (NVML), not the operating
+  system (`stt/gpu_turns.py`): where it holds Whisper (2.3 GB + 0.14 GB a file) and Cohere at
+  once, both stay loaded (9.5 GiB+ on Windows, 7.5 GiB+ on Linux, at the plan's batch). Where it
+  holds one at a time (the 2080 SUPER on Windows: 6.95 GiB free for a process, 5.8 GiB once
+  Whisper is loaded), they take turns: the GPU runs one model's files while the other's wait,
+  each turn a batch of files (the worker's batch, at most 30 minutes while the other waits);
+  the idle model's weights move to the host's memory and back (CTranslate2's
+  `unload_model(to_cpu=True)`, torch's `.to("cpu")`), ~1–3 s a swap (**estimate**), against
+  21 s to load Cohere from disk (measured on the M3 Ultra) or 20–26 s on the PC. A GPU that was
+  to hold both but has no room after all (another program took part of it) switches to turns.
+  Admin > Machines says which ("beside Whisper", "taking turns with Whisper").
+- Speed: 43× at a batch of 4 on the 2080 SUPER, 11× alone (code). On the M3 Ultra 91–116× for
+  one file (measured on a fixture, section 3).
+- **A Windows or Linux machine that cannot run it still transcribes**; a machine that runs it
+  corrects those transcripts. Settings > Transcription > *Transcribe without the second listen*
+  lets a machine without it pass a transcript on with Whisper's words when no machine with it
+  takes it within 15 minutes; one that runs it gives those theirs later, a few at a time.
 
 ### Live TV: `max_active_channels` and `video_kbps`
 
@@ -375,8 +398,9 @@ A cluster is one **home** plus any number of **machines** that pull work from th
   ([join a machine](cluster/join-a-machine.md#step-3--on-the-machine-mount-the-nas-share)).
   On Windows, a worker that runs as a service needs the `\\nas\share` path, not a drive letter.
 - **ffmpeg** and the pipeline (the node installer or the app brings both).
-- **For transcription:** Apple Silicon, or an NVIDIA GPU (4 GB+; for the second listen 10 GB+ on
-  Windows, 8 GB+ on Linux), or the CPU (slow). Section 3's per-machine speeds apply.
+- **For transcription:** Apple Silicon, or an NVIDIA GPU (4 GB+; for the second listen 8 GB+ on
+  Windows, 6 GB+ on Linux, taking turns with Whisper below 10 GB on Windows and 8 GB on Linux),
+  or the CPU (slow). Section 3's per-machine speeds apply.
 - **The second listen's model:** only the home needs the Hugging Face login; it puts a copy of
   the model on the NAS for the machines ([models](cluster/models.md)).
 
@@ -409,10 +433,11 @@ What this means for sizing:
 Each machine transcribes its own files through its own GPU, so transcription should add up
 roughly in line with the GPUs: the home's 47× plus each machine's own speed. **This is expected,
 not measured:** no machine other than the home has transcribed on the live cluster. For the live
-PC with Whisper alone (the rule above on): **~47× + up to ~72× ≈ 100–120× for the cluster, an
-estimate**, the PC's part an engine benchmark that production will not reach in full (section 3),
-and the Mac then also spending part of its GPU on the PC's transcripts' second listen. The limits
-we know of are the home's index (above), the NAS, and the network to the NAS.
+PC with its second listen (Whisper and Cohere taking turns on the 8 GB card): **~47× + up to
+~27× ≈ 70× for the cluster, an estimate**, the PC's part built from engine benchmarks that
+production will not reach in full (section 3). The PC now corrects its own transcripts, so the
+Mac's GPU no longer spends time on them. The limits we know of are the home's index (above), the
+NAS, and the network to the NAS.
 
 ### Windows and Linux workers
 
@@ -420,7 +445,7 @@ we know of are the home's index (above), the NAS, and the network to the NAS.
 |---|---|---|
 | Supported | yes, x86_64 (the app, or the node installer) | yes, x86_64 and aarch64 |
 | Whisper | CTranslate2 (faster-whisper): CUDA on an NVIDIA GPU, else the CPU | same on x86_64; **none on aarch64** (the `stt` extra installs no engine there) |
-| Second listen | NVIDIA 10 GB+ | NVIDIA 8 GB+ (x86_64) |
+| Second listen | NVIDIA 8 GB+ (8 GB: taking turns with Whisper; 10 GB+: both loaded) | NVIDIA 6 GB+ (x86_64; both loaded from 8 GB) |
 | AMD or Intel GPUs | not used for transcription (CPU path) | not used for transcription (CPU path) |
 
 ---

@@ -29,6 +29,7 @@ __all__ = [
     "has_module",
     "is_apple_silicon",
     "memory_bytes",
+    "second_listen_sharing",
     "stt_backend",
 ]
 
@@ -122,6 +123,29 @@ def stt_backend(gpus: list[dict[str, Any]]) -> str | None:
     return STT_CT2_CUDA if gpus and _cuda_wheels() else STT_CT2_CPU
 
 
+def second_listen_sharing(backend: str | None) -> str | None:
+    """How the second listen shares the GPU with Whisper here (``second_listen_gpu``):
+    ``together`` (both loaded; Apple Silicon's unified memory always), ``sequential``
+    (they take turns: :mod:`..stt.gpu_turns`, from the GPU's measured free memory), or
+    None where it does not run on the GPU. Nothing is loaded to answer."""
+    if backend == STT_MLX:
+        return "together"
+    if backend != STT_CT2_CUDA:
+        return None
+    try:
+        from ..engine.stages.transcribe import refine_model, settings_from_env
+        from ..stt import cohere_cuda
+        from ..stt.cohere import DEFAULT_MODEL
+
+        settings = settings_from_env()
+        if cohere_cuda.problem(settings.device) is not None:
+            return None
+        return cohere_cuda.mode(refine_model() or DEFAULT_MODEL, settings)
+    except Exception:  # noqa: BLE001 - the report goes out without it
+        _log.warning("capabilities_second_listen_unknown", exc_info=True)
+        return None
+
+
 def _ffmpeg() -> dict[str, str] | None:
     binary = ffmpeg_binary()
     path = binary if os.path.isabs(binary) and os.path.exists(binary) else shutil.which(binary)
@@ -158,6 +182,7 @@ def capabilities() -> dict[str, Any]:
         "gpus": gpus,
         "gpu_problem": gpu_problem,
         "stt_backend": backend,
+        "second_listen_gpu": second_listen_sharing(backend),
         "ffmpeg": _ffmpeg(),
         "extras": sorted(extras),
         "python": platform.python_version(),

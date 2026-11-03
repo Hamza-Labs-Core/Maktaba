@@ -455,7 +455,8 @@ function ConvertTo-NodeSha256 {
 # second listen needs, and only an NVIDIA GPU that runs it: as the pipeline checks it
 # (stt/cohere_cuda.py: MIN_GPU_GB on Windows, MIN_COMPUTE, MIN_DRIVER; a test keeps these
 # equal), asked of nvidia-smi. Something nvidia-smi does not report is not held against it.
-$script:NodeSecondListenMinMiB = 9728       # 9.5 GiB
+# An 8 GB card runs it, taking turns with Whisper on the GPU (stt/gpu_turns.py)
+$script:NodeSecondListenMinMiB = 7680       # 7.5 GiB
 $script:NodeSecondListenMinCompute = '7.5'  # Turing
 $script:NodeSecondListenMinDriver = 580
 # ...and Whisper alone (CTranslate2 with the stt extra's CUDA wheels): the supervisor's

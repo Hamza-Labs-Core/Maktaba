@@ -210,7 +210,7 @@ def test_refine_is_on_by_default_and_can_be_switched_off(
 def test_a_worker_without_the_model_keeps_whisper(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    def missing(model: str, share: Any = None, settings: Any = None) -> Any:
+    def missing(model: str, share: Any = None, settings: Any = None, **_k: Any) -> Any:
         raise RuntimeError("gated repo")
 
     monkeypatch.setattr(cohere, "recogniser", missing)
@@ -236,7 +236,9 @@ def test_refine_hears_a_files_stretches_together_in_order() -> None:
 def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    monkeypatch.setattr(cohere, "recogniser", lambda _m, _share=None, _ws=None: lambda _s: ["x"])
+    monkeypatch.setattr(
+        cohere, "recogniser", lambda _m, _share=None, _ws=None, **_k: lambda _s: ["x"]
+    )
     monkeypatch.setattr(cohere, "dictionary", lambda: None)
 
     def broken(*_a: Any, **_k: Any) -> Any:
@@ -255,7 +257,7 @@ def test_a_merge_error_keeps_the_transcript(monkeypatch: pytest.MonkeyPatch) -> 
 def test_a_missing_dictionary_is_recorded(monkeypatch: pytest.MonkeyPatch) -> None:
     from maktaba_pipeline.stt import cohere
 
-    monkeypatch.setattr(cohere, "recogniser", lambda *_a: lambda _s: ["قال الشيخ"])
+    monkeypatch.setattr(cohere, "recogniser", lambda *_a, **_k: lambda _s: ["قال الشيخ"])
     monkeypatch.setattr(cohere, "dictionary", lambda: None)
     out = stage._refine(transcript(sentence("قال الشيخ")), silence(), "m")
     assert out["dictionary"] == "unavailable" and out["source"] == "hf"
