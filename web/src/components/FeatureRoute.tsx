@@ -8,6 +8,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useToast } from "@ds/components/Toast/Toast";
 import { FeatureOffNote, useOpenFeatureGate, type FeatureId } from "../lib/capabilities";
 import { useI18n } from "../lib/i18n";
+import { featureUnavailableText } from "../lib/featureWords";
 
 export function FeatureRoute({
   id,
@@ -48,7 +49,7 @@ function Unavailable({ id, home }: { id: FeatureId; home: string }) {
     toast.show({
       id: `feature-unavailable-${id}`,
       tone: "info",
-      message: t("capabilities.unavailable", { feature: t(`components.feature.${id}`) }),
+      message: featureUnavailableText(id, t),
     });
   }, [id, t, toast]);
   return <Navigate to={home} replace />;

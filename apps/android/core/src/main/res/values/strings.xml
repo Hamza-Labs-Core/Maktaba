@@ -177,7 +177,7 @@
     <string name="error_server">Something went wrong on your home. Try again in a moment.</string>
     <!-- a part of the home that is off (Epic 51 story 51.09) and the features' names -->
     <string name="error_off">This feature is turned off on this home.</string>
-    <string name="error_off_admin">%1$s is off on this home. Turn it on in Components.</string>
+    <string name="error_off_admin">%1$s Turn it on in Components.</string>
     <string name="feature_live_tv">Live TV</string>
     <string name="feature_transcripts">Transcripts</string>
     <string name="feature_subtitles">Subtitles</string>
@@ -188,9 +188,27 @@
     <string name="feature_remote_access">Access away from home</string>
     <string name="feature_recommendations">Recommendations</string>
     <!-- story 51.11: what an app says where a feature that is off would be -->
-    <string name="feature_off_admin">%1$s is off on this home.</string>
+    <string name="feature_off_admin">The %1$s feature is off on this home.</string>
     <string name="feature_turn_on">Turn it on in Components</string>
-    <string name="feature_unavailable">%1$s isn\'t available on this home.</string>
+    <string name="feature_unavailable">The %1$s feature isn\'t available on this home.</string>
+    <string name="feature_off_live_tv">Live TV is off on this home.</string>
+    <string name="feature_off_transcripts">Transcripts are off on this home.</string>
+    <string name="feature_off_subtitles">Subtitles are off on this home.</string>
+    <string name="feature_off_semantic_search">Search by meaning is off on this home.</string>
+    <string name="feature_off_chapters">Chapters are off on this home.</string>
+    <string name="feature_off_youtube">YouTube is off on this home.</string>
+    <string name="feature_off_plex">Plex is off on this home.</string>
+    <string name="feature_off_remote_access">Access away from home is off on this home.</string>
+    <string name="feature_off_recommendations">Recommendations are off on this home.</string>
+    <string name="feature_unavailable_live_tv">Live TV isn\'t available on this home.</string>
+    <string name="feature_unavailable_transcripts">Transcripts aren\'t available on this home.</string>
+    <string name="feature_unavailable_subtitles">Subtitles aren\'t available on this home.</string>
+    <string name="feature_unavailable_semantic_search">Search by meaning isn\'t available on this home.</string>
+    <string name="feature_unavailable_chapters">Chapters aren\'t available on this home.</string>
+    <string name="feature_unavailable_youtube">YouTube isn\'t available on this home.</string>
+    <string name="feature_unavailable_plex">Plex isn\'t available on this home.</string>
+    <string name="feature_unavailable_remote_access">Access away from home isn\'t available on this home.</string>
+    <string name="feature_unavailable_recommendations">Recommendations aren\'t available on this home.</string>
     <string name="search_words_only">Searching by words only. Search by meaning is off.</string>
     <plurals name="parts_off">
         <item quantity="one">%d part is off</item>

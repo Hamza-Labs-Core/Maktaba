@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { check } from "./catalog_words.mjs";
+import { androidStrings, check, checkApps } from "./catalog_words.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = join(here, "..", "..");
@@ -47,6 +47,12 @@ test("story 51.09 T15: a feature with no Arabic words fails", () => {
   assert.deepEqual(check(dump, en, bad), ["components.feature.live_tv: no words in ar"]);
 });
 
+test("story 51.11: a feature's off sentence with no Arabic fails", () => {
+  const bad = { ...ar };
+  delete bad["capabilities.off.transcripts"];
+  assert.deepEqual(check(dump, en, bad), ["capabilities.off.transcripts: no words in ar"]);
+});
+
 test("every feature of the catalog has its words, Plex the same in both", () => {
   assert.equal(dump.features.length, 9);
   for (const f of dump.features) {
@@ -55,4 +61,27 @@ test("every feature of the catalog has its words, Plex the same in both", () => 
   }
   const copied = { ...ar, "components.feature.youtube": en["components.feature.youtube"] };
   assert.deepEqual(check(dump, en, copied), ["components.feature.youtube: the ar words are a copy of the en words"]);
+});
+
+const androidEn = androidStrings(readFileSync(join(root, "apps/android/core/src/main/res/values/strings.xml"), "utf8"));
+const androidAr = androidStrings(readFileSync(join(root, "apps/android/core/src/main/res/values-ar/strings.xml"), "utf8"));
+const apple = read("apps/apple/MaktabaKit/Sources/MaktabaKit/Localizable.xcstrings");
+
+test("story 51.11: the apps say a feature is off in the web's words", () => {
+  assert.deepEqual(checkApps(dump, en, ar, androidEn, androidAr, apple), []);
+  assert.equal(androidEn["feature_off_transcripts"], "Transcripts are off on this home.");
+  assert.equal(androidEn["feature_unavailable_live_tv"], "Live TV isn't available on this home.");
+});
+
+test("story 51.11: an app's sentence that drifts from the web fails, naming it", () => {
+  const drifted = { ...androidAr, feature_off_live_tv: "البث المباشر متوقفة على الجهاز الرئيسي." };
+  assert.deepEqual(checkApps(dump, en, ar, androidEn, drifted, apple), [
+    `feature_off_live_tv (android ar) is not the web's capabilities.off.live_tv: "البث المباشر متوقفة على الجهاز الرئيسي."`,
+  ]);
+  const strings = { ...apple.strings };
+  delete strings["capabilities.unavailable.chapters"];
+  assert.deepEqual(checkApps(dump, en, ar, androidEn, androidAr, { ...apple, strings }), [
+    "capabilities.unavailable.chapters (apple en) is not the web's: undefined",
+    "capabilities.unavailable.chapters (apple ar) is not the web's: undefined",
+  ]);
 });

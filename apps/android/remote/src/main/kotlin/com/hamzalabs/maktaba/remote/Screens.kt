@@ -307,7 +307,7 @@ internal fun QueueContent(
         chosenTitle = row?.label ?: job?.let { it.subjectLabel.ifEmpty { it.subjectId } },
         onUnchoose = { choose(null) },
         detail = when {
-            row != null -> { { StageDetail(row, failures?.takeIf { it.first == row.id }?.second, busy == row.id) { act(row.id) { if (row.stage.paused) resumeStage(row.id) else pauseStage(row.id) } } } }
+            row != null -> { { StageDetail(row, failures?.takeIf { it.first == row.id }?.second, busy == row.id, remote.client.home.toString()) { act(row.id) { if (row.stage.paused) resumeStage(row.id) else pauseStage(row.id) } } } }
             job != null -> { { JobDetail(job, labelOf(job.stage)) } }
             else -> null
         },
@@ -346,7 +346,13 @@ internal fun QueueContent(
                                 if (health.isNotEmpty()) {
                                     Text(
                                         health.joinToString(" · "),
-                                        color = if (r.summary?.health?.state == "failing" || (r.summary?.health == null && c.failedOpen > 0)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary,
+                                        color = when {
+                                            r.summary?.health?.state == "failing" || (r.summary?.health == null && c.failedOpen > 0) -> MaterialTheme.colorScheme.error
+                                            // its component is off: a choice, grey as on the web
+                                            r.summary?.health?.state == "off" -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            else -> MaterialTheme.colorScheme.tertiary
+                                        },
+                                        modifier = Modifier.testTag("queue-health-${r.id}"),
                                     )
                                 }
                             }
@@ -366,11 +372,11 @@ internal fun QueueContent(
 private fun waitingOf(r: StageRow, say: Say): String? {
     val q = r.summary ?: return null
     if (q.waitingReason == "idle") return null
-    return say.queueWaiting(q.waitingReason, q.retryingService, r.label)
+    return say.queueWaiting(q.waitingReason, q.retryingService, r.label, q.component)
 }
 
 @Composable
-private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolean, toggle: () -> Unit) {
+private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolean, homeUrl: String, toggle: () -> Unit) {
     val c = r.counts
     val q = r.summary
     val say = rememberSay()
@@ -400,7 +406,17 @@ private fun StageDetail(r: StageRow, failures: List<FailureGroup>?, busy: Boolea
                 )
             }
         }
-        r.stage.disabledReason?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // a component's hold is said above, in words (waitingOf)
+        r.stage.disabledReason?.takeIf { it != "component_off" && it != "component_held" }?.let {
+            Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // Epic 51: the stage's component is off or stopped; it is turned on in Components
+        if (q?.health?.state == "off" || q?.component != null) {
+            val context = LocalContext.current
+            TextButton(onClick = { openComponents(context, homeUrl) }, modifier = Modifier.testTag("queue-components")) {
+                Text(stringResource(CoreR.string.feature_turn_on))
+            }
+        }
         FilledTonalButton(onClick = toggle, enabled = !busy) {
             if (busy) Busy() else Text(stringResource(if (r.stage.paused) R.string.resume else R.string.pause))
         }

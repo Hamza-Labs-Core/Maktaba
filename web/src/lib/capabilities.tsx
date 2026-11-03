@@ -32,6 +32,7 @@ import { useI18n } from "./i18n";
 import { subscribe as subscribeServer } from "./ws";
 import { CLIENT_HEADER, clientHeaderValue } from "./clientHeader";
 import { SERVER_PAGES } from "./edition";
+import { featureOffText } from "./featureWords";
 
 /** Every feature this client knows (the catalog's `features`, 51.09's order). */
 export const KNOWN_FEATURES = [
@@ -306,7 +307,7 @@ export function useOpenFeatureGate(id: FeatureId): "show" | "explain" | "hide" {
 }
 
 /**
- * The admin's note for a feature that is off: "<Feature> is off on this home."
+ * The admin's note for a feature that is off: "Live TV is off on this home." (lib/featureWords)
  * with a link to Components (where the edition has that page).
  */
 export function FeatureOffNote({ id, className }: { id: FeatureId; className?: string }) {
@@ -317,7 +318,7 @@ export function FeatureOffNote({ id, className }: { id: FeatureId; className?: s
       role="note"
       data-feature-off={id}
     >
-      <p>{t("capabilities.offAdmin", { feature: t(`components.feature.${id}`) })}</p>
+      <p>{featureOffText(id, t)}</p>
       {SERVER_PAGES && (
         <Link className="mkt-btn mkt-btn--secondary" to={COMPONENTS_PATH}>
           {t("capabilities.turnOn")}

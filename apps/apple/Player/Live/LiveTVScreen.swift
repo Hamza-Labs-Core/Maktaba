@@ -17,13 +17,26 @@ struct LiveTVScreen: View {
     /// Now or Guide; a UI test may open on the guide (`ShellLaunch.liveMode`).
     @SceneStorage("live.mode") private var mode = ShellLaunch.liveMode().flatMap(Mode.init(rawValue:)) ?? .now
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// Whether Live TV was off when the screen came into view (story 51.11): decided as it
+    /// opens, so a screen already open is not torn down when Live TV goes off; its next call
+    /// answers 409 `component_off` and says so.
+    @State private var openedOff: Bool
+
+    init(context: PlayerContext) {
+        self.context = context
+        _openedOff = State(initialValue: !context.session.capabilities.current.isOn(.liveTV))
+    }
 
     var body: some View {
-        if context.session.capabilities.current.isOn(.liveTV) {
-            live
-        } else {
-            off
+        Group {
+            if openedOff {
+                off
+            } else {
+                live
+            }
         }
+        // decided again each time the screen comes into view (the tab chosen again)
+        .onAppear { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
     }
 
     /// Live TV is off on the home (story 51.11): an admin reads so, with a button to the

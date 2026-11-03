@@ -126,7 +126,9 @@ let renditionNotFound = #"{"type":"https://maktaba.invalid/problems/rendition-no
         #expect(en.sentence(.off) == "This feature is turned off on this home.")
         #expect(ar.sentence(.off) == "هذه الميزة متوقفة على الجهاز الرئيسي.")
         #expect(en.offSentence(feature: "live_tv", admin: true) == "Live TV is off on this home. Turn it on in Components.")
-        #expect(ar.offSentence(feature: "live_tv", admin: true) == "البث المباشر متوقفة على الجهاز الرئيسي. شغّلها من صفحة المكوّنات.")
+        #expect(ar.offSentence(feature: "live_tv", admin: true) == "البث المباشر متوقف على الجهاز الرئيسي. شغّل من صفحة المكوّنات.")
+        // a plural name agrees with its verb
+        #expect(en.offSentence(feature: "transcripts", admin: true) == "Transcripts are off on this home. Turn it on in Components.")
         #expect(en.offSentence(feature: "live_tv", admin: false) == en.text(.off))
         #expect(en.offSentence(feature: "holograms", admin: true) == en.text(.off))
     }

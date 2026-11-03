@@ -8,7 +8,8 @@ import SwiftUI
 /// "no channels" is no choice), as on Android.
 ///
 /// At launch the shell waits for that answer a moment (up to `patience`), so a launch into
-/// Live TV lands there; a later change rebuilds the shell with the new sections.
+/// Live TV lands there; a later change gives the shell its new sections without rebuilding it
+/// (each tab keeps its stack, the screen in view stays: `ShellTabs`, story 51.11).
 ///
 /// With Live TV off on the home (`capabilities`, story 51.11) a viewer has no section and an
 /// admin keeps it (its screen explains); `content`'s second value says Live TV is left out
@@ -35,7 +36,9 @@ struct LiveSectionGate<Content: View>: View {
                 let shown = PlayerSection.shown(sections, hasChannels: hasChannels, liveTVOff: liveTVOff,
                                                 admin: capabilities.current.isAdmin)
                 let hidden = liveTVOff && !shown.contains(.liveTV)
-                content(shown, hidden).id("\(shown)|\(hidden)")
+                content(shown, hidden)
+                    // once shown, the shell is never swapped back for the wait
+                    .onAppear { waited = true }
             }
         }
         // asked again when Live TV comes back on (51.11): the channels show without a relaunch

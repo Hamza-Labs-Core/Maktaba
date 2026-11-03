@@ -31,26 +31,6 @@
         }
       }
     },
-    "%@ is off on this home." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ متوقفة على الجهاز الرئيسي."
-          }
-        }
-      }
-    },
-    "%@ isn't available on this home." : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ غير متاحة على الجهاز الرئيسي."
-          }
-        }
-      }
-    },
     "%lld days" : {
       "localizations" : {
         "en" : {
@@ -843,6 +823,26 @@
         }
       }
     },
+    "The %@ feature is off on this home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ميزة %@ متوقفة على الجهاز الرئيسي."
+          }
+        }
+      }
+    },
+    "The %@ feature isn't available on this home." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ميزة %@ غير متاحة على الجهاز الرئيسي."
+          }
+        }
+      }
+    },
     "The TV stays on %@: %@" : {
       "localizations" : {
         "ar" : {
@@ -968,7 +968,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "شغّلها من صفحة المكوّنات"
+            "value" : "شغّل من صفحة المكوّنات"
           }
         }
       }
@@ -1073,6 +1073,312 @@
         }
       }
     },
+    "capabilities.off.chapters" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفصول متوقفة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chapters are off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.live_tv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث المباشر متوقف على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live TV is off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.plex" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plex متوقف على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plex is off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.recommendations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاقتراحات متوقفة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommendations are off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.remote_access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوصول من خارج المنزل متوقف على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access away from home is off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.semantic_search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث بالمعنى متوقف على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search by meaning is off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.subtitles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة متوقفة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subtitles are off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.transcripts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نصوص الفيديو متوقفة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transcripts are off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.off.youtube" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يوتيوب متوقف على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "YouTube is off on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.chapters" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الفصول غير متاحة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chapters aren't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.live_tv" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث المباشر غير متاح على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live TV isn't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.plex" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plex غير متاح على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plex isn't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.recommendations" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاقتراحات غير متاحة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommendations aren't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.remote_access" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الوصول من خارج المنزل غير متاح على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access away from home isn't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.semantic_search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث بالمعنى غير متاح على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Search by meaning isn't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.subtitles" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة غير متاحة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subtitles aren't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.transcripts" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نصوص الفيديو غير متاحة على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transcripts aren't available on this home."
+          }
+        }
+      }
+    },
+    "capabilities.unavailable.youtube" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يوتيوب غير متاح على الجهاز الرئيسي."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "YouTube isn't available on this home."
+          }
+        }
+      }
+    },
     "check %@ failed" : {
       "localizations" : {
         "ar" : {
@@ -1089,6 +1395,227 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "فشل الفحص %1$@: %2$@"
+          }
+        }
+      }
+    },
+    "components.classify.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التنظيم"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Organising"
+          }
+        }
+      }
+    },
+    "components.enrich.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث عن التفاصيل"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details lookup"
+          }
+        }
+      }
+    },
+    "components.ext.dizquetv.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة dizqueTV"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "dizqueTV"
+          }
+        }
+      }
+    },
+    "components.ext.plex.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إضافة Plex"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plex"
+          }
+        }
+      }
+    },
+    "components.library.convert.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التحويل إلى MP4"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convert to MP4"
+          }
+        }
+      }
+    },
+    "components.library.dedup.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التكرارات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duplicates"
+          }
+        }
+      }
+    },
+    "components.library.repair.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصلاح"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repair"
+          }
+        }
+      }
+    },
+    "components.livetv.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البث المباشر"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Live TV"
+          }
+        }
+      }
+    },
+    "components.media.thumbnails.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الصور المصغرة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Thumbnails"
+          }
+        }
+      }
+    },
+    "components.search.semantic.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "البحث الذكي"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smart search"
+          }
+        }
+      }
+    },
+    "components.subtitles.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الترجمة المرئية"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subtitles"
+          }
+        }
+      }
+    },
+    "components.transcription.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التفريغ النصي"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transcription"
+          }
+        }
+      }
+    },
+    "components.youtube.title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يوتيوب"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "YouTube"
           }
         }
       }
@@ -1580,6 +2107,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الآن"
+          }
+        }
+      }
+    },
+    "queue.health.componentHeld" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار: المكوّن {component} متوقف حتى تشغّله · {n} في الطابور"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting: the {component} component is stopped until you turn it on · {n} queued"
+          }
+        }
+      }
+    },
+    "queue.health.componentOff" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "في الانتظار: المكوّن {component} متوقف · {n} في الطابور"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting: the {component} component is off · {n} queued"
           }
         }
       }

@@ -448,6 +448,7 @@ extension StatusWords {
         ("tvchanges.slots.color.", slotColors), ("tvchanges.check.", checkNames),
         ("tvchanges.result.", checkResults), ("tvchanges.value.", checkValues), ("updates.trigger.", triggers),
         ("setup.starting.detail.", processDetails), ("machines.home.reason.", rolesReasons),
+        ("queue.health.", QueueWords.lines),
     ]
 }
 

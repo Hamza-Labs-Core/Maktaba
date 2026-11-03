@@ -7,6 +7,7 @@ import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../../lib/i18n";
 import { COMPONENTS_PATH, useOpenFeatureGate, type FeatureId } from "../../lib/capabilities";
 import { SERVER_PAGES } from "../../lib/edition";
+import { featureOffText } from "../../lib/featureWords";
 import { setFullScreen } from "../../lib/bigScreen";
 import { bigPath } from "../nav";
 import { Empty, Screen } from "../ui";
@@ -33,9 +34,7 @@ export function BigFeatureOff({ id }: { id: FeatureId }) {
   return (
     <Screen testId="big-feature-off">
       <Empty>
-        <p data-feature-off={id}>
-          {t("capabilities.offAdmin", { feature: t(`components.feature.${id}`) })}
-        </p>
+        <p data-feature-off={id}>{featureOffText(id, t)}</p>
         {SERVER_PAGES && (
           <button
             type="button"

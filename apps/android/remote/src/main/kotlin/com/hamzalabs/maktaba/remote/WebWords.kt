@@ -262,6 +262,31 @@ internal object WebWords {
         "awaiting_review" to Template(R.string.w_queue_waiting_awaiting_review),
         "idle" to Template(R.string.w_queue_waiting_idle),
         "no_worker" to Template(R.string.w_queue_waiting_no_worker, listOf("stage")),
+        "component_off" to Template(R.string.w_queue_waiting_component_off, listOf("component")),
+        "component_held" to Template(R.string.w_queue_waiting_component_held, listOf("component")),
+    )
+
+    /** `queue.health.componentOff` / `componentHeld` (Epic 51): a stage its component holds back. */
+    val queueHealthComponent: Map<String, Template> = mapOf(
+        "off" to Template(R.string.w_queue_health_componentOff, listOf("component", "n")),
+        "stopped" to Template(R.string.w_queue_health_componentHeld, listOf("component", "n")),
+    )
+
+    /** `components.<id>.title`, for the components that own stages (the catalog's ids). */
+    val componentTitle: Map<String, Int> = mapOf(
+        "media.thumbnails" to R.string.w_components_media_thumbnails_title,
+        "library.convert" to R.string.w_components_library_convert_title,
+        "library.dedup" to R.string.w_components_library_dedup_title,
+        "library.repair" to R.string.w_components_library_repair_title,
+        "transcription" to R.string.w_components_transcription_title,
+        "subtitles" to R.string.w_components_subtitles_title,
+        "search.semantic" to R.string.w_components_search_semantic_title,
+        "classify" to R.string.w_components_classify_title,
+        "enrich" to R.string.w_components_enrich_title,
+        "youtube" to R.string.w_components_youtube_title,
+        "ext.plex" to R.string.w_components_ext_plex_title,
+        "ext.dizquetv" to R.string.w_components_ext_dizquetv_title,
+        "livetv" to R.string.w_components_livetv_title,
     )
 
     /** `health.processes.state.*` */

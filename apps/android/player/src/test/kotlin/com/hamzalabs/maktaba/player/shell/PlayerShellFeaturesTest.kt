@@ -89,8 +89,8 @@ class PlayerShellFeaturesTest {
         shell()
         compose.settledUntil(5_000) { sections("LiveTv") == 1 }
         compose.onNodeWithTag("section-LiveTv").performClick()
-        compose.settledUntil(5_000) { compose.onAllNodes(hasText("البث المباشر متوقفة على الجهاز الرئيسي.")).fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("شغّلها من صفحة المكوّنات").assertExists()
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("البث المباشر متوقف على الجهاز الرئيسي.")).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("شغّل من صفحة المكوّنات").assertExists()
     }
 
     @Test

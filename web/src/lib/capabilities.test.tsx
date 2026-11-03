@@ -429,11 +429,9 @@ describe("CapabilitiesProvider", () => {
         client,
         "/guide"
       );
-      const text = ar["capabilities.offAdmin"].replace(
-        "{feature}",
-        ar["components.feature.live_tv"]
-      );
-      expect(await screen.findByText(text)).toBeInTheDocument();
+      // the feature's own sentence: «البث المباشر» is masculine, so «متوقف»
+      expect(await screen.findByText(ar["capabilities.off.live_tv"])).toBeInTheDocument();
+      expect(ar["capabilities.off.live_tv"]).toContain("البث المباشر متوقف ");
       expect(screen.getByRole("link", { name: ar["capabilities.turnOn"] })).toBeInTheDocument();
       expect(await axeViolations(container)).toEqual([]);
     } finally {

@@ -168,7 +168,7 @@ describe("VideoDetail with transcripts and chapters off", () => {
 
   it("an admin's Transcript tab says it is off", async () => {
     renderAt(page, adminUser, client(["transcripts"], true), "/videos/v1?tab=transcript");
-    expect(await screen.findByText("Transcripts is off on this home.")).toBeInTheDocument();
+    expect(await screen.findByText("Transcripts are off on this home.")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: en["video.tab.chapters"] })).toBeInTheDocument();
   });
 });

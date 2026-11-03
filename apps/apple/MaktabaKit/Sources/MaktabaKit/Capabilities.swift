@@ -272,19 +272,34 @@ public enum FeatureWords {
         ErrorStrings(AppLanguage.isRightToLeft ? .ar : .en).featureName(f.rawValue) ?? f.rawValue
     }
 
-    /// "Live TV is off on this home." (an admin's note).
-    public static func offOnThisHome(_ f: Capabilities.Feature) -> String {
-        let name = name(f)
-        return kit("\(name) is off on this home.")
+    /// "Live TV is off on this home." (an admin's note): each feature has its own sentence
+    /// (`capabilities.off.<id>`, the web's words) so the verb agrees with its name
+    /// ("Transcripts are off", «البث المباشر متوقف»).
+    public static func offOnThisHome(_ f: Capabilities.Feature, _ locale: Locale = AppLanguage.locale) -> String {
+        offSentence(f.rawValue, locale)
+    }
+
+    /// The off sentence of a feature id; one this app has no sentence for reads through the
+    /// frame whose head noun carries the agreement ("The <id> feature is off on this home.").
+    public static func offSentence(_ id: String, _ locale: Locale = AppLanguage.locale) -> String {
+        if let s = kitWord("capabilities.off.\(id)", locale) { return s }
+        let name = featureName(id, locale)
+        return kit("The \(name) feature is off on this home.", locale)
+    }
+
+    private static func featureName(_ id: String, _ locale: Locale) -> String {
+        let ar = locale.language.characterDirection == .rightToLeft
+        return ErrorStrings(ar ? .ar : .en).featureName(id) ?? id
     }
 
     /// The admin's button to the Components page.
     public static var turnOn: String { kit("Turn it on in Components") }
 
     /// "Live TV isn't available on this home." (a viewer's link to a hidden screen).
-    public static func unavailable(_ f: Capabilities.Feature) -> String {
-        let name = name(f)
-        return kit("\(name) isn't available on this home.")
+    public static func unavailable(_ f: Capabilities.Feature, _ locale: Locale = AppLanguage.locale) -> String {
+        if let s = kitWord("capabilities.unavailable.\(f.rawValue)", locale) { return s }
+        let name = featureName(f.rawValue, locale)
+        return kit("The \(name) feature isn't available on this home.", locale)
     }
 
     /// An admin's line under the search field while search by meaning is off.

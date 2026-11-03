@@ -38,10 +38,20 @@ fun FollowCapabilities(session: AppSession) {
     }
 }
 
-/** "Live TV is off on this home.", with the feature's own name ([feature]: a capabilities id). */
+/**
+ * "Live TV is off on this home." ([feature]: a capabilities id): the feature's own sentence, else
+ * the frame whose head noun agrees ("The <id> feature is off on this home.").
+ */
 @Composable
 fun featureOffSentence(feature: String): String =
-    stringResource(R.string.feature_off_admin, featureName(feature)?.let { stringResource(it) } ?: feature)
+    featureOff(feature)?.let { stringResource(it) }
+        ?: stringResource(R.string.feature_off_admin, featureName(feature)?.let { stringResource(it) } ?: feature)
+
+/** "Live TV isn't available on this home.", what a viewer reads who followed a link to it. */
+@Composable
+fun featureUnavailableSentence(feature: String): String =
+    featureUnavailable(feature)?.let { stringResource(it) }
+        ?: stringResource(R.string.feature_unavailable, featureName(feature)?.let { stringResource(it) } ?: feature)
 
 /**
  * What an admin reads where a feature that is off would be (story 51.11): "[feature] is off on
