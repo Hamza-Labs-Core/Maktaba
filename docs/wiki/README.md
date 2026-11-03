@@ -60,6 +60,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 - [Epic 25 — Cloud Relay](epics/epic-25-cloud-relay.md)
 - [Epic 50 — Maktaba Cloud with no downtime](epics/epic-50-cloud-no-downtime.md)
 
+### Logs, errors and reports (epic 53)
+
+- [Epic 53 — Logs, errors and problem reports, and a UI that never goes dark](epics/epic-53-logs-errors-reports.md)
+
 ## Cross-cutting wiki pages
 
 - [Security architecture summary](security.md) — auth flow, JWT lifecycle, signed URLs, rate limits, input validation, TLS, secrets management. Cross-references Epic 10 + Epic 23.

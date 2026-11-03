@@ -1,6 +1,6 @@
 # Story 50.10 — Monitoring, the canary home and alerts
 
-> Epic 50 · Phase 1 · Depends on: 50.07 · Needed by: 50.11, 50.12
+> Epic 50 · Phase 1 · Depends on: 50.07, [53.17](../53-logs-errors-reports/story-53-17-cloud-observability.md) · Needed by: 50.11, 50.12
 
 ## Why
 
@@ -54,6 +54,13 @@ New metrics:
 | `cert_expiry_seconds{name}` | Caddy / blackbox exporter |
 | `backup_age_seconds`, `wal_archive_failures_total`, `backup_restore_drill_ok` | 50.09 |
 | `canary_up`, `canary_latency_seconds`, `canary_throughput_bytes_per_second` | blackbox exporter on W + network 2 |
+| `maktaba_errors_total{service,code}`, `maktaba_http_requests_total`, `maktaba_http_request_seconds`, `maktaba_log_lines_total`, `maktaba_log_dropped_total`, `maktaba_log_forward_lag_seconds`, `maktaba_problem_reports_total` | the cloud processes; **named and emitted by Epic 53.17** (`shared/metrics/cloud-series.md`), scraped here |
+
+**Logs and errors are not built here.** The cloud's logs (14 days on each node, forwarded to W,
+searchable by the service admin) and its error groups come from
+[Epic 53.17](../53-logs-errors-reports/story-53-17-cloud-observability.md). This story scrapes
+53.17's application metrics, puts them on the dashboards, and owns every alert rule, including
+the two below that use them.
 
 ### 4. Alert rules
 
@@ -73,6 +80,8 @@ New metrics:
 | `held_requests_timing_out` | > 1 % of held requests time out over 10 min | warn |
 | `relay_near_capacity` | > 60 % of measured capacity (50.14) at peak, 3 days running | warn (Phase 2 trigger) |
 | `cost_ceiling` | month's spend > 80 % of README §5 ceiling | warn (from 25.21) |
+| `cloud_error_spike` | `maktaba_errors_total` rate (any `service`) over 5× its 7-day baseline for 10 min (Epic 53.17's counter) | warn; page if `service` is `cloud.relay` and it lasts 20 min |
+| `log_forward_lagging` | `maktaba_log_forward_lag_seconds` > 60 for 5 min (a node's logs aren't reaching W) | warn |
 
 Every alert has a `runbook_url` annotation pointing at its page in `docs/runbooks/` (50.12).
 
@@ -143,7 +152,7 @@ None here; users see the status page and banner (50.11), driven by these probes.
 | `deploy/cloud-ha/bin/fip-check` (new) | `fip_holder` metric. |
 | `deploy/cloud-ha/setup.sh` | Witness role installs the above. |
 | `.github/workflows/cloud-probe.yml` (new) | Network-2 probe, pushes results, opens an issue on failure as a backup signal. |
-| `cloud/internal/metrics/` | Metrics from 50.03/50.04 registered here if not already. |
+| `cloud/internal/metrics/` | Metrics from 50.03/50.04 registered here if not already (Epic 53.17 adds its own there). |
 
 ### Tests
 
@@ -164,4 +173,5 @@ probes stay on regardless.
 
 ### Dependencies
 
-50.07 (the nodes to watch and the witness to run on). Needed by 50.11, 50.12.
+50.07 (the nodes to watch and the witness to run on); Epic 53.17 (the cloud's application
+metrics, logs and error groups). Needed by 50.11, 50.12.

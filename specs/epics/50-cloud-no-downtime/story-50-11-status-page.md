@@ -1,6 +1,6 @@
 # Story 50.11 — Status page and in-app status
 
-> Epic 50 · Phase 1 · Depends on: 50.10 · Needed by: 50.12, 50.13
+> Epic 50 · Phase 1 · Depends on: 50.10, [53.06](../53-logs-errors-reports/story-53-06-status-strip.md) · Needed by: 50.12, 50.13
 
 ## Why
 
@@ -76,6 +76,12 @@ Apple (Player, Remote, tvOS) and Android (Player, Remote, TV) show a slim banner
 **relay** or **API** component is degraded, in outage, or under maintenance (now or within
 24 h). It links to the status page and can be closed for that incident. It never shows for
 `push` alone, and never inside the player while playing (it shows on pause or exit).
+
+**The banner is drawn by [Epic 53.06](../53-logs-errors-reports/story-53-06-status-strip.md)'s
+status strip**, the one strip every app shows for the home's own state (a part of the home down,
+safe mode) and for the cloud's. This story provides the feed (`summary.json`), the fetcher in each
+app's client library and the rules above; 53.06 decides the priority between home and cloud
+states and draws it. No app has two banners.
 
 ## Acceptance criteria
 
@@ -168,12 +174,12 @@ Apple (Player, Remote, tvOS) and Android (Player, Remote, TV) show a slim banner
 | `status/` (new) | Static site source: templates (EN/AR), `build.ts` (or Go `cmd`), `data/checks/`, `data/incidents/`, `CNAME`. |
 | `.github/workflows/status-page.yml` (new) | Build and publish to GitHub Pages on push to `status/**` and every 5 min; check Arabic titles. |
 | `.github/workflows/status-probe.yml` (new) | The outside prober from 50.10 writes `status/data/checks/` (one of its two networks is GitHub's runners). |
-| `web/src/components/OfflineBanner.tsx` (or a new `CloudStatusBanner.tsx` beside it) | Banner from `summary.json` in the home's web app. |
+| `web/src/lib/cloudStatus.ts` (new) | `summary.json` fetch and model for the home's web app; drawn by 53.06's `StatusStrip.tsx`. |
 | `web/src/i18n/en.json`, `web/src/i18n/ar.json` | `banner.*` keys. |
-| `web/cloud/src/ui.tsx`, `web/cloud/src/i18n/en.json`, `web/cloud/src/i18n/ar.json` | Banner in the cloud web app. |
-| `apps/apple/MaktabaKit/Sources/MaktabaKit/CloudStatus.swift` (new), `Localizable.xcstrings` | `summary.json` fetch, banner view used by Player, Remote and tvOS. |
+| `web/cloud/src/cloudStatus.ts` (new), `web/cloud/src/i18n/en.json`, `web/cloud/src/i18n/ar.json` | Fetch and strings for the cloud web app; drawn by 53.06's strip. |
+| `apps/apple/MaktabaKit/Sources/MaktabaKit/CloudStatus.swift` (new), `Localizable.xcstrings` | `summary.json` fetch and model; drawn by 53.06's `StatusStrip.swift` in Player, Remote and tvOS. |
 | `apps/android/client/src/main/kotlin/com/hamzalabs/maktaba/core/session/CloudStatus.kt` (new) | Fetch and model. |
-| `apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/CloudStatusBanner.kt` (new), `apps/android/core/src/main/res/values/strings.xml`, `values-ar/strings.xml` | Banner composable and strings. |
+| `apps/android/core/src/main/res/values/strings.xml`, `values-ar/strings.xml` | Banner strings; drawn by 53.06's `StatusStrip.kt`. |
 | `docs/runbooks/cloud/status-page.md` (new, with 50.12) | How to post an incident or maintenance notice. |
 
 ### Tests
@@ -200,5 +206,5 @@ Apple (Player, Remote, tvOS) and Android (Player, Remote, TV) show a slim banner
 
 ### Dependencies
 
-50.10 (the probe that feeds it). Needed by 50.12 (incident posts) and 50.13 (apps use the
-banner).
+50.10 (the probe that feeds it); Epic 53.06 (the strip that draws the banner). Needed by 50.12
+(incident posts) and 50.13 (apps use the banner).

@@ -11,6 +11,10 @@ This epic does not specify a monitoring vendor; it specifies the
 and retention rules that work with Prometheus, OpenTelemetry, or a
 plain text-log fallback.
 
+> **2026-11-03:** [Epic 53](../53-logs-errors-reports/README.md) takes over what is left of
+> 21.1 (the log-level route, the shared redaction list) and 21.5 (error reporting), and adds
+> log storage, search, error groups, crash and problem reports, and the recovery console.
+
 ## Stories
 
 - [Story 21.1 — Structured logging](story-21-01-structured-logging.md)

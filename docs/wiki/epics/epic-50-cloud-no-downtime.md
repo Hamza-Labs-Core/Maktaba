@@ -1,7 +1,7 @@
 # Epic 50 — Maktaba Cloud with no downtime
 
 > **Status:** spec (2026-11-03). **Source:** [`specs/epics/50-cloud-no-downtime/`](../../../specs/epics/50-cloud-no-downtime/README.md).
-> **Anchors:** [`architecture.md` §13](../../../specs/architecture.md#13-cloud-relay-architecture) · [Epic 25](epic-25-cloud-relay.md) · [`deploy/cloud-relay/`](../../../deploy/cloud-relay/README.md) · [research](../../../specs/epics/50-cloud-no-downtime/research.md).
+> **Anchors:** [`architecture.md` §13](../../../specs/architecture.md#13-cloud-relay-architecture) · [Epic 25](epic-25-cloud-relay.md) · [Epic 53](epic-53-logs-errors-reports.md) (the cloud's logs, errors and application metrics) · [`deploy/cloud-relay/`](../../../deploy/cloud-relay/README.md) · [research](../../../specs/epics/50-cloud-no-downtime/research.md).
 
 ## Goal
 
@@ -60,6 +60,10 @@ of relays** (Phase 2).
 | 50.18 | [The database on its own nodes](../../../specs/epics/50-cloud-no-downtime/story-50-18-database-nodes.md) | 2 |
 
 The dependency graph and launch gate are in the [epic README](../../../specs/epics/50-cloud-no-downtime/README.md#10-stories).
+50.10 depends on [Epic 53.17](../../../specs/epics/53-logs-errors-reports/story-53-17-cloud-observability.md)
+(logs, error groups and application metrics of the cloud's processes) and 50.11 on
+[Epic 53.06](../../../specs/epics/53-logs-errors-reports/story-53-06-status-strip.md) (the one
+status strip every app draws).
 
 ## Key decisions
 
