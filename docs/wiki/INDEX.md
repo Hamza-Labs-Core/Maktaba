@@ -47,6 +47,7 @@
 | 23 | [Security Hardening](../../specs/epics/23-security/README.md) | 4 | API + Streaming | 8 | 8 | 0 | Maktaba is safe to expose on a home LAN by default and safe to |
 | 24 | [Data Integrity](../../specs/epics/24-data-integrity/README.md) | 4 | Cross-cutting | 9 | 9 | 0 | A user's media library and the platform's derived state survive |
 | 25 | [Cloud Relay](../../specs/epics/25-cloud-relay/README.md) | 5 | Cloud (Go) + Distribution | 36 | 36 | 0 | Maktaba Cloud — hosted SaaS layer (HamzaLabs): identity, server linking, WSS-tunneled HTTP relay, push fanout, Stripe billing, plus native installers for macOS / Windows / Linux / NAS / ARM / VPS. |
+| 52 | [Word Review](../../specs/epics/52-transcript-word-review/README.md) · [wiki](epics/epic-52-transcript-word-review.md) | spec | Pipeline + API + Web + native | 14 | 14 | 0 | Suspect words in transcripts (low confidence, not in dictionary, listeners disagree, names, optional LLM judge) go to a keyboard-first human review queue; fixes update transcript, subtitles and search and teach a per-library vocabulary; every language through add-on language packs. |
 
 ## Implementation phases
 
