@@ -1,0 +1,64 @@
+# Restores the Go module and build caches (GOMODCACHE, GOCACHE) that main saved; it never
+# saves. setup-go's own cache has no read-only switch, and a pull request's run saved its own
+# copy of every entry: the repository's Actions cache went over its 10 GB limit and main's
+# entries were evicted within an hour or two (#615). So setup-go runs with `cache: false`,
+# this action restores, and only a push to main writes, with the job's last step:
+#
+#   - name: Save the Go caches
+#     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+#     uses: actions/cache/save@v4
+#     with:
+#       path: ${{ steps.go-cache.outputs.path }}
+#       key: ${{ steps.go-cache.outputs.key }}
+#
+# The key and paths are setup-go's own (setup-go-<os>-<arch>-<image>-go-<version>-<hash of
+# the go.sum files>; GOMODCACHE then GOCACHE), so entries setup-go saved still restore. The
+# key is the go.sum files' content, never the commit: a run on the same modules restores the
+# entry and saves nothing.
+
+name: Go caches (restore only)
+description: Restores main's Go module and build caches under setup-go's key; never saves.
+
+inputs:
+  go-sum-hash:
+    description: hashFiles() of the go.sum files the job builds from
+    required: true
+
+outputs:
+  key:
+    description: the cache key (for actions/cache/save)
+    value: ${{ steps.key.outputs.key }}
+  path:
+    description: GOMODCACHE and GOCACHE, one per line (for actions/cache/save)
+    value: ${{ steps.key.outputs.path }}
+  cache-hit:
+    description: "'true' when the exact key was restored"
+    value: ${{ steps.restore.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        HASH: ${{ inputs.go-sum-hash }}
+      run: |
+        set -euo pipefail
+        [ -n "${HASH}" ] || { echo "::error::go-cache: no go.sum file matched"; exit 1; }
+        arch=$(printf '%s' "${RUNNER_ARCH}" | tr '[:upper:]' '[:lower:]')
+        image=""
+        if [ "${RUNNER_OS}" = Linux ]; then image="${ImageOS}-"; fi
+        version=$(go env GOVERSION)
+        {
+          echo "key=setup-go-${RUNNER_OS}-${arch}-${image}go-${version#go}-${HASH}"
+          echo "path<<GO_CACHE_PATHS"
+          go env GOMODCACHE
+          go env GOCACHE
+          echo "GO_CACHE_PATHS"
+        } >> "${GITHUB_OUTPUT}"
+
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ steps.key.outputs.path }}
+        key: ${{ steps.key.outputs.key }}

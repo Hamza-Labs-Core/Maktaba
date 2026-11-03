@@ -227,15 +227,15 @@ Makes metadata suggestions for a video when you press Find metadata or Re-enrich
 
 ### Convert to MP4 {#convert-mp4}
 
-Makes a video's file an MP4 that plays directly, without losing it: the new file is checked (it is decoded in full) before it takes the old one's place, and the original goes to the library's trash for 30 days. The video keeps its watch history, playlists and transcripts. Runs on the main machine, one file at a time. Not set up yet: it arrives in a later version.
+Makes a video's file an MP4 that plays directly, without losing it: the new file is checked (it is decoded in full) before it takes the old one's place, and the original goes to the library's trash for 30 days. The video keeps its watch history, playlists and transcripts. Runs on the main machine, one file at a time. Each file is skipped, remuxed, given AAC audio or (only where the library allows it) re-encoded to H.264, and a file with image subtitles is skipped: see [How a conversion decides](/help/processing#convert-decides). Start it with **Convert to MP4** in a library's menu on the Processing page. Every video downloaded from YouTube comes here by itself, then goes on to **Find duplicates**. Automatic conversion after a scan is off by default.
 
 ### Find duplicates {#dedup-scan}
 
-Looks through a library for the same video stored more than once: byte-identical copies, and the same lecture in another file. Not set up yet: it arrives in a later version.
+Looks through a library for the same video stored more than once: byte-identical copies, and the same lecture in another file. Start it with **Find duplicates** in a library's menu on the Processing page; it also checks each video **Convert to MP4** finishes. A video that is not converted yet is converted first. Identical copies in one library are merged at once; the other groups wait for you on [Duplicates](/help/processing#duplicates).
 
 ### Merge duplicates {#dedup-apply}
 
-Merges one group of duplicates into the copy that is kept: watch history, playlists and favourites move to it, and the other file goes to the library's trash. Not set up yet: it arrives in a later version.
+Merges one group of duplicates into the copy that is kept: watch history, playlists and favourites move to it, and the other file goes to the library's trash for 30 days. It runs when you press **Apply** on Duplicates, and by itself for identical copies in one library.
 
 ### Empty file trash {#trash-purge}
 
@@ -247,11 +247,11 @@ Puts back what the File actions page's **Restore** asked for: a converted origin
 
 ### YouTube downloads {#youtube-fetch}
 
-Downloads the new uploads of a library's YouTube channels and playlists, with their subtitles and thumbnails, one at a time. Not set up yet: it arrives in a later version.
+Downloads the new uploads of a library's YouTube channels and playlists, with their subtitles and thumbnails, one at a time. Each video goes on to **Convert to MP4** as soon as it lands. Only sources that are turned on download: the channels a library already had start **Off**, so turn them on under **YouTube sources…** (see [YouTube sources](/help/processing#youtube-sources)).
 
 ### YouTube back catalogue {#youtube-backfill}
 
-Downloads the older videos of a library's YouTube sources in small batches, only when nothing else needs the YouTube slot. It can be paused on its own. Not set up yet: it arrives in a later version.
+Downloads the older videos of a library's YouTube sources in small batches, only when nothing else needs the YouTube slot. It can be paused on its own. It runs only for sources set to **New uploads and back catalogue** (see [YouTube sources](/help/processing#youtube-sources)), and each video goes on to **Convert to MP4** as soon as it lands.
 
 ## What the states and messages mean {#states}
 

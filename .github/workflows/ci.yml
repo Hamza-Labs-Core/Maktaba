@@ -298,7 +298,8 @@ jobs:
       - name: Download the pinned files
         if: steps.cache.outputs.cache-hit != 'true'
         run: tools/release/linux-app/payload.sh --fetch-only
-      - if: steps.cache.outputs.cache-hit != 'true'
+      # main's entry only: a release/** branch's would be seen by that branch alone
+      - if: github.ref == 'refs/heads/main' && steps.cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: build/linux-app/downloads
@@ -331,13 +332,29 @@ jobs:
       - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/packages/devportal/.nvmrc
-          cache: npm
-          cache-dependency-path: web/wiki-app/package-lock.json
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: npm cache
+        id: npm-cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: npm
+          lock-hash: ${{ hashFiles('web/wiki-app/package-lock.json') }}
+
       - name: The wiki app builds
         working-directory: web/wiki-app
         run: |
           npm ci --no-audit --no-fund
           npm run build
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the npm cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.npm-cache.outputs.key != '' && steps.npm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.npm-cache.outputs.path }}
+          key: ${{ steps.npm-cache.outputs.key }}
 
   pr-body-check:
     # ci-paths: always-run, pr-only

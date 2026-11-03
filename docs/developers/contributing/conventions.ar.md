@@ -14,6 +14,7 @@
 | Android | `res/values/strings.xml` و`res/values-ar/strings.xml` في كل وحدة |
 | Apple | فهارس `.xcstrings` (مثل `apps/apple/Player/Localizable.xcstrings`)، بلغتَي `en` و`ar` معًا |
 | دليل المستخدم | صفحات المساعدة في `web/src/help/`، باللغتين |
+| الويكي | كل تغيير في المواصفات (`specs/epics/`) يُشحن بعربيّته في `docs/wiki/db/ar/`؛ ويُفشل `python3 docs/wiki/db/generate_wiki.py --check` التكاملَ المستمر إن غابت العربية أو تقادمت |
 
 يجب أن يعمل الاتجاه من اليمين إلى اليسار:
 

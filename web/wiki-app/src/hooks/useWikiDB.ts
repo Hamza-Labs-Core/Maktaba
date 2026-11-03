@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { WikiBundle, WikiDB } from '@/types/wiki';
 import { buildBundle, buildIndex, type IndexedEntry } from '@/lib/search-index';
+import { LANG, dbBase, t } from '@/lib/i18n';
 
 interface State {
   bundle: WikiBundle | null;
@@ -35,7 +36,8 @@ export function useWikiDB(): State {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const base = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/db`;
+      // the page's language picks the database: /wiki/db/ or /ar/wiki/db/ (lib/i18n.ts)
+      const base = dbBase(LANG, import.meta.env.BASE_URL);
       const primary = await fetchJSON<WikiDB>(`${base}/${PRIMARY}`);
       if (!primary || !Array.isArray(primary.entries)) {
         if (!cancelled)
@@ -43,7 +45,7 @@ export function useWikiDB(): State {
             bundle: null,
             index: [],
             loading: false,
-            error: `Could not load wiki database from ${base}/${PRIMARY}`,
+            error: `${t('app.error.body')} ${base}/${PRIMARY}`,
           });
         return;
       }

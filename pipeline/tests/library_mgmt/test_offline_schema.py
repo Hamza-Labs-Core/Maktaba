@@ -1,6 +1,7 @@
 """Story 47.1: slot 0166 (Epic 47) up and down on SQLite and Postgres, the stage rows the
-graph defines (off until their story ships, trash_purge on), the ``convert`` pool, the
-``dup_group`` subject, and the youtube_sources backfill (mode ``off``)."""
+graph defines (all shipped and on, also in the stage registry the help reads), the
+``convert`` pool, the ``dup_group`` subject, and the youtube_sources backfill (mode
+``off``)."""
 
 from __future__ import annotations
 
@@ -15,7 +16,8 @@ import pytest
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, GRAPH, POOLS, get_stage
 from maktaba_pipeline.engine.sql import is_pg, loads
-from maktaba_pipeline.engine.stages.registry import get_impl
+from maktaba_pipeline.engine.stages._unreleased import unreleased_impl
+from maktaba_pipeline.engine.stages.registry import CORE_MODULES, get_impl
 from maktaba_pipeline.engine.subjects import label_of
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.runtime import Database
@@ -290,6 +292,22 @@ def test_the_graph_has_the_epic47_stages() -> None:
         )
         assert get_impl(name) is not None and get_impl(name).run is not None  # type: ignore[union-attr]
     assert EPIC47_PRIORITIES["youtube_fetch"] < 150 < EPIC47_PRIORITIES["youtube_backfill"]
+
+
+def test_the_epic47_stages_are_shipped_in_the_registry() -> None:
+    """The in-app help (web help.coverage.test.ts) reads ``CORE_MODULES`` and the graph's
+    ``unreleased`` flag: a shipped stage's entry may not say it comes later. Each Epic 47
+    stage is a core module of its own, not unreleased, and its job is not the stub that
+    fails with ``not_implemented``."""
+    by = {s.name: s for s in GRAPH}
+    for name in EPIC47_STAGES:
+        assert CORE_MODULES[name] == f"maktaba_pipeline.engine.stages.{name}", name
+        assert not by[name].unreleased, name
+        impl = get_impl(name)
+        assert impl is not None and impl.run is not None, name
+        stub = unreleased_impl(name, "test").run
+        assert stub is not None
+        assert impl.run.__qualname__ != stub.__qualname__, name
 
 
 @pytest.mark.asyncio

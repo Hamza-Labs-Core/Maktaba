@@ -77,6 +77,9 @@ type Handler struct {
 
 	libMu    sync.Mutex
 	libCache libraryCache
+	// actCache keeps GET /api/queues/libraries/activity (one scan of the finished
+	// jobs) for a minute per window; guarded by libMu.
+	actCache map[int]activityCache
 
 	ringMu sync.Mutex
 	ring   backlogRing
@@ -135,6 +138,7 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues", h.Snapshot)
 	r.Get("/api/queues/graph", h.Graph)
 	r.Get("/api/queues/libraries", h.Libraries)
+	r.Get("/api/queues/libraries/activity", h.LibraryActivity)
 	r.Get("/api/queues/health", h.Health)
 	r.Get("/api/queues/insights", h.Insights)
 	r.Get("/api/queues/pulse", h.Pulse)

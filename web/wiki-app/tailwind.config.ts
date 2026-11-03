@@ -8,6 +8,9 @@ const config: Config = {
       fontFamily: {
         sans: [
           'Inter',
+          // Inter has no Arabic letters: the Arabic page's text falls through to these
+          'Noto Sans Arabic',
+          'Geeza Pro',
           '-apple-system',
           'BlinkMacSystemFont',
           'Segoe UI',
@@ -22,7 +25,7 @@ const config: Config = {
         ],
       },
       colors: {
-        // Indigo-focused brand palette to match Linear project.
+        // Indigo-focused brand palette.
         brand: {
           50: '#eef2ff',
           100: '#e0e7ff',

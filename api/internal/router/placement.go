@@ -102,6 +102,7 @@ func buildPlacement() placement.Table {
 		"/api/queues/health",
 		"/api/queues/insights",
 		"/api/queues/libraries",
+		"/api/queues/libraries/activity",
 		"/api/queues/pulse",
 		"/api/queues/running",
 		"/api/queues/{stage}/failures",

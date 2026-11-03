@@ -41,6 +41,8 @@ jobs:
           version: "0.13.4"
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build the node release assets
         run: deploy/packaging/node/build-release.sh --version "v${NODE_VERSION}" --out dist
@@ -118,9 +120,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: |
-            tools/release/go.sum
-            shared/go/releaseverify/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum') }}
 
       # every module both go.sums name, so the cache this job saves holds what
       # sign-and-release runs too (gen-release-json, release-order, releaseverify's tests);
@@ -155,6 +162,14 @@ jobs:
           cat "$rel/release.json"
           go run ./cmd/gen-release-json --check "$rel/release.json" --repo ../..
 
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
   installer-tests:
     name: installer tests (${{ matrix.os }})
     if: inputs.packaging
@@ -167,6 +182,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: shellcheck
         if: runner.os == 'Linux'
         run: |
@@ -220,13 +238,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: tools/release/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
+
       # The static nfpm _launcher.yml builds and main's runs cache, under the same key: a
       # build from source here fetched some 50 modules and their checksums each run, and
       # one sum.golang.org stream error failed the job.
       - name: nfpm from the cache
         id: nfpm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/go/bin/nfpm
           key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
@@ -253,6 +279,21 @@ jobs:
       - name: Homebrew formula and cask
         run: bash tools/release/homebrew-tap-test.sh
 
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
+      - name: Save the static nfpm
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.nfpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/go/bin/nfpm
+          key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
+
   install-linux:
     name: install from the archive (linux, --system)
     if: inputs.packaging
@@ -261,6 +302,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
@@ -289,6 +333,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
@@ -384,7 +431,14 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: cmd/maktaba-server/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('cmd/maktaba-server/go.sum') }}
 
       - uses: actions/download-artifact@v8.0.1
         with:
@@ -402,6 +456,14 @@ jobs:
           go test -count=1 -timeout 20m -run 'TestRealVenvFromARelease$' -v ./internal/appvenv/ | tee "$RUNNER_TEMP/release-venv.out"
           grep -q -- "--- PASS: TestRealVenvFromARelease " "$RUNNER_TEMP/release-venv.out" ||
             { echo "::error::TestRealVenvFromARelease did not pass (or was skipped)"; exit 1; }
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
 
   # Maktaba for Windows's first run (Epic 38, story 38.7): the bootstrap's tests on Windows
   # (real venvs, the msvcrt lock, CTRL_BREAK mid-download), then the venv built from the
@@ -437,6 +499,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: venv bootstrap tests
         working-directory: pipeline
@@ -509,6 +573,9 @@ jobs:
         with:
           sparse-checkout: deploy/packaging/node
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: node-origin tests (Windows PowerShell 5.1)
         shell: powershell
         run: .\deploy\packaging\node\tests\node-origin.Tests.ps1

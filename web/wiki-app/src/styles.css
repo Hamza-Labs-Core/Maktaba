@@ -8,6 +8,11 @@
   }
   body {
     @apply text-[14px] leading-relaxed;
+    overflow-wrap: break-word;
+  }
+  /* Arabic reads better a little larger and looser than Latin at the same size */
+  [lang='ar'] body {
+    @apply text-[15px] leading-loose;
   }
   :focus-visible {
     @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-950;
@@ -27,9 +32,21 @@
 }
 
 @layer components {
-  /* Markdown content styling — applied to elements rendered from markdown.ts. */
+  /* Markdown content styling — applied to elements rendered from markdown.ts. A long path or
+     identifier wraps at the line's end rather than push the page sideways; a word that fits
+     is never split (break-word, not anywhere or break-all). */
   .md {
     @apply text-slate-800 dark:text-slate-200 leading-7;
+    overflow-wrap: break-word;
+  }
+  /* code reads left to right inside Arabic prose */
+  .md code {
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+  .md pre {
+    direction: ltr;
+    text-align: left;
   }
   .md h1,
   .md h2,
@@ -83,12 +100,21 @@
   .md hr {
     @apply my-6 border-slate-200 dark:border-slate-800;
   }
+  /* A table wider than a phone scrolls inside itself, never the page; a cell keeps its words
+     whole (break-word sizes a column by its longest word; `anywhere` would squeeze a column
+     to a letter, as maktaba.dev's guides found on a phone, #617). */
   .md table {
-    @apply my-4 w-full border-collapse text-[13px];
+    @apply my-4 border-collapse text-[13px];
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
   }
   .md th,
   .md td {
-    @apply border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-left;
+    @apply border border-slate-200 dark:border-slate-800 px-3 py-1.5 text-start align-top;
+    overflow-wrap: break-word;
+    word-break: normal;
+    min-width: 6rem;
   }
   .md th {
     @apply bg-slate-50 dark:bg-slate-900 font-semibold;

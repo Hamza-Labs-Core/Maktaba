@@ -688,6 +688,12 @@ export interface LibraryQueueRow {
   last_activity_at: string | null;
 }
 
+/** GET /api/queues/libraries/activity: done / failed per day, aligned with days */
+export interface LibraryActivityResponse {
+  days: string[];
+  items: { library_id: string; done: number[]; failed: number[] }[];
+}
+
 export interface HealthSeries {
   metric: string;
   points: { t: string; v: number }[];
@@ -920,6 +926,12 @@ export const queueApi = {
   running: (host?: string) =>
     api.get<{ host: string; jobs: JobRef[] }>(`/api/queues/running${qs({ host })}`),
   libraries: () => api.get<{ items: LibraryQueueRow[] }>("/api/queues/libraries"),
+  /** each library's finished jobs per UTC day, oldest first (admin; cached 1 min) */
+  libraryActivity: (days = 14) =>
+    api.get<LibraryActivityResponse>(`/api/queues/libraries/activity${qs({ days })}`),
+  /** one library's Epic 47 summary (YouTube, Not MP4, duplicates, trash) */
+  offlineSummary: (id: string) =>
+    api.get<OfflineSummary>(`/api/libraries/${q(id)}/offline-summary`),
   health: (hours = 4) => api.get<{ series: HealthSeries[] }>(`/api/queues/health${qs({ hours })}`),
   explain: (text: string, libraryId?: string, limit?: number) =>
     api.get<ExplainResponse>(`/api/explain${qs({ q: text, library_id: libraryId, limit })}`),

@@ -1,0 +1,135 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 29 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-29-analytics": {
+      "title": {
+        "hash": "4e3e0b3cb9e52849",
+        "ar": "تحليلات المشاهدة وتتبّع النشاط"
+      },
+      "content": {
+        "hash": "4ed6fc0536be724e",
+        "ar": "تحليلات المشاهدة وتتبّع النشاط.\n\nمكتبة خادم وسائط **متعدد المستخدمين**. والمشغّل الذي يديره لأسرة أو فصل دراسي أو مؤسسة صغيرة لا يملك وسيلة للإجابة عن الأسئلة التي يطرحها كل مشغّل من هذا النوع عاجلًا أو آجلًا: *ما الذي يُشاهَد، ومَن يشاهده، ومتى، وإلى أي حدّ وصل فيه؟* تبني الملحمة 29 هذه الرؤية داخل النظام — «مثل Tautulli لـ Plex، لكنه مدمج» — دون إلحاق خدمة تحليلات ثانية به."
+      }
+    },
+    "story-29.1": {
+      "title": {
+        "hash": "7f60777f95c28a03",
+        "ar": "تتبّع جلسات المشاهدة"
+      },
+      "content": {
+        "hash": "1afa4732342dc179",
+        "ar": "# القصة 29.1 — تتبّع جلسات المشاهدة\n\n> الملحمة 29 · تحليلات المشاهدة · المرحلة 1 (الجمع)\n\n## الوصف\n\nيُسجَّل كل تشغيل بوصفه **جلسة مشاهدة**: صفًّا يُفتح حين\nيبدأ التشغيل، ويتقدّم بنبضة دورية، ويُغلق حين\nيتوقف التشغيل. وهذا هو جدول الحقائق الذي يقرؤه بقية الملحمة.\n\nالسلوك:\n\n- **البدء.** الطلب `POST /api/watch/start {video_id, device_type?, platform?,\n  quality?}` يُدرج صفًّا في `watch_sessions` (`state='active'`،\n  `started_at = last_heartbeat = now`، `duration_sec = 0`) ويعيد\n  `{session_id}`. ويُجزَّأ عنوان IP للعميل مع ملح إلى `ip_addr_hash`؛\n  و"
+      }
+    },
+    "story-29.2": {
+      "title": {
+        "hash": "8c3fa3f49322d546",
+        "ar": "سجلّ المشاهدة"
+      },
+      "content": {
+        "hash": "7fc49fb2751175a8",
+        "ar": "# القصة 29.2 — سجلّ المشاهدة\n\n> الملحمة 29 · تحليلات المشاهدة · المرحلة 2 (القراءة لكل مستخدم)\n\n## الوصف\n\nيستطيع كل مستخدم أن يرى سجلّ مشاهدته ويديره، مع إبقاء موضع\nالاستئناف متّسقًا مع «متابعة المشاهدة».\n\n- **القائمة.** يعيد `GET /api/me/history?limit=&offset=&from=&to=`\n  مقاطع الفيديو التي شاهدها المستدعي، الأحدث أولًا، مقسّمة إلى صفحات. ويحمل كل عنصر\n  ملخص الفيديو، و`last_watched_at`، و`times_watched` (عدد\n  الجلسات)، و`total_watch_sec`، وأفضل قيمة `percent_complete`، وعلامة\n  `completed`، و**موضع الاستئناف `position_sec`** المقروء من\n  `playback_state` (D2). و`from`/`to`"
+      }
+    },
+    "story-29.3": {
+      "title": {
+        "hash": "438580d4f68ccf38",
+        "ar": "لوحة التحليلات (للمسؤول)"
+      },
+      "content": {
+        "hash": "54720f548faed7fa",
+        "ar": "# القصة 29.3 — لوحة التحليلات (للمسؤول)\n\n> الملحمة 29 · تحليلات المشاهدة · المرحلة 3 (القراءة المجمّعة)\n\n## الوصف\n\nلوحة مقصورة على المسؤول تعرض إحصاءات مشاهدة مجمّعة، مبنية على\nاستعلامات `GROUP BY` وقت القراءة فوق `watch_sessions` (مع ربطها بـ `users`\nو`videos` و`video_tags`/`tags` و`libraries`) مع ذاكرة مؤقتة قصيرة في الذاكرة.\n\n### البطاقات / نقاط الوصول\n\n- **المباشر — `GET /api/admin/analytics/live`.** الجلسات التي هي حاليًا\n  `active` (نبضتها ضمن نافذة التقادم): مَن يشاهد ماذا،\n  ومنذ متى، وعلى أي جهاز. وتقود بطاقة «يُشاهَد الآن».\n- **الملخّص — `GET /api/admin/analytic"
+      }
+    },
+    "story-29.4": {
+      "title": {
+        "hash": "44478c04d2d04b8f",
+        "ar": "موجز نشاط المستخدم والخصوصية"
+      },
+      "content": {
+        "hash": "f0e17cd738fecc78",
+        "ar": "# القصة 29.4 — موجز نشاط المستخدم والخصوصية\n\n> الملحمة 29 · تحليلات المشاهدة · المرحلة 4 (العرض الذاتي + الخصوصية)\n\n## الوصف\n\nخط زمني لكل مستخدم يعرض نشاطه هو، ومفتاح يوقف\nكل التتبّع مؤقتًا.\n\n- **الموجز.** يعيد `GET /api/me/activity?limit=&offset=&types=`\n  خطًا زمنيًا مدمجًا بترتيب زمني عكسي لنشاط المستدعي:\n  - **شاهد** — من `watch_sessions` (الفيديو، والوقت، والنسبة)،\n  - **بحث** — من `search_history` (الاستعلام، والوقت)،\n  - **قيّم** — من واجهة التقييمات إن وُجدت (الفيديو، والدرجة،\n    والوقت)؛ ويُحذف بسلاسة حين يغيب جدول التقييمات.\n\n  `t"
+      }
+    },
+    "story-29.5": {
+      "title": {
+        "hash": "ee2002d3fc549332",
+        "ar": "إحصاءات التشغيل لكل فيديو"
+      },
+      "content": {
+        "hash": "3255b3ae30114dc7",
+        "ar": "# القصة 29.5 — إحصاءات التشغيل لكل فيديو\n\n> الملحمة 29 · تحليلات المشاهدة · المرحلة 5 (القراءة لكل فيديو)\n\n## الوصف\n\nتعرض صفحة تفاصيل الفيديو أداء ذلك الفيديو.\n\n- **الإحصاءات.** يعيد `GET /api/videos/{id}/stats` قيمًا مجمّعة فوق\n  `watch_sessions` لذلك الفيديو:\n  - `total_views` — عدد الجلسات،\n  - `unique_viewers` — قيم `user_id` المميزة،\n  - `avg_completion` — متوسط `percent_complete`،\n  - `avg_watch_sec` — متوسط `duration_sec`،\n  - `completion_rate` — نسبة الجلسات التي حالتها `state='completed'`،\n  - `last_watched_at`.\n- **التفصيل لكل مستخدم (للمسؤول فقط).** حين يكون المستدعي "
+      }
+    },
+    "story-29.6": {
+      "title": {
+        "hash": "7eae1ed4e8462297",
+        "ar": "التصدير والتقارير والاحتفاظ"
+      },
+      "content": {
+        "hash": "53bcf525311cb1b0",
+        "ar": "# القصة 29.6 — التصدير والتقارير والاحتفاظ\n\n> الملحمة 29 · تحليلات المشاهدة · المرحلة 6 (التصدير + دورة الحياة)\n\n## الوصف\n\nيستطيع المسؤولون تصدير بيانات التحليلات، ويحدّ النظام من\nنموّه بنفسه عبر نافذة احتفاظ قابلة للضبط.\n\n- **التصدير.** يبثّ `GET /api/admin/analytics/export?format=csv|json&range=30d`\n  سجلات جلسات المشاهدة ضمن النطاق. تُخرج صيغة CSV صفًّا للعناوين و\n  سطرًا لكل جلسة (مُعرّف الجلسة، والمستخدم، والفيديو، والبداية، والنهاية، والمدة،\n  والنسبة، والحالة، والجهاز، والمنصة، والجودة)؛ وتُخرج JSON مصفوفة بالمحتوى\n  نفسه. مع `Content-Disposition: attachment` واسم ملف مؤرَّخ. للمسؤول\n  فق"
+      }
+    },
+    "plan-29.01-watch-session-tracking": {
+      "title": {
+        "hash": "7939eca6cf50b95c",
+        "ar": "خطة التنفيذ — القصة 29.1 تتبّع جلسات المشاهدة"
+      },
+      "content": {
+        "hash": "fd07aa9ff75786d6",
+        "ar": "# خطة التنفيذ — القصة 29.1 تتبّع جلسات المشاهدة\n\n> مرافقة لـ [story-29-01-watch-session-tracking.md](story-29-01-watch-session-tracking.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| الترحيل | الخانة **0086** (`shared/db/migrations/0086_watch_sessions.sql` + `.sqlite.sql`): `watch_sessions` + `user_analytics_prefs`. |\n| الحزمة | `api/internal/handlers/watch/` (المعالج + المستودع + المنطق الخالص + الحاصد). |\n| المسارات | `POST /api/watch/start` و`/heartbeat` و`/stop`، مركّبة في `router/p29.go`. |\n| الحاصد | `watch.Reaper` يبدؤه `main.go` (على غرار `runPairingSweep"
+      }
+    },
+    "plan-29.02-watch-history": {
+      "title": {
+        "hash": "5d2a95da6cc8c6a3",
+        "ar": "خطة التنفيذ — القصة 29.2 سجلّ المشاهدة"
+      },
+      "content": {
+        "hash": "e9556db4be05e521",
+        "ar": "# خطة التنفيذ — القصة 29.2 سجلّ المشاهدة\n\n> مرافقة لـ [story-29-02-watch-history.md](story-29-02-watch-history.md).\n\n## 0. الموضع\n\n`api/internal/handlers/watch/history.go` (الحزمة نفسها التي في 29.1؛ وتتشارك\nالمستودع). المسارات مركّبة في `p29.go` على المجموعة `/api/me`:\n\n```\nGET    /api/me/history\nGET    /api/me/history/{video_id}\nDELETE /api/me/history/{video_id}\n```\n\n## 1. الاستعلامات (محصورة في المالك، بعلامات `$N` النائبة)\n\n**القائمة** — تجميع الجلسات لكل فيديو، مع ربط يساري بـ `playback_state` لنقطة\nالاستئناف (D2) وبـ `videos` للملخص:\n\n```sql\nSELECT v.id, v.title, v.duration_sec,\n      "
+      }
+    },
+    "plan-29.03-analytics-dashboard": {
+      "title": {
+        "hash": "cb0189a071fc124d",
+        "ar": "خطة التنفيذ — القصة 29.3 لوحة التحليلات (للمسؤول)"
+      },
+      "content": {
+        "hash": "9346072663bd329d",
+        "ar": "# خطة التنفيذ — القصة 29.3 لوحة التحليلات (للمسؤول)\n\n> مرافقة لـ [story-29-03-analytics-dashboard.md](story-29-03-analytics-dashboard.md).\n\n## 0. الموضع\n\n`api/internal/handlers/analytics/` — قراءات مجمّعة للمسؤول:\n\n```\nGET /api/admin/analytics/live\nGET /api/admin/analytics/summary?range=\nGET /api/admin/analytics/top-videos?range=&limit=\nGET /api/admin/analytics/activity?range=&bucket=\nGET /api/admin/analytics/users?range=&limit=\n```\n\nمركّبة في `p29.go`. كل معالج: `principal.FromContext`؛ و`403` ما لم يكن\n`p.IsAdmin`.\n\n## 1. تحليل النطاق (خالص، `ranges.go`)\n\n```go\n// ParseRa"
+      }
+    },
+    "plan-29.04-user-activity-feed": {
+      "title": {
+        "hash": "a4677cbca7ba4a0f",
+        "ar": "خطة التنفيذ — القصة 29.4 موجز نشاط المستخدم والخصوصية"
+      },
+      "content": {
+        "hash": "b66471f922ef728f",
+        "ar": "# خطة التنفيذ — القصة 29.4 موجز نشاط المستخدم والخصوصية\n\n> مرافقة لـ [story-29-04-user-activity-feed.md](story-29-04-user-activity-feed.md).\n\n## 0. الموضع\n\n## 1. تجميع الموجز\n\nكل مصدر استعلام صغير يعيد `ActivityItem{Kind, At\ntime.Time, …}` مشتركًا:\n\n- **شاهد** — `SELECT video_id, started_at, percent_complete FROM\n  watch_sessions WHERE user_id=$1 ORDER BY started_at DESC LIMIT n`.\n- **بحث** — `SELECT query, last_used_at FROM search_history WHERE\n  user_id=$1 ORDER BY last_used_at DESC LIMIT n`.\n- **قيّم** — محميّ: فحص وجود جدول للتقييمات؛ فإن غاب، يُتخ"
+      }
+    },
+    "plan-29.05-playback-statistics": {
+      "title": {
+        "hash": "0611fe78380dad73",
+        "ar": "خطة التنفيذ — القصة 29.5 إحصاءات التشغيل لكل فيديو"
+      },
+      "content": {
+        "hash": "a53ae3e340808182",
+        "ar": "# خطة التنفيذ — القصة 29.5 إحصاءات التشغيل لكل فيديو\n\n> مرافقة لـ [story-29-05-playback-statistics.md](story-29-05-playback-statistics.md).\n\n## 0. الموضع\n\n`api/internal/handlers/analytics/videostats.go` (يقيم تفصيل المسؤول\nبطبيعة الحال بجوار القراءات المجمّعة الأخرى). المسار في `p29.go`:\n\n```\nGET /api/videos/{id}/stats\n```\n\nيلزم وجود هوية موثّقة؛ والإضافات الخاصة بالمسؤول محمية داخل المعالج.\n\n## 1. الاستعلامات\n\n**المجمّع** (للجميع):\n\n```sql\nSELECT COUNT(*)                               AS total_views,\n       COUNT(DISTINCT user_id)                AS unique_viewers,\n       COALES"
+      }
+    },
+    "plan-29.06-export-and-reports": {
+      "title": {
+        "hash": "276f9b1e1f8a8df9",
+        "ar": "خطة التنفيذ — القصة 29.6 التصدير والتقارير والاحتفاظ"
+      },
+      "content": {
+        "hash": "c9ee84927ec88482",
+        "ar": "# خطة التنفيذ — القصة 29.6 التصدير والتقارير والاحتفاظ\n\n> مرافقة لـ [story-29-06-export-and-reports.md](story-29-06-export-and-reports.md).\n\n## 0. الموضع\n\n- التصدير: `api/internal/handlers/analytics/export.go`، والمسار\n  `GET /api/admin/analytics/export` في `p29.go` (مقصور على المسؤول).\n- حذف ما تجاوز مدة الاحتفاظ: مدمج في `watch.Reaper` (خطة القصة 29.1 §5).\n\n## 1. معالج التصدير\n\n- المعاملات: `format` (`csv`|`json`، والافتراضي `csv`)، و`range` (بإعادة استخدام\n  `ParseRange`).\n- الاستعلام: `SELECT id, user_id, video_id, started_at, ended_at,\n  duration_sec, percent_complete, state, device_type, platform, quality"
+      }
+    }
+  }
+}

@@ -1,17 +1,14 @@
 import { Link } from '@tanstack/react-router';
-import { CircleDot, ExternalLink, Github, Sparkles } from 'lucide-react';
-import {
-  GITHUB_ISSUES,
-  GITHUB_REPO,
-  PENPOT_LINK,
-  PHASE_INFO,
-  PHASES,
-} from '@/lib/labels';
-import type { WikiBundle } from '@/types/wiki';
+import { CircleDot, ExternalLink, Github } from 'lucide-react';
+import { GITHUB_ISSUES, GITHUB_REPO, PHASES, phaseText } from '@/lib/labels';
+import { t, type Key } from '@/lib/i18n';
+import type { EntryType, WikiBundle } from '@/types/wiki';
 
 interface Props {
   bundle: WikiBundle;
 }
+
+const STATS: EntryType[] = ['epic', 'story', 'plan', 'endpoint', 'entity', 'diagram', 'mockup', 'review'];
 
 export function Dashboard({ bundle }: Props) {
   const c = bundle.meta.counts;
@@ -28,56 +25,39 @@ export function Dashboard({ bundle }: Props) {
     }
   }
 
-  const stats: { to: string; params?: Record<string, string>; n: number; label: string }[] = [
-    { to: '/type/$type', params: { type: 'epic' }, n: c.epic || 0, label: 'Epics' },
-    { to: '/type/$type', params: { type: 'story' }, n: c.story || 0, label: 'Stories' },
-    { to: '/type/$type', params: { type: 'plan' }, n: c.plan || 0, label: 'Plans' },
-    { to: '/type/$type', params: { type: 'endpoint' }, n: c.endpoint || 0, label: 'API endpoints' },
-    { to: '/type/$type', params: { type: 'entity' }, n: c.entity || 0, label: 'DB tables' },
-    { to: '/type/$type', params: { type: 'diagram' }, n: c.diagram || 0, label: 'Diagrams' },
-    { to: '/type/$type', params: { type: 'mockup' }, n: c.mockup || 0, label: 'Mockups' },
-    { to: '/type/$type', params: { type: 'review' }, n: c.review || 0, label: 'Reviews' },
-  ];
-
   return (
     <div className="space-y-7">
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-brand-50 via-white to-slate-50 dark:from-brand-950/40 dark:via-slate-950 dark:to-slate-900 p-7">
+      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-brand-50 via-white to-slate-50 dark:from-brand-950/40 dark:via-slate-950 dark:to-slate-900 p-5 sm:p-7">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          Maktaba Wiki
+          {t('app.name')}
         </h1>
-        <p className="mt-2 max-w-prose text-slate-600 dark:text-slate-300">
+        <p className="mt-2 max-w-prose text-slate-600 dark:text-slate-300 break-words">
           {bundle.meta.description}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <QuickLink href={GITHUB_ISSUES} icon={<CircleDot className="h-3 w-3" />}>
-            GitHub issues ·{' '}
-            <span lang="ar" dir="rtl">
-              مشكلات GitHub
-            </span>
+            {t('dash.issues')}
           </QuickLink>
           <QuickLink href={GITHUB_REPO} icon={<Github className="h-3 w-3" />}>
-            GitHub repo
-          </QuickLink>
-          <QuickLink href={PENPOT_LINK} icon={<Sparkles className="h-3 w-3" />}>
-            Penpot designs
+            {t('dash.repo')}
           </QuickLink>
         </div>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {stats.map((s, i) => (
+        {STATS.map((type) => (
           <Link
-            key={i}
-            to={s.to}
-            params={s.params}
+            key={type}
+            to="/type/$type"
+            params={{ type }}
             className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3.5 hover:border-brand-500 dark:hover:border-brand-400 hover:-translate-y-px hover:shadow-soft transition-all"
           >
             <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-none">
-              {s.n}
+              {c[type] || 0}
             </div>
-            <div className="mt-1 text-[11px] uppercase tracking-wide font-medium text-slate-500 dark:text-slate-400">
-              {s.label}
+            <div className="mt-1 text-[11px] uppercase tracking-wide rtl:normal-case rtl:tracking-normal rtl:text-[12px] font-medium text-slate-500 dark:text-slate-400 break-words">
+              {t(`dash.stat.${type}` as Key)}
             </div>
           </Link>
         ))}
@@ -86,46 +66,38 @@ export function Dashboard({ bundle }: Props) {
       {/* Phases */}
       <section>
         <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3">
-          Phases
+          {t('dash.phases')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {PHASES.map((ph) => {
             const count = phaseStoryCounts[ph];
             const pct = totalStories ? Math.round((count / totalStories) * 100) : 0;
-            const lbl = PHASE_INFO[ph];
+            const lbl = phaseText(ph);
             return (
               <div
                 key={ph}
                 className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3"
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-[13.5px]">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-[13.5px] min-w-0">
                     {lbl.title}
-                    <span lang="ar" dir="rtl" className="block font-normal text-[12px] text-slate-600 dark:text-slate-300">
-                      {lbl.titleAr}
-                    </span>
                   </span>
-                  <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
-                    {count} stories
+                  <span className="shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                    {t('dash.stories', { n: count })}
                   </span>
                 </div>
                 <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2 min-h-[34px]">
                   {lbl.sub}
                 </p>
-                <p lang="ar" dir="rtl" className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2">
-                  {lbl.subAr}
-                </p>
                 <div className="mt-2 h-1.5 bg-slate-100 dark:bg-slate-800 rounded overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-brand-500 to-violet-500"
+                    className="h-full bg-gradient-to-r rtl:bg-gradient-to-l from-brand-500 to-violet-500"
                     style={{ width: `${pct}%` }}
                   />
                 </div>
-                <div className="mt-2 flex justify-between text-[11px] text-slate-500 dark:text-slate-400">
-                  <span>
-                    {lbl.range} · <span lang="ar" dir="rtl">{lbl.rangeAr}</span>
-                  </span>
-                  <span>{pct}% of stories</span>
+                <div className="mt-2 flex flex-wrap justify-between gap-x-2 text-[11px] text-slate-500 dark:text-slate-400">
+                  <span>{lbl.range}</span>
+                  <span>{t('dash.pctStories', { n: pct })}</span>
                 </div>
               </div>
             );
@@ -136,7 +108,7 @@ export function Dashboard({ bundle }: Props) {
       {/* Epics grid */}
       <section>
         <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-3">
-          All epics
+          {t('dash.allEpics')}
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {epics.map((e) => {
@@ -149,24 +121,24 @@ export function Dashboard({ bundle }: Props) {
                 key={e.id}
                 to="/entry/$id"
                 params={{ id: e.id }}
-                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3.5 hover:border-brand-500 dark:hover:border-brand-400 hover:-translate-y-px hover:shadow-soft transition-all"
+                className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3.5 hover:border-brand-500 dark:hover:border-brand-400 hover:-translate-y-px hover:shadow-soft transition-all min-w-0"
               >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-[13.5px]">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <span className="font-semibold text-slate-900 dark:text-slate-100 text-[13.5px] min-w-0 break-words">
                     {e.title}
                   </span>
-                  <span className="rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-200 px-2 py-0.5 text-[11px] font-medium">
+                  <span className="shrink-0 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-800 dark:text-violet-200 px-2 py-0.5 text-[11px] font-medium">
                     P{e.phase || '?'}
                   </span>
                 </div>
-                <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2 min-h-[34px]">
+                <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed line-clamp-2 min-h-[34px] break-words">
                   {desc}
                   {truncated ? '…' : ''}
                 </p>
-                <div className="mt-2 flex gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-                  <span>{sc} stories</span>
-                  <span>{pc} plans</span>
-                  {e.engine && <span className="truncate">{e.engine}</span>}
+                <div className="mt-2 flex flex-wrap gap-x-3 text-[11px] text-slate-500 dark:text-slate-400 min-w-0">
+                  <span>{t('dash.stories', { n: sc })}</span>
+                  <span>{t('dash.plans', { n: pc })}</span>
+                  {e.engine && <span className="truncate max-w-full">{e.engine}</span>}
                 </div>
               </Link>
             );

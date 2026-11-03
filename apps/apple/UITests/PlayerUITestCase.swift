@@ -169,9 +169,30 @@ class PlayerUITestCase: XCTestCase {
         if fresh {
             let walkthrough = element("permissions.walkthrough")
             if walkthrough.waitForExistence(timeout: 10 * patience) {
-                app.buttons["permissions.continue"].tap()
-                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5 * patience))
+                // the sheet is in the tree as it starts to slide up, and UIKit takes no touch
+                // while a presentation runs: a tap 0.5 s after it appeared was dropped and the
+                // walkthrough stayed (an iPhone run on #618). Continue is tapped once it stands
+                // still, the presentation over.
+                let go = app.buttons["permissions.continue"]
+                waitUntilStill(go, timeout: 5 * patience)
+                go.tap()
+                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5 * patience), "the permissions walkthrough closes")
             }
+        }
+    }
+
+    /// Waits (at most `timeout`) until `e` can be tapped and its frame is the same on two looks
+    /// a quarter second apart: a sheet or a page that is still moving has settled.
+    func waitUntilStill(_ e: XCUIElement, timeout: TimeInterval) {
+        let end = Date().addingTimeInterval(timeout)
+        var last = CGRect.null
+        while Date() < end {
+            if e.exists, e.isHittable {
+                let now = e.frame
+                if now == last { return }
+                last = now
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
         }
     }
 
