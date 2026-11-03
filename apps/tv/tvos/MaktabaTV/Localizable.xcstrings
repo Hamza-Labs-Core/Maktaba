@@ -81,6 +81,16 @@
         }
       }
     },
+    "Favorites" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المفضلة"
+          }
+        }
+      }
+    },
     "For you" : {
       "localizations" : {
         "ar" : {
@@ -151,32 +161,22 @@
         }
       }
     },
+    "Live picture" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "صورة البث المباشر"
+          }
+        }
+      }
+    },
     "Mini guide" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "الدليل المصغّر"
-          }
-        }
-      }
-    },
-    "More to watch" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المزيد للمشاهدة"
-          }
-        }
-      }
-    },
-    "Newly added" : {
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "أضيف حديثًا"
           }
         }
       }
@@ -251,12 +251,12 @@
         }
       }
     },
-    "Picks" : {
+    "On now" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مختارات"
+            "value" : "يُعرض الآن"
           }
         }
       }
@@ -277,6 +277,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التشغيل من البداية"
+          }
+        }
+      }
+    },
+    "Recently added" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أضيف حديثًا"
+          }
+        }
+      }
+    },
+    "Recently watched" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "شوهد مؤخرًا"
           }
         }
       }
@@ -317,6 +337,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "اضغط «اختيار» للمحاولة مجددًا، أو ▲ ▼ لقناة أخرى."
+          }
+        }
+      }
+    },
+    "Select to try again." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اضغط للمحاولة مرة أخرى."
           }
         }
       }
@@ -431,12 +461,32 @@
         }
       }
     },
+    "This row could not be loaded." : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحميل هذا الصف."
+          }
+        }
+      }
+    },
     "Tuning…" : {
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "جارٍ ضبط القناة…"
+          }
+        }
+      }
+    },
+    "Up next" : {
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الدرس التالي"
           }
         }
       }

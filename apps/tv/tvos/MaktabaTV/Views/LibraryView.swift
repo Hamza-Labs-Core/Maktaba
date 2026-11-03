@@ -1,10 +1,11 @@
 import MaktabaKit
 import SwiftUI
 
-/// The home's libraries; one opens its videos.
+/// The home's libraries (`GET /api/libraries/summary`: the pinned first, each with its newest
+/// videos for its picture, as the iPhone/iPad Player's Libraries); one opens its videos.
 struct LibraryView: View {
     @Environment(\.client) private var client
-    @State private var libraries: [Library] = []
+    @State private var libraries: [LibrarySummary] = []
     @State private var problem: HomeFailure?
     @State private var loading = true
 
@@ -41,7 +42,7 @@ struct LibraryView: View {
     private func load() async {
         guard let client else { return }
         do {
-            libraries = try await client.libraries()
+            libraries = LibrarySummary.ordered(try await client.librarySummaries())
             problem = nil
         } catch {
             problem = HomeFailure.shown("load libraries", error) ?? problem
@@ -50,27 +51,37 @@ struct LibraryView: View {
     }
 }
 
-/// A library's tile.
+/// A library's tile: its newest video's picture (the books while it loads, or when the
+/// library has none yet), its name and how many videos it has.
 struct LibraryCard: View {
-    let library: Library
+    static let width: CGFloat = 380
+    let library: LibrarySummary
+    @Environment(\.client) private var client
     @Environment(\.isFocused) private var focused
+    @State private var art = false
 
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "books.vertical.fill")
-                .font(.system(size: 72))
-                .foregroundStyle(Theme.goldText)
+        VStack(alignment: .leading, spacing: 16) {
+            Group {
+                if let client {
+                    AuthorizedImage(client: client, video: library.posterVideoIDs.first, small: true,
+                                    placeholder: "books.vertical.fill") { art = $0 }
+                } else {
+                    Rectangle().fill(Theme.surface)
+                }
+            }
+            .frame(width: Self.width, height: Self.width * 9 / 16)
+            .clipShape(.rect(cornerRadius: Theme.cornerRadius))
+            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).strokeBorder(Theme.border, lineWidth: 1))
+            .goldFocus(focused)
             Text(library.name)
-                .font(Theme.heading(40))
-                .foregroundStyle(Theme.text)
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
+                .font(Theme.heading(36))
+                .foregroundStyle(focused ? Theme.text : Theme.muted)
+                .lineLimit(1)
+                .frame(width: Self.width, alignment: .leading)
         }
-        .padding(24)
-        .frame(width: 380, height: 260)
-        .background(focused ? Theme.raised : Theme.surface, in: .rect(cornerRadius: Theme.cornerRadius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).strokeBorder(Theme.border, lineWidth: 1))
-        .goldFocus(focused)
+        // the UI tests read whether the picture showed
+        .accessibilityIdentifier(art ? "library.card.\(library.id).art" : "library.card.\(library.id)")
     }
 }
 
@@ -144,12 +155,13 @@ struct VideoCard: View {
     @Environment(\.client) private var client
     @Environment(\.isFocused) private var focused
     @State private var loaded: String?
+    @State private var art = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ZStack(alignment: .bottom) {
                 if let client {
-                    AuthorizedImage(client: client, video: id)
+                    AuthorizedImage(client: client, video: id, small: true) { art = $0 }
                 }
                 if progress > 0 {
                     ProgressView(value: progress)
@@ -167,6 +179,8 @@ struct VideoCard: View {
                 .lineLimit(2, reservesSpace: true)
                 .frame(width: Self.width, alignment: .leading)
         }
+        // the UI tests read whether the picture showed
+        .accessibilityIdentifier(art ? "video.card.\(id).art" : "video.card.\(id)")
         .task(id: id) {
             guard title == nil, let client else { return }
             loaded = try? await client.video(id).displayTitle
