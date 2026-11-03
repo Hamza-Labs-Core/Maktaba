@@ -177,6 +177,10 @@ public final class CapabilitiesStore {
     public private(set) var current: Capabilities = .allOn
     /// The ETag of `current` (sent as If-None-Match).
     @ObservationIgnored public private(set) var etag: String?
+    /// The home answered once (a 304, a 404 or a failure count): until then `current` is a
+    /// guess, every feature on. A shell built on the guess is built again once, at the first
+    /// answer; a later change keeps the screens open (story 51.11).
+    public private(set) var answered = false
 
     @ObservationIgnored private var source: (any CapabilitiesSource)?
     /// Moves on each `use` and `reset`: an answer for an older home is dropped.
@@ -222,6 +226,7 @@ public final class CapabilitiesStore {
         etag = nil
         generation += 1
         if current != .allOn { current = .allOn }
+        if answered { answered = false }
     }
 
     /// Asks now, then every `every` until `reset` or another `use`.
@@ -260,7 +265,9 @@ public final class CapabilitiesStore {
             // not answer)
             if Log.isCancellation(error) { return }
             Log.failure("capabilities", error, logger: Log.network)
+            guard mine == generation else { return }
         }
+        if !answered { answered = true }
     }
 }
 

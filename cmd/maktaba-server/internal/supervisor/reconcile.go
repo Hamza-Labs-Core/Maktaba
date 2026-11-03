@@ -66,10 +66,10 @@ const (
 	defaultReconcileMach = store.Home
 )
 
-// SupervisorLoop is a loop the supervisor runs for a switchable component
+// Loop is a loop the supervisor runs for a switchable component
 // (supervisor:mdns, supervisor:backups). The reconciler gives it its own context:
 // cancelled when the component is turned off.
-type SupervisorLoop struct {
+type Loop struct {
 	Name string // "supervisor:<name>", as the catalog lists it
 	Run  func(ctx context.Context)
 	// ConfigOn: it runs when its component has no desired row (today's server.toml).
@@ -115,7 +115,7 @@ type Reconciler struct {
 	Bundle    string
 	// Off is [components] reconcile = "off".
 	Off   bool
-	Loops []*SupervisorLoop
+	Loops []*Loop
 	Log   io.Writer
 	// Tick is how often a pass runs on what the supervisor holds (0: 1 s).
 	Tick time.Duration
@@ -451,7 +451,7 @@ func cond(typ, status, reason string, params map[string]any) store.Condition {
 
 // decide is one component's gate from the desired state and what runs (views of every
 // process, by component), with open the gate as it is now (for the start-only checks).
-func (r *Reconciler) decide(comp *components.Component, procs map[string][]procView, loop *SupervisorLoop,
+func (r *Reconciler) decide(comp *components.Component, procs map[string][]procView, loop *Loop,
 	desired map[string]store.Desired, wasOpen bool) decision {
 	id := comp.ID
 	own := procs[id]
@@ -640,7 +640,7 @@ func (r *Reconciler) reconciled(procs map[string][]procView) []*components.Compo
 	return out
 }
 
-func (r *Reconciler) loopOf(id string) *SupervisorLoop {
+func (r *Reconciler) loopOf(id string) *Loop {
 	for _, l := range r.Loops {
 		if l.component == id {
 			return l
@@ -784,7 +784,7 @@ func (r *Reconciler) applyLoops(ctx context.Context, decs map[string]decision) i
 	return moved
 }
 
-func (r *Reconciler) runLoop(ctx context.Context, l *SupervisorLoop, done chan struct{}) {
+func (r *Reconciler) runLoop(ctx context.Context, l *Loop, done chan struct{}) {
 	defer close(done)
 	defer func() {
 		if p := recover(); p != nil {
@@ -857,7 +857,7 @@ func hasCond(cs []store.Condition, typ string) bool {
 	return false
 }
 
-func (r *Reconciler) loopPhase(l *SupervisorLoop) string {
+func (r *Reconciler) loopPhase(l *Loop) string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	run := r.loops[l.Name]

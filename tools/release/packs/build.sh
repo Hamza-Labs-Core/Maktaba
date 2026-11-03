@@ -36,7 +36,9 @@ while [ $# -gt 0 ]; do
         *) die "unknown option $1" ;;
     esac
 done
-[ -n "$VERSION" ] && [ -n "$PLATFORM" ] && [ -n "$OUT" ] || die "--version, --platform and --out are needed"
+if [ -z "$VERSION" ] || [ -z "$PLATFORM" ] || [ -z "$OUT" ]; then
+  die "--version, --platform and --out are needed"
+fi
 case "$PLATFORM" in darwin-arm64 | windows-amd64 | linux-amd64 | linux-arm64) ;; *) die "bad platform $PLATFORM" ;; esac
 
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$REPO_ROOT" log -1 --pretty=%ct)}"

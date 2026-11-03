@@ -52,7 +52,7 @@ echo "ok: the same bytes twice, and it unpacks against its files.sha256"
 
 # split: parts, joined the same as the whole
 build "$tmp/c" --part-size 100000 >"$tmp/c.log" 2>&1 || { cat "$tmp/c.log"; fail "split build"; }
-[ -f "$tmp/c/$pack.part1" ] && [ -f "$tmp/c/$pack.part2" ] || fail "no parts"
+if [ ! -f "$tmp/c/$pack.part1" ] || [ ! -f "$tmp/c/$pack.part2" ]; then fail "no parts"; fi
 [ ! -e "$tmp/c/$pack" ] || fail "a split pack left the whole file"
 cat "$tmp/c/$pack".part* | cmp - "$tmp/a/$pack" || fail "the parts joined are not the pack"
 echo "ok: a big pack splits, and its parts join to the pack"

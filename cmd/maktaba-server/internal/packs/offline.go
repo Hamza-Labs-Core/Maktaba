@@ -359,7 +359,7 @@ func (m *Manager) ImportFrom(ctx context.Context, r io.Reader) (ids []string, er
 			continue
 		}
 		name := h.Name
-		if h.Typeflag != tar.TypeReg || !offlineEntry(name) {
+		if h.Typeflag != tar.TypeReg || strings.Contains(name, "..") || !offlineEntry(name) {
 			return nil, fail(ReasonUnpackRefused, map[string]any{"entry": name}, "%s does not belong in an offline file", name)
 		}
 		if first != (name == OfflineManifestName) {

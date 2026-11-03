@@ -183,46 +183,33 @@ snap="$(snapshot)"
 printf '%s\n' "$snap" >"$LOGS/processes.json"
 
 ps -A -o pid=,ppid=,rss=,comm= >"$SCRATCH/ps.txt"
-"$PY" -I - "$LPID" "$SCRATCH/ps.txt" "$LOGS/processes.json" "$OUT" "$ROLES" <<'EOF'
-import json, os, sys
+"$PY" -I - "$LPID" "$SCRATCH/ps.txt" "$LOGS/processes.json" "$OUT" "$ROLES" "$(cd "$(dirname "$0")" && pwd)" <<'EOF'
+import json, sys
 
 launcher, ps_path, snap_path, out_path = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]
 want = sys.argv[5].split()
+sys.path.insert(0, sys.argv[6])
+import bundle_size  # noqa: E402  (process_tree: what N9 counts, tested there)
+
 with open(snap_path) as f:
     snap = json.load(f)
-rows = {}
-kids = {}
 with open(ps_path) as f:
-    for line in f:
-        parts = line.split(None, 3)
-        if len(parts) < 4:
-            continue
-        pid, ppid, rss = int(parts[0]), int(parts[1]), int(parts[2])
-        rows[pid] = (ppid, rss, parts[3].strip())
-        kids.setdefault(ppid, []).append(pid)
-if launcher not in rows:
-    sys.exit("the launcher is gone")
-# the supervisor: the launcher's maktaba-server
-sups = [p for p in kids.get(launcher, []) if os.path.basename(rows[p][2]) == "maktaba-server"]
-if len(sups) != 1:
-    sys.exit(f"expected one supervisor under the launcher, found {sups}")
-sup = sups[0]
-others = [p for p in kids.get(launcher, []) if p != sup] + kids.get(sup, [])
-tree, todo = [], [launcher]
-while todo:
-    p = todo.pop()
-    tree.append(p)
-    todo.extend(kids.get(p, []))
-rss_kb = sum(rows[p][1] for p in tree)
+    try:
+        t = bundle_size.process_tree(launcher, f.read())
+    except ValueError as e:
+        sys.exit(str(e))
+rows = t["rows"]
+rss_kb = sum(rows[p][1] for p in t["tree"])
 live = ("starting", "running", "unhealthy", "backoff")
 roles = sorted(p["role"] for p in snap.get("processes", []) if p.get("state") in live)
 doc = {
-    "processes": len(others),
-    "process_names": sorted(os.path.basename(rows[p][2]) for p in others),
+    "processes": len(t["processes"]),
+    "process_names": t["processes"],
+    "helpers": t["helpers"],
     "roles": roles,
     "roles_expected": sorted(want),
     "idle_rss_mb": round(rss_kb * 1024 / 1_000_000, 1),
-    "rss_mb_by_process": {f"{os.path.basename(rows[p][2])}[{p}]": round(rows[p][1] * 1024 / 1_000_000, 1) for p in tree},
+    "rss_mb_by_process": {f"{rows[p][2].rsplit('/', 1)[-1]}[{p}]": round(rows[p][1] * 1024 / 1_000_000, 1) for p in t["tree"]},
 }
 with open(out_path, "w") as f:
     json.dump(doc, f, indent=2)

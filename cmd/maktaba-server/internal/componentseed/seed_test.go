@@ -34,9 +34,9 @@ func TestPlanRules(t *testing.T) {
 		id   string
 		want string
 	}{
-		{"core always", func(f *Facts) {}, "core.postgres", "enabled"},
-		{"core.pipeline always", func(f *Facts) {}, "core.pipeline", "enabled"},
-		{"stage group on", func(f *Facts) {}, "youtube", "enabled"},
+		{"core always", func(*Facts) {}, "core.postgres", "enabled"},
+		{"core.pipeline always", func(*Facts) {}, "core.pipeline", "enabled"},
+		{"stage group on", func(*Facts) {}, "youtube", "enabled"},
 		{"stage group: one stage still on", func(f *Facts) {
 			f.OperatorOff = map[string]bool{"youtube_sync": true, "youtube_fetch": true, "youtube_backfill": true}
 		}, "youtube", "enabled"},
@@ -46,7 +46,7 @@ func TestPlanRules(t *testing.T) {
 		{"thumbnails off on the Queues page", func(f *Facts) {
 			f.OperatorOff = map[string]bool{"thumbnail": true, "thumb_small": true, "chapter_thumbs": true}
 		}, "media.thumbnails", "installed"},
-		{"slots on", func(f *Facts) {}, "livetv.slots", "enabled"},
+		{"slots on", func(*Facts) {}, "livetv.slots", "enabled"},
 		{"slots on, every livetv stage off by an operator: livetv stays enabled", func(f *Facts) {
 			f.OperatorOff = map[string]bool{"plan_channels": true, "write_channels": true}
 		}, "livetv", "enabled"},
@@ -54,34 +54,34 @@ func TestPlanRules(t *testing.T) {
 			f.Slots = false
 			f.OperatorOff = map[string]bool{"plan_channels": true, "write_channels": true}
 		}, "livetv", "enabled"},
-		{"slots on: in-process off", func(f *Facts) {}, "livetv.inprocess", "installed"},
+		{"slots on: in-process off", func(*Facts) {}, "livetv.inprocess", "installed"},
 		{"slots off", func(f *Facts) { f.Slots = false }, "livetv.slots", "installed"},
 		{"slots off: in-process on", func(f *Facts) { f.Slots = false }, "livetv.inprocess", "enabled"},
 		{"hdhomerun on", func(f *Facts) { f.HDHR = true }, "livetv.hdhomerun", "enabled"},
-		{"hdhomerun off", func(f *Facts) {}, "livetv.hdhomerun", "installed"},
+		{"hdhomerun off", func(*Facts) {}, "livetv.hdhomerun", "installed"},
 		{"llm process", func(f *Facts) { f.LLMProcess = true }, "llm", "enabled"},
 		{"llm url", func(f *Facts) { f.Config.LLM.URL = "http://10.0.0.2:11434" }, "llm", "enabled"},
-		{"no llm", func(f *Facts) {}, "llm", "installed"},
+		{"no llm", func(*Facts) {}, "llm", "installed"},
 		{"plex on", func(f *Facts) { f.Extensions["plex"] = true }, "ext.plex", "enabled"},
 		{"plex row off", func(f *Facts) { f.Extensions["plex"] = false }, "ext.plex", "installed"},
-		{"no dizquetv row", func(f *Facts) {}, "ext.dizquetv", "installed"},
+		{"no dizquetv row", func(*Facts) {}, "ext.dizquetv", "installed"},
 		{"cloudflare on", func(f *Facts) { f.Extensions["cloudflare_stream"] = true }, "ext.cloudflare_stream", "enabled"},
 		{"relay wanted: link", func(f *Facts) { f.Relay = true }, "cloud.link", "enabled"},
 		{"relay wanted: relay", func(f *Facts) { f.Relay = true }, "cloud.relay", "enabled"},
-		{"no relay", func(f *Facts) {}, "cloud.link", "installed"},
-		{"no relay: relay", func(f *Facts) {}, "cloud.relay", "installed"},
-		{"mdns default", func(f *Facts) {}, "discovery.mdns", "enabled"},
+		{"no relay", func(*Facts) {}, "cloud.link", "installed"},
+		{"no relay: relay", func(*Facts) {}, "cloud.relay", "installed"},
+		{"mdns default", func(*Facts) {}, "discovery.mdns", "enabled"},
 		{"mdns off", func(f *Facts) { f.Config.Server.MDNS = "off" }, "discovery.mdns", "installed"},
-		{"backups default", func(f *Facts) {}, "backups", "enabled"},
+		{"backups default", func(*Facts) {}, "backups", "enabled"},
 		{"backups off", func(f *Facts) { f.Config.Backups.Nightly = "off" }, "backups", "installed"},
-		{"telemetry default", func(f *Facts) {}, "telemetry", "enabled"},
+		{"telemetry default", func(*Facts) {}, "telemetry", "enabled"},
 		{"telemetry off", func(f *Facts) { f.Config.Telemetry.Enabled = "off" }, "telemetry", "installed"},
-		{"cluster always", func(f *Facts) {}, "cluster", "enabled"},
-		{"queue health always", func(f *Facts) {}, "queue_health", "enabled"},
-		{"analytics always", func(f *Facts) {}, "analytics", "enabled"},
-		{"updates always", func(f *Facts) {}, "updates.auto", "enabled"},
+		{"cluster always", func(*Facts) {}, "cluster", "enabled"},
+		{"queue health always", func(*Facts) {}, "queue_health", "enabled"},
+		{"analytics always", func(*Facts) {}, "analytics", "enabled"},
+		{"updates always", func(*Facts) {}, "updates.auto", "enabled"},
 		{"asset on disk", func(f *Facts) { f.Assets["model.whisper-turbo"] = true }, "model.whisper-turbo", "installed"},
-		{"asset not on disk", func(f *Facts) {}, "model.whisper-turbo", "absent"},
+		{"asset not on disk", func(*Facts) {}, "model.whisper-turbo", "absent"},
 		{"runtime on disk", func(f *Facts) { f.Assets["runtime.ml"] = true }, "runtime.ml", "installed"},
 	}
 	for _, c := range cases {

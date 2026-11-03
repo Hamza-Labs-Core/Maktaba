@@ -168,20 +168,6 @@ func (s *fakeStore) ReportStatus(_ context.Context, _, _ string, rows []store.St
 	return nil
 }
 
-func (s *fakeStore) set(id, want string, hold bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.desired == nil {
-		s.desired = map[string]store.Desired{}
-	}
-	d := store.Desired{ID: id, Want: want, Generation: s.desired[id].Generation + 1}
-	if hold {
-		d.Hold = &store.Hold{By: "ana", At: time.Now()}
-	}
-	s.desired[id] = d
-	s.rev++
-}
-
 func (s *fakeStore) row(id string) (store.Status, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -655,16 +641,16 @@ func TestReconcileLoops(t *testing.T) {
 	r, _ := newTestReconciler(components.Default(), tab, st)
 	release := make(chan struct{})
 	started := make(chan struct{}, 4)
-	backups := &SupervisorLoop{Name: "supervisor:backups", ConfigOn: true, Run: func(ctx context.Context) {
+	backups := &Loop{Name: "supervisor:backups", ConfigOn: true, Run: func(ctx context.Context) {
 		started <- struct{}{}
 		<-ctx.Done()
 		<-release // a dump that ends after the stop
 	}}
-	mdns := &SupervisorLoop{Name: "supervisor:mdns", ConfigOn: true, Forced: ReasonBootFlag,
-		ForcedParams: map[string]any{"flag": "--no-mdns"}, Run: func(ctx context.Context) {
+	mdns := &Loop{Name: "supervisor:mdns", ConfigOn: true, Forced: ReasonBootFlag,
+		ForcedParams: map[string]any{"flag": "--no-mdns"}, Run: func(_ context.Context) {
 			t.Error("mdns ran under --no-mdns")
 		}}
-	r.Loops = []*SupervisorLoop{backups, mdns}
+	r.Loops = []*Loop{backups, mdns}
 	r.defaults()
 	ctx := context.Background()
 	passWith(r, map[string]store.Desired{"discovery.mdns": want("discovery.mdns", "enabled", 1)})

@@ -217,7 +217,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	// Epic 35 story 35.11: the supervisor is the machine's one mDNS advertiser
 	// (home or node), re-publishing when what it says changes. Epic 51 story 51.04: the
 	// discovery.mdns component's loop, run by the reconciler (startComponents).
-	var compLoops []*supervisor.SupervisorLoop
+	var compLoops []*supervisor.Loop
 	if serveWeb || containsRole(roles, supervisor.RoleAPI) {
 		mcfg := cfg
 		compLoops = append(compLoops, mdnsLoop(cfg, opts.noMDNS, func(ctx context.Context) { advertiseMachine(ctx, mcfg, node) }))
@@ -275,7 +275,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		// the backups component's loop (story 51.04): turned off, a dump under way ends
 		// first (it runs with serve's context)
 		bundle := *pg
-		compLoops = append(compLoops, &supervisor.SupervisorLoop{Name: "supervisor:backups", ConfigOn: true,
+		compLoops = append(compLoops, &supervisor.Loop{Name: "supervisor:backups", ConfigOn: true,
 			Run: func(loop context.Context) { bundle.RunBackupsLoop(loop, ctx, backupCheckInterval, os.Stderr) }})
 	}
 	if cp != nil {

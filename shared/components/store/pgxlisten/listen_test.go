@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -138,6 +139,30 @@ func TestBackoffDoublesToTheCap(t *testing.T) {
 	}
 }
 
+// own tags dsn's connections with name, so the test terminates only its own listener: the
+// other listener package's test shares the scratch database and the channel.
+func own(dsn, name string) string {
+	switch {
+	case strings.Contains(dsn, "://") && strings.Contains(dsn, "?"):
+		return dsn + "&application_name=" + name
+	case strings.Contains(dsn, "://"):
+		return dsn + "?application_name=" + name
+	default:
+		return dsn + " application_name=" + name
+	}
+}
+
+// until is the next event ok accepts; events another test sent on the shared channel are
+// skipped.
+func until(t *testing.T, l *Listener, ok func(store.Event) bool) store.Event {
+	t.Helper()
+	for {
+		if e := next(t, l); ok(e) {
+			return e
+		}
+	}
+}
+
 // On scratch Postgres (MAKTABA_TEST_PG_URL, slot 0175 applied by the caller's test DB or
 // here): a real notification and a reconnect after pg_terminate_backend.
 func TestRealPostgres(t *testing.T) {
@@ -150,22 +175,22 @@ func TestRealPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = db.Close() }()
-	l := New(Dial(dsn), Options{MinBackoff: 50 * time.Millisecond})
+	l := New(Dial(own(dsn, "pgxlisten_test")), Options{MinBackoff: 50 * time.Millisecond})
 	defer func() { _ = l.Close() }()
-	if e := next(t, l); !e.Reload {
+	if e := until(t, l, func(e store.Event) bool { return e.Reload }); !e.Reload {
 		t.Fatalf("first %+v", e)
 	}
-	if _, err := db.Exec(`SELECT pg_notify($1, '{"revision":41,"id":"x","node":null}')`, store.Channel); err != nil {
+	if _, err := db.Exec(`SELECT pg_notify($1, '{"revision":41,"id":"pgx-x","node":null}')`, store.Channel); err != nil {
 		t.Fatal(err)
 	}
-	if e := next(t, l); e.Revision != 41 {
+	if e := until(t, l, func(e store.Event) bool { return e.ID == "pgx-x" }); e.Revision != 41 {
 		t.Fatalf("got %+v", e)
 	}
 	if _, err := db.Exec(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity
-		WHERE query LIKE 'LISTEN%' AND pid <> pg_backend_pid()`); err != nil {
+		WHERE application_name = 'pgxlisten_test'`); err != nil {
 		t.Fatal(err)
 	}
-	if e := next(t, l); !e.Reload {
+	if e := until(t, l, func(e store.Event) bool { return e.Reload }); !e.Reload {
 		t.Fatalf("after terminate %+v, want Reload", e)
 	}
 }

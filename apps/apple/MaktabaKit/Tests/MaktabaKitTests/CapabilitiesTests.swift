@@ -156,6 +156,29 @@ final class FakeCapabilities: CapabilitiesSource, @unchecked Sendable {
         #expect(home.sent == [nil, #""c-1842-1""#, #""c-1842-1""#, #""c-1842-1""#], "If-None-Match with the kept ETag")
     }
 
+    /// The first answer (a failure too) marks the store answered, once; signing out or another
+    /// home starts again unanswered, so the Player's shell is built again once (story 51.11).
+    @Test func answeredOnceUntilAnotherHome() async {
+        let store = CapabilitiesStore(gate: true)
+        #expect(!store.answered, "a guess before the home answers")
+        store.use(FakeCapabilities([.failure(APIError.transport("timed out")), .success(.notModified)]))
+        #expect(!store.answered)
+        await store.refresh()
+        #expect(store.answered, "a failure is an answer: the guess stays, and is now the answer")
+        await store.refresh()
+        #expect(store.answered)
+        store.use(FakeCapabilities([.success(.changed(Self.caps(CapabilityFixtures.viewer), etag: "e1"))]))
+        #expect(!store.answered, "another home: unanswered again")
+        await store.refresh()
+        #expect(store.answered)
+        store.reset()
+        #expect(!store.answered)
+        let off = CapabilitiesStore(gate: false)
+        off.use(FakeCapabilities([.success(.notModified)]))
+        await off.refresh()
+        #expect(!off.answered, "the build switch off: nothing asked, nothing answered")
+    }
+
     @Test func aFirstFailureLeavesEveryFeatureOn() async {
         let store = CapabilitiesStore(gate: true)
         store.use(FakeCapabilities([.failure(APIError.status(500, "{}"))]))

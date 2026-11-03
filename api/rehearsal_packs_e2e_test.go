@@ -64,11 +64,13 @@ func (r *rehearsal) packsKit() {
 	r.packs = true
 }
 
-// afterSpec is this commit as the release after next: the additive migration of cur, a
-// release that runs (scenario 13's update after the rollback).
+// afterSpec is this commit as the release after next, a release that runs (scenario 13's
+// update after the rollback): it carries both migrations of the failed next, which the
+// rollback kept (additive), or the home refuses it as older than its database.
 func (k *rehearsalKit) afterSpec() payloadSpec {
-	n, body := additiveMigration(k.rev + 1)
-	return payloadSpec{variant: "after", version: k.after, extra: map[string]string{n: body}}
+	n1, b1 := additiveMigration(k.rev + 1)
+	n2, b2 := additiveNextMigration(k.rev + 2)
+	return payloadSpec{variant: "after", version: k.after, extra: map[string]string{n1: b1, n2: b2}}
 }
 
 // attachPacks puts the kit's packs of version in the release, with their index made the

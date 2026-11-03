@@ -130,6 +130,13 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.channel").waitForExistence(timeout: 5), "the open channel stays")
         shot("live-off-open")
 
+        // the player covers the tabs: back to the Live TV screen (still in view), then Home
+        let back = app.buttons["live.player.back"]
+        if !back.waitForExistence(timeout: 3) { element("screen.channel").tap() }
+        XCTAssertTrue(back.waitForExistence(timeout: 5), "the player's back button")
+        back.tap()
+        XCTAssertTrue(element("screen.channel").waitForNonExistence(timeout: 10), "out of the player")
+        XCTAssertTrue(sectionButton("Home").waitForExistence(timeout: 10), "the Home tab")
         sectionButton("Home").tap()
         XCTAssertTrue(element("screen.home").waitForExistence(timeout: 10))
         XCTAssertTrue(wait(timeout: 10) { !self.app.tabBars.buttons["Live TV"].exists && !self.app.buttons["Live TV"].exists },
@@ -187,12 +194,13 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(channel(contains: "Lectures TV"))
     }
 
-    /// Up and down through many channels.
+    /// Up and down through many channels: 40, so the guide is far taller than an iPad's
+    /// screen (16 overflowed it by 40 points only, less than the drag checks for).
     func testGuideScrollsThroughTheChannels() {
-        home.stub("GET", "/api/channels/guide", body: Self.bigGuide(channels: 16))
+        home.stub("GET", "/api/channels/guide", body: Self.bigGuide(channels: 40))
         launchOnTheGuide()
         let top = element("live.guide.g-1.now")
-        XCTAssertTrue(top.waitForExistence(timeout: 15), "the guide of 16 channels")
+        XCTAssertTrue(top.waitForExistence(timeout: 15), "the guide of 40 channels")
         let before = top.frame.minY
         drag(top, by: CGVector(dx: 0, dy: -300))
         XCTAssertTrue(wait { top.frame.minY < before - 100 }, "the channels scrolled up (\(before) → \(top.frame.minY))")

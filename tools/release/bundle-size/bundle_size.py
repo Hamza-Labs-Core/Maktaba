@@ -71,6 +71,58 @@ def first_run_bytes(catalog: dict, bundle: str, platform: str) -> int:
     return total
 
 
+# The commands the supervisor's own mDNS loop (supervisor:mdns) runs to announce the home
+# through the system's responder (macOS: dns-sd, through a small sh; Linux: avahi). They
+# are the supervisor's helpers, not services: N9 counts the services.
+RESPONDERS = ("dns-sd", "avahi-publish-service")
+
+
+def process_tree(launcher: int, ps_text: str) -> dict:
+    """The launcher's tree from `ps -A -o pid=,ppid=,rss=,comm=`: the processes N9 counts
+    (the launcher's and the supervisor's children, the supervisor and the responder's
+    helpers left out), the helpers, and every pid of the tree (its memory is all counted)."""
+    rows: dict[int, tuple[int, int, str]] = {}
+    kids: dict[int, list[int]] = {}
+    for line in ps_text.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) < 4:
+            continue
+        pid, ppid, rss = int(parts[0]), int(parts[1]), int(parts[2])
+        rows[pid] = (ppid, rss, parts[3].strip())
+        kids.setdefault(ppid, []).append(pid)
+    if launcher not in rows:
+        raise ValueError("the launcher is gone")
+
+    def name(p: int) -> str:
+        return rows[p][2].rsplit("/", 1)[-1]
+
+    def subtree(p: int) -> list[int]:
+        out, todo = [], [p]
+        while todo:
+            q = todo.pop()
+            out.append(q)
+            todo.extend(kids.get(q, []))
+        return out
+
+    sups = [p for p in kids.get(launcher, []) if name(p) == "maktaba-server"]
+    if len(sups) != 1:
+        raise ValueError(f"expected one supervisor under the launcher, found {sups}")
+    sup = sups[0]
+    others = [p for p in kids.get(launcher, []) if p != sup]
+    helpers = []
+    for p in kids.get(sup, []):
+        if any(name(q) in RESPONDERS for q in subtree(p)):
+            helpers.append(p)
+        else:
+            others.append(p)
+    return {
+        "processes": sorted(name(p) for p in others),
+        "helpers": sorted(name(p) for p in helpers),
+        "tree": subtree(launcher),
+        "rows": rows,
+    }
+
+
 def load_catalog(path: Path = CATALOG) -> dict:
     with path.open("rb") as f:
         return tomllib.load(f)

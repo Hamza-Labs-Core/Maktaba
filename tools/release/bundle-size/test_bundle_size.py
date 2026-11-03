@@ -119,5 +119,37 @@ class BudgetTest(unittest.TestCase):
         self.assertIn("| core footprint | 60.0 MB | 400.0 MB | ok |", out.getvalue())
 
 
+
+class ProcessTreeTest(unittest.TestCase):
+    # a Core home on a Mac: the four services, and the mDNS loop's responder (sh, dns-sd)
+    PS = """\
+  100     1  5800 /Applications/Maktaba.app/Contents/Resources/server/bin/maktaba-launcher
+  101   100 44900 /Applications/Maktaba.app/Contents/Resources/server/bin/maktaba-server
+  102   101 22100 /Applications/Maktaba.app/Contents/Resources/server/postgres/bin/postgres
+  103   102  8500 postgres: maktaba maktaba 127.0.0.1(49356) idle
+  104   101 48100 maktaba-api
+  105   101 24000 maktaba-streaming
+  106   101 74800 python
+  107   101  2200 sh
+  108   107  1800 /usr/bin/dns-sd
+  109   107  1600 sh
+"""
+
+    def test_the_responder_is_a_helper_not_a_service(self) -> None:
+        t = bundle_size.process_tree(100, self.PS)
+        self.assertEqual(t["processes"], ["maktaba-api", "maktaba-streaming", "postgres", "python"])
+        self.assertEqual(t["helpers"], ["sh"])
+        self.assertEqual(sorted(t["tree"]), list(range(100, 110)), "every process's memory counts")
+
+    def test_a_stray_shell_still_counts(self) -> None:
+        ps = self.PS.replace("/usr/bin/dns-sd", "/usr/bin/sleep")
+        t = bundle_size.process_tree(100, ps)
+        self.assertEqual(len(t["processes"]), 5)
+        self.assertEqual(t["helpers"], [])
+
+    def test_no_supervisor(self) -> None:
+        with self.assertRaises(ValueError):
+            bundle_size.process_tree(100, "  100     1  5800 maktaba-launcher\n")
+
 if __name__ == "__main__":
     unittest.main()

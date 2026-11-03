@@ -34,17 +34,23 @@ type Layout struct {
 	Root string
 }
 
-// Dir is one component's folder.
-func (l Layout) Dir(id string) string { return filepath.Join(l.Root, id) }
+// Dir is one component's folder. The callers pass catalog ids; elem keeps any other name
+// inside Root all the same.
+func (l Layout) Dir(id string) string { return filepath.Join(l.Root, elem(id)) }
+
+// elem is s as one path element: rooted and cleaned first, so no "..", separator or
+// volume in s reaches above the folder it is joined to (an id, a version, a digest are
+// one element as they are).
+func elem(s string) string { return filepath.Base(filepath.Clean("/" + s)) }
 
 // PartialDir is where downloads in progress are kept.
 func (l Layout) PartialDir() string { return filepath.Join(l.Root, partialDir) }
 
 // Folder is a pack's folder name: <version>_<first 12 of its sha256>.
-func PackFolder(version, sha string) string { return version + "_" + short(sha) }
+func PackFolder(version, sha string) string { return elem(version + "_" + short(sha)) }
 
 // RevFolder is a model revision's folder name: rev_<first 12 of the revision>.
-func RevFolder(rev string) string { return revPre + short(rev) }
+func RevFolder(rev string) string { return elem(revPre + short(rev)) }
 
 func short(s string) string {
 	if len(s) > 12 {

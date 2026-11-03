@@ -196,7 +196,8 @@ func TestCapabilitiesETagAndSignal(t *testing.T) {
 
 // Many changes inside the coalescing window are one push, with the last ETag.
 func TestCapabilitiesCoalesce(t *testing.T) {
-	c := NewCapabilities(CapabilitiesOptions{})
+	const window = 50 * time.Millisecond
+	c := NewCapabilities(CapabilitiesOptions{Window: window})
 	got := make(chan string, 10)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -216,7 +217,7 @@ func TestCapabilitiesCoalesce(t *testing.T) {
 	select {
 	case e := <-got:
 		t.Fatalf("a second push %s", e)
-	case <-time.After(CoalesceWindow + 300*time.Millisecond):
+	case <-time.After(window + 150*time.Millisecond):
 	}
 }
 

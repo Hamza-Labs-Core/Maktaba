@@ -48,7 +48,7 @@ func (f *fixture) installedPack(t *testing.T) string {
 func TestInstallPack(t *testing.T) {
 	f := newFixture(t, fixtureOpts{})
 	var prepared string
-	f.m.Prepare = map[string]PrepareFunc{"runtime.ml": func(_ context.Context, id, dir string, report func(int)) error {
+	f.m.Prepare = map[string]PrepareFunc{"runtime.ml": func(_ context.Context, _, dir string, report func(int)) error {
 		prepared = dir
 		report(50)
 		if !exists(filepath.Join(dir, "wheels", "index.json")) {
@@ -618,5 +618,29 @@ func TestImportRefusesStrangeEntries(t *testing.T) {
 	wantReason(t, err, ReasonUnpackRefused)
 	if exists(filepath.Join(filepath.Dir(f.root), "escape")) {
 		t.Fatal("written outside")
+	}
+}
+
+// A name the layout joins is one element of its folder: an id, a version or a digest
+// with "..", a separator or a volume stays inside Root.
+func TestLayoutNamesStayInside(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "components")
+	l := Layout{Root: root}
+	for _, id := range []string{"../../etc", "a/../../b", `..\x`, "/abs"} {
+		d := l.Dir(id)
+		if filepath.Dir(d) != root {
+			t.Errorf("Dir(%q) = %q, not one element of %q", id, d, root)
+		}
+	}
+	if d := l.Dir("model.whisper-turbo"); d != filepath.Join(root, "model.whisper-turbo") {
+		t.Errorf("a catalog id moved: %q", d)
+	}
+	for _, f := range []string{PackFolder("../1.0", "abc"), PackFolder("1.0", "../../x"), RevFolder("../r")} {
+		if f != filepath.Base(f) || f == ".." {
+			t.Errorf("folder %q is not one element", f)
+		}
+	}
+	if f := PackFolder("0.4.2", "0123456789abcdef"); f != "0.4.2_0123456789ab" {
+		t.Errorf("PackFolder = %q", f)
 	}
 }

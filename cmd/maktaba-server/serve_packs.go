@@ -331,7 +331,7 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 			a.postImport(w, r)
 		default:
 			id, verb, ok := strings.Cut(rest, "/")
-			if !ok || id == "" {
+			if !ok || id == "" || strings.Contains(id, "..") || strings.ContainsAny(id, `/\`) {
 				http.NotFound(w, r)
 				return
 			}
@@ -532,7 +532,9 @@ func (a *packsAdmin) postImport(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Path string `json:"path"`
 		}
-		if derr := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); derr != nil || body.Path == "" {
+		// the CLI's file beside the server, named absolutely (components_cli makes it so)
+		if derr := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); derr != nil ||
+			!filepath.IsAbs(body.Path) || strings.Contains(body.Path, "..") {
 			writeConfigJSON(w, http.StatusBadRequest, map[string]string{"error": "bad_request"})
 			return
 		}

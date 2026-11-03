@@ -39,6 +39,10 @@ struct LiveSectionGate<Content: View>: View {
                 content(shown, hidden)
                     // once shown, the shell is never swapped back for the wait
                     .onAppear { waited = true }
+                    // built again once, when the home first answers what is on: a launch into
+                    // Live TV with it off then lands as it should; later changes keep the
+                    // screens open (ShellTabs, story 51.11)
+                    .id(capabilities.answered)
             }
         }
         // asked again when Live TV comes back on (51.11): the channels show without a relaunch

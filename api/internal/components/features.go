@@ -242,9 +242,10 @@ const LicencePoll = 30 * time.Second
 // the desired state (a store.Watcher) and the licence. Until Run reads the database
 // every feature is on, as before the epic.
 type Capabilities struct {
-	cat   *components.Catalog
-	log   *slog.Logger
-	allOn bool
+	cat    *components.Catalog
+	log    *slog.Logger
+	allOn  bool
+	window time.Duration
 
 	snap atomic.Pointer[Snapshot]
 
@@ -262,6 +263,8 @@ type CapabilitiesOptions struct {
 	// AllOn is the kill switch: [components] capabilities_gate = off, or reconcile = off
 	// (the runners act on nothing, so everything runs).
 	AllOn bool
+	// Window is how long a change waits for the next before it is pushed (0: CoalesceWindow).
+	Window time.Duration
 }
 
 // NewCapabilities is a holder whose snapshot answers every feature on.
@@ -272,7 +275,10 @@ func NewCapabilities(o CapabilitiesOptions) *Capabilities {
 	if o.Logger == nil {
 		o.Logger = slog.Default()
 	}
-	c := &Capabilities{cat: o.Catalog, log: o.Logger, allOn: o.AllOn, changed: make(chan struct{}, 1)}
+	if o.Window <= 0 {
+		o.Window = CoalesceWindow
+	}
+	c := &Capabilities{cat: o.Catalog, log: o.Logger, allOn: o.AllOn, window: o.Window, changed: make(chan struct{}, 1)}
 	c.mu.Lock()
 	c.rebuild()
 	c.mu.Unlock()
@@ -353,7 +359,7 @@ type Publisher func(ctx context.Context, etag string) error
 
 // Run keeps the snapshot in step until ctx ends: the desired state from src (listener
 // nil: the 30 s revision poll only), the licence every LicencePoll, and publish (nil:
-// none) after each change, at most once per CoalesceWindow.
+// none) after each change, at most once per window (CoalesceWindow unless set).
 func (c *Capabilities) Run(ctx context.Context, src store.Source, listener store.Listener, publish Publisher) {
 	if listener != nil {
 		defer func() { _ = listener.Close() }()
@@ -376,7 +382,7 @@ func (c *Capabilities) Run(ctx context.Context, src store.Source, listener store
 			c.Recheck()
 		case <-c.changed:
 			if due == nil {
-				due = time.After(CoalesceWindow)
+				due = time.After(c.window)
 			}
 		case <-due:
 			due = nil

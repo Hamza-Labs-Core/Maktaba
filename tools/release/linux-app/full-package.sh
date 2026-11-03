@@ -41,7 +41,9 @@ while [ $# -gt 0 ]; do
         *)           die "unknown option '$1'" ;;
     esac
 done
-[ -n "$VERSION" ] && [ -n "$ARCH" ] && [ -n "$OFFLINE" ] && [ -n "$OUT" ] || die "--version, --arch, --offline and --out are required"
+if [ -z "$VERSION" ] || [ -z "$ARCH" ] || [ -z "$OFFLINE" ] || [ -z "$OUT" ]; then
+  die "--version, --arch, --offline and --out are required"
+fi
 case "$ARCH" in
     x86_64) GOARCH=amd64 PLATFORM=linux-amd64 ;;
     aarch64) GOARCH=arm64 PLATFORM=linux-arm64 ;;

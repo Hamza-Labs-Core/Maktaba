@@ -64,7 +64,7 @@ func bootConfig(cfg config.Config, log io.Writer) config.Config {
 // it. With no reconciler the loops run as before. It returns the asset routes (their
 // token set by the caller): every route answers 503 when there is no reconciler.
 func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Supervisor, whole bool,
-	loops []*supervisor.SupervisorLoop, releaseDir string, log io.Writer) *packsAdmin {
+	loops []*supervisor.Loop, releaseDir string, log io.Writer) *packsAdmin {
 	if log == nil {
 		log = io.Discard
 	}
@@ -121,8 +121,8 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 // mdnsLoop is the supervisor's mDNS advertiser as the discovery.mdns component's loop:
 // on by default when [server] mdns is, kept off for this boot by --no-mdns (boot_flag)
 // or MAKTABA_DISCOVERY_MDNS=0 (env_override).
-func mdnsLoop(cfg config.Config, noMDNS bool, run func(ctx context.Context)) *supervisor.SupervisorLoop {
-	l := &supervisor.SupervisorLoop{Name: "supervisor:mdns", Run: run, ConfigOn: cfg.Server.MDNSOn()}
+func mdnsLoop(cfg config.Config, noMDNS bool, run func(ctx context.Context)) *supervisor.Loop {
+	l := &supervisor.Loop{Name: "supervisor:mdns", Run: run, ConfigOn: cfg.Server.MDNSOn()}
 	v := strings.TrimSpace(strings.ToLower(os.Getenv("MAKTABA_DISCOVERY_MDNS")))
 	switch {
 	case noMDNS:

@@ -51,14 +51,14 @@ func Assets(cat *components.Catalog, d Disk) map[string]bool {
 			continue
 		}
 		var on bool
-		switch {
-		case c.ID == "runtime.ml":
+		switch c.ID {
+		case "runtime.ml":
 			on = ml
-		case c.ID == "model.refine":
+		case "model.refine":
 			on = ml // fetched with the ML runtime today
-		case c.ID == "tool.yt-dlp":
+		case "tool.yt-dlp":
 			on = ytdlp
-		case c.ID == "runtime.ollama":
+		case "runtime.ollama":
 			on = d.Ollama
 		default:
 			src := c.SourceFor(platform)

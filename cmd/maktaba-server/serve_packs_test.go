@@ -142,6 +142,28 @@ func TestPacksImportRouteRefusesAnotherVersion(t *testing.T) {
 	_ = a
 }
 
+// The import's path is the CLI's file named absolutely, with no ".." in it; an id with a
+// ".." or a separator names no component.
+func TestPacksRoutesRefuseOtherPaths(t *testing.T) {
+	_, _, h := packsTestAdmin(t)
+	for _, p := range []string{"relative/offline.tar", "/srv/../etc/offline.tar"} {
+		body, _ := json.Marshal(map[string]string{"path": p})
+		req := httptest.NewRequest(http.MethodPost, "/components/import", strings.NewReader(string(body)))
+		req.Header.Set("Authorization", "Bearer tok")
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("import of %q: %d %s", p, rec.Code, rec.Body.String())
+		}
+	}
+	for _, id := range []string{"runtime..ml", `runtime.ml\x`} {
+		if code, _ := packsCall(t, h, http.MethodGet, "/components/"+id+"/progress", "tok"); code != http.StatusNotFound {
+			t.Errorf("progress of %q: %d", id, code)
+		}
+	}
+}
+
 // The venv a pack brings: the extras of what is installed, the packs' wheels alone when
 // each has its pack; a removal keeps the others' and builds with none when nothing is left.
 func TestPackVenvSpec(t *testing.T) {

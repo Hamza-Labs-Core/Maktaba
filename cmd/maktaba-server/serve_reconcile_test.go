@@ -47,7 +47,7 @@ func TestMDNSLoopFlags(t *testing.T) {
 func TestStartComponentsWithoutReconciler(t *testing.T) {
 	cfg := config.Defaults()
 	ran := make(chan string, 2)
-	loops := []*supervisor.SupervisorLoop{
+	loops := []*supervisor.Loop{
 		{Name: "supervisor:backups", ConfigOn: true, Run: func(context.Context) { ran <- "backups" }},
 		{Name: "supervisor:mdns", ConfigOn: true, Forced: supervisor.ReasonBootFlag,
 			Run: func(context.Context) { ran <- "mdns" }},
