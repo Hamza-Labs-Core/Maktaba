@@ -10,10 +10,10 @@
 #     (a tag cut from a branch that missed what the newest release carried would undo it);
 #   - CI passed on that commit (the CI workflow's run for it; a run still going is waited for).
 #     A finished run that failed only on the jobs IGNORED_CI_JOBS names (the flaky iPhone/iPad
-#     Player UI shards, the owner 2026-11-02) and the ci-success rollup counts as passed;
+#     Player UI shards, since 2026-11-02) and the ci-success rollup counts as passed;
 #   - the update rehearsal passed on that exact commit (update-rehearsal.yml: every update
 #     path of the Mac app, from the latest published release to this commit; waited for
-#     likewise). The owner, 2026-10-28: no release before its updates are proven in CI.
+#     likewise). Since 2026-10-28: no release before its updates are proven in CI.
 # A deliberate maintenance release of an older line (story 22.5 EC1) is named in the
 # repository variable MAKTABA_RELEASE_ALLOW_TAG: its commit is on main or a release/*
 # branch (ci.yml runs on those), it skips the history check, and it never becomes the
@@ -72,7 +72,7 @@ fi
 # waited for while it runs; and 4. the update rehearsal passed on that exact commit
 # (update-rehearsal.yml, docs/update-rehearsal.md: every update path of the owner's Mac
 # app, rehearsed; it runs on every push to main and release/*)
-# The CI jobs a release does not wait on. The owner, 2026-11-02 ("Tag without them"): the
+# The CI jobs a release does not wait on (decided 2026-11-02): the
 # Apple iPhone/iPad Player UI test shards are flaky and are being fixed separately, so a
 # finished CI run whose only failed jobs are these shards (and the ci-success rollup that
 # reports them) still lets a tag through. Exactly the iphone/ipad shards: the Mac UI job
@@ -100,7 +100,7 @@ jobs_pass() {
     fi
     ignored="$(awk -F'\t' -v ign="${IGNORED_CI_JOBS}" '
         ign != "" && $2 ~ ign && $1 != "success" && $1 != "skipped" { print $2 " (" $1 ")" }' <<<"${jobs}")"
-    echo "::warning::tag guard: CI run ${id} passed every required job; ignored failures (the owner, 2026-11-02: flaky iPhone/iPad Player UI shards): $(tr '\n' ',' <<<"${ignored:-none}" | sed 's/,$//')"
+    echo "::warning::tag guard: CI run ${id} passed every required job; ignored failures (flaky iPhone/iPad Player UI shards): $(tr '\n' ',' <<<"${ignored:-none}" | sed 's/,$//')"
     return 0
 }
 

@@ -4,7 +4,7 @@
 
 ## Why
 
-The owner asked for parts of Maktaba to be "stopped/started, enabled/disabled" from settings.
+Parts of Maktaba must be stopped and started, enabled and disabled, from settings.
 The admin API exists after 51.08, but owners use the web. Today the nearest tools are spread
 out: stage pauses on the Queues page, extensions on their own page, `[llm]` and `[tv]` only in
 `server.toml`. This story adds one page that shows every part of the home, what it is doing and

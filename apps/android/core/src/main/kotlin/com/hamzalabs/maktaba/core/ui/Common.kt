@@ -124,7 +124,7 @@ fun ApproveSignInDialog(
 
 /**
  * "Approve a TV", in sight on a top bar: a TV showing a sign-in code is approved here, not
- * looked for in the account menu (the owner could not find it there). It opens the same
+ * looked for in the account menu (it was hard to find there). It opens the same
  * "Approve a sign-in" as the menu; the home still checks every approval.
  */
 @Composable

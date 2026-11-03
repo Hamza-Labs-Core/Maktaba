@@ -4,9 +4,9 @@
 
 ## Why
 
-The owner's rule after the 2026-10-28 outages: failure paths are proven in CI before they reach
-the Mac ("THIS NEED TO BE ON CI"). The update rehearsal does that for updates. Nothing yet kills
-the API or Postgres and checks the UI still loads. "No crash that breaks all" is a promise only a
+The rule since the 2026-10-28 outages: failure paths are proven in CI before they reach
+the Mac. The update rehearsal does that for updates. Nothing yet kills
+the API or Postgres and checks the UI still loads. "No crash breaks everything" is a promise only a
 test can keep.
 
 ## Description

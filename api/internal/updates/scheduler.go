@@ -15,8 +15,7 @@ import (
 )
 
 // Blocker reasons (story 35.3 AC5): a due run waits while one holds. A TV change never
-// holds an update (the owner's rule of 2026-10-28, "tv changes should not block
-// updates"): the TV change controller sets it aside while the update runs and checks it
+// holds an update (rule of 2026-10-28: TV changes do not block updates): the TV change controller sets it aside while the update runs and checks it
 // again after (tvchange/updatehold.go), and only the restart waits for a swap in progress
 // (Driver.tvSwapWait).
 const (

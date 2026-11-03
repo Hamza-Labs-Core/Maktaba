@@ -55,8 +55,8 @@ A janitor goroutine runs every 5 minutes:
 | Rule | Default | Setting (`[logs]` in `server.toml`, and the admin page in 53.11) |
 |---|---|---|
 | `debug` lines | 24 h (they are written to `<service>/debug/`, so dropping is deleting files) | `debug_retention` |
-| everything else | **7 days** (owner's decision, 2026-11-03) | `retention` |
-| all diagnostics on disk (segments + `logs.db` + reports) | **1 GB** in all (owner's decision, 2026-11-03) | `max_total_size` |
+| everything else | **7 days** (decided 2026-11-03) | `retention` |
+| all diagnostics on disk (segments + `logs.db` + reports) | **1 GB** in all (decided 2026-11-03) | `max_total_size` |
 | the segments' share of it | 550 MB (55 %; `logs.db` gets 35 % = 350 MB, reports 10 % = 100 MB) | `max_segments_size` (follows `max_total_size` unless set) |
 | data volume free space floor | 5 GB: below it, stop writing `debug` and delete the oldest hour until above | `min_free` |
 | hard floor | 1 GB free: write only `warn` and above | — |

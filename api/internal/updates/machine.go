@@ -64,7 +64,7 @@ type MachineStatus struct {
 	Running   string          `json:"running,omitempty"`
 	Installer string          `json:"installer,omitempty"`
 	// Asks: a desktop app that runs the server, whose app installs the release: ordered,
-	// staged there, installed at the home's go (no click: owner decision D1, 2026-10-27;
+	// staged there, installed at the home's go (no click: decision D1, 2026-10-27;
 	// the wire keeps the name); App is its answer to the order (ordered, staged).
 	Asks bool   `json:"asks,omitempty"`
 	App  string `json:"app,omitempty"`
@@ -145,7 +145,7 @@ const (
 	MRolledBack    = "rolled_back"
 	MApplyFailed   = "apply_failed"
 	MFailed        = "failed"
-	// What a supervisor from before owner decision D1 was replaced (2026-10-27) says of
+	// What a supervisor from before decision D1 was replaced (2026-10-27) says of
 	// an order: it waits for a click on that machine, then (clicked) for the home's go.
 	// Read as MOrdered and MAppStaged: such a machine's click is its own, the go is not.
 	MAwaitingClick = "awaiting_click"

@@ -349,7 +349,7 @@ pub enum Plan {
 /// updates are on (its /api/cluster/self says `updates_auto` to this machine, at
 /// `web_url`). Then a newer payload of this app (a newer AppImage, a package upgraded) is
 /// kept, not switched to: the home's run installs that release as a new runtime, in its
-/// window and after its checks (owner decision D3). A standalone server whose automatic
+/// window and after its checks (decision D3). A standalone server whose automatic
 /// updates are off takes it as before: a machine that once ran an update, or follows an
 /// apt mirror with updates off, still follows its package. A server that does not say (the
 /// app's start often asks before the server's unit answers; an older server) is taken by
@@ -446,7 +446,7 @@ pub fn plan(st: &RuntimeStatus, home_orders: bool) -> Plan {
     }
     // the same release built again (another build of its payload: v0.3.0's Linux payload
     // tarball and its app's differed) is what runs already: the server switches releases
-    // itself (owner decision D3), never this app behind the home's back
+    // itself (decision D3), never this app behind the home's back
     let runs_it =
         !st.version.is_empty() && crate::attempts::at_least(&st.version, &st.from_version);
     // a newer payload, on a server a home manages: the home's run switches to it (a first

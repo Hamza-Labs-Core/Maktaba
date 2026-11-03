@@ -209,7 +209,7 @@ pub struct Words {
     /// Its update item: what it does from a menu.
     pub install_update: &'static str,
     /// The release the home ordered, staged here: it installs and restarts by itself, with
-    /// no click (owner decision D1, 2026-10-27): by {time} (an automatic run's window), or
+    /// no click (decision D1, 2026-10-27): by {time} (an automatic run's window), or
     /// shortly (an admin's run); then, at the home's go, now. The tray's item (no button)
     /// and the OS notification (one each per order) say the same.
     pub order_by: &'static str,

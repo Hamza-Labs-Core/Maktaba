@@ -20,7 +20,7 @@ sets, then lower quality. A viewer who is playing is never stopped by a limit. T
 prices are the owner's (README §14.10, questions 1–7), so they live in the catalog as `TBD` until
 set.
 
-**We charge for infrastructure, not content** (owner, 2026-11-03). Every unit here is a unit of
+**We charge for infrastructure, not content** (decided 2026-11-03). Every unit here is a unit of
 infrastructure: channels carried, concurrent viewers served, viewer-hours delivered, and the
 ladder's bandwidth. No price depends on what airs. **Viewers never pay.** The only money flow is
 from the publisher to Maktaba.

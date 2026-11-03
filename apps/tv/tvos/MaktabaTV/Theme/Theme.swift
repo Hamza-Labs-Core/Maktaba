@@ -56,7 +56,7 @@ enum Theme {
     // MARK: Shape & focus
 
     static let cornerRadius: CGFloat = 16
-    /// Focused-card ring (owner spec: 3px gold outline + scale).
+    /// Focused-card ring (spec: 3px gold outline + scale).
     static let focusRingWidth: CGFloat = 3
 
     // MARK: Fonts

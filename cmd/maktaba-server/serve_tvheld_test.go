@@ -1,7 +1,7 @@
 package main
 
 // A TV held on its old streaming software stays there across the desktop app's update
-// restart and every restart after it (story 35.6, the owner's decision of 2026-10-28; seen
+// restart and every restart after it (story 35.6, decided 2026-10-28; seen
 // live on 2026-10-28, 0.3.37 -> 0.3.39: the app relaunched, the supervisor started the live
 // slot unbound on the newly installed 0.3.39 binary, and when the TV change's check failed
 // the live TV was on the new software already).

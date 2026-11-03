@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0169 (Epic 33, the owner's rule of 2026-10-28: "only manual needs approval") -
+-- Slot 0169 (Epic 33, rule of 2026-10-28: only a manual change needs approval) -
 -- who made a TV change.
 --
 --   tv_changes.origin  'auto' | 'manual' (NOT NULL, default 'manual').

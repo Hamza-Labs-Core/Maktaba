@@ -38,7 +38,7 @@ import {
 import { TitleRow } from "../../help/HelpLink";
 import { SERVER_PAGES } from "../../lib/edition";
 
-// Guide window: two hours, now − 30 min … now + 90 min (the owner's choice,
+// Guide window: two hours, now − 30 min … now + 90 min (decided
 // 2026-10-27: what is on now and next, not a long scroll).
 const WINDOW_BACK_MIN = 30;
 const WINDOW_FWD_MIN = 90;

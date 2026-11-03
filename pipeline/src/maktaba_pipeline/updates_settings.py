@@ -3,7 +3,7 @@ home finds new signed releases, when it installs them and how it rolls them out 
 machines. The pipeline never reads them; they live here because every rules section's
 schema (``api/internal/handlers/rules/schema.json``) is generated from one place.
 
-``auto_install`` defaults to true (owner decision, Epic 35 decision "Automatic"); until
+``auto_install`` defaults to true (Epic 35 decision "Automatic"); until
 the home's update orchestrator ships (stories 35.4-35.7) the API keeps automatic installs
 off whatever this says (phase A), and only checks and notifies."""
 
@@ -24,7 +24,7 @@ UPS = "Updates safety"
 class UpdatesConfig:
     """Automatic updates of the home and its machines (rules ``updates``)."""
 
-    #: install a new signed release in the quiet window (owner). Off: check and notify only
+    #: install a new signed release in the quiet window (decided). Off: check and notify only
     auto_install: bool = True
     #: stable | beta. Switching to stable never installs a lower version
     channel: str = "stable"

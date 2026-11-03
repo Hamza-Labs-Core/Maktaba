@@ -5,9 +5,9 @@
 
 ## Goal
 
-The owner, 2026-11-03: *"currently all workers and features work right away, we need all to be
-config, setting, whatever based, so that it can be stopped/started, enabled/disabled, even
-server bundles, with and without components, ability to add later and so on."*
+Requirement: today every worker and feature starts right away. Each one must instead be driven
+by config or settings, so it can be stopped and started, enabled and disabled, with server
+bundles that ship with or without components, and components that can be added later.
 
 Every worker, background loop, feature, integration, runtime and model becomes a
 **component** in one catalog. Admins say what they want; every machine reports what is true

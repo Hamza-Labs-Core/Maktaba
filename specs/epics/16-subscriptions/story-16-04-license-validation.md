@@ -60,4 +60,4 @@ server periodically.
   are admin-only with role tests.
 - Over-seat: existing users keep working; new users are refused; the admin sees a
   warning. (The AC's "read-only" for the extra users is not built: they keep full
-  access, which is what the owner chose.)
+  access, by decision.)

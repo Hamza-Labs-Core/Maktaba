@@ -11,7 +11,7 @@
 | D2 | The front door keeps every client socket and the on-demand sessions. | Client connections survive a slot swap and a slot crash. |
 | D3 | Same binary, new subcommand `slot`. | One build; the release picks the version (33.2). |
 | D4 | Loopback on the home; signed prefix on nodes. | No new exposed port; reuses Epic 32's HMAC. |
-| D5 | Hot standby on by default for the home (owner). | Instant failover on a live crash; costs a second encode of the warm channels. |
+| D5 | Hot standby on by default for the home (decided). | Instant failover on a live crash; costs a second encode of the warm channels. |
 | D6 | Three instances with rotating roles. | The standby stays while a change is staged; staging is the third. |
 | D7 | Failover reuses the swap's splice, stitch and relay switch. | One continuity path for swaps, rollbacks and crashes. |
 

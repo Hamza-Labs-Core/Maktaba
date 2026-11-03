@@ -1573,7 +1573,7 @@ func TestAppBundleDumpProgressAndAGivenUpStart(t *testing.T) {
 	}
 }
 
-// The owner's request (update-attempts.md): a release's start says what it did with the
+// Requirement (update-attempts.md): a release's start says what it did with the
 // update where the Updates page reads it. A failed migration reads put back, with the
 // migration's error; the release before, back, keeps it; the update tried again and
 // installed is a new attempt; a dump that cannot be taken reads failed at the dump.

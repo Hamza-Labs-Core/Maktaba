@@ -5,8 +5,8 @@
 
 ## Goal
 
-The owner, 2026-11-03: *"every part of the server need to be reportable, no crash that breaks
-all, makes the server not accessible, i mean ui here"*.
+Requirement: every part of the server is reportable, and no crash may break everything or make
+the UI unreachable.
 
 Today the admin's tools for finding out what went wrong (Logs, System health) need the API and
 Postgres, the parts most likely to have failed. All processes share one 50 MB `server.log`.
@@ -61,7 +61,7 @@ Crashes stay on the devices, and nobody can report a problem. This epic covers f
 
 ## Decisions (2026-11-03)
 
-The owner answered the open questions:
+The open questions were answered:
 
 1. Crash reports to the home: **off by default**, asked during onboarding, a Settings switch
    afterwards (53.14).

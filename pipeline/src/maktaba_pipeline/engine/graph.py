@@ -355,7 +355,7 @@ GRAPH: tuple[StageDef, ...] = (
         version=YT_FETCH_VERSION,
         external_write=True,
         # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (owner, 2026-10-28: download, convert, dedup)
+        # downloads the next one (download, convert, dedup; decided 2026-10-28)
         may_request=("convert_mp4", "youtube_fetch"),
     ),
     StageDef(
@@ -368,7 +368,7 @@ GRAPH: tuple[StageDef, ...] = (
         version=YT_BACKFILL_VERSION,
         external_write=True,
         # one video per job: it goes on to convert (then dedup) while the next job
-        # downloads the next one (owner, 2026-10-28: download, convert, dedup)
+        # downloads the next one (download, convert, dedup; decided 2026-10-28)
         may_request=("convert_mp4", "youtube_backfill"),
     ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the

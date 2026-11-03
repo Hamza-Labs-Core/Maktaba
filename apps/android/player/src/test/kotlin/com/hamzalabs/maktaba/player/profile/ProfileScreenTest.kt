@@ -341,7 +341,7 @@ class ProfileScreenTest {
         assertEquals(1_500, p.qualityMobile.maxBitrateKbps)
     }
 
-    // ---------- approving a TV (the owner could not find it: it was under Account) ----------
+    // ---------- approving a TV (it was hard to find under Account) ----------
 
     @Test
     fun approveATvIsTheFirstRowUnderTheHeaderAndOpensApprove() {
@@ -381,7 +381,7 @@ class ProfileScreenTest {
         assertTrue(problems.distinct().joinToString("\n"), problems.isEmpty())
     }
 
-    // ---------- shown again (the owner: "pages should be cached while waiting updates when switching") ----------
+    // ---------- shown again (a page read last shows at once while it is read again) ----------
 
     private val release = java.util.concurrent.CountDownLatch(1)
 

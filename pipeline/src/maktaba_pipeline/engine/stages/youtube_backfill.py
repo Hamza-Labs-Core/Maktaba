@@ -5,7 +5,7 @@ has its own tile on the Queues page and pauses, resumes and cancels without touc
 uploads. Pool ``network_yt`` (shared with ``youtube_fetch``: the two never run at once),
 priority 300: below new uploads (120), normal pipeline work (100) and conversion (150).
 
-One item at a time (the owner's rule): each job goes through the back catalogue oldest
+One item at a time (the rule): each job goes through the back catalogue oldest
 first until one video lands (at most 25 items: skipped and gone ones do not count), asks
 ``convert_mp4`` for that video and itself for the next one (graph requests), so a video
 converts while the next one downloads. A new upload's ``youtube_fetch`` (120) claims the

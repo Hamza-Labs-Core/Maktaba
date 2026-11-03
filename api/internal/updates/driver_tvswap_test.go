@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// The owner's rule of 2026-10-28, "tv changes should not block updates": an update always
+// Rule of 2026-10-28: TV changes do not block updates. An update always
 // starts and drains; only its restart waits for a TV change that swaps (a swap takes
 // seconds), and at most TVSwapWait. A change that waits for an approval (ready), or
 // anything else in flight, does not hold the restart at all.

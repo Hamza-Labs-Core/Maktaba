@@ -4,9 +4,8 @@
 
 ## Why
 
-This is the queue job the owner asked for: *"a queue review each transcript … to save the
-location of a word and if its not available in dictionary or think its not correct, or not
-confident, to save for human review."* It turns 52.1's evidence and the packs' knowledge into
+This is the queue job that reviews each transcript and saves the location of every word that is
+not in the dictionary, looks wrong or has low confidence, for a person to review. It turns 52.1's evidence and the packs' knowledge into
 `word_flags` rows: where the word is, why it is suspect, how sure we are, and what it might be.
 It runs on the CPU, so it can run again whenever the packs, the vocabulary or the thresholds
 change, without the GPU.
@@ -97,7 +96,7 @@ code-point position between the sentence's `start_sec` and `end_sec`, and the fl
 `scores.time_estimated = true`, so the clip (52.8) pads more. The text-only threshold is raised by
 0.1 (one signal is weaker evidence).
 
-The owner decided (README §8, decision 2) to text-check **all ~45k existing transcripts**:
+Decided (README §8, decision 2): text-check **all ~45k existing transcripts**:
 
 - When the stage first ships (and again whenever a library is added with old transcripts), a
   one-time **backfill planner** enqueues `word_check` for every active transcript that has never

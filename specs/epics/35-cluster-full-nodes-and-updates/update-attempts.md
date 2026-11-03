@@ -1,6 +1,6 @@
 # Update attempts: every failure says why
 
-> **Status:** built with the PR that adds this file. Owner's request (2026-10-24, after the Mac
+> **Status:** built with the PR that adds this file. Requirement (2026-10-24, after the Mac
 > home's update from 0.3.0-rc.5 to 0.3.0 failed without a word): every update failure shows its
 > reason, in plain words, where the person looks: the Updates page, and the desktop app.
 

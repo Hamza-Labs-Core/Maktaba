@@ -57,7 +57,7 @@ so no VPS is ever needed for it.
 | Packages, source archives, icons, signed lists, nightly exports | **R2** | public bucket `maktaba-plugins`; private bucket `maktaba-plugins-private` (source archives, check reports, exports) never on a public domain |
 | Background work | **Queues** + Cron Triggers | `store-checks` (54.16), `store-catalog` (regenerate lists), `store-mail`; crons for the revocation re-sign, the monthly DNS prefix check, nightly exports |
 | Upload checks | Queue consumer Worker (static checks) and **Cloudflare Containers** (sandbox run), with a CI-runner fallback | 54.16 §1 |
-| Email | Cloudflare Email Service (sending), or a non-Stripe provider such as Amazon SES or Postmark | owner decision (README §14 item 10); every message in English and Arabic |
+| Email | Cloudflare Email Service (sending), or a non-Stripe provider such as Amazon SES or Postmark | decided (README §14 item 10); every message in English and Arabic |
 | Payment webhooks (Phase 3) | Worker route `POST /v1/payments/webhook/<provider>` | 54.19 |
 
 **No shared tables, sessions or cookies with the cloud.** The store never reads the cloud

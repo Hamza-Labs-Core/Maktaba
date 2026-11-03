@@ -14,7 +14,7 @@ It replaces the whole bundle — shell **and** `Contents/Resources/server` — i
 > (`<state>/updates/app-install.json`, the release's own feed
 > `releases/download/v<version>/latest.json`); the app downloads and checks it, says when it
 > installs ("Maktaba will update to <v> and restart by <time>", then "is updating now"), and
-> installs it by itself when the home says go (owner decision D1 of 2026-10-27: no click),
+> installs it by itself when the home says go (decision D1 of 2026-10-27: no click),
 > saying how it went in the same file. The app's updater still does the swap. Before it, the
 > server keeps a copy of the payload it ran (`<state>/updates/payloads/<version>`); the
 > launcher runs that copy (`<state>/updates/payload-override`) when the new server cannot stay

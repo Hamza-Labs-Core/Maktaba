@@ -234,7 +234,7 @@ func (c *Controller) AutoUpdate(ctx context.Context, runID string) (AutoUpdateSt
 		if failed && !stageRequested(ch) {
 			// its check failed before any swap: back to draft with its report (no retry
 			// loop), held there until an admin retries or drops it, and the live TV stays
-			// on its streaming software (the owner's decision, 2026-10-28)
+			// on its streaming software (decided 2026-10-28)
 			st.Outcome, st.Reason = AutoOutcomeHeld, "verify_failed"
 			st.Failed, st.FailedChecks = failedCheckNames(ch.VerifyReport), failedCheckList(ch.VerifyReport)
 			break
@@ -313,7 +313,7 @@ func failedCheckList(report map[string]any) []Check {
 // The live slot's report comes first: it is the version stamped in the binary that runs.
 // A release's streaming_version is only what the release recorded when it was built (a
 // release made from a source checkout says 0.0.1, the pipeline package's own version:
-// the owner's live release since 2026-10-22, so the update to 0.3.39 said "the TV stays
+// the live release since 2026-10-22, so the update to 0.3.39 said "the TV stays
 // on 0.0.1"), and a slot started unbound runs the installed binary whatever it says.
 // The pipeline reads the same (tvrelease.snapshot.live_streaming) for the release of a
 // change that brings no binary of its own, so a held TV stays on its software (#404).

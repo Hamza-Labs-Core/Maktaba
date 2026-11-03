@@ -5,7 +5,7 @@
 The home's libraries are mostly YouTube channels, one library per channel, under
 `/Volumes/Originals/Backup/Youtube/`. Most were downloaded with Tartube or yt-dlp and arrive in mixed
 containers: `.mkv`, `.webm`, `.mp4` and the odd `.avi`. The same lecture is often in two places,
-for example after a re-download or because it is in two playlists. The owner asked for three things,
+for example after a re-download or because it is in two playlists. This epic adds three things,
 each run from the existing Queues page and with no new UI anywhere else:
 
 1. **Convert to MP4** without losing a file. Keep the original until the new MP4 is proven to play.
@@ -14,7 +14,7 @@ each run from the existing Queues page and with no new UI anywhere else:
 3. **Refresh a library from YouTube**, so it stays offline. Download only what is new, with
    metadata, subtitles and thumbnails, and keep to YouTube's rate limits.
 
-The owner pointed at two of their own repos as the starting point: **FileUtilities** for encoding
+Two existing repos are the starting point: **FileUtilities** for encoding
 and clean-up, and **Make-It-Offline** (MIO), an unfinished yt-dlp front end inspired by Tartube.
 This epic says what each repo gives us and what Maktaba already has, then plans the three
 pipelines.
@@ -65,9 +65,9 @@ What it offers:
   macOS. This is relevant to the Arabic file names on the NAS. We **port it** into the convert
   stage's open step.
 - **Clean Up** (`CleanUpService.cs`) deletes `X.mkv` whenever `X.mp4` exists, **with no check of the
-  MP4**. This is the exact pattern the owner wants to avoid. **Not reused.**
-- **No deduplication at all**: no hashing and no duplicate detection. The owner may have expected
-  some, but the dedup plan below rests on Maktaba's own hashes and signals.
+  MP4**. This is the exact pattern to avoid. **Not reused.**
+- **No deduplication at all**: no hashing and no duplicate detection. The dedup plan below rests on
+  Maktaba's own hashes and signals.
 - **Not reused:** the Avalonia UI, the EF/SQLite history (Maktaba has `job_events` and adds
   `file_actions` below), and DeepL renaming.
 
@@ -210,7 +210,7 @@ then NFD, then on macOS a `ditto` copy into the work folder.
 
 ### Pipeline order: download, convert, dedup, one item at a time
 
-The owner's rule (2026-10-28) is "convert first, then dedup; one item at a time, not all".
+The rule (2026-10-28): convert first, then dedup, one item at a time, not all at once.
 Duplicates are compared as converted files, and no pair is merged while one of them is about
 to be converted. The queue enforces the order, the same way it orders every other stage:
 
@@ -314,7 +314,7 @@ size_bytes, mtime, seen_at)` and keeps the row's own path. `dedup_scan` then rep
 exact duplicates. That makes the hidden ones visible: copies that are on disk today but tracked by
 nobody.
 
-**Scope.** Within a library by default, or across all libraries when the admin asks (the owner's 66
+**Scope.** Within a library by default, or across all libraries when the admin asks (the home's 66
 channel libraries share lectures). A cross-library merge keeps the keeper in its own library and
 never moves files between libraries.
 
@@ -515,8 +515,8 @@ All of the following is **admin only**, server-side, with a role test per endpoi
   *Duplicates* (open groups).
 - **YouTube sources dialog** (per library): list, add (paste a channel or playlist URL; the API
   resolves it with `yt-dlp --flat-playlist -J --playlist-end 1`), set the mode and options, turn a
-  source off, and *Retry gone/skipped*. The dialog lives on the Queues page because the owner wants
-  no UI elsewhere.
+  source off, and *Retry gone/skipped*. The dialog lives on the Queues page because no UI is added
+  elsewhere.
 - **Duplicates review** (`/queue/duplicates`, a sub-page like `/queue/failures`): groups with each
   member's path, size, resolution, codec, watch data, and a frame strip from `chapter_thumbs`/the
   poster. Per group: choose the keeper, Apply, Dismiss. Bulk Apply for exact groups.
@@ -620,7 +620,7 @@ After the tracks: 47.11 → 47.13 → 47.14.
 47.1–47.10 and 47.12 are pipeline and migration work. 47.11 is Go. 47.13 is web. The migration is
 applied to the live database by the main session, after review.
 
-## Decided (owner, 2026-10-28)
+## Decided (2026-10-28)
 
 1. **Converted originals and removed duplicates** go to the trash for **30 days**, then
    `trash_purge` deletes them automatically. Restore works until the purge.

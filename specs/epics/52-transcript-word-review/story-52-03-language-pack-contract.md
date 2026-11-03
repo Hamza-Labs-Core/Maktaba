@@ -4,8 +4,7 @@
 
 ## Why
 
-The owner: *"this needs to be done so that it can support all languages, added as addons or
-whatever."* Today the only language knowledge is Arabic-specific and scattered:
+Requirement: support every language, with languages added as add-ons. Today the only language knowledge is Arabic-specific and scattered:
 `text/arabic.py` (folding), `stt/cohere.py` (the CAMeL dictionary), `classify/quran.py`. A word
 checker built on those would be Arabic forever. This story defines one contract every language
 plugs into, a registry that finds installed packs, and a fallback that gives *any* language
@@ -46,7 +45,7 @@ class LanguagePack(Protocol):
 
 Rules every pack keeps:
 
-- **Deterministic** (owner's decision 3, 2026-11-03: no LLM judge): the same input, data and
+- **Deterministic** (decision 3, 2026-11-03: no LLM judge): the same input, data and
   `version` always give the same answer. No sampling, no model calls, no LLM.
 - Pure and thread-safe after `load()`. No network at check time. Data fetched once at install.
 - `key()` is idempotent (`key(key(x)) == key(x)`) and stable within a `version`.

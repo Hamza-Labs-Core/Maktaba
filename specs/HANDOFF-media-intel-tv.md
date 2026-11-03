@@ -43,7 +43,7 @@ Worktrees on the dev PC:
 | `E:\tv\Maktaba-apply` | detached checkout of clip-groups, used for the Media Masters write; safe to remove |
 | `E:\tv\Maktaba-qa`, `-qb`, `-qc` | old workstream branches, already merged; safe to remove |
 
-## 3. Decisions the user made (do not re-litigate)
+## 3. Decisions made (do not re-litigate)
 
 1. **Tools only.** Every library action goes through the tools (mediaintel or Maktaba stages), never through manual one-offs.
 2. **Writes are automatic.** Plex, dizqueTV and channel writes happen without a review step, and every write logs its diff. A review/approval system is deferred; it will be a Maktaba feature covering Maktaba's own changes too.

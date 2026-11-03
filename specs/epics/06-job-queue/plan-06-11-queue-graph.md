@@ -12,12 +12,12 @@
 >
 > **Replaces:** the hand-chained orchestration in `pipeline/scripts/mediaintel/pipeline.py` (`_run`, lines 57-196).
 
-The user asked for this, in their words:
+Requirements:
 
-- "When one job finishes an episode's tagging, thumb, audio, whatever, it pushes to the next step's queue, and that starts on it, and so on."
-- "When an episode is updated, it and its season are sent to the next step to update their info, and update whatever updates with them."
-- "Retrigger for a library just re-adds it to the right queue."
-- They also want a control centre with a gauge, logs, progress and issues per queue, in light and dark themes.
+- When a job finishes a step for an episode (tagging, thumbnail, audio or any other), it pushes the episode to the next step's queue, which starts on it, and so on.
+- When an episode is updated, it and its season are sent to the next step to update their info, along with anything that updates with them.
+- A retrigger for a library re-adds it to the right queue.
+- A control centre shows a gauge, logs, progress and issues per queue, in light and dark themes.
 
 This plan does that by **extending `processing_jobs`**. It does not build a second queue.
 
@@ -1287,7 +1287,7 @@ Decisions and deviations made while implementing workstream B (Go API + SSE). Wh
 3. **`/ws/queues` initial frame.** `ws.Handler.Initial` (a hook) sends a fresh snapshot on connect. `queues.Handler.PublishSnapshots` publishes every 2 s only while `Hub.SubscriberCount("queues") > 0`. It starts from `MountP6` only when `P6Deps.BusCtx` is set, so tests that mount without a context do not leak a goroutine.
 4. **Enqueue helper.** `queues.Enqueue` (new file `queues/enqueue.go`) is the single Go call site of `processing_jobs_enqueue`. `libraries/enqueuer.go`, `jobs.Retry`, retrigger, retry-by-cause and apply all use it.
 5. **Tests do not need A's migrations.** Postgres is not available in the build environment, so unit tests run on a scripted `database/sql` driver (`queues/queuestest`). It checks which statements run, their arguments and the row-to-JSON mapping, not SQL validity. `api/queues_integration_test.go` (`-tags=integration`, needs `DATABASE_URL`) applies the real migrations and skips itself while 0087-0090 are absent. **The SQL has therefore not been executed against Postgres yet.**
-6. **`write_mode`.** Per the user's decision external writes run automatically: values `auto` (default, set by A), `apply` (accepted as a synonym) and `review`. `PATCH` accepts all three. The `apply` endpoint is kept as specified. `queueApi.ts` types the field as `"apply" | "review"`, so C should widen it to include `"auto"`.
+6. **`write_mode`.** By decision, external writes run automatically: values `auto` (default, set by A), `apply` (accepted as a synonym) and `review`. `PATCH` accepts all three. The `apply` endpoint is kept as specified. `queueApi.ts` types the field as `"apply" | "review"`, so C should widen it to include `"auto"`.
 7. **Workers registry (assumed shape).** `workers(id TEXT PK, host TEXT, stages TEXT[], pools JSONB, started_at, last_seen_at, version TEXT)`. A worker is online when `last_seen_at` is within 60 s. `GET /api/workers` returns `worker_id, host, online, last_seen_at, serves[], serves_label` (plus `pools`, `started_at`, `version`). `QueueSummary.served_by` is the list of online hosts serving the stage (as in `queueApi.ts`; the plan had no such field), with `served_workers` as an extra count. `no_worker` is true when the stage is enabled, has pending work and no online worker serves it. It also becomes waiting reason `no_worker` (after `awaiting_review`, before `pool_full`). `/api/queue/stats` carries `served_workers`, `served_hosts`, `no_worker` and `extension` per stage and tolerates a missing `workers` table.
 8. **Extensions (assumed shape).** `extensions(name TEXT PK, enabled BOOLEAN, settings JSONB, updated_at)` and `job_stages.extension TEXT NULL`. The catalogue (label, version, description, settings schema for `plex` and `dizquetv`) is code in `queues/extensions.go`. Only schema keys are ever echoed; secrets come back as `********` plus `secrets_set`. A client that sends the mask back keeps the stored secret, and `null` or `""` clears it. `POST /api/extensions/{name}/test` answers `200 {ok:false, message:"not_implemented: ..."}` (the shape `queueApi.ts` expects) instead of 501.
 9. **`stale_graph` heuristic.** The API cannot see worker handlers. A stage is reported as `stale_graph` when it is enabled and not paused, has ready pending rows, and `graph_synced_at` is NULL or older than 24 h.

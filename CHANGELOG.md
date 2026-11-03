@@ -158,7 +158,7 @@ build fails when the two differ.
   Remote says what the web admin says, in the web's own Arabic for each state, step and code; a
   value it has no words for is still shown as the home sent it. A unit test and lint now fail
   any Android or Android TV string that has no Arabic.
-- **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the owner's
+- **`docs/claude-trail.md`, the record a new Claude session reads first.** It holds the project's
   standing rules, the decisions and why, failures and their fixes, the live state, the work in
   flight, what waits on the owner and the release history. `CLAUDE.md` tells every session to
   read it first and add to it before it ends.

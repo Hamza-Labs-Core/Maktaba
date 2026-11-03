@@ -308,7 +308,7 @@ describe("Admin Updates", () => {
     );
   });
 
-  // The owner's decision, 2026-10-28: machines follow once the home commits.
+  // Decided 2026-10-28: machines follow once the home commits.
   it("while the home updates, its machines show waiting for it, with no order", async () => {
     const watching = { ...liveRun, trigger: "manual", state: "home_applying", step: "watching" };
     routes(overview({ run: watching }), {
@@ -670,7 +670,7 @@ describe("Admin Updates", () => {
     expect(screen.getByTestId("updates-machine-home")).toHaveTextContent("الجهاز الرئيسي");
   });
 
-  // The owner's cluster on 2026-10-28: a run to 0.3.36 rolled back (failed_tv), 0.3.37 was
+  // A real cluster on 2026-10-28: a run to 0.3.36 rolled back (failed_tv), 0.3.37 was
   // then installed on the home by hand; the PC runs 0.3.33 and catches up in the window.
   // The page used to say "the cluster runs 0.3.37", "the last update, to 0.3.36" and offer
   // to retry 0.3.36: each value now says the truth, once.
@@ -1474,7 +1474,7 @@ describe("Admin Updates: blocked, stuck and waiting releases", () => {
   });
 });
 
-// The owner's decision (2026-10-28): when only the TV change's check fails, the update
+// Decided 2026-10-28: when only the TV change's check fails, the update
 // installs, the TV stays on the streaming software it ran, and the admin retries or
 // drops the change from here.
 describe("Admin Updates: a TV held at an update", () => {

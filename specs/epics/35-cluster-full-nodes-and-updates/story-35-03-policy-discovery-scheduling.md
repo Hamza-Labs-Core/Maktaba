@@ -15,7 +15,7 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 ## Acceptance criteria
 
 - **AC1** Settings `rules.updates` (schema.json, settings UI, `app_settings`) with the README defaults:
-  `auto_install` true (owner), `channel` stable, `window` "03:00-05:00", `window_overrun_minutes` 120,
+  `auto_install` true (decided), `channel` stable, `window` "03:00-05:00", `window_overrun_minutes` 120,
   `min_release_age_hours` 24, `pinned_version` "", `deferred_until` null, `skipped_versions` [],
   `node_failure_policy` hold_platform, `node_health_timeout_minutes` 10, `drain_timeout_minutes` 10,
   `rehearse_migrations` true, `rehearse_max_db_gb` 20, `keep_versions` 3, `backups_keep` 3, `catch_up`
@@ -32,7 +32,7 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 - **AC5** The scheduler ticks every minute and starts a run only when: `auto_install`, a target exists,
   its age ≥ `min_release_age_hours`, now inside `window` and ≥ 30 min before its end, `deferred_until`
   passed, no active run, every home role running and no crash in 10
-  min. *Amended (owner, 2026-10-28: "tv changes should not block updates"):* a TV change never holds a
+  min. *Amended (2026-10-28: a TV change never blocks an update):* a TV change never holds a
   run (the `tv_change_in_flight` blocker is removed). The run starts; the TV change controller sets
   the change in flight aside while the update holds the TV (a draft or a ready one is left as it is, a
   staged or verifying one is cancelled cleanly back to draft with its staging slot released) and checks

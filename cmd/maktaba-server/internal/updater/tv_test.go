@@ -199,7 +199,7 @@ func TestTVStepSkippedCommits(t *testing.T) {
 	}
 }
 
-// TC3, as the owner decided it (2026-10-28): a swap that fails, and a TV that fails on
+// TC3, as decided 2026-10-28: a swap that fails, and a TV that fails on
 // the air after it switched (Epic 33.9 rolled it back), roll the release back (failed_tv)
 // and take the change back; the release that comes back says rolled_back.
 func TestTVStepFailedTVRollsBack(t *testing.T) {
@@ -225,7 +225,7 @@ func TestTVStepFailedTVRollsBack(t *testing.T) {
 	}
 }
 
-// The owner's decision (2026-10-28): a check that fails before any swap holds the TV on
+// Decided 2026-10-28: a check that fails before any swap holds the TV on
 // the streaming software it runs, and the release commits all the same: no rollback, the
 // change not taken back, the TV step held with the checks that failed, and the release the
 // live TV runs recorded for the commit's pruning to keep.

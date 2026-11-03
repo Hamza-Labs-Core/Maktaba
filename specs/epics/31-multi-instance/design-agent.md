@@ -5,7 +5,7 @@ Phase 1 requirements: [README.md](README.md). Phase 1 design (built, merged):
 [docs/cluster](../../../docs/cluster/README.md).
 
 **Status.** Authoritative for phase 2. Consolidated on 2026-10-19 from the amendments made on
-2026-10-18/19 as the owner refined the requirements; what the consolidation clarified or
+2026-10-18/19 as the requirements were refined; what the consolidation clarified or
 added is listed in [Appendix A](#appendix-a--consolidation-notes), and what still needs an
 owner decision in [§13](#13-open-points-for-the-owner).
 
@@ -16,19 +16,19 @@ authenticated, encrypted channel to a hub on the home, over which flow real-time
 what it collects to **files on the shared video storage**, where every other machine can
 read them; and the Processing page watches the whole cluster live through the hub.
 
-The database keeps the catalog and the queues, and — "keep a database, but it will be like
-a cache" (owner) — a bounded, disposable cache of the channel that only the hub writes, so
+The database keeps the catalog and the queues, and — kept, but only as a cache — a bounded,
+disposable cache of the channel that only the hub writes, so
 recent history reads fast (§7.9). Logs, metrics and LLM traffic never travel through the
 database; the files on the share are their record.
 
 ## 0. Requirements and trace
 
-The owner's phase 2 requirements, in the order they were given (2026-10-18/19; 10 refines 2):
+The phase 2 requirements, in the order they were given (2026-10-18/19; 10 refines 2):
 
 | # | Requirement | Satisfied by |
 |---|---|---|
-| 1 | Metrics over a socket for every worker; LLMs running on any machine usable by all; "all should be like a cluster" | §4 every process runs an agent on one channel to the hub; §5 `metrics` frame; §8 LLM runtimes, router and doors; §6 hub |
-| 2 | "Build it solid"; "no database" — logs, metrics, LLM traffic never through the database | §4 mutually authenticated, forward-secret, encrypted, versioned protocol with strict counters; §10 failure behaviour; §9 settings from the environment; §2 the three planes; §7.9 the database only as the hub's cache |
+| 1 | Metrics over a socket for every worker; LLMs running on any machine usable by all; every machine works as one cluster | §4 every process runs an agent on one channel to the hub; §5 `metrics` frame; §8 LLM runtimes, router and doors; §6 hub |
+| 2 | Built solid; no database for live data — logs, metrics, LLM traffic never through the database | §4 mutually authenticated, forward-secret, encrypted, versioned protocol with strict counters; §10 failure behaviour; §9 settings from the environment; §2 the three planes; §7.9 the database only as the hub's cache |
 | 3 | Real-time streams | §5 metrics every 2 s, logs within 250 ms, job events as they happen; §6.4 browser WebSocket |
 | 4 | Saved to files by node IP | §7.3 the IP folder; §7.4 layout |
 | 5 | All saved on the videos share under a `maktaba` folder, viewable from all nodes, each finding the right path for its OS | §7.1 share root; §7.2 per-OS path through each machine's path map |
@@ -36,8 +36,8 @@ The owner's phase 2 requirements, in the order they were given (2026-10-18/19; 1
 | 7 | Same for queue metrics, job metrics, library — all | §5.3 `job` frame; §7.4 `jobs/`, `queues/`, `library/`; §6.4 topics `jobs`, `queues`, `library` |
 | 8 | The Processing page talks to a central hub on the main node over a WebSocket; all jobs on all machines talk to that hub | §6.4 `/api/cluster/ws`; §6.5 Processing page; §5.3 every job reports to the hub |
 | 9 | Not stages: the work is split into queues on the main node and each machine's workers pull jobs from those queues | §3 queues and pulling |
-| 10 | "Keep a database, but it will be like a cache" | §7.9 the database cache: `health_samples` and three cache tables, written only by the hub, bounded, refilled from the files |
-| 11 | "Should have long term log archive on main node as well" | §7.10 the archive on the home: every closed day's logs, jobs, LLM usage and hub events, compressed on the home's own disk, kept a year (or to a size cap), readable from the Machines page and the CLI |
+| 10 | Keep a database, but only as a cache | §7.9 the database cache: `health_samples` and three cache tables, written only by the hub, bounded, refilled from the files |
+| 11 | A long-term log archive on the main node as well | §7.10 the archive on the home: every closed day's logs, jobs, LLM usage and hub events, compressed on the home's own disk, kept a year (or to a size cap), readable from the Machines page and the CLI |
 
 ## 1. Words used here
 
@@ -690,7 +690,7 @@ recent metrics and logs for fast reading (§7.9).
 
 ### 7.9 The database cache
 
-Owner (2026-10-19): "Keep a database, but it will be like a cache." The files on the share
+Decided 2026-10-19: keep a database, but only as a cache. The files on the share
 stay the record. The home's database keeps a **cache** of the channel so that recent history
 reads fast. Three rules: only the **hub** writes it; it is **bounded**; it is **disposable** —
 emptying it loses nothing the files do not hold.
@@ -759,7 +759,7 @@ by track C1 (package `api/internal/cluster/cache`).
 
 ### 7.10 The archive on the home
 
-Owner (2026-10-19): "should have long term log archive on main node as well." The share
+Decided 2026-10-19: the main node keeps a long-term log archive as well. The share
 keeps 14 days (§7.7) and the database a day (§7.9); the **home keeps the long-term archive on
 its own disk**.
 
@@ -839,7 +839,7 @@ lives in memory.
 - **Anything OpenAI-compatible**: the home serves
   `GET /api/cluster/llm/v1/models`, `POST /api/cluster/llm/v1/chat/completions` and
   `POST /api/cluster/llm/v1/embeddings`, streaming as SSE in the OpenAI wire format.
-  **Admins and personal access tokens only** (owner decision, 2026-10-19): an admin's session
+  **Admins and personal access tokens only** (decided 2026-10-19): an admin's session
   or the admin token, or any `Authorization: Bearer pat_…` personal access token; an
   ordinary signed-in user's session gets 403. Point a tool at
   `http://<home>:8080/api/cluster/llm/v1`. `models` lists every model on any machine, with
@@ -1087,14 +1087,13 @@ they are today.
    home's cluster key, ephemeral keys on both sides, a transcript hash, a proof each way)
    gives mutual authentication and forward secrecy. Machines joined before it must re-join.
    TLS on the API (the phase 1 follow-up) remains open for the browser and REST traffic.
-2. **Resolved — the database as a cache** (owner, 2026-10-19: "Keep a database, but it
-   will be like a cache"): `health_samples` stays, written by the hub from `metrics` frames,
-   plus two bounded cache tables refilled from the files (§7.9).
+2. **Resolved — the database as a cache** (2026-10-19): `health_samples` stays, written by
+   the hub from `metrics` frames, plus two bounded cache tables refilled from the files (§7.9).
 3. **No SSE fallback for the Machines page's live views.** The first draft had
    `/api/cluster/stream` (SSE); the WebSocket replaced it, and only the Processing page keeps
    a fallback (the existing streams). Bring back an SSE mirror of the hub for blocked
    networks?
-4. **Resolved — who may use the LLM door** (owner, 2026-10-19): admins and personal access
+4. **Resolved — who may use the LLM door** (2026-10-19): admins and personal access
    tokens; ordinary signed-in users get 403 (§8.3).
 5. **Day folders in UTC** (chosen so machines agree): an admin in UTC+3 sees a day start at
    03:00 local time. Keep UTC, or use the home's time zone?
@@ -1109,7 +1108,7 @@ What this rewrite settled where the amended draft was unclear or contradicted it
 what it added because an implementer needs it. Every decided detail of the draft (handshake,
 cryptography, frames, files, the hub, queues and pulling, LLMs, settings) is kept.
 
-**Owner decisions after the consolidation (2026-10-19):**
+**Decisions after the consolidation (2026-10-19):**
 
 - The database becomes a cache of the channel (requirement 10, §7.9): workers send `health`
   in `metrics` frames and the hub writes `health_samples` and two `UNLOGGED` cache tables,

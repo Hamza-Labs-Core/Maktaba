@@ -74,7 +74,7 @@
 # tauri signs + notarizes + staples the app, then the .dmg is notarized and
 # stapled here before it is staged for the publish job.
 # Windows (WINDOWS_CERTIFICATE / WINDOWS_CERTIFICATE_PASSWORD, Authenticode)
-# stays deferred: the owner's decision (tools/release/win-app/README.md, Signing).
+# stays deferred (tools/release/win-app/README.md, Signing).
 # The updater key: TAURI_SIGNING_PRIVATE_KEY(_PASSWORD).
 name: Desktop Release
 

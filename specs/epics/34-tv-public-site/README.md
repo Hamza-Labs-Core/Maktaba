@@ -17,8 +17,8 @@ push, the Worker and its Durable Object, tokens, access modes, channel switching
 
 ## Goal
 
-The owner said: *"why not have a tv.maktaba.com, will check domain later, as another feature for
-people to watch using Cloudflare"*.
+Requirement: a public TV site (working name tv.maktaba.com; the domain is checked later) where people
+watch the channels through Cloudflare, as a feature next to Epic 32.
 
 Epic 32 lets **signed-in Maktaba users** watch a channel away from home through Cloudflare Stream.
 This epic adds a **public website** where **anyone the owner allows** (everyone, everyone who passes
@@ -33,14 +33,14 @@ channels to their Stream live inputs.
 The domain is not decided: it is a setting (`tv_public.domain`). Until it is set the site runs on its
 `*.workers.dev` address.
 
-## Decisions (owner and recommendations)
+## Decisions (decided and recommended)
 
 | Question | Decision |
 |---|---|
 | Hosting | **One Cloudflare Worker with static assets** (Cloudflare's recommendation for new projects; Pages still works but new features go to Workers), on the **owner's own Cloudflare account** — the same account as Epic 32's Stream. |
 | What the home sends | Outbound only: the public lineup, logos, the guide for the next `guide_days` days, and live channel state. Published to R2 through the Worker's home endpoint on every schedule change. |
 | Video | The Epic 32 push — the home front door's **push relay** (Epic 33.8, `streaming/internal/frontdoor/relay`), same encode, stream copy — of the channel's **public feed** to **dedicated public live inputs**, one A/B pair per public channel. Watermark and channel strip (Epic 27.11) are already burned into the video by the block encodes, so the public feed carries them unchanged; the site never overlays its own. |
-| Always-on or on demand | **Always-on, full quality, for every public channel** (owner's uplink is 1 Gbps: 22 × ≈ 6.5 Mb/s ≈ 143 Mb/s ≈ 15 %). Ingest is free and delivery is billed only when watched. The constraint is **encoder capacity** (22 encodes 24/7 across the M3 Ultra's VideoToolbox and the PC's NVENC via Epic 32 balancing), not bandwidth. "Lower public rendition" and "always-on only for the top N, on demand for the rest" exist as settings for smaller uplinks, **off by default**. |
+| Always-on or on demand | **Always-on, full quality, for every public channel** (the home's uplink is 1 Gbps: 22 × ≈ 6.5 Mb/s ≈ 143 Mb/s ≈ 15 %). Ingest is free and delivery is billed only when watched. The constraint is **encoder capacity** (22 encodes 24/7 across the M3 Ultra's VideoToolbox and the PC's NVENC via Epic 32 balancing), not bandwidth. "Lower public rendition" and "always-on only for the top N, on demand for the rest" exist as settings for smaller uplinks, **off by default**. |
 | Control channel | The home keeps an **outbound WebSocket** to a Durable Object (`SiteControl`); the Worker never calls the home. Used for on-demand wake (only when that option is on), state reports, panic off-air. Fallback: long-poll over HTTPS. |
 | Which channels | Per-channel **"public" flag** with a **rights confirmation** by an admin, default off; per-programme **exclusions** (series, collection, item) shown as a slate "Not available online". |
 | Viewer access | Modes `public`, `turnstile` (default), `access` (Cloudflare Access, invite-only), `accounts` (Maktaba cloud accounts, phase D). |

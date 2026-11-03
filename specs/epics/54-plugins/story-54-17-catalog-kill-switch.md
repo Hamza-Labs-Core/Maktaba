@@ -58,7 +58,7 @@ range, developer key id) and acts:
 works for file-installed store plugins as soon as the home sees a list.
 
 The store's `disable` is the malware switch-off and cannot be undone by an admin. It is
-separate from the admin's own **keep off** (54.07, owner decision 2026-11-03): an admin's
+separate from the admin's own **keep off** (54.07, decided 2026-11-03): an admin's
 disable sticks through updates, restores and reinstalls until the admin turns it on; turning
 it on never lifts a `disable` revocation. Auto-update never turns on a kept-off plugin.
 

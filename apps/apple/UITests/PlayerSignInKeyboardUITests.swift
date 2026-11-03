@@ -1,6 +1,6 @@
 import XCTest
 
-/// The sign-in form from the keyboard (the owner: "sign in need the next field arrow"):
+/// The sign-in form from the keyboard (each field needs a Next key to the next field):
 /// Return on the username moves the keyboard to the password, the password is in sight above
 /// the on-screen keyboard, and Return on the password signs in. The mock home refuses the
 /// password; what is checked is that it was sent.

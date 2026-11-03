@@ -18,7 +18,7 @@ to fix a bug, and nothing a person chose to send.
 | **Anonymous error groups** (fingerprint, title, counts, versions) | the home's usage-data opt-in is on (existing, unchanged) | none (random install id) | as today |
 | **Problem reports** (the 53.15 report, the home's part, crash reports inside it) | the home's admin turned on **"Let people send problem reports to Maktaba"** **and** the report was sent with the Maktaba box ticked (by the sender, or by the admin with their own preview) | the linked home (`home_h` and the cloud account that linked it, so Maktaba can answer); **never** the sender's name, email or user id | **90 days**, then deleted |
 
-Nothing here is automatic: anything that leaves the home stays opt-in (owner's decision,
+Nothing here is automatic: anything that leaves the home stays opt-in (decided
 2026-11-03, README §12). The admin setting lives in Settings → Privacy, off by default, and needs the home to be linked to
 Maktaba Cloud (Epic 25). Turning it off stops new sends at once; already-sent reports stay until
 their 90 days or until the admin asks to delete them ("Delete what Maktaba has").

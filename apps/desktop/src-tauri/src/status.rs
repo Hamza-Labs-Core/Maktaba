@@ -454,7 +454,7 @@ pub fn updates_auto_of_response(raw: &[u8]) -> Option<bool> {
 }
 
 /// Whether this machine's server follows a home (a joined machine), and the release that
-/// home committed last, as its /api/cluster/self says (the owner's rule, 2026-10-28: a
+/// home committed last, as its /api/cluster/self says (the rule of 2026-10-28: a
 /// joined machine never goes ahead of its home).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Joined {

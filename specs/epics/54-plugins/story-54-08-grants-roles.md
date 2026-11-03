@@ -18,7 +18,7 @@ generation BIGINT, granted_by, granted_at)`. `generation` increments on every ch
 `NOTIFY plugin_grants_changed` invalidates the API's cache (54.04 §6). `all_libraries = true`
 includes libraries added later; otherwise only the listed ones.
 
-**Library checkboxes start empty** (owner decision 2026-11-03). The permission dialog shows
+**Library checkboxes start empty** (decided 2026-11-03). The permission dialog shows
 every library unticked, and "All libraries, including new ones" unticked; the admin ticks each
 library the plugin may use. A plugin installed with no library ticked installs and runs, but
 every library-scoped call answers `403 plugin_scope`, and the dialog warns "This plugin can't

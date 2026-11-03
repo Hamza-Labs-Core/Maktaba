@@ -1,4 +1,4 @@
-"""A TV held on its old streaming software (the owner's rule of 2026-10-28, #404: when
+"""A TV held on its old streaming software (the rule of 2026-10-28, #404: when
 only an update's TV check fails, the update stays installed and the TV stays on its old
 version until the update's Retry passes or a later release's own binary change passes its
 check).

@@ -39,7 +39,7 @@ function attempt(over: Partial<UpdateAttempt>): UpdateAttempt {
   };
 }
 
-/** The owner's cluster on 2026-10-28: a run to 0.3.36 rolled back, then 0.3.37 installed by
+/** A real cluster on 2026-10-28: a run to 0.3.36 rolled back, then 0.3.37 installed by
  * hand on the home; the PC on 0.3.33, behind, caught up in the next quiet window. */
 function owners(over: Partial<UpdatesOverview> = {}): UpdatesOverview {
   const home: UpdateMachine = {
