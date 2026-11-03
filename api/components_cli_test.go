@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -17,6 +18,9 @@ type fakeComponents struct {
 	applied []components.Request
 	actors  []components.Actor
 	refuse  error
+	// imported and records are what the import and offline commands recorded
+	imported []string
+	records  []string
 }
 
 func (f *fakeComponents) List(context.Context) (components.ListView, error) {
@@ -25,7 +29,11 @@ func (f *fakeComponents) List(context.Context) (components.ListView, error) {
 }
 
 func (f *fakeComponents) Show(_ context.Context, id string) (components.Detail, error) {
-	return components.Detail{View: components.View{ID: id, Want: catalog.WantEnabled}}, nil
+	kind := "stages"
+	if strings.HasPrefix(id, "runtime.") {
+		kind = catalog.KindAsset
+	}
+	return components.Detail{View: components.View{ID: id, Kind: kind, Want: catalog.WantEnabled}}, nil
 }
 
 func (f *fakeComponents) Preview(context.Context, components.Request) (components.Preview, error) {
@@ -41,13 +49,29 @@ func (f *fakeComponents) Apply(_ context.Context, req components.Request, a comp
 	return components.Result{Changed: []store.Desired{{ID: req.Changes[0].ID, Want: req.Changes[0].Want, Generation: 2}}}, nil
 }
 
+func (f *fakeComponents) Imported(_ context.Context, ids []string, _ string, a components.Actor) (components.Result, error) {
+	f.imported = append(f.imported, ids...)
+	f.actors = append(f.actors, a)
+	return components.Result{Changed: []store.Desired{}}, nil
+}
+
+func (f *fakeComponents) Record(_ context.Context, _ components.Actor, action, _ string, _ map[string]any) error {
+	f.records = append(f.records, action)
+	return nil
+}
+
 func cli(f *fakeComponents, tty bool, stdin string) (*componentsCLI, *bytes.Buffer, *bytes.Buffer) {
 	var out, errOut bytes.Buffer
-	return &componentsCLI{svc: f, in: strings.NewReader(stdin), out: &out, errOut: &errOut, tty: tty, user: "maya"}, &out, &errOut
+	c := &componentsCLI{in: strings.NewReader(stdin), out: &out, errOut: &errOut, tty: tty, user: "maya", wait: func(time.Duration) {}}
+	if f != nil {
+		c.svc = f
+	}
+	return c, &out, &errOut
 }
 
 func runCLI(c *componentsCLI, argv ...string) int {
 	flags, args := splitComponentsArgs(argv)
+	c.values = componentsValues(argv)
 	return c.run(context.Background(), flags, args)
 }
 

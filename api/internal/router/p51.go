@@ -21,6 +21,9 @@ type P51Deps struct {
 	// License gates a component that names a licence flag (nil: the free tier).
 	License *subscriptions.StoreRef
 	Logger  *slog.Logger
+	// Packs is this machine's pack installer (nil: the supervisor named by
+	// MAKTABA_SUPERVISOR_URL and MAKTABA_SUPERVISOR_TOKEN_FILE, if any).
+	Packs *componentsh.Packs
 }
 
 // MountP51 mounts the components' admin routes (nil DB: nothing) and answers the service.
@@ -32,7 +35,11 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 	s.Logger = d.Logger
 	ref := d.License
 	s.Licensed = func(flag string) bool { return ref.Store().Allows(subscriptions.Feature(flag)) }
-	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger}
+	pk := d.Packs
+	if pk == nil {
+		pk = componentsh.PacksFromEnv()
+	}
+	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger, Packs: pk}
 	h.Mount(r)
 	return s
 }

@@ -9,7 +9,11 @@
 //	POST   /api/components/{id}/start      clear the hold
 //	POST   /api/components/preview         {changes, with_conflicts?, bundle?}: the effect, changing nothing
 //	POST   /api/components/apply           {changes, generation?, with_conflicts?, bundle?}: all in one transaction, or none
+//	POST   /api/components/offline         build an offline file on this machine (story 51.16, packs.go)
+//	GET    /api/components/offline/{name}  its progress, then the file
+//	POST   /api/components/import          the offline file as the body: install what it holds
 //
+// The lists carry each asset's install or removal progress from this machine's supervisor.
 // Every route is a home admin's (an admin's cloud link with scope manage included): no
 // sign-in is 401, anyone else 403. The checks and the audit rows are the components
 // service's, the same the CLI uses. Errors are problem+json with a top-level code.
@@ -41,6 +45,9 @@ type Handler struct {
 	// DB names the admin in a hold and an audit row (users.username); nil: user:<id>.
 	DB     *sql.DB
 	Logger *slog.Logger
+	// Packs is this machine's pack installer (its supervisor); nil: none, so no progress
+	// and the offline and import routes answer 503.
+	Packs *Packs
 }
 
 // Mount wires the routes behind adminOnly.
@@ -50,6 +57,9 @@ func (h *Handler) Mount(r chi.Router) {
 		r.Get("/api/components", h.list)
 		r.Post("/api/components/preview", h.preview)
 		r.Post("/api/components/apply", h.apply)
+		r.Post("/api/components/offline", h.offlineMake)
+		r.Get("/api/components/offline/{name}", h.offlineGet)
+		r.Post("/api/components/import", h.importFile)
 		r.Get("/api/components/{id}", h.show)
 		r.Put("/api/components/{id}", h.put)
 		r.Delete("/api/components/{id}", h.remove)
@@ -169,6 +179,11 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	views := make([]*svc.View, len(v.Components))
+	for i := range v.Components {
+		views[i] = &v.Components[i]
+	}
+	WithProgress(r.Context(), h.Packs, views...)
 	common.WriteJSON(w, r, http.StatusOK, v)
 }
 
@@ -178,6 +193,7 @@ func (h *Handler) show(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	WithProgress(r.Context(), h.Packs, &d.View)
 	common.WriteJSON(w, r, http.StatusOK, d)
 }
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/clustertest"
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -108,5 +109,45 @@ func TestPGApplyAllOrNone(t *testing.T) {
 	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &v)
 	if len(v.Audit) == 0 || v.Audit[0].Action != "component.hold" {
 		t.Fatalf("audit %+v", v.Audit)
+	}
+}
+
+// T12 on Postgres: an import by an admin (a real user) writes the desired row and the
+// audit rows with the admin as actor; the offline file's rows have no component target.
+func TestPGImportAndOfflineAudited(t *testing.T) {
+	f, _ := pgFixture(t)
+	sup := withSupervisor(t, f)
+	sup.built = true
+	const uid = "6f1c2a8e-3b7d-4c11-9a52-0d3e4f5a6b7c"
+	if _, err := f.db.Exec(`INSERT INTO users (id, username, pw_hash, is_admin) VALUES ($1, 'maya', 'x', true)`, uid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.SetDesired(context.Background(), store.Desired{ID: "model.whisper-medium", Want: components.WantAbsent},
+		store.Audit{By: "test", Action: "component.remove"}); err != nil {
+		t.Fatal(err)
+	}
+	maya := &principal.Principal{UserID: uid, IsAdmin: true}
+	decode(t, f.doType("POST", "/api/components/import?name=home.tar", "TAR", "application/x-tar", maya), 200, nil)
+	if d := f.want(t, "model.whisper-medium"); d.Want != components.WantInstalled {
+		t.Fatalf("model.whisper-medium %+v", d)
+	}
+	var v svc.Detail
+	decode(t, f.do("GET", "/api/components/model.whisper-medium", "", maya), 200, &v)
+	if len(v.Audit) < 2 || v.Audit[0].Action != svc.ActionImport || v.Audit[0].ActorUserID != uid || v.Audit[0].ActorSource != "web" {
+		t.Fatalf("audit %+v", v.Audit)
+	}
+	var p map[string]any
+	_ = json.Unmarshal(v.Audit[0].Payload, &p)
+	if p["by"] != "maya" || p["file"] != "home.tar" {
+		t.Fatalf("payload %s", v.Audit[0].Payload)
+	}
+	decode(t, f.do("POST", "/api/components/offline", `{"bundle":"core"}`, maya), 202, nil)
+	if rec := f.do("GET", "/api/components/offline/maktaba-offline-1.2.3-linux-amd64-core.tar", "", maya); rec.Code != 200 {
+		t.Fatalf("download %d", rec.Code)
+	}
+	var n int
+	if err := f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE category = 'components' AND action IN ($1, $2)
+		AND target_id IS NULL AND actor_user_id = $3`, svc.ActionOfflineMake, svc.ActionOfflineDownload, uid).Scan(&n); err != nil || n != 2 {
+		t.Fatalf("offline audit rows: %d %v", n, err)
 	}
 }

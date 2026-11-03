@@ -6073,5 +6073,8 @@
   "components.detail.pack_importing": "Reading the file: {name}",
   "components.detail.pack_offline": "Gathering {name}: {done} of {total}",
   "components.offline.import": "Import a file",
-  "components.offline.download": "Download for offline"
+  "components.offline.download": "Download for offline",
+  "components.reason.components_unavailable": "This machine's Maktaba server does not answer, so nothing can be installed or imported right now.",
+  "components.reason.offline_unknown": "That offline file is not on this machine. Files are kept for 24 hours; make it again.",
+  "components.reason.import_too_large": "The file is too large to import (at most 64 GB)."
 }
