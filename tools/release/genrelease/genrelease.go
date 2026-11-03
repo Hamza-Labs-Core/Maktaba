@@ -23,6 +23,7 @@ import (
 	"time"
 
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
+	"github.com/Hamza-Labs-Core/Maktaba/tools/release/componentsindex"
 )
 
 // Repository paths read from the checkout.
@@ -308,6 +309,15 @@ func Build(o Options) (*rv.Manifest, error) {
 				return nil, fmt.Errorf("two cuda constraints files: %s, %s", consCUDA, name)
 			}
 			consCUDA = name
+		case name == rv.ComponentsIndexName(version):
+			// the signed component index (Epic 51, story 51.15): named with its digest
+			d, err := fileSHA(filepath.Join(o.Dist, name))
+			if err != nil {
+				return nil, err
+			}
+			m.Components = &rv.ComponentsRef{Index: name, SHA256: d}
+		case strings.HasPrefix(name, "components-") && strings.HasSuffix(name, ".json"):
+			return nil, fmt.Errorf("%s: a component index of another version than %s", name, version)
 		case strings.HasPrefix(name, "maktaba-migrations-") && strings.HasSuffix(name, ".tar.gz"):
 			// the release's migrations (Epic 35 phase B): what a home's update rehearses and
 			// a plain server install migrates with
@@ -394,6 +404,30 @@ func Check(m *rv.Manifest, repo string, previousRev int) error {
 		return fmt.Errorf("release.json disagrees with the repository: %s", strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// CheckComponents checks release.json's component index against dist (story 51.15
+// T10): the index is there with release.json's digest and parses, and every pack and part
+// it lists is in dist with its size and digest. A release.json without one passes.
+func CheckComponents(m *rv.Manifest, dist string) error {
+	if m.Components == nil {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Join(dist, m.Components.Index))
+	if err != nil {
+		return fmt.Errorf("components: %w", err)
+	}
+	if got := hexSHA(b); got != m.Components.SHA256 {
+		return fmt.Errorf("components: %s has sha256 %s, release.json says %s", m.Components.Index, got, m.Components.SHA256)
+	}
+	idx, err := rv.ParseComponentsIndex(b)
+	if err != nil {
+		return err
+	}
+	if idx.Version != m.Version || idx.Commit != m.Commit {
+		return fmt.Errorf("components: the index is %s at %s, release.json %s at %s", idx.Version, idx.Commit, m.Version, m.Commit)
+	}
+	return componentsindex.CheckDist(idx, dist)
 }
 
 // archiveAsset hashes the archive and the maktaba-* binaries inside it.

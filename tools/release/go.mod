@@ -9,8 +9,11 @@ require (
 
 require github.com/BurntSushi/toml v1.6.0
 
+require github.com/klauspost/compress v1.20.1 // indirect
+
 require (
 	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack v0.0.0
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
