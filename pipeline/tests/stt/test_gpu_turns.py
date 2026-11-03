@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -128,6 +130,8 @@ class FakeGpu:
         self.swap_s = swap_s
         self.on: set[str] = set()
         self.moves: list[tuple[str, str]] = []
+        #: the first load waits until this says so (in its thread): every job queued
+        self.hold: Callable[[], bool] | None = None
 
     def unload(self, model: str) -> None:
         self.on.discard(model)
@@ -135,6 +139,10 @@ class FakeGpu:
         self.clock[0] += self.swap_s / 2
 
     def load(self, model: str) -> None:
+        hold, self.hold = self.hold, None
+        deadline = time.monotonic() + 5
+        while hold is not None and not hold() and time.monotonic() < deadline:
+            time.sleep(0.001)
         self.on.add(model)
         self.moves.append(("on", model))
         self.clock[0] += self.swap_s / 2
@@ -148,8 +156,12 @@ def _turns(gpu: FakeGpu, batch: int, **kw: Any) -> GpuTurns:
 
 async def _jobs(turns: GpuTurns, gpu: FakeGpu, plan: list[str], took: float = 0.0) -> list[str]:
     """Run ``plan``'s jobs at once (one task each); returns the order they ran in, each
-    checking that its model alone is on the GPU and no job of the other runs."""
+    checking that its model alone is on the GPU and no job of the other runs. The first
+    model's load waits until every job is queued, so the order is the policy's alone (a
+    job that arrives while the other model has none waiting enters at once: that load
+    finishing first made the order depend on the machine's speed)."""
     ran: list[str] = []
+    gpu.hold = lambda: sum(turns.state.waiting.values()) >= len(plan)
     live = {WHISPER: 0, COHERE: 0}
 
     async def job(model: Any) -> None:
