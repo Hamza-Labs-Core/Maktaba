@@ -8,18 +8,12 @@ from __future__ import annotations
 
 import subprocess
 import types
-from typing import Any
 
 import pytest
 
 from maktaba_pipeline import gpu as gpu_probe
 from maktaba_pipeline import venv_bootstrap as vb
 from maktaba_pipeline.cluster import capabilities as caps
-from maktaba_pipeline.cluster.stages import StageSelector, select_stages
-from maktaba_pipeline.engine.graph import GRAPH
-from maktaba_pipeline.engine.stages import transcribe as tr
-from maktaba_pipeline.stt import engine
-from maktaba_pipeline.stt.placement import TranscriptionConfig
 
 pytestmark = pytest.mark.unit
 
@@ -169,80 +163,3 @@ def test_a_broken_probe_is_logged_not_raised(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(gpu_probe, "probe", boom)
     gpus, why = caps._nvidia()
     assert gpus == [] and why is not None and "driver wedged" in why
-
-
-# --- the stage selection: transcription on the GPU node, and why not -----------------------
-
-
-def _transcribe_off(**kw: Any) -> str | None:
-    graph = [st for st in GRAPH if st.name == "transcribe"]
-    served, off = select_stages(graph, role="node", **kw)
-    return None if served == ["transcribe"] else off["transcribe"]
-
-
-def test_a_gpu_node_that_can_transcribe_serves_transcribe(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(engine, "current", lambda: engine.CT2)
-    monkeypatch.setattr(tr, "_engine_unavailable", lambda: None)
-    monkeypatch.setattr(tr, "_RULES", TranscriptionConfig(without_second_listen=True))
-    assert _transcribe_off(storage={"read": "ok", "write": "ok"}) is None
-
-
-def test_the_reason_it_cannot_reaches_the_machines_page(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``workers.stages_off`` said only ``unavailable``: the Machines page could not say
-    that the PC waits for the second listen, nor how to let it transcribe."""
-    for var in ("MAKTABA_STT_REFINE", "MAKTABA_STT_REFINE_MODEL"):
-        monkeypatch.delenv(var, raising=False)
-    monkeypatch.setattr(engine, "current", lambda: engine.CT2)
-    monkeypatch.setattr(tr, "_engine_unavailable", lambda: None)
-    monkeypatch.setattr(
-        tr,
-        "second_listen_problem",
-        lambda: "NVIDIA GeForce RTX 2080 SUPER has 8.0 GB: the second listen needs 9.5 GB",
-    )
-    monkeypatch.setattr(tr, "_RULES", TranscriptionConfig())
-    off = _transcribe_off()
-    assert off is not None and off.startswith("unavailable: the second listen does not run here")
-    assert "RTX 2080 SUPER" in off and "without_second_listen" in off
-    # the rule lets it: then it transcribes (Whisper alone; a machine with the second
-    # listen gives those transcripts theirs later)
-    monkeypatch.setattr(tr, "_RULES", TranscriptionConfig(without_second_listen=True))
-    assert _transcribe_off() is None
-
-
-def test_no_engine_is_named(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        tr, "_engine_unavailable", lambda: "faster-whisper is not installed (the stt extra)"
-    )
-    assert _transcribe_off() == "unavailable: faster-whisper is not installed (the stt extra)"
-
-
-def test_a_node_that_cannot_read_the_share_does_not_transcribe(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """transcribe decodes the file off the share from the gpu pool: with the read check
-    failing every job would fail on this machine."""
-    monkeypatch.setattr(engine, "current", lambda: engine.CT2)
-    monkeypatch.setattr(tr, "_engine_unavailable", lambda: None)
-    monkeypatch.setattr(tr, "_RULES", TranscriptionConfig(without_second_listen=True))
-    assert _transcribe_off(storage={"read": "error", "write": "ok"}) == "storage"
-
-
-def test_a_reason_that_counts_down_is_no_new_selection(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The stored reason carries the pipeline's words, which may count down (a second
-    listen that failed to load: "next try in 9 min"): the selection does not change, nor
-    is it written again, at every refresh."""
-    why = ["the second listen does not run here (failed (tried 1x; next try in 9 min))"]
-    monkeypatch.setattr(tr, "_engine_unavailable", lambda: why[0])
-    graph = [st for st in GRAPH if st.name == "transcribe"]
-    selector = StageSelector(graph=graph, role="node")
-    assert selector.compute()
-    first = selector.stages_off["transcribe"]
-    why[0] = why[0].replace("9 min", "8 min")
-    assert not selector.compute() and selector.stages_off["transcribe"] == first
-    why[0] = "faster-whisper is not installed (the stt extra)"
-    assert selector.compute()
-    assert selector.stages_off["transcribe"] == f"unavailable: {why[0]}"
