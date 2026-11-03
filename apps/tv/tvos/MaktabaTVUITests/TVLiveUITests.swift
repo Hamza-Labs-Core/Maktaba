@@ -148,12 +148,13 @@ final class TVLiveUITests: XCTestCase {
     }
 
     /// The bug: a channel slower to start than the banner's six seconds kept the
-    /// banner up for good. Here the playlist takes 9 s: the banner stays while it starts, then
-    /// goes 6 s after the picture plays; Play/Pause brings it back, Menu puts it away. The
+    /// banner up for good. Here the playlist is held until the banner's time has passed (a
+    /// latch: a 9 s delay raced the checks on a loaded runner): the banner stays while it
+    /// starts, then goes 6 s after the picture plays; Play/Pause brings it back, Menu puts it away. The
     /// picture fills the screen edge to edge, and nothing is drawn over the top-right corner,
     /// where the home burns the channel's logo into the picture.
     func testBannerHidesAfterASlowStart() throws {
-        home.delay("GET", "/stream/channel/ch-1/index.m3u8", by: 9)
+        home.hold("GET", "/stream/channel/ch-1/index.m3u8")
         signIn("en")
         openLiveTab("Live TV")
         let first = app.buttons["live.channel.ch-1"]
@@ -167,6 +168,7 @@ final class TVLiveUITests: XCTestCase {
         sleep(7)
         XCTAssertTrue(banner.exists, "it stays while the channel starts")
         XCTAssertTrue(element("live.player.starting").exists, "still starting after the banner's time")
+        home.release()
         XCTAssertTrue(element("live.player.starting").waitForNonExistence(timeout: 30), "the channel plays")
 
         // the whole picture, nothing cropped; the watermark's corner kept clear
