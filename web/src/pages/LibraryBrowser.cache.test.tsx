@@ -2,7 +2,7 @@
 // filters and sort come back at once with every page loaded, and are read
 // again quietly; another filter, or another user, starts afresh.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderPage, memberUser, adminUser } from "../test/pageHarness";
 
@@ -71,6 +71,41 @@ describe("LibraryBrowser kept for a return", () => {
     expect(last.get("sort")).toBe("title");
     expect(last.get("cursor")).toBeNull();
     expect(last.get("limit")).toBe("60");
+  });
+
+  it("a mark saved while the kept list is read again stays on its cards", async () => {
+    serve(() => Promise.resolve({ items: [video("v1"), video("v2")], next: null }));
+    post.mockImplementation((path: string, body: { video_ids?: string[] }) =>
+      path === "/api/me/watched" || path === "/api/me/favorites"
+        ? Promise.resolve({ updated: body.video_ids?.length ?? 0 })
+        : Promise.reject(new Error(`unmocked POST ${path}`))
+    );
+    renderGrid("/videos?sort=title");
+    expect(await screen.findByText("Video v1")).toBeInTheDocument();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("link", { name: "go elsewhere" }));
+
+    // the quiet re-read is answered as the home has it now (no marks), and held
+    // until both marks are saved
+    let answer: (v: unknown) => void = () => {};
+    serve(() => new Promise((resolve) => (answer = resolve)));
+    await user.click(screen.getByRole("button", { name: "go back" }));
+    const before = { items: [video("v1"), video("v2")], next: null };
+    await user.click(screen.getByRole("button", { name: "Select" }));
+    await user.click(screen.getByRole("checkbox", { name: "Select Video v1" }));
+    await user.click(screen.getByRole("button", { name: "Add to favorites" }));
+    expect(await screen.findByText("Added 1 to your favorites.")).toBeInTheDocument();
+    await user.click(screen.getByRole("checkbox", { name: "Select Video v1" }));
+    await user.click(screen.getByRole("button", { name: "Mark watched" }));
+    expect(await screen.findByText("Marked 1 as watched.")).toBeInTheDocument();
+
+    // the read is applied, and keeps the marks
+    await act(async () => answer(before));
+    const card = screen.getByText("Video v1").closest("li")!;
+    expect(within(card).getByRole("img", { name: "Favorite" })).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: "Watched" })).toBeInTheDocument();
+    const other = screen.getByText("Video v2").closest("li")!;
+    expect(within(other).queryByRole("img", { name: "Favorite" })).toBeNull();
   });
 
   it("another filter is another list: nothing kept shows", async () => {
