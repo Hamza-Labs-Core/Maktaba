@@ -241,11 +241,15 @@ footer .wrap {
   display: block;
   overflow-x: auto;
 }
+/* a cell breaks a word only when the word alone is wider than the page: .doc's `anywhere`
+   would shrink every column to a letter or two on a phone ("Planned" split over 3 lines);
+   `break-word` keeps a column as wide as its longest word, and the table scrolls instead */
 .doc th,
 .doc td {
   border: 1px solid var(--line);
   padding: 6px 10px;
   vertical-align: top;
+  overflow-wrap: break-word;
 }
 .doc blockquote {
   margin: 0;

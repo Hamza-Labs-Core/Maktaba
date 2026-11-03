@@ -441,6 +441,17 @@ describe("English and Arabic", () => {
   });
 });
 
+describe("tables", () => {
+  it("a cell keeps its words whole: break-word, not .doc's anywhere", () => {
+    const css = read("assets/portal.css");
+    const cells = css.match(/\.doc th,\s*\.doc td\s*\{([^}]*)\}/);
+    expect(cells, "the .doc th, .doc td rule").not.toBeNull();
+    // `anywhere` counts a word's letters as break points when sizing a column, so a phone
+    // squeezed "Planned" into a 22 px column; `break-word` sizes it by the whole word
+    expect(cells![1]).toMatch(/overflow-wrap:\s*break-word/);
+  });
+});
+
 describe("security.txt, robots.txt, sitemap", () => {
   it("security.txt is the API's own disclosure policy, with an expiry ahead", () => {
     const policy = readDisclosurePolicy();
