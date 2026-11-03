@@ -442,7 +442,10 @@ async def test_a_failed_frame_keeps_the_start_of_ffmpegs_words(
         assert failed.value.kind == "chapter_frames_failed"
         message = failed.value.message
         assert message.startswith("Error while opening the decoder")
-        assert message.endswith("stream…") and len(message) <= 300
+        # cut at a whole word (where depends on the wrapped error's length), never mid-word
+        assert message.endswith("…") and len(message) <= 300
+        assert message[:-1].split()[-1] in words.split()
+        assert "Terminating" not in message
     finally:
         chapter_thumbs.reset_frame_runner()
 
