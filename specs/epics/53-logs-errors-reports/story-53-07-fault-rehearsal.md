@@ -4,10 +4,10 @@
 
 ## Why
 
-The owner's rule after the 2026-10-28 outages: failure paths are proven in CI before they reach
-the Mac ("THIS NEED TO BE ON CI"). The update rehearsal does that for updates. Nothing yet kills
-the API or Postgres and checks the UI still loads. "No crash that breaks all" is a promise only a
-test can keep.
+The rule since the 2026-10-28 outages: failure paths are proven in CI before they reach the
+Mac. The update rehearsal does that for updates. Nothing yet kills
+the API or Postgres and checks the UI still loads. That one crash never takes the UI down is a
+promise only a test can keep.
 
 ## Description
 
@@ -48,6 +48,8 @@ artifact when a scenario fails, as the update rehearsal does.
 | F10 | Safe mode | console "Start in safe mode" | only the allowed roles; `mode: safe`; strip; next restart normal | — |
 | F11 | Disk nearly full | a small loop volume for `<data>/logs` (as update rehearsal 08) | `info` stops, `warn` kept, nothing else breaks | — |
 | F12 | Two at once: streaming + pipeline | both killed | shell loads; strip priority right | — |
+| F13 | **Off is not down** | `maktaba-server components disable livetv.slots --yes` and `components stop transcription --yes` (Epic 51 CLI, `api/components_cli.go`) | `/status.json` says `off` for both, `overall` stays `ok`; no strip, no repair item; the console lists them as off and held; turning them back on returns `ok` | — |
+| F14 | Reconcile kill switch | `[components] reconcile = "off"`, then kill a worker | the processes run as `server.toml` builds them; status rows say `reconcile_off`; a crash is still `restarting`/`down` as usual | — |
 
 ### 3. When it runs, and the gate
 
@@ -61,7 +63,7 @@ artifact when a scenario fails, as the update rehearsal does.
 
 ## Acceptance criteria
 
-- **Given** each scenario F01–F12,
+- **Given** each scenario F01–F14,
   **when** it runs on this commit,
   **then** its asserts hold within its budget.
 - **Given** a commit that makes the web shell depend on the API (e.g. the SPA's index fetched through `/api/`),
@@ -71,7 +73,7 @@ artifact when a scenario fails, as the update rehearsal does.
   **when** the release workflow starts,
   **then** the tag guard refuses it.
 - **Given** a failed scenario,
-  **then** its artifact holds every component's segments, the browser console and screenshots.
+  **then** its artifact holds every service's segments, the browser console and screenshots.
 
 ## Test cases
 

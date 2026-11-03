@@ -5,9 +5,8 @@
 
 ## Goal
 
-The owner, 2026-11-03: *"Spec a third-party no internet calling plugging queue extender that
-allows new functions by interacting with queues and maktaba API and a store for such
-plugins/jobs"*.
+Third-party plugins that extend the queue with new functions, work only through the queue and
+the Maktaba API, never reach the internet, and come from a Maktaba store (2026-11-03).
 
 Other people can add functions to Maktaba. A plugin adds queue stages that run after stable
 events (a video was added, a transcript is ready…) or on a schedule, reads what the admin let it
@@ -17,7 +16,7 @@ its own data. It can never reach the internet or see the disk. Maktaba runs a st
 switch a bad one off in every home. The store is independent of Maktaba Cloud: its own
 accounts, database, deploy and payments, all on Cloudflare with no VPS.
 
-The owner added on the same day: **all of Maktaba's own stages become first-party plugins** on
+Added the same day: **all of Maktaba's own stages become first-party plugins** on
 the same interface (README §15). They run as native Python in supervised runners, not as
 WebAssembly, with a trusted capability set that only Maktaba's release signature unlocks, and
 move stage by stage with a switch per stage and a CI proof that each writes exactly what it
@@ -28,12 +27,12 @@ wrote before.
 | | Choice |
 |---|---|
 | Plugin code | a WebAssembly component (WASI 0.2), from Rust, JS/TS, Python (componentize-py) or Go (TinyGo) |
-| Where it runs | `maktaba-plugind`, one Rust process per home embedding Wasmtime, supervised as the Epic 51 component `plugins.host`; a fresh store per job |
+| Where it runs | `maktaba-plugind`, one Rust process per home embedding Wasmtime, supervised as the Epic 51 component `plugins.host` (on demand: no process while no plugin is enabled); a fresh store per job |
 | No internet | layer 1: sockets, HTTP and files are never linked into the component; layer 2: the host runs in Seatbelt (macOS), namespaces + seccomp + Landlock (Linux), AppContainer + Job Object (Windows); CI escape probes with a canary must log 0 connections |
 | Queue | the pipeline claims plugin stages from a `plugins` pool and hands each job to the host; retries, drain and parking are Epic 40/51's |
 | Plugin API | `maktaba:plugin@1.x` (WIT), forwarded by the host to the Go API over a unix socket with a per-job token the plugin never sees; every call checked for capability, subject, library and quota |
 | Permissions | named capabilities granted by the admin at install, with library scope; updates asking for more wait |
-| Lifecycle | each plugin is an Epic 51 component (kind `plugin`): install, enable, disable, hold, side-by-side update, data-aware rollback, uninstall, purge |
+| Lifecycle | each plugin is an Epic 51 component `plugin.<id>` of a new run-time kind `plugin` (54.37; Epic 51's catalog is fixed per release), switched by `PUT /api/components/plugin.<id>`, `/stop`, `/start` and `DELETE` or by `/api/plugins/*`: install, enable, disable, hold, side-by-side update, data-aware rollback, uninstall, purge; files under `<state>/plugins/` on Epic 51's packs code (54.38) |
 | Store | independent of Maktaba Cloud, all on Cloudflare (Workers, D1, Durable Objects, R2; no VPS) at `plugins.maktaba.tv`, files on `plugins-cdn.maktaba.tv`; its own store accounts (email verification, MFA required for developers, passkeys for reviewers and store admins, re-auth for sensitive actions); review and store admin at `plugins.maktaba.tv/admin`; automated checks (import and capability audit, sandbox run, malware scan), human review, developer + Maktaba signatures, signed expiring catalog and revocation list |
 | Linking a home | a device code like the TV pairing links a home to a store account, only to buy and rate; entitlements are store-signed and checked offline, never through the cloud |
 | Offline | files install offline; store-signed files as from the store; others only with "Allow unreviewed plugins" and a red Unreviewed badge |
@@ -41,8 +40,8 @@ wrote before.
 | Permissions dialog | library checkboxes start empty; the admin ticks each |
 | Panels | read-only, data-only, shown to everyone in the home (viewers included) once installed; no separate viewer approval |
 | Store listings | English and Arabic required (machine translation allowed, labelled); every version's source goes to reviewers, kept private |
-| Maktaba's own stages | 15 first-party plugins (one per Epic 51 component) covering all 56 stages; native Python runners; named SQL statements under per-plugin Postgres roles; exact stage names; lock-step with the server; nine migration waves |
-| Paid | 85 % developer / 15 % Maktaba; $25 one-time fee to sell; the store's own payment provider and seller of record, separate from cloud billing, decided at Phase 3 (never Stripe); payouts, tax and refunds owned by the store |
+| Maktaba's own stages | 15 first-party plugins, one per Epic 51 component that owns stages (`core.pipeline`, `media.thumbnails`, `library.convert`, `library.dedup`, `library.repair`, `transcription`, `subtitles`, `search.semantic`, `classify`, `enrich`, `youtube`, `livetv`, `livetv.slots`, `ext.plex`, `ext.dizquetv`), which keep their ids and kinds, covering all 56 stages; native Python runners; named SQL statements under per-plugin Postgres roles; exact stage names; lock-step with the server; nine migration waves |
+| Paid | 85 % developer / 15 % Maktaba; $25 one-time fee to sell; the store's own payment provider and seller of record, separate from cloud billing, decided at Phase 3; payouts, tax and refunds owned by the store; a lapsed entitlement waits with `entitlement_missing` |
 | Store cost (estimate) | about $5 a month at launch (Workers Paid base), about $60 a month at 50,000 homes |
 
 ## Stories
@@ -85,6 +84,8 @@ wrote before.
 | 54.34 | [Wave 7: live TV](../../../specs/epics/54-plugins/story-54-34-wave7-livetv.md) | 4 |
 | 54.35 | [Wave 8: Plex and dizqueTV through the service door](../../../specs/epics/54-plugins/story-54-35-wave8-plex-dizquetv.md) | 4 |
 | 54.36 | [Wave 9: the core stages, and removing the in-process path](../../../specs/epics/54-plugins/story-54-36-wave9-core.md) | 4 |
+| 54.37 | [The component catalog takes plugin entries](../../../specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md) | 1 |
+| 54.38 | [Plugin files on disk, on Epic 51's packs code](../../../specs/epics/54-plugins/story-54-38-plugin-files.md) | 1 |
 
 ## Key numbers
 
@@ -108,8 +109,10 @@ wasmtime-go (cgo) or wazero (no component model). Two layers: nothing networked 
 an OS sandbox on the host. The pipeline keeps the queue; the API makes every decision. Stable
 events, not internal stage names. No secrets in plugin settings. Store keys of its own (offline
 root), not the release Sigstore identity. A `disable` revocation can't be undone, and an admin's
-keep-off sticks until the admin turns it on; an expired list warns but never stops plugins. No
-Stripe, ever: 85/15, and the payment provider is chosen at Phase 3. The store shares nothing
+keep-off sticks until the admin turns it on; an expired list warns but never stops plugins.
+85/15, and the payment provider is chosen at Phase 3. Third-party plugins are run-time catalog
+entries of a new kind; first-party plugins implement existing components, which keep their
+kinds. The store shares nothing
 with Maktaba Cloud and runs on Cloudflare only. First-party plugins are
 native and trusted behind the same interface, reach the database through named statements, move
 with the server version, keep their stage names and prove identity, not similarity. Unreviewed installs allowed behind an opt-in. Home-only

@@ -5,7 +5,7 @@
 ## Why
 
 Failover and alerts handle the failures we planned for. The rest need a person, and today
-that person is the owner, alone, maybe at 3 a.m. The owner's rule is that recovery must be
+that person is the owner, alone, maybe at 3 a.m. The rule is that recovery must be
 automatic or one click, never a terminal ("when ppl use this how are you going to fix it for
 them"). Where a person must act, they need a short, tested page that says what to do, and
 users need to hear what is going on in their language.
@@ -41,7 +41,7 @@ either a one-click GitHub Actions workflow or one command), **Done when**, **Tel
 | `restore.md` | both nodes lost, or the zone | Order a node in another zone (or provider), run `restore.sh` from 50.09, DNS swap, tell users. Target: 4 h. |
 | `deploy-rollback.md` | a deploy is bad after it passed health checks | Actions → **Relay deploy** with the previous tag (blue-green, 50.08). Never roll the schema back: migrations are expand-only (50.08). |
 | `cert-expiry.md` | certificate < 14 days | Check DNS-01 renewal logs on both nodes; renew by hand with the same command; switch to the ZeroSSL issuer if Let's Encrypt is down. |
-| `payments-backlog.md` | webhook failures or lag | The payment provider (TBD, not Stripe) retries its webhooks: fix the cause, then replay from the provider's dashboard; run the daily reconciliation (25.14) at once. |
+| `payments-backlog.md` | webhook failures or lag | The payment provider (TBD) retries its webhooks: fix the cause, then replay from the provider's dashboard; run the daily reconciliation (25.14) at once. |
 | `abuse-ddos.md` | traffic spike, abuse score alerts | Suspend the home (25.20); turn on Cloudflare "Under attack" for `api.maktaba.tv`; for the relay, Hetzner Cloud Firewall rules by source. |
 | `secrets-rotation.md` | a secret leaked or might have | Order: Hetzner token, Cloudflare token, payment provider keys, token secret (homes fall back to bearer; tickets die), entitlement key last (needs a coordinated release; 25.26). |
 | `tunnel-down.md` | `tunnel_connections_low`, or `api_down` while the relay is up | Check `cloudflared` on the leader and Cloudflare's status; restart the unit; if Cloudflare's Tunnel is down for long, deploy `origin_mode = aop` (50.31 §3). Never open the API's port without AOP. |
@@ -53,7 +53,7 @@ runbooks with Epic 54; a store incident follows these severities and templates, 
 the cloud's runbooks act on it.
 
 The forced-failover, switchover, DNS-swap and deploy workflows are proven in the cloud
-rehearsal (50.06), never first on the VPS (owner rule: update and recovery paths are proven in
+rehearsal (50.06), never first on the VPS (the rule: update and recovery paths are proven in
 CI first).
 
 ### 3. Telling users
@@ -72,7 +72,7 @@ issue links, and the cloud log searches and error groups (Epic 53.17) that show 
 Blameless. A summary goes on the incident's status page entry, and the Claude
 trail gets a line (in a trail-only PR).
 
-### 5. No downtime credits (owner decision, 2026-11-03)
+### 5. No downtime credits (decided 2026-11-03)
 
 The **99.9 % uptime target stays** (README §4.2): it drives alerts, error budgets and
 postmortems, and the status page shows the measured figure. But it is a **target, not a

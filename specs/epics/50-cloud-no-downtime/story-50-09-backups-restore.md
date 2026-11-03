@@ -17,7 +17,7 @@ state, and the cloud's secrets sign every home's entitlement.
 | Setting | Value |
 |---|---|
 | repo1 | Hetzner Object Storage, bucket `maktaba-prod-pg` in **HEL1** (not FSN1/NBG1, where the nodes are) |
-| repo2 | **Cloudflare R2** bucket `maktaba-prod-pg-r2`, the copy off Hetzner (owner decision, 2026-11-03; README §13 decision 2). Same backups and WAL as repo1 (`archive-push` writes both; pgBackRest's multi-repo mode), its own passphrase. R2 charges no egress, so a restore from it costs nothing extra. |
+| repo2 | **Cloudflare R2** bucket `maktaba-prod-pg-r2`, the copy off Hetzner (decided 2026-11-03; README §13 decision 2). Same backups and WAL as repo1 (`archive-push` writes both; pgBackRest's multi-repo mode), its own passphrase. R2 charges no egress, so a restore from it costs nothing extra. |
 | What is in them | the cloud's Postgres only. The plugin store (Epic 54) runs on Cloudflare with its own data and backups, so these buckets have **no `store/` prefix** and the drill restores no store data. |
 | Encryption | `repo-cipher-type=aes-256-cbc`, a passphrase per repo, encrypted before upload |
 | WAL archive | `archive_command = pgbackrest --stanza=cloud archive-push %p`; `archive_timeout = 60` (RPO ≤ 60 s if both nodes are lost) |
@@ -42,7 +42,7 @@ Hetzner-wide loss still leaves one:
 |---|---|
 | `MAKTABA_CLOUD_TOKEN_SECRET` | every access token and resume ticket stops working; users sign in again |
 | Entitlement signing key (`secrets/entitlement.key`) | homes can't verify new entitlements; after 7 days cloud features stop on every home until each home trusts a new key. **The worst one to lose.** |
-| Payment provider secret and webhook secret (provider TBD, not Stripe) | billing stops until new ones are made at the provider |
+| Payment provider secret and webhook secret (provider TBD) | billing stops until new ones are made at the provider |
 | OAuth client secrets, APNs key, FCM service account | sign-in with Google/Apple and push stop until replaced |
 | pgBackRest repo passphrases | the backups can't be read |
 | etcd CA key, Hetzner and Cloudflare tokens | can be made again; listed so a rebuild knows them |

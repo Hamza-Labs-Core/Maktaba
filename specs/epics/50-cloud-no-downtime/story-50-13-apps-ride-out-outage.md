@@ -134,6 +134,11 @@ looking at the "can't reach Maktaba Cloud" message also sees it is a known outag
   storage.
 - **Web.** The home's own web app reached through the relay can't help when the relay is down;
   the cloud web app shows saved direct links instead.
+- **What is switched on is the home's answer, not the cloud's.** Apps learn which features are on
+  from the home's `GET /api/capabilities` (Epic 51 story 51.09), not from the cloud. While the
+  home can't be reached, an app keeps its last good answer (51.11's client rule), so a cloud
+  outage never hides Live TV or transcripts. A `409 component_off` from the home means an admin
+  turned something off; it is not an outage and does not trigger the outage path here.
 
 ## User-facing strings
 

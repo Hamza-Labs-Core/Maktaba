@@ -4,7 +4,9 @@
 > cloud, relay, metering, tiers, entitlements) and [Epic 30](../30-relay-analytics/README.md)
 > (relay metrics). **Works with:** [Epic 53](../53-logs-errors-reports/README.md) (logs, errors,
 > problem reports and application metrics: the cloud's come from 53.17; see §4.5 and §10 for
-> who owns what). **Research:** [research.md](research.md): the code as it is, Plex, Jellyfin,
+> who owns what) and [Epic 51](../51-configurable-components/README.md) (built: the home's
+> cloud parts are components, `cloud.link` and `cloud.relay`, and this epic adds two; §4.6).
+> **Research:** [research.md](research.md): the code as it is, Plex, Jellyfin,
 > Emby, Tailscale, Cloudflare Tunnel, Hetzner prices, all with sources.
 > **Wiki:** [epic-50-cloud-no-downtime.md](../../../docs/wiki/epics/epic-50-cloud-no-downtime.md).
 > **Home broadcasting** (publishing a home's TV channels to people outside it, the Broadcaster
@@ -15,9 +17,8 @@
 
 ## 1. Why
 
-The owner, 2026-11-03, on taking payments for remote access:
-
-> "if we are letting people pay then there should be no downtime"
+The requirement (2026-11-03): once people pay for remote access, the cloud must have no
+downtime.
 
 Maktaba Cloud has no VPS yet. The plan is to start on one Hetzner VPS with the existing
 single-machine deploy (`deploy/cloud-relay/`). That works for a demo, but it isn't something
@@ -37,7 +38,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | G3 | Homes reconnect without jitter, so they all retry at the same instants. | 50.03 |
 | G4 | One Let's Encrypt certificate **per home**, issued on demand and kept on one disk. Let's Encrypt's limit is 50 new certificates per domain per week, so a fresh standby can't get them in time. | 50.02 |
 | G5 | The relay queries Postgres on **every** request (`BySlug`, `Meter.Allow`), so a 30-second database failover fails 30 seconds of requests. | 50.05 |
-| G13 | The plan limits don't agree, and the relay doesn't enforce stream limits. The architecture doc says Pro 2 / Family 5 streams; `cloud/internal/billing/plans.go` has Free / Pro / Family with 1 / 4 / 10 streams and 5 / 100 / 500 GiB, the license maps them to `free` / `home` / `pro`, and the cloud web app's strings say "Home" and "Pro". Only the billing API reports the limit; no relay enforces it, and the byte cap cuts relayed play off with a `402`. **Decided (§13, decisions 4 and 6):** all of these are replaced by **Free** (no relay; direct remote free), **Basic** (relay capped at ~3 Mbps, 2 streams, 500 GB soft fair use) and **Pro** (full quality, an allowance, N streams, optional pay-as-you-go with a cap, paid extra streams); Family is dropped; prices TBD. The relay enforces each plan and never cuts a paid plan off; old names migrate `pro`→`basic`, `family`→`pro`. | 50.19 (plans, enforcement, metering, billing through a payment provider TBD (not Stripe), migration); 50.16 keeps the counts across relays |
+| G13 | The plan limits don't agree, and the relay doesn't enforce stream limits. The architecture doc says Pro 2 / Family 5 streams; `cloud/internal/billing/plans.go` has Free / Pro / Family with 1 / 4 / 10 streams and 5 / 100 / 500 GiB, the license maps them to `free` / `home` / `pro`, and the cloud web app's strings say "Home" and "Pro". Only the billing API reports the limit; no relay enforces it, and the byte cap cuts relayed play off with a `402`. **Decided (§13, decisions 4 and 6):** all of these are replaced by **Free** (no relay; direct remote free), **Basic** (relay capped at ~3 Mbps, 2 streams, 500 GB soft fair use) and **Pro** (full quality, an allowance, N streams, optional pay-as-you-go with a cap, paid extra streams); Family is dropped; prices TBD. The relay enforces each plan and never cuts a paid plan off; old names migrate `pro`→`basic`, `family`→`pro`. | 50.19 (plans, enforcement, metering, billing through a payment provider TBD, migration); 50.16 keeps the counts across relays |
 | G14 | Nothing writes `direct_ip` / `direct_port`, so `direct_url` in the home list is in practice always empty. | 50.15 |
 | G12 | Architecture §13.10 and story 25.14 describe `NOTIFY tier_changed`, but neither the NOTIFY nor a LISTEN exists in the code, so a plan change reaches the relay only when it next queries. | 50.05, 50.17 |
 | G6 | Tunnels are held in one process's memory. Story 25.8's multi-relay routing ("consistent hash on `server_id` at the L4 LB") was never built, and Hetzner's load balancer can't do it. | 50.04, 50.16 |
@@ -90,8 +91,8 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | F8 | **Incident handling.** Severity levels, runbooks, user messages in English and Arabic, postmortems. | 50.12 |
 | F9 | **Apps ride out the cloud being down.** They keep the last connection list, try direct addresses first, and show plain messages. | 50.13 |
 | F10 | **Direct remote like Plex.** UPnP / NAT-PMP, an outside reachability check, and HTTPS on the direct path, with names on several separate direct-name domains (never under `maktaba.tv`). **Free on every plan.** | 50.15 |
-| F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through usage-based items at a payment provider TBD (not Stripe). | 50.19 |
-| F12 | **Home broadcasting: the Broadcaster tier** (§14.4). Pro gains guest sharing (1 invite-only channel on demand, 5 viewers, 50 viewer-hours); Broadcaster, an add-on to Pro, gives 3 channels, 100 concurrent viewers, 5,000 viewer-hours, up to 1080p, then optional pay-as-you-go viewer-hours with a cap, then the lowest rung, then new viewers wait. A viewer already playing is never stopped by a limit. Billed through the same payment provider (TBD, not Stripe). | 50.20 |
+| F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through usage-based items at a payment provider TBD. | 50.19 |
+| F12 | **Home broadcasting: the Broadcaster tier** (§14.4). Pro gains guest sharing (1 invite-only channel on demand, 5 viewers, 50 viewer-hours); Broadcaster, an add-on to Pro, gives 3 channels, 100 concurrent viewers, 5,000 viewer-hours, up to 1080p, then optional pay-as-you-go viewer-hours with a cap, then the lowest rung, then new viewers wait. A viewer already playing is never stopped by a limit. Billed through the same payment provider (TBD). | 50.20 |
 | F13 | **The broadcast edge.** The home pushes each segment of each rendition once to Maktaba's Cloudflare edge (Worker, Durable Object, R2). Viewers never reach the home or the Hetzner relay. Segments are cached under token-free keys, so the home's upload doesn't depend on the number of viewers. Stream is a switchable fallback. | 50.21 |
 | F14 | **The home publishes channels**, with the ladder at home (top rung `copy`), an uplink check (≤ 50 % of the measured uplink), encoder-slot accounting against `max_active_channels`, always-on for open channels and on demand for invite-only ones, and an offline slate. | 50.22 |
 | F15 | **Only publishable items air** (a safety feature on the publisher's home): own recordings, Creative Commons (CC BY detected at YouTube intake) and sources with a recorded permission and proof link; the scheduler skips the rest while a channel is published; optional geo rules. Maktaba Cloud does no curation: channel building, scheduling and intake stay on the home. | 50.23 |
@@ -140,7 +141,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | Remote play over the **relay** (Basic and Pro; Free has no relay) | Down. | Down only if **both** nodes are down. |
 | Remote play over a **direct** address (every plan, Free included) | In practice never: the home list has a `direct_url` field, but nothing fills it (G14). | Works from the app's **cached** connection list, over HTTPS, with ports opened by UPnP / NAT-PMP (50.13, 50.15). |
 | Cloud features on the home (relay plan flags) | 7-day grace on the last signed entitlement. | Same (story 25.26). |
-| Paying, changing plans | The payment provider (TBD, not Stripe) hosts checkout and retries its webhooks; choosing one that retries for days is a selection rule (50.19 §6). | Same; nothing lost. Pay-as-you-go usage queues in Postgres and reaches the payment provider later with the same idempotency identifiers (50.19). |
+| Paying, changing plans | The payment provider (TBD) hosts checkout and retries its webhooks; choosing one that retries for days is a selection rule (50.19 §6). | Same; nothing lost. Pay-as-you-go usage queues in Postgres and reaches the payment provider later with the same idempotency identifiers (50.19). |
 | Push notifications | Down. | Down; the outbox in Postgres sends them after recovery if they are still within their TTL. |
 
 ### 4.4 Security
@@ -182,6 +183,42 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
   page and incidents; Epic 53 owns what the processes log and report. The split is in Epic 53
   README §9.
 - Every alert links to its runbook (50.12).
+
+### 4.6 The home's side: Epic 51 components
+
+Most of this epic runs in the cloud, which Epic 51 does not cover. The parts that run **on the
+home** are Epic 51 components, in
+[`shared/components/catalog.toml`](../../../shared/components/catalog.toml), and follow its rules:
+desired state set by an admin (`PUT /api/components/{id}`, `/stop`, `/start`; contract in
+`shared/api/openapi.yaml`, tag Components), actual state per
+machine in `component_status`, licence gating by one existing flag (story 51.19), and
+`409 component_off` on their routes when off.
+
+| Component | Kind | What it is on the home | Licence flag | Story |
+|---|---|---|---|---|
+| `cloud.link` (exists) | `process` (`relay/`) | the relay agent: claim, tunnel, identity, `META_ENDPOINTS`. On as `[cloud] enabled` said at the seed (51.03); never licence-gated, so a Free home can still claim and get its licence | — | 50.03, 50.13, 50.15 |
+| `cloud.relay` (exists) | `loop` (`api:cloudlink_reporter`) | relayed play and its reporting; requires `cloud.link` | `cloud_relay` | 50.19 |
+| **`cloud.direct`** (new) | `loop` | direct remote access: port mapping, the TLS listener, the per-home certificate; requires `cloud.link` | — (free on every plan) | 50.15 |
+| **`livetv.broadcast`** (new) | `loop` | the home's broadcaster: publish, ladder, uploader, control socket; requires `livetv` and `cloud.link` | **`broadcast`** (new flag, 50.20) | 50.22 |
+
+- **Plans map onto one flag each.** Basic and Pro carry `cloud_relay`; Free does not, so on a
+  Free home `cloud.relay` is *Waiting* with reason `licence_missing` and its want is kept, while
+  `cloud.link` and `cloud.direct` keep running. Pro (guest sharing) and Broadcaster carry
+  `broadcast`. A lapsed plan stops the component, never deletes the wish; the licence's grace
+  (7 days, story 25.26) applies unchanged. Stream counts, bitrate caps and viewer-hours are the
+  relay's and the edge's to enforce (50.19, 50.26), not the home's.
+- **Capabilities.** `cloud.link` and `cloud.relay` serve the viewer feature `remote_access` in
+  `GET /api/capabilities`. As built, a feature is on only when **every** component listing it is
+  on (`api/internal/components/features.go`), so a Free home (no `cloud_relay`) reads
+  `remote_access: off` even when direct remote works. **50.35** makes `cloud.relay` and
+  `cloud.direct` one group for `remote_access`: either is enough, with `cloud.link` on.
+  `livetv.broadcast` serves no viewer feature (Epic 51's `features` list stays at nine).
+- **New ids on seeded homes.** Epic 51 writes desired rows once; an id a later release adds has
+  no row, and no row reads as on. [Epic 52.17](../52-transcript-word-review/story-52-17-new-component-defaults.md)
+  gives new ids a row as the home's bundle says. 50.15 and 50.22 ship after it.
+- **A cloud kill switch never writes the home's desired state.** The broadcast revocation list
+  (50.25) stops a channel at the edge and on the home; it does not hold or disable
+  `livetv.broadcast`, which only the home's admin changes.
 
 ## 5. Sizing and cost
 
@@ -358,7 +395,7 @@ Full detail and sources in [research.md](research.md) §2 and §6.
 **Copy:** direct first, router setup with an outside check, per-home certificates, a cached
 connection list. **Avoid:** local play depending on the cloud, a status page that's updated
 by hand, one DNS name for direct access with no fallback (Plex's April 2026 `plex.direct`
-fault), and charging for direct remote (ours is free). **Changed by the owner's decision:** we
+fault), and charging for direct remote (ours is free). **Changed by the 2026-11-03 decision:** we
 copy Plex's relay cap for **Basic** (about 3 Mbps, higher than Plex's 2 Mbps because Basic is
 paid), and Pro is uncapped within its allowance (§13 decision 4).
 
@@ -380,14 +417,14 @@ paid), and Pro is uncapped within its allowance (§13 decision 4).
 | 50.12 | [Incident handling](story-50-12-incident-handling.md) | 1 | 50.10, 50.11 |
 | 50.13 | [Apps ride out a cloud outage](story-50-13-apps-ride-out-outage.md) | 1 | 50.11 |
 | 50.14 | [Load test and sizing](story-50-14-load-test.md) | 1 | 50.06, 50.08 |
-| 50.15 | [Direct remote access, like Plex](story-50-15-direct-remote.md) | 1b | 50.01 |
+| 50.15 | [Direct remote access, like Plex](story-50-15-direct-remote.md) | 1b | 50.01, 50.35, Epic 52.17 |
 | 50.16 | [A pool of relays](story-50-16-relay-pool.md) | 2 | 50.08, 50.14, 50.19 |
 | 50.17 | [A stateless API pool](story-50-17-api-pool.md) | 2 | 50.08 |
 | 50.18 | [The database on its own nodes](story-50-18-database-nodes.md) | 2 | 50.09, 50.17 |
 | 50.19 | [Plans: Free, Basic and Pro, enforced by the relay and billed by usage](story-50-19-plans-relay-billing.md) | 1 | 50.04, 50.05 |
-| 50.20 | [The Broadcaster tier and guest sharing](story-50-20-broadcaster-tier.md) | B | 50.19 |
+| 50.20 | [The Broadcaster tier and guest sharing](story-50-20-broadcaster-tier.md) | B | 50.19, Epic 51 (51.19) |
 | 50.21 | [The broadcast edge](story-50-21-broadcast-edge.md) | B | 50.01 |
-| 50.22 | [The home's broadcaster](story-50-22-home-broadcaster.md) | B | 50.21, Epic 34.1, 34.3 |
+| 50.22 | [The home's broadcaster](story-50-22-home-broadcaster.md) | B | 50.20, 50.21, Epic 34.1, 34.3, Epic 52.17 |
 | 50.23 | [Publishable sources: permissions, Creative Commons, own recordings; geo](story-50-23-publishable-sources.md) | B | 50.22, Epic 34.1 |
 | 50.24 | [Takedown, reports and repeat infringers](story-50-24-takedown-reports.md) | B | 50.12, 50.23, 50.25 |
 | 50.25 | [Kill switch and the signed broadcast revocation list](story-50-25-kill-switch.md) | B | 50.21, 50.22 |
@@ -400,6 +437,7 @@ paid), and Pro is uncapped within its allowance (§13 decision 4).
 | 50.32 | [The operator console on admin.maktaba.tv](story-50-32-admin-hostname.md) | 1 | 50.34 |
 | 50.33 | [Staff sign-in for the operator console](story-50-33-staff-auth.md) | 1 | 50.32 |
 | 50.34 | [Cloudflare deploys from CI](story-50-34-cloudflare-deploys.md) | 1 | 50.01 |
+| 50.35 | [Remote access is on when any remote path is on](story-50-35-remote-access-capability.md) | 1b | Epic 51 (51.09, 51.19) |
 
 Phase **B** (home broadcasting, §14) comes after Phase 1's launch gate and doesn't depend on
 Phase 2.
@@ -409,6 +447,11 @@ graph LR
   S01[50.01 names] --> S02[50.02 wildcard cert]
   S01 --> S06[50.06 rehearsal]
   S01 --> S15[50.15 direct remote]
+  E51_09[Epic 51.09 capabilities, 51.19 licence] --> S35[50.35 remote_access: relay or direct]
+  S35 --> S15
+  E52_17[Epic 52.17 rows for new component ids] --> S15
+  E52_17 --> S22
+  E51_09 --> S20
   S03[50.03 tunnel handover] --> S04[50.04 tunnel directory]
   S02 --> S07[50.07 two nodes]
   S04 --> S07
@@ -435,6 +478,7 @@ graph LR
   S05 --> S19
   S19 --> S16
   S19 --> S20[50.20 Broadcaster tier]
+  S20 --> S22
   S01 --> S21[50.21 broadcast edge]
   S21 --> S22[50.22 home broadcaster]
   E34_1[Epic 34.1 public flag, rights] --> S22
@@ -467,8 +511,9 @@ graph LR
   S32 --> S33[50.33 staff sign-in]
 ```
 
-Work that can start at once, in parallel: **50.01, 50.03, 50.05** (and 50.15 after 50.01;
-50.19 after 50.04 and 50.05).
+Work that can start at once, in parallel: **50.01, 50.03, 50.05, 50.35** (and 50.15 after
+50.01 and 50.35; 50.19 after 50.04 and 50.05). Epic 51 is built; the home-side stories (50.15,
+50.20, 50.22, 50.35) use its components as §4.6 says.
 
 Two edges come from [Epic 53](../53-logs-errors-reports/README.md): 50.10 needs 53.17 (the
 cloud's logs, error groups and application metrics to watch) and 50.11 needs 53.06 (the one
@@ -512,7 +557,7 @@ Building this epic calls no Hetzner, Cloudflare, DNS, payment provider or VPS AP
 5. Registers the first 3–4 direct-name domains (never under `maktaba.tv`), delegates their `NS`
    to the responder on A and B, adds their `CAA` records, and lists them in `direct.domains`
    (50.15 §4); later domains are added the same way, by configuration only.
-6. Picks the payment provider (TBD, not Stripe; 50.19 §6), sets the prices and Pro's numbers,
+6. Picks the payment provider (TBD; 50.19 §6), sets the prices and Pro's numbers,
    then creates at that provider the flat prices for Basic and Pro, the metered price for
    pay-as-you-go GB, and the per-unit price for extra streams, and puts their IDs in the
    `production` config (50.19 §6).
@@ -554,7 +599,7 @@ The owner's answers to the open questions, applied to the stories above.
    - 50.19 specs how the relay enforces each plan (refuse / full / capped / capped-slow, a cap
      header the home transcodes to, pacing as a backstop, `relay_streams` counting), the
      metering (bytes per mode per month, Pro's order: allowance, pay-as-you-go, capped), the
-     billing through a payment provider TBD, not Stripe (a flat price per plan, a usage-based
+     billing through a payment provider TBD (a flat price per plan, a usage-based
      metered price for pay-as-you-go, a per-unit price for extra streams), and the migration from today's code
      names (`pro`→`basic`, then `family`→`pro`; license tier `home` read as `basic` during the
      grace).
@@ -570,12 +615,12 @@ The owner's answers to the open questions, applied to the stories above.
 
 ## 14. Home broadcasting
 
-> **Status:** spec (2026-11-03). Owner decisions of 2026-11-03:
+> **Status:** spec (2026-11-03). Decisions of 2026-11-03:
 >
 > - **Viewers never pay.** Access is **open or by invite link** only.
-> - The publisher pays Maktaba for the Broadcaster tier (payment provider TBD, never Stripe).
-> - **"We charge for infra, not content":** Maktaba Cloud is an infrastructure and hosting
->   provider (§14.6).
+> - The publisher pays Maktaba for the Broadcaster tier (payment provider TBD).
+> - **Maktaba charges for infrastructure, not content:** Maktaba Cloud is an infrastructure and
+>   hosting provider (§14.6).
 >
 > The questions still open are in §14.10.
 > **Research:** [research-broadcasting.md](research-broadcasting.md) (Plex, Jellyfin, Emby,
@@ -584,10 +629,8 @@ The owner's answers to the open questions, applied to the stories above.
 
 ### 14.1 Why, and what it is
 
-The owner, 2026-11-03:
-
-> "the ability to stream TV from home servers to others, let's say an entertainment tier or a
-> home streamer tier. Explore that and what it requires."
+The requirement (2026-11-03): homes can stream their TV channels to other people, as a paid
+tier for home streamers, and this section says what that requires.
 
 **Home broadcasting** lets a Maktaba home owner (the **publisher**) publish chosen live TV
 channels to **viewers who aren't users of their home**, through Maktaba Cloud. These are Maktaba
@@ -623,7 +666,7 @@ broadcasting.
 
 **Not in this section:**
 
-- viewer payments, paid passes or payouts to publishers (owner decision, 2026-11-03);
+- viewer payments, paid passes or payouts to publishers (decided 2026-11-03);
 - VOD, catch-up or DVR (segments are deleted after 10 minutes);
 - a public directory or search of broadcasts (unlisted only, §14.6);
 - chat, comments and ads;
@@ -719,7 +762,7 @@ This keeps decision 4's rules:
 takedown, a kill switch or a lapsed plan stops a playing viewer. **Viewers never pay**; only the
 publisher does.
 
-**We charge for infrastructure, not content** (owner, 2026-11-03). Every Broadcaster unit is a
+**We charge for infrastructure, not content** (decided 2026-11-03). Every Broadcaster unit is a
 unit of infrastructure: channels carried, concurrent viewers served, viewer-hours of delivery,
 and the quality ladder's bandwidth. None of them is priced by what airs, and no price or plan
 depends on a programme, a source or a genre.
@@ -739,7 +782,7 @@ depends on a programme, a source or a genre.
 - **The meter is viewer-hours**, counted from heartbeats: a session that heartbeats for a minute
   is a viewer-minute. On the primary path the cost follows requests, not bytes, and viewers
   understand hours (research §3).
-- **Billing** goes through the same `billing.Provider` (TBD, never Stripe), on Pro's
+- **Billing** goes through the same `billing.Provider` (TBD), on Pro's
   subscription:
   - item 4: the Broadcaster flat price;
   - item 5: metered `broadcast_viewer_hours` for pay-as-you-go (hourly reports, idempotent,
@@ -847,8 +890,8 @@ has certain things in place. They are **what that status requires**, and each is
   directory comes later, it **lists only what publishers choose to list**, in a neutral order
   (for example alphabetical or newest), with no picks, rankings or recommendations by Maktaba.
 
-**The owner's question:** *"YouTube is public, so if you are not paying, what's the legal
-issue?"* The short answer:
+**The question:** if a YouTube video is public and nobody pays to watch it, what is the legal
+issue with re-broadcasting it? The short answer:
 
 - **Free to watch isn't the same as free to re-broadcast.** Copyright covers copying a work and
   showing it to the public (public performance, or "communication to the public"), whether or not
@@ -1068,9 +1111,9 @@ All in **Phase B** (broadcasting), after Phase 1's launch gate; it doesn't depen
 
 | # | Story | Phase | Depends on |
 |---|---|---|---|
-| 50.20 | [The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing](story-50-20-broadcaster-tier.md) | B | 50.19 |
+| 50.20 | [The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing](story-50-20-broadcaster-tier.md) | B | 50.19, Epic 51 (51.19) |
 | 50.21 | [The broadcast edge: ingest, R2 segments, playlists, one fetch from the home](story-50-21-broadcast-edge.md) | B | 50.01 |
-| 50.22 | [The home's broadcaster: publish, ladder at home, uplink and encoder checks](story-50-22-home-broadcaster.md) | B | 50.21, Epic 34.1, 34.3 |
+| 50.22 | [The home's broadcaster: publish, ladder at home, uplink and encoder checks](story-50-22-home-broadcaster.md) | B | 50.20, 50.21, Epic 34.1, 34.3, Epic 52.17 |
 | 50.23 | [Publishable sources: permissions, Creative Commons, own recordings; geo](story-50-23-publishable-sources.md) | B | 50.22, Epic 34.1 |
 | 50.24 | [Takedown, reports and repeat infringers](story-50-24-takedown-reports.md) | B | 50.12, 50.23, 50.25 |
 | 50.25 | [Kill switch and the signed broadcast revocation list](story-50-25-kill-switch.md) | B | 50.21, 50.22 |
@@ -1311,6 +1354,7 @@ zone file names its plan and CI fails a file that doesn't fit that plan's counts
 | 50.32 | [The operator console on admin.maktaba.tv: its own host, bundle, cookies and CSP](story-50-32-admin-hostname.md) | 1 | 50.34 |
 | 50.33 | [Staff sign-in for the operator console: MFA, short sessions, re-authentication](story-50-33-staff-auth.md) | 1 | 50.32 |
 | 50.34 | [Cloudflare deploys from CI](story-50-34-cloudflare-deploys.md) | 1 | 50.01 |
+| 50.35 | [Remote access is on when any remote path is on](story-50-35-remote-access-capability.md) | 1b | Epic 51 (51.09, 51.19) |
 
 They are part of the launch gate (§11 item 1): the console that suspends accounts and sets
 plans is protected before anyone pays. 50.34 can start at once, then 50.30 and 50.32 in

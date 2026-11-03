@@ -1,11 +1,11 @@
 # Story 53.09 — Log index, search and live tail
 
-> Epic 53 · Phase 2 · Depends on: 53.02 · Needed by: 53.10, 53.11, 53.12, 53.13
+> Epic 53 · Phase 2 · Depends on: 53.02, 53.18 · Needed by: 53.10, 53.11, 53.12, 53.13
 
 ## Why
 
 Segments (53.02) keep everything but can only be read by time. Admins need to type a word, pick a
-component and a level, follow one request, and watch lines arrive. The viewer today polls three
+service or an Epic 51 component and a level, follow one request, and watch lines arrive. The viewer today polls three
 10,000-line rings.
 
 ## Description
@@ -16,6 +16,14 @@ A new child role, `maktaba-server logs` (same binary, its own process, README D3
 the others (backoff, cut-off, `/healthz`, `/readyz`). It listens on loopback only
 (`127.0.0.1:<logs port>`, added to the port registry `shared/go/ports/registry.go`, checked at start since PR #440).
 
+The role is the Epic 51 component **`logs.index`** (kind `process`, `processes = ["logs/"]`;
+its catalog entry is 53.18). Like every component it can be turned off
+(`PUT /api/components/logs.index` with `want = installed`), held (`POST /api/components/logs.index/stop`)
+or turned off on one machine (`PUT /api/components/logs.index/machines/{node}`). While it is off,
+segments are still written (the supervisor, not this role, writes them), the Logs page reads them
+directly (53.11), dashboards (53.12) and error groups (53.10) stop updating, and `/status.json`
+says `logs: off` with no banner. Turning it on again ingests from its saved positions.
+
 ### 2. The index
 
 `<data>/logs/index/logs.db`, SQLite (WAL mode) via `modernc.org/sqlite` (README D2):
@@ -25,7 +33,7 @@ CREATE TABLE lines (
   id INTEGER PRIMARY KEY,           -- rowid
   ts INTEGER NOT NULL,              -- unix ms
   level INTEGER NOT NULL,           -- 10 debug … 50 fatal
-  service TEXT NOT NULL, node TEXT NOT NULL,
+  service TEXT NOT NULL, component TEXT, node TEXT NOT NULL,  -- component: the Epic 51 id (53.01)
   msg TEXT NOT NULL,
   request_id TEXT, job_id TEXT, session_id TEXT, video_id TEXT, user_h TEXT,
   error_fp TEXT,                    -- 53.10
@@ -33,6 +41,7 @@ CREATE TABLE lines (
 );
 CREATE INDEX lines_ts ON lines(ts);
 CREATE INDEX lines_svc_lvl_ts ON lines(service, level, ts);
+CREATE INDEX lines_comp_lvl_ts ON lines(component, level, ts) WHERE component IS NOT NULL;
 CREATE INDEX lines_req ON lines(request_id) WHERE request_id IS NOT NULL;
 CREATE INDEX lines_job ON lines(job_id) WHERE job_id IS NOT NULL;
 CREATE VIRTUAL TABLE lines_fts USING fts5(msg, text, err, content='', tokenize='unicode61 remove_diacritics 2');
@@ -50,13 +59,13 @@ CREATE VIRTUAL TABLE lines_fts USING fts5(msg, text, err, content='', tokenize='
   removed hourly in 10,000-row batches; `VACUUM` never runs in the foreground (incremental
   vacuum).
 - **Cap:** `logs.db`'s share of the 1 GB diagnostics total: **350 MB** by default (README §4.2,
-  owner's decision 2026-11-03; it holds the line index, error groups and metric rollups, and
+  decided 2026-11-03; it holds the line index, error groups and metric rollups, and
   scales when an admin changes the total); over it, the oldest `debug` then `info` rows go first,
   then the oldest error hours, then the 1-hour metric rollups.
 
 ### 3. Search API (loopback, the API proxies it)
 
-`GET /search?q=&service=&level=&node=&since=&until=&request_id=&job_id=&user_h=&cursor=&limit=`
+`GET /search?q=&service=&component=&level=&node=&since=&until=&request_id=&job_id=&user_h=&cursor=&limit=`
 
 - `q` is FTS5 syntax limited to words, quoted phrases, `-word` and `prefix*` (no column filters
   from the user); empty `q` means filters only.
@@ -64,7 +73,7 @@ CREATE VIRTUAL TABLE lines_fts USING fts5(msg, text, err, content='', tokenize='
   query is cut at **3 s** and returns what it has with `"partial": true`.
 - `GET /tail?…same filters…` is a **Server-Sent Events** stream: new matching lines as they are
   indexed (≤ 2 s after they are written), heartbeat every 15 s, at most 10 open tails.
-- `GET /around?id=&before=&after=` gives the lines of all components around one line (the
+- `GET /around?id=&before=&after=` gives the lines of every service around one line (the
   "what else happened then" view).
 
 The API exposes them to admins only: `/api/admin/logs/search`, `/api/admin/logs/tail`,
@@ -129,7 +138,7 @@ machines didn't answer.
 |---|---|
 | `cmd/maktaba-server/internal/logindex/` (new): `schema.sql`, `ingest.go`, `search.go`, `tail.go`, `retention.go`, `server.go` | §1–§3. |
 | `cmd/maktaba-server/cmd_logs.go` (new) | The `logs` subcommand. |
-| `cmd/maktaba-server/internal/supervisor/` | Add the role. |
+| `cmd/maktaba-server/internal/supervisor/` | Add the role; the reconciler opens and closes it as `logs.index`'s desired state says (51.04). |
 | `shared/go/ports/registry.go` | The logs port. |
 | `api/internal/handlers/logs/` | Proxy routes, roles, `request_id` on export. |
 | `api/internal/cluster/` | Fan-out to machines. |
@@ -145,8 +154,10 @@ The role starts in a release with the old viewer unchanged; 53.11 moves the UI t
 
 ### Rollback
 
-Remove the role from the supervisor's list; segments are unaffected.
+Turn `logs.index` off (`maktaba-server components disable logs.index`), or remove the role from
+the supervisor's list with its catalog entry; segments are unaffected.
 
 ### Dependencies
 
-53.02. Needed by 53.10, 53.11, 53.12, 53.13.
+53.02; 53.18 (the `logs.index` catalog entry, in the same release as the role). Needed by 53.10,
+53.11, 53.12, 53.13.

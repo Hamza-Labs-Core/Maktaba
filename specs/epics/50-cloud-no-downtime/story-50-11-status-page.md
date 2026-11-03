@@ -33,7 +33,7 @@ someone remembering to update it, and it must still load when Hetzner is down.
 | Remote access (relay) | canary home probe `https://canary.relay.maktaba.tv/api/health` | The one paying users care about most. |
 | Sign-in and accounts (API) | `https://api.maktaba.tv/readyz` | |
 | Notifications | `push_outbox_lag_seconds` (> 300 s = degraded) | From the witness's Prometheus. |
-| Payments | link to the payment provider's own status page (provider TBD, not Stripe) | We don't host it; we say where to look. |
+| Payments | link to the payment provider's own status page (provider TBD) | We don't host it; we say where to look. |
 | Plugin store (optional) | the store's own health check, `https://plugins.maktaba.tv/healthz` (Epic 54) | Its own part, because the store runs on Cloudflare apart from the cloud: a cloud outage doesn't make it down, and the reverse. Listed once the store launches. |
 
 States: **operational**, **degraded** (slow, or failing from one network only, or a held
@@ -47,7 +47,7 @@ request rate above 5 %), **outage** (both networks fail two probes in a row), **
   incidents of the last 90 days.
 - **The uptime target, with no credit.** Under the bars the page states the 99.9 % monthly
   target for Remote access and last month's measured figure, and says plainly that it is a
-  target, not a guarantee, with **no credit or refund** for downtime (owner decision,
+  target, not a guarantee, with **no credit or refund** for downtime (decided
   2026-11-03; README §13 decision 1; wording `uptime.policy` from 50.12). The page never shows a
   credit amount, a credit schedule or a "you're owed" message.
 - **English and Arabic**: the language follows `Accept-Language` on first load, with a switch;

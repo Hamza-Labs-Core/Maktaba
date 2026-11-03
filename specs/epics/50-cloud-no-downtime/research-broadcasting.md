@@ -1,8 +1,8 @@
 # Epic 50 research: home broadcasting (publishing a home's TV channels to people outside it)
 
-Read with the [README](README.md) §14. The owner, 2026-11-03: *"the ability to stream TV from
-home servers to others, let's say an entertainment tier or a home streamer tier. Explore that
-and what it requires."*
+Read with the [README](README.md) §14. The requirement (2026-11-03): homes can stream their TV
+channels to other people, as a paid tier for home streamers; this research says what that
+requires.
 
 Prices and outside facts were looked up on **2026-11-03**, and each carries its source. Facts we
 could not confirm are marked **unverified**. Numbers we worked out are marked **estimate**. The
@@ -18,7 +18,7 @@ launch** (§6.4).
 | Channel output settings | `streaming/internal/channel/settings.go` (`tv_output.*`: `video_kbps` 300–50,000, `segment_seconds` 1–10, `keyint_seconds`, `max_active_channels` 0–64, `nvenc_max_sessions`, `videotoolbox_max_sessions`) | The encode a published channel would carry, and the slot limit it has to fit in. |
 | Placement across hosts | Epic 32, `docs/tv-cluster-and-remote.md` | A channel is placed at its first viewer and released after the warm grace. A published channel would have to stay placed. |
 | The public TV site | Epic 34, `web/packages/tvsite/` (first slice on main: `worker.ts`, `homeauth.ts`, `sign.ts`) | A Cloudflare Worker with static assets and a `SiteControl` Durable Object. The home posts its state, signed with **one** shared secret (`HOME_HMAC`). The Worker mints Cloudflare Stream tokens with the site's key (`STREAM_KEY_ID`, `STREAM_KEY_JWK`) for `/watch/<slug>`. It runs **on the home owner's own Cloudflare account**, for **one** home. Epic 34's spec adds rights confirmation, exclusions and slates (34.1, 34.3), the guide publisher (34.2), access modes (34.7) and budget and abuse limits (34.9). |
-| Maktaba Cloud | Epic 25, this epic | Accounts, homes, the relay, plans (Free / Basic / Pro, 50.19), billing through a provider-agnostic `billing.Provider` (TBD, never Stripe), signed entitlements. |
+| Maktaba Cloud | Epic 25, this epic | Accounts, homes, the relay, plans (Free / Basic / Pro, 50.19), billing through a provider-agnostic `billing.Provider` (TBD), signed entitlements. |
 | Signed lists homes honour | Epic 54 §6.3 | Ed25519-signed, expiring, anti-rollback catalog and revocation list. The pattern for a broadcast kill switch (§7). |
 | Logs, metrics, analytics | Epic 53 (53.01 schema, 53.12 dashboards, 53.17 cloud) | The place viewer analytics and the edge's logs go. |
 
@@ -302,7 +302,7 @@ The rule in 50.22: **published channels together may use at most 50 % of the mea
 
 ### 6.0 The position: Maktaba Cloud is an infrastructure and hosting provider
 
-The owner, 2026-11-03: *"we charge for infra, not content"*.
+Decided 2026-11-03: Maktaba charges for infrastructure, not content.
 
 - **What Maktaba Cloud sells:** relay, bandwidth and uptime. It never selects, uploads, curates or
   owns what a publisher airs.
@@ -427,6 +427,6 @@ This is the same list as README §14.9, kept short:
 | Metering | **Viewer-hours** | GB: doesn't match the primary path's costs or viewers' intuition. |
 | Fallbacks | Stream (P-rtmp), then Bunny | Mux: $1,369 a channel a month to encode. |
 | Discovery | **Unlisted only** (link or code); a later directory would list only what publishers choose | Maktaba-picked listings: curation by the host (§6.0). |
-| Viewer payments | **None: viewers never pay** (owner, 2026-11-03); access is open or invite | Paid passes: brings a seller-of-record problem (Epic 54.19). |
+| Viewer payments | **None: viewers never pay** (decided 2026-11-03); access is open or invite | Paid passes: brings a seller-of-record problem (Epic 54.19). |
 | What can air | **Publishable items only**, decided on the publisher's home (own recordings, CC BY, sources with permission) | Anything in the library: YouTube's Terms and copyright don't allow re-broadcasting without permission. |
 | Maktaba's role | **Infrastructure and hosting provider**: no cloud-side curation | Curating or recommending: weakens the hosting position (§6.3). |

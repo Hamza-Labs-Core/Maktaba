@@ -1,21 +1,35 @@
 # Story 52.14 — Settings, thresholds, budget and queue health
 
-> Epic 52 · Phase 2 · Depends on: 52.6 · Needed by: 52.11
+> Epic 52 · Phase 2 · Depends on: 52.6, 52.16 · Needed by: 52.11
+> Epic 51: `review.words` owns `rules.word_review` (51.13); its health is 51.14's.
 
 ## Why
 
 How many words a person is asked to check is a trade-off. Too many and the queue is ignored; too
-few and mistakes stay. That trade-off belongs to the owner, per library: a Quran library, a
+few and mistakes stay. That trade-off is the admin's, per library: a Quran library, a
 lecture library and an English documentary library want different settings. The new stages also
 have to show their health like every other queue (Epic 40), and must not slow transcription on the
 home Mac.
 
 ## Description
 
-### 1. The library setting `word_review`
+### 1. The home default `rules.word_review` and the library setting `word_review`
 
-It is stored in the library's settings JSON (next to `stt`), read through `library_setting` by the
-stages.
+Two layers, with the same keys:
+
+- **Home defaults**: the rules section `rules.word_review`, a config class in
+  `pipeline/src/maktaba_pipeline/word_review/settings.py` registered in `rules.py` `SECTIONS`.
+  It is the section `review.words` owns in the catalog (`settings = ["rules.word_review"]`), so
+  Epic 51 story 51.13 applies as built: it declares `SCHEMA_VERSION = (1, 0)`
+  (`pipeline/src/maktaba_pipeline/settings.py`), a field removed or retyped later needs a major
+  bump and a migration registered with `settings.register_migration`, and the stored version sits
+  in `rules_version.word_review`. It is edited with `PATCH /api/rules/word_review` (validated
+  against `api/internal/handlers/rules/schema.json`, version checked). Disabling, stopping or
+  removing `review.words` keeps it; `POST /api/components/review.words/settings/reset` (or
+  `DELETE /api/components/review.words?purge=true`) deletes it after asking, with Epic 51's
+  `settings.reset` audit row. Neither touches flags, fixes, vocabulary or the per-library values.
+- **Per library**: the library's settings JSON key `word_review` (next to `stt`), read through
+  `library_setting` by the stage. A key the library does not set takes the home default.
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
@@ -49,14 +63,18 @@ library's transcripts, at low priority. It never touches `transcribe`.
   hours, CPU-time left at ≤ 10 CPU-s per audio hour). Turning `backfill` off cancels the
   library's pending backfill jobs; turning it back on enqueues the unchecked ones again. The whole
   stage can be paused like any queue stage (`POST /api/queues/word_check/pause`).
-- **Language packs (home-wide):** a page under Settings lists the `language_packs` rows (code,
-  name in English and Arabic, version, enabled, source, size, installed at), and, for each
-  language heard in the home's transcripts, whether a full pack is installed or the fallback is in
-  use, with an "Install the Hunspell pack" / «تثبيت حزمة Hunspell» link when LibreOffice has a
-  dictionary for it (about 100 languages). Admins may enable or disable a pack. Install, update and
-  removal go through Epic 51's components page, linked from here (packs are Epic 51 components).
-  Disabling a pack makes its words fall to the fallback pack at the next check. Routes:
-  `GET /api/language-packs`, `PATCH /api/language-packs/{code}` (admin).
+- **Language packs (home-wide):** a page under Settings lists, for each language heard in the
+  home's transcripts, its pack (from the `language_packs` report, 52.3: code, name in English and
+  Arabic, data version, state) next to its Epic 51 component (`lang.ar`, `lang.en`,
+  `lang.hunspell.<code>`: phase, reason and `install_size_mb` from `GET /api/components`), or
+  "fallback in use". The switches are Epic 51's, called from this page: **Install** /
+  «تثبيت» is `POST /api/components/lang.hunspell.<code>/install` (with its `progress` shown as
+  `components.progress.installing`), **Remove** is `DELETE /api/components/<id>` (an asset is on
+  disk or not; refused with
+  `409 component_required_by` while something enabled requires it). There is no second switch in
+  this epic. A removed pack's language falls to the fallback at the next check. Route of this epic:
+  `GET /api/language-packs` (admin, read only); the Components page (group `languages`) shows the
+  same assets.
 
 ### 3. Throughput guard
 
@@ -70,14 +88,19 @@ library's transcripts, at low priority. It never touches `transcribe`.
 ### 4. Queue health (Epic 40)
 
 - `word_check` gets a queue tile like every stage: pending, running, failed, and failure classes
-  (`pack_missing`, `pack_failed`, `transcript_gone`), plus the backfill's progress (checked of
-  ~45k).
+  (`pack_unavailable`, `pack_failed`, `transcript_gone`; not Epic 51's `pack_missing` reason,
+  which is about installing a pack), plus the backfill's progress (checked of ~45k).
+- **Off is not red.** While `review.words` is off or held, the tile is Epic 51's: `state = off`,
+  and its waiting jobs carry `component = review.words` and `phase = off | stopped` (51.14), shown
+  as "waiting: word review is off". The component's own health (phase, `since`, `restarts`,
+  `last_error_code`) is the `health` block of `GET /api/components/review.words`, and a failed or
+  degraded `review.words` raises the system health item of kind `components` like any other.
 - Backfill jobs waiting on the idle rule show as **waiting (transcription busy)** / «بانتظار
   انتهاء التفريغ», not red.
 - The Transcription page (`web/src/pages/transcription/Transcription.tsx`) shows open flags per
   library and language, flags this week, fixes this week, the flag rate (per 1,000 words), and the
   share of flags resolved as "accepted as is". That share is the live precision signal that tells
-  the owner whether the sensitivity is right.
+  an admin whether the sensitivity is right.
 - Strings for all of this are in English and Arabic (`wordReview.settings.*`,
   `queue.stage.word_check`, `queue.backfill.*`, `transcription.flags.*`).
 
@@ -100,13 +123,18 @@ library's transcripts, at low priority. It never touches `transcribe`.
    Arabic.
 7. **Given** `reasons.not_in_dictionary = false`, **when** `word_check` runs, **then** no flag has
    only that reason.
-8. **Given** the Arabic pack is disabled, **when** an Arabic transcript is checked, **then** the
+8. **Given** `lang.ar` removed (`DELETE /api/components/lang.ar`), **when** an Arabic transcript is checked, **then** the
    fallback pack is used, `word_flags.pack` says so, and no `not_in_dictionary` flags are made from
    a missing dictionary.
 9. **Given** the Transcription page, **then** it shows open flags, the flag rate and the
    "accepted as is" share per library, in English and Arabic.
 10. **Given** a `word_check` failure, **then** its tile turns red with the failure class, as in
     Epic 40.
+11. **Given** `review.words` disabled, **then** the tile shows "waiting: word review is off" (not
+    red), and `GET /api/components/review.words` shows phase `off`.
+12. **Given** `POST /api/components/review.words/settings/reset` by an admin, **then**
+    `rules.word_review` and `rules_version.word_review` are deleted with a `settings.reset` audit
+    row, the per-library values are kept, and a viewer gets 403.
 
 ## Build plan
 
@@ -121,8 +149,11 @@ library's transcripts, at low priority. It never touches `transcribe`.
   backfill jobs and the per-library cancel.
 - `pipeline/src/maktaba_pipeline/engine/graph.py`: stage priorities and pools.
 - `api/internal/handlers/libraries/wordreview.go`: GET and PUT.
-- `api/internal/handlers/languagepacks/languagepacks.go`: the list and enable/disable routes.
-  Both are mounted in `router/p6.go`.
+- `api/internal/handlers/languagepacks/languagepacks.go`: the read-only list, joined with the
+  component service (`api/internal/components` `Service.List`). Both routes are mounted in
+  `router/p6.go`.
+- `pipeline/src/maktaba_pipeline/rules.py`: `word_review` in `SECTIONS`; `schema.json`
+  regenerated (`test_the_api_schema_is_current`).
 - `web/src/pages/libraries/WordReviewSettings.tsx`, `web/src/pages/settings/LanguagePacks.tsx`.
 - `web/src/pages/transcription/Transcription.tsx`: flag counts.
 - `web/src/components/queue/QueueCard.tsx`: the waiting label.
@@ -136,6 +167,8 @@ library's transcripts, at low priority. It never touches `transcribe`.
   reasons switch.
 - `test_backfill.py`: the claim is refused while transcribe has pending work; a deferral uses no
   attempt; turning `backfill` off cancels pending jobs.
+- `test_rules_word_review.py`: `SCHEMA_VERSION`, the section in `schema.json`, the per-library
+  key overriding the home default.
 - `wordreview_test.go` and `languagepacks_test.go`: roles in the `TestAdminOnly` style (nobody,
   viewer, `write` on the library, library `admin` role without home admin → 401/403; home admin →
   200), and validation errors; a stored `llm_judge` key is ignored.
@@ -151,7 +184,7 @@ runs in idle time (README §8, decision 2).
 
 - **A library with no `word_review` key:** the defaults apply, and nothing is written until an
   admin saves.
-- **The owner lowers the budget:** existing flags over the new budget are marked `skipped`
+- **An admin lowers the budget:** existing flags over the new budget are marked `skipped`
   (`over_budget`) at the next check, never deleted.
 - **A multi-language library:** sensitivity and budget are per library, and the thresholds are per
   language inside the scoring table.

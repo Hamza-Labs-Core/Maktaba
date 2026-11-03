@@ -1,7 +1,8 @@
 # Story 50.15 — Direct remote access, like Plex
 
-> Epic 50 · Phase 1b · Depends on: 50.01 · Needed by: — (recommended before launch, doesn't
-> gate it; used by 50.13 when present)
+> Epic 50 · Phase 1b · Depends on: 50.01, 50.35, Epic 51 (built), Epic 52.17 (rows for new
+> component ids) · Needed by: — (recommended before launch, doesn't gate it; used by 50.13 when
+> present)
 
 ## Why
 
@@ -85,7 +86,7 @@ settings. Only homes whose last check passed get a `direct` entry in the connect
 
 ### 4. Several direct-name domains, so Let's Encrypt's limit never blocks a home
 
-**Owner decision, 2026-11-03 (README §13 decision 5).** Let's Encrypt allows **50 new
+**Decided 2026-11-03 (README §13 decision 5).** Let's Encrypt allows **50 new
 certificates per registered domain per week** ([rate limits](https://letsencrypt.org/docs/rate-limits/)).
 So direct names use **multiple separate registered domains, never `maktaba.tv`**, starting
 with **3–4**. Each has its own 50-a-week limit, so 4 domains give about 180 new homes a week
@@ -120,12 +121,61 @@ with a margin, and `maktaba.tv`'s own certificates are never at risk.
 
 ### 5. Who gets it: free for everyone
 
-**Owner decision, 2026-11-03 (README §13 decision 6): direct remote is free, on every plan
+**Decided 2026-11-03 (README §13 decision 6): direct remote is free, on every plan
 including Free. Only the relay is paid** (plans in 50.19). Direct access carries no relay
 bytes, so it costs us almost nothing. The home doesn't check its plan before opening the direct
 listener, mapping the port or asking for a certificate, and the cloud issues certificates and
 runs the outside check for Free homes too. (Plex, by contrast, has required a pass for any
 remote play since 2025-04-29.)
+
+### 6. An Epic 51 component: `cloud.direct`
+
+The home's side (port mapping, the TLS listener, the certificate and its renewal) runs in the
+API as new loops, so it is a component in
+[`shared/components/catalog.toml`](../../../shared/components/catalog.toml) (README §4.6). The
+`catalog` CI job and the loop check (`shared/components/runner/loopcheck`) fail without it.
+
+```toml
+[[component]]
+id        = "cloud.direct"
+kind      = "loop"
+group     = "system"
+title_key = "components.cloud.direct.title"
+desc_key  = "components.cloud.direct.desc"
+# the direct listener serves the same API and web as the LAN port
+loops     = ["api:direct_listener", "api:direct_portmap", "api:direct_cert"]
+requires  = ["cloud.link"]
+settings  = ["rules.direct", "toml:direct.listen"]
+placement = "home"
+platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
+bundles   = ["full", "core"]
+features  = ["remote_access"]
+since     = "<the release that ships this story>"
+```
+
+- **No licence.** `licence` is empty: direct remote is free on every plan (§5), so a Free home
+  runs it while `cloud.relay` waits with `licence_missing`.
+- **Requires `cloud.link`.** The CSR, the certificate and the outside check's result travel over
+  the tunnel. With the relay agent off, `cloud.direct` is *Waiting* (`dependency_off`) and the
+  listener is closed.
+- **On by bundle.** In `full` and `core`; [52.17](../52-transcript-word-review/story-52-17-new-component-defaults.md)'s
+  seed gives seeded homes a row as their bundle says. A Worker machine never runs it
+  (`placement = "home"`).
+- **Turning it off** (`PUT /api/components/cloud.direct`, `want = installed`) closes the
+  listener within the loops' stop grace, deletes the port mapping, keeps the certificate and the
+  settings, and the next `META_ENDPOINTS` frame drops the direct endpoints so the cloud stops
+  listing a `direct` connection. A hold (`POST /api/components/cloud.direct/stop`) does the same
+  until `start`.
+- **Settings.** The mapping switch and the manual port are a `rules.direct` section, with a
+  `SCHEMA_VERSION` (story 51.13); `direct.listen` stays a `server.toml` key.
+- **Capabilities.** `cloud.direct` serves the viewer feature `remote_access` together with
+  `cloud.relay`: either one is enough. This story adds the group to the catalog with the
+  component, `feature_any = { remote_access = [["cloud.relay", "cloud.direct"]] }` (the key is
+  50.35's). Turning both off turns `remote_access` off.
+- **Words.** `components.cloud.direct.title` = Direct remote access / الوصول المباشر عن بُعد;
+  `components.cloud.direct.desc` = Lets apps outside the home reach it directly over HTTPS,
+  without the relay, when the router allows it. / يتيح للتطبيقات خارج المنزل الوصول إليه مباشرة
+  عبر HTTPS، دون المرحّل، عندما يسمح الموجّه بذلك.
 
 ## Acceptance criteria
 
@@ -266,5 +316,7 @@ remote play since 2025-04-29.)
 
 ### Dependencies
 
-50.01 (the names plan: direct names on separate domains, never under `maktaba.tv`).
-Independent of the HA stories otherwise.
+50.01 (the names plan: direct names on separate domains, never under `maktaba.tv`). 50.35
+(`remote_access` on when either path is on). Epic 51 (built: the catalog, the API loop runner
+51.05, settings 51.13) and Epic 52.17 (rows for new component ids). Independent of the HA stories
+otherwise.

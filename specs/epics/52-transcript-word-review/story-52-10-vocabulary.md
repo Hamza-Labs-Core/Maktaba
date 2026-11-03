@@ -5,14 +5,14 @@
 ## Why
 
 A lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times
-unless the system learns it. The owner wants each fix to count. This story turns fixes into a
+unless the system learns it. Each fix should count. This story turns fixes into a
 vocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second
 listen and new transcriptions spell it right. It never re-transcribes the library
 by itself.
 
 ## Description
 
-### 1. Tables (slot 0173+)
+### 1. Tables (slot 0182+)
 
 - `vocabulary (id, scope 'home'|'library', library_id NULL, language, term, key, kind
   'word'|'name'|'term', variants TEXT[], source 'review'|'manual'|'import', uses INT, added_by,
@@ -105,7 +105,7 @@ sees the page.
 
 ### Files
 
-- `shared/db/migrations/0173+_vocabulary.sql` and `.sqlite.sql`.
+- `shared/db/migrations/0182+_vocabulary.sql` and `.sqlite.sql`.
 - `api/internal/handlers/vocabulary/vocabulary.go`: CRUD, import and export. Mounted in
   `router/p6.go`, using `review.canReview` for library scope and `p.IsAdmin` for home scope.
 - `api/internal/handlers/review/review.go`: the vocabulary writes on `name`, `dictionary` and

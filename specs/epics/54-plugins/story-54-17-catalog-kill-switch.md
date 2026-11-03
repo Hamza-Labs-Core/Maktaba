@@ -1,6 +1,6 @@
 # Story 54.17 — The home's catalog, updates and the kill switch
 
-> Epic 54 · Phase 2 · Depends on: 54.07, 54.14, 54.15 · Needed by: 54.18
+> Epic 54 · Phase 2 · Depends on: 54.07, 54.14, 54.15, 54.37, Epic 51 (51.05) · Needed by: 54.18
 
 ## Why
 
@@ -15,8 +15,10 @@ or needs the home to be linked to it, so a cloud outage changes nothing for plug
 
 ### 1. Fetching
 
-A new API loop `plugins.catalog` (an Epic 51 `loop` component, enabled when the home has any
-plugin installed or an admin opened Browse in the last 7 days):
+A new API loop, `api:plugins_catalog`, declared on the API's Epic 51 loop runner
+(`runner.Declare`, 51.05) and listed in the `loops` of the `plugins.host` component (54.02), so
+it runs while `plugins.host` is enabled. Inside, it fetches only while the home has a plugin
+installed or an admin opened Browse in the last 7 days:
 
 | What | When | How |
 |---|---|---|
@@ -50,7 +52,7 @@ range, developer key id) and acts:
 
 | Action | Home does |
 |---|---|
-| `disable` | Epic 51 hold with reason `revoked` (drain ≤ 30 s, then force-pause; queue kept); `plugin_installs.revoked = true`; admins get a notice with the reason code's words; the plugin cannot be started again (`409 plugin_revoked`); it can only be removed. Its writes stay, and the Plugins page offers "Remove and clear what it wrote". |
+| `disable` | `plugin_installs.revoked = true`, which closes the `revoked` gate (54.37 §3): every runner sees *Waiting* `revoked` (drain ≤ 30 s, then force-pause; queue kept), and the API also sets an Epic 51 hold (`hold_by = "store-revocation"`, audit `component.hold`). Admins get a notice with the reason code's words; the plugin cannot be started again (`409 plugin_revoked` on `/start` and on `PUT /api/components/plugin.<id>` with `want = enabled`); it can only be removed. Its writes stay, and the Plugins page offers "Remove and clear what it wrote". |
 | `warn` | a warning on the plugin and a notice; it keeps running; the admin may disable it |
 | `delist` | nothing changes for installed copies; no updates offered |
 
@@ -58,7 +60,7 @@ range, developer key id) and acts:
 works for file-installed store plugins as soon as the home sees a list.
 
 The store's `disable` is the malware switch-off and cannot be undone by an admin. It is
-separate from the admin's own **keep off** (54.07, owner decision 2026-11-03): an admin's
+separate from the admin's own **keep off** (54.07, decided 2026-11-03): an admin's
 disable sticks through updates, restores and reinstalls until the admin turns it on; turning
 it on never lifts a `disable` revocation. Auto-update never turns on a kept-off plugin.
 
@@ -131,7 +133,7 @@ fetch.
 |---|---|
 | `api/internal/plugins/catalog/` (new) | Loop, fetch, verify, updates, kill switch. |
 | `api/internal/handlers/plugins/catalog.go` (new) | Routes. |
-| `shared/components/catalog.toml` | `plugins.catalog` loop entry. |
+| `shared/components/catalog.toml` | `api:plugins_catalog` in the `loops` of `plugins.host`. |
 | `web/src/i18n/{en,ar}.json` | Revocation reasons, notices. |
 | `tests/update_rehearsal/` | T08 scenario. |
 

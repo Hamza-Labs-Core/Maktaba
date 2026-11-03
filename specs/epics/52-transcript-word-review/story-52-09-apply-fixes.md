@@ -119,7 +119,7 @@ who, when, before and after, and undone. 52.11 shows it.
   in the fingerprint, `SUBTITLE_VERSION` bump.
 - `pipeline/src/maktaba_pipeline/engine/stages/index.py`: re-embed one sentence when the payload
   names it.
-- `shared/db/migrations/0173+_transcript_edits.sql` and `.sqlite.sql`: `transcripts.revision INT
+- `shared/db/migrations/0182+_transcript_edits.sql` and `.sqlite.sql`: `transcripts.revision INT
   NOT NULL DEFAULT 0`, the `transcript_edits` table, and an index on `(transcript_id,
   segment_seq)`.
 - `shared/testdata/word_data/edits/*.json`: golden before/after cases shared by Go and Python

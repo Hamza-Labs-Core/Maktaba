@@ -5,9 +5,8 @@
 ## Why
 
 When the API or Postgres is down, the web app shows "Maktaba is restarting" and reloads every
-5 seconds, for as long as it takes. If it never comes back, the owner has no way in except a
-terminal, which the owner ruled out ("recovery must be automatic or one click, never a
-terminal"). Home Assistant's recovery mode is the model: the UI, the logs and restore keep
+5 seconds, for as long as it takes. If it never comes back, the admin has no way in except a
+terminal. The rule is that recovery is automatic or one click, never a terminal. Home Assistant's recovery mode is the model: the UI, the logs and restore keep
 working when the core can't start.
 
 ## Description
@@ -56,26 +55,33 @@ next starts.
 
 ### 3. What it shows
 
-- The 53.03 components with their admin detail: state, restarts in the last hour, last exit code
-  and time, crash loop, the last `error` line of each.
-- **Logs:** the last 15 minutes of `warn`+ lines of every component (53.02's segment reader),
-  filter by component and level, a text box that searches the loaded window, "load 15 more
-  minutes". No index needed.
+- The 53.03 status groups, and inside each its Epic 51 components (catalog ids and their
+  `components.<id>.title` words), with admin detail: the reconciler's phase and reason
+  (`running`, `off`, `stopped` + `held`, `waiting` + `dependency_off`, `failed` + `crash_loop`,
+  …; reason words `components.reason.<code>`), restarts since the supervisor started (51.14's
+  `restarts`), last exit code and time, the last `error` line of each. All from the supervisor's
+  memory and its `<state>/state/components.json` cache, none from Postgres.
+- **Logs:** the last 15 minutes of `warn`+ lines of every service (53.02's segment reader),
+  filter by service, Epic 51 component and level, a text box that searches the loaded window,
+  "load 15 more minutes". No index needed.
 - **Disk:** free space of the data volume and the log segments' size.
 
 ### 4. What it can do (one click each, with a confirm)
 
 | Action | Does | Available when |
 |---|---|---|
-| Restart a component | Supervisor stop + start of that role, resetting its crash-loop count | always |
-| Restart everything | Supervisor restarts all roles in order | always |
+| Restart a component | Supervisor stop + start of the processes of that Epic 51 component (its `processes` in the catalog), resetting their crash-loop count. For this boot only: it writes no desired state | the component's desired state is enabled and not held |
+| Restart everything | Supervisor restarts all roles in order, requirements first (Epic 51's `Order()`) | always |
+| Turn off / stop a component | Not here. The console links to Settings → Components (`PUT /api/components/{id}`, `POST /api/components/{id}/stop`), which need the API and Postgres. A component that keeps crashing is cut off by 53.05 instead | — |
 | Start in safe mode | Writes the safe-mode flag and restarts (53.05) | always |
 | Leave safe mode | Removes the flag and restarts | in safe mode |
 | Roll back to the previous version | The launcher's existing rollback to the kept payload (`payload-override`), as the boot-loop rollback does today | a previous version is kept |
 | Restore a backup | Opens the existing restore flow (`cmd_restore.go` via the supervisor's admin call), listing backups on the data disk | Postgres down or in safe mode |
-| Download diagnostics | A `.tar.gz`: the last 2 h of segments of every component, `status.json`, supervisor events, system info, redacted (53.01); ≤ 50 MB | always |
+| Download diagnostics | A `.tar.gz`: the last 2 h of segments of every service, `status.json`, the reconciler's desired-state cache and phases, supervisor events, system info, redacted (53.01); ≤ 50 MB | always |
 
-No action deletes data. Restore asks twice and says what will be replaced, as the existing restore
+No action deletes data. Epic 51 has no restart route (`POST /api/components/{id}/restart` is
+not mounted) and no timed hold; the console's Restart is the supervisor's own, on its loopback
+admin port, and a component held or turned off is not restarted by it. Restore asks twice and says what will be replaced, as the existing restore
 does.
 
 ### 5. Strings
@@ -175,4 +181,5 @@ Revert; `/recovery` returns 404 and the restarting page loses its button.
 
 ### Dependencies
 
-53.02 (segment reader), 53.03 (component states). Needed by 53.07.
+53.02 (segment reader), 53.03 (status groups and the reconciler's phases). Epic 51 (built): the
+catalog, the supervisor's reconciler (51.04) and its health fields (51.14). Needed by 53.07.

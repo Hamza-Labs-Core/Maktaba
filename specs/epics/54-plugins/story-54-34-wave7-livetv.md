@@ -26,8 +26,10 @@ Runner group `light`. `write_channels` is the largest stage by SQL (about 33 cal
 
 ### 2. What stays
 
-The loops (channel top-up, the tvchange controller, tvremote, the streaming channel engine)
-are Epic 51 `loop` components and do not move (README §15.2). `after_topup` and
+The loops (`pipeline:channel-topup`, `api:tvchange_controller`, the `api:tvremote_*` loops and
+the streaming TV loops of `livetv`; `streaming:slots_*` of `livetv.slots`; the in-process
+channel engine `streaming:channel_engine` of `livetv.inprocess`) stay where the catalog puts
+them, run by Epic 51's loop runners, and do not move (README §15.2). `after_topup` and
 `every_minutes_rule` move into the manifests unchanged, so the engine still enqueues these
 stages when top-up extends a timeline.
 

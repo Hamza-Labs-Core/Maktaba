@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 623
+    "story": 629
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -2579,7 +2579,7 @@
       "epic": "50-cloud-no-downtime",
       "phase": 5,
       "engine": null,
-      "content": "Maktaba Cloud with no downtime: from one VPS to a relay people can pay for.\n\nPrices are **as of 2026-11-03**, EUR a month excluding VAT, from Hetzner's plan pages (sources in [research.md](research.md) §4). Hetzner raised prices twice in 2026, and today the CX and CAX plans say \"currently not available\" to order. So each row shows what can be ordered today (**orderable**) and what it costs if the cheaper plan comes back (**if CX/CAX**). Check the vCPU and RAM of a plan when ordering: each node needs at least **2 vCPU and 4 GB RAM** (Postgres, Patroni, etcd, Caddy and the cloud processes on one machine).",
+      "content": "Maktaba Cloud with no downtime: from one VPS to a relay people can pay for.\n\nThe requirement (2026-11-03): once people pay for remote access, the cloud must have no downtime.",
       "tags": [
         "epic",
         "50-cloud-no-downtime",
@@ -2619,13 +2619,14 @@
         "story-50.31",
         "story-50.32",
         "story-50.33",
-        "story-50.34"
+        "story-50.34",
+        "story-50.35"
       ],
       "files": {
         "readme": "specs/epics/50-cloud-no-downtime/README.md"
       },
       "metadata": {
-        "story_count": 34,
+        "story_count": 35,
         "plan_count": 0,
         "mockup_count": 0
       }
@@ -2637,7 +2638,7 @@
       "epic": "51-configurable-components",
       "phase": 5,
       "engine": null,
-      "content": "Every part of Maktaba can be turned on, off, added later or left out.\n\nToday a new install starts everything it can: transcription workers, the index worker, the LLM server, Live TV slots, YouTube sync, the cluster hub, the relay agent and about 40 background loops in the API, streaming and the pipeline. A home that only wants to play its films still downloads about 2 GB of machine-learning wheels and models on first run, and still runs the workers. An admin who wants transcription off tonight has to pause stages one by one on the Queues page. A Linux owner who never wants Live TV has to edit `server.toml` and restart. Nothing tells the apps that a feature is off, so they show Live TV tabs that cannot work.",
+      "content": "Every part of Maktaba can be turned on, off, added later or left out.\n\nEvery worker and feature runs as soon as it is installed. The requirement (2026-11-03): all of them are driven by config and settings, so each can be enabled or disabled and started or stopped; servers come in bundles, with and without components; and components can be added later.",
       "tags": [
         "epic",
         "51-configurable-components",
@@ -2680,7 +2681,7 @@
       "epic": "52-transcript-word-review",
       "phase": 5,
       "engine": null,
-      "content": "Word review: suspect words go to a person, in every language.\n\nSo the epic is in three parts: **keep the evidence** (each word's time, confidence and the second listener's version), **point at suspect words** with language packs that know each language's spelling, and **let a person fix them fast**, with every fix teaching the next transcript.",
+      "content": "Word review: suspect words go to a person, in every language.\n\nThe requirement (2026-11-03): a queue job reviews each transcript, either as its own step or in the same step as the second listen. It saves the place of every word that is not in the dictionary, looks wrong or has low confidence, for a person to review and give the right spelling. It works for every language, with languages added as installable packs.",
       "tags": [
         "epic",
         "52-transcript-word-review",
@@ -2701,13 +2702,15 @@
         "story-52.12",
         "story-52.13",
         "story-52.14",
-        "story-52.15"
+        "story-52.15",
+        "story-52.16",
+        "story-52.17"
       ],
       "files": {
         "readme": "specs/epics/52-transcript-word-review/README.md"
       },
       "metadata": {
-        "story_count": 15,
+        "story_count": 17,
         "plan_count": 0,
         "mockup_count": 0
       }
@@ -2719,7 +2722,7 @@
       "epic": "53-logs-errors-reports",
       "phase": 5,
       "engine": null,
-      "content": "Logs, errors and problem reports from every part, and a UI that never goes dark.\n\nMeasured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.07.",
+      "content": "Logs, errors and problem reports from every part, and a UI that never goes dark.\n\nThe requirement (2026-11-03): every part of the home, the apps and the cloud reports its logs, errors and problems; admins can view, search and chart them in the server's admin UI; and no crash in one part may take the UI down with it.",
       "tags": [
         "epic",
         "53-logs-errors-reports",
@@ -2742,13 +2745,14 @@
         "story-53.14",
         "story-53.15",
         "story-53.16",
-        "story-53.17"
+        "story-53.17",
+        "story-53.18"
       ],
       "files": {
         "readme": "specs/epics/53-logs-errors-reports/README.md"
       },
       "metadata": {
-        "story_count": 17,
+        "story_count": 18,
         "plan_count": 0,
         "mockup_count": 0
       }
@@ -2760,7 +2764,7 @@
       "epic": "54-plugins",
       "phase": 5,
       "engine": null,
-      "content": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nIn short: other people can add functions to Maktaba. A plugin takes jobs from the queue, reads what it is allowed to read through the Maktaba API, and writes results back. It can never reach the internet. Maktaba runs a store that reviews, signs and sells plugins.",
+      "content": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nThe requirement (2026-11-03): third-party plugins that extend the queue with new functions, work only through the queue and the Maktaba API, never reach the internet, and come from a Maktaba store.",
       "tags": [
         "epic",
         "54-plugins",
@@ -2802,13 +2806,15 @@
         "story-54.33",
         "story-54.34",
         "story-54.35",
-        "story-54.36"
+        "story-54.36",
+        "story-54.37",
+        "story-54.38"
       ],
       "files": {
         "readme": "specs/epics/54-plugins/README.md"
       },
       "metadata": {
-        "story_count": 36,
+        "story_count": 38,
         "plan_count": 0,
         "mockup_count": 0
       }
@@ -6047,6 +6053,7 @@
         "story-52.14",
         "story-53.11",
         "story-54.4",
+        "story-54.7",
         "story-54.8",
         "story-54.11",
         "story-54.13"
@@ -6092,6 +6099,7 @@
         "story-52.14",
         "story-53.11",
         "story-54.4",
+        "story-54.7",
         "story-54.8",
         "story-54.11",
         "story-54.13"
@@ -6285,8 +6293,12 @@
         "story-50.16",
         "story-50.21",
         "story-50.22",
+        "story-50.35",
         "story-51.9",
-        "story-51.11"
+        "story-51.11",
+        "story-52.17",
+        "story-53.6",
+        "story-54.20"
       ],
       "files": {
         "openapi": "shared/api/openapi.yaml"
@@ -6462,7 +6474,6 @@
         "story-51.7",
         "story-51.8",
         "story-51.14",
-        "story-52.6",
         "story-52.9",
         "story-52.14",
         "story-54.25",
@@ -7593,6 +7604,7 @@
         "story-51.12",
         "story-51.13",
         "story-51.19",
+        "story-52.17",
         "story-53.4",
         "story-53.10",
         "story-53.11",
@@ -8252,7 +8264,8 @@
         "story-51.9",
         "story-51.11",
         "story-52.8",
-        "story-53.3"
+        "story-53.3",
+        "story-53.6"
       ],
       "files": {
         "schema": "specs/architecture.md#8-database-schema",

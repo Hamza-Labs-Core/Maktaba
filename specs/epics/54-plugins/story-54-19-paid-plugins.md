@@ -1,6 +1,7 @@
 # Story 54.19 — Paid plugins
 
-> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, the Phase 3 payment provider decision · Needed by: —
+> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, 54.37, the Phase 3 payment provider decision ·
+> Needed by: —
 
 ## Why
 
@@ -14,11 +15,9 @@ use a paid plugin.
 Decisions of 2026-11-03 that shape this story:
 
 - **The store is independent of Maktaba Cloud**, payments included (54.15 "Why independent").
-- **No Stripe, ever**: no Stripe, Stripe Connect, Stripe Tax or Stripe-owned services (Lemon
-  Squeezy among them), and no provider that runs on Stripe underneath.
 - **Split:** the developer gets 85 %, Maktaba keeps 15 % of the price.
 - **Developer fee:** free to publish free plugins; a one-time $25 to sell.
-- **Seller of record and payment processor: an owner decision at Phase 3.** This story is
+- **Seller of record and payment processor: chosen at Phase 3.** This story is
   written against a provider-agnostic `PaymentProvider` interface so the choice does not change
   the rest of the design.
 
@@ -27,18 +26,18 @@ Decisions of 2026-11-03 that shape this story:
 ### 1. The Phase 3 decision this story waits for
 
 The store resells third-party products, which many sellers of record restrict (Paddle among
-them), so a candidate is chosen only after it confirms in writing that it allows plugin resale
-and that it does not process through Stripe. The provider account is the store's own, opened
+them), so a candidate is chosen only after it confirms in writing that it allows plugin resale.
+The provider account is the store's own, opened
 for the store and separate from any account used for cloud billing (separate merchant account,
 separate API keys, separate webhook secrets, separate payout bank details).
 
-| # | Model | Who sells | Who files VAT and sales tax | How developers are paid | Non-Stripe candidates to evaluate |
+| # | Model | Who sells | Who files VAT and sales tax | How developers are paid | Candidates to evaluate |
 |---|---|---|---|---|---|
 | A | **A merchant of record sells for the store** | the provider | the provider | the provider pays the store; the store pays each developer their 85 % monthly | Paddle, FastSpring, 2Checkout (Verifone) |
 | B | **The store is the seller** with a marketplace payment provider | the store's legal entity | the store | the provider splits each payment: 85 % to the developer's sub-account, 15 % to the store | Adyen for Platforms, PayPal (marketplace / Commerce Platform), Checkout.com; for the Gulf and Egypt, Tap Payments, PayTabs or Paymob |
 | C | **Developers sell directly** on their own checkout | the developer | the developer | directly; the store invoices its 15 % monthly, and verifies the developer's licence keys offline | none needed for sales; the store's 15 % invoices and the $25 fee still need one of A or B |
 
-Until the owner picks one, everything in §3–§7 is built against fakes and stays off.
+Until one is chosen, everything in §3–§7 is built against fakes and stays off.
 
 ### 2. The `PaymentProvider` interface
 
@@ -54,8 +53,8 @@ Until the owner picks one, everything in §3–§7 is built against fakes and st
 | `payouts(period) → Payout[]` | for A, the store's monthly payout run (85 % of the month's net sales per developer, after refunds); for B and C, a report only |
 
 Implementations: `fake` (tests and staging), then exactly one real provider after the Phase 3
-decision. Stripe is never an implementation (CI check T07 fails if a Stripe SDK, API host or key
-format appears under `store/`).
+decision. CI check T07 keeps it to that one: only the chosen provider's SDK and API hosts may
+appear under `store/`.
 
 Webhooks go to the `store-web` Worker at `POST plugins.maktaba.tv/v1/payments/webhook/<provider>`:
 verified by `parseEvent` with the provider's signing secret (a Worker secret), idempotent on
@@ -130,14 +129,18 @@ provider's own fees are shown to developers as the provider states them.
   developer's registered licence-key public key and checked offline the same way; the store
   countersigns the developer's public key, not each licence.
 - A one-time purchase renews forever while the purchase is not refunded.
-- **No valid entitlement** → the plugin is *Waiting* `licence_missing` (Epic 51 §4.10): held,
-  queue kept, data kept. It never deletes data and never blocks other plugins. Words: "Waiting
+- **No valid entitlement** → the plugin is *Waiting* `entitlement_missing`: queue kept, data
+  kept. This is not Epic 51's licence gating: a component's `licence` names one existing flag
+  of `api/internal/flags/declarations.go` (today only `cloud.relay` uses one, `cloud_relay`), and
+  a plugin entitlement is neither a flag nor part of the home's licence. The entitlement is a
+  gate of its own (54.37 §3), with the reason code `entitlement_missing` added to `reasons` in
+  `shared/components/catalog.toml`; the runners treat it like `licence_missing`. It never deletes data and never blocks other plugins. Words: "Waiting
   for this plugin's licence" / «في انتظار ترخيص هذه الإضافة».
 - **Packages of paid plugins** are downloaded from `plugins-cdn.maktaba.tv/paid/<sha256>` with
   a signed URL (`t`: home id, sha256, expiry 10 minutes, signed by the store) issued only
   against a valid entitlement; the `store-cdn` Worker checks it and streams from the private
   R2 prefix. A copied package installed on another home installs but stays *Waiting*
-  `licence_missing`.
+  `entitlement_missing`.
 - **Moving to a new home:** the buyer's store account can move a purchase to another of its
   linked homes (twice a year, re-auth), which ends the old home's entitlement at its next
   refresh.
@@ -187,7 +190,7 @@ links).
   **then** the paid plugin keeps running and no request goes to any cloud host.
 - **Given** an entitlement that lapsed past grace,
   **when** the home's runner passes,
-  **then** the plugin is *Waiting* `licence_missing`, its queue and data kept; a new
+  **then** the plugin is *Waiting* `entitlement_missing`, its queue and data kept; a new
   entitlement brings it back with nobody touching it.
 - **Given** an entitlement for another home id, or for this home id with another home key,
   **when** verified,
@@ -197,12 +200,12 @@ links).
   **then** the developer's share is reversed and the entitlement ends at the next refresh.
 - **Given** a paid plugin's package copied to another home,
   **when** installed there,
-  **then** it stays *Waiting* `licence_missing`.
+  **then** it stays *Waiting* `entitlement_missing`.
 - **Given** any change under `store/`,
   **when** CI runs,
-  **then** the no-Stripe check finds no Stripe SDK import, API host (`api.stripe.com`,
-  `js.stripe.com`) or key prefix (`sk_live_`, `sk_test_`, `pk_live_`, `pk_test_`, `rk_live_`,
-  `whsec_`) in the store code.
+  **then** the payment-provider check finds no payment SDK import, payment API host or payment
+  key prefix other than those on its allowlist (empty until the Phase 3 choice; then the chosen
+  provider's only).
 
 ## Test cases
 
@@ -211,10 +214,10 @@ links).
 | T01 | unit (ts) | split function, shared table | 85/15 on prices and currencies | Maktaba rounded down, developer the rest, sums equal |
 | T02 | integration (ts, Miniflare D1) | fake provider events: paid, refunded, disputed, payout failed, duplicates | process | purchase rows, reversals, idempotent |
 | T03 | unit (go home + ts store) | entitlement signed by E (ts) and verified (go); model C developer key | verify | valid / expired / other home / other home key / wrong key use |
-| T04 | integration (PG, go home) | lapse past grace; cloud and store hosts blackholed | runner | runs while valid; Waiting `licence_missing` after; back on renew |
+| T04 | integration (PG, go home) | lapse past grace; cloud and store hosts blackholed | runner | runs while valid; Waiting `entitlement_missing` after; back on renew |
 | T05 | role tests (ts) | seller fee, pricing, purchase, refund, move, sales, payout approval routes | roles | developer of other plugin, buyer of another account, unlinked home, cloud token refused; payout approval needs `store_admin` + re-auth |
-| T06 | unit | strings en + ar | checkout, account, link-to-buy and console pages; `licence_missing` words | complete |
-| T07 | CI check (`tools/ci/no_stripe.sh`) | `store/` tree and its lockfiles | grep | no Stripe SDK, host or key prefix |
+| T06 | unit | strings en + ar | checkout, account, link-to-buy and console pages; `entitlement_missing` words | complete |
+| T07 | CI check (`tools/ci/payment_provider_allowlist.sh`) | `store/` tree and its lockfiles | grep against a list of known payment SDKs, hosts and key prefixes | none outside the allowlist |
 | T08 | integration (ts) | model A monthly payout run on the fake | `payouts(month)` | 85 % of net sales per developer after refunds; under $25 rolls over |
 | T09 | integration (ts) | `/paid/*` with an expired, a forged and another home's `t` | GET | 403 each; valid one streams |
 
@@ -245,9 +248,10 @@ All payment tests use the fake provider and recorded fixtures; no live payment c
 | `store/web/payments_webhook.ts` (new) | Provider events. |
 | `store/cdn/paid.ts` (new) | Signed URLs for paid packages. |
 | `store/migrations/commerce/NNNN_payments.sql` (new) | Seller fees, products, purchases, entitlements, payouts, provider events. |
-| `api/internal/plugins/entitlements.go` (new) | Home refresh and offline checks; *Waiting* `licence_missing`. |
+| `api/internal/plugins/entitlements.go` (new) | Home refresh and offline checks; the `entitlement_missing` gate (54.37). |
+| `shared/components/catalog.toml`, `web/src/i18n/{en,ar}.json` | `entitlement_missing` in `reasons`, with its words (if 54.37 has not added it). |
 | `shared/go/pluginsig/` | Entitlement verification with `use: "entitlement"` keys. |
-| `tools/ci/no_stripe.sh` (new) | T07. |
+| `tools/ci/payment_provider_allowlist.sh` (new) | T07. |
 | `store/web/` pages | Seller fee, checkout, account purchases, payouts in the console; en + ar. |
 | `web/src/pages/Admin/Plugins/StorePlugin.tsx` | Buy / Link this home to buy; en + ar. |
 
@@ -257,10 +261,9 @@ All payment tests use the fake provider and recorded fixtures; no live payment c
 
 ### Rollout
 
-Off until the owner picks the payment provider and seller of record at Phase 3 (after written
-confirmation that it allows resale of third-party plugins and does not run on Stripe) and opens
-the store's own provider account (an owner action; nothing in this epic calls a live payment
-API).
+Off until the payment provider and seller of record are chosen at Phase 3 (after written
+confirmation that the provider allows resale of third-party plugins) and the store's own
+provider account is opened (nothing in this epic calls a live payment API).
 
 ### Rollback
 

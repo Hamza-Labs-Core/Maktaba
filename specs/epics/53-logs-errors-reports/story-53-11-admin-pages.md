@@ -15,23 +15,28 @@ apps and the desktop window.
 
 - **Search bar:** words, phrases, `-word`; a reference (8 characters) or a full request id jumps
   to "Follow a request".
-- **Filters:** component (multi), level (≥), machine, time (last 15 min, 1 h, 24 h, 7 d (the default retention),
-  custom). All filters go in the address, as today (`?services=&level=&since=&until=&node=`), so
-  other pages keep linking here (`update-attempts.md` does).
+- **Filters:** service (multi), Epic 51 component (multi: catalog ids shown with their
+  `components.<id>.title` words), level (≥), machine, time (last 15 min, 1 h, 24 h, 7 d (the default retention),
+  custom). All filters go in the address, as today (`?services=&components=&level=&since=&until=&node=`), so
+  other pages keep linking here (`update-attempts.md` does). The Components drawer
+  (`web/src/pages/Settings/ComponentDrawer.tsx`, story 51.10) gains **Logs** and **Errors**
+  links with `?components=<id>`.
 - **Live:** a toggle that switches the list to the SSE tail (53.09); pauses when the admin
   scrolls up; "N new lines" to jump back.
-- **A line:** time, level colour, component, message, and the ids as chips (request, job, video,
+- **A line:** time, level colour, service and component, message, and the ids as chips (request, job, video,
   session, user name resolved from `user_h`). Expand shows every field and "Lines around this"
   (53.09 `/around`).
-- **Follow a request:** every line with that request id from every component and machine, in
+- **Follow a request:** every line with that request id from every service and machine, in
   time order, as a timeline (web → API → pipeline job → streaming), with gaps over 1 s marked.
 - **Download:** the existing export, with the current filters (and `request_id`).
 - **When the `logs` role is down:** a notice "Log search is restarting; showing recent lines from
-  the files" and the 53.02 segment reader behind the same list (filters, no full text).
+  the files" and the 53.02 segment reader behind the same list (filters, no full text). When
+  `logs.index` is turned off or held (Epic 51), the same list with "Log search is off" and a link
+  to its row in Settings → Components.
 
 ### 2. Errors (`/admin/errors`, new)
 
-- A list of groups: title, component, count (24 h and total), a 14-day sparkline, users, first
+- A list of groups: title, Epic 51 component, count (24 h and total), a 14-day sparkline, users, first
   and last seen, status chip; filter by status (default: new + seen), component, time; sort by
   last seen, count, users.
 - A group page: the chart, the samples (each opens its line in Logs and "Follow this request"),
@@ -42,9 +47,9 @@ apps and the desktop window.
 
 ### 3. Settings (`/admin/logs/settings`)
 
-**Retention** (owner's decision, 2026-11-03: defaults logs 7 days, errors 30, reports 90, at most
+**Retention** (decided 2026-11-03: defaults logs 7 days, errors 30, reports 90, at most
 1 GB in all; an admin changes each value and the total here, within 53.02's ranges, and the page
-shows what each kind uses now), debug level per component for 1 h (the missing `POST /admin/log/level` of
+shows what each kind uses now), debug level per service for 1 h (the missing `POST /admin/log/level` of
 Epic 21.1, done through the supervisor so it reaches every child, returning to `info` after the
 hour).
 
@@ -57,7 +62,7 @@ The Remote apps (Apple, Android) get **Errors** (list, group, status actions) an
 ### 5. Roles
 
 Every route is admin-only in the API (role tests); the navigation hides the pages from viewers,
-but hiding is not the rule (owner, 2026-10-25). A home admin signed in through Maktaba Cloud gets
+but hiding is not the rule (standing rule, 2026-10-25). A home admin signed in through Maktaba Cloud gets
 these only if granted manage, as today.
 
 ### 6. Strings (in addition to 53.10's)
@@ -124,7 +129,8 @@ these only if granted manage, as today.
 |---|---|
 | `web/src/pages/Admin/Logs.tsx` (rewrite), `LogLine.tsx`, `FollowRequest.tsx`, `LogSettings.tsx` (new) | §1, §3. |
 | `web/src/pages/Admin/Errors.tsx`, `ErrorGroup.tsx` (new); `web/src/serverRoutes.tsx`; `web/src/components/AppShell.tsx` | §2, nav and badge. |
-| `web/src/lib/logFilters.ts` | New filters. |
+| `web/src/lib/logFilters.ts` | New filters (`components`). |
+| `web/src/pages/Settings/ComponentDrawer.tsx` | Logs and Errors links per component. |
 | `api/internal/handlers/logs/`, `api/internal/handlers/errors/` | Level route (via the supervisor), user name resolution. |
 | `cmd/maktaba-server/internal/supervisor/` | Set a child's level for 1 h (SIGUSR1 already toggles debug in Go; the pipeline gets the same signal handler). |
 | `apps/apple/Remote/` (Errors, Logs screens), `apps/android/remote/` | §4. |

@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 54,
-    "stories": 623,
+    "stories": 629,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -356,35 +356,35 @@
       "id": "50",
       "slug": "cloud-no-downtime",
       "title": "Maktaba Cloud with no downtime",
-      "description": "Maktaba Cloud with no downtime: from one VPS to a relay people can pay for.\n\nPrices are **as of 2026-11-03**, EUR a month excluding VAT, from Hetzner's plan pages (sources in [research.md](research.md) §4). Hetzner raised prices twice in 2026, and today the CX and CAX plans say \"currently not available\" to order. So each row shows what can be ordered today (**orderable**) and what it costs if the cheaper plan comes back (**if CX/CAX**). Check the vCPU and RAM of a plan when ordering: each node needs at least **2 vCPU and 4 GB RAM** (Postgres, Patroni, etcd, Caddy and the cloud processes on one machine).",
+      "description": "Maktaba Cloud with no downtime: from one VPS to a relay people can pay for.\n\nThe requirement (2026-11-03): once people pay for remote access, the cloud must have no downtime.",
       "readme": "specs/epics/50-cloud-no-downtime/README.md"
     },
     {
       "id": "51",
       "slug": "configurable-components",
       "title": "Every part of Maktaba can be turned on, off, added later or left out",
-      "description": "Every part of Maktaba can be turned on, off, added later or left out.\n\nToday a new install starts everything it can: transcription workers, the index worker, the LLM server, Live TV slots, YouTube sync, the cluster hub, the relay agent and about 40 background loops in the API, streaming and the pipeline. A home that only wants to play its films still downloads about 2 GB of machine-learning wheels and models on first run, and still runs the workers. An admin who wants transcription off tonight has to pause stages one by one on the Queues page. A Linux owner who never wants Live TV has to edit `server.toml` and restart. Nothing tells the apps that a feature is off, so they show Live TV tabs that cannot work.",
+      "description": "Every part of Maktaba can be turned on, off, added later or left out.\n\nEvery worker and feature runs as soon as it is installed. The requirement (2026-11-03): all of them are driven by config and settings, so each can be enabled or disabled and started or stopped; servers come in bundles, with and without components; and components can be added later.",
       "readme": "specs/epics/51-configurable-components/README.md"
     },
     {
       "id": "52",
       "slug": "transcript-word-review",
       "title": "Word review",
-      "description": "Word review: suspect words go to a person, in every language.\n\nSo the epic is in three parts: **keep the evidence** (each word's time, confidence and the second listener's version), **point at suspect words** with language packs that know each language's spelling, and **let a person fix them fast**, with every fix teaching the next transcript.",
+      "description": "Word review: suspect words go to a person, in every language.\n\nThe requirement (2026-11-03): a queue job reviews each transcript, either as its own step or in the same step as the second listen. It saves the place of every word that is not in the dictionary, looks wrong or has low confidence, for a person to review and give the right spelling. It works for every language, with languages added as installable packs.",
       "readme": "specs/epics/52-transcript-word-review/README.md"
     },
     {
       "id": "53",
       "slug": "logs-errors-reports",
       "title": "Logs, errors and problem reports from every part, and a UI that never goes dark",
-      "description": "Logs, errors and problem reports from every part, and a UI that never goes dark.\n\nMeasured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.07.",
+      "description": "Logs, errors and problem reports from every part, and a UI that never goes dark.\n\nThe requirement (2026-11-03): every part of the home, the apps and the cloud reports its logs, errors and problems; admins can view, search and chart them in the server's admin UI; and no crash in one part may take the UI down with it.",
       "readme": "specs/epics/53-logs-errors-reports/README.md"
     },
     {
       "id": "54",
       "slug": "plugins",
       "title": "Plugins",
-      "description": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nIn short: other people can add functions to Maktaba. A plugin takes jobs from the queue, reads what it is allowed to read through the Maktaba API, and writes results back. It can never reach the internet. Maktaba runs a store that reviews, signs and sells plugins.",
+      "description": "Plugins: new functions from the queue, with no internet, from a Maktaba store.\n\nThe requirement (2026-11-03): third-party plugins that extend the queue with new functions, work only through the queue and the Maktaba API, never reach the internet, and come from a Maktaba store.",
       "readme": "specs/epics/54-plugins/README.md"
     }
   ],
@@ -5952,6 +5952,15 @@
       "plan_files": []
     },
     {
+      "id": "50.35",
+      "epic": 50,
+      "num": "35",
+      "slug": "remote-access-capability",
+      "title": "Remote access is on when any remote path is on",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-35-remote-access-capability.md",
+      "plan_files": []
+    },
+    {
       "id": "51.01",
       "epic": 51,
       "num": "01",
@@ -6258,6 +6267,24 @@
       "plan_files": []
     },
     {
+      "id": "52.16",
+      "epic": 52,
+      "num": "16",
+      "slug": "language-components",
+      "title": "Word review and language packs in the component catalog",
+      "story_file": "specs/epics/52-transcript-word-review/story-52-16-language-components.md",
+      "plan_files": []
+    },
+    {
+      "id": "52.17",
+      "epic": 52,
+      "num": "17",
+      "slug": "new-component-defaults",
+      "title": "Components a later release adds start as the bundle says",
+      "story_file": "specs/epics/52-transcript-word-review/story-52-17-new-component-defaults.md",
+      "plan_files": []
+    },
+    {
       "id": "53.01",
       "epic": 53,
       "num": "01",
@@ -6408,6 +6435,15 @@
       "slug": "cloud-observability",
       "title": "The cloud on the same model, feeding Epic 50",
       "story_file": "specs/epics/53-logs-errors-reports/story-53-17-cloud-observability.md",
+      "plan_files": []
+    },
+    {
+      "id": "53.18",
+      "epic": 53,
+      "num": "18",
+      "slug": "catalog-entries",
+      "title": "Epic 53's parts in the component catalog",
+      "story_file": "specs/epics/53-logs-errors-reports/story-53-18-catalog-entries.md",
       "plan_files": []
     },
     {
@@ -6732,6 +6768,24 @@
       "slug": "wave9-core",
       "title": "Wave 9: the core stages, and removing the in-process path",
       "story_file": "specs/epics/54-plugins/story-54-36-wave9-core.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.37",
+      "epic": 54,
+      "num": "37",
+      "slug": "catalog-plugin-entries",
+      "title": "The component catalog takes plugin entries",
+      "story_file": "specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.38",
+      "epic": 54,
+      "num": "38",
+      "slug": "plugin-files",
+      "title": "Plugin files on disk, on Epic 51's packs code",
+      "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
       "plan_files": []
     }
   ],

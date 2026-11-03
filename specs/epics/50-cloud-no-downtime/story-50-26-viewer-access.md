@@ -4,7 +4,7 @@
 
 ## Why
 
-Viewers aren't users of the home and **never pay** (owner decision, 2026-11-03). Access is one of
+Viewers aren't users of the home and **never pay** (decided 2026-11-03). Access is one of
 two modes:
 
 - `invite` (the default): the publisher decides who;

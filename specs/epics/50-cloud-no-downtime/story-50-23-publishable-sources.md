@@ -6,8 +6,8 @@
 
 ## Why
 
-The owner asked, 2026-11-03: *"YouTube is public, so if you are not paying, what's the legal
-issue?"* The practical answer (README §14.6, research §6.1):
+The question: if a YouTube video is public and nobody pays to watch it, what is the legal issue
+with re-broadcasting it? The practical answer (README §14.6, research §6.1):
 
 - **Free to watch isn't a licence to re-broadcast.** Copyright covers copying a work and showing
   it to the public whether or not money changes hands.

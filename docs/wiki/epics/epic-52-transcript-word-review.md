@@ -1,13 +1,13 @@
 # Epic 52 — Word review: suspect words go to a person, in every language
 
-> **Status:** spec (2026-11-03), owner's decisions applied the same day. **Source:** [`specs/epics/52-transcript-word-review/`](../../../specs/epics/52-transcript-word-review/README.md).
+> **Status:** spec (2026-11-03), decisions applied the same day; on Epic 51 as built. **Source:** [`specs/epics/52-transcript-word-review/`](../../../specs/epics/52-transcript-word-review/README.md).
 > **Anchors:** `pipeline/src/maktaba_pipeline/stt/refine.py` (the second listen) ·
 > `stt/align.py` (word probabilities) · `engine/stages/transcribe.py` (`_store`) ·
 > `text/arabic.py` (folding) · `classify/quran.py` + `data/quran/` (the Tanzil Quran text).
 
 ## Goal
 
-After the owner's hearing tests set how Maktaba transcribes (Whisper turbo, then a second listen
+After the hearing tests set how Maktaba transcribes (Whisper turbo, then a second listen
 by Cohere Arabic, merged word by word), the remaining errors are single words: a misheard name,
 a misspelt term, a word the two listeners disagree on. This epic points at those words and lets a
 person fix them fast:
@@ -26,8 +26,9 @@ person fix them fast:
 4. **Every fix teaches.** A per-library and per-language vocabulary stops re-flagging, finds the
    same word elsewhere, and feeds the second listen's speller and new transcriptions, without
    re-transcribing the library.
-5. **Every language.** Language packs are installable Epic 51 components: a normaliser,
-   tokenizer, dictionary, morphology and suggestions. Arabic (CAMeL Tools morphology + Hunspell)
+5. **Every language.** A language pack is pipeline code (normaliser, tokenizer, dictionary,
+   morphology, suggestions) plus its data as an Epic 51 asset component (`lang.ar`, `lang.en`,
+   `lang.hunspell.<code>`, with the wheels in `runtime.lang`). Arabic (CAMeL Tools morphology + Hunspell)
    and English (Hunspell) ship first; a generic Hunspell pack covers about 100 more languages;
    any language without a full pack gets the fallback pack (Unicode word segmentation + word
    frequencies).
@@ -55,15 +56,17 @@ person fix them fast:
 | 52.13 | Review in the native apps | 4 |
 | 52.14 | Settings, thresholds, budget and queue health | 2 |
 | 52.15 | Quran check: verse runs against the Quran text | 1 |
+| 52.16 | Word review and language packs in the component catalog | 1 |
+| 52.17 | Components a later release adds start as the bundle says | 1 |
 
-14 stories to build (52.7 is a removed stub kept for its number).
+16 stories to build (52.7 is a removed stub kept for its number).
 Build order and dependency DAG: [`plan.md`](../../../specs/epics/52-transcript-word-review/plan.md).
 Research with sources: [`research.md`](../../../specs/epics/52-transcript-word-review/research.md).
 
 ## Targets
 
 - Flag precision: Arabic ≥ 0.50 and English ≥ 0.60 at first, ≥ 0.65 / 0.70 after calibration.
-  Recall ≥ 0.60. At most 3% of words flagged. At least 18 of the owner's 20 hearing-test spots
+  Recall ≥ 0.60. At most 3% of words flagged. At least 18 of the 20 hearing-test spots
   flagged.
 - Quran check: no flag on a correctly heard verse run; ≥ 0.80 of seeded verse-word errors flagged.
 - Flags visible within 2 minutes of a transcript. A fix takes ≤ 300 ms, with subtitles rewritten
@@ -86,5 +89,19 @@ queue. The API enforces it, with role tests that expect 403 for `write`.
 4. Quran: verse runs are checked against the Quran text with their own reason code,
    `quran_mismatch` (story 52.15).
 
-Third-party language packs, beyond the built-in and Hunspell ones, will come through Epic 54's
-plugin system and store (built on Epic 51's components); this epic does not design it.
+## On Epic 51 components
+
+| id | kind | What it is |
+|---|---|---|
+| `review.words` | `stages` | owns `word_check` (with the Quran check) and the `rules.word_review` settings; requires `runtime.lang`, wants `lang.ar`, `lang.en`, `model.refine`; bundles Full and Worker |
+| `runtime.lang` | `asset` | the wheels of the pipeline's `lang` extra (wordfreq, PyICU, spylls) |
+| `lang.ar`, `lang.en` | `asset` | Hunspell data for the Arabic and English packs (CAMeL's DB stays `model.refine`) |
+| `lang.hunspell.<code>` | `asset` | one LibreOffice dictionary each, installed on demand |
+
+Everything is switched with Epic 51's admin routes and CLI (`PUT /api/components/{id}`,
+`/install`, `/stop`, `/start`, `DELETE`, preview and apply, per machine). Two things Epic 51 does
+not give are new stories here: data packs and a way for the pipeline to find them (52.16), and a
+default for a component a later release adds, which today has no row and so reads as on (52.17).
+
+Third-party language packs come through Epic 54's plugin system and store (built on Epic 51's
+components); Epic 51 itself installs only first-party packs from Maktaba's release.

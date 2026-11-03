@@ -56,7 +56,7 @@ Rules:
 - **Cookies are host-only.** No cloud cookie is ever set with `Domain=.maktaba.tv`, so a cloud
   session never reaches a home on `*.relay.maktaba.tv`, the store on `plugins.maktaba.tv`, or the
   operator console (50.32 §4).
-- **Direct names are never under `maktaba.tv`** (owner decision, 2026-11-03; README §13
+- **Direct names are never under `maktaba.tv`** (decided 2026-11-03; README §13
   decision 5). They live on **several separate registered domains used only for direct names**
   (3–4 to start), each delegated by `NS` at its registrar to the cloud's own DNS responder
   (`--role=dns`, UDP/TCP 53, on nodes A and B), with names like

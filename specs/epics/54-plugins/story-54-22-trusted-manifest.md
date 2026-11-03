@@ -1,10 +1,10 @@
 # Story 54.22 — First-party plugins: the trusted manifest and release signing
 
-> Epic 54 · Phase 4 · Depends on: 54.01, Epic 51 (51.15) · Needed by: 54.23, 54.24, 54.27
+> Epic 54 · Phase 4 · Depends on: 54.01, 54.37, Epic 51 (51.15) · Needed by: 54.23, 54.24, 54.27
 
 ## Why
 
-The owner wants Maktaba's own stages to be plugins on the same interface as third-party ones
+Maktaba's own stages become plugins on the same interface as third-party ones
 (README §15). They need rights no third-party plugin may have: their own SQL, library files,
 ffmpeg, the GPU, sometimes the network. Those rights must be **declared**, **reviewed**, and
 **unlockable only by Maktaba's release signature**, or "first-party" becomes a back door any
@@ -37,14 +37,19 @@ Reserved for trusted packages: the id prefix `tv.maktaba.` and every stage name 
 A package is trusted when **all** hold:
 
 1. its `files.json` digest is listed in the running release's `checksums.txt`, whose Sigstore
-   signature was verified against the release identity (Epic 51 H6, `shared/go/releaseverify`);
+   signature was verified against the release identity (Epic 51 H6; `releaseverify.VerifyDir`
+   and `ParseChecksums` in `shared/go/releaseverify`, the same check the updater and 51.15's
+   index use). First-party packages ride in the payload: they are not packs and are not listed
+   in `components-<version>.json`, whose entries are asset packs and models only;
 2. its `version` equals the running server's version;
 3. its id starts with `tv.maktaba.`.
 
 The check runs in the Go API at load (`api/internal/plugins/trusted.go`) and again in the
 runner before it imports the package (54.23), each from its own copy of the verified list. A
 failed check refuses the package with `plugin_trusted_unsigned` (or `plugin_trusted_version`),
-the component goes *Failed* with that reason, and nothing of it runs.
+the component it belongs to (`transcription`, `classify`, …, 54.27) goes *Failed* with that
+reason, and nothing of it runs. Both codes are Epic 51 reason codes, added to `reasons` in
+`shared/components/catalog.toml` with en and ar words (54.37 §3).
 
 There is no setting, flag or environment variable that marks a package trusted. Developer
 builds use the existing `-tags e2etrust` build, which trusts a developer index (Epic 51 §4.9).
@@ -129,4 +134,5 @@ Release rollback; nothing in the database depends on it.
 
 ### Dependencies
 
-54.01 (schema), Epic 51 51.15 (signed release index and checksums).
+54.01 (schema), 54.37 (the reason codes); Epic 51 51.15 (`shared/go/releaseverify`, the
+signed checksums).

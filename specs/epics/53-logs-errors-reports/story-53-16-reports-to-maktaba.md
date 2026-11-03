@@ -1,6 +1,6 @@
 # Story 53.16 — Reports and errors to Maktaba
 
-> Epic 53 · Phase 4 · Depends on: 53.15, 53.17 · Needed by: —
+> Epic 53 · Phase 4 · Depends on: 53.15, 53.17, 53.18 · Needed by: —
 
 ## Why
 
@@ -18,7 +18,7 @@ to fix a bug, and nothing a person chose to send.
 | **Anonymous error groups** (fingerprint, title, counts, versions) | the home's usage-data opt-in is on (existing, unchanged) | none (random install id) | as today |
 | **Problem reports** (the 53.15 report, the home's part, crash reports inside it) | the home's admin turned on **"Let people send problem reports to Maktaba"** **and** the report was sent with the Maktaba box ticked (by the sender, or by the admin with their own preview) | the linked home (`home_h` and the cloud account that linked it, so Maktaba can answer); **never** the sender's name, email or user id | **90 days**, then deleted |
 
-Nothing here is automatic: anything that leaves the home stays opt-in (owner's decision,
+Nothing here is automatic: anything that leaves the home stays opt-in (decided
 2026-11-03, README §12). The admin setting lives in Settings → Privacy, off by default, and needs the home to be linked to
 Maktaba Cloud (Epic 25). Turning it off stops new sends at once; already-sent reports stay until
 their 90 days or until the admin asks to delete them ("Delete what Maktaba has").
@@ -38,6 +38,15 @@ Through the home's cloud link (the relay tunnel the home already holds, Epic 25 
 request to the cloud API `POST /v1/homes/{id}/reports` (multipart, ≤ 8 MB, authenticated as the
 home). If the cloud is unreachable, the home keeps it in an outbox (the `telemetry_outbox`
 pattern) and retries for 7 days with backoff.
+
+The retry loop is a new API loop, `api:reports_forwarder`, so it belongs to an Epic 51
+component: **`reports.share`** (kind `loop`, `requires = ["cloud.link"]`, `bundles = []`;
+catalog entry in 53.18). It is on as the admin setting says, like `telemetry` is on as the usage
+opt-in says: turning the setting on writes `want = enabled` through the components service
+(audit `component.enable`), turning it off writes `want = installed` (`component.disable`). With
+the relay agent `cloud.link` off, `reports.share` waits (`dependency_off`) and reports stay in the
+outbox. A forward while `reports.share` is not on answers `409 component_off` with
+`"component": "reports.share"`, the problem Epic 51 already uses (`api/internal/router/components_routes.go`).
 
 ### 4. In the cloud
 
@@ -70,7 +79,7 @@ pattern) and retries for 7 days with backoff.
 ## Acceptance criteria
 
 - **Given** the admin setting is off,
-  **then** no app shows the Maktaba box and the API refuses a forward (409).
+  **then** no app shows the Maktaba box, `reports.share` is at `want = installed`, and the API refuses a forward (`409 component_off`).
 - **Given** a report sent with the box ticked,
   **when** it reaches the cloud,
   **then** it contains no title, library path, user name, email or IP (the fixture check), and the service admin can read it.
@@ -104,6 +113,7 @@ pattern) and retries for 7 days with backoff.
 | File | Change |
 |---|---|
 | `api/internal/handlers/reports/forward.go` (new), `api/internal/usagedata/outbox` (reuse) | Forward, outbox, settings. |
+| `api/main.go` (`loops.Declare("reports_forwarder", …)`), `api/internal/router/components_routes.go` | The loop under its component; the forward route mapped to `reports.share`. |
 | `shared/redact/rules.json` | Export-only rules (53.01) used here. |
 | `cloud/migrations/<next>_problem_reports.sql` (new) | Table. |
 | `cloud/internal/reports/` (new), `cloud/internal/handlers/admin/reports.go` (new) | §4. |
@@ -127,4 +137,6 @@ The cloud answers 503 to new reports; homes keep them in the outbox until it exp
 
 ### Dependencies
 
-53.15 (reports), 53.17 (the cloud's store, groups and admin Errors view).
+53.15 (reports), 53.17 (the cloud's store, groups and admin Errors view), 53.18 (the
+`reports.share` catalog entry). Epic 51 (built): the Go loop runner (51.05) and `component_off`
+(51.09).

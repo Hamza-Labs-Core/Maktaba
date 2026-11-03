@@ -1,6 +1,7 @@
 # Story 50.20 — The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing
 
-> Epic 50 · Phase B · Depends on: 50.19 · Needed by: 50.26, the broadcasting gate (README §14.11)
+> Epic 50 · Phase B · Depends on: 50.19, Epic 51 (51.19 licence gating, built) · Needed by: 50.22, 50.26, the
+> broadcasting gate (README §14.11)
 
 ## Why
 
@@ -20,7 +21,7 @@ sets, then lower quality. A viewer who is playing is never stopped by a limit. T
 prices are the owner's (README §14.10, questions 1–7), so they live in the catalog as `TBD` until
 set.
 
-**We charge for infrastructure, not content** (owner, 2026-11-03). Every unit here is a unit of
+**We charge for infrastructure, not content** (decided 2026-11-03). Every unit here is a unit of
 infrastructure: channels carried, concurrent viewers served, viewer-hours delivered, and the
 ladder's bandwidth. No price depends on what airs. **Viewers never pay.** The only money flow is
 from the publisher to Maktaba.
@@ -70,6 +71,16 @@ type BroadcastTier struct {
   `servers.broadcast_plan = 'broadcaster'`. Dropping Pro drops Broadcaster at the same renewal.
 - `TBD` values block the broadcasting gate. That check is in 50.19 T12's launch switch, extended
   to the broadcast catalog.
+- **The home's licence flag.** The home learns what its plan allows through the signed licence
+  (Epic 16, story 25.26), and Epic 51 gates a component by one flag of
+  `api/internal/flags/declarations.go` (story 51.19). This story adds the flag **`broadcast`**
+  (`subscriptions.FeatureBroadcast = "broadcast"` in `api/internal/subscriptions/subscriptions.go`,
+  declared with `Feature` set, as `cloud_relay` is). The cloud's licence carries it for Pro
+  (guest sharing) and for Broadcaster; Free and Basic don't. The home's `livetv.broadcast`
+  component (50.22) names it as its `licence`, so on a home without it the component is
+  *Waiting* with reason `licence_missing` and turning it on answers `403 licence_missing`. How
+  much a home may publish (channels, viewers, hours) stays the cloud's and the edge's to enforce
+  (§2); the flag only says whether the home may publish at all.
 
 ### 2. The mode for a new viewer session
 
@@ -109,7 +120,7 @@ on every change and every 5 minutes.
   Guest sharing: the allowance, then `wait`.
 - The month boundary is 00:00 UTC on the 1st, the same as 50.19's `MonthStart`.
 
-### 4. Billing (same `billing.Provider`, TBD, never Stripe)
+### 4. Billing (same `billing.Provider`, TBD)
 
 | Item | Provider object | How |
 |---|---|---|
@@ -235,6 +246,7 @@ notice.
 | `web/cloud/src/pages/Billing.tsx`, `web/cloud/src/i18n/en.json`, `ar.json` | Broadcaster, guest sharing, usage, PAYG. |
 | `web/src/` Broadcast page usage panel, `web/src/i18n/en.json`, `ar.json` | Usage and mode. |
 | `cloud/docs/accounts-billing-admin.md` | Broadcaster, metering. |
+| `api/internal/subscriptions/subscriptions.go`, `api/internal/flags/declarations.go`, `cloud/internal/license/` | The `broadcast` feature and flag; the licence carries it for Pro and Broadcaster. |
 
 ### Tests
 

@@ -6,7 +6,7 @@
 
 `word_check` (52.6) saves suspect words as `word_flags` rows. Nobody can act on them yet. This
 story gives the apps one API to list flags, open one with its context, hear the audio around the
-word, and resolve it. The owner's rule is that the API enforces every role rule (trail §1), so
+word, and resolve it. The standing rule is that the API enforces every role rule (trail §1), so
 the rights in README §4.5 live here, not in the apps.
 
 ## Description
@@ -51,7 +51,7 @@ signed-URL scheme of Epic 10) to the streaming service:
 
 ### 3. Roles (enforced here): home admins only
 
-The owner decided (README §8, decision 1, 2026-11-03) that **only home admins review**. The check
+Decision 1 (README §8, 2026-11-03): **only home admins review**. The check
 is inline, the way `transcription.go:304` does it:
 
 - `p == nil` → 401.
@@ -110,7 +110,7 @@ The lock is released on resolve, on skip, or when it expires.
 - `api/internal/router/p6.go`: mount `review.Routes`. `api/internal/router/placement.go`: list
   the routes as home-only (a node never serves them).
 - `streaming/internal/handlers/clip.go`: the clip endpoint, signature check, ffmpeg, cache.
-- `shared/db/migrations/0173+_word_flags_lock.sql` and `.sqlite.sql`: `locked_by UUID NULL`,
+- `shared/db/migrations/0182+_word_flags_lock.sql` and `.sqlite.sql`: `locked_by UUID NULL`,
   `locked_until TIMESTAMPTZ NULL` on `word_flags`.
 - `web/src/lib/reviewApi.ts`: typed client (used by 52.11), with reason and status codes as one
   union that a test checks against the Go constants.

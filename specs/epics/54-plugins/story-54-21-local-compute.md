@@ -1,6 +1,7 @@
 # Story 54.21 — Local compute: embeddings and the language model
 
-> Epic 54 · Phase 3 · Depends on: 54.04, Epic 51 (`llm`, `search.semantic`) · Needed by: —
+> Epic 54 · Phase 3 · Depends on: 54.04, 54.37, Epic 51 (components `llm`, `search.semantic`) ·
+> Needed by: 54.31
 
 ## Why
 
@@ -22,9 +23,12 @@ Plugins may ask those, on the home, and never anything outside it.
 - The plugin API forwards to the existing internal services on the home (the pipeline's gRPC
   semantic service; the `llm` component's local endpoint). The plugin host still has no network:
   calls go through the plugin API, which is Maktaba's code.
-- Both are `wants` of the plugin component (Epic 51 §4.6): if `llm` is off, the plugin runs and
-  `compute.generate` answers `error(unavailable)`; the plugin decides what to do. A plugin that
-  lists `compute.llm` as **required** is *Waiting* `dependency_off:llm` instead.
+- An optional capability is a `wants` of the plugin component (Epic 51 §4.6, filled in by
+  54.37 §1): if `llm` is off, the plugin runs *Degraded* (`want_missing:llm` in
+  `GET /api/components`) and `compute.generate` answers `error(unavailable)`; the plugin
+  decides what to do. A **required** `compute.llm` is a `requires` instead: the plugin is
+  *Waiting* `dependency_off` (shown as `dependency_off:llm`). The same holds for
+  `compute.embed` and `search.semantic`.
 - **Never a remote model.** If the home's `llm` settings point at a remote URL (the
   `model_rules` case in `graph.py`), `compute.llm` is refused for plugins (`compute_remote`):
   sending library text to another machine on the plugin's behalf would break the no-internet

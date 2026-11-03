@@ -116,7 +116,7 @@ written (old rows keep theirs). Readers prefer `word_data`, then `metadata.words
 - `pipeline/src/maktaba_pipeline/stt/word_data.py` (new): `pack`, `unpack`.
 - `pipeline/src/maktaba_pipeline/engine/stages/transcribe.py` `_store`: write `word_data` and
   `metadata.alt`; drop `MAKTABA_STT_STORE_WORDS`.
-- `shared/db/migrations/` next free slot, 0173+: `ALTER TABLE transcript_segments ADD COLUMN
+- `shared/db/migrations/` next free slot, 0182+: `ALTER TABLE transcript_segments ADD COLUMN
   word_data BYTEA` (metadata-only, no rewrite of the 23 M rows), Postgres and SQLite twins.
 - `api/internal/transcript/worddata/` (new): `Decode`, `Encode`, `ShiftAfter`.
 - `shared/testdata/word_data/` (new): golden fixtures.

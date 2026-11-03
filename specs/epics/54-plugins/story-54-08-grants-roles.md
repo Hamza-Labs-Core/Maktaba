@@ -18,7 +18,7 @@ generation BIGINT, granted_by, granted_at)`. `generation` increments on every ch
 `NOTIFY plugin_grants_changed` invalidates the API's cache (54.04 §6). `all_libraries = true`
 includes libraries added later; otherwise only the listed ones.
 
-**Library checkboxes start empty** (owner decision 2026-11-03). The permission dialog shows
+**Library checkboxes start empty** (decided 2026-11-03). The permission dialog shows
 every library unticked, and "All libraries, including new ones" unticked; the admin ticks each
 library the plugin may use. A plugin installed with no library ticked installs and runs, but
 every library-scoped call answers `403 plugin_scope`, and the dialog warns "This plugin can't
@@ -56,7 +56,7 @@ store (54.16), with a shared test table.
 | `GET /api/plugins/{id}` | details, manifest summary, counters, last errors (54.09) |
 | `POST /api/plugins/install` | 54.07 §4 (multipart file, or a store reference) with `{grants, libraries, enable}` |
 | `PUT /api/plugins/{id}/grants` | change grants and libraries |
-| `POST /api/plugins/{id}/enable` / `disable` / `start` / `stop` | Epic 51 desired state (`want` / `hold`) |
+| `POST /api/plugins/{id}/enable` / `disable` / `start` / `stop` | Epic 51 desired state of `plugin.<id>`: enable = `want = enabled`, disable = `want = installed` plus keep-off (54.07), stop / start = the hold (`hold_by`, `hold_at`; no end time). Same effect walk and refusals as `POST /api/components/apply` (`stale_generation`, `component_required_by`, …) |
 | `POST /api/plugins/{id}/update` / `rollback` | 54.07 §5, §6 |
 | `DELETE /api/plugins/{id}?purge=` | 54.07 §7 |
 | `GET /api/plugins/{id}/writes` | `plugin_writes` paged, for "what it wrote" |
@@ -77,9 +77,22 @@ viewers are 54.20.
 
 ### 5. Epic 51's routes agree
 
-`PUT /api/components/plugin.<id>` (Epic 51 51.08) works too and goes through the same store
-functions, so both routes write the same rows; the Plugins page is the friendly view and the
-Components page lists plugins under "Plugins".
+Epic 51's routes work on `plugin.<id>` too (54.37 §5) and go through the same store functions,
+so both write the same rows and the same audit actions:
+
+| Epic 51 route (51.08) | Plugin route |
+|---|---|
+| `PUT /api/components/plugin.<id>` `{"want": "enabled"}` | `POST /api/plugins/{id}/enable` (`component.enable`) |
+| `PUT /api/components/plugin.<id>` `{"want": "installed"}` | `POST /api/plugins/{id}/disable` (`component.disable`, keep-off set) |
+| `POST /api/components/plugin.<id>/stop`, `/start` | `POST /api/plugins/{id}/stop`, `/start` (`component.hold`, `component.release`) |
+| `DELETE /api/components/plugin.<id>[?purge=true]` | `DELETE /api/plugins/{id}[?purge=true]` (`component.remove`) |
+| `POST /api/components/preview`, `/apply` with `plugin.<id>` changes | the Plugins page's confirm dialogs |
+| `POST /api/components/{id}/install`, `/api/components/import` | refused for `plugin.*` (`409 plugin_install_route`); install is `POST /api/plugins/install` |
+
+Epic 51 has no restart route (`POST /api/components/{id}/restart` is not mounted), and this
+epic adds none: Stop then Start is the restart. The Plugins page is the friendly view; the
+Components page lists plugins under "Plugins". Grants, the plugin's own audit rows and
+`GET /api/plugins/{id}/writes` have no Epic 51 counterpart.
 
 ## Acceptance criteria
 

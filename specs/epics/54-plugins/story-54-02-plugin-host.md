@@ -16,8 +16,13 @@ outside only through the `maktaba:plugin` imports it implements.
 
 - New binary `maktaba-plugind` (Rust, workspace `plugind/`), built for the four platforms by
   the same jobs that build `maktaba-server` and shipped in every payload next to it (≈ 15 MB).
-- Started by the supervisor as role `plugins` (one instance per home), an Epic 51 `process`
-  component `plugins.host`, enabled while at least one plugin is enabled (54.07).
+- Started by the supervisor as role `plugins` (one instance per home, pattern `plugins/`),
+  through Epic 51's `Supervisor.Allow(role, instance, on)`
+  (`cmd/maktaba-server/internal/supervisor/components.go`). Its catalog entry is a new
+  `[[component]]` in `shared/components/catalog.toml`: id `plugins.host`, `kind =
+  "process+loop"` (the loop is 54.17's `api:plugins_catalog`), `group = "plugins"`,
+  `placement = "home"`, `bundles = ["full", "core"]`, `on_demand = true` (54.37 §4): the
+  process runs only while at least one plugin component is enabled and passes its gates.
 - Listens on one unix socket, `<data>/run/plugind.sock` (mode 0600, owner the server user;
   Windows: AF_UNIX in a folder ACL'd to the server user and the AppContainer SID), for the
   pipeline's dispatch calls. It opens one outbound unix socket to the plugin API
@@ -167,7 +172,8 @@ version; anything else is recompiled. Cache files are written atomically.
 | `plugind/src/dispatch.rs`, `plugind/proto/dispatch.proto` (new) | §2. |
 | `shared/plugins/wit/maktaba-plugin.wit` (new) | The world; versioned. |
 | `plugind/tests/hostile/` (new) | Hostile components (Rust; Python via componentize-py). |
-| `cmd/maktaba-server/internal/supervisor/roles.go` | `RolePlugins`, probe through the socket, stop grace 130 s (longest drain + margin). |
+| `cmd/maktaba-server/internal/supervisor/plugind.go` (new), `catalog_roles_test.go` | `RolePlugins`, probe through the socket, stop grace 130 s (longest drain + margin); the role's instance is in exactly one catalog component. |
+| `shared/components/catalog.toml`, `web/src/i18n/{en,ar}.json` | The `plugins.host` entry and its title and description words. |
 | `tools/release/` payload scripts, `.github/workflows/_build-artifacts.yml` | Build and ship `maktaba-plugind` for the four platforms. |
 | `.github/workflows/_unit.yml` | `cargo test` for `plugind/`. |
 
@@ -179,8 +185,8 @@ version; anything else is recompiled. Cache files are written atomically.
 
 ### Rollout
 
-Shipped in the payload but not started until a plugin is enabled (54.07). The update rehearsal
-sees one more file in the payload and nothing running.
+Shipped in the payload but not started until a plugin is enabled (on demand, 54.37 §4). The
+update rehearsal sees one more file in the payload and nothing running.
 
 ### Rollback
 
@@ -188,5 +194,5 @@ The binary is unused without enabled plugins; a release rollback removes it.
 
 ### Dependencies
 
-54.01 (manifest and capabilities list). Epic 51 51.04 for the supervisor's `Allow()`; until it
-lands the role uses today's `Want(role, instance, on)`.
+54.01 (manifest and capabilities list). Epic 51 51.01 (the catalog entry) and 51.04 (the
+supervisor's reconciler and `Allow()`).

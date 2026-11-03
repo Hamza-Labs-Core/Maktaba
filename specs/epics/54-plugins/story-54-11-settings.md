@@ -30,8 +30,18 @@ Maktaba draws, validates and stores it.
 
 ### 2. Storage and versions
 
-- Settings live in `app_settings` under `plugins.<id>` (the same table as `rules.*`), with a
-  `schema_version` = the plugin's `data_version` (Epic 51 51.13's versioning).
+- Settings live in `app_settings` under `plugins.<id>` (the same table as `rules.*`, but not
+  under the `rules.` prefix, so the API's `rules` loader and `GET /api/rules` never see them).
+  Epic 51.13 versions a `rules.<section>` with its own key, `rules_version.<section>` =
+  `{"major":…,"minor":…}`, and Python `SCHEMA_VERSION` / `register_migration`
+  (`pipeline/src/maktaba_pipeline/settings.py`). A plugin has no Python class there, so it
+  follows the same pattern with its own key: `plugins_version.<id>` = `{"version":
+  "<plugin version>", "data_version": N}`, written with the settings in one transaction.
+- The catalog entry of the plugin lists `settings = ["plugins.<id>"]` (54.37 §1). Epic 51's
+  reset, `POST /api/components/plugin.<id>/settings/reset` (`Service.ResetSettings`, audit
+  `settings.reset`), today resets only `rules.*` sections; this story teaches it the
+  `plugins.` key, so the Plugins page's **Reset to defaults** and the Components page call the
+  same thing.
 - `PUT /api/plugins/{id}/settings` validates against the installed version's schema (Go, with
   the same validator the web uses for `rules.*`), stores, audits, and bumps the settings hash
   that plugin stage fingerprints include (54.06 §4), so a change reruns what depends on it.
@@ -89,6 +99,7 @@ is always present.
 |---|---|
 | `shared/plugins/settings.schema.json` (new) | The meta-schema of the allowed subset. |
 | `api/internal/plugins/settings.go` (new) | Validate, store, hash, audit. |
+| `api/internal/components/settings.go` (Epic 51) | `ResetSettings` and purge reach the `plugins.<id>` and `plugins_version.<id>` keys. |
 | `web/src/pages/Settings/RulesSection.tsx` | Accept a plugin schema + string source; new widgets. |
 | `web/src/pages/Admin/Plugins/Settings.tsx` (new) | Wrapper page. |
 | `web/src/i18n/{en,ar}.json` | Messages. |
@@ -103,4 +114,4 @@ Ships with Phase 1; additive.
 
 ### Dependencies
 
-54.07; Epic 51 51.13 (settings versions).
+54.07, 54.37 (the catalog entry's `settings`); Epic 51 51.13 (the versioning pattern and the reset route).

@@ -290,9 +290,8 @@ host process as the second, an escape needs two independent bugs.
 
 ### 4.1 Payments
 
-- **Owner decision (2026-11-03): no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
-  Stripe-owned services such as Lemon Squeezy). The payment provider and the seller of record
-  are decided at Phase 3 (README §6.5, §14).
+- **The payment provider and the seller of record are decided at Phase 3** (README §6.5,
+  §14).
 - **Who is the seller of record decides who owes VAT and sales tax.** When Maktaba sells, the
   tax on digital goods is Maktaba's; a merchant-of-record service takes it on for a fee.
 - **Resale of third-party products is the known constraint.** A plugin store resells other
@@ -305,7 +304,7 @@ host process as the second, an escape needs two independent bugs.
   with Maktaba verifying their licence keys offline.
 - Splits in the market: Apple and Google 70/30 (85/15 for small developers and
   subscriptions after a year), Epic Games Store 88/12, VS Code and Obsidian have no paid
-  marketplace. The owner decided **85/15** (2026-11-03).
+  marketplace. The split is **85/15** (decided 2026-11-03).
 
 ### 4.2 Review, signing, revocation
 

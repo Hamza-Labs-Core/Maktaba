@@ -2,24 +2,24 @@
 
 > Status: spec (2026-11-03). Depends on: Epic 03 (transcription, plan 03-10), Epic 04
 > (subtitles), Epic 49 (Arabic-aware search, for the normaliser it shares), Epic 51
-> (configurable components: language packs install as components). Research:
+> (configurable components, as built: the word check is the `review.words` component and each
+> language's data is a `lang.*` asset pack, §4.12). Research:
 > [research.md](research.md). Build order and DAG: [plan.md](plan.md).
-> Owner's decisions of 2026-11-03 are in §8: admins only review, every existing transcript is
+> The decisions of 2026-11-03 are in §8: admins only review, every existing transcript is
 > checked in the background, there is **no LLM judge** (story 52.7 removed), and Quran verse runs
 > are checked against the Quran text (story 52.15).
 
 ## 1. Why
 
-The owner's words (2026-11-03): *"transcription was done after some hearing tests i made, we can
-make this so that a queue review each transcript, or the same step that sends for the 2nd llm
-review, to save the location of a word and if its not available in dictionary or think its not
-correct, or not confident, to save for human review and to provide correct spelling, also this
-needs to be done so that it can support all languages, added as addons or whatever."*
+The requirement (2026-11-03): a queue job reviews each transcript, either as its own step or in
+the same step as the second listen. It saves the place of every word that is not in the
+dictionary, looks wrong or has low confidence, for a person to review and give the right
+spelling. It works for every language, with languages added as installable packs.
 
 The hearing tests (2026-10-19, trail §2 "Transcription and search", [#113]) settled how the
 library is transcribed: Whisper large-v3-turbo, then a **second listen** by Cohere Transcribe
 Arabic over each stretch, merged word by word (`pipeline/src/maktaba_pipeline/stt/refine.py`). On
-20 disputed spots the owner's ears scored Cohere 17, turbo 0. **An LLM judge had favoured turbo's
+20 disputed spots the listening test scored Cohere 17, turbo 0. **An LLM judge had favoured turbo's
 tidy spelling and was wrong.** That result is the first design rule of this epic: a machine may
 *point at* a word; a person decides what it is.
 
@@ -36,7 +36,7 @@ What we have today, read from the code on 2026-11-03:
 | Spelling of Cohere's words uses the CAMeL Tools MSA analyser as a dictionary | `stt/cohere.py:312` `dictionary()` | Arabic morphology is already a dependency |
 | Arabic folding (hamza forms, ة/ه, ى/ي, harakat, tatweel) | `text/arabic.py` `light`/`fold` | The first language pack's normaliser exists |
 | Names and terms bias Whisper through the library's `stt.initial_prompt` | `engine/stages/transcribe.py:852` `library_prompt` | A vocabulary channel into STT exists, **but the prompt is part of the transcribe fingerprint** (`input_fingerprint`, line 836): changing it queues the whole library again |
-| There is no LLM anywhere in the transcript path; `llm.cluster_llm()` (Ollama / OpenAI-compatible runtimes on the cluster) is used only by enrich | `llm/__init__.py`, `enrich/reader.py:258` | "The 2nd LLM review" the owner names is today the second *listen*. The owner decided (2026-11-03) that no LLM judges words: every check is deterministic |
+| There is no LLM anywhere in the transcript path; `llm.cluster_llm()` (Ollama / OpenAI-compatible runtimes on the cluster) is used only by enrich | `llm/__init__.py`, `enrich/reader.py:258` | The "second review" in the requirement is today the second *listen*. No LLM judges words (decision 3): every check is deterministic |
 | Roles: `users.is_admin` and `library_acl.role IN ('read','write','admin')` | `0029_users.sql:31`, `0072_library_acl_role.sql:20` | Reviewing is for home admins only (decision 1); `library_acl` roles grant nothing here |
 | Verse runs are found by exact folded match against the bundled Tanzil "Simple Clean" text | `classify/quran.py` `verse_runs`, `data/quran/` (CC BY 3.0) | The canonical text is already on every home; one wrong word breaks today's exact run, so the Quran check (52.15) aligns with tolerance |
 
@@ -58,8 +58,8 @@ spelling, and **let a person fix them fast**, with every fix teaching the next t
    being flagged again, checks other files for it, and feeds the second listen's speller and new
    transcriptions. It never re-transcribes the library by itself.
 5. Nothing is hard-coded to one language. A **language pack** (normaliser, tokenizer, dictionary,
-   morphology, suggestions, names) is an installable Epic 51 component. Arabic and English ship
-   first. Hunspell dictionaries cover about 100 languages, so most languages get a full pack from
+   morphology, suggestions, names) is pipeline code plus an Epic 51 asset component (`lang.ar`,
+   `lang.en`, `lang.hunspell.<code>`) that carries its data. Arabic and English ship first. Hunspell dictionaries cover about 100 languages, so most languages get a full pack from
    them; any language without a full pack gets the fallback pack.
 6. Every check is **deterministic** (decision 3): CAMeL Tools morphology for Arabic, Hunspell for
    English and the other languages, the calibrated confidence and the second listen. No LLM reads
@@ -76,10 +76,11 @@ spelling, and **let a person fix them fast**, with every fix teaching the next t
   click.
 - Training or fine-tuning STT models on corrections. Corrections are exported for that
   (story 52.10) but no training happens here.
-- An LLM judge or any LLM in the word path (owner, 2026-11-03). Story 52.7 is removed.
-- Third-party add-ons beyond language packs. Plugins are Epic 54's (a third-party plugin system
-  with no internet access and a store, built on Epic 51's component model); this epic only uses
-  Epic 51 components for its packs.
+- An LLM judge or any LLM in the word path (decision 3). Story 52.7 is removed.
+- Third-party language packs. Epic 51 installs only first-party asset packs from Maktaba's own
+  release; packs from other people come through
+  [Epic 54](../54-plugins/README.md) (plugins with no internet access and a store, on Epic 51's
+  component model) and must pass 52.3's conformance suite.
 
 ## 4. Design
 
@@ -94,9 +95,8 @@ There is no third place: the `word_judge` LLM stage of the first draft is remove
 
 Why not only in the transcribe step: the GPU is the home's scarcest resource (every hour of audio costs GPU time),, dictionaries and vocabularies change weekly, and a re-check must not need
 the GPU. Why not only a separate stage: the confidence and second-listen evidence die with the
-transcribe job. So transcribe *captures*, `word_check` *decides*. This answers the owner's "a queue
-review each transcript, or the same step that sends for the 2nd review": both, each doing the half
-it is placed for.
+transcribe job. So transcribe *captures*, `word_check` *decides*. The requirement allowed either
+place; this uses both, each doing the half it is placed for.
 
 Existing transcripts (~45k videos, about 23 M sentences on the home) have no word evidence. **All
 of them** are checked in the background at the lowest priority (decision 2) with text-only signals
@@ -125,7 +125,7 @@ table stays for the legacy path only.
 
 ### 4.3 The flag model
 
-One row per suspect word or short span (`word_flags`, slot 0173+, Postgres and SQLite twins):
+One row per suspect word or short span (`word_flags`, slot 0182+, Postgres and SQLite twins):
 
 | Column | Type | Notes |
 |---|---|---|
@@ -158,9 +158,10 @@ DESC)` for the queue, `(key, language, status)` for "same word elsewhere".
 
 ### 4.4 Language packs
 
-A pack is an installable component (Epic 51 installs, enables, updates and removes it; until Epic
-51 lands, a pack is a Python entry point in the `maktaba.language_packs` group plus a data folder
-under `model_dirs`, fetched like the CAMeL data). Every check a pack makes is deterministic: the
+A pack is two parts (§4.12): its **code**, a module of the pipeline package
+(`language_packs/ar`, `en`, the generic `hunspell` and `fallback`), and its **data**, an Epic 51
+`asset` component (`lang.ar`, `lang.en`, `lang.hunspell.<code>`) that Epic 51 installs, updates
+with the server and removes. Every check a pack makes is deterministic: the
 same text and the same pack version give the same answer. Hunspell dictionaries exist for about
 100 languages (LibreOffice's dictionaries), so a full pack for most languages is Hunspell plus
 that language's tokenizer rules; Arabic adds CAMeL Tools morphology. A language with no full pack
@@ -191,8 +192,9 @@ class LanguagePack(Protocol):
   `UNSURE`, not `UNKNOWN`.
 - **English** (`en`, story 52.5): Hunspell `en_US` + `en_GB` (SCOWL-based) for `known` and
   `suggest`; contractions and possessives handled in `tokens`.
-- **Hunspell packs for other languages** (story 52.3): a generic Hunspell pack, installed per
-  language as its own Epic 51 component (`langpack-fr`, `langpack-de`, …), takes that language's
+- **Hunspell packs for other languages** (story 52.3): a generic Hunspell pack whose data is
+  installed per language as its own Epic 51 asset (`lang.hunspell.fr`, `lang.hunspell.de`, …,
+  story 52.16), takes that language's
   LibreOffice Hunspell dictionary for `known` and `suggest` and UAX #29 for `tokens`. About 100
   languages are covered this way without new code.
 - **Fallback for any language without a full pack** (story 52.3): Unicode word segmentation
@@ -205,7 +207,7 @@ class LanguagePack(Protocol):
 
 ### 4.5 Who reviews (enforced by the API): home admins only
 
-The owner decided (2026-11-03, decision 1): **only home admins review.**
+Decision 1 (2026-11-03): **only home admins review.**
 
 | Who | May | Rule |
 |---|---|---|
@@ -246,7 +248,8 @@ flood the queue. Flags beyond the budget are kept as `skipped` with reason `over
 file whose budget overflows gets one file-level flag ("this transcript may be poor: N suspect
 words"). Settings per library (story 52.14): on/off, sensitivity (low/normal/high moves every
 threshold together), the budget, which reasons are on (including the Quran check), and the
-backfill switch.
+backfill switch. The home-wide defaults are the `rules.word_review` section that
+`review.words` owns (§4.12).
 
 ### 4.7 Applying a fix
 
@@ -269,7 +272,7 @@ A fix is a **transcript edit**, never a new STT run (story 52.9):
 
 ### 4.8 The Quran check (story 52.15)
 
-The first draft never flagged a word inside a verse run. The owner decided (decision 4) to
+The first draft never flagged a word inside a verse run. Decision 4 is to
 **check** verse runs against the Quran text instead, so a misheard word in a recitation is caught
 while a correctly heard verse is never shown.
 
@@ -343,7 +346,49 @@ created_at`.
 | `POST /api/videos/{id}/transcript/words` | Home admin only | 52.12 |
 | `/api/vocabulary` (list, add, edit, delete, import), `GET /api/vocabulary/export`, `GET /api/review/corrections/export` | Home admin only | 52.10 |
 | `GET`/`PUT /api/libraries/{id}/word-review` | Admin | 52.14 |
-| `GET /api/language-packs`, `PATCH /api/language-packs/{code}` | Admin | 52.14 |
+| `GET /api/language-packs` (read only: what loaded, languages heard) | Admin | 52.14 |
+| `GET`/`PATCH /api/rules/word_review` (home defaults, versioned) | Admin | 52.14 |
+| Epic 51's own routes for `review.words`, `runtime.lang` and `lang.*`: `PUT /api/components/{id}`, `POST …/{id}/stop`, `…/start`, `…/install`, `DELETE …/{id}[?purge=true]`, `POST /api/components/preview`, `/apply`, `PUT /api/components/{id}/machines/{node}`, `POST …/{id}/settings/reset` | Admin (Epic 51's rule) | 52.14, 52.16 |
+
+### 4.12 On Epic 51 components, as built
+
+Epic 51 (`shared/components/catalog.toml`, loaders `shared/components/catalog.go` and
+`pipeline/src/maktaba_pipeline/components/catalog.py`) decides what runs. This epic adds these
+catalog entries (story 52.16 writes them; the `catalog` CI job checks every stage has one owner
+and every `title_key` has English and Arabic words):
+
+| id | kind | group | What it is | requires / wants | settings | bundles |
+|---|---|---|---|---|---|---|
+| `review.words` | `stages` | `processing` | the `word_check` stage (52.6) with the Quran check (52.15) | requires `runtime.lang`; wants `lang.ar`, `lang.en`, `model.refine` | `rules.word_review` | `full`, `worker` |
+| `runtime.lang` | `asset` | `runtimes` | the wheels of the pipeline's `lang` extra (`wordfreq`, `PyICU`, `spylls`): the generic Hunspell pack and the fallback | — | — | `full`, `worker` |
+| `lang.ar` | `asset` | `languages` | Ayaspell `ar` Hunspell data for the Arabic pack (52.4); the CAMeL morphology data stays `model.refine` | requires `runtime.lang` | — | `full`, `worker` |
+| `lang.en` | `asset` | `languages` | SCOWL `en_US` + `en_GB` Hunspell data for the English pack (52.5) | requires `runtime.lang` | — | `full`, `worker` |
+| `lang.hunspell.<code>` | `asset` | `languages` | one LibreOffice dictionary each (`lang.hunspell.fr`, `.de`, `.tr`, …) for the generic pack (52.3) | requires `runtime.lang` | — | none (installed on demand) |
+
+- **Turning it on and off** is Epic 51's: `PUT /api/components/review.words` with
+  `{"want":"enabled"|"installed"}`, `POST /api/components/review.words/stop` / `start` (a hold,
+  until start), `POST /api/components/lang.hunspell.fr/install` (an asset's want is `installed` or `absent`; it never runs, so it is never `enabled`, `cmd/maktaba-server/internal/componentseed/seed.go`), `DELETE /api/components/lang.hunspell.fr` to remove it,
+  and `maktaba-server components enable|disable|stop|start|install|remove <id>`. Every change
+  writes Epic 51's audit rows (`component.enable`, `component.disable`, `component.hold`,
+  `component.release`, `component.remove`). Turning `review.words` off follows Epic 51 §4.5: stop
+  claiming, drain (`drain = { grace_s = 30, checkpoint = false }`), keep the queued `word_check`
+  jobs ("waiting: word review is off" on the Queues page), and catch up when it comes back
+  (`component_catchup`). Flags, fixes and vocabulary are never touched by off, stop or remove.
+- **Per machine**: `PUT /api/components/review.words/machines/{node}` keeps the check off an old
+  laptop (it writes the stage row through `cluster_node_stages` too, 51.12).
+- **A missing language** is not a failure: `review.words` shows *Degraded* with
+  `want_missing:lang.ar` (the API's `expected` reason) and Arabic runs use the fallback pack.
+  `runtime.lang` `absent` keeps `review.words` *Waiting* (`dependency_off`); while its pack is
+  still downloading, `word_check` jobs defer without using an attempt (52.16).
+- **No capability feature.** Word review is admin-only, so it adds nothing to
+  `GET /api/capabilities` (its `features` list is fixed at nine). The review pages read
+  `GET /api/components/review.words` for the phase, and no route answers `409 component_off`:
+  fixes are Go edits and work while the check is off.
+- **What Epic 51 does not give, added here:** packs carry only first-party data built by
+  `release.yml`'s `package-packs` from a recipe, valid for one server version, and the pipeline
+  has no way yet to find a data pack's folder (story 52.16); a component a later release adds
+  has no desired row on an existing home, and no row reads as *on*, so a Core home would start
+  `review.words` after the update (story 52.17).
 
 ## 5. Requirements
 
@@ -353,7 +398,7 @@ created_at`.
 |---|---|---|
 | F1 | Each new transcript keeps every word's time, confidence and second-listen version in `word_data` / `metadata.alt` | 52.1 |
 | F2 | An evaluation set with gold corrections measures flag precision/recall per language | 52.2 |
-| F3 | Language packs are installable Epic 51 components through one contract; a generic Hunspell pack covers ~100 languages; any language without a full pack has the fallback | 52.3 |
+| F3 | Language packs follow one contract; their data are Epic 51 asset components (`lang.*`); a generic Hunspell pack covers ~100 languages; any language without a full pack has the fallback | 52.3, 52.16 |
 | F4 | Arabic (CAMeL Tools morphology) and English (Hunspell) packs; every check deterministic | 52.4, 52.5 |
 | F5 | `word_check` writes flags with place, reasons, scores, candidates and status | 52.6 |
 | F6 | Names in metadata and vocabulary lower priority and suggest spellings | 52.6 |
@@ -367,6 +412,8 @@ created_at`.
 | F14 | Settings, thresholds, budget, queue health | 52.14 |
 | F15 | All ~45k existing transcripts are checked in the background at the lowest priority with text-only signals, without re-transcribing | 52.6, 52.14 |
 | F16 | Words of a Quran verse run are compared with the matched verse of the canonical text; only real mismatches are flagged, with reason `quran_mismatch` | 52.15 |
+| F17 | `review.words`, `runtime.lang` and the `lang.*` assets are catalog components: enabled, stopped, installed and removed through Epic 51's routes, CLI and Components page | 52.16 |
+| F18 | A component added by a later release starts as the home's bundle says (on in it, off outside it), never on by default | 52.17 |
 
 ### Non-functional (targets, measured by story 52.2's harness)
 
@@ -375,7 +422,7 @@ created_at`.
 | Flag precision (flagged words that are really wrong) | Arabic ≥ 0.50, English ≥ 0.60 at phase 1; ≥ 0.65 / 0.70 after calibration (phase 2) | Gold set, word-level alignment of hypothesis to reference |
 | Flag recall (wrong words that are flagged) | Arabic ≥ 0.60, English ≥ 0.60 at the default budget | Same |
 | Flag rate | ≤ 3% of words (≤ 40 per audio hour at the default budget) | Live sample, read-only |
-| Hearing-test spots | ≥ 18 of the owner's 20 disputed spots flagged | The 20-spot set, kept as a fixture |
+| Hearing-test spots | ≥ 18 of the 20 disputed hearing-test spots flagged | The 20-spot set, kept as a fixture |
 | Quran check | No flag on a correctly heard verse run (0 false flags on the gold set's matching runs); ≥ 0.80 of seeded word errors inside runs flagged `quran_mismatch` | Gold set's Quran clips plus seeded-error fixtures (52.15) |
 | Backfill | All ~45k existing transcripts checked; never runs while `transcribe` has pending jobs | Backfill progress on the queue tile |
 | Queue latency | Flags visible ≤ 2 min after the transcript is stored (p95, idle queue) | Job timestamps |
@@ -412,7 +459,7 @@ Full notes with sources: [research.md](research.md).
   signals, with its reasons, its sentence and its clip, and a few keys.
 - **LLM correction:** generative error correction can fix ASR text, but it also over-corrects and
   hallucinates fluent wrong text. Our own hearing test saw exactly that. The first draft let an
-  LLM flag and suggest; the owner decided against any LLM judge (2026-11-03), so every check is
+  LLM flag and suggest; decision 3 (2026-11-03) removed any LLM judge, so every check is
   deterministic.
 - **Quran text:** Tanzil publishes verified Quran texts (Simple and Uthmani scripts) under CC BY
   3.0 with verbatim copying only; Maktaba already bundles "Simple Clean". Comparing on folded and
@@ -425,17 +472,18 @@ Full notes with sources: [research.md](research.md).
 
 | Phase | Stories | Ships |
 |---|---|---|
-| **1. Evidence and flags** | 52.1, 52.2, 52.3, 52.4, 52.5, 52.6, 52.15 | Words kept with confidence; Arabic + English + Hunspell + fallback packs; `word_check` writes flags; the Quran check; all existing transcripts checked text-only in the background. Flags visible to admins as a read-only list |
+| **1. Evidence and flags** | 52.1, 52.2, 52.3, 52.4, 52.5, 52.16, 52.17, 52.6, 52.15 | Words kept with confidence; Arabic + English + Hunspell + fallback packs, their data as `lang.*` packs; `review.words` in the catalog, off on homes whose bundle leaves it out; `word_check` writes flags; the Quran check; all existing transcripts checked text-only in the background. Flags visible to admins as a read-only list |
 | **2. Review and fixes** | 52.8, 52.9, 52.11, 52.12, 52.14 | The web queue (admins only), fixes with undo, subtitles and search refreshed, roles, settings, budget |
 | **3. Learning** | 52.10 | Vocabulary, same-word bulk fixes, derived prompt and speller |
 | **4. Native apps** | 52.13 | Review screens in the Apple and Android Remote and Server apps |
 
-Packaging: phase 1 ships the packs as entry points. When Epic 51 lands, they move to its
-component model with no change to the contract (story 52.3).
+Packaging: Epic 51 is built, so there is no interim entry-point stage. Phase 1 ships the pack
+code in the pipeline package and the data as `lang.*` asset packs (52.16); the contract (52.3)
+does not depend on how the data arrives.
 
 ## 8. Decisions (2026-11-03)
 
-The owner answered the four open questions on 2026-11-03.
+The four open questions were settled on 2026-11-03.
 
 1. **Reviewers: home admins only.** A user with `write` (or the library `admin` role) on a
    library may **not** review its words, see its flags or edit its vocabulary. §4.5, §4.11, the
@@ -451,7 +499,7 @@ The owner answered the four open questions on 2026-11-03.
    settings, the `llm_unavailable` failure class and the phase-3 judge work. Dictionary and
    spelling checks are deterministic: **CAMeL Tools morphology for Arabic** (52.4), **Hunspell for
    English and the other languages** (52.5, 52.3). Languages stay installable packs (Epic 51
-   components): Hunspell dictionaries cover about 100 languages, and the fallback pack covers any
+   `lang.*` asset components): Hunspell dictionaries cover about 100 languages, and the fallback pack covers any
    language without a full pack.
 4. **Quran: check verse runs against the Quran text.** A new Quran-aware check (story 52.15)
    aligns each detected verse run with the matched verse of the bundled Tanzil text (CC BY 3.0,
@@ -477,5 +525,7 @@ The owner answered the four open questions on 2026-11-03.
 | 52.13 | [Review in the native apps](story-52-13-native-review.md) | 4 |
 | 52.14 | [Settings, thresholds, budget and queue health](story-52-14-settings-and-health.md) | 2 |
 | 52.15 | [Quran check: verse runs against the Quran text](story-52-15-quran-check.md) | 1 |
+| 52.16 | [Word review and language packs in the component catalog](story-52-16-language-components.md) | 1 |
+| 52.17 | [Components a later release adds start as the bundle says](story-52-17-new-component-defaults.md) | 1 |
 
 [#113]: https://github.com/Hamza-Labs-Core/Maktaba/pull/113

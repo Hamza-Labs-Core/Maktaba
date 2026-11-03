@@ -21,7 +21,7 @@ link to the web page in Phase 1; they show plugin health in their existing compo
 
 A list of cards, one per plugin: icon, name (plugin's strings in the admin's language),
 developer, version, badges (Unreviewed, Development, Update available, Incompatible), rating
-(1–6, with a tooltip of why), phase and reason (Epic 51 words), jobs today / failed today.
+(1–6, with a tooltip of why), phase and reason (Epic 51's `components.phase.<phase>` and `components.reason.<code>` words), jobs today / failed today.
 
 The plugin's page:
 
@@ -38,7 +38,7 @@ The plugin's page:
 ### 3. Install from a file
 
 A button opening 54.10's dialog: drop a file, see the summary, capabilities, libraries (none
-ticked: the admin ticks each, owner decision 2026-11-03), rating, badge, typed confirmation for unreviewed, "Install" or "Install and
+ticked: the admin ticks each, decided 2026-11-03), rating, badge, typed confirmation for unreviewed, "Install" or "Install and
 turn on".
 
 ### 4. Policy

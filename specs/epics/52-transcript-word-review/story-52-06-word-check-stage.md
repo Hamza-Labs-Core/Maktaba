@@ -1,12 +1,12 @@
 # Story 52.06 — `word_check`: flags, names and old transcripts
 
-> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5 · Needed by: 52.8, 52.14, 52.15
+> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5, 52.16, 52.17 · Needed by: 52.8, 52.14, 52.15
+> Epic 51 component: `review.words` (kind `stages`, owns `word_check`).
 
 ## Why
 
-This is the queue job the owner asked for: *"a queue review each transcript … to save the
-location of a word and if its not available in dictionary or think its not correct, or not
-confident, to save for human review."* It turns 52.1's evidence and the packs' knowledge into
+This is the queue job the epic is for: it reviews each transcript and saves the place of every
+word that is not in the dictionary, looks wrong or has low confidence, for a person. It turns 52.1's evidence and the packs' knowledge into
 `word_flags` rows: where the word is, why it is suspect, how sure we are, and what it might be.
 It runs on the CPU, so it can run again whenever the packs, the vocabulary or the thresholds
 change, without the GPU.
@@ -15,7 +15,16 @@ change, without the GPU.
 
 ### 1. The stage
 
-- Name `word_check`, pool `cpu`, one job per video, in `engine/graph.py`.
+- Name `word_check`, pool `cpu`, one job per video, in `engine/graph.py`. Its one owner in
+  `shared/components/catalog.toml` is `review.words` (52.16); the `catalog` CI job fails while a
+  `StageDef` has no owner.
+- **On and off are Epic 51's** (51.06): while `review.words` is not enabled, or is held, the
+  pipeline runner drops `word_check` from the served set (`stages_off = component_off:review.words`
+  or `component_held:review.words`), drains for `drain.grace_s` (30 s; a job is one transcript and
+  has no checkpoint), and force-pauses what is left. Upstream edges record
+  `skipped_component_off` instead of enqueueing while it is off; a hold lets jobs queue and wait.
+  When it comes back, `component_catchup` enqueues every transcript stored while it was off. The
+  per-library `word_review.enabled` (52.14) only narrows inside an enabled component.
 - Edge `transcribe → word_check` (`same`). It also runs when the vocabulary or a pack changes
   (52.10 queues the affected transcripts), and when the library's `word_review` settings change.
 - **Input fingerprint**: active transcript id, `transcripts.revision` (52.9; 0 until then),
@@ -97,7 +106,7 @@ code-point position between the sentence's `start_sec` and `end_sec`, and the fl
 `scores.time_estimated = true`, so the clip (52.8) pads more. The text-only threshold is raised by
 0.1 (one signal is weaker evidence).
 
-The owner decided (README §8, decision 2) to text-check **all ~45k existing transcripts**:
+Decision 2 (README §8) is to text-check **all ~45k existing transcripts**:
 
 - When the stage first ships (and again whenever a library is added with old transcripts), a
   one-time **backfill planner** enqueues `word_check` for every active transcript that has never
@@ -150,6 +159,10 @@ The owner decided (README §8, decision 2) to text-check **all ~45k existing tra
     `transcribe` has pending jobs, **then** no backfill job runs until they finish.
 14. **Given** a library with `backfill = false`, **then** none of its old transcripts is
     enqueued, and its pending backfill jobs are cancelled.
+15. **Given** `review.words` disabled through `PUT /api/components/review.words`, **when** a
+    transcript is stored, **then** no `word_check` job is created (`skipped_component_off`), the
+    queued ones stay queued, and enabling it again runs `component_catchup` for the missed
+    transcripts; a hold (`POST …/stop`) instead lets new jobs queue and wait.
 
 ## Build plan
 
@@ -162,7 +175,10 @@ The owner decided (README §8, decision 2) to text-check **all ~45k existing tra
 - `pipeline/src/maktaba_pipeline/word_review/backfill.py` (new): the planner and the idle-only
   claim rule for backfill jobs.
 - `pipeline/src/maktaba_pipeline/engine/stages/registry.py`: register it.
-- `shared/db/migrations/` next free slot, 0173+: `word_flags`, Postgres and SQLite twins.
+- `shared/db/migrations/` next free slot, 0182 (0181 is the highest once Epic 51 merges):
+  `word_flags`, Postgres and SQLite twins.
+- `shared/components/catalog.toml` (and the pipeline copy, `make catalog-sync`): `word_check` in
+  `review.words`'s `stages` (the entry itself is 52.16).
 - `api/internal/handlers/review/` gets a read-only admin list in this story (full API in 52.8),
   so phase 1 flags can be looked at.
 
@@ -187,8 +203,9 @@ The owner decided (README §8, decision 2) to text-check **all ~45k existing tra
   `transcribe`.
 - Live check after a day (read-only): flag rate ≤ 3% of words, open flags per audio hour ≤ the
   budget. If over, lower sensitivity before 52.11 opens the queue.
-- Back out: disable the stage (`POST /api/queues/word_check/pause`), or revert. Flags are only
-  rows. Deleting them is safe.
+- Back out: `maktaba-server components disable review.words` (or `PUT /api/components/review.words`
+  `{"want":"installed"}`; queued jobs are kept, not lost), or revert. Flags are only rows.
+  Deleting them is safe.
 
 ## Edge cases
 
