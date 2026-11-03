@@ -1904,7 +1904,6 @@
   "machines.cap.gpu": "GPU",
   "machines.cap.gpuNamed": "GPU: {name}",
   "machines.cap.appleSilicon": "Apple Silicon",
-  "machines.stt.title": "Transcription",
   "machines.stt.readyGpu": "Transcription: ready on {gpu}",
   "machines.stt.readyCpu": "Transcription: ready on the CPU (slow)",
   "machines.stt.readyMlx": "Transcription: ready on Apple Silicon",

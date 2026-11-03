@@ -1904,7 +1904,6 @@
   "machines.cap.gpu": "معالج رسومي",
   "machines.cap.gpuNamed": "معالج رسومي: {name}",
   "machines.cap.appleSilicon": "شريحة Apple Silicon",
-  "machines.stt.title": "التفريغ النصي",
   "machines.stt.readyGpu": "التفريغ النصي: جاهز على {gpu}",
   "machines.stt.readyCpu": "التفريغ النصي: جاهز على المعالج (بطيء)",
   "machines.stt.readyMlx": "التفريغ النصي: جاهز على Apple Silicon",

@@ -926,8 +926,6 @@ function TranscriptionNote({ node }: { node: ClusterNode }) {
   return (
     <div
       className={`mkt-mc-note${s.tone === "warn" ? " mkt-mc-note--warn" : ""}`}
-      role="note"
-      aria-label={t("machines.stt.title")}
       data-testid="machine-transcription"
     >
       <p>{t(s.key, vars)}</p>

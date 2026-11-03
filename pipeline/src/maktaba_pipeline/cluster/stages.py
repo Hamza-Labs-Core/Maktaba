@@ -30,6 +30,7 @@ exposes the current set to the claim loop, which reads it on every poll.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -81,6 +82,16 @@ def _cannot_run(st: StageDef, handlers: Collection[str]) -> str | None:
     if impl is None or impl.run is None:
         return "not implemented in this version"
     return impl.unavailable() if impl.unavailable is not None else None
+
+
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _steady(off: Mapping[str, str]) -> dict[str, str]:
+    """The reasons without their numbers: a reason that counts down ("next try in 9 min")
+    or reads a moving figure (the GPU's free memory) is no new selection, and is not
+    written to ``workers`` again at every refresh."""
+    return {stage: _NUMBER.sub("#", why) for stage, why in off.items()}
 
 
 def select_stages(
@@ -252,9 +263,10 @@ class StageSelector:
             paused=self.paused or self.unreachable,
         )
         self.detail = detail
-        changed = tuple(served) != self.served or off != self.stages_off
+        changed = tuple(served) != self.served or _steady(off) != _steady(self.stages_off)
         self.served = tuple(served)
-        self.stages_off = off
+        if changed:
+            self.stages_off = off
         return changed
 
     def current(self) -> tuple[str, ...]:
