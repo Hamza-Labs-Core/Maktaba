@@ -271,6 +271,8 @@ final class Playback {
             "pip=\(pip.isActive)",
             "pipSupported=\(PictureInPicture.isSupported)",
             "pipPossible=\(pip.isPossible)",
+            "backgroundAudio=\(PlaybackAudio.declaredInInfoPlist)",
+            "backgroundPolicy=\(player?.audiovisualBackgroundPlaybackPolicy == .continuesIfPossible ? "continues" : "pauses")",
         ].joined(separator: ";")
     }
 
@@ -320,6 +322,7 @@ final class Playback {
             proxiedURL = local
             let item = AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route))
             let p = player ?? AVPlayer()
+            p.keepPlayingInBackground()
             observe(item, of: p)
             p.replaceCurrentItem(with: item)
             if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
@@ -623,5 +626,11 @@ enum PlaybackAudio {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         try? AVAudioSession.sharedInstance().setActive(true)
         #endif
+    }
+
+    /// The app declares the audio background mode in the Info.plist it shipped with (without
+    /// it iOS stops the sound in the background and Picture in Picture never becomes possible).
+    static var declaredInInfoPlist: Bool {
+        BackgroundAudio.isDeclared(in: Bundle.main.infoDictionary)
     }
 }
