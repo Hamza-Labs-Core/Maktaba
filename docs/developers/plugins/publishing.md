@@ -7,18 +7,30 @@
 
 ## Where things live
 
-- **Users** browse plugins on maktaba.tv/plugins and in their home's web app (Settings,
+The store is a service of its own, independent of Maktaba Cloud: its own accounts, database,
+deploy, hostname and payments, all on Cloudflare. It shares no accounts, sessions or tables
+with the cloud, and keeps working when the cloud is down.
+
+- **The store: `plugins.maktaba.tv`.** The listing pages, buyer accounts, the developer
+  console (your account, keys, submissions and payouts), the store API, linking a home
+  (`/link`), and review and store admin (`/admin`).
+- **Signed files: `plugins-cdn.maktaba.tv`.** Packages, icons, the catalog, the revocation list
+  and the store's keys, served from the Cloudflare CDN.
+- **Users** browse plugins on `plugins.maktaba.tv` and in their home's web app (Settings,
   Plugins, Browse), which shows only versions that fit their server and platform.
-- **Developers** read these docs on maktaba.dev. The developer console (account, keys,
-  submissions, payouts) is at maktaba.tv/developers.
-- **Homes** fetch the catalog, packages and the revocation list through the home server's own
-  connection to Maktaba Cloud, or over HTTPS from `store.maktaba.tv`. Signatures, not the
-  channel, are what a home trusts.
+- **Developers** read these docs on maktaba.dev, and publish from the console on
+  `plugins.maktaba.tv`.
+- **Homes** fetch the catalog, packages and the revocation list straight from
+  `plugins-cdn.maktaba.tv` over HTTPS, never through Maktaba Cloud. Signatures, not the
+  channel, are what a home trusts. A home links to a store account only to buy paid plugins
+  and to rate them, by a code its admin confirms on `plugins.maktaba.tv/link`.
 
 ## Your developer account
 
-1. Sign in at maktaba.tv/developers with a Maktaba Cloud account and verify your email.
-2. Turn on two-factor sign-in. It is required to submit or change anything.
+1. Sign up at `plugins.maktaba.tv` for a **store account** (not a Maktaba Cloud account) and
+   verify your email.
+2. Turn on multi-factor sign-in (an authenticator app or a passkey). It is required to
+   publish, and sensitive actions (keys, submissions, payouts) ask you to sign in again.
 3. Accept the developer agreement. A new version must be accepted before your next submission.
 4. Choose an **id prefix**: prove a domain with a DNS TXT record
    `maktaba-developer=<value from the console>`, or take a community prefix
@@ -114,15 +126,19 @@ Targets: first response within 5 business days for a new plugin, 2 for an update
 
 ## The catalog and updates
 
-Homes fetch the catalog every few hours while plugins are installed. When a newer compatible
+Homes fetch the catalog every 6 hours while plugins are installed, and when an admin opens
+Browse on a catalog over an hour old. When a newer compatible
 version appears, the admin sees Update. Auto-update is off by default per plugin; when on,
 updates that add no capability apply at night, and updates that add capabilities always wait
 for the admin.
 
 ## The kill switch
 
-The store publishes a signed revocation list. Homes check it hourly, and linked homes get a
-push within minutes. Each server release also carries the list as of its build.
+The store publishes a signed revocation list on `plugins-cdn.maktaba.tv`. Every home checks a
+small signed head of it every 5 minutes and fetches the full list when it changes (and every
+hour in any case), so a `disable` reaches every online home within about 7 minutes, linked
+to a store account or not, with no Maktaba Cloud connection. Each server release also carries
+the list as of its build.
 
 | Action | On homes |
 |---|---|
@@ -136,8 +152,9 @@ uploads signed only by it, and re-reviews countersigned versions.
 
 ## Ratings and reports
 
-Admins of homes that have had your plugin installed for at least 24 hours can rate it (1 to 5
-stars, optional text). You can reply once per review. Anyone can report a plugin for malware,
+A store account can rate your plugin once (1 to 5 stars, optional text) when it is linked to
+a home that has had the plugin installed for at least 24 hours. You can reply once per review.
+Moderation is done by the store's reviewers, on store accounts, never by home admins. Anyone can report a plugin for malware,
 data misuse, not working, being misleading, offensive content or copyright. Malware and data
 misuse reports are triaged within 24 hours.
 
@@ -149,7 +166,9 @@ misuse reports are triaged within 24 hours.
 - Prices are one-time or yearly, from $1 to $200 or the equivalent. Buyers can get a refund
   within 14 days.
 - A listed free plugin cannot become paid; publish a new plugin id instead.
-- The payment provider and seller of record are not chosen yet.
+- Plugins are bought on `plugins.maktaba.tv` by a home linked to a store account. Payments
+  belong to the store, separate from Maktaba Cloud's billing. The payment provider and seller
+  of record are not chosen yet, and it will never be Stripe.
 - The home checks a signed entitlement offline and refreshes it daily. Without a valid one the
   plugin waits; its data is never deleted.
 - Your plugin never handles payment: no capability touches money, and a plugin cannot show a
