@@ -66,13 +66,17 @@ type Preview struct {
 
 // Refusal is a change the service will not make. It is the error of a write.
 type Refusal struct {
-	Status     int            `json:"-"`
-	ID         string         `json:"id,omitempty"`
-	Code       string         `json:"code"`
-	Detail     string         `json:"detail"`
-	RequiredBy []string       `json:"required_by,omitempty"`
-	Conflicts  []string       `json:"conflicts,omitempty"`
-	Licence    string         `json:"licence,omitempty"`
+	Status     int      `json:"-"`
+	ID         string   `json:"id,omitempty"`
+	Code       string   `json:"code"`
+	Detail     string   `json:"detail"`
+	RequiredBy []string `json:"required_by,omitempty"`
+	Conflicts  []string `json:"conflicts,omitempty"`
+	Licence    string   `json:"licence,omitempty"`
+	// Tier is the home's tier, with a licence_missing refusal (free, home, pro).
+	Tier string `json:"tier,omitempty"`
+	// Components are every gated component a refused bundle would turn on.
+	Components []string       `json:"components,omitempty"`
 	Current    *store.Desired `json:"current,omitempty"`
 	Revision   *int64         `json:"revision,omitempty"`
 }
@@ -100,8 +104,15 @@ type gate struct {
 	reason string
 }
 
-// gates computes every component's gate over rows, requirements first.
+// gates computes every component's gate over rows, requirements first, every licence
+// granted.
 func gates(cat *components.Catalog, rows map[string]store.Desired) map[string]gate {
+	return gatesLicensed(cat, rows, nil)
+}
+
+// gatesLicensed is gates with the home's licence (nil: every flag): an enabled component
+// whose flag it lacks waits, licence_missing (story 51.19).
+func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licensed func(string) bool) map[string]gate {
 	out := map[string]gate{}
 	for _, id := range cat.Order() {
 		c, _ := cat.Get(id)
@@ -115,6 +126,8 @@ func gates(cat *components.Catalog, rows map[string]store.Desired) map[string]ga
 			g = gate{phase: components.PhaseOff}
 		case d.Hold != nil:
 			g = gate{phase: components.PhaseStopped, reason: "held"}
+		case c.Licence != "" && licensed != nil && !licensed(c.Licence):
+			g = gate{phase: components.PhaseWaiting, reason: CodeLicence}
 		default:
 			for _, req := range cat.Requires(id) {
 				if !slices.ContainsFunc(req.AnyOf, func(x string) bool { return out[x].on }) {
@@ -222,8 +235,9 @@ func validWant(w string) bool {
 
 // bundleChanges are the changes that make rows match bundle b: what it leaves out is
 // turned off (its files kept), then what it holds is turned on. A component whose
-// licence flag this home lacks is left as it is.
-func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b string, licensed func(string) bool) []Change {
+// licence flag this home lacks is in it too: makePlan refuses the whole bundle then
+// (story 51.19), no half-applied bundle.
+func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b string) []Change {
 	in := map[string]bool{}
 	for _, id := range cat.InBundle(b) {
 		in[id] = true
@@ -242,9 +256,6 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 		if !c.Switchable || !in[id] || wantOf(rows, id) == components.WantEnabled {
 			continue
 		}
-		if c.Licence != "" && !licensed(c.Licence) {
-			continue
-		}
 		out = append(out, Change{ID: id, Want: components.WantEnabled})
 	}
 	return out
@@ -254,6 +265,19 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 // write (collect false) the first refusal is the answer; for a preview every refusal
 // is listed and the refused change is left out.
 func makePlan(cat *components.Catalog, licensed func(string) bool, now time.Time,
+	rows map[string]store.Desired, rev int64, req Request, actor Actor, collect bool) (*plan, error) {
+	return makePlanTier(cat, licensed, "", now, rows, rev, req, actor, collect)
+}
+
+// licenceRefusal is the 403 of turning on c, whose flag the home's licence lacks.
+func licenceRefusal(c *components.Component, tier string) *Refusal {
+	r := refuse(http.StatusForbidden, c.ID, CodeLicence, c.ID+" needs the "+c.Licence+" licence")
+	r.Licence, r.Tier = c.Licence, tier
+	return r
+}
+
+// makePlanTier is makePlan with the home's tier, named in a licence_missing refusal.
+func makePlanTier(cat *components.Catalog, licensed func(string) bool, tier string, now time.Time,
 	rows map[string]store.Desired, rev int64, req Request, actor Actor, collect bool) (*plan, error) {
 	if licensed == nil {
 		licensed = func(string) bool { return true }
@@ -285,9 +309,31 @@ func makePlan(cat *components.Catalog, licensed func(string) bool, now time.Time
 		if len(req.Changes) > 0 {
 			return nil, refuse(http.StatusBadRequest, "", CodeBadBundle, "a bundle is applied on its own, without changes")
 		}
-		changes = bundleChanges(cat, p.rows, req.Bundle, licensed)
+		changes = bundleChanges(cat, p.rows, req.Bundle)
 		action = "component.bundle_apply"
 		p.bundle = req.Bundle
+		// a bundle that would turn on a component the licence lacks is refused whole,
+		// naming every such component
+		var gated []string
+		var first *components.Component
+		for _, ch := range changes {
+			if c, ok := cat.Get(ch.ID); ok && ch.Want == components.WantEnabled && c.Licence != "" && !licensed(c.Licence) {
+				gated = append(gated, ch.ID)
+				if first == nil {
+					first = c
+				}
+			}
+		}
+		if len(gated) > 0 {
+			r := licenceRefusal(first, tier)
+			r.Components = gated
+			r.Detail = "the " + req.Bundle + " bundle turns on components this home's plan does not include"
+			if !collect {
+				return nil, r
+			}
+			p.preview.Refused = append(p.preview.Refused, *r)
+			changes = slices.DeleteFunc(slices.Clone(changes), func(ch Change) bool { return slices.Contains(gated, ch.ID) })
+		}
 	}
 	var batch []store.BatchWrite
 	write := func(id string, next store.Desired, verb string) {
@@ -344,10 +390,10 @@ func makePlan(cat *components.Catalog, licensed func(string) bool, now time.Time
 			}
 		}
 		turningOn := next.Want == components.WantEnabled && was != components.WantEnabled
-		if turningOn && c.Licence != "" && !licensed(c.Licence) {
-			r := refuse(http.StatusForbidden, ch.ID, CodeLicence, ch.ID+" needs the "+c.Licence+" licence")
-			r.Licence = c.Licence
-			if err := fail(r); err != nil {
+		// asking for enabled is refused without the licence even when the row already
+		// says enabled (a lapsed licence keeps the wish; asking again does not pass)
+		if ch.Want == components.WantEnabled && c.Licence != "" && !licensed(c.Licence) {
+			if err := fail(licenceRefusal(c, tier)); err != nil {
 				return nil, err
 			}
 			continue
@@ -405,7 +451,7 @@ func makePlan(cat *components.Catalog, licensed func(string) bool, now time.Time
 		write(ch.ID, next, verb)
 	}
 	p.writes = batch
-	before, after := gates(cat, rows), gates(cat, p.rows)
+	before, after := gatesLicensed(cat, rows, licensed), gatesLicensed(cat, p.rows, licensed)
 	p.preview.Effects = effects(cat, before, after)
 	for _, id := range cat.Order() {
 		if before[id].on && !after[id].on {

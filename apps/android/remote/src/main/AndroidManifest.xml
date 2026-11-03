@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A TV asking to sign in (the "Sign-in requests" channel). Never asked for just for
+         this: without it the app shows its banner only. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- Homes are on the local network by address (http://192.168.1.20:8088): cleartext is
          allowed, as in the Apple apps' local-network exception. No backup or device

@@ -1,0 +1,156 @@
+# Publishing
+
+> **Status: planned.** Signing, the store, review, the catalog and the kill switch are
+> Phase 2; paid plugins are Phase 3. None of it is built yet. This page describes the design in
+> [Epic 54](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md)
+> section 6, which can change.
+
+## Where things live
+
+- **Users** browse plugins on maktaba.tv/plugins and in their home's web app (Settings,
+  Plugins, Browse), which shows only versions that fit their server and platform.
+- **Developers** read these docs on maktaba.dev. The developer console (account, keys,
+  submissions, payouts) is at maktaba.tv/developers.
+- **Homes** fetch the catalog, packages and the revocation list through the home server's own
+  connection to Maktaba Cloud, or over HTTPS from `store.maktaba.tv`. Signatures, not the
+  channel, are what a home trusts.
+
+## Your developer account
+
+1. Sign in at maktaba.tv/developers with a Maktaba Cloud account and verify your email.
+2. Turn on two-factor sign-in. It is required to submit or change anything.
+3. Accept the developer agreement. A new version must be accepted before your next submission.
+4. Choose an **id prefix**: prove a domain with a DNS TXT record
+   `maktaba-developer=<value from the console>`, or take a community prefix
+   `tv.maktaba.community.<handle>`.
+
+## Signing keys
+
+```sh
+mkp keys new
+mkp keys export-public
+```
+
+Your key is Ed25519, and the private half never leaves your machine. Register the public half
+in the console. You can rotate keys; old signatures stay valid until you revoke the old key.
+
+A package carries two signatures over the same `files.json`:
+
+| File | Signed by | Covers |
+|---|---|---|
+| `signatures/developer.sig` | you | plugin id, version, the hash of `files.json` |
+| `signatures/store.sig` | the store, after checks | the above plus your key id, review level, review date and capabilities |
+
+Because the store signature names your key, nobody else can re-sign your package and keep the
+store's mark.
+
+### Review levels a home records
+
+| Level | Meaning |
+|---|---|
+| `none` | no signature |
+| `developer` | your signature only |
+| `automated` | store-signed after automated checks (an update that added nothing) |
+| `reviewed` | store-signed after a person reviewed it |
+
+### The trust chain
+
+Every server binary embeds the store's root public keys, held offline. They sign a
+short-lived list of the store's online keys, which sign packages, the catalog and the
+revocation list. A home refuses expired or older copies of these lists (anti-rollback).
+
+## Submitting
+
+```sh
+mkp submit
+```
+
+Each submission is a package signed with your key, a **source archive** (required for every
+version, kept private to reviewers) and release notes in English and Arabic. A listing needs
+English **and** Arabic strings. Machine translation is allowed; say so in your notes and the
+listing shows "Arabic machine translated".
+
+## Automated checks
+
+They report within about 30 minutes:
+
+| Check | Blocks when |
+|---|---|
+| Package format and limits | invalid |
+| Developer signature, active key, verified prefix | invalid |
+| Manifest rules, `maktaba` upper bound present | invalid |
+| Import audit | forbidden or undeclared import |
+| Capability audit | warns on declared but unused capabilities, and medium-risk ones without a reason |
+| Strings in both languages; reserved words in names | missing string or reserved word; URLs warn |
+| Malware scan of package and source | a hit |
+| Sandbox run of your fixtures and generated events with strict limits | a trap, memory over 80 % of declared, or outputs breaking the rules |
+| Diff against your previous version | routes to human review on new capabilities, panels, exports or large jumps |
+| Source archive present and, for reproducible toolchains (Rust, TinyGo), builds to the same hash | missing source blocks; otherwise a badge |
+
+## Human review
+
+A person reviews:
+
+- every **first** version;
+- any version that adds a capability, a panel or a `plugin-data.read`;
+- any version the checks flag;
+- any version of a plugin with an open malware or data-misuse report;
+- a random 5 % of the rest.
+
+Other versions are approved automatically. Reviewers see the manifest, your reasons for each
+capability, the check report, the call trace, outputs on the sample set, the diff and your
+source. They approve, reject with reasons from a fixed list, or ask you a question.
+
+Targets: first response within 5 business days for a new plugin, 2 for an update.
+
+### Guidelines
+
+- Ask only for the capabilities you use, and say why for medium-risk ones.
+- Do what your listing says.
+- No hidden data stores or library fingerprinting.
+- No illegal or hateful content.
+- Names and icons must not imitate Maktaba or anyone else; `Maktaba`, its Arabic name and
+  `official` are reserved.
+
+## The catalog and updates
+
+Homes fetch the catalog every few hours while plugins are installed. When a newer compatible
+version appears, the admin sees Update. Auto-update is off by default per plugin; when on,
+updates that add no capability apply at night, and updates that add capabilities always wait
+for the admin.
+
+## The kill switch
+
+The store publishes a signed revocation list. Homes check it hourly, and linked homes get a
+push within minutes. Each server release also carries the list as of its build.
+
+| Action | On homes |
+|---|---|
+| `disable` | the plugin is drained and held, admins are told why, and it can only be removed; an admin cannot undo it |
+| `warn` | it keeps running with a warning; the admin may disable it |
+| `delist` | removed from the catalog; installed copies keep working, without updates |
+
+An expired list does not stop plugins. It shows a warning and blocks new store installs until
+a fresh list arrives. If your developer key is compromised, the store revokes it, refuses
+uploads signed only by it, and re-reviews countersigned versions.
+
+## Ratings and reports
+
+Admins of homes that have had your plugin installed for at least 24 hours can rate it (1 to 5
+stars, optional text). You can reply once per review. Anyone can report a plugin for malware,
+data misuse, not working, being misleading, offensive content or copyright. Malware and data
+misuse reports are triaged within 24 hours.
+
+## Paid plugins (Phase 3)
+
+- Publishing free plugins is free. Selling needs a one-time $25 developer fee and active
+  payouts.
+- The developer gets 85 % of each sale and Maktaba keeps 15 %.
+- Prices are one-time or yearly, from $1 to $200 or the equivalent. Buyers can get a refund
+  within 14 days.
+- A listed free plugin cannot become paid; publish a new plugin id instead.
+- The payment provider and seller of record are not chosen yet.
+- The home checks a signed entitlement offline and refreshes it daily. Without a valid one the
+  plugin waits; its data is never deleted.
+- Your plugin never handles payment: no capability touches money, and a plugin cannot show a
+  price, paywall or link.

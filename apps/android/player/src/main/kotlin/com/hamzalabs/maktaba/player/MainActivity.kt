@@ -14,6 +14,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.hamzalabs.maktaba.core.permissions.PermissionsGate
 import com.hamzalabs.maktaba.core.permissions.permissionsHelpUrl
+import com.hamzalabs.maktaba.core.ui.ApproveRequests
+import com.hamzalabs.maktaba.core.ui.PendingSignInsHost
 import com.hamzalabs.maktaba.core.ui.MaktabaApp
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.SessionGate
@@ -40,6 +42,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             app.session.openLink(intent?.dataString)
             link.value = VideoLink.route(intent?.dataString)
+            // a tapped sign-in request notification: Approve opens
+            ApproveRequests.handle(intent)
         }
         setContent {
             val mode by app.themes.mode.collectAsState()
@@ -56,7 +60,10 @@ class MainActivity : ComponentActivity() {
                             val images = remember(client) { ImageCache.loader(applicationContext, client) }
                             // the sections (a bar, a rail or the collapsible rail, by the window and its fold), Live TV only with a channel (FR-5); hidden while a video plays full screen
                             CompositionLocalProvider(LocalPlayerHome provides home, LocalHomeImages provides images) {
-                                PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
+                                // a TV waiting to sign in: a banner on top (not over a playing video), and a notification
+                                PendingSignInsHost(app.session, user, client, enabled = !playing) {
+                                    PlayerShell(sections = rememberShownSections(home), immersive = playing, link = link.value, onLinkOpened = { link.value = null })
+                                }
                             }
                         }
                     }
@@ -69,5 +76,6 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         (application as PlayerApplication).session.openLink(intent.dataString)
         VideoLink.route(intent.dataString)?.let { link.value = it }
+        ApproveRequests.handle(intent)
     }
 }

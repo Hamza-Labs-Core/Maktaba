@@ -83,6 +83,8 @@ Streams the channel carries at set times, such as the news on the hour. Nothing 
 
 Drop an image or click **Choose file**. On a saved channel the image uploads at once and is marked **Uploaded**; **Back to plan** removes it and returns to the plan's picture (**From the plan**). For the watermark, choose the **Watermark corner**, **Watermark width (% of the picture)** (1 to 50) and **Margin from the edge (%)** (0 to 25), then **Apply**.
 
+The home draws the watermark into the picture itself (it is burned in), so it looks the same in the browser, the apps, the TVs and Plex; no app has to draw it. By default filler clips and bumpers air without it, and programmes and live broadcasts always carry it. To show it on filler too, turn off **No corner logo on filler** in [Settings → Rules](/settings/rules), section **Maktaba TV** (see [Rules](/help/rules#tv)).
+
 ### Channel strip {#strip}
 
 On a saved channel the **Art** tab also holds the **Channel strip**: a news-style bar with what is on now, what is next and a clock that rotates between cities. What you leave as it is follows the strip settings in [Settings → Rules](/settings/rules) (see [Rules](/help/rules#tv-strip)).

@@ -78,7 +78,7 @@ def test_capabilities_report_the_keys_the_page_reads(monkeypatch: pytest.MonkeyP
     caps = capabilities()
     assert set(caps) == {
         "os", "os_version", "arch", "cpu_count", "memory_gb", "apple_silicon", "mlx",
-        "gpus", "ffmpeg", "extras", "python", "pipeline_version",
+        "gpus", "gpu_problem", "stt_backend", "ffmpeg", "extras", "python", "pipeline_version",
     }  # fmt: skip
     assert caps["cpu_count"] >= 1 and isinstance(caps["gpus"], list)
     assert caps["ffmpeg"] is None  # the override names a binary that is not there

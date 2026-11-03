@@ -396,6 +396,8 @@ settings  = ["rules.tv_staging", "toml:tv.slots"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = ["full"]
+# one of livetv.slots / livetv.inprocess is enough for live_tv (they conflict)
+features  = ["live_tv"]
 since     = "0.3.66"
 
 [[component]]
@@ -410,6 +412,7 @@ conflicts = ["livetv.slots"]
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = []
+features  = ["live_tv"]
 since     = "0.3.66"
 
 [[component]]
@@ -455,6 +458,7 @@ licence   = "cloud_relay"
 placement = "home"
 platforms = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles   = []
+features  = ["remote_access"]
 since     = "0.3.66"
 
 [[component]]

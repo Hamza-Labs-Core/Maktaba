@@ -566,8 +566,9 @@ struct CodeSignInSection: View {
     private func showing(_ p: DevicePairing) -> some View {
         Section {
             VStack(spacing: 16) {
-                Text(words.text(.codeIntro, session.current?.name ?? ""))
+                Text(words.codeIntro)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("signin.code.intro")
                 Text(verbatim: p.code)
                     .font(.system(size: 44, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color.mktBrassText)
@@ -594,6 +595,14 @@ struct CodeSignInSection: View {
                 // waiting for approval, the code and the time it has left, the attempt
                 ConnectProgressView(model?.progress ?? ConnectProgress(.awaitingApproval(code: p.code, expiresAt: p.expiresAt)),
                                     locale: words.locale)
+                // a phone signed in on the home has read this code: approval is next
+                if model?.lookedUp == true {
+                    Label(words.text(.lookedUp), systemImage: "iphone.radiowaves.left.and.right")
+                        .foregroundStyle(.green)
+                        .accessibilityIdentifier("signin.code.lookedUp")
+                }
+                Button(words.text(.newCode), systemImage: "arrow.clockwise") { model?.newCode() }
+                    .accessibilityIdentifier("signin.code.new")
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)

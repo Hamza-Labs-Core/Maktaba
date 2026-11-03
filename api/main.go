@@ -48,6 +48,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/telemetry"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
@@ -339,12 +341,21 @@ func runServe() error {
 	// Epic 16: the entitlement store is built with the app DB below; the
 	// relay gate in the router's chain reads it through this reference.
 	licRef := &subscriptions.StoreRef{}
+	// Epic 51 story 51.19: the gate also asks the cloud.relay component's Licensed
+	// condition (the row the runners read), the same answer from one source
+	licRef.SetRelayLicensed(func() (bool, bool) { return loops.Licensed("cloud.relay") })
 	// Epic 44 story 44.5: the API's use per app and day. It counts once the
 	// app database is attached (below) and is written every minute and at
 	// shutdown.
 	usageCounter := &usage.Counter{Logger: logger}
+	// Epic 51 story 51.09: which features are on (GET /api/capabilities) and the
+	// component_off check, from memory. Every feature is on until the database is read;
+	// either kill switch keeps it so.
+	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
+		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
 	r := router.New(router.Deps{
+		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
 		IdempotencyStore:   idemStore,
@@ -542,10 +553,15 @@ func runServe() error {
 			runtimeSettings := runtimecfg.New(appDB)
 			// the runner reads the home's desired state from here on
 			components.Start(loops, appDB, pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), logger)
+			var eventBus *eventbus.Bus
+			eventHub := ws.NewHub()
 			router.MountP6(r, router.P6Deps{
-				Loops:    loops,
-				Settings: runtimeSettings,
-				Secrets:  homeSecrets,
+				EventHub:     eventHub,
+				OnBus:        func(b *eventbus.Bus) { eventBus = b },
+				Capabilities: capabilities,
+				Loops:        loops,
+				Settings:     runtimeSettings,
+				Secrets:      homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
 						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
@@ -691,7 +707,10 @@ func runServe() error {
 			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
 			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
 			// preview and apply), the same service the `components` CLI uses
-			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger})
+			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
+			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
+				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
+				Bus: eventBus, Hub: eventHub, RunCapabilities: true})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

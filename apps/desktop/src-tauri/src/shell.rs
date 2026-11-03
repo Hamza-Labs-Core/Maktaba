@@ -459,6 +459,20 @@ fn see_logs(app: &AppHandle) -> Result<(), String> {
     navigate_main(app, &url)
 }
 
+/// The local home's Components page (story 51.10): `<web_url>/settings/components`.
+pub fn components_url(web_url: &str) -> String {
+    format!("{}/settings/components", web_url.trim_end_matches('/'))
+}
+
+/// "Open Components": the local home's Components page in the browser, the way the
+/// update log links open the logs page. Only a machine that runs the server offers it.
+fn open_components(app: &AppHandle) -> Result<(), String> {
+    let Some(web_url) = local_web_url(app) else {
+        return Err("this app does not run a server here".into());
+    };
+    agent::open_path(std::ffi::OsStr::new(&components_url(&web_url)))
+}
+
 /// What the local server shows (attempts::wait_for_server): the release its api answers
 /// on, its supervisor answering while its api does not yet (starting), or nothing.
 fn server_seen(web_url: &str, supervisor_url: &str) -> attempts::Seen {
@@ -1106,6 +1120,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             }
         }
         "open-logs" | "update-log-folder" => agent::open_logs(),
+        "open-components" => open_components(app),
         "update-logs" => see_logs(app),
         "change-server" => sh.clear_mode().and_then(|()| {
             focus_main(app);
@@ -2204,5 +2219,17 @@ mod tests {
         assert!(!allowed_external("https://plex.tv.evil.com/"));
         assert!(!allowed_external("http://plex.tv/link"));
         assert!(!allowed_external("file:///Applications"));
+    }
+
+    #[test]
+    fn open_components_opens_the_components_settings_page() {
+        assert_eq!(
+            components_url("http://127.0.0.1:8088"),
+            "http://127.0.0.1:8088/settings/components"
+        );
+        assert_eq!(
+            components_url("http://127.0.0.1:8088/"),
+            "http://127.0.0.1:8088/settings/components"
+        );
     }
 }

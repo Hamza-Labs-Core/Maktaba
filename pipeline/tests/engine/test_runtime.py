@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import threading
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -23,6 +24,7 @@ from maktaba_pipeline.runtime import (
     _served_stages,
     _start_engine,
 )
+from maktaba_pipeline.stt.placement import TranscriptionConfig
 
 LEGACY_HANDLERS = {"scan", "probe", "extract", "transcribe", "subtitle_gen", "index", "thumbnail"}
 
@@ -178,6 +180,43 @@ async def test_a_worker_without_the_share_never_checks_it(
     assert "queue-health" not in names
     assert failure_policy._share_probes is False
     assert {"worker-hb", "stage-selection", "reconciler"} <= set(names)
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _TranscriptionV2(TranscriptionConfig):
+    """TranscriptionConfig at 2.0 (1.0 called relisten_tries ``tries``)."""
+
+    SCHEMA_VERSION: ClassVar[tuple[int, int]] = (2, 0)
+
+
+@pytest.mark.asyncio
+async def test_the_home_moves_the_settings_before_any_stage_runs(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Story 51.13: the home's worker runs the settings pass at start (here a 1.0 value of
+    a section now at 2.0) and keeps watching the failed sections."""
+    from maktaba_pipeline import rules, settings
+
+    monkeypatch.setattr(settings, "_MIGRATIONS", {})
+    monkeypatch.setitem(rules.SECTIONS, "transcription", (_TranscriptionV2, "T", "t"))
+    settings.register_migration(_TranscriptionV2, 1, lambda old: {"relisten_tries": old["tries"]})
+    cast = "::jsonb" if db.dialect == "postgres" else ""
+    await db.execute(
+        f"INSERT INTO app_settings (key, value) VALUES ('rules.transcription', $1{cast})",
+        '{"tries": 2}',
+    )
+    names = await _boot_tasks(db)
+    assert "settings-watch" in names
+    cfg, _, _ = await rules.read(db, "transcription")
+    assert cfg.relisten_tries == 2
+    assert (
+        rules.parse_version(
+            await db.fetchval(
+                "SELECT value FROM app_settings WHERE key = 'rules_version.transcription'"
+            )
+        ).major
+        == 2
+    )
 
 
 @pytest.mark.asyncio

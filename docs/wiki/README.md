@@ -64,6 +64,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 
 - [Epic 51 — Every part of Maktaba can be turned on, off, added later or left out](epics/epic-51-configurable-components.md)
 
+### Word review (epic 52)
+
+- [Epic 52 — Word review: suspect words go to a person, in every language](epics/epic-52-transcript-word-review.md)
+
 ### Logs, errors and reports (epic 53)
 
 - [Epic 53 — Logs, errors and problem reports, and a UI that never goes dark](epics/epic-53-logs-errors-reports.md)
@@ -80,17 +84,28 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 
 ## Machine-readable index
 
-The `db/` directory holds the JSON databases behind the wiki pages. A wiki app or build-tooling layer can consume them directly:
+The wiki database is generated from the specs by [`db/generate_wiki.py`](db/generate_wiki.py) and
+read by the in-repo wiki app (`web/wiki-app`). A wiki app or build-tooling layer can consume it directly:
 
-- [`db/wiki.json`](db/wiki.json) — unified wiki database.
-- [`db/wiki-schema.json`](db/wiki-schema.json) — JSON schema for the wiki database.
-- [`db/wiki-cross-refs.json`](db/wiki-cross-refs.json) — Linear ↔ file cross-references (issues, files, build_order, critical_path, parallel_tracks, reviews, epics, stories).
-- [`db/wiki-epics-01-06.json`](db/wiki-epics-01-06.json) — pipeline epics.
-- [`db/wiki-epics-07-13.json`](db/wiki-epics-07-13.json) — API and clients.
-- [`db/wiki-epics-14-24.json`](db/wiki-epics-14-24.json) — cross-cutting epics. Fields: `id`, `type`, `title`, `epic`, `content`, `tags`, `related`, `file_paths`, `linear_issue`, `api_endpoints`, `db_tables`, `migrations`.
-- [`db/generate_wiki.py`](db/generate_wiki.py) — generator script.
+- [`../../web/wiki-app/public/db/wiki.json`](../../web/wiki-app/public/db/wiki.json): the meta, the
+  names of its part files (`parts`) and every entry that is not a story or a plan.
+- `../../web/wiki-app/public/db/wiki-epics-NN-MM.json`: the stories and plans of epics NN to MM.
+- [`../../web/wiki-app/public/db/wiki-cross-refs.json`](../../web/wiki-app/public/db/wiki-cross-refs.json):
+  Linear and file cross-references (issues, files, build_order, critical_path, parallel_tracks,
+  reviews, epics, stories).
+- [`db/wiki-schema.json`](db/wiki-schema.json): the JSON schema.
+- [`db/curated.json`](db/curated.json): the hand-kept data the specs do not carry (epic names,
+  phases and engines, hand-written summaries, Linear ids, the implementation phases, the
+  cross-reference inventory). Edit it, never the generated JSON.
 
-The unified [`db/wiki.json`](db/wiki.json) is the canonical source of truth; the per-range JSON shards are historical and may lag behind. As of 2026-05-10 the unified file contains 761 entries: 25 epics, 273 stories, 274 plans, 14 diagrams, 8 reviews, 48 mockups, 70 endpoints, 32 entities, and 17 implementation-phase entries.
+Every epic in `specs/epics/` is in the database. Regenerate after changing a spec, a mockup,
+`shared/api/openapi.yaml` or `db/curated.json`:
+
+```sh
+python3 docs/wiki/db/generate_wiki.py
+```
+
+CI runs `generate_wiki.py --check` and fails when the committed database does not match the specs.
 
 ## Quick navigation by intent
 

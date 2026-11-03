@@ -458,6 +458,9 @@ function ConvertTo-NodeSha256 {
 $script:NodeSecondListenMinMiB = 9728       # 9.5 GiB
 $script:NodeSecondListenMinCompute = '7.5'  # Turing
 $script:NodeSecondListenMinDriver = 580
+# ...and Whisper alone (CTranslate2 with the stt extra's CUDA wheels): the supervisor's
+# gpuMinGB, venv_bootstrap.WHISPER_MIN_GIB (a test keeps them equal)
+$script:NodeWhisperMinMiB = 4096            # 4 GiB
 
 # One nvidia-smi line ("NVIDIA GeForce RTX 3080 Ti, 12288, 8.6, 591.44", or an older
 # driver's "name, MiB, driver") as @{ Name; MiB; Compute; Driver } (Compute and Driver $null
@@ -483,6 +486,11 @@ function Get-NodeNvidiaGpu {
         $p = Join-Path $env:SystemRoot 'System32\nvidia-smi.exe'
         if (Test-Path -LiteralPath $p -PathType Leaf) { $exe = $p }
     }
+    if (-not $exe -and $env:ProgramFiles) {
+        # older drivers put it under NVSMI (the venv bootstrap looks there too)
+        $p = Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI\nvidia-smi.exe'
+        if (Test-Path -LiteralPath $p -PathType Leaf) { $exe = $p }
+    }
     if (-not $exe) { return $null }
     foreach ($query in @('name,memory.total,compute_cap,driver_version', 'name,memory.total,driver_version')) {
         $r = Invoke-NativeCapture -FilePath $exe -ArgumentList @("--query-gpu=$query", '--format=csv,noheader,nounits')
@@ -493,6 +501,17 @@ function Get-NodeNvidiaGpu {
         }
     }
     return $null
+}
+
+# The extras an install takes when none were given or remembered: stt on x86_64 with an
+# NVIDIA GPU Whisper transcribes on ($script:NodeWhisperMinMiB or more: the stt extra brings
+# CTranslate2 and cuBLAS 12 from PyPI, so the driver is all it needs), else none. Without
+# it a GPU worker installed with the defaults never transcribed.
+function Get-NodeDefaultExtras {
+    param($Gpu, [string]$Arch = $env:PROCESSOR_ARCHITECTURE, [string]$Arch6432 = $env:PROCESSOR_ARCHITEW6432)
+    if ($Arch -ne 'AMD64' -and $Arch6432 -ne 'AMD64') { return 'none' }
+    if ($Gpu -and $Gpu.MiB -ge $script:NodeWhisperMinMiB) { return 'stt' }
+    return 'none'
 }
 
 # Why this GPU (Get-NodeNvidiaGpu) does not run the second listen, or '' when it does.

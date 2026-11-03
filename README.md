@@ -20,16 +20,17 @@ support out of the box.
 
 ## Architecture
 
-Four cooperating services share one Postgres for state and one media volume for
-bytes:
+The home's services (API, streaming, pipeline, web) share one Postgres for state and one
+media volume for bytes; the apps and the optional cloud talk to them:
 
 | Service | Language | Role |
 |---|---|---|
-| **API** | Go 1.23 | REST + GraphQL + WebSocket. Auth, library CRUD, search orchestration, job control, settings, watch state. |
-| **Streaming** | Go 1.23 | HLS / DASH origin. FFmpeg-driven transcode/remux, range serving, subtitle muxing, sprites. |
-| **Pipeline** | Python 3.12 | Scanner, audio extractor, Whisper STT (MLX / faster-whisper / OpenAI), embedding, ChromaDB indexer, diarization. Drains the durable job queue. |
-| **Web** | React 18 + TS + Vite | Single PWA wrapped natively into iOS/Android (Capacitor), macOS/Windows/Linux (Tauri), and tvOS / Android TV (Swift / Kotlin). |
-| **Cloud Relay** *(optional)* | Go 1.23 | Hosted SaaS layer for remote access: identity, server linking, WSS-tunneled HTTP relay, push fanout, billing (payment provider TBD). Lives in `cloud/`. |
+| **API** | Go 1.26 | REST + GraphQL + WebSocket. Auth, library CRUD, search orchestration, job control, settings, watch state. |
+| **Streaming** | Go 1.25 | HLS / DASH origin. FFmpeg-driven transcode/remux, range serving, subtitle muxing, sprites, and the live TV channels. |
+| **Pipeline** | Python 3.12 | Scanner, audio extractor, Whisper STT (MLX / faster-whisper / OpenAI), embedding, pgvector indexer (Postgres), diarization. Drains the durable job queue. |
+| **Web** | React 18 + TS + Vite | The web app (PWA), with the user guide at `/help`. The Mac, Windows and Linux apps (Tauri) show it and carry the server. |
+| **Native apps** | Swift / Kotlin | Maktaba Player and Maktaba Remote (iPhone, iPad, Mac, Android), Maktaba TV (Apple TV, Android TV), Maktaba Player for Windows and Linux. See [Get the apps](#get-the-apps). |
+| **Cloud Relay** *(optional)* | Go 1.26 | Hosted SaaS layer for remote access: identity, server linking, WSS-tunneled HTTP relay, push fanout, billing (no payment provider yet). Lives in `cloud/`. |
 
 See [`specs/architecture.md`](specs/architecture.md) for the canonical design,
 data flow, and rationale behind the language split.
@@ -47,18 +48,39 @@ data flow, and rationale behind the language split.
   pluggable registry. Pause / resume / crash recovery preserve every segment
   already committed.
 - **Hybrid FTS + semantic search** — Postgres `tsvector` full-text search fanned
-  out with ChromaDB vector search via reciprocal-rank fusion. Search any phrase
+  out with pgvector semantic search in the same Postgres ([Epic 43](specs/epics/43-pgvector-search/README.md)). Search any phrase
   spoken in any video and jump to the exact second from any client.
 - **HLS / DASH adaptive streaming** — on-the-fly transcode and remux via FFmpeg
   subprocesses, range-request direct play, subtitle muxing, signed-URL gated
   session capability matrix, hardware-accelerated decode paths.
 - **Arabic-first with English support** — bidi/RTL correct from input to
   caption rendering. Pipeline is language-agnostic; UI ships AR and EN.
+- **Live TV channels** — channels made from your library, played around the clock
+  with a guide (XMLTV) for the web, the apps, the TVs and Plex. The home burns each
+  channel's corner watermark into the picture; by default filler and bumpers air
+  without it (rules → Maktaba TV → *No corner logo on filler*).
+- **Libraries and sections** — libraries, series, collections and playlists; the
+  Player apps have Home, Libraries, Live TV, Search and Profile.
+- **Processing you can see** — the queue shows what runs and waits; *Needs attention*
+  groups failures by cause, in English and Arabic, with **Retry** and **Retry all**
+  (web and Maktaba Remote).
+- **Updates and rollback** — signed releases install by themselves in a quiet window,
+  the home first and then each machine; a failed update goes back by itself, and a
+  database backup can be put back from Admin → Updates ([docs/updates.md](docs/updates.md)).
+- **Several machines as one home** — other computers join the home and share its
+  work and its live TV ([docs/cluster/README.md](docs/cluster/README.md)).
+- **Plex integration** — with the Plex extension on, Maktaba keeps a Plex collection
+  for every season it finds, adds topic and clip collections, and puts its channels
+  and guide in Plex Live TV.
+- **Usage data only with consent** — anonymous usage data is off until a person turns
+  it on for their app, and an admin for the server (Settings → Privacy).
+- **Help in the app** — a user guide and FAQ for every feature at `/help`, in English
+  and Arabic, linked from every page.
 - **Cloud relay for remote access** — optional hosted layer that links a
   self-hosted server to a Maktaba Cloud account, tunnels HTTP through WSS, and
-  fans out APNs / FCM push without exposing the home box to the internet. Free
-  tier; paid tiers through a payment provider (TBD; until then paid
-  plans are "coming soon").
+  fans out APNs / FCM push without exposing the home box to the internet. There is
+  no payment provider yet: paid plans show "Payments coming soon". The hosted relay
+  that people can pay for is planned in [Epic 50](specs/epics/50-cloud-no-downtime/README.md).
 
 ---
 
@@ -69,7 +91,7 @@ install commands for anything missing.
 
 | Tool | Version | macOS | Linux (Debian/Ubuntu) |
 |---|---|---|---|
-| **Go** | 1.23+ | `brew install go` | `sudo apt install golang-go` (or [go.dev/dl](https://go.dev/dl/)) |
+| **Go** | 1.26+ | `brew install go` | `sudo apt install golang-go` (or [go.dev/dl](https://go.dev/dl/)) |
 | **Python + uv** | 3.12+ | `curl -LsSf https://astral.sh/uv/install.sh \| sh` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | **Node + pnpm** | Node 20+, pnpm 9+ | `brew install node && corepack enable && corepack prepare pnpm@latest --activate` | `sudo apt install nodejs npm && corepack enable && corepack prepare pnpm@latest --activate` |
 | **Docker + Compose v2** | Docker 24+, Compose v2.27+ | `brew install --cask docker` | `sudo apt install docker.io docker-compose-plugin` |
@@ -85,7 +107,7 @@ Recommended (sharper inner loop):
 | **pre-commit** | `uv tool install pre-commit`  /  `pip install pre-commit` |
 | **jq, shellcheck** | `brew install jq shellcheck`  /  `sudo apt install jq shellcheck` |
 
-Postgres 16 and ChromaDB are managed by `deploy/compose/docker-compose.yml`
+Postgres 16 (and the Chroma server the e2e tests still use) are managed by `deploy/compose/docker-compose.yml`
 and started by `make dev` — keep them in Docker; a host Postgres install
 will collide on port 5432 and skip the migrations we ship.
 
@@ -109,6 +131,29 @@ docker compose -f deploy/compose/docker-compose.yml up --build
 CI runs the same `make` targets you run locally — see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for the canonical dev workflow,
 troubleshooting, and pre-commit setup.
+
+---
+
+## Hardware requirements
+
+Transcribing the backlog decides the hardware; everything else is light. Measured on the live
+home (Mac Studio M3 Ultra, 96 GB, v0.3.62): about **1,120 audio-hours a day (~47× real time)**,
+so ~50,000 videos of 15 minutes take about **11 days** and ~150,000 about a month. Once it has
+caught up, the new videos of a day take minutes.
+
+| | Small (~5k videos) | Medium (~50k, a few TV channels) | Large (~150k, 20+ channels) |
+|---|---|---|---|
+| macOS (Apple Silicon) | 16–24 GB | Max-class GPU, 36–64 GB | Ultra-class GPU, 96 GB+ |
+| Windows / Linux (x86_64) | 16 GB RAM, NVIDIA 4 GB+ or CPU only (slow) | 32 GB RAM, NVIDIA 10 GB+ (Linux 8 GB+) | 64 GB+ RAM, NVIDIA 20 GB+ or several machines |
+| Disk for Maktaba's data, plus backups | ~20 GB | ~60 GB | ~150 GB |
+
+The media stays on your NAS (SMB or NFS); live TV sends about 10 Mbps per watched channel.
+CPU-only transcription runs at about 2.6× real time: fine for keeping up, too slow to catch up
+a large library. Linux aarch64 runs the server without transcription.
+
+[docs/hardware.md](docs/hardware.md) has the measurements, how each number was found (measured,
+from the code, or estimated), the settings that change the load, worker machines, and running
+the home on a dev machine.
 
 ---
 
@@ -146,9 +191,9 @@ the command that installs it for your distribution (the terminal setup offers to
 
   The script is in the release's signed `checksums.txt` too, so it can be checked the same way
   first ([how](deploy/packaging/README.md#linux-the-app-or-these-packages)). This machine
-  updates from the signed releases when an admin clicks Update now in the web app or runs
-  `maktaba-server update` (each installs the new version beside the running one and switches to
-  it); installing updates by itself, on a schedule, comes with story 39.9.
+  updates from the signed releases by itself in the quiet window, at once when an admin clicks
+  Update now in the web app, or with `maktaba-server update` (each installs the new version
+  beside the running one and switches to it, keeping the previous one for a rollback).
 - **Uninstall:** `~/.local/share/maktaba/runtime/current/bin/maktaba-server service uninstall`
   stops and removes the service; removing the `.deb` / `.rpm` stops it too. Your library's data
   stays in `~/.local/share/maktaba` and `~/.config/maktaba` until you delete them.
@@ -209,6 +254,42 @@ development and CI stack, built from source.)
 
 ---
 
+## Get the apps
+
+The apps are in testing. Testers get them from TestFlight and Google Play's internal testing,
+not from the public stores yet. The owner adds each tester: their Apple ID to a TestFlight
+testers group in App Store Connect ([docs/testflight.md](docs/testflight.md)), their Google
+account to the testers list in Play Console ([docs/google-play.md](docs/google-play.md)).
+Every release tag uploads a new build to both, which reaches testers as an update.
+
+| App | Platform | How to get it |
+|---|---|---|
+| **Maktaba Player** (watch) | iPhone · iPad (*Maktaba Player for iPad*) · Mac (*Maktaba Player for Mac*) | TestFlight |
+| **Maktaba Remote** (run the home; admins only) | iPhone | TestFlight |
+| **Maktaba TV** | Apple TV | TestFlight on the Apple TV |
+| **Maktaba Player** and **Maktaba Remote** | Android phones, foldables and tablets | Google Play internal testing |
+| **Maktaba TV** | Android TV and Google TV | Google Play internal testing; or sideload `maktaba-tv-<version>.apk` when a release carries it (only signed builds are attached) |
+| **Maktaba Player** | Windows, Linux | `Maktaba-Player_<v>_x64.msi`, `.deb`, `.rpm` from the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest); it updates itself (Help → Check for updates) |
+| **Maktaba** (the server and the web app) | Mac, Windows, Linux | the [latest release](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest) (see [above](#install-the-home-server)); it updates itself |
+| **Web app** | any browser | the home's address, port `8088`; or through Maktaba Cloud |
+
+**Signing in a TV or a device by code.** A TV (or a phone or computer that chooses *With a
+code*) shows a code like `ABCD-1234` and a QR code. Approve it from an app that is already
+signed in: in **Maktaba Remote**, tap **Approve a TV or device** at the top of any screen; in
+**Maktaba Player**, open **Profile** and tap **Approve a TV or device** (on the Mac, the
+**Account** menu); or open the web app's **Sign in a device** page (`/pair`). While a TV waits,
+the Remote (and the Android Player) shows a banner with **Enter code**, and the Android apps a
+notification when notifications are allowed. Older apps call it **Approve a sign-in**, under the
+person icon. The device is signed in as you, with your role.
+
+The older Capacitor web-app wrapper (`apps/mobile`, `maktaba-<version>.apk`) is not one of
+these apps. Installed by hand, it shows a *New version available* banner with *Get update*
+when a newer release exists ([docs/auto-update.md](docs/auto-update.md)).
+
+The user guide for every app is in the web app at `/help` (Help → Apps), in English and Arabic.
+
+---
+
 ## Deploying the Cloud Relay
 
 The optional hosted layer (`cloud/`) ships as a single `maktaba-cloud`
@@ -237,18 +318,20 @@ provisioning, and operations — is in
 
 ## Native apps
 
-Phones and desktops wrap the same `web/` SPA bundle natively — no
-per-platform UI fork. **TV is different**: the 10-foot UI (D-pad focus,
-poster rows, big-text) can't be a reused web view, so tvOS and Android TV
-are *native* apps that talk to the same API. All shells live under
-[`apps/`](apps/):
+The Player, Remote and TV apps are native and talk to the home's API
+([Epic 42](specs/epics/42-apps-player-remote-server/README.md),
+[Epic 48](specs/epics/48-native-players/README.md)). The desktop apps that carry the
+server wrap the `web/` bundle. All shells live under [`apps/`](apps/):
 
 | Target | Stack | Build |
 |---|---|---|
-| iOS + Android | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) — wraps `web/dist` | `make mobile-build` |
-| macOS / Windows / Linux | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) — wraps `web/dist` | `make desktop-build` |
-| tvOS | **SwiftUI + AVKit** ([`apps/tv/tvos/`](apps/tv/tvos/)) — native 10-foot UI | `make tv-build-ios` |
+| iPhone, iPad, Mac: Player and Remote | **SwiftUI** + the shared `MaktabaKit` ([`apps/apple/`](apps/apple/)) | `xcodebuild` (see its README) |
+| Android: Player and Remote | **Jetpack Compose** on the shared `client` ([`apps/android/`](apps/android/)) | `./gradlew` (see its README) |
+| Windows, Linux: Player | **Compose for Desktop** ([`apps/desktop-player/`](apps/desktop-player/)) | `./gradlew packageMsi` / `packageDeb packageRpm` |
+| Apple TV | **SwiftUI + AVKit** ([`apps/tv/tvos/`](apps/tv/tvos/), scheme `Maktaba TV`) — native 10-foot UI | `make tv-build-ios` |
 | Android TV | **Compose-for-TV + Media3** ([`apps/tv/android/`](apps/tv/android/)) — native 10-foot UI | `make tv-build-android` |
+| macOS / Windows / Linux: the server app | **Tauri 2** ([`apps/desktop/`](apps/desktop/)) — wraps `web/dist`, carries the server | `make desktop-build` |
+| iOS + Android (older web-app wrapper) | **Capacitor 6** ([`apps/mobile/`](apps/mobile/)) — wraps `web/dist` | `make mobile-build` |
 
 ```sh
 make mobile-build      # web build + cap sync (needs Xcode/CocoaPods, Android SDK+JDK)
@@ -258,9 +341,10 @@ make tv-build-ios      # tvOS core (swift build); device builds via xcodebuild
 make tv-build-android  # Android TV debug APK (needs the Android SDK)
 ```
 
-The mobile/desktop wrappers share `com.hamzalabs.maktaba` as the
-app/bundle identifier and the `maktaba://` deep-link scheme; the TV apps
-use `com.hamzalabs.maktaba.tv`. Generated native projects
+The native apps use `com.hamzalabs.maktaba.player` (`.player.tablet` on iPad,
+`.player.mac` on the Mac), `com.hamzalabs.maktaba.remote` and `com.hamzalabs.maktaba.tv`;
+the Capacitor and Tauri wrappers share `com.hamzalabs.maktaba`. All take `maktaba://connect`
+links. Generated native projects
 (`apps/mobile/{ios,android}`, `apps/desktop/src-tauri/{target,gen}`, the
 TV build outputs) and signing material are not checked in — see each
 shell's README for the toolchain prerequisites and signing setup.
@@ -283,16 +367,16 @@ the workflows below.
 | **Desktop — Windows** | NSIS `-setup.exe` with the server inside (current user, `%LOCALAPPDATA%\Maktaba`) + portable `.zip` of the client | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Desktop — Linux** | `.AppImage` + `.deb` + `.rpm` (x86_64, aarch64), the whole server inside (ffmpeg is the distribution's) | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
 | **Server — Linux without a desktop** | `maktaba-linux-payload-<version>-<x86_64\|aarch64>.tar.gz` (`install.sh --app`) | [`release.yml`](.github/workflows/release.yml) |
-| **Mobile — Android** | `maktaba-<version>.apk` (sideload) + `.aab` (Play Store) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
-| **Mobile — iOS** | `maktaba-<version>.ipa` *(signing deferred — see workflow)* | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
-| **TV — Android TV** | `maktaba-tv-<version>.apk` | [`tv-release.yml`](.github/workflows/tv-release.yml) |
-| **Google Play — native Android** | `maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, `maktaba-tv-<version>.aab` (signed with the Play upload key; [docs/google-play.md](docs/google-play.md)) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
-| **TV — tvOS** | *manual* via Xcode ▸ Archive ▸ TestFlight | [`tv-release.yml`](.github/workflows/tv-release.yml) (compile check) |
+| **Player — Windows, Linux** | `Maktaba-Player_<v>_x64.msi`, `maktaba-player_<v>_<amd64\|arm64>.deb`, `maktaba-player-<v>.<x86_64\|aarch64>.rpm` (each with a `.sig`) + `latest-player.json` | [`desktop-release.yml`](.github/workflows/desktop-release.yml) |
+| **Apple — TestFlight** | Maktaba Player (iPhone, iPad, Mac), Maktaba Remote (iPhone), Maktaba TV (Apple TV), uploaded to App Store Connect ([docs/testflight.md](docs/testflight.md)) | [`testflight.yml`](.github/workflows/testflight.yml) |
+| **Google Play — native Android** | `maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, `maktaba-tv-<version>.aab` (signed with the Play upload key), uploaded to each app's internal testing track ([docs/google-play.md](docs/google-play.md)) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
+| **TV — Android TV (sideload)** | `maktaba-tv-<version>.apk`, attached only when signed | [`tv-release.yml`](.github/workflows/tv-release.yml) |
+| **Older web-app wrapper** | `maktaba-<version>.apk` + `.aab`, `maktaba-<version>.ipa` (unsigned) | [`mobile-release.yml`](.github/workflows/mobile-release.yml) |
 
-**Signing status.** Desktop installers and the iOS/tvOS builds are
-currently **unsigned** — code-signing certificates (Apple Developer ID,
-Windows Authenticode) are wired in as documented TODOs in each workflow and
-land once provisioned. The desktop apps' **updates are signed** with the Tauri
+**Signing status.** The TestFlight builds are signed by Xcode's cloud signing, and the
+Play bundles with the upload key. The desktop installers are signed and notarized only when
+the Apple Developer ID and Windows Authenticode secrets are set; until then they are
+**unsigned**. The desktop apps' **updates are signed** with the Tauri
 updater key: the release workflow signs them with the repository's secret and
 stamps the public key (the `TAURI_UPDATER_PUBKEY` variable) into
 `tauri.conf.json` at build time, so the apps take only updates signed with it
@@ -315,18 +399,21 @@ maktaba/
 ├── streaming/            # Go streaming service (Epic 8) — HLS/DASH origin
 ├── pipeline/             # Python pipeline (Epics 1–6) — scan, STT, index
 ├── cloud/                # Go cloud relay service (Epic 25) — hosted SaaS
-├── web/                  # React PWA + design system + wiki app (Epic 11, 17)
+├── web/                  # React PWA, the in-app help (src/help), design system, wiki app (Epics 11, 17, 41)
 ├── apps/
-│   ├── mobile/           # Capacitor wrappers for iOS / Android (Epic 12)
-│   ├── desktop/          # Tauri wrapper for mac/Win/Linux (Epic 13)
-│   └── tv/               # Swift (tvOS) + Kotlin (Android TV) (Epic 14)
+│   ├── apple/            # SwiftUI Player + Remote (iPhone, iPad, Mac), MaktabaKit (Epics 42, 48)
+│   ├── android/          # Compose Player + Remote (phone, foldable, tablet) (Epics 42, 48)
+│   ├── desktop-player/   # Compose for Desktop Player for Windows / Linux (Epic 42)
+│   ├── desktop/          # Tauri app for mac/Win/Linux that carries the server (Epics 13, 36–39)
+│   ├── mobile/           # older Capacitor wrappers for iOS / Android (Epic 12)
+│   └── tv/               # Swift (tvOS) + Kotlin (Android TV) (Epics 14, 48)
 ├── shared/
 │   ├── api/              # openapi.yaml, GraphQL SDL — single source of truth
 │   ├── db/migrations/    # numbered SQL migrations (Postgres + SQLite duals)
 │   ├── log/              # structured logging libraries (go + py)
 │   ├── metrics/          # OpenTelemetry helpers
 │   └── testtier/         # cross-language test pyramid budgets
-├── specs/                # design source of truth: 25 epics, 272 stories
+├── specs/                # design source of truth: 54 epics (specs/epics/README.md)
 │   ├── architecture.md   # canonical system design
 │   ├── epics/            # one directory per epic, README + stories + plans
 │   └── PLAN_REVIEW*.md   # independent spec reviews
@@ -343,11 +430,12 @@ maktaba/
 
 ## Tech stack
 
-- **Backend:** Go 1.23+ (api, streaming, cloud), Python 3.12+ (pipeline)
+- **Backend:** Go 1.26 (api, cloud; streaming 1.25), Python 3.12+ (pipeline)
 - **Frontend:** TypeScript, React 18, Vite, TailwindCSS, Vidstack
-- **Native:** Capacitor (mobile), Tauri 2 (desktop), Swift / SwiftUI (tvOS),
-  Kotlin / Jetpack Compose (Android TV)
-- **Data:** PostgreSQL 16 (or SQLite for single-user mode), ChromaDB (vectors)
+- **Native:** Swift / SwiftUI (iPhone, iPad, Mac, Apple TV), Kotlin / Jetpack Compose
+  (Android, Android TV), Compose for Desktop (Windows / Linux Player), Tauri 2 (the
+  desktop server app), Capacitor (the older mobile wrapper)
+- **Data:** PostgreSQL 16 with pgvector (or SQLite for single-user mode)
 - **Media:** FFmpeg for transcoding / remuxing / probing
 - **STT / ML:** Whisper via `mlx-whisper`, `faster-whisper`, or OpenAI API;
   multilingual `sentence-transformers` embeddings; `pyannote.audio` diarization
@@ -361,21 +449,44 @@ maktaba/
 
 | | |
 |---|---|
-| Epics | **25** ([scanner](specs/epics/01-scanner/) → [cloud relay](specs/epics/25-cloud-relay/)) |
-| Stories | **272** implemented |
-| Phases | **17** delivered (foundation → cloud relay) |
-| Plans | 274 implementation plans across 5 plan-review passes |
+| Epics | **54** in [`specs/epics/`](specs/epics/README.md): most of 01–49 is built on `main` (each epic's README and the [CHANGELOG](CHANGELOG.md) say how far); 50–54 are planned ([Roadmap](#roadmap)) |
+| Releases | tagged `v0.3.x`; update, rollback and restore are rehearsed in CI before a tag ships ([docs/update-rehearsal.md](docs/update-rehearsal.md)) |
+| Changes | [`CHANGELOG.md`](CHANGELOG.md) |
 
 See:
 
 - [`specs/architecture.md`](specs/architecture.md) — system design.
-- [`specs/FULL_IMPLEMENTATION_AUDIT.md`](specs/FULL_IMPLEMENTATION_AUDIT.md) — end-to-end audit of all 25 epics on `main`.
-- [`specs/TEST_RESULTS.md`](specs/TEST_RESULTS.md) — full-suite test results snapshot.
+- [`docs/hardware.md`](docs/hardware.md) — what the home and worker machines need, by library size, measured on the live home.
 - [`docs/testing.md`](docs/testing.md) — test pyramid, tier budgets, CI gates.
-- [`docs/cluster/README.md`](docs/cluster/README.md) — several machines as one Maktaba cluster: joining, files on the share, LLMs, troubleshooting.
+- [`docs/cluster/README.md`](docs/cluster/README.md) — several machines as one Maktaba home: joining, files on the share, LLMs, troubleshooting.
+- [`docs/updates.md`](docs/updates.md) — how updates install, roll back and restore.
+- [`docs/testflight.md`](docs/testflight.md), [`docs/google-play.md`](docs/google-play.md) — getting the apps to testers.
 - [`docs/wiki/INDEX.md`](docs/wiki/INDEX.md) — generated wiki index. **The wiki is served by the bundled wiki web app in [`web/wiki-app/`](web/wiki-app/), NOT by GitHub Wiki** — see [`docs/WIKI_SYNC.md`](docs/WIKI_SYNC.md) for why and how.
 - [`docs/wiki/build-order.md`](docs/wiki/build-order.md) — phase-by-phase implementation order.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — day-1 setup, day-N inner loop, troubleshooting.
+
+---
+
+## Roadmap
+
+The next epics are specs, not built yet:
+
+| # | Epic | What it brings |
+|---|---|---|
+| 50 | [Maktaba Cloud with no downtime](specs/epics/50-cloud-no-downtime/README.md) | the hosted relay, from one VPS to a relay people can pay for; payments come with a provider still to be chosen |
+| 51 | [Configurable components](specs/epics/51-configurable-components/README.md) | every part of Maktaba can be turned on, off, added later or left out |
+| 52 | [Word review](specs/epics/52-transcript-word-review/README.md) | suspect words in transcripts go to a person, in every language |
+| 53 | [Logs, errors and reports](specs/epics/53-logs-errors-reports/README.md) | one log schema, problem reports from every app, and a UI that never goes dark |
+| 54 | [Plugins](specs/epics/54-plugins/README.md) | new functions in the queue, with no internet, from a Maktaba store at plugins.maktaba.tv that runs apart from Maktaba Cloud |
+
+---
+
+## Domains
+
+- **maktaba.tv** is for users: Maktaba Cloud and everything people use.
+- **maktaba.dev** is for developers: the developer wiki, the source and `security.txt`.
+
+No other Maktaba domain is ours.
 
 ---
 

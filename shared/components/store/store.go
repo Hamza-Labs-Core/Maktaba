@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -56,6 +57,27 @@ type Desired struct {
 	Want       string `json:"want"` // absent | installed | enabled
 	Hold       *Hold  `json:"hold,omitempty"`
 	Generation int64  `json:"generation"`
+	// Licence is what the home's licence allows, as the API published it (slot 0181;
+	// story 51.19). nil: nothing published, the component runs as it does today. Only
+	// Desired fills it (the runners' read).
+	Licence *Licence `json:"licence,omitempty"`
+}
+
+// Licence is a desired row's licensed and licensed_until: whether the home's licence
+// grants the component's flag, and until when (the licence's expires_at + SkewGrace; nil:
+// it does not expire, or it is not granted).
+type Licence struct {
+	Licensed bool       `json:"licensed"`
+	Until    *time.Time `json:"until,omitempty"`
+}
+
+// LicensedAt is the Licensed condition at now: licensed AND (no until OR now < until).
+// A row with nothing published is licensed.
+func (d Desired) LicensedAt(now time.Time) bool {
+	if d.Licence == nil {
+		return true
+	}
+	return d.Licence.Licensed && (d.Licence.Until == nil || now.Before(*d.Licence.Until))
 }
 
 // Override is one machine's exception to the home's row (51.12). An empty Want follows
@@ -213,7 +235,97 @@ func (s *Store) Desired(ctx context.Context, machine string) (map[string]Desired
 		}
 		out[d.ID] = d
 	}
-	return out, rev, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	if machine == Home || machine == "" {
+		if err := s.readLicences(ctx, out); err != nil {
+			return nil, 0, err
+		}
+	}
+	return out, rev, nil
+}
+
+// readLicences sets each home row's Licence from licensed and licensed_until. A database
+// before slot 0181 has neither column: nothing is published there. A joined machine reads
+// none (component_desired_for returns no licence): gating is per home, and no gated
+// component runs on a machine (cloud.relay is home-only).
+func (s *Store) readLicences(ctx context.Context, out map[string]Desired) error {
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, licensed, licensed_until FROM components WHERE licensed IS NOT NULL`)
+	if err != nil {
+		if noLicenceColumns(err) {
+			return nil
+		}
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var id string
+		var licensed bool
+		var until nullTime
+		if err := rows.Scan(&id, &licensed, &until); err != nil {
+			return err
+		}
+		d, ok := out[id]
+		if !ok {
+			continue
+		}
+		l := &Licence{Licensed: licensed}
+		if until.Valid {
+			u := until.T
+			l.Until = &u
+		}
+		d.Licence = l
+		out[id] = d
+	}
+	return rows.Err()
+}
+
+func noLicenceColumns(err error) bool {
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "licensed") && (strings.Contains(m, "does not exist") || strings.Contains(m, "no such column"))
+}
+
+// SetLicences publishes what the home's licence allows on the desired rows of the
+// components in ls (story 51.19): only a row whose licensed or licensed_until differs is
+// written, so a publish that changes nothing sends no notification. A component with no
+// desired row is left alone (no row runs as today; the seed writes every row). It
+// answers how many rows it changed. Only the API calls it.
+func (s *Store) SetLicences(ctx context.Context, ls map[string]Licence) (int, error) {
+	ids := make([]string, 0, len(ls))
+	for id := range ls {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	q := `UPDATE components SET licensed = $2, licensed_until = $3
+		WHERE id = $1 AND (licensed IS DISTINCT FROM $2 OR licensed_until IS DISTINCT FROM $3)`
+	if s.sqlite() {
+		q = `UPDATE components SET licensed = $2, licensed_until = $3
+		WHERE id = $1 AND (licensed IS NOT $2 OR licensed_until IS NOT $3)`
+	}
+	n := 0
+	for _, id := range ids {
+		l := ls[id]
+		var until any
+		if l.Until != nil {
+			until = ts(s.DB, *l.Until)
+		}
+		var licensed any = l.Licensed
+		if s.sqlite() {
+			licensed = 0
+			if l.Licensed {
+				licensed = 1
+			}
+		}
+		res, err := s.DB.ExecContext(ctx, q, id, licensed, until)
+		if err != nil {
+			return n, err
+		}
+		if k, err := res.RowsAffected(); err == nil {
+			n += int(k)
+		}
+	}
+	return n, nil
 }
 
 // DesiredOf is the home's row for id (ErrNotFound when there is none).
