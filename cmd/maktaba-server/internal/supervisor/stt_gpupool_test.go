@@ -7,7 +7,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 )
 
-// The owner's Windows PC (RTX 2080 SUPER, 8 GB): the gpu pool is per worker, and the
+// The Windows node (RTX 2080 SUPER, 8 GB): the gpu pool is per worker, and the
 // cluster's size was set for the home's GPU (2 on the live Mac). The worker that
 // transcribes there takes the batch sized from its own GPU (MAKTABA_POOL_GPU, which the
 // pipeline's claim loop reads): 8 files at once, the batch that ran at 72x. With the

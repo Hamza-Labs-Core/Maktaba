@@ -951,11 +951,28 @@ UNMAPPED_HINT = (
 )
 
 
+_DRIVE_OR_UNC = re.compile(r"^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/])")
+
+
+def unmapped_here(local: str, db_path: str, windows: bool | None = None) -> bool:
+    """The path map left the home's path as it was, and it is another system's: a POSIX
+    path (``/Volumes/...``) on Windows, a drive letter or UNC path elsewhere. Only then is
+    a file that is not there the map's doing; on the home its own paths stay as they are."""
+    if local.replace("\\", "/") != db_path.replace("\\", "/"):
+        return False
+    if windows is None:
+        windows = sys.platform == "win32"
+    if windows:
+        return db_path.startswith("/") and not db_path.startswith("//")
+    return _DRIVE_OR_UNC.match(db_path) is not None
+
+
 async def _on_share(local: str, db_path: str | None = None) -> str:
     """The video's file as this machine reads it, or why not. ``db_path`` is the path the
-    home stored: when the path map left it as it was and it is not here, the failure says
-    that the map has no entry for it (a node whose map misses a library's folder)."""
-    unmapped = db_path is not None and local.replace("\\", "/") == db_path.replace("\\", "/")
+    home stored: when the path map left another system's path as it was and it is not
+    here, the failure says that the map has no entry for it (a Windows node whose map
+    misses a library's folder, :func:`unmapped_here`)."""
+    unmapped = db_path is not None and unmapped_here(local, db_path)
     hint = f" ({UNMAPPED_HINT})" if unmapped else ""
     try:
         found = await asyncio.wait_for(asyncio.to_thread(on_disk, local), READ_TIMEOUT_S)

@@ -1,5 +1,5 @@
 // A machine's transcription line on Admin > Machines: ready on its GPU, installing with an
-// update, or the exact reason it cannot transcribe (the owner's Windows PC said nothing:
+// update, or the exact reason it cannot transcribe (the Windows node said nothing:
 // "unavailable" in the stage table, no GPU, no stt extra).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { screen, within } from "@testing-library/react";

@@ -1,4 +1,4 @@
-"""A Windows NVIDIA worker's capability report and stage selection (the owner's PC: an RTX
+"""A Windows NVIDIA worker's capability report and stage selection (the Windows node: an RTX
 2080 SUPER that reported ``"gpus": []`` and no ``stt`` extra, and never transcribed).
 
 Runs on Windows too (``_unit.yml`` pipeline-cluster-windows): nothing here needs a GPU.
@@ -101,7 +101,7 @@ def test_nvml_without_a_driver_is_a_reason_not_an_error() -> None:
 
 @pytest.fixture
 def windows_pc(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The owner's PC: Windows x86_64, the app's venv (every pin of the constraints: the
+    """The Windows node: Windows x86_64, the app's venv (every pin of the constraints: the
     stt extra's faster-whisper, CTranslate2 and cuBLAS wheels), no pynvml, no NVML that
     loads, an RTX 2080 SUPER nvidia-smi sees."""
     installed = {"faster_whisper", "ctranslate2", "nvidia", "sentence_transformers", "yt_dlp"}
