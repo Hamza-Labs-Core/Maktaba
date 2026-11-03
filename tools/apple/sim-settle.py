@@ -11,7 +11,8 @@ whole is no measure: its own daemons (diagnosticd, apsd, Spotlight) kept it unde
 for twelve minutes on every shard. So this sums the CPU of the simulator's processes alone
 (the ones launched from its runtime, `/RuntimeRoot/`, or its device folder) on each 5-second
 look, and returns once three looks running are under QUIET percent of one core. Each look,
-with the simulator's busiest processes and the runner's idle share, goes to LOG. Not quiet
+with the simulator's busiest processes, the runner's idle share and the runner's own busiest
+processes, goes to LOG. Not quiet
 within --max seconds: it says so and returns 0 (the tests run anyway; their results decide).
 """
 from __future__ import annotations
@@ -40,6 +41,17 @@ def sim_pids(ps: str, udid: str) -> dict[int, str]:
     return found
 
 
+def runner_busiest(ps: str, cpu: dict[int, float], sim: dict[int, str], most: int = 3) -> list[tuple[str, float]]:
+    """The runner's own busiest processes (not the simulator's): what else holds its CPU."""
+    names: dict[int, str] = {}
+    for line in ps.splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) == 2 and parts[0].isdigit():
+            names[int(parts[0])] = parts[1].split(" -", 1)[0].rsplit("/", 1)[-1]
+    rest = [(names.get(p, str(p)), c) for p, c in cpu.items() if p not in sim and c > 0]
+    return sorted(rest, key=lambda x: -x[1])[:most]
+
+
 def last_sample(top: str) -> tuple[float | None, dict[int, float]]:
     """The runner's idle share and each pid's CPU in the last sample of `top -l 2 -stats pid,cpu`."""
     samples = re.split(r"(?m)^Processes:", top)
@@ -53,13 +65,13 @@ def last_sample(top: str) -> tuple[float | None, dict[int, float]]:
     return (float(idle_m.group(1)) if idle_m else None), cpu
 
 
-def look(udid: str) -> tuple[float, float | None, list[tuple[str, float]]]:
+def look(udid: str) -> tuple[float, float | None, list[tuple[str, float]], list[tuple[str, float]]]:
     ps = subprocess.run(["ps", "-Ao", "pid=,command="], capture_output=True, text=True, check=False).stdout
     top = subprocess.run(["top", "-l", "2", "-s", "5", "-n", "500", "-stats", "pid,cpu"], capture_output=True, text=True, check=False).stdout
     names = sim_pids(ps, udid)
     idle, cpu = last_sample(top)
     busy = sorted(((names[p], c) for p, c in cpu.items() if p in names), key=lambda x: -x[1])
-    return sum(c for _, c in busy), idle, busy
+    return sum(c for _, c in busy), idle, busy, runner_busiest(ps, cpu, names)
 
 
 def settle(udid: str, log: str, most: int) -> None:
@@ -67,10 +79,14 @@ def settle(udid: str, log: str, most: int) -> None:
     quiet = 0
     with open(log, "a", encoding="utf-8") as out:
         while True:
-            total, idle, busy = look(udid)
+            total, idle, busy, runner = look(udid)
             took = int(time.monotonic() - start)
             top3 = "; ".join(f"{n} {c:.0f}" for n, c in busy[:3])
-            line = f"t={took}s simulator={total:.0f}% runner-idle={idle if idle is not None else '?'}% {top3}"
+            # the runner's own busiest too: a shard ran at 0% idle all through with the
+            # simulator at half a core (CI run 41542134785, iPhone 2/6), its audits timing out
+            others = "; ".join(f"{n} {c:.0f}" for n, c in runner)
+            line = (f"t={took}s simulator={total:.0f}% runner-idle={idle if idle is not None else '?'}% {top3}"
+                    f" | runner: {others}")
             print(line, flush=True)
             out.write(line + "\n")
             quiet = quiet + 1 if total < QUIET else 0
@@ -99,6 +115,7 @@ def self_test() -> None:
     idle, cpu = last_sample(top)
     assert idle == 85.0, idle
     assert cpu == {202: 12.5, 303: 3.0, 404: 40.0}, cpu
+    assert runner_busiest(ps, cpu, sim_pids(ps, udid)) == [("diagnosticd", 40.0)], runner_busiest(ps, cpu, sim_pids(ps, udid))
     print("sim-settle.py: self-test passed")
 
 

@@ -190,13 +190,23 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
 
     /// Apple's accessibility audit (labels, roles, contrast, Dynamic Type, clipped text, hit
     /// regions) on the Libraries root, a library and a series, in English and Arabic.
+    ///
+    /// The section is launched alone (`sections: ["libraries"]`, the shell's one-section mode, as
+    /// Home's and the video page's audits): the audit checks this section's pages, not the
+    /// system's tab bar. Its clipped-text check lays the whole app out again at each of the 12
+    /// Dynamic Type sizes, within the audit's 15 s, and with all five tabs half of the app's work
+    /// at each size was UIKit's own tab bar and sidebar rebuilding (an iPad's Libraries root:
+    /// 2.0 s of the app's CPU per check with the tabs, 1.1 s without). On a loaded CI runner the
+    /// check went past its 15 s ("Audit failed to complete in time"; the iPad's root, CI run
+    /// 41542134785 and earlier).
     func testAccessibilityAudit() {
         let pages: [(open: String?, ready: String)] = [(nil, "library.lib-docs"), ("library/lib-docs", "library.row.continue"),
                                                        ("series/s-seerah", "series.continue")]
         for language in ["en", "ar"] {
             for page in pages {
                 let name = "\(language) \(page.open ?? "root")"
-                launchSignedIn(language, section: "libraries", open: page.open)
+                launchedAt = home.requests.count
+                launchSignedIn(language, sections: ["libraries"], section: "libraries", open: page.open)
                 XCTAssertTrue(element(page.ready).waitForExistence(timeout: 20), name)
                 // the posters loaded: no shimmer moving under the contrast check
                 waitFor(timeout: 2) { false }
@@ -244,6 +254,9 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         signIn(timeout: 30)
     }
 
+    /// How many requests the mock home had when the page under audit was launched.
+    private var launchedAt = 0
+
     /// A grid loads its next page when its last card shows, and the audit's smaller text sizes
     /// can show it: a page arriving mid-audit moves every text it is measuring, which it calls
     /// "partially unsupported" all at once (CI: iPad ar root, `GET /api/videos` during the
@@ -253,8 +266,12 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         // the rows last, once the grid is back at its top: what the audit will see
         defer { loadEveryRail() }
         let grid = element("screen.library")
-        let lastPage = { self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos" && $0.value("cursor") == "c2" } }
-        guard grid.exists, home.requests.contains(where: { $0.method == "GET" && $0.path == "/api/videos" }) else { return }
+        // this launch's requests only: the test's one mock home has every earlier page's, and
+        // an earlier page's last page (another library's, or this one's in English) passed for
+        // this one's, so its grid's last page came during the audit (`GET /api/videos?cursor=c2`)
+        let asked = { self.home.requests.dropFirst(self.launchedAt).filter { $0.method == "GET" && $0.path == "/api/videos" } }
+        let lastPage = { asked().contains { $0.value("cursor") == "c2" } }
+        guard grid.exists, !asked().isEmpty else { return }
         var swipes = 0
         while !lastPage(), swipes < 10 {
             grid.swipeUp()
@@ -322,7 +339,7 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         } catch {
             found.append("\(error)")
         }
-        return (found, home.requests.dropFirst(asked).map { "\($0.method) \($0.path)" })
+        return (found, home.requests.dropFirst(asked).map { "\($0.method) \($0.path)\($0.query.isEmpty ? "" : "?" + $0.query)" })
     }
 
     // MARK: the Series tab's pages
