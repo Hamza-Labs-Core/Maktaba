@@ -47,6 +47,13 @@ func TestPlanRules(t *testing.T) {
 			f.OperatorOff = map[string]bool{"thumbnail": true, "thumb_small": true, "chapter_thumbs": true}
 		}, "media.thumbnails", "installed"},
 		{"slots on", func(f *Facts) {}, "livetv.slots", "enabled"},
+		{"slots on, every livetv stage off by an operator: livetv stays enabled", func(f *Facts) {
+			f.OperatorOff = map[string]bool{"plan_channels": true, "write_channels": true}
+		}, "livetv", "enabled"},
+		{"slots off, every livetv stage off by an operator", func(f *Facts) {
+			f.Slots = false
+			f.OperatorOff = map[string]bool{"plan_channels": true, "write_channels": true}
+		}, "livetv", "enabled"},
 		{"slots on: in-process off", func(f *Facts) {}, "livetv.inprocess", "installed"},
 		{"slots off", func(f *Facts) { f.Slots = false }, "livetv.slots", "installed"},
 		{"slots off: in-process on", func(f *Facts) { f.Slots = false }, "livetv.inprocess", "enabled"},

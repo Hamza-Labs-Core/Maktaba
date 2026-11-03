@@ -109,7 +109,34 @@ func Plan(cat *components.Catalog, f Facts) map[string]string {
 		}
 		out[c.ID] = w
 	}
+	keepRequirementsOn(cat, out)
 	return out
+}
+
+// keepRequirementsOn enables what an enabled component requires, so nothing that runs
+// today waits on a requirement the rules above turned off (every livetv stage turned off
+// on the Queues page while the slots run: livetv's loops run today too). Assets and
+// "any:" groups are left as they are: an asset is never enabled.
+func keepRequirementsOn(cat *components.Catalog, out map[string]string) {
+	for changed := true; changed; {
+		changed = false
+		for _, c := range cat.Components() {
+			if out[c.ID] != components.WantEnabled {
+				continue
+			}
+			for _, r := range cat.Requires(c.ID) {
+				if len(r.AnyOf) != 1 {
+					continue
+				}
+				dep, ok := cat.Get(r.AnyOf[0])
+				if !ok || dep.Kind == components.KindAsset || out[dep.ID] != components.WantInstalled {
+					continue
+				}
+				out[dep.ID] = components.WantEnabled
+				changed = true
+			}
+		}
+	}
 }
 
 // ReadDB reads the database's facts: the stages an operator turned off, the extensions
