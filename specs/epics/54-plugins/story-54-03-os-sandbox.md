@@ -6,7 +6,7 @@
 
 The WebAssembly layer (54.02) is the main wall: a plugin cannot name a socket. But one bug in
 Wasmtime would turn a plugin into native code with the server user's rights, which include the
-network. The owner's rule is "no internet, enforced, not promised". This story puts the host
+network. The rule is: no internet, enforced, not promised. This story puts the host
 process itself in each operating system's sandbox, with no network and almost no files, and
 proves it in CI on every OS with native code that tries to get out and must fail.
 

@@ -1,4 +1,4 @@
-// The owner's rule of 2026-10-28, "only manual needs approval": a change says who made it
+// The rule of 2026-10-28, only a manual change needs an approval: a change says who made it
 // (an automatic one goes on by its rule; a manual one waits for an admin).
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";

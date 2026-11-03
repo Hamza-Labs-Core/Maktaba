@@ -1,6 +1,6 @@
 """A video's downloaded thumbnail in its folder's ``.thumbs/`` (2026-11).
 
-The owner's NAS keeps the thumbnails of 69 channel folders in a hidden subfolder
+One NAS keeps the thumbnails of 69 channel folders in a hidden subfolder
 (``<channel>/.thumbs/<stem>.jpg`` beside ``<channel>/<stem>.mp4``). One rule finds a
 video's own image (:func:`find_sidecar_thumbnail`): next to the video first, then in
 ``.thumbs/``. ``thumb_hash`` and ``thumb_small`` use it and fingerprint a ``.thumbs/``

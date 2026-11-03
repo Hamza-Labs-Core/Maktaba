@@ -1,4 +1,4 @@
-// Every update this app tries, with its reason when it fails (the owner's request after the
+// Every update this app tries, with its reason when it fails (required after the
 // Mac's 0.3.0-rc.5 to 0.3.0 update failed without a word; specs/epics/35-cluster-full-
 // nodes-and-updates/update-attempts.md). The record is app-attempts.json beside the home's
 // order (app-install.json): newest first, at most KEEP, written whole. The server reads it

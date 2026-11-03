@@ -10,7 +10,7 @@
 
 ## Goal
 
-The owner's decisions (2026-10-21):
+Decisions (2026-10-21):
 
 1. **A tile's colour says what to do.** A stage is not red because a small share of its jobs
    failed. Red means *many recent jobs fail the same new way* (a bug or a bad setting). Jobs

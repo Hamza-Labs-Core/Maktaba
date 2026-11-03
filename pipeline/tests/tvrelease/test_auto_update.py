@@ -26,7 +26,7 @@ def test_only_manual_changes_need_approval() -> None:
     assert auto_rule(cfg, ["binary"], "auto_update") == "immediate"
     assert auto_rule(cfg, ["binary"], "manual") == "approval"
     assert auto_rule(cfg, ["binary"]) == "approval"
-    # automatic: a stored "approval" from before the owner's rule reads as immediate
+    # automatic: a stored "approval" from before the 2026-10-28 rule reads as immediate
     assert auto_rule(cfg, ["lineup", "binary"], "auto_update") == "immediate"
     quiet = MaktabaTvStagingConfig(
         auto_promote_lineup="quiet_window", auto_promote_binary="quiet_window"

@@ -98,7 +98,7 @@ tasks not exported again). Another install cannot move while one move is under w
 | `serve --no-mdns --bin-dir bin` | `--bin-dir`: the payload's; `--no-mdns`: carried as `[server] mdns = "off"` | |
 | kept | `E:\tv\maktaba-local` (logs, `pgdata`, `bin-*`, `mediaintel-snapshot.db`) | untouched |
 
-This PC is converted only after the owner's OK (the user asked for that explicitly).
+This PC is converted only after the owner's OK.
 
 ## Going back
 

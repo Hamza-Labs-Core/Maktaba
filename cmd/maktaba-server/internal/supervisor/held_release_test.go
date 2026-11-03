@@ -14,7 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
 )
 
-// The owner's rule (#404, 2026-10-28): while an update's TV check failed, the live TV
+// Rule (#404, 2026-10-28): while an update's TV check failed, the live TV
 // stays on its old streaming software until the update's Retry passes or a later
 // release's own binary change passes its check. A schedule or settings change made
 // meanwhile records the held version and its staging slot and swap run the held binary;
@@ -47,8 +47,8 @@ func TestHeldTVReleasesRunTheHeldBinary(t *testing.T) {
 	held := func(context.Context) (string, error) { return "v1.4.0", nil }
 	green, amber := heldSlot(t, "green", held), heldSlot(t, "amber", held)
 	s := New([]Process{green, amber}, testPolicy(), WithKeptStreaming(finder), WithLog(&syncWriter{w: &bytes.Buffer{}}))
-	// the live slot bound to the live release, which names no binary (the owner's live
-	// release recorded the pipeline's 0.0.1; the front door names none for it): the held
+	// the live slot bound to the live release, which names no binary (the live release
+	// recorded the pipeline's 0.0.1; the front door names none for it): the held
 	// binary, bound to its release, not 1.5.0
 	if err := s.Bind("green", &SlotBinding{ReleaseID: "r-live"}); err != nil {
 		t.Fatal(err)

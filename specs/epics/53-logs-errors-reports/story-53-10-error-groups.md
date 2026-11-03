@@ -43,7 +43,7 @@ CREATE TABLE error_hours (fp TEXT, hour INTEGER, count INTEGER, PRIMARY KEY (fp,
 - **Status:** `new` → `seen` when an admin opens it; `resolved` by an admin (records the current
   version); a resolved group that happens again **on a later version** goes back to `new` and is
   marked "came back"; `muted` for 24 h, 7 days or until resolved.
-- Retention: groups not seen for **30 days** (owner's decision, 2026-11-03; admin-adjustable,
+- Retention: groups not seen for **30 days** (decided 2026-11-03; admin-adjustable,
   53.11) are deleted with their hours; hourly counts older than 30 days are dropped; samples point at lines
   that may have aged out (the UI says "line no longer kept").
 

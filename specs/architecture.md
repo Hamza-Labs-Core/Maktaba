@@ -2558,7 +2558,7 @@ There is no Kubernetes requirement at any scale; Compose + a small
 > Floating IP, then a relay pool. Hetzner has no managed Postgres, so
 > "Postgres (managed)" in §13.2 means Patroni run by us, and the
 > load-balancer routing by `server_id` in §13.3 is replaced by
-> Epic 50's tunnel directory. The owner's decisions of 2026-11-03: plans
+> Epic 50's tunnel directory. Decided 2026-11-03: plans
 > are Free (no relay; home play and direct remote), Basic (relay capped
 > at about 3 Mbps, 2 streams) and Pro (full-quality relay with an
 > allowance, optional capped pay-as-you-go, falls back to Basic's cap and

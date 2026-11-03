@@ -244,7 +244,7 @@ func TestSlotReleaseBinding(t *testing.T) {
 	}
 }
 
-// A TV held on the release before (story 35.6, the owner's decision of 2026-10-28): a
+// A TV held on the release before (story 35.6, decided 2026-10-28): a
 // slot bound to it restarts on its binary where the install keeps it (a desktop app's
 // kept payload), checked against its SHA-256, and that release counts as in use while the
 // slot is bound, running or not, so no commit prunes it.

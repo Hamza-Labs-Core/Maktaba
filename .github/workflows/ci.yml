@@ -4,7 +4,7 @@
 # job branch protection requires. Adding a new gate means wiring it into
 # `ci-success.needs:` — branch protection config never has to change.
 #
-# CI runs what a change touches (the owner, 2026-11-02): on a pull request each job runs
+# CI runs what a change touches (decided 2026-11-02): on a pull request each job runs
 # only when a file it builds or tests changed (the filters in .github/ci-paths.yml); on a
 # push to main or release/* every job runs, which is what the tag guard waits for. A job
 # skipped by its filter counts as passed in ci-success; a failed or cancelled one fails it.
@@ -13,8 +13,8 @@
 # `tools/ci/ci_paths.py which <files>` says which jobs a change runs.
 #
 # A pull request that changes only the Claude trail (docs/claude-trail.md) runs nothing but
-# `changes` and `ci-success` (the owner, 2026-11-02: "Update trail on its own PRs, no ci no
-# test"). The always-run jobs are gated by the `repo` output: a file other than the trail
+# `changes` and `ci-success`: a trail update goes in its own pull request, with no CI and
+# no tests. The always-run jobs are gated by the `repo` output: a file other than the trail
 # changed. No filter matches the trail.
 #
 # A push to main or release/* that changes only the trail starts no run at all (the push

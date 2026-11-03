@@ -23,8 +23,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Switching places, and folding, shows the page read last at once, where it was scrolled to,
- * while the home is asked again (the owner: "pages should be cached while waiting updates when
- * switching"); the answer then updates it in place.
+ * while the home is asked again (a page stays cached while its update loads); the answer then updates it in place.
  */
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w344dp-h882dp-420dpi")

@@ -42,7 +42,7 @@ apps and the desktop window.
 
 ### 3. Settings (`/admin/logs/settings`)
 
-**Retention** (owner's decision, 2026-11-03: defaults logs 7 days, errors 30, reports 90, at most
+**Retention** (decided 2026-11-03: defaults logs 7 days, errors 30, reports 90, at most
 1 GB in all; an admin changes each value and the total here, within 53.02's ranges, and the page
 shows what each kind uses now), debug level per component for 1 h (the missing `POST /admin/log/level` of
 Epic 21.1, done through the supervisor so it reaches every child, returning to `info` after the
@@ -57,7 +57,7 @@ The Remote apps (Apple, Android) get **Errors** (list, group, status actions) an
 ### 5. Roles
 
 Every route is admin-only in the API (role tests); the navigation hides the pages from viewers,
-but hiding is not the rule (owner, 2026-10-25). A home admin signed in through Maktaba Cloud gets
+but hiding is not the rule (project rule since 2026-10-25). A home admin signed in through Maktaba Cloud gets
 these only if granted manage, as today.
 
 ### 6. Strings (in addition to 53.10's)

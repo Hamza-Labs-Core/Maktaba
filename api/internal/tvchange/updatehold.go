@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-// TV changes during an app update (the owner's rule of 2026-10-28: "tv changes should not
-// block updates"; Epic 35 story 35.3 AC5 as amended). An update always starts: no TV
+// TV changes during an app update (rule of 2026-10-28: TV changes do not block
+// updates; Epic 35 story 35.3 AC5 as amended). An update always starts: no TV
 // change holds it. From the moment the home is drained for its restart until the update
 // ends (its run in draining or home_applying: UpdateHolding), the change controller
 // handles the change in flight like this:

@@ -4,7 +4,7 @@
 
 ## Why
 
-The owner's decisions of 2026-11-03 (README §13, decisions 4 and 6) replace every plan we have
+The decisions of 2026-11-03 (README §13, decisions 4 and 6) replace every plan we have
 written down so far: the architecture doc's Pro 2 / Family 5 streams, and the code's Free / Pro /
 Family with 1 / 4 / 10 streams and 5 / 100 / 500 GiB (`cloud/internal/billing/plans.go`), which
 the license calls `free` / `home` / `pro` (`cloud/internal/license/license.go`,
@@ -148,7 +148,7 @@ by 50.05) is extended:
 
 ### 6. Billing through a payment provider TBD (not Stripe)
 
-Owner decision 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
+Decided 2026-11-03: **no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
 Stripe-owned services). The payment provider is **TBD**; this story builds against a
 provider-agnostic `billing.Provider` interface (`cloud/internal/billing/provider.go`) and a
 fake, and the owner picks the provider before the launch gate (README §12). Selection rules

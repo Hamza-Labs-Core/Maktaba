@@ -14,13 +14,13 @@
 > **Used by:** [Epic 52](../52-transcript-word-review/README.md) lists language packs as
 > add-on components of this epic. Epic 54 (being specced) builds a
 > third-party plugin system, with no internet access and a store, on this component model.
-> **Decisions:** the owner's answers of 2026-11-03 are in §13.
+> **Decisions:** the answers of 2026-11-03 are in §13.
 
 ## 1. Why
 
-The owner, 2026-11-03: *"currently all workers and features work right away, we need all to be
-config, setting, whatever based, so that it can be stopped/started, enabled/disabled, even
-server bundles, with and without components, ability to add later and so on."*
+Requirement: today every worker and feature starts right away. Each one must instead be driven
+by config or settings, so it can be stopped and started, enabled and disabled, with server
+bundles that ship with or without components, and components that can be added later.
 
 Today a new install starts everything it can: transcription workers, the index worker, the
 LLM server, Live TV slots, YouTube sync, the cluster hub, the relay agent and about 40
@@ -587,7 +587,7 @@ Sources in [research.md](research.md) §2.
 | # | Call | Rejected, and why |
 |---|---|---|
 | H1 | **Desired state in Postgres, actual state per machine with conditions.** | *Everything in `server.toml`*: not live, not per-cluster, not editable from the web. *A `phase` column only*: loses the reason, can't show "running but degraded". *etcd / a new store*: one more thing to run on a home. |
-| H2 | **Enable and Stop are two controls. A hold persists across restarts** until Start. There are no timed holds. | *systemd's "stop lasts until reboot"*: an update restarts the server, so "stop transcription" would undo itself at 3 a.m. *One switch*: the owner asked for both. *Timed holds (1 hour, tonight, until tomorrow 06:00)*: the owner chose only "until I turn it on" (§13, decision 2); fewer choices, and no time zones to get wrong. |
+| H2 | **Enable and Stop are two controls. A hold persists across restarts** until Start. There are no timed holds. | *systemd's "stop lasts until reboot"*: an update restarts the server, so "stop transcription" would undo itself at 3 a.m. *One switch*: both controls are required. *Timed holds (1 hour, tonight, until tomorrow 06:00)*: the only choice is "until I turn it on" (§13, decision 2); fewer choices, and no time zones to get wrong. |
 | H3 | **Disabling a requirement keeps the dependents' wish; they wait.** | *Cascade-disable the dependents* (systemd `Requires=` stop): turning one thing back on would mean finding and re-ticking five others. *Refuse while dependents are on*: annoying for a temporary stop. Refusal is kept only for remove. |
 | H4 | **Disable = stop claiming, drain, force-pause what is left, keep the queue, don't feed; enable = resume + catch-up.** | *Keep enqueueing and park everything*: a home with transcription off for months would grow millions of parked rows. *Cancel queued jobs*: loses work and history. *Fail in-flight jobs*: pollutes Epic 40's failure classes. |
 | H5 | **First-party components and packs are versioned with the server.** No third-party store in this epic. | *Independent component versions*: a compatibility matrix for each pair, and the update rehearsal would have to cover every mix. *A public store*: needs review, signing for others, and support. Epic 54 adds third-party plugins and a store on this model. |
@@ -682,7 +682,7 @@ processes, no shared files). 51.15 can start right after 51.01. After 51.08: 51.
 
 ## 13. Decisions (2026-11-03)
 
-The owner answered the open questions on 2026-11-03. Each one is applied in the stories named.
+The open questions were answered on 2026-11-03. Each one is applied in the stories named.
 
 1. **Core's contents: transcription stays out of Core.** Core keeps thumbnails, convert, dedup,
    keyword search, queue health, analytics and backups. Transcription, semantic search, Live TV,

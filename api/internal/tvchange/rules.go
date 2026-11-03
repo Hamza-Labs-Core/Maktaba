@@ -12,7 +12,7 @@ import (
 )
 
 // Auto-promote rules, strictest first (README "Settings": auto_promote). Since the
-// owner's rule of 2026-10-28 ("only manual needs approval") RuleApproval is a change's
+// rule of 2026-10-28 (only a manual change needs approval) RuleApproval is a change's
 // rule only when a person made it (OriginManual); an automatic change follows its kinds'
 // auto rules, quiet_window or immediate (a stored "approval" reads as immediate).
 const (
@@ -148,8 +148,8 @@ func StrictestRule(c Config, kinds []string) string {
 	return best
 }
 
-// ChangeRule is the auto-promote rule of a change (the owner's rule of 2026-10-28: "only
-// manual needs approval"): approval for a change a person made (OriginManual, whatever
+// ChangeRule is the auto-promote rule of a change (rule of 2026-10-28: only a manual
+// change needs approval): approval for a change a person made (OriginManual, whatever
 // its kinds); for an automatic one (OriginAuto) the strictest auto rule of its kinds,
 // quiet_window or immediate, with no limit on the channels it touches - and immediate
 // for the automatic updater's change of the streaming binary alone (Epic 35 story 35.6:

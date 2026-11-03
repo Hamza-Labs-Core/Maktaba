@@ -48,4 +48,4 @@ Story TC1–TC6.
 ## 4. Rollout
 
 Metrics and events land with each story that emits them (phase B on); the docs and runbook close phase
-E and are reviewed against a real 03:00 run on the owner's cluster before the epic is marked done.
+E and are reviewed against a real 03:00 run on the live home's cluster before the epic is marked done.

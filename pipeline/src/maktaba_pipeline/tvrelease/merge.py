@@ -1,4 +1,4 @@
-"""How updates to the TV add up in one change (the owner's rule, story 33.12 AC3).
+"""How updates to the TV add up in one change (the rule of story 33.12 AC3).
 
 An update to the TV starts a change; every update after it joins that same change
 (same id, same number, ``updated_at`` bumped, an ``append`` event naming the update)

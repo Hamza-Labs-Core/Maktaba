@@ -12,7 +12,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange/tvchangetest"
 )
 
-// The owner's rule of 2026-10-28, "only manual needs approval" (with Story 35.6 AC2): a
+// Rule: only a manual change needs approval (2026-10-28, with Story 35.6 AC2). A
 // change a person made needs an approval whatever its source and kinds, and whatever the
 // rules say; an automatic one follows its kinds' auto rules - with every rule stored as
 // "approval" (before the rule) that reads immediate - and the updater's binary change
@@ -350,7 +350,7 @@ func (w *auWorld) held(run string) AutoUpdateStatus {
 	return got
 }
 
-// The owner's decision (2026-10-28): a check that fails before any swap holds the change
+// Decided 2026-10-28: a check that fails before any swap holds the change
 // (a draft with its report) and leaves the live TV where it is: the run reads held, with
 // the checks that failed and the streaming software the TV stays on.
 func TestAutoUpdateCheckFailedIsHeld(t *testing.T) {

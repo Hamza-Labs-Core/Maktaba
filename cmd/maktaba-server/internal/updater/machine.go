@@ -370,7 +370,7 @@ type Status struct {
 	Running string `json:"running"`
 	Kind    string `json:"installer"`
 	// Asks: this machine's desktop app installs the release, ordered and staged before
-	// the home's go (Orderer; the name is the wire's since owner decision D1).
+	// the home's go (Orderer; the name is the wire's since decision D1).
 	Asks bool `json:"asks,omitempty"`
 	// BoundSec is how long this machine's own limits let the run go on from its switch
 	// (its start steps' cap and its watch's bound): the home's driver waits at least that
@@ -976,7 +976,7 @@ func (m *Machine) Resume() {
 	m.mu.Unlock()
 	switch j.State {
 	case StateOrdered, StateAppStaged:
-		// (a journal from before owner decision D1 was replaced says awaiting_click or
+		// (a journal from before decision D1 was replaced says awaiting_click or
 		// clicked: LoadJournal read them as these two, so such a run goes on with no click)
 		if newRel {
 			// installed while it waited (the app's own way): watched like a switch

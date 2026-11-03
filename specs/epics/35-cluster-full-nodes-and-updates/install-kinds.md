@@ -16,7 +16,7 @@
 | design.md | Now |
 |---|---|
 | Every machine runs a launcher over `bin/releases/<v>` (§2). | Four kinds of install (below). Only plain server installs use `bin/releases`. The apps run a payload inside the app (Mac, Windows) or a runtime copy of it (Linux). |
-| The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **at the home's go, by itself** (owner decision D1, "No click" below); the app's updater still does the swap for Mac and Windows. Every install updates by itself: an admin's run at once, an automatic one in the window; the machines follow once the home commits (2026-10-28). |
+| The app's updater is the only updater inside an app; the server's own is off (Epic 36 contract-update). | The server decides **what** and the order of the machines (policy, home first, one node at a time); a desktop app that runs the server stages what the home orders and installs it **at the home's go, by itself** (decision D1, "No click" below); the app's updater still does the swap for Mac and Windows. Every install updates by itself: an admin's run at once, an automatic one in the window; the machines follow once the home commits (2026-10-28). |
 | Rollback replaces binaries; the schema stays (migrations are additive). | Every installed release (38.12) refuses a database a newer release migrated (`migrate up` exits 3, `serve` refuses). So a rollback after a migration also **puts back the dump taken before it**. |
 | The orchestrator backs up and migrates before restarting the roles (§5.3 steps 6–9). | Every home migrates at the new release's start, through the 38.12 database step (dump, migrate, put back on failure), whatever the install kind. The orchestrator rehearses the migrations on a scratch copy before anything is installed. |
 | TV: Epic 33 hot swap, or a restart when nobody watches (§7.2). | A plain server install (the launcher over `bin/releases`) hands its TV processes over across the restart (§8.1, story 35.7, "TV handover" below): the front door and the slots keep serving while every other process restarts on the new release, and the new supervisor adopts them, so the run waits for no quiet TV (the machine's prepared report says `hands_over`). Where they cannot run on (another install kind, a front door the new release's `edge_protocol` does not match, a Linux launcher from before the handover, a Windows server whose job lets no child leave it under a launcher from before it), the fallback: the home restarts in the window only while `tv_staging.quiet_max_viewers` (0) are watching (checked before the drain and again right before its apply); a machine only while its own streams have no more watchers (`channel_runtime.host_id`), and the machines keeping streams on air go last; at the window's end the home is `tv_busy` and tried again next window. Then the Epic 33 binary swap (story 35.6): once the new release runs, its supervisor asks the TV change controller for a change of the streaming binary alone (`source.kind = auto_update`), promoted without an approval at programme boundaries, and commits only once it is live (below, "The TV step"). |
@@ -86,7 +86,7 @@ container of the stack built from source (`deploy/compose`, the development and 
 | The release's migrations | `release.yml` (`maktaba-migrations-<v>.tar.gz`), `release.json` `migrations`, `releaseverify/install.Stage` (beside the binaries), `api/migrate.go` (found beside `maktaba-api`) |
 | The page | `web/src/pages/Admin/Updates.tsx` (`/admin/updates`) |
 
-### No click: a desktop app installs by itself (owner decision D1, 2026-10-27)
+### No click: a desktop app installs by itself (decision D1, 2026-10-27)
 
 **Decision.** A desktop app that runs the server — the home's, or a full node's: Maktaba.app,
 the Windows app, the Linux app — installs what the home orders by itself, as headless and
@@ -96,7 +96,7 @@ restart, watch, commit), and only its commit sends the machines their orders, by
 one machine at a time; an automatic one does the same inside the policy's window, with only a
 notice on the machine beforehand. Nobody clicks anything on the machine.
 
-**Machines follow once the home commits (the owner's decision, 2026-10-28).** No machine is
+**Machines follow once the home commits (decided 2026-10-28).** No machine is
 ordered a release before the home has committed it (its watch passed): while the home
 prepares, restarts and watches, the run lists the machines as waiting for the home to finish
 (`update_runs.detail.waiting_home`); its commit orders them with no click. A home that rolls
@@ -108,7 +108,7 @@ run gave up on it, `home_timeout`) raises no watermark until its supervisor repo
 commit. **Why:** on 2026-10-28 windows-pc took v0.3.42 while the home still watched it; the
 home rolled back to v0.3.41 and put its database back to schema 167, which v0.3.42 cannot run
 on, and updates only go up: the machine stayed paused until the home's next release. Machines
-are not rolled back with the home (out of scope, by the owner's choice): they are simply never
+are not rolled back with the home (out of scope, by choice): they are simply never
 ordered before its commit.
 
 **A joined machine never goes ahead of its home.** Its only source of a newer server release is
@@ -125,12 +125,12 @@ install": the release was downloaded, verified and staged by itself, then instal
 someone clicked "Install … and restart" in that machine's tray or app (the supervisor's
 journal said `awaiting_click`, then `clicked`; the run's step `waiting_click`; the notice
 `update.waiting_click`). That applied even when an admin had started the update from the
-Updates page, and the page gave no sign of it beyond a muted line: on 2026-10-27 the owner's
+Updates page, and the page gave no sign of it beyond a muted line: on 2026-10-27 the home's
 v0.3.33 run (`37146c9d-…`) sat at "Wait for a click in Maktaba on this machine" for over an
-hour with nothing telling him to go to the Mac app. **Why it changed:** a manual run is
+hour with nothing telling the admin to go to the Mac app. **Why it changed:** a manual run is
 already the admin's deliberate decision, made on the Updates page; a second click on the
 machine was a hidden, redundant step. An automatic run is the policy's decision, and its
-window is when the owner said restarts are fine; a notice says when it happens.
+window is when an admin set restarts to be fine; a notice says when it happens.
 
 **What stays.** Every safety rule of the run: the release verified (its signed version, the
 exact ordered version only, from its own feed in the pinned repository); the workers drained
@@ -161,7 +161,7 @@ guard. The app stages and installs only the exact ordered version (its updater's
 comparator), only from that release's feed in the pinned repository, signed with the version
 (`requireSignedVersion`), and re-reads the order right before it installs.
 
-**On Windows the server agent installs it (owner, 2026-10-31).** An update must not wait for a
+**On Windows the server agent installs it (2026-10-31).** An update must not wait for a
 window: the Windows app's always-running `Maktaba.exe --server-agent` (the sign-in task's)
 answers the order in the window app's place (`agent_orders.rs`, with the window app's own
 decisions, `autoinstall::decide`). It stages the release from its own feed (a setup .exe on
@@ -200,7 +200,7 @@ runs again meanwhile) is checked on CI's Windows runner (`check-task-children.ps
   withdraws the home's order before its go, and stops a rollout; Skip withdraws one machine's.
 - **What older releases wrote** goes on: a journal or an order file that says
   `awaiting_click` or `clicked` (and a step `ask`) is read as `ordered` and `app_staged` (and
-  the step `order`), so a run left waiting (the owner's v0.3.33 run) proceeds without a click,
+  the step `order`), so a run left waiting (the home's v0.3.33 run) proceeds without a click,
   or a newer release supersedes it; the run's step `waiting_click` and the targets
   `waiting_click` and `clicked` are read as `waiting_app`, `ordered` and `app_staged`. A
   machine whose supervisor is still from before reports `awaiting_click` until someone clicks
@@ -223,7 +223,7 @@ updated its runtime) offers its own update for its window and tray.
    it (the release's `migrations` archive, verified like everything else). A failure blocks the
    version; the real database was never touched. Skipped above `rehearse_max_db_gb`, without
    `CREATEDB`, or for a release without a migrations archive (logged).
-2. **Apply: the backup on the side, then the 38.12 database step** (owner rule, 2026-10-27: an
+2. **Apply: the backup on the side, then the 38.12 database step** (rule of 2026-10-27: an
    update never blocks the library for a backup). Right before its switch, the home's apply
    (`internal/updater/backup.go`, step `backup`) compares the staged release's migrations (the
    verified migrations archive of its `release.json`) with the newest migration the database
@@ -350,7 +350,7 @@ updated its runtime) offers its own update for its window and tray.
    **A halt has a way out (2026-10-28).** The database step's halts (`db_restore_failed`,
    `db_restored`, `db_refused_older`, `db_ahead`, …) last until the database's record changes
    to `migrated` or `restored` (`supervisor.HaltUntil`, looked at every 5 s): put right by hand
-   (as the owner did: the record set `restored`), the step runs again and every role that
+   (as was done on the home: the record set `restored`), the step runs again and every role that
    waits on it starts, with no restart of the server. A restore a person asks for (`restoring`
    with `by`) is not a way out: `maktaba-server restore` restarts the server for it.
 4. **The dumps' format** (`pgbundle/dumpfmt.go`). Every dump is a directory-format dump
@@ -359,7 +359,7 @@ updated its runtime) offers its own update for its window and tray.
    compressed with `zstd:1`, else `lz4`, else `gzip:1` (else `-Z 1` for a `pg_dump` older than
    16), the first the `pg_dump` at hand takes (the bundled one has zlib only). A worker locks
    its table with NOWAIT: one locked out (a session asked for its table whole while the server
-   served) begins the dump again, twice at most. Every dump is whole (owner, 2026-10-27: a
+   served) begins the dump again, twice at most. Every dump is whole (2026-10-27: a
    backup that left the vectors out would cost days of embedding after a restore). The
    tables of `pgbundle.Chunked` are written apart: `segment_embeddings`, semantic search's
    vectors (31 of 47 GB on the home that measured it), was the bulk of a 35 GB dump that one
@@ -502,8 +502,8 @@ that comes back behind the watermark gets a `catch_up` run of its own.
 
 ## Proven in CI: the update rehearsal (2026-10-28)
 
-The owner, after the two outages of 2026-10-28: "THIS NEED TO BE ON CI". Every path of
-this page that ran only on the owner's Mac runs in CI before any release:
+Requirement after the two outages of 2026-10-28: every path of this page that ran only on the
+owner's Mac runs in CI before any release:
 `.github/workflows/update-rehearsal.yml` (verdict job `update-rehearsal`;
 [docs/update-rehearsal.md](../../../docs/update-rehearsal.md)). The Mac app's install kind is
 driven on Linux through the same code (the bundle's layout under a `Maktaba.app` path, the
@@ -520,7 +520,7 @@ against a budget. The tag guard refuses a tag on a commit the rehearsal did not 
 
 ## What still needs a person
 
-- Nothing on a desktop app that runs the server (owner decision D1, 2026-10-27): it installs
+- Nothing on a desktop app that runs the server (decision D1, 2026-10-27): it installs
   what the home orders by itself. Only a machine whose supervisor is from before that decision
   waits for one last click there (its "Install … and restart"); the release it installs then
   updates it without one.
@@ -630,9 +630,9 @@ its watch, where the new streaming binary never meets an older schema:
    `streaming_sha256`); the Updates page's **Retry** makes the change with them (then it is
    staged and checked as any), and **Drop** leaves the TV on its software with nothing to
    cancel.
-4. **The owner's decision (2026-10-28):** *"when only the TV test fails, keep the update
-   installed, leave TV on the old version, and notify me with Retry / Drop. Undo everything only
-   if TV breaks after it has switched."*
+4. **Decided 2026-10-28:** when only the TV check fails, the update stays installed, TV stays on
+   the old version, and the admin is notified with Retry / Drop. Everything is undone only if TV
+   breaks after it has switched.
    - **The preview fails** (the change's verification in the staging slot fails, before any swap):
      the TV step ends `held` and the release commits. The new server, web and pipeline stay
      installed; the run ends as succeeded (`done`) with `update_runs.detail.tv = {outcome: held,
@@ -665,7 +665,7 @@ release whose streaming software the live TV ran at the TV step's last answer (t
 that release finds its binary there when `bin/releases/<v>` has none (`supervisor.WithKeptStreaming`).
 A slot restarted with the server (every desktop app's update, and a plain server whose slots
 were not handed over) starts on the streaming software the live TV ran, not the new release's
-(`supervisor/held.go`, fixed 2026-10-28 after 0.3.37 → 0.3.39 put the owner's live TV on 0.3.39
+(`supervisor/held.go`, fixed 2026-10-28 after 0.3.37 → 0.3.39 put the live home's TV on 0.3.39
 before its check ran): at the slots' first start the supervisor reads the live slot's own
 report (`tv_slots.version`), and while it is an older release than the one starting, TV
 staging is on and the live TV release does not record the new release's streaming, every slot
@@ -681,7 +681,7 @@ the live TV runs (`tvrelease.snapshot.live_streaming`, read as the API's `liveSt
 when it names a binary, else the pipeline's), with the checksum a release recorded for that
 version; its staging slot and its swap bind to that release, so they run the held binary from
 where the install keeps it, like the live slots. A release that names no binary (none, or a
-source checkout's placeholder `0.0.1`, as the owner's live release from 2026-10-22) is bound
+source checkout's placeholder `0.0.1`, as the live home's release from 2026-10-22) is bound
 with no version, and a slot so bound runs what an unbound slot runs: the held binary while the
 TV is held, else the release's own. The supervisor refuses at once a binding whose binary is
 nowhere on the machine (409, logged at error and as `tv_held_binary_missing`): the change's

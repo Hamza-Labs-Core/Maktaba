@@ -12,9 +12,7 @@
 
 ## 1. Why
 
-The owner, 2026-11-03, on taking payments for remote access:
-
-> "if we are letting people pay then there should be no downtime"
+Requirement: once people pay for remote access, there must be no downtime.
 
 Maktaba Cloud has no VPS yet. The plan is to start on one Hetzner VPS with the existing
 single-machine deploy (`deploy/cloud-relay/`). That works for a demo, but it isn't something
@@ -346,7 +344,7 @@ Full detail and sources in [research.md](research.md) §2 and §6.
 **Copy:** direct first, router setup with an outside check, per-home certificates, a cached
 connection list. **Avoid:** local play depending on the cloud, a status page that's updated
 by hand, one DNS name for direct access with no fallback (Plex's April 2026 `plex.direct`
-fault), and charging for direct remote (ours is free). **Changed by the owner's decision:** we
+fault), and charging for direct remote (ours is free). **Changed by decision:** we
 copy Plex's relay cap for **Basic** (about 3 Mbps, higher than Plex's 2 Mbps because Basic is
 paid), and Pro is uncapped within its allowance (§13 decision 4).
 
@@ -494,7 +492,7 @@ Building this epic calls no Hetzner, Cloudflare, DNS, payment provider or VPS AP
 
 ## 13. Decisions (2026-11-03)
 
-The owner's answers to the open questions, applied to the stories above.
+The answers to the open questions, applied to the stories above.
 
 1. **Downtime credits: none.** The 99.9 % (Phase 2: 99.95 %) uptime target stays, with its
    alerts, error budget and postmortems, and the status page publishes the measured figure.
@@ -542,11 +540,11 @@ The owner's answers to the open questions, applied to the stories above.
 
 ## 14. Home broadcasting
 
-> **Status:** spec (2026-11-03). Owner decisions of 2026-11-03:
+> **Status:** spec (2026-11-03). Decisions of 2026-11-03:
 >
 > - **Viewers never pay.** Access is **open or by invite link** only.
 > - The publisher pays Maktaba for the Broadcaster tier (payment provider TBD, never Stripe).
-> - **"We charge for infra, not content":** Maktaba Cloud is an infrastructure and hosting
+> - **We charge for infrastructure, not content:** Maktaba Cloud is an infrastructure and hosting
 >   provider (§14.6).
 >
 > The questions still open are in §14.10.
@@ -556,10 +554,8 @@ The owner's answers to the open questions, applied to the stories above.
 
 ### 14.1 Why, and what it is
 
-The owner, 2026-11-03:
-
-> "the ability to stream TV from home servers to others, let's say an entertainment tier or a
-> home streamer tier. Explore that and what it requires."
+Requirement: a way to stream TV from home servers to other people, as a tier of its own (an
+entertainment or home streamer tier), and what it requires.
 
 **Home broadcasting** lets a Maktaba home owner (the **publisher**) publish chosen live TV
 channels to **viewers who aren't users of their home**, through Maktaba Cloud. These are Maktaba
@@ -595,7 +591,7 @@ broadcasting.
 
 **Not in this section:**
 
-- viewer payments, paid passes or payouts to publishers (owner decision, 2026-11-03);
+- viewer payments, paid passes or payouts to publishers (decided 2026-11-03);
 - VOD, catch-up or DVR (segments are deleted after 10 minutes);
 - a public directory or search of broadcasts (unlisted only, §14.6);
 - chat, comments and ads;
@@ -691,7 +687,7 @@ This keeps decision 4's rules:
 takedown, a kill switch or a lapsed plan stops a playing viewer. **Viewers never pay**; only the
 publisher does.
 
-**We charge for infrastructure, not content** (owner, 2026-11-03). Every Broadcaster unit is a
+**We charge for infrastructure, not content** (decided 2026-11-03). Every Broadcaster unit is a
 unit of infrastructure: channels carried, concurrent viewers served, viewer-hours of delivery,
 and the quality ladder's bandwidth. None of them is priced by what airs, and no price or plan
 depends on a programme, a source or a genre.
@@ -819,8 +815,8 @@ has certain things in place. They are **what that status requires**, and each is
   directory comes later, it **lists only what publishers choose to list**, in a neutral order
   (for example alphabetical or newest), with no picks, rankings or recommendations by Maktaba.
 
-**The owner's question:** *"YouTube is public, so if you are not paying, what's the legal
-issue?"* The short answer:
+**A common question:** can public YouTube videos be re-broadcast when no money is charged?
+The short answer:
 
 - **Free to watch isn't the same as free to re-broadcast.** Copyright covers copying a work and
   showing it to the public (public performance, or "communication to the public"), whether or not
@@ -830,7 +826,7 @@ issue?"* The short answer:
 - **Non-commercial use helps** a fair-use argument in the US, but doesn't make re-broadcasting
   safe. And Maktaba charging publishers for the tier makes the platform commercial.
 - **The fix is simple:** air content that is clearly **allowed to be shared**. A lot of the
-  owner's kind of content is.
+  content in a typical Maktaba library is.
 
 **The "publishable" default: a safety feature on the publisher's home (50.23).** It isn't
 Maktaba vetting content. It is the publisher's own home helping the publisher meet their

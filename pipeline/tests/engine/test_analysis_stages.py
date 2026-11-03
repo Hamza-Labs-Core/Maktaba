@@ -422,7 +422,7 @@ async def test_a_failed_frame_keeps_the_start_of_ffmpegs_words(
     db: Database, tmp_path: Path
 ) -> None:
     """ffmpeg's long stderr is kept from its start, cut at a word: the tail began
-    mid-word ("ing thread with return code -22") on the owner's Remote."""
+    mid-word ("ing thread with return code -22") on a Remote."""
     words = "Error while opening the decoder for the input stream " * 20
 
     async def failing(args: list[str]) -> None:

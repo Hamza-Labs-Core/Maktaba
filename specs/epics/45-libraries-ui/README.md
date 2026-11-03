@@ -201,7 +201,7 @@ Help: `library.md` grows Home, Libraries, the library page and pinning; new topi
 ## Phase 2: Plex and Jellyfin parity (review of 2026-10-27)
 
 Phase 1 (stories 45.1 to 45.7, PR 345) gave Maktaba a Plex-like shell: Home, library cards with pins,
-a library page with rows and a Browse grid, management and storage settings. The owner asked for more
+a library page with rows and a Browse grid, management and storage settings. Phase 2 asks for more
 of what Plex and Jellyfin do. This review compares their library experience with Maktaba as the code
 stands (checked in the code, not from memory) and says what fits a library of lectures, lessons and
 sheikhs.
@@ -344,7 +344,7 @@ Built with this section:
 
 Built in Phase 3 (below): 45.17 to 45.21.
 
-Shelved (the owner's decision, 2026-10-28: not now; Epic 45 is done without them):
+Shelved (decided 2026-10-28: not now; Epic 45 is done without them):
 
 - **45.22** Per-user star ratings, if favorites prove too coarse.
 - **45.23** Profiles with a PIN in the Mac app's window and parental limits beyond library ACLs (Low:
@@ -400,7 +400,7 @@ and grouped row never show another library's video; trickplay follows the poster
 
 ## Phase 4: a library's Series and Collections tabs
 
-The owner's decision (2026-10-28): a library's page gets **Series** and **Collections** tabs, and the
+Decided 2026-10-28: a library's page gets **Series** and **Collections** tabs, and the
 separate Collections button and page go away. Maktaba's own queue jobs already group a library three
 ways, in its database, and the Plex extension pushes them to Plex as collections (nothing is pulled from
 Plex): series (`series`, `series_episodes`, from the detector), topic collections ("ملف",

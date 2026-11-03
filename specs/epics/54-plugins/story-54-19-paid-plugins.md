@@ -5,10 +5,10 @@
 ## Why
 
 Developers maintain what pays (Plex's plugins faded partly because nobody was paid to keep
-them working). The owner asked for free and paid plugins. Maktaba Cloud already issues signed
+them working). Both free and paid plugins are required. Maktaba Cloud already issues signed
 licences that homes check offline; paid plugins reuse that for entitlements.
 
-Owner decisions of 2026-11-03 that shape this story:
+Decisions of 2026-11-03 that shape this story:
 
 - **No Stripe, ever**: no Stripe, Stripe Connect, Stripe Tax or Stripe-owned services (Lemon
   Squeezy among them).

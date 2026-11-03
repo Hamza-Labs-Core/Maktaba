@@ -13,7 +13,7 @@
 
 ## Goal
 
-The owner's words (2026-10-20): *"also need the same one app setup on windows similar to mac"*.
+Requirement (2026-10-20): the same one-app setup on Windows as on the Mac.
 
 1. **One Windows installation runs everything.** One installer gives the API, streaming (Live TV),
    the pipeline workers *including transcription*, semantic search, the web app, the database and

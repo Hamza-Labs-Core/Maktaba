@@ -1,8 +1,8 @@
 # Epic 50 research: home broadcasting (publishing a home's TV channels to people outside it)
 
-Read with the [README](README.md) §14. The owner, 2026-11-03: *"the ability to stream TV from
-home servers to others, let's say an entertainment tier or a home streamer tier. Explore that
-and what it requires."*
+Read with the [README](README.md) §14. The requirement: a way to stream TV from home servers to
+other people, as a tier of its own (an entertainment or home streamer tier), and what it
+requires.
 
 Prices and outside facts were looked up on **2026-11-03**, and each carries its source. Facts we
 could not confirm are marked **unverified**. Numbers we worked out are marked **estimate**. The
@@ -88,7 +88,7 @@ other large files via the CDN". Otherwise Cloudflare may limit or disable CDN ac
   by default ([default cache behaviour](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/)).
 - **Serving segments from R2 through a Worker** is, **on our reading**, the "Developer Platform"
   route the terms point to (R2 and Workers belong to it). The page doesn't name R2 explicitly.
-  **Confirm this in writing with Cloudflare before launch** (owner question 8). The fallbacks
+  **Confirm this in writing with Cloudflare before launch** (README §14.10, question 8). The fallbacks
   are Stream (named in the terms) and Bunny.
 
 ### 2.5 Edge fan-out mechanics
@@ -272,7 +272,7 @@ The rule in 50.22: **published channels together may use at most 50 % of the mea
 (the rest is for remote play, the relay tunnel and the household). Examples:
 
 - A 20 Mbps upload carries one full-ladder channel, or two `720p + 480p` channels.
-- The owner's 1 Gbps carries the Broadcaster tier's three full-ladder channels (≈ 47 Mbps)
+- A 1 Gbps upload carries the Broadcaster tier's three full-ladder channels (≈ 47 Mbps)
   with plenty of room.
 
 ### 5.2 Encoder load
@@ -302,7 +302,7 @@ The rule in 50.22: **published channels together may use at most 50 % of the mea
 
 ### 6.0 The position: Maktaba Cloud is an infrastructure and hosting provider
 
-The owner, 2026-11-03: *"we charge for infra, not content"*.
+Decided 2026-11-03: we charge for infrastructure, not content.
 
 - **What Maktaba Cloud sells:** relay, bandwidth and uptime. It never selects, uploads, curates or
   owns what a publisher airs.
@@ -352,7 +352,7 @@ From 17 U.S.C. § 512 ([Cornell LII](https://www.law.cornell.edu/uscode/text/17/
     ((c)(2)).
 
   (c)(3) lists what a notice must contain. On (c)(1)(B), we charge a flat infrastructure price
-  and usage, the same whatever airs, which is the posture the owner chose; counsel confirms it.
+  and usage, the same whatever airs, which is the posture chosen; counsel confirms it.
 - **§ 512(g), counter-notice.** The material is restored **10–14 business days** after a
   counter-notice, unless the complainant sues.
 - **§ 512(i)(1)(A), repeat infringers.** A policy that is adopted, reasonably implemented and
@@ -427,6 +427,6 @@ This is the same list as README §14.9, kept short:
 | Metering | **Viewer-hours** | GB: doesn't match the primary path's costs or viewers' intuition. |
 | Fallbacks | Stream (P-rtmp), then Bunny | Mux: $1,369 a channel a month to encode. |
 | Discovery | **Unlisted only** (link or code); a later directory would list only what publishers choose | Maktaba-picked listings: curation by the host (§6.0). |
-| Viewer payments | **None: viewers never pay** (owner, 2026-11-03); access is open or invite | Paid passes: brings a seller-of-record problem (Epic 54.19). |
+| Viewer payments | **None: viewers never pay** (decided 2026-11-03); access is open or invite | Paid passes: brings a seller-of-record problem (Epic 54.19). |
 | What can air | **Publishable items only**, decided on the publisher's home (own recordings, CC BY, sources with permission) | Anything in the library: YouTube's Terms and copyright don't allow re-broadcasting without permission. |
 | Maktaba's role | **Infrastructure and hosting provider**: no cloud-side curation | Curating or recommending: weakens the hosting position (§6.3). |

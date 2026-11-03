@@ -17,7 +17,7 @@ state, and the cloud's secrets sign every home's entitlement.
 | Setting | Value |
 |---|---|
 | repo1 | Hetzner Object Storage, bucket `maktaba-prod-pg` in **HEL1** (not FSN1/NBG1, where the nodes are) |
-| repo2 | **Cloudflare R2** bucket `maktaba-prod-pg-r2`, the copy off Hetzner (owner decision, 2026-11-03; README §13 decision 2). Same backups and WAL as repo1 (`archive-push` writes both; pgBackRest's multi-repo mode), its own passphrase. R2 charges no egress, so a restore from it costs nothing extra. |
+| repo2 | **Cloudflare R2** bucket `maktaba-prod-pg-r2`, the copy off Hetzner (decided 2026-11-03; README §13 decision 2). Same backups and WAL as repo1 (`archive-push` writes both; pgBackRest's multi-repo mode), its own passphrase. R2 charges no egress, so a restore from it costs nothing extra. |
 | Encryption | `repo-cipher-type=aes-256-cbc`, a passphrase per repo, encrypted before upload |
 | WAL archive | `archive_command = pgbackrest --stanza=cloud archive-push %p`; `archive_timeout = 60` (RPO ≤ 60 s if both nodes are lost) |
 | Full backup | weekly, Sunday 03:00 UTC |

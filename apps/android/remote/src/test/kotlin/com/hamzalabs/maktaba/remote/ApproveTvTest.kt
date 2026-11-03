@@ -23,8 +23,8 @@ import org.robolectric.annotation.GraphicsMode
 import com.hamzalabs.maktaba.core.R as CoreR
 
 /**
- * "Approve a TV" in sight on every Remote place's top bar (the owner saw a TV's sign-in code
- * and could not find where to approve it: it was only in the account menu). The button is on
+ * "Approve a TV" in sight on every Remote place's top bar (a TV's sign-in code was on screen
+ * and where to approve it was hard to find: it was only in the account menu). The button is on
  * the bar before the account menu, inside the screen, says what it does, and opens "Approve a
  * sign-in". On the cover screens at a large text size the title ends in "…" but stays.
  */

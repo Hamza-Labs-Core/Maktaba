@@ -25,7 +25,7 @@ func (w *world) as(p *principal.Principal, method, path, body string) (int, map[
 	return rec.Code, out
 }
 
-// The owner's rule of 2026-10-28: a manual change needs an admin's approval, enforced by
+// Rule of 2026-10-28: a manual change needs an admin's approval, enforced by
 // the API (not by hiding the button): only an admin approves; nobody else, signed in or
 // not, moves it. A manual change cannot skip its approval with "swap now" whatever its
 // kind's rule (schedule: immediate); an automatic one never needs an approve call.

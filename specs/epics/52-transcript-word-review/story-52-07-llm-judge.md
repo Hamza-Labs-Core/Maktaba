@@ -1,12 +1,12 @@
 # Story 52.07 — The LLM judge that flags, not rewrites (REMOVED)
 
-> Epic 52 · **Removed 2026-11-03** by the owner's decision 3 ([README §8](README.md#8-decisions-2026-11-03)).
+> Epic 52 · **Removed 2026-11-03** by decision 3 ([README §8](README.md#8-decisions-2026-11-03)).
 > The number is kept so references stay valid; no story replaces it, and nothing is renumbered.
 
 ## Why it was removed
 
 The first draft added an optional `word_judge` stage: an LLM on the cluster would read flagged
-and borderline sentences and add an `llm_disagrees` verdict and an `llm` candidate. The owner
+and borderline sentences and add an `llm_disagrees` verdict and an `llm` candidate. It was
 decided there is **no LLM judge**. The hearing test (2026-10-19) had already shown an LLM judge
 preferring tidy wrong spelling, and deterministic checks are cheaper, repeatable and testable.
 

@@ -13,9 +13,9 @@ Maktaba Cloud, never to the home's admin, who already sees the home's use by nam
 
 The first version asked every person on every device to "share anonymous usage data with
 this server's admin" and stored it on the home, with the library's size counted by 1 + N
-library requests on each app open. The owner's verdict: useless for an admin, who has full
-analytics already; the value is for Maktaba, across homes. Consent is "per admin for the
-server, per app for players and remote and so on". So:
+library requests on each app open. That was useless for an admin, who has full
+analytics already; the value is for Maktaba, across homes. Consent is given by an admin for the
+server, and per app for the players, the remote and the other apps. So:
 
 - the data goes to Maktaba Cloud, through the home;
 - the server's data has its own consent (the admin's switch), each app's data its own
@@ -56,7 +56,7 @@ server, per app for players and remote and so on". So:
 
 ### Never sent: the hard rule
 
-The owner's words: "nothing about data or ips or identities". Enforced in code and tests
+Nothing about the library's data, IP addresses or identities is ever sent. Enforced in code and tests
 at both ends, not only written down:
 
 - **No identities.** No user, account, home name, device name, email or cloud account.

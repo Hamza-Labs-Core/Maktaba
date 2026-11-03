@@ -38,7 +38,7 @@ __all__ = [
 #: the states a change is "in flight" in: at most one at a time (README R9.4)
 IN_FLIGHT = ("staged", "verifying", "ready", "approved", "swapping")
 #: the states the open change is in: an update joins it until it is approved (the
-#: owner's rule, story 33.12 AC3); approved, swapping or live, it takes no more
+#: rule of story 33.12 AC3); approved, swapping or live, it takes no more
 OPEN = ("draft", "staged", "verifying", "ready")
 #: the reopen event's reason (a checked change an update joined goes back to draft)
 REOPEN_WHY = "updated after it was checked: it is checked again"

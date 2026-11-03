@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// The open change (story 33.12 AC3, the owner's rule): "when an update happens it
-// needs to start a change; anything after that is added to the same change, unless
-// it's approved".
+// The open change (story 33.12 AC3): an update starts a change, and every update after
+// it joins that same change until the change is approved.
 //
 // The open change is the change no one approved in draft, staged, verifying or ready.
 // Every update to the TV joins it, whatever its producer (merge.go). Joined after it

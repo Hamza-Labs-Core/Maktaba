@@ -96,7 +96,7 @@ export function sourceLabel(tk: (k: string, f: string) => string, c: TvChange): 
   return tk(`tvchanges.source.${k}`, k);
 }
 
-/** Who made it (the owner's rule: only a manual change waits for an approval). */
+/** Who made it (the rule: only a manual change waits for an approval). */
 export function OriginTag({ change }: { change: TvChange }) {
   const { t } = useI18n();
   const origin = change.origin === "auto" ? "auto" : "manual";

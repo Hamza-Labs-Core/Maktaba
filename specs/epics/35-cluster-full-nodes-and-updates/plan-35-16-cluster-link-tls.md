@@ -6,8 +6,8 @@
 
 | # | Decision | Rationale |
 |---|---|---|
-| D1 | WebSockets over mutual TLS on the API's existing port, TLS sniffed on the first byte. | Owner's choice; reuses the Epic 31 hub and libraries; no new port or firewall rule. |
-| D2 | One control channel per machine, authenticated first; every data stream on its own `wss://` with a single-use ticket. | Owner: "auth first, then stream on another"; no head-of-line blocking between streams; each stream is authorised by a live control session. |
+| D1 | WebSockets over mutual TLS on the API's existing port, TLS sniffed on the first byte. | Chosen; reuses the Epic 31 hub and libraries; no new port or firewall rule. |
+| D2 | One control channel per machine, authenticated first; every data stream on its own `wss://` with a single-use ticket. | Authenticate first, then stream on another connection; no head-of-line blocking between streams; each stream is authorised by a live control session. |
 | D3 | Per-frame sealing dropped on the link; kept on the legacy WebSocket and end to end for forwarded pipeline sessions. | TLS 1.3 + per-machine certificates give the same guarantees; double crypto and strict counters would only slow the mux. |
 | D4 | Nodes always dial; the home never connects to a node (`stream.offer` for home-initiated pulls). | One direction through firewalls; nodes listen on loopback only. |
 | D5 | Streams survive a control reconnect for 60 s, then close; revocation closes everything at once. | A home API restart must not cut TV; a revoked machine must lose access immediately. |

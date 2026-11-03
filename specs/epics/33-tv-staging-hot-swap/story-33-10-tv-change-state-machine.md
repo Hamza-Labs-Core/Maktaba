@@ -25,7 +25,7 @@ Design: [design.md](design.md) §11.
 - **AC5** Approve requires the admin role; with `require_second_admin` the approver must differ from the
   author (or the producer job's enqueuer); `ack_param_change` is required when `push.continuity` asks.
 - **AC6** Default: **every** kind (lineup, settings, schedule, art, live slots, binary, rollback) is
-  `approval` — no change reaches the air without an admin (owner decision); a test asserts the shipped
+  `approval` — no change reaches the air without an admin (decided); a test asserts the shipped
   defaults. The rules stay as settings: the strictest rule of the change's kinds applies;
   `quiet_window` promotes at the first minute inside the window with ≤ `quiet_max_viewers` viewers and
   no warnings; `immediate` when ready with no warnings; `approval` never by itself.

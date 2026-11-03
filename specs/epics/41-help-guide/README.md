@@ -8,8 +8,8 @@
 
 ## Goal
 
-The owner's ask (2026-10-21): *"a user guide / FAQ for each feature: what to do, what it means; audit
-the features and build the help, and have it linkable."*
+Requirement (2026-10-21): a user guide and FAQ for each feature, saying what to do and what it
+means; audit the features, build the help, and make it linkable.
 
 1. **One help topic per feature**, in English and Arabic, inside the app at `/help`.
 2. Each topic answers, in plain short language: **what it is**, **how to use it**, **what its states

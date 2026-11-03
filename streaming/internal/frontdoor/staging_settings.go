@@ -12,7 +12,7 @@ import (
 // StagingSettings are the rules.tv_staging keys the runtime reads (story 33.1;
 // the change-management keys belong to stories 33.5-33.13).
 type StagingSettings struct {
-	// Enabled: changes go through staging (owner: on by default). Effective only
+	// Enabled: changes go through staging (on by default). Effective only
 	// in a StagingBuild.
 	Enabled bool
 	// HotStandby: a second slot runs the live release, warm on the watched
@@ -43,7 +43,7 @@ const (
 )
 
 // DefaultStagingSettings mirror rules.tv_staging's defaults (pipeline
-// tvrelease/config.py, API tvchange.LoadConfig): enabled on (the owner's
+// tvrelease/config.py, API tvchange.LoadConfig): enabled on (the
 // default since the Changes page, story 33.11); hot_standby on; standby_warm
 // viewers, so the standby never spends an encoder on a channel nobody watches
 // by default.

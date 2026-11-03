@@ -49,7 +49,7 @@ dSYMs as a release asset, and `tools/apple/symbolicate.py` turns a crash's addre
 **at Maktaba** when a report is forwarded with consent (53.16). At home, the group shows the
 binary images and offsets plus the app log, which is usually enough to tell what happened.
 
-### 3. Consent and switches (owner's decision, 2026-11-03, README §12)
+### 3. Consent and switches (decided 2026-11-03, README §12)
 
 - **To the home: off by default.** Nothing is sent until the person says yes. The app asks once,
   during its **initial setup** (the onboarding steps after signing in to a home), on its own

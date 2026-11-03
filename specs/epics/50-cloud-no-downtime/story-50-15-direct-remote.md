@@ -85,7 +85,7 @@ settings. Only homes whose last check passed get a `direct` entry in the connect
 
 ### 4. Several direct-name domains, so Let's Encrypt's limit never blocks a home
 
-**Owner decision, 2026-11-03 (README §13 decision 5).** Let's Encrypt allows **50 new
+**Decided 2026-11-03 (README §13 decision 5).** Let's Encrypt allows **50 new
 certificates per registered domain per week** ([rate limits](https://letsencrypt.org/docs/rate-limits/)).
 So direct names use **multiple separate registered domains, never `maktaba.tv`**, starting
 with **3–4**. Each has its own 50-a-week limit, so 4 domains give about 180 new homes a week
@@ -113,14 +113,14 @@ with a margin, and `maktaba.tv`'s own certificates are never at risk.
   increases to hosting providers); the admin fleet page (25.20) shows each domain's weekly use
   and alerts (SEV3) when overflow was used in a week.
 - **Rejected: paid per-home certificates.** A commercial certificate per home costs about
-  $35–1,000 a year each at retail; the owner rejected it.
+  $35–1,000 a year each at retail; rejected.
 - **Not pursued now:** adding the domains to the Public Suffix List (it would make each home ID
   its own registered domain for rate limits, but takes weeks and isn't needed with several
   domains).
 
 ### 5. Who gets it: free for everyone
 
-**Owner decision, 2026-11-03 (README §13 decision 6): direct remote is free, on every plan
+**Decided 2026-11-03 (README §13 decision 6): direct remote is free, on every plan
 including Free. Only the relay is paid** (plans in 50.19). Direct access carries no relay
 bytes, so it costs us almost nothing. The home doesn't check its plan before opening the direct
 listener, mapping the port or asking for a certificate, and the cloud issues certificates and

@@ -14,7 +14,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 )
 
-// A TV held at the update (the owner's decision, 2026-10-28; install-kinds.md "The TV
+// A TV held at the update (decided 2026-10-28; install-kinds.md "The TV
 // step"): when only the TV change's check (its verification in the staging slot) fails,
 // before any swap, the release commits all the same: the new server, web and pipeline stay
 // installed, the live TV stays on the streaming software it ran, the change stays a draft

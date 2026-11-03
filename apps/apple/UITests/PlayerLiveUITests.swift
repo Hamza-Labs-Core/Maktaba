@@ -187,7 +187,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 10), "back on Live TV")
     }
 
-    /// Going home while a channel plays keeps it playing (the owner's report: leaving the app cut
+    /// Going home while a channel plays keeps it playing (a report: leaving the app cut
     /// it): the player goes on reloading the channel's live playlist while the app is away (it
     /// reaches the home through the app's own stream proxy, so a suspended app reads nothing), and
     /// the channel is still on screen back in the app. The simulator does not enforce

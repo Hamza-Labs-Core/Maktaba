@@ -312,7 +312,7 @@ Inputs are created lazily (first need) up to `max_channels`, named
 ```
 
 `recording.mode = automatic` because Cloudflare serves HLS/DASH for a live input only in that mode
-(README Q1, decided by the owner); each broadcast's recording is deleted as soon as the broadcast
+(README Q1, decided); each broadcast's recording is deleted as soon as the broadcast
 ends (§7.7). `preferLowLatency` follows `tv_remote.low_latency`, off by default (README Q11).
 `deleteRecordingAfterDays` is not used (minimum 30 days). The pool holds at most `max_channels`
 inputs (default 22, every channel, 1–50: ≈ 6.5 Mb/s of the home's 1 Gb/s upload each, ≈ 143 Mb/s

@@ -58,7 +58,7 @@ In order, deduplicated by `key`, at most `n`:
 
 ### 5. Protected and scripture (Quran)
 
-The owner decided (README §8, decision 4) to **check** verse runs against the Quran text rather
+README §8, decision 4, is to **check** verse runs against the Quran text rather
 than never flag them. The pack's `scripture()` returns the verse runs found by the Quran aligner
 of story 52.15 (tolerant alignment against the bundled Tanzil text). `protected()` covers the
 words of those runs that equal the verse (or are a rasm variant of it); the words that differ are

@@ -120,7 +120,7 @@ REHEARSAL=$'completed failure\ncompleted success' expect_pass "a commit the upda
     v0.3.2 "${c3}" "" false true false
 
 # CI judged by its jobs: a failed run passes when its only failed jobs are the iPhone/iPad
-# Player UI shards (the owner, 2026-11-02: "Tag without them") and the ci-success rollup
+# Player UI shards (a tag does not wait on them, since 2026-11-02) and the ci-success rollup
 jobs() { # jobs ID LINES...: run ID's jobs, "conclusion name" (the first word is the conclusion)
     local id="$1"; shift
     : >"${work}/jobs/${id}"

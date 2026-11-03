@@ -6,7 +6,7 @@
 # nothing from outside the payload but Windows, NVENC, Postgres initdb/start/extensions on
 # the payload's runtime, an offline venv, nothing written into the payload, the launcher's
 # app-bundle mode, and a silent install + uninstall that leaves the state beside it alone.
-# Unsigned: Authenticode is the owner's decision (tools/release/win-app/README.md).
+# Unsigned: Authenticode signing is deferred (tools/release/win-app/README.md).
 
 name: Windows app
 

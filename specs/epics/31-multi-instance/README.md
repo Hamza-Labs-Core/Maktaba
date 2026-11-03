@@ -6,7 +6,7 @@ through the queue: each machine runs the stages it is good at (the Mac's GPU
 transcribes, the machine next to the NAS hashes and makes thumbnails, any machine
 tags), with nothing to configure by hand beyond approving a machine once.
 
-**Decisions (owner, 2026-10-18).**
+**Decisions (2026-10-18).**
 
 | Question | Decision |
 |---|---|

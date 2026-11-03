@@ -42,7 +42,7 @@ Rules:
 - Phase 2 relay names use **60 s** because the witness removes a dead relay's record.
 - Slugs `canary`, `status`, `api`, `app`, `www`, `r1`…`r99`, `direct`, `staging` are added to
   the reserved list (story 25.22) so no home can take them.
-- **Direct names are never under `maktaba.tv`** (owner decision, 2026-11-03; README §13
+- **Direct names are never under `maktaba.tv`** (decided 2026-11-03; README §13
   decision 5). They live on **several separate registered domains used only for direct names**
   (3–4 to start), each delegated by `NS` at its registrar to the cloud's own DNS responder
   (`--role=dns`, UDP/TCP 53, on nodes A and B), with names like

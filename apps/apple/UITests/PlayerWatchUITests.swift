@@ -202,7 +202,7 @@ final class PlayerWatchUITests: PlayerUITestCase {
         XCTAssertTrue(element("player.surface").waitForNonExistence(timeout: 10), "the player closes, the window with it")
     }
 
-    /// Going home while it plays keeps it playing (the owner's report: leaving the app cut it,
+    /// Going home while it plays keeps it playing (a report: leaving the app cut it,
     /// and the PiP button stayed off). The app ships the audio background mode in its
     /// Info.plist and its player keeps playing when the app leaves; while it is away it keeps
     /// reporting progress to the home (a suspended app sends nothing), further on each time, and

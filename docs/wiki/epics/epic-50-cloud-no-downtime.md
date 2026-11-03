@@ -5,7 +5,7 @@
 
 ## Goal
 
-The owner, 2026-11-03: *"if we are letting people pay then there should be no downtime"*.
+Requirement: once people pay for remote access, there must be no downtime.
 
 Maktaba Cloud's relay is built (Epic 25) but deployed as one VPS running relay, API, Postgres,
 Redis and Caddy together. That's fine for a demo but not for paying users. This epic takes it
@@ -70,7 +70,7 @@ status strip every app draws).
 
 ## Decisions (2026-11-03)
 
-The owner's answers to the epic's open questions (epic README §13):
+The answers to the epic's open questions (epic README §13):
 
 1. **No downtime credits.** The uptime target stays and is published; it is a target, not a
    promise, and no credit or refund is given (50.11, 50.12).
@@ -125,8 +125,8 @@ at about 10,000 homes is about **€481**. Details and sources: epic README §5 
 
 ## Home broadcasting (spec, 2026-11-03)
 
-The owner: *"the ability to stream TV from home servers to others, let's say an entertainment
-tier or a home streamer tier."* Epic README
+Requirement: a way to stream TV from home servers to other people, as a tier of its own (an
+entertainment or home streamer tier). Epic README
 [§14](../../../specs/epics/50-cloud-no-downtime/README.md#14-home-broadcasting), research in
 [research-broadcasting.md](../../../specs/epics/50-cloud-no-downtime/research-broadcasting.md).
 
@@ -134,10 +134,10 @@ A Maktaba home owner (the **publisher**) publishes chosen live TV channels to vi
 home through Maktaba Cloud, on `watch.maktaba.tv/<publisher>/<channel>` and in every Maktaba
 Player and TV app as a guest.
 
-**Owner decisions (2026-11-03):**
+**Decisions (2026-11-03):**
 
 - **Viewers never pay.** Access is open or by invite link only.
-- **"We charge for infra, not content."** Maktaba Cloud is an infrastructure and hosting
+- **We charge for infrastructure, not content.** Maktaba Cloud is an infrastructure and hosting
   provider. It never selects, uploads, curates or recommends what airs. Channel building,
   scheduling and YouTube intake stay on the publisher's home, and the publisher is responsible for
   the rights.
@@ -196,5 +196,5 @@ kill switch through a signed revocation list (the Epic 54 pattern). There is no 
 | 50.28 | [Viewer analytics and broadcast monitoring](../../../specs/epics/50-cloud-no-downtime/story-50-28-analytics-monitoring.md) | B |
 | 50.29 | [The broadcast rehearsal and fan-out load test](../../../specs/epics/50-cloud-no-downtime/story-50-29-broadcast-rehearsal.md) | B |
 
-The owner's open questions, each with a recommended default, are in README §14.10. The
+The open questions, each with a recommended default, are in README §14.10. The
 broadcasting gate is in §14.11.

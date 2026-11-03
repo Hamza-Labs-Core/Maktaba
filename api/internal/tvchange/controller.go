@@ -416,7 +416,7 @@ func (c *Controller) ready(ctx context.Context, cfg Config, ch *Change) error {
 	if loc == nil {
 		loc = time.Local
 	}
-	// the owner's rule (2026-10-28): a manual change waits for an approval; an automatic
+	// rule (2026-10-28): a manual change waits for an approval; an automatic
 	// one goes on the air by its kind's rule, however many channels it touches
 	rule := ChangeRule(cfg, ch)
 	if rule == RuleApproval {

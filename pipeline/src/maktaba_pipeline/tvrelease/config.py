@@ -1,7 +1,8 @@
 """The ``tv_staging`` rules (Epic 33, README "Settings"): every TV change goes through
-staging. The defaults are the owner's decisions, not "the current behaviour": staging is
+staging. The defaults are decisions, not "the current behaviour": staging is
 on, a watched channel switches at its programme boundary, the hot standby is on - and
-"only manual needs approval" (2026-10-28): a change a person made (``origin = manual``:
+only a manual change needs an approval (decided 2026-10-28): a change a person made
+(``origin = manual``:
 the channel editor, a lineup or settings edit, an admin's change, a rollback an admin
 pressed) always waits for an admin's approval; a change the system made (``origin =
 auto``: the channel plan, the schedule, the updater's binary, an automatic rollback) goes
@@ -36,9 +37,9 @@ TSS = "TV staging swap"
 class MaktabaTvStagingConfig:
     """How TV changes are staged, approved and put on the air (rules ``tv_staging``)."""
 
-    #: changes go through staging (owner). Off: direct writes as before Epic 33
+    #: changes go through staging (decided). Off: direct writes as before Epic 33
     enabled: bool = True
-    #: an automatic change of each kind goes on the air once verified (owner, 2026-10-28)
+    #: an automatic change of each kind goes on the air once verified (decided 2026-10-28)
     auto_promote_lineup: str = "immediate"
     auto_promote_settings: str = "immediate"
     auto_promote_live_slots: str = "immediate"
@@ -66,7 +67,7 @@ class MaktabaTvStagingConfig:
     rolling_swap: str = "auto"
     auto_rollback: bool = True
     hot_standby: bool = True
-    #: viewers (default, the owner's call for story 33.1: the standby never spends an
+    #: viewers (default, decided for story 33.1: the standby never spends an
     #: encoder on a channel nobody watches) | demand
     standby_warm: str = "viewers"
     require_second_admin: bool = False
@@ -91,7 +92,7 @@ def auto_rule(
     source_kind: str = "",
     origin: str | None = None,
 ) -> str:
-    """A change's rule (the API's tvchange.ChangeRule; the owner's rule of 2026-10-28):
+    """A change's rule (the API's tvchange.ChangeRule; the rule of 2026-10-28):
     ``approval`` for a manual change; for an automatic one the strictest auto rule among
     ``kinds`` (``quiet_window`` or ``immediate``; a stored ``approval`` reads as
     ``immediate``), and ``immediate`` for the updater's change of the streaming binary

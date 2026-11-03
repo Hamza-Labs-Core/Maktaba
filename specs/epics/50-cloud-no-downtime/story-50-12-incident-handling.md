@@ -5,9 +5,9 @@
 ## Why
 
 Failover and alerts handle the failures we planned for. The rest need a person, and today
-that person is the owner, alone, maybe at 3 a.m. The owner's rule is that recovery must be
-automatic or one click, never a terminal ("when ppl use this how are you going to fix it for
-them"). Where a person must act, they need a short, tested page that says what to do, and
+that person is the owner, alone, maybe at 3 a.m. The rule is that recovery must be
+automatic or one click, never a terminal, so it still works once many people use the service.
+Where a person must act, they need a short, tested page that says what to do, and
 users need to hear what is going on in their language.
 
 ## Description
@@ -47,7 +47,7 @@ either a one-click GitHub Actions workflow or one command), **Done when**, **Tel
 | `status-page.md` | posting an incident or maintenance | Add a file under `status/data/incidents/` from the templates below; commit. |
 
 The forced-failover, switchover, DNS-swap and deploy workflows are proven in the cloud
-rehearsal (50.06), never first on the VPS (owner rule: update and recovery paths are proven in
+rehearsal (50.06), never first on the VPS (project rule: update and recovery paths are proven in
 CI first).
 
 ### 3. Telling users
@@ -66,7 +66,7 @@ issue links, and the cloud log searches and error groups (Epic 53.17) that show 
 Blameless. A summary goes on the incident's status page entry, and the Claude
 trail gets a line (in a trail-only PR).
 
-### 5. No downtime credits (owner decision, 2026-11-03)
+### 5. No downtime credits (decided 2026-11-03)
 
 The **99.9 % uptime target stays** (README §4.2): it drives alerts, error budgets and
 postmortems, and the status page shows the measured figure. But it is a **target, not a

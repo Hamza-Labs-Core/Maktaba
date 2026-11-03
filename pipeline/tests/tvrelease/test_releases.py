@@ -21,9 +21,9 @@ pytestmark = pytest.mark.integration
 
 def test_defaults_only_manual_needs_approval() -> None:
     cfg = MaktabaTvStagingConfig()
-    assert cfg.enabled is True  # owner decision: staging on by default
+    assert cfg.enabled is True  # decided: staging on by default
     assert cfg.swap_wait == "boundary" and cfg.hot_standby is True
-    # the owner's rule (2026-10-28): an automatic change of any kind goes on once verified,
+    # the rule of 2026-10-28: an automatic change of any kind goes on once verified,
     # however many channels it touches; a manual one always waits for an admin
     for kind in CHANGE_KINDS:
         assert getattr(cfg, f"auto_promote_{kind}") == "immediate"

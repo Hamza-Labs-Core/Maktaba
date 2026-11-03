@@ -3,7 +3,7 @@
 > For [README.md](README.md). Researched 2026-11-03; every source below was fetched that day.
 > Items that could not be confirmed are marked so.
 >
-> **Owner's decisions, 2026-11-03 ([README §8](README.md#8-decisions-2026-11-03)):** there is no
+> **Decisions, 2026-11-03 ([README §8](README.md#8-decisions-2026-11-03)):** there is no
 > LLM judge (story 52.7 removed), so the LLM rows and §5 below are kept as background only; every
 > check is deterministic (CAMeL Tools for Arabic, Hunspell for English and ~100 other languages,
 > a fallback pack for the rest). Quran verse runs are checked against the bundled Tanzil text

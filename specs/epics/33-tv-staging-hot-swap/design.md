@@ -87,7 +87,7 @@ The slot's `Engine` is today's engine with three differences:
 3. **Holds.** `POST /internal/tv/slot/warm {channels}` attaches a synthetic viewer per channel
    (`reg.attach`), refreshed every 10 s by the front door, so the reaper keeps warmed channels up.
 
-### 2.4 Hot standby and failover (owner decision)
+### 2.4 Hot standby and failover (decided)
 
 The **standby** slot runs the live release and the same `sched_gen`; the front door keeps the
 standby's warm set equal to live's (`standby_warm = demand`) or, when the encoder budget is short,
@@ -551,7 +551,7 @@ no approval stays `ready` and notifies daily.
 
 ### 11.3 Auto-promote
 
-**Default (owner decision): every kind is `approval`** — nothing reaches the air without an admin.
+**Default (decided): every kind is `approval`** — nothing reaches the air without an admin.
 The rules remain settings: the strictest `tv_staging.auto_promote` rule among the change's kinds:
 `approval` → wait for an admin;
 `quiet_window` → promote at the first moment inside the window with ≤ `quiet_max_viewers` viewers
@@ -618,8 +618,8 @@ Epic 28.3's update path changes from "replace this executable, re-exec" to:
 
 1. download the release to `bin/releases/<version>/`, verify checksums;
 2. create a `binary` TV change with `streaming = <version>` and the rest of the live release;
-   stage → verify (the new binary runs as the staging slot) → wait for an admin's approval (owner
-   decision; the `binary` auto rule is `approval` by default) → swap;
+   stage → verify (the new binary runs as the staging slot) → wait for an admin's approval (decided;
+   the `binary` auto rule is `approval` by default) → swap;
 3. after the TV swap: restart `api`, `pipeline`, `web` on the new version (supervisor rolling
    restart; their clients retry);
 4. the front door restarts only if `edge_protocol` (a constant in the binary) changed, in the quiet

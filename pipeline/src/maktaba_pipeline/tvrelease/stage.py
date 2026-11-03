@@ -63,7 +63,7 @@ class ChangeInFlight(RuntimeError):
 
 
 async def enabled(db: Any) -> bool:
-    """``rules.tv_staging.enabled`` (on by default: owner decision)."""
+    """``rules.tv_staging.enabled`` (on by default: a decision)."""
     cfg, _, _ = await rules.read(db, "tv_staging")
     return bool(cfg.enabled)
 

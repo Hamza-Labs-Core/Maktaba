@@ -190,7 +190,7 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 	// database replaced, each machine copies it anew, and its next grant makes its
 	// publication again with the tables there then (cluster_copy_publication). The dump's
 	// own ALTER PUBLICATION ... ADD TABLE failed the whole restore once ("is already member
-	// of publication"; the owner's rollback of 2026-10-27).
+	// of publication"; the rollback of 2026-10-27).
 	env := append(os.Environ(), "PGPASSWORD="+q.pw)
 	restore := func(list string, workers int, sections ...string) error {
 		args := []string{"-h", "127.0.0.1", "-p", strconv.Itoa(b.Port), "-U", SuperUser, "-d", restoringDatabase,

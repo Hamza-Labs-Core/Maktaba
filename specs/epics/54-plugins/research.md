@@ -72,7 +72,7 @@ for code that is not built from Maktaba's own commit.
 - Maktaba Cloud (`cloud/`) already has accounts, a billing package (`cloud/internal/billing/`),
   a webhook handler, plans, metering, a licence issuer (`cloud/internal/license/issuer.go`) and entitlements. Homes reach
   it through the cloud link (`maktaba-cloudlink`). Epic 50 makes it highly available.
-- Domains (owner, standing): **maktaba.tv** is everything users touch; **maktaba.dev** is the
+- Domains (standing rule): **maktaba.tv** is everything users touch; **maktaba.dev** is the
   developer wiki, source and security.txt; maktaba.app is not ours.
 
 ### 1.5 Constraints from the trail
@@ -286,7 +286,7 @@ host process as the second, an escape needs two independent bugs.
 
 ### 4.1 Payments
 
-- **Owner decision (2026-11-03): no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
+- **Decided 2026-11-03: no Stripe, ever** (no Stripe, Stripe Connect, Stripe Tax or
   Stripe-owned services such as Lemon Squeezy). The payment provider and the seller of record
   are decided at Phase 3 (README §6.5, §14).
 - **Who is the seller of record decides who owes VAT and sales tax.** When Maktaba sells, the
@@ -301,7 +301,7 @@ host process as the second, an escape needs two independent bugs.
   with Maktaba verifying their licence keys offline.
 - Splits in the market: Apple and Google 70/30 (85/15 for small developers and
   subscriptions after a year), Epic Games Store 88/12, VS Code and Obsidian have no paid
-  marketplace. The owner decided **85/15** (2026-11-03).
+  marketplace. Decided: **85/15** (2026-11-03).
 
 ### 4.2 Review, signing, revocation
 

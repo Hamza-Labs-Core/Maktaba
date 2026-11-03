@@ -40,7 +40,7 @@
    `kill -9` only, recorded in the runbook).
 6. Per-OS E2E in CI: build v0.0.1-e2e/v0.0.2-e2e, update a single-machine home on each OS, assert.
    The three-OS cluster E2E (home and nodes joined, rollout) runs later on a self-hosted lab
-   (follow-up, owner decision 2026-10-19); CI keeps the per-OS tests and is not gated on it.
+   (follow-up, decided 2026-10-19); CI keeps the per-OS tests and is not gated on it.
 7. Triage: each failure fixed or listed in the runbook's known issues.
 
 ## 3. Tests

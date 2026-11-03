@@ -46,7 +46,7 @@ code on 2026-11-03 (main at `f45276258`). Prices and outside facts were looked u
   (architecture §13: "Self-hosted features never depend on the cloud").
 - **Cloud features on the home** (relay entitlement flags, editions) keep their last signed
   entitlement for **7 days** (story 25.26).
-- **Payments.** The payment provider is TBD (not Stripe; owner decision 2026-11-03). A hosted
+- **Payments.** The payment provider is TBD (not Stripe; decided 2026-11-03). A hosted
   checkout and webhooks the provider retries for days mean a cloud outage delays a plan change
   but doesn't lose it, so multi-day webhook retries are a selection rule for the provider
   (50.19 §6).

@@ -22,8 +22,8 @@ Design: [design.md](design.md) §11.4.
   posts `{apply:true, plan_digests:[digest]}`** to the job (`POST /api/queues/write_channels/apply`), the
   re-run stages the change, and the controller treats it as approved (no second approval), subject to
   `require_second_admin`.
-- **AC3** (the owner's rule: "when an update happens it needs to start a change; anything after that is
-  added to the same change, unless it's approved"; replaces "a changed plan supersedes the draft" and
+- **AC3** (rule: an update starts a change, and anything after it joins that same change until it
+  is approved; replaces "a changed plan supersedes the draft" and
   "beyond draft takes no more updates") An update to the TV starts a change, and every update after it
   joins that same change - same id, same number, `updated_at` bumped, an `append` event naming the
   update - until the change is approved. Updates are a channel plan from `write_channels`, a schedule
@@ -46,7 +46,7 @@ Design: [design.md](design.md) §11.4.
   tick and at every update (`Store.CollapseOpen`, `stage.collapse_open`; idempotent). A change that fails
   verification is not ended: it returns to `draft` with its report and the reasons (its approval
   withdrawn, no stage asked), is the open change again, and a change opened while it was in flight joins
-  it. The owner fixes it, or approves it again. `failed` stays only for the rows made before this rule
+  it. An admin fixes it, or approves it again. `failed` stays only for the rows made before this rule
   (slot 0142 cleans them up).
 - **AC4** `write_channels._verify` checks the release snapshot; the read-back of `channels` runs after the
   swap commit and is reported on the change.

@@ -1,13 +1,13 @@
 # Epic 52 — Word review: suspect words go to a person, in every language
 
-> **Status:** spec (2026-11-03), owner's decisions applied the same day. **Source:** [`specs/epics/52-transcript-word-review/`](../../../specs/epics/52-transcript-word-review/README.md).
+> **Status:** spec (2026-11-03), decisions applied the same day. **Source:** [`specs/epics/52-transcript-word-review/`](../../../specs/epics/52-transcript-word-review/README.md).
 > **Anchors:** `pipeline/src/maktaba_pipeline/stt/refine.py` (the second listen) ·
 > `stt/align.py` (word probabilities) · `engine/stages/transcribe.py` (`_store`) ·
 > `text/arabic.py` (folding) · `classify/quran.py` + `data/quran/` (the Tanzil Quran text).
 
 ## Goal
 
-After the owner's hearing tests set how Maktaba transcribes (Whisper turbo, then a second listen
+After hearing tests set how Maktaba transcribes (Whisper turbo, then a second listen
 by Cohere Arabic, merged word by word), the remaining errors are single words: a misheard name,
 a misspelt term, a word the two listeners disagree on. This epic points at those words and lets a
 person fix them fast:
@@ -63,7 +63,7 @@ Research with sources: [`research.md`](../../../specs/epics/52-transcript-word-r
 ## Targets
 
 - Flag precision: Arabic ≥ 0.50 and English ≥ 0.60 at first, ≥ 0.65 / 0.70 after calibration.
-  Recall ≥ 0.60. At most 3% of words flagged. At least 18 of the owner's 20 hearing-test spots
+  Recall ≥ 0.60. At most 3% of words flagged. At least 18 of the 20 hearing-test spots
   flagged.
 - Quran check: no flag on a correctly heard verse run; ≥ 0.80 of seeded verse-word errors flagged.
 - Flags visible within 2 minutes of a transcript. A fix takes ≤ 300 ms, with subtitles rewritten

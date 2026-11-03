@@ -4,7 +4,7 @@
 
 ## Why
 
-The owner wants Maktaba's own stages to be plugins on the same interface as third-party ones
+Maktaba's own stages are to be plugins on the same interface as third-party ones
 (README §15). They need rights no third-party plugin may have: their own SQL, library files,
 ffmpeg, the GPU, sometimes the network. Those rights must be **declared**, **reviewed**, and
 **unlockable only by Maktaba's release signature**, or "first-party" becomes a back door any

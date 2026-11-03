@@ -29,7 +29,7 @@ order; any **block** stops the version:
 | C7 | Malware scan of the package and source archive (ClamAV signatures, YARA rules for known Wasm cryptominer patterns) | hit |
 | C8 | **Sandbox run**: the plugin's fixtures plus generated events (50 videos, random metadata, the sample media set) through the harness (54.12) with `--limits strict`, recording calls, outputs and resources | any trap on fixtures; p95 memory > 80 % of declared; outputs violating rules |
 | C9 | **Diff vs previous version**: new capabilities, new panels, new exports, size jump > 3×, call pattern change > 5× | — (routes to human review) |
-| C10 | Source archive present (**required for every version**, kept private to reviewers; owner decision 2026-11-03; missing → blocked) and builds (`mkp build` in the language's container) to a component whose sha256 matches, when the language toolchain is reproducible (Rust, TinyGo); otherwise "not reproducible" noted | — (badge only) |
+| C10 | Source archive present (**required for every version**, kept private to reviewers; decided 2026-11-03; missing → blocked) and builds (`mkp build` in the language's container) to a component whose sha256 matches, when the language toolchain is reproducible (Rust, TinyGo); otherwise "not reproducible" noted | — (badge only) |
 | C11 | Rating (54.08's shared function) | — |
 
 Target: report ≤ 30 minutes p95 (N11). The report is shown to the developer and reviewers.
@@ -62,7 +62,7 @@ use: ask only for what you use; do what the listing says; no tracking or fingerp
 library for later exfiltration (moot without network, but no hidden data stores either); no
 content that is illegal or hateful; names and icons not imitating Maktaba or others; Arabic
 strings may be machine translated but must be labelled so in the notes, and the listing
-then shows "Arabic machine translated" / «ترجمة آلية» (owner decision 2026-11-03). A listing
+then shows "Arabic machine translated" / «ترجمة آلية» (decided 2026-11-03). A listing
 without both English and Arabic is refused (C6).
 
 ### 5. SLAs and staffing
