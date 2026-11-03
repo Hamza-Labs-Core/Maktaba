@@ -19,6 +19,36 @@ struct LiveTVScreen: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
+        if context.session.capabilities.current.isOn(.liveTV) {
+            live
+        } else {
+            off
+        }
+    }
+
+    /// Live TV is off on the home (story 51.11): an admin reads so, with a button to the
+    /// Components page (a viewer has no Live TV section; should one reach it, the 409's words).
+    private var off: some View {
+        Group {
+            if context.session.capabilities.current.isAdmin {
+                FeatureOffNote(.liveTV, home: context.client.home)
+            } else {
+                Text(verbatim: ErrorStrings.forPreferredLanguages().text(.off))
+                    .foregroundStyle(Color.mktMuted)
+                    .padding(MaktabaTokens.Spacing.s5)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .maktabaSurface()
+        .navigationTitle(Text(PlayerSection.liveTV.title))
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("screen.liveTV")
+    }
+
+    private var live: some View {
         VStack(spacing: 0) {
             Picker(selection: $mode) {
                 Text("Now", tableName: "Live", comment: "Live TV: what is on now on every channel").tag(Mode.now)

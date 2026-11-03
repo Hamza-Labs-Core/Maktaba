@@ -102,7 +102,9 @@ struct HomeScreen: View {
                 ForEach(model.sections) { section in
                     switch section {
                     case let .cards(row): cardsRow(row)
-                    case let .live(channels): liveRow(channels)
+                    case let .live(channels):
+                        // no channel row while Live TV is off on the home (51.11)
+                        if context.session.capabilities.current.isOn(.liveTV) { liveRow(channels) }
                     }
                 }
             }

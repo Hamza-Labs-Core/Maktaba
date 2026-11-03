@@ -135,6 +135,31 @@ final class MockHome: @unchecked Sendable {
         lock.withLock { stubs["\(method) \(path)"] = Answer(status: status, body: Data(body.utf8), contentType: type, delay: delay, headers: headers) }
     }
 
+    /// From now on, `GET /api/capabilities` (story 51.09) answers with the features in `off`
+    /// off (`live_tv`, `semantic_search` …), as it answers a viewer, or with the admin block
+    /// (`admin`). A feature that is off also answers its routes' 409 `component_off`
+    /// (Live TV's `/api/channels/now` and guide), as the home does.
+    func capabilities(off: Set<String>, admin: Bool) {
+        stub("GET", "/api/capabilities", body: Self.capabilities(off: off, admin: admin), headers: ["ETag": #""c-ui-1""#])
+        if off.contains("live_tv") {
+            let problem = #"{"type":"https://maktaba.tv/problems/component-off","title":"This feature is off","status":409,"code":"component_off","component":"livetv","feature":"live_tv"}"#
+            for path in ["/api/channels/now", "/api/channels/guide"] { stub("GET", path, status: 409, body: problem) }
+        }
+    }
+
+    static let features = ["live_tv", "transcripts", "subtitles", "semantic_search", "chapters", "youtube", "plex",
+                           "remote_access", "recommendations"]
+
+    static func capabilities(off: Set<String>, admin: Bool) -> String {
+        let features = Self.features.map { #""\#($0)":"\#(off.contains($0) ? "off" : "on")""# }.joined(separator: ",")
+        var body = #"{"etag":"c-ui-1","features":{\#(features)}"#
+        if admin {
+            let parts = Self.features.filter(off.contains).map { #""\#($0)":{"components":["\#($0).part"],"reason":"switched_off"}"# }
+            body += #","admin":{"manage_components":true,"off":{\#(parts.joined(separator: ","))}}"#
+        }
+        return body + "}"
+    }
+
     /// From now on, `method path` answers `bodies[n]` (JSON) to `page=n` (no `page`: 0), and
     /// `{"items":[]}` past the last: a list the app reads page by page. Wins over the fixtures.
     func stubPages(_ method: String, _ path: String, _ bodies: [String]) {
@@ -378,6 +403,9 @@ final class MockHome: @unchecked Sendable {
             return (200, #"{"access_token":"\#(Self.accessToken)","refresh_token":"ui-refresh"}"#)
         case ("GET", "/api/auth/me"):
             return (200, #"{"id":"u1","username":"tester","is_admin":true,"home_name":"UI Test Home"}"#)
+        case ("GET", "/api/capabilities"):
+            // every feature on, as a viewer's answer (a test turns some off: `capabilities`)
+            return (200, Self.capabilities(off: [], admin: false))
         case ("GET", "/api/issues"):
             return (200, #"{"groups":[]}"#)
         case ("GET", "/api/queues"):

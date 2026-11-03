@@ -60,6 +60,53 @@ final class PlayerLiveUITests: PlayerUITestCase {
         shot("live-hidden")
     }
 
+    // MARK: Live TV off on the home (story 51.11)
+
+    /// T07: Live TV off and a viewer: no Live TV section although the home has channels, no
+    /// channel row on Home; a launch into Live TV lands on Home and says it isn't available.
+    func testLiveTVOffHidesItFromAViewer() {
+        home.capabilities(off: ["live_tv"], admin: false)
+        launchSignedIn(section: "live")
+        XCTAssertTrue(element("screen.home").waitForExistence(timeout: 20), "signed in: Home; the home saw \(home.seen)")
+        XCTAssertTrue(home.seen.contains("GET /api/capabilities"), "the app asked what is on")
+        XCTAssertTrue(sectionButton("Libraries").exists, "the other sections show")
+        XCTAssertTrue(element("shell.unavailable").waitForExistence(timeout: 10), "the link into Live TV says it isn't available")
+        XCTAssertTrue(element("shell.unavailable").label.contains("Live TV isn't available on this home"),
+                      element("shell.unavailable").label)
+        XCTAssertFalse(app.tabBars.buttons["Live TV"].exists, "no Live TV tab")
+        XCTAssertFalse(app.buttons["Live TV"].exists, "no Live TV section")
+        XCTAssertFalse(element("home.row.live").exists, "no channel row on Home")
+        shot("live-off-viewer")
+    }
+
+    /// T08: Live TV off and an admin: the section stays, and its screen says Live TV is off
+    /// with the button to the Components page.
+    func testLiveTVOffExplainsItToAnAdmin() {
+        home.capabilities(off: ["live_tv"], admin: true)
+        launchSignedIn(section: "live")
+        XCTAssertTrue(sectionButton("Live TV").waitForExistence(timeout: 20), "the admin keeps the Live TV section")
+        XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 10))
+        let note = element("feature.off.live_tv")
+        XCTAssertTrue(note.waitForExistence(timeout: 15), "the admin note; the home saw \(home.seen)")
+        XCTAssertEqual(note.label, "Live TV is off on this home.")
+        let button = app.buttons["feature.turnOn"]
+        XCTAssertTrue(button.exists, "the button to Components")
+        XCTAssertEqual(button.label, "Turn it on in Components")
+        XCTAssertFalse(element("live.now").exists, "no channel list")
+        shot("live-off-admin")
+    }
+
+    /// The same note in Arabic.
+    func testLiveTVOffExplainsItToAnAdminInArabic() {
+        home.capabilities(off: ["live_tv"], admin: true)
+        launchSignedIn("ar", section: "live")
+        let note = element("feature.off.live_tv")
+        XCTAssertTrue(note.waitForExistence(timeout: 25), "the admin note; the home saw \(home.seen)")
+        XCTAssertTrue(note.label.contains("متوقفة على الجهاز الرئيسي"), note.label)
+        XCTAssertEqual(app.buttons["feature.turnOn"].label, "شغّلها من صفحة المكوّنات")
+        shot("live-off-admin")
+    }
+
     // MARK: Guide
 
     /// The guide: channels × time with the now-line at the right x; it scrolls sideways

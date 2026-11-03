@@ -426,6 +426,14 @@ public actor APIClient {
     /// `SameOriginOnly` for a request with a credential in its body (not followed there at all).
     func sendRaw(_ r: URLRequest, authorized: Bool = true, retried: Bool = false,
                          redirects: URLSessionTaskDelegate = SameOriginRedirects.shared) async throws -> Data {
+        try await exchange(r, authorized: authorized, retried: retried, redirects: redirects).data
+    }
+
+    /// `sendRaw` with the response: a status in `answered` (a 304 to an If-None-Match, a 404
+    /// that means "not on this home") is returned, not thrown or logged as a failure.
+    func exchange(_ r: URLRequest, authorized: Bool = true, retried: Bool = false,
+                  redirects: URLSessionTaskDelegate = SameOriginRedirects.shared,
+                  answered: Set<Int> = []) async throws -> (data: Data, response: HTTPURLResponse?) {
         var r = r
         if authorized, let access = tokens.access {
             r.setValue("Bearer \(access)", forHTTPHeaderField: "Authorization")
@@ -442,21 +450,21 @@ public actor APIClient {
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401, authorized, !retried, tokens.refresh != nil {
             _ = try await refreshOnce()
-            return try await sendRaw(r, authorized: true, retried: true, redirects: redirects)
+            return try await exchange(r, authorized: true, retried: true, redirects: redirects, answered: answered)
         }
         if code == 401, authorized {
             Log.session.notice("\(Self.describe(r), privacy: .public): 401 after a refresh: signed out")
             tokens.clear()
             throw APIError.signedOut
         }
-        guard (200..<300).contains(code) else {
+        guard (200..<300).contains(code) || answered.contains(code) else {
             let e = APIError.status(code, String(decoding: data.prefix(4096), as: UTF8.self),
                                     retryAfter: (response as? HTTPURLResponse).flatMap(Self.retryAfter))
             let p = e.problem
             Log.network.error("\(Self.describe(r), privacy: .public) -> \(code, privacy: .public) code=\(p?.code ?? "-", privacy: .public) type=\(p?.slug ?? "-", privacy: .public) detail=\(p?.detail ?? "", privacy: .private)")
             throw e
         }
-        return data
+        return (data, response as? HTTPURLResponse)
     }
 
     /// One refresh at a time: requests that 401 together wait for the same one.
