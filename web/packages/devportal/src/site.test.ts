@@ -186,11 +186,17 @@ describe("English and Arabic", () => {
   });
 
   it("the portal's pages carry no inline script (the CSP allows none)", () => {
+    // every `<script` (any case) opens a tag with a src and closes at once: no inline code
     for (const p of files(DIST).filter((f) => f.endsWith(".html"))) {
-      for (const m of read(p).matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
-        expect(m[1], p).toMatch(/\bsrc=/);
-        expect(m[2].trim(), p).toBe("");
+      const html = read(p).toLowerCase();
+      let seen = 0;
+      for (let i = html.indexOf("<script"); i !== -1; i = html.indexOf("<script", i + 1)) {
+        const end = html.indexOf(">", i);
+        expect(html.slice(i, end), p).toMatch(/\ssrc="/);
+        expect(html.slice(end + 1, end + 10), p).toBe("</script>");
+        seen++;
       }
+      expect(seen, p).toBeGreaterThan(0);
     }
   });
 });
