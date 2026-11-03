@@ -133,7 +133,7 @@ jobs 7 "${base[@]}" "failure apple-apps / Player UI tests (iphone 2/6)" \
     "failure apple-apps / Player UI tests (ipad 5/6)" "cancelled apple-apps / Player UI tests (ipad 1/6)" "failure ci-success"
 CI_RUNS="completed failure 7" expect_pass "a CI run failed only on iPhone/iPad UI shards and ci-success" \
     v0.3.2 "${c3}" "" false true false
-grep -q 'ignored failures.*Player UI tests (iphone 2/6) (failure).*(ipad 5/6) (failure)' "${work}/log" \
+grep -q 'ignored failures (flaky iPhone/iPad Player UI shards):.*Player UI tests (iphone 2/6) (failure).*(ipad 5/6) (failure)' "${work}/log" \
     || fail "the ignored shard failures are not printed: $(cat "${work}/log")"
 jobs 8 "${base[@]}" "failure apple-apps / Player UI tests (iphone 2/6)" "failure ci-success" \
     "failure apple-apps / Player UI tests (mac)"
