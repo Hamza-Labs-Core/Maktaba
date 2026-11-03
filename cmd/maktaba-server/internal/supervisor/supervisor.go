@@ -117,6 +117,12 @@ type Process struct {
 	// its detail naming the port and the holder; serve checks them against one
 	// another at its start (CheckBinds).
 	Binds []ports.Bind
+	// Component is the catalog component the process belongs to (Epic 51 story 51.04);
+	// empty: New fills it from the catalog (ByProcess).
+	Component string
+	// Dormant: built though today's server.toml leaves it out, so it starts only when
+	// the component's desired state enables it (its gate starts closed: Allow).
+	Dormant bool
 }
 
 // graceFor is how long p has to stop once asked: grace, or its own StopGrace when
