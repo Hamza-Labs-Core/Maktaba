@@ -142,6 +142,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba Player
+        # only the system's HTTPS: no export-compliance question on every TestFlight build
+        # (the iPhone and iPad apps have it from IOSApp)
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         ARCHS: arm64
         ENABLE_HARDENED_RUNTIME: YES
     entitlements:

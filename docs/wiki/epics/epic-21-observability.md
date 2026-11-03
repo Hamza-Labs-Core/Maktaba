@@ -2,6 +2,7 @@
 
 > **Status:** spec + plans complete. **Source:** `specs/epics/21-observability/`.
 > **Anchors:** [`architecture.md`](../../../specs/architecture.md) §5 (observability platform), §9 (service correlation).
+> **2026-11-03:** continued by [Epic 53](epic-53-logs-errors-reports.md) (log storage and search, error groups, crash and problem reports, the recovery console).
 
 ## Goal
 

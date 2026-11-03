@@ -108,7 +108,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
         XCTAssertTrue(en.isSelected, "an audio track is selected")
         XCTAssertEqual(ar.label, "Arabic")
         ar.tap()
-        waitFor("the Arabic audio, with sound") { state["audio"] == "ar" && state["sound"] == "aac" && state["audible"] == "true" }
+        // a track switch re-buffers the stream: on a loaded simulator that is more than 15 s
+        waitFor("the Arabic audio, with sound", timeout: 30) {
+            state["audio"] == "ar" && state["sound"] == "aac" && state["audible"] == "true"
+        }
     }
 
     func testQualityReopensAtTheSamePositionWithMaxBitrate() throws {
@@ -324,6 +327,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
         let end = Date().addingTimeInterval(timeout)
         while !done() {
             if Date() > end {
+                // one more look: each read of the state is an accessibility query (a second or
+                // more on a loaded CI simulator), so the state can arrive while the last read
+                // was under way, and the failure message then shows it done (PR #583's iPad run)
+                if done() { return }
                 XCTFail("timed out: \(what) (state: \(state))")
                 return
             }
