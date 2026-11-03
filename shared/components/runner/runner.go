@@ -454,9 +454,9 @@ func Gates(cat *components.Catalog, desired map[string]store.Desired, noReconcil
 
 // GatesAt is every catalog component's gate for desired at now (nil desired: nothing read
 // yet, all on). A core component, a component with no row, and every component under the
-// kill switch (noReconcile) are on. Off: want is not enabled, a hold, a licence the home
-// lacks (story 51.19), or a requirement is off. Requirements come first in the catalog's
-// order, so each sees its requirements' gates.
+// kill switch (noReconcile) are on. An asset has no run, so it is on unless absent. Off:
+// want is not enabled, a hold, a licence the home lacks (story 51.19), or a requirement is
+// off. Requirements come first in the catalog's order, so each sees its requirements' gates.
 func GatesAt(cat *components.Catalog, desired map[string]store.Desired, noReconcile bool, now time.Time) map[string]Gate {
 	out := make(map[string]Gate, len(cat.Order()))
 	for _, id := range cat.Order() {
@@ -474,6 +474,11 @@ func GatesAt(cat *components.Catalog, desired map[string]store.Desired, noReconc
 		}
 		switch {
 		case !c.Switchable || noReconcile || !has:
+		case c.Kind == components.KindAsset:
+			// an asset has no run: on disk (installed or enabled) it is met, absent it is off
+			if d.Want == components.WantAbsent {
+				g.On, g.Phase = false, components.PhaseOff
+			}
 		case d.Want != components.WantEnabled:
 			g.On, g.Phase = false, components.PhaseOff
 		case d.Hold != nil:

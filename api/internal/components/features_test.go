@@ -100,10 +100,14 @@ func TestFeatureIgnoresStatusAndMissingRows(t *testing.T) {
 	}
 }
 
-// A requirement that is off turns its dependents' features off (the runners' rule), and
-// a missing licence flag turns its component's feature off.
+// A requirement that is off turns its dependents' features off (the runners' rule) (an asset
+// only when absent: installed meets it), and a missing licence flag turns its component's
+// feature off.
 func TestFeatureDependencyAndLicence(t *testing.T) {
-	r := resolve(setWant(allEnabled(), "runtime.ml", components.WantInstalled, false))
+	if r := resolve(setWant(allEnabled(), "runtime.ml", components.WantInstalled, false)); !r.Features["transcripts"] {
+		t.Fatalf("transcripts off with runtime.ml installed: %+v", r.Off["transcripts"])
+	}
+	r := resolve(setWant(allEnabled(), "runtime.ml", components.WantAbsent, false))
 	if r.Features["transcripts"] || r.Off["transcripts"].Reason != ReasonDependencyOff {
 		t.Fatalf("transcripts %+v", r.Off["transcripts"])
 	}

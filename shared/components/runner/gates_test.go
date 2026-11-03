@@ -44,6 +44,33 @@ func TestGates(t *testing.T) {
 	}
 }
 
+// An asset has no run, so the seed writes one on disk as installed: that meets a
+// requirement (the pipeline's and the supervisor's rule too); only absent is off. A home
+// seeded with its models keeps transcription, and so its capabilities, on.
+func TestGatesInstalledAssetIsMet(t *testing.T) {
+	cat := components.Default()
+	d := map[string]store.Desired{
+		"runtime.ml":          {ID: "runtime.ml", Want: components.WantInstalled},
+		"model.whisper-turbo": {ID: "model.whisper-turbo", Want: components.WantInstalled},
+		"transcription":       {ID: "transcription", Want: components.WantEnabled},
+	}
+	g := Gates(cat, d, false)
+	if !g["runtime.ml"].On || !g["model.whisper-turbo"].On {
+		t.Fatalf("installed assets off: %+v %+v", g["runtime.ml"], g["model.whisper-turbo"])
+	}
+	if x := g["transcription"]; !x.On {
+		t.Fatalf("transcription with its models installed %+v", x)
+	}
+	d["runtime.ml"] = store.Desired{ID: "runtime.ml", Want: components.WantAbsent}
+	g = Gates(cat, d, false)
+	if x := g["runtime.ml"]; x.On || x.Phase != components.PhaseOff {
+		t.Fatalf("absent asset %+v", x)
+	}
+	if x := g["transcription"]; x.On || x.Reason != "dependency_off" || !slices.Contains(x.Missing, "runtime.ml") {
+		t.Fatalf("transcription without its runtime %+v", x)
+	}
+}
+
 // The licence is part of the shared rule (stories 51.09 + 51.19): the capabilities answer
 // sees cloud.relay off exactly when the runners do, and back on inside its grace.
 func TestGatesLicence(t *testing.T) {
