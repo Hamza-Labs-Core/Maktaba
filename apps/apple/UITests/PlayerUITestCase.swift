@@ -227,7 +227,13 @@ class PlayerUITestCase: XCTestCase {
     /// screen recording shows each of them redrawn and scaled at every size. Dynamic Type is
     /// checked instead by `assertTextScales`, on each audited page: the page shown at the
     /// smallest size, the default and AX3, each text taller at each step. Clipped text
-    /// (`.textClipped`) is still the audit's.
+    /// (`.textClipped`) is still the audit's, and it is the costly part: leaving Dynamic Type
+    /// out does not stop the audit stepping through the sizes. The clipping check lays the app
+    /// out again at each of the 12 sizes (one UIKit routine runs both checks), all within the
+    /// audit's 15 s: two thirds of an audit's time (an iPad's Libraries root: 10 s of 16 s on a
+    /// slowed simulator; contrast, hit regions and the rest 0.7 to 2 s each). Its cost is all
+    /// the app has laid out at each size, so an audited page is launched with only what it
+    /// needs (a section alone, `sections:`, not all five tabs). Each audit's time is printed.
     ///
     /// The handler runs once the audit is over, on every issue it found: nothing queries the
     /// app while the audit holds it. A query from inside the audit's own handler (an issue's
@@ -241,6 +247,9 @@ class PlayerUITestCase: XCTestCase {
         shown = settledPage()
         defer { shown = nil }
         var issues: [XCUIAccessibilityAuditIssue] = []
+        let start = Date()
+        // in the test log on a pass too: an audit near its 15 s shows before it times one out
+        defer { print(String(format: "accessibility audit: %.1f s", Date().timeIntervalSince(start))) }
         try app.performAccessibilityAudit(for: types.subtracting(.dynamicType)) { issue in
             issues.append(issue)
             return true
