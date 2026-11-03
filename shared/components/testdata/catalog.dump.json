@@ -2305,7 +2305,8 @@
     "not_in_payload",
     "component_off",
     "component_held",
-    "required_by"
+    "required_by",
+    "toml_superseded"
   ],
   "schema": 1
 }
