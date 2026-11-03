@@ -1955,6 +1955,12 @@ GET        /api/system/version
 GET        /api/system/metrics           → Prometheus exposition
 ```
 
+> **Components (spec, 2026-11-03):** [Epic 51](epics/51-configurable-components/README.md)
+> makes every worker, loop, feature, extension, runtime and model a component with desired
+> and actual state: `GET/PUT /api/components[/{id}]`, `POST /api/components/{id}/start|stop|install|remove`
+> (admin only), and `GET /api/capabilities` (every signed-in user) so apps can hide what is off.
+> A route whose component is off answers `409 component_off`.
+
 ### 9.7.1 Per-user (`/api/me`)
 
 ```
