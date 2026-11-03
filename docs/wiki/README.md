@@ -68,6 +68,10 @@ Wiki pages for the Maktaba platform — a self-hosted, RTL-first media library w
 
 - [Epic 53 — Logs, errors and problem reports, and a UI that never goes dark](epics/epic-53-logs-errors-reports.md)
 
+### Plugins and the store (epic 54)
+
+- [Epic 54 — Plugins: new functions from the queue, with no internet, from a Maktaba store](epics/epic-54-plugins.md)
+
 ## Cross-cutting wiki pages
 
 - [Security architecture summary](security.md) — auth flow, JWT lifecycle, signed URLs, rate limits, input validation, TLS, secrets management. Cross-references Epic 10 + Epic 23.
