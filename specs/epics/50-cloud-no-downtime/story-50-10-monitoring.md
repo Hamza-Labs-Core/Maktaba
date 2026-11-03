@@ -83,6 +83,13 @@ the two below that use them.
 | `cost_ceiling` | month's spend > 80 % of README §5 ceiling | warn (from 25.21) |
 | `cloud_error_spike` | `maktaba_errors_total` rate (any `service`) over 5× its 7-day baseline for 10 min (Epic 53.17's counter) | warn; page if `service` is `cloud.relay` and it lasts 20 min |
 | `log_forward_lagging` | `maktaba_log_forward_lag_seconds` > 60 for 5 min (a node's logs aren't reaching W) | warn |
+| `tunnel_connections_low` | `cloudflared_tunnel_ha_connections` on the leader < 2 for 2 min (50.31) | warn; page at 0 |
+| `staff_lockout` / `staff_recovery_code_used` / `staff_passkey_counter` | a staff account locked, a recovery code spent, a passkey counter went backwards (50.33) | page |
+| `turnstile_unavailable` | siteverify failing for 5 min (50.30) | warn |
+
+The **plugin store** (Epic 54) runs on Cloudflare, not on these machines, and alerts on its
+own (for example `store_review_backlog`, from its own Cron Trigger). None of its alerts are
+rules here, and this Prometheus doesn't scrape it.
 
 Every alert has a `runbook_url` annotation pointing at its page in `docs/runbooks/` (50.12).
 

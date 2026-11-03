@@ -37,14 +37,20 @@ either a one-click GitHub Actions workflow or one command), **Done when**, **Tel
 | `failover-check.md` | automatic failover happened | Confirm the new leader serves, the old node is fenced, replication restarts when it is back; open a postmortem. |
 | `switchover.md` | planned node work | Post maintenance 48 h ahead; Actions → **Cloud switchover** (Patroni switchover, Floating IP follows); patch; switch back if wanted. |
 | `forced-failover.md` | leader is sick but alive (stuck disk, OOM loop) | Actions → **Cloud failover** (fence the leader, promote the standby). |
-| `hetzner-api-down.md` | the Floating IP can't move | Actions → **Cloud DNS swap**: point `relay.maktaba.tv`, `*.relay.maktaba.tv` and the API origin at the standby's primary IP through the Cloudflare API (TTL 60 s). Swap back when the API returns. |
+| `hetzner-api-down.md` | the Floating IP can't move | Actions → **Cloud DNS swap**: point `relay.maktaba.tv` and `*.relay.maktaba.tv` at the standby's primary IP through the Cloudflare API (TTL 60 s). The API, web app and console need no swap: they follow the leader through the Tunnel (50.31). Swap back when the API returns. |
 | `restore.md` | both nodes lost, or the zone | Order a node in another zone (or provider), run `restore.sh` from 50.09, DNS swap, tell users. Target: 4 h. |
 | `deploy-rollback.md` | a deploy is bad after it passed health checks | Actions → **Relay deploy** with the previous tag (blue-green, 50.08). Never roll the schema back: migrations are expand-only (50.08). |
 | `cert-expiry.md` | certificate < 14 days | Check DNS-01 renewal logs on both nodes; renew by hand with the same command; switch to the ZeroSSL issuer if Let's Encrypt is down. |
 | `payments-backlog.md` | webhook failures or lag | The payment provider (TBD, not Stripe) retries its webhooks: fix the cause, then replay from the provider's dashboard; run the daily reconciliation (25.14) at once. |
 | `abuse-ddos.md` | traffic spike, abuse score alerts | Suspend the home (25.20); turn on Cloudflare "Under attack" for `api.maktaba.tv`; for the relay, Hetzner Cloud Firewall rules by source. |
 | `secrets-rotation.md` | a secret leaked or might have | Order: Hetzner token, Cloudflare token, payment provider keys, token secret (homes fall back to bearer; tickets die), entitlement key last (needs a coordinated release; 25.26). |
+| `tunnel-down.md` | `tunnel_connections_low`, or `api_down` while the relay is up | Check `cloudflared` on the leader and Cloudflare's status; restart the unit; if Cloudflare's Tunnel is down for long, deploy `origin_mode = aop` (50.31 §3). Never open the API's port without AOP. |
+| `staff-security.md` | `staff_lockout`, `staff_recovery_code_used`, `staff_passkey_counter` | Ask the staff member; if it wasn't them, `maktaba-cloud staff disable`, read the audit rows (`actor_kind = staff`), rotate `MAKTABA_CLOUD_STAFF_TOKEN_SECRET` if a token may have leaked (50.33). |
 | `status-page.md` | posting an incident or maintenance | Add a file under `status/data/incidents/` from the templates below; commit. |
+
+The **plugin store** (Epic 54) has its own alerts (such as `store_review_backlog`) and its own
+runbooks with Epic 54; a store incident follows these severities and templates, but none of
+the cloud's runbooks act on it.
 
 The forced-failover, switchover, DNS-swap and deploy workflows are proven in the cloud
 rehearsal (50.06), never first on the VPS (owner rule: update and recovery paths are proven in
