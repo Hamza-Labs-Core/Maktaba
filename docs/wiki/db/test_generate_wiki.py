@@ -116,7 +116,16 @@ class Build(unittest.TestCase):
         self.assertIn("feature-wiki-glossary", ids)
         part = json.loads(self.out[g.OUT_DB / "wiki-epics-01-09.json"])
         story = next(e for e in part["entries"] if e["id"] == "story-1.1")
-        self.assertEqual(story["linear"], "HLB-5")
+        overlay = json.loads(g.CURATED.read_text(encoding="utf-8"))["overlays"]["story-1.1"]
+        self.assertTrue(overlay["tags"])
+        self.assertTrue(set(overlay["tags"]) <= set(story["tags"]))
+
+    def test_no_private_tracker_in_the_database(self) -> None:
+        # the issue tracker is private: no Linear link, id or field in anything served
+        for path, text in self.out.items():
+            self.assertNotIn('"linear', text, path)
+            self.assertNotIn("linear.app", text.lower(), path)
+            self.assertNotRegex(text, r"\bHLB-\d", path)
 
 
 if __name__ == "__main__":

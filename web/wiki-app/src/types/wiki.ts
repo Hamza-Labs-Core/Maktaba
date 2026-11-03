@@ -23,7 +23,6 @@ export interface WikiEntry {
   tags?: string[];
   related?: string[];
   files?: Record<string, string | string[] | null>;
-  linear?: string | null;
   api_endpoints?: string[];
   db_tables?: string[];
   metadata?: Record<string, unknown> & {

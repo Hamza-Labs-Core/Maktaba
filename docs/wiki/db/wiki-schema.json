@@ -132,13 +132,6 @@
           },
           "description": "Map of role -> repo-relative file path(s)."
         },
-        "linear": {
-          "type": [
-            "string",
-            "null"
-          ],
-          "description": "Linear issue id if known (HLB-XXX)."
-        },
         "api_endpoints": {
           "type": "array",
           "items": {

@@ -76,7 +76,6 @@
       "metadata": {
         "milestone": "M0 — Foundation",
         "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/library/",
-        "linear_range": "HLB-5..HLB-10",
         "story_count": 6,
         "plan_count": 6,
         "mockup_count": 0
@@ -131,7 +130,6 @@
       "metadata": {
         "milestone": "M1 — Audio",
         "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/media/",
-        "linear_range": "HLB-11..HLB-14",
         "story_count": 4,
         "plan_count": 5,
         "mockup_count": 0
@@ -201,7 +199,6 @@
       "metadata": {
         "milestone": "M2 — Transcription",
         "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/stt/",
-        "linear_range": "HLB-15..HLB-23",
         "story_count": 9,
         "plan_count": 10,
         "mockup_count": 0
@@ -261,7 +258,6 @@
       "metadata": {
         "milestone": "M3 — Outputs",
         "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/media/subtitles/",
-        "linear_range": "HLB-24..HLB-28",
         "story_count": 5,
         "plan_count": 5,
         "mockup_count": 0
@@ -316,7 +312,6 @@
       "metadata": {
         "milestone": "M3 — Outputs",
         "owner": "Pipeline writes both indexes; API service reads (proxies semantic queries via gRPC Embed)",
-        "linear_range": "HLB-29..HLB-35",
         "story_count": 7,
         "plan_count": 7,
         "mockup_count": 0
@@ -387,7 +382,6 @@
       "metadata": {
         "milestone": "M0 — Foundation",
         "owner": "Pipeline Service · pipeline/src/maktaba_pipeline/pipeline/runner.py + db/jobs.py",
-        "linear_range": "HLB-36..HLB-45",
         "story_count": 10,
         "plan_count": 11,
         "mockup_count": 0

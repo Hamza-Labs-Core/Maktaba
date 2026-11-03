@@ -20,17 +20,17 @@ has no backend, no KV and no secrets. Every request goes through the Worker, whi
 
 ## What is on the site
 
-| Path                                           | What                                            | From                                                                              |
-| ---------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| `/`                                            | the landing page, English and Arabic            | `scripts/build.mjs`, `scripts/strings.mjs`                                        |
-| `/plugins/`                                    | building plugins: guides                        | `docs/developers/plugins/` (the list in `build.mjs`)                              |
-| `/contributing/`                               | working on Maktaba: guides                      | `docs/developers/contributing/`                                                   |
-| `/security/conformance/`                       | security rules for plugins and contributors     | `docs/developers/security/conformance.md`                                         |
-| `/api/`                                        | the API reference: Redoc, served from this site | `shared/api/openapi.json`, the `redoc` package                                    |
-| `/changelog/`                                  | the changelog                                   | `CHANGELOG.md`                                                                    |
-| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                           | `scripts/strings.mjs`                                                             |
-| `/.well-known/security.txt`                    | RFC 9116                                        | `api/internal/security/disclosure.go` (the API's own policy)                      |
-| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                    | the build                                                                         |
+| Path                                           | What                                            | From                                                         |
+| ---------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------ |
+| `/`                                            | the landing page, English and Arabic            | `scripts/build.mjs`, `scripts/strings.mjs`                   |
+| `/plugins/`                                    | building plugins: guides                        | `docs/developers/plugins/` (the list in `build.mjs`)         |
+| `/contributing/`                               | working on Maktaba: guides                      | `docs/developers/contributing/`                              |
+| `/security/conformance/`                       | security rules for plugins and contributors     | `docs/developers/security/conformance.md`                    |
+| `/api/`                                        | the API reference: Redoc, served from this site | `shared/api/openapi.json`, the `redoc` package               |
+| `/changelog/`                                  | the changelog                                   | `CHANGELOG.md`                                               |
+| `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                           | `scripts/strings.mjs`                                        |
+| `/.well-known/security.txt`                    | RFC 9116                                        | `api/internal/security/disclosure.go` (the API's own policy) |
+| `/robots.txt`, `/sitemap.xml`                  | for crawlers                                    | the build                                                    |
 
 Every string the portal's own pages show is in English and Arabic (`scripts/strings.mjs`).
 The EN/AR button swaps them and sets `dir="rtl"` for Arabic. The first visit follows the

@@ -113,7 +113,6 @@ describe("security headers", () => {
     expect(csp).toContain("worker-src 'self' blob:");
     expect(csp).not.toMatch(/https:\/\//);
   });
-
 });
 
 describe("caching", () => {

@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { ExternalLink, Github, Sparkles, Zap } from 'lucide-react';
+import { CircleDot, ExternalLink, Github, Sparkles } from 'lucide-react';
 import {
+  GITHUB_ISSUES,
   GITHUB_REPO,
-  LINEAR_PROJECT,
   PENPOT_LINK,
   PHASE_INFO,
   PHASES,
@@ -49,8 +49,11 @@ export function Dashboard({ bundle }: Props) {
           {bundle.meta.description}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <QuickLink href={LINEAR_PROJECT} icon={<Zap className="h-3 w-3" />}>
-            Linear board
+          <QuickLink href={GITHUB_ISSUES} icon={<CircleDot className="h-3 w-3" />}>
+            GitHub issues ·{' '}
+            <span lang="ar" dir="rtl">
+              مشكلات GitHub
+            </span>
           </QuickLink>
           <QuickLink href={GITHUB_REPO} icon={<Github className="h-3 w-3" />}>
             GitHub repo

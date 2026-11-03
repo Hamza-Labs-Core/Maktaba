@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import {
   BookMarked,
   ChevronRight,
+  CircleDot,
   Database,
   ExternalLink,
   FileText,
@@ -16,7 +17,6 @@ import {
   Search,
   Sparkles,
   Sun,
-  Zap,
 } from 'lucide-react';
 import {
   KeyboardEvent,
@@ -27,8 +27,8 @@ import {
 } from 'react';
 import type { EntryType, WikiBundle, WikiEntry } from '@/types/wiki';
 import {
+  GITHUB_ISSUES,
   GITHUB_REPO,
-  LINEAR_PROJECT,
   PENPOT_LINK,
   PHASE_INFO,
   PHASES,
@@ -125,7 +125,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto p-2 text-[13px]">
         {/* External */}
         <Section heading="External">
-          <ExternalRow href={LINEAR_PROJECT} icon={<Zap className="h-3.5 w-3.5" />} label="Linear" hint="project" />
+          <ExternalRow href={GITHUB_ISSUES} icon={<CircleDot className="h-3.5 w-3.5" />} label="Issues · المشكلات" hint="GitHub" />
           <ExternalRow href={PENPOT_LINK} icon={<Sparkles className="h-3.5 w-3.5" />} label="Penpot" hint="design" />
           <ExternalRow href={GITHUB_REPO} icon={<Github className="h-3.5 w-3.5" />} label="GitHub" hint="repo" />
         </Section>

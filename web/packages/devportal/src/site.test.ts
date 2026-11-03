@@ -140,12 +140,16 @@ describe("the allow-list", () => {
     const home = read("index.html");
     for (const href of ["/plugins/", "/contributing/", "/api/", "/changelog/", "/security/policy/"])
       expect(home).toContain(`href="${href}"`);
-    expect(home).toContain('href="https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics"');
+    expect(home).toContain(
+      'href="https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics"'
+    );
   });
 
   it("quotes no one: no owner's words on any page", () => {
     for (const p of files(DIST).filter((f) => f.endsWith(".html"))) {
-      expect(read(p), p).not.toMatch(/the owner(?:'s|&#39;s)? (?:words|said|asked|decided)|The owner, 20\d\d/i);
+      expect(read(p), p).not.toMatch(
+        /the owner(?:'s|&#39;s)? (?:words|said|asked|decided)|The owner, 20\d\d/i
+      );
     }
   });
 
@@ -184,7 +188,9 @@ describe("scrubbing markdown", () => {
     expect(rewriteHref("README.md#the-plugin-model", from, published)).toBe(
       "/plugins/#the-plugin-model"
     );
-    expect(rewriteHref("../security/conformance.md", from, published)).toBe("/security/conformance/");
+    expect(rewriteHref("../security/conformance.md", from, published)).toBe(
+      "/security/conformance/"
+    );
     expect(rewriteHref("../../../specs/epics/54-plugins/README.md", from, published)).toBe(
       "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/specs/epics/54-plugins/README.md"
     );

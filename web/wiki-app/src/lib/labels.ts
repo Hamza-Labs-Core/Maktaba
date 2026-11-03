@@ -107,9 +107,8 @@ export const PHASES: number[] = Object.keys(PHASE_INFO)
 
 export const GITHUB_REPO = 'https://github.com/Hamza-Labs-Core/Maktaba';
 export const GITHUB_BRANCH = 'main';
-export const LINEAR_PROJECT =
-  'https://linear.app/hamzalabs/project/maktaba-129e338d2e41';
-export const LINEAR_ISSUE_BASE = 'https://linear.app/hamzalabs/issue/';
+// the project's public tracker: GitHub issues
+export const GITHUB_ISSUES = `${GITHUB_REPO}/issues`;
 export const PENPOT_LINK = '#'; // placeholder — fill in when Penpot project URL is known
 
 export function githubUrlFor(path: string): string {

@@ -24,7 +24,6 @@
         "plan": "specs/epics/28-auto-update/plan-28-01-versioning-build-stamping.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /system/version"
       ],
@@ -54,7 +53,6 @@
         "plan": "specs/epics/28-auto-update/plan-28-02-update-check-service.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -82,7 +80,6 @@
         "plan": "specs/epics/28-auto-update/plan-28-03-server-self-update.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -110,7 +107,6 @@
         "plan": "specs/epics/28-auto-update/plan-28-04-desktop-auto-update.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -138,7 +134,6 @@
         "plan": "specs/epics/28-auto-update/plan-28-05-mobile-update-notification.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -167,7 +162,6 @@
         "plan": "specs/epics/28-auto-update/plan-28-06-update-ui.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /system/version"
       ],
@@ -197,7 +191,6 @@
         "plan": "specs/epics/29-analytics/plan-29-01-watch-session-tracking.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -226,7 +219,6 @@
         "plan": "specs/epics/29-analytics/plan-29-02-watch-history.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [
         "playback_state"
@@ -262,7 +254,6 @@
         "plan": "specs/epics/29-analytics/plan-29-03-analytics-dashboard.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /activity"
       ],
@@ -301,7 +292,6 @@
         "plan": "specs/epics/29-analytics/plan-29-04-user-activity-feed.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
@@ -338,7 +328,6 @@
         "plan": "specs/epics/29-analytics/plan-29-05-playback-statistics.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -373,7 +362,6 @@
         "plan": "specs/epics/29-analytics/plan-29-06-export-and-reports.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -401,7 +389,6 @@
         "plan": "specs/epics/30-relay-analytics/plan-30-01-relay-metrics-collection.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -429,7 +416,6 @@
         "plan": "specs/epics/30-relay-analytics/plan-30-02-gdpr-compliance.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -458,7 +444,6 @@
         "plan": "specs/epics/30-relay-analytics/plan-30-03-relay-admin-dashboard.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [
         "users"
@@ -488,7 +473,6 @@
         "plan": "specs/epics/30-relay-analytics/plan-30-04-metrics-export.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -516,7 +500,6 @@
         "plan": "specs/epics/31-multi-instance/plan-31-03-canonical-share-paths.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -547,7 +530,6 @@
         "plan": "specs/epics/31-multi-instance/plan-31-relay-service-door.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /collections",
         "POST /collections"
@@ -580,7 +562,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-01-streaming-nodes-capacity.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -608,7 +589,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-02-channel-placement-balancer.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -636,7 +616,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-03-front-door.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -664,7 +643,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-04-failover-drain.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -692,7 +670,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-05-admin-hosts-on-air.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -720,7 +697,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-06-cloudflare-integration.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -748,7 +724,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-07-live-input-push.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -776,7 +751,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-08-signed-remote-playback.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -804,7 +778,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-09-app-lan-remote-routing.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -832,7 +805,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-10-cost-limits-budget.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -860,7 +832,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-11-observability.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -888,7 +859,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-12-docs-runbook.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -916,7 +886,6 @@
         "plan": "specs/epics/32-tv-streaming-cluster-remote/plan-32-13-simulcast.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -944,7 +913,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-01-two-slot-runtime.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -972,7 +940,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-02-releases-snapshots.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1000,7 +967,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-03-schedule-generations.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1028,7 +994,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-04-splice-ready-output.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1056,7 +1021,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-05-staging-warmup-verification.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1084,7 +1048,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-06-staging-preview.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1113,7 +1076,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-07-hot-swap-front-door.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [
         "audit_log"
@@ -1143,7 +1105,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-08-continuous-push-simulcast.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1171,7 +1132,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-09-rollback.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1200,7 +1160,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-10-tv-change-state-machine.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [
         "audit_log"
@@ -1230,7 +1189,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-11-changes-page.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1258,7 +1216,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-12-producers-review-mode.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1287,7 +1244,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-13-notifications-audit.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [
         "audit_log"
@@ -1317,7 +1273,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-14-upgrade-via-swap.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1345,7 +1300,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-15-observability.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1373,7 +1327,6 @@
         "plan": "specs/epics/33-tv-staging-hot-swap/plan-33-16-docs-runbook.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1401,7 +1354,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-01-public-channel-flag-rights.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1429,7 +1381,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-02-guide-lineup-publisher.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1457,7 +1408,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-03-public-feed-push-slates.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1486,7 +1436,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-04-worker-api-tokens.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /ws"
       ],
@@ -1516,7 +1465,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-05-site-ui-guide-player.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1544,7 +1492,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-06-channel-switching.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1572,7 +1519,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-07-access-modes.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1600,7 +1546,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-08-branding-domain.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1628,7 +1573,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-09-budget-abuse-analytics.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1658,7 +1602,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-10-deployment-pipeline.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /tags",
         "POST /tags"
@@ -1689,7 +1632,6 @@
         "plan": "specs/epics/34-tv-public-site/plan-34-11-docs-runbook.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1719,7 +1661,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-01-release-manifest-verification.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /tags",
         "POST /tags"
@@ -1750,7 +1691,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-02-layout-launcher.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1778,7 +1718,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-03-policy-discovery-scheduling.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1807,7 +1746,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-04-home-orchestrator.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [
         "audit_log"
@@ -1837,7 +1775,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-05-database-safety.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1865,7 +1802,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-06-tv-during-updates.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1893,7 +1829,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-07-supervisor-self-update.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1921,7 +1856,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-08-full-nodes.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1949,7 +1883,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-09-auth-across-machines.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1978,7 +1911,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-10-node-routing.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /ws"
       ],
@@ -2009,7 +1941,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-11-discovery.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /system/version"
       ],
@@ -2039,7 +1970,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-12-cluster-rollout.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2070,7 +2000,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-13-updates-page-notifications.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [
         "GET /settings",
         "PUT /settings"
@@ -2103,7 +2032,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-14-failure-modes-e2e.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2131,7 +2059,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-15-observability-docs.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2159,7 +2086,6 @@
         "plan": "specs/epics/35-cluster-full-nodes-and-updates/plan-35-16-cluster-link-tls.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2186,7 +2112,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2214,7 +2139,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2242,7 +2166,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2270,7 +2193,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2298,7 +2220,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2326,7 +2247,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2354,7 +2274,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2382,7 +2301,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2410,7 +2328,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2438,7 +2355,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2466,7 +2382,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2494,7 +2409,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2522,7 +2436,6 @@
         "plan": null,
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {

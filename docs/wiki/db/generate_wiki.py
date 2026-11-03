@@ -12,7 +12,7 @@ Reads (all repo-relative, found from this file's own path, so it runs from any d
   shared/api/openapi.yaml   the endpoints
   web/mockups/**/*.html
   docs/wiki/db/curated.json the hand-kept data the specs do not carry (epic names, phases
-                            and engines, hand-written summaries, Linear ids, the implementation
+                            and engines, hand-written summaries, the implementation
                             phases, the cross-reference inventory). Edit it, not the output.
 
 Writes:
@@ -480,13 +480,6 @@ def build() -> dict[Path, str]:
                 story_eps[sid].append(f"{ep['method']} {ep['path']}")
                 ep_stories[ep["id"]].append(sid)
 
-    linear_by_story = {}
-    for issue in curated.get("cross_refs", {}).get("issues", []):
-        num = issue.get("story_num")
-        if issue.get("id") and num and re.match(r"^\d+\.\d+$", num):
-            a, b = num.split(".")
-            linear_by_story.setdefault(f"story-{int(a)}.{int(b)}", issue["id"])
-
     # ---- 6. entries -----------------------------------------------------------------------
     entries: list[dict] = []
     for en, e in epics.items():
@@ -516,7 +509,6 @@ def build() -> dict[Path, str]:
             "phase": st["phase"], "content": st["raw"][:EXCERPT],
             "tags": ["story", st["epic"], f"phase-{st['phase']}"], "related": related,
             "files": {"story": st["story_file"], "plan": st["plan_file"], "mockups": mks},
-            "linear": linear_by_story.get(f"story-{sid}"),
             "api_endpoints": story_eps.get(sid, []), "db_tables": story_tables.get(sid, []),
             "metadata": meta,
         })
@@ -589,8 +581,6 @@ def build() -> dict[Path, str]:
         for k in ("tags", "related", "api_endpoints", "db_tables"):
             if o.get(k):
                 e[k] = list(dict.fromkeys((e.get(k) or []) + o[k]))
-        if o.get("linear") and not e.get("linear"):
-            e["linear"] = o["linear"]
         if o.get("metadata"):
             e["metadata"] = {**o["metadata"], **(e.get("metadata") or {})}
     # a related id points at an entry that exists
@@ -648,11 +638,9 @@ def build() -> dict[Path, str]:
     xref = {
         "schema_version": 2,
         "generated_for": "Maktaba",
-        "linear_range": xref_cur.get("linear_range"),
         "totals": {
             "epics": len(epics), "stories": len(stories), "plans": len(plans),
             "diagrams": len(diagrams), "mockups": len(mockups),
-            "issues": len(xref_cur.get("issues", [])),
         },
         "epics": [
             {"id": f"{e['num']:02d}", "slug": en[3:], "title": e["name"],
@@ -669,7 +657,7 @@ def build() -> dict[Path, str]:
         ],
         "diagrams": [{"key": d["name"], "path": d["file"]} for d in diagrams],
     }
-    for k in ("issues", "files", "build_order", "critical_path", "parallel_tracks", "reviews",
+    for k in ("files", "build_order", "critical_path", "parallel_tracks", "reviews",
               "grpc_rpcs", "notify_channels"):
         if k in xref_cur:
             xref[k] = xref_cur[k]
@@ -722,7 +710,6 @@ SCHEMA = {
                                                        {"type": "null"}]},
                     "description": "Map of role -> repo-relative file path(s).",
                 },
-                "linear": {"type": ["string", "null"], "description": "Linear issue id if known (HLB-XXX)."},
                 "api_endpoints": {"type": "array", "items": {"type": "string"},
                                   "description": "Endpoints in 'METHOD /path' form mentioned by this entry."},
                 "db_tables": {"type": "array", "items": {"type": "string"},

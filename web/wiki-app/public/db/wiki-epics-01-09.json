@@ -40,7 +40,6 @@
         "plan": "specs/epics/01-scanner/plan-01-01-file-discovery.md",
         "mockups": []
       },
-      "linear": "HLB-5",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -90,7 +89,6 @@
         "plan": "specs/epics/01-scanner/plan-01-02-content-identity.md",
         "mockups": []
       },
-      "linear": "HLB-6",
       "api_endpoints": [],
       "db_tables": [
         "videos"
@@ -129,7 +127,6 @@
         "plan": "specs/epics/01-scanner/plan-01-03-filesystem-watcher.md",
         "mockups": []
       },
-      "linear": "HLB-7",
       "api_endpoints": [],
       "db_tables": [
         "videos"
@@ -174,7 +171,6 @@
         "plan": "specs/epics/01-scanner/plan-01-04-manual-control.md",
         "mockups": []
       },
-      "linear": "HLB-8",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -220,7 +216,6 @@
         "plan": "specs/epics/01-scanner/plan-01-05-schema-decisions.md",
         "mockups": []
       },
-      "linear": "HLB-9",
       "api_endpoints": [],
       "db_tables": [
         "videos",
@@ -261,7 +256,6 @@
         "plan": "specs/epics/01-scanner/plan-01-06-video-state-machine.md",
         "mockups": []
       },
-      "linear": "HLB-10",
       "api_endpoints": [],
       "db_tables": [
         "media_info",
@@ -307,7 +301,6 @@
         "plan": "specs/epics/02-audio-extraction/plan-02-01-audio-probe.md",
         "mockups": []
       },
-      "linear": "HLB-11",
       "api_endpoints": [],
       "db_tables": [
         "audio_tracks",
@@ -346,7 +339,6 @@
         "plan": "specs/epics/02-audio-extraction/plan-02-02-track-selection.md",
         "mockups": []
       },
-      "linear": "HLB-12",
       "api_endpoints": [
         "GET /api/videos/{id}/tracks",
         "PUT /api/videos/{id}/tracks/override"
@@ -390,7 +382,6 @@
         "plan": "specs/epics/02-audio-extraction/plan-02-03-stream-extraction.md",
         "mockups": []
       },
-      "linear": "HLB-13",
       "api_endpoints": [
         "POST /api/diagnostics/extract-args"
       ],
@@ -428,7 +419,6 @@
         "plan": "specs/epics/02-audio-extraction/plan-02-04-resource-accounting.md",
         "mockups": []
       },
-      "linear": "HLB-14",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -463,7 +453,6 @@
         "plan": "specs/epics/03-transcription/plan-03-01-backend-protocol.md",
         "mockups": []
       },
-      "linear": "HLB-15",
       "api_endpoints": [
         "GET /system/health"
       ],
@@ -504,7 +493,6 @@
         "plan": "specs/epics/03-transcription/plan-03-02-whisper-mlx-backend.md",
         "mockups": []
       },
-      "linear": "HLB-16",
       "api_endpoints": [],
       "db_tables": [
         "transcripts",
@@ -543,7 +531,6 @@
         "plan": "specs/epics/03-transcription/plan-03-03-faster-whisper-backend.md",
         "mockups": []
       },
-      "linear": "HLB-17",
       "api_endpoints": [],
       "db_tables": [
         "transcripts",
@@ -582,7 +569,6 @@
         "plan": "specs/epics/03-transcription/plan-03-04-openai-api-backend.md",
         "mockups": []
       },
-      "linear": "HLB-18",
       "api_endpoints": [],
       "db_tables": [
         "stt_usage",
@@ -625,7 +611,6 @@
         "plan": "specs/epics/03-transcription/plan-03-05-backend-registry.md",
         "mockups": []
       },
-      "linear": "HLB-19",
       "api_endpoints": [
         "GET /api/system/health",
         "GET /api/transcripts/{id}/backends"
@@ -670,7 +655,6 @@
         "plan": "specs/epics/03-transcription/plan-03-06-segment-commit.md",
         "mockups": []
       },
-      "linear": "HLB-20",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs",
@@ -715,7 +699,6 @@
         "plan": "specs/epics/03-transcription/plan-03-07-pause-resume.md",
         "mockups": []
       },
-      "linear": "HLB-21",
       "api_endpoints": [
         "GET /jobs",
         "GET /jobs/{id}",
@@ -762,7 +745,6 @@
         "plan": "specs/epics/03-transcription/plan-03-08-crash-recovery.md",
         "mockups": []
       },
-      "linear": "HLB-22",
       "api_endpoints": [
         "POST /api/jobs/{id}/pause?force=true"
       ],
@@ -803,7 +785,6 @@
         "plan": "specs/epics/03-transcription/plan-03-09-diarization.md",
         "mockups": []
       },
-      "linear": "HLB-23",
       "api_endpoints": [],
       "db_tables": [
         "speakers",
@@ -845,7 +826,6 @@
         "plan": "specs/epics/04-subtitles/plan-04-01-generate-from-segments.md",
         "mockups": []
       },
-      "linear": "HLB-24",
       "api_endpoints": [],
       "db_tables": [
         "subtitle_files",
@@ -885,7 +865,6 @@
         "plan": "specs/epics/04-subtitles/plan-04-02-formatting-wrapping.md",
         "mockups": []
       },
-      "linear": "HLB-25",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -921,7 +900,6 @@
         "plan": "specs/epics/04-subtitles/plan-04-03-external-discovery.md",
         "mockups": []
       },
-      "linear": "HLB-26",
       "api_endpoints": [],
       "db_tables": [
         "subtitle_files"
@@ -959,7 +937,6 @@
         "plan": "specs/epics/04-subtitles/plan-04-04-embedded-extraction.md",
         "mockups": []
       },
-      "linear": "HLB-27",
       "api_endpoints": [],
       "db_tables": [
         "subtitle_files"
@@ -997,7 +974,6 @@
         "plan": "specs/epics/04-subtitles/plan-04-05-live-vtt-contract.md",
         "mockups": []
       },
-      "linear": "HLB-28",
       "api_endpoints": [],
       "db_tables": [
         "transcript_segments",
@@ -1035,7 +1011,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-01-unit-chunking.md",
         "mockups": []
       },
-      "linear": "HLB-29",
       "api_endpoints": [],
       "db_tables": [
         "transcript_units"
@@ -1078,7 +1053,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-02-fts-tsvector.md",
         "mockups": []
       },
-      "linear": "HLB-30",
       "api_endpoints": [],
       "db_tables": [
         "transcript_segments",
@@ -1119,7 +1093,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-03-chroma-vector.md",
         "mockups": []
       },
-      "linear": "HLB-31",
       "api_endpoints": [],
       "db_tables": [
         "transcripts",
@@ -1161,7 +1134,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-04-hybrid-rrf.md",
         "mockups": []
       },
-      "linear": "HLB-32",
       "api_endpoints": [
         "GET /v1/search"
       ],
@@ -1204,7 +1176,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-05-incremental-indexing.md",
         "mockups": []
       },
-      "linear": "HLB-33",
       "api_endpoints": [],
       "db_tables": [
         "transcript_units",
@@ -1247,7 +1218,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-06-query-suggestions.md",
         "mockups": []
       },
-      "linear": "HLB-34",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -1293,7 +1263,6 @@
         "plan": "specs/epics/05-search-indexing/plan-05-07-chapter-inference.md",
         "mockups": []
       },
-      "linear": "HLB-35",
       "api_endpoints": [],
       "db_tables": [
         "chapters"
@@ -1330,7 +1299,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-01-schema-indexes.md",
         "mockups": []
       },
-      "linear": "HLB-36",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1368,7 +1336,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-02-claim-loop.md",
         "mockups": []
       },
-      "linear": "HLB-37",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1406,7 +1373,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-03-heartbeat-progress.md",
         "mockups": []
       },
-      "linear": "HLB-38",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1449,7 +1415,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-04-pause-resume-cancel.md",
         "mockups": []
       },
-      "linear": "HLB-39",
       "api_endpoints": [
         "GET /jobs",
         "GET /jobs/{id}",
@@ -1498,7 +1463,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-05-backoff-retry.md",
         "mockups": []
       },
-      "linear": "HLB-40",
       "api_endpoints": [
         "GET /jobs",
         "GET /jobs/{id}",
@@ -1539,7 +1503,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-06-reaper.md",
         "mockups": []
       },
-      "linear": "HLB-41",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1577,7 +1540,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-07-concurrency-caps.md",
         "mockups": []
       },
-      "linear": "HLB-42",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1614,7 +1576,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-08-graceful-shutdown.md",
         "mockups": []
       },
-      "linear": "HLB-43",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1654,7 +1615,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-09-observability.md",
         "mockups": []
       },
-      "linear": "HLB-44",
       "api_endpoints": [
         "GET /queue/stats",
         "GET /api/queue/stats"
@@ -1696,7 +1656,6 @@
         "plan": "specs/epics/06-job-queue/plan-06-10-resume-invariant.md",
         "mockups": []
       },
-      "linear": "HLB-45",
       "api_endpoints": [],
       "db_tables": [
         "processing_jobs"
@@ -1735,7 +1694,6 @@
         "plan": "specs/epics/07-api-server/plan-07-01-http-server-skeleton.md",
         "mockups": []
       },
-      "linear": "HLB-46",
       "api_endpoints": [],
       "db_tables": [
         "idempotency_keys"
@@ -1770,7 +1728,6 @@
         "plan": "specs/epics/07-api-server/plan-07-02-cursor-pagination.md",
         "mockups": []
       },
-      "linear": "HLB-47",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1814,7 +1771,6 @@
         "plan": "specs/epics/07-api-server/plan-07-03-library-crud.md",
         "mockups": []
       },
-      "linear": "HLB-48",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -1868,7 +1824,6 @@
         "plan": "specs/epics/07-api-server/plan-07-04-video-crud.md",
         "mockups": []
       },
-      "linear": "HLB-49",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -1917,7 +1872,6 @@
         "plan": "specs/epics/07-api-server/plan-07-05-video-processing-control.md",
         "mockups": []
       },
-      "linear": "HLB-50",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -1962,7 +1916,6 @@
         "plan": "specs/epics/07-api-server/plan-07-06-transcript-window.md",
         "mockups": []
       },
-      "linear": "HLB-51",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -2006,7 +1959,6 @@
         "plan": "specs/epics/07-api-server/plan-07-07-subtitles-chapters-read.md",
         "mockups": []
       },
-      "linear": "HLB-52",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -2051,7 +2003,6 @@
         "plan": "specs/epics/07-api-server/plan-07-08-search-api.md",
         "mockups": []
       },
-      "linear": "HLB-53",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -2093,7 +2044,6 @@
         "plan": "specs/epics/07-api-server/plan-07-09-saved-searches.md",
         "mockups": []
       },
-      "linear": "HLB-54",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -2136,7 +2086,6 @@
         "plan": "specs/epics/07-api-server/plan-07-10-streaming-session-lifecycle.md",
         "mockups": []
       },
-      "linear": "HLB-55",
       "api_endpoints": [
         "POST /sessions",
         "GET /sessions/{id}",
@@ -2180,7 +2129,6 @@
         "plan": "specs/epics/07-api-server/plan-07-11-watch-progress-sync.md",
         "mockups": []
       },
-      "linear": "HLB-56",
       "api_endpoints": [
         "POST /sessions",
         "GET /sessions/{id}",
@@ -2232,7 +2180,6 @@
         "plan": "specs/epics/07-api-server/plan-07-12-job-control.md",
         "mockups": []
       },
-      "linear": "HLB-57",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -2278,7 +2225,6 @@
         "plan": "specs/epics/07-api-server/plan-07-13-queue-stats.md",
         "mockups": []
       },
-      "linear": "HLB-58",
       "api_endpoints": [
         "GET /queue/stats"
       ],
@@ -2326,7 +2272,6 @@
         "plan": "specs/epics/07-api-server/plan-07-14-collections-tags-speakers.md",
         "mockups": []
       },
-      "linear": "HLB-59",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -2374,7 +2319,6 @@
         "plan": "specs/epics/07-api-server/plan-07-15-settings-system.md",
         "mockups": []
       },
-      "linear": "HLB-60",
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
@@ -2417,7 +2361,6 @@
         "plan": "specs/epics/07-api-server/plan-07-16-websocket-fanout.md",
         "mockups": []
       },
-      "linear": "HLB-61",
       "api_endpoints": [
         "GET /jobs",
         "GET /ws"
@@ -2457,7 +2400,6 @@
         "plan": "specs/epics/07-api-server/plan-07-17-graphql-schema.md",
         "mockups": []
       },
-      "linear": "HLB-62",
       "api_endpoints": [],
       "db_tables": [
         "audio_tracks",
@@ -2492,7 +2434,6 @@
         "plan": "specs/epics/07-api-server/plan-07-18-grpc-clients.md",
         "mockups": []
       },
-      "linear": "HLB-63",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2530,7 +2471,6 @@
         "plan": "specs/epics/07-api-server/plan-07-19-validation-rate-limiting.md",
         "mockups": []
       },
-      "linear": "HLB-64",
       "api_endpoints": [
         "POST /auth/login",
         "GET /videos",
@@ -2572,7 +2512,6 @@
         "plan": "specs/epics/07-api-server/plan-07-20-health-version-metrics.md",
         "mockups": []
       },
-      "linear": "HLB-65",
       "api_endpoints": [
         "GET /system/health",
         "GET /system/version"
@@ -2608,7 +2547,6 @@
         "plan": "specs/epics/07-api-server/plan-07-21-recommendations.md",
         "mockups": []
       },
-      "linear": "HLB-66",
       "api_endpoints": [
         "GET /recommendations"
       ],
@@ -2648,7 +2586,6 @@
         "plan": "specs/epics/07-api-server/plan-07-22-devices-register.md",
         "mockups": []
       },
-      "linear": "HLB-67",
       "api_endpoints": [
         "POST /devices/register",
         "GET /devices",
@@ -2689,7 +2626,6 @@
         "plan": "specs/epics/08-streaming/plan-08-01-server-skeleton.md",
         "mockups": []
       },
-      "linear": "HLB-68",
       "api_endpoints": [
         "POST /sessions"
       ],
@@ -2724,7 +2660,6 @@
         "plan": "specs/epics/08-streaming/plan-08-02-capability-matrix.md",
         "mockups": []
       },
-      "linear": "HLB-69",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2756,7 +2691,6 @@
         "plan": "specs/epics/08-streaming/plan-08-03-direct-play.md",
         "mockups": []
       },
-      "linear": "HLB-70",
       "api_endpoints": [
         "POST /sessions"
       ],
@@ -2790,7 +2724,6 @@
         "plan": "specs/epics/08-streaming/plan-08-04-direct-stream-remux.md",
         "mockups": []
       },
-      "linear": "HLB-71",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2825,7 +2758,6 @@
         "plan": "specs/epics/08-streaming/plan-08-05-hls-transcode.md",
         "mockups": []
       },
-      "linear": "HLB-72",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2855,7 +2787,6 @@
         "plan": "specs/epics/08-streaming/plan-08-06-dash-manifest.md",
         "mockups": []
       },
-      "linear": "HLB-73",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2888,7 +2819,6 @@
         "plan": "specs/epics/08-streaming/plan-08-07-hwaccel-detect.md",
         "mockups": []
       },
-      "linear": "HLB-74",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2921,7 +2851,6 @@
         "plan": "specs/epics/08-streaming/plan-08-08-grpc-server.md",
         "mockups": []
       },
-      "linear": "HLB-75",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2954,7 +2883,6 @@
         "plan": "specs/epics/08-streaming/plan-08-09-session-store.md",
         "mockups": []
       },
-      "linear": "HLB-76",
       "api_endpoints": [
         "POST /sessions"
       ],
@@ -2990,7 +2918,6 @@
         "plan": "specs/epics/08-streaming/plan-08-10-concurrency-caps.md",
         "mockups": []
       },
-      "linear": "HLB-77",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3027,7 +2954,6 @@
         "plan": "specs/epics/08-streaming/plan-08-11-live-subtitle.md",
         "mockups": []
       },
-      "linear": "HLB-78",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -3067,7 +2993,6 @@
         "plan": "specs/epics/08-streaming/plan-08-12-chapter-delivery.md",
         "mockups": []
       },
-      "linear": "HLB-79",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3098,7 +3023,6 @@
         "plan": "specs/epics/08-streaming/plan-08-13-posters-sprites.md",
         "mockups": []
       },
-      "linear": "HLB-80",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3130,7 +3054,6 @@
         "plan": "specs/epics/08-streaming/plan-08-14-cache-gc.md",
         "mockups": []
       },
-      "linear": "HLB-81",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3162,7 +3085,6 @@
         "plan": "specs/epics/08-streaming/plan-08-15-probe-cache.md",
         "mockups": []
       },
-      "linear": "HLB-82",
       "api_endpoints": [],
       "db_tables": [
         "media_info"
@@ -3196,7 +3118,6 @@
         "plan": "specs/epics/09-library-management/plan-09-01-library-config-schema.md",
         "mockups": []
       },
-      "linear": "HLB-83",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3229,7 +3150,6 @@
         "plan": "specs/epics/09-library-management/plan-09-02-filesystem-watcher.md",
         "mockups": []
       },
-      "linear": "HLB-84",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3267,7 +3187,6 @@
         "plan": "specs/epics/09-library-management/plan-09-03-periodic-sweep.md",
         "mockups": []
       },
-      "linear": "HLB-85",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -3309,7 +3228,6 @@
         "plan": "specs/epics/09-library-management/plan-09-04-content-hash-dedup.md",
         "mockups": []
       },
-      "linear": "HLB-86",
       "api_endpoints": [],
       "db_tables": [
         "videos"
@@ -3341,7 +3259,6 @@
         "plan": "specs/epics/09-library-management/plan-09-05-ignore-rules.md",
         "mockups": []
       },
-      "linear": "HLB-87",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3379,7 +3296,6 @@
         "plan": "specs/epics/09-library-management/plan-09-06-manual-scan.md",
         "mockups": []
       },
-      "linear": "HLB-88",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -3427,7 +3343,6 @@
         "plan": "specs/epics/09-library-management/plan-09-07-library-stats.md",
         "mockups": []
       },
-      "linear": "HLB-89",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -3473,7 +3388,6 @@
         "plan": "specs/epics/09-library-management/plan-09-08-language-tag.md",
         "mockups": []
       },
-      "linear": "HLB-90",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",
@@ -3510,7 +3424,6 @@
         "plan": "specs/epics/09-library-management/plan-09-09-topic-tag.md",
         "mockups": []
       },
-      "linear": "HLB-91",
       "api_endpoints": [],
       "db_tables": [
         "library_topics",
@@ -3544,7 +3457,6 @@
         "plan": "specs/epics/09-library-management/plan-09-10-content-type-classifier.md",
         "mockups": []
       },
-      "linear": "HLB-92",
       "api_endpoints": [],
       "db_tables": [
         "media_features"
@@ -3581,7 +3493,6 @@
         "plan": "specs/epics/09-library-management/plan-09-11-speakers.md",
         "mockups": []
       },
-      "linear": "HLB-93",
       "api_endpoints": [
         "GET /speakers",
         "POST /speakers/merge"
@@ -3620,7 +3531,6 @@
         "plan": "specs/epics/09-library-management/plan-09-12-tag-crud.md",
         "mockups": []
       },
-      "linear": "HLB-94",
       "api_endpoints": [],
       "db_tables": [
         "tags",
@@ -3654,7 +3564,6 @@
         "plan": "specs/epics/09-library-management/plan-09-13-collections-manual.md",
         "mockups": []
       },
-      "linear": "HLB-95",
       "api_endpoints": [],
       "db_tables": [
         "collection_items"
@@ -3693,7 +3602,6 @@
         "plan": "specs/epics/09-library-management/plan-09-14-smart-collections.md",
         "mockups": []
       },
-      "linear": "HLB-96",
       "api_endpoints": [
         "GET /collections",
         "POST /collections",
@@ -3748,7 +3656,6 @@
         "plan": "specs/epics/09-library-management/plan-09-15-library-deletion.md",
         "mockups": []
       },
-      "linear": "HLB-97",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -3797,7 +3704,6 @@
         "plan": "specs/epics/09-library-management/plan-09-16-multi-root-overlap.md",
         "mockups": []
       },
-      "linear": "HLB-98",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3834,7 +3740,6 @@
         "plan": "specs/epics/09-library-management/plan-09-17-library-audit.md",
         "mockups": []
       },
-      "linear": "HLB-99",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -3881,7 +3786,6 @@
         "plan": "specs/epics/09-library-management/plan-09-18-chapter-inference.md",
         "mockups": []
       },
-      "linear": "HLB-100",
       "api_endpoints": [
         "GET /videos",
         "GET /videos/{id}",

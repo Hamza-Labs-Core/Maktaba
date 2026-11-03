@@ -30,7 +30,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-01-user-store.md",
         "mockups": []
       },
-      "linear": "HLB-101",
       "api_endpoints": [
         "POST /sessions"
       ],
@@ -70,7 +69,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-02-web-login.md",
         "mockups": []
       },
-      "linear": "HLB-102",
       "api_endpoints": [
         "POST /auth/login"
       ],
@@ -108,7 +106,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-03-native-login.md",
         "mockups": []
       },
-      "linear": "HLB-103",
       "api_endpoints": [
         "POST /auth/login"
       ],
@@ -145,7 +142,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-04-token-refresh.md",
         "mockups": []
       },
-      "linear": "HLB-104",
       "api_endpoints": [
         "POST /auth/refresh"
       ],
@@ -183,7 +179,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-05-logout-revocation.md",
         "mockups": []
       },
-      "linear": "HLB-105",
       "api_endpoints": [
         "POST /auth/logout",
         "POST /sessions"
@@ -222,7 +217,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-06-rs256-keys-jwks.md",
         "mockups": []
       },
-      "linear": "HLB-106",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -254,7 +248,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-07-streaming-jwt-verify.md",
         "mockups": []
       },
-      "linear": "HLB-107",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -286,7 +279,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-08-signed-url-minter.md",
         "mockups": []
       },
-      "linear": "HLB-108",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -318,7 +310,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-09-single-user-mode.md",
         "mockups": []
       },
-      "linear": "HLB-109",
       "api_endpoints": [],
       "db_tables": [
         "users"
@@ -350,7 +341,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-10-csrf-protection.md",
         "mockups": []
       },
-      "linear": "HLB-110",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -381,7 +371,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-11-brute-force-protection.md",
         "mockups": []
       },
-      "linear": "HLB-111",
       "api_endpoints": [],
       "db_tables": [
         "users"
@@ -416,7 +405,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-12-rate-limiting-auth.md",
         "mockups": []
       },
-      "linear": "HLB-112",
       "api_endpoints": [
         "POST /auth/login",
         "POST /auth/refresh"
@@ -457,7 +445,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-13-permission-model.md",
         "mockups": []
       },
-      "linear": "HLB-113",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -499,7 +486,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-14-secret-loading.md",
         "mockups": []
       },
-      "linear": "HLB-114",
       "api_endpoints": [
         "GET /settings",
         "PUT /settings"
@@ -535,7 +521,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-15-transport-security.md",
         "mockups": []
       },
-      "linear": "HLB-115",
       "api_endpoints": [
         "GET /ws",
         "GET /system/health"
@@ -570,7 +555,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-16-security-audit.md",
         "mockups": []
       },
-      "linear": "HLB-116",
       "api_endpoints": [],
       "db_tables": [
         "audit_log"
@@ -604,7 +588,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-17-auth-pair.md",
         "mockups": []
       },
-      "linear": "HLB-117",
       "api_endpoints": [],
       "db_tables": [
         "audit_log",
@@ -635,7 +618,6 @@
         "plan": "specs/epics/10-auth-security/plan-10-18-ed25519-server-identity.md",
         "mockups": []
       },
-      "linear": null,
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -669,7 +651,6 @@
           "web/mockups/mockup-11-01-library-browser.html"
         ]
       },
-      "linear": "HLB-118",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -707,7 +688,6 @@
           "web/mockups/mockup-11-02-video-detail.html"
         ]
       },
-      "linear": "HLB-119",
       "api_endpoints": [
         "GET /jobs",
         "GET /ws"
@@ -755,7 +735,6 @@
           "web/mockups/mockup-11-03-video-player.html"
         ]
       },
-      "linear": "HLB-120",
       "api_endpoints": [
         "POST /sessions",
         "GET /sessions/{id}",
@@ -798,7 +777,6 @@
           "web/mockups/mockup-11-04-search-interface.html"
         ]
       },
-      "linear": "HLB-121",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -844,7 +822,6 @@
           "web/mockups/mockup-11-05-processing-queue.html"
         ]
       },
-      "linear": "HLB-122",
       "api_endpoints": [
         "GET /jobs",
         "GET /jobs/{id}",
@@ -888,7 +865,6 @@
           "web/mockups/mockup-11-06-settings.html"
         ]
       },
-      "linear": "HLB-123",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -928,7 +904,6 @@
           "web/mockups/mockup-11-07-theme.html"
         ]
       },
-      "linear": "HLB-124",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -961,7 +936,6 @@
         "plan": "specs/epics/11-web-ui/plan-11-08-dark-light-theme.md",
         "mockups": []
       },
-      "linear": "HLB-125",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -993,7 +967,6 @@
         "plan": "specs/epics/11-web-ui/plan-11-09-keyboard-shortcuts.md",
         "mockups": []
       },
-      "linear": "HLB-126",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1039,7 +1012,6 @@
           "web/mockups/mockup-11-10-offline-pwa.html"
         ]
       },
-      "linear": "HLB-127",
       "api_endpoints": [
         "POST /auth/login",
         "POST /auth/refresh",
@@ -1082,7 +1054,6 @@
         "plan": "specs/epics/11-web-ui/plan-11-11-accessibility.md",
         "mockups": []
       },
-      "linear": "HLB-128",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1116,7 +1087,6 @@
           "web/mockups/mockup-11-12-i18n.html"
         ]
       },
-      "linear": "HLB-129",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1151,7 +1121,6 @@
         "plan": "specs/epics/11-web-ui/plan-11-13-pat-management-api.md",
         "mockups": []
       },
-      "linear": "HLB-130",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -1193,7 +1162,6 @@
         "plan": "specs/epics/11-web-ui/plan-11-14-active-sessions-api.md",
         "mockups": []
       },
-      "linear": "HLB-131",
       "api_endpoints": [
         "POST /auth/logout",
         "POST /sessions",
@@ -1232,7 +1200,6 @@
         "plan": "specs/epics/12-mobile/plan-12-01-ios-app.md",
         "mockups": []
       },
-      "linear": "HLB-132",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1264,7 +1231,6 @@
         "plan": "specs/epics/12-mobile/plan-12-02-android-app.md",
         "mockups": []
       },
-      "linear": "HLB-133",
       "api_endpoints": [
         "GET /system/version"
       ],
@@ -1304,7 +1270,6 @@
         "plan": "specs/epics/12-mobile/plan-12-03-native-player.md",
         "mockups": []
       },
-      "linear": "HLB-134",
       "api_endpoints": [
         "POST /sessions",
         "GET /sessions/{id}",
@@ -1344,7 +1309,6 @@
         "plan": "specs/epics/12-mobile/plan-12-04-push-notifications.md",
         "mockups": []
       },
-      "linear": "HLB-135",
       "api_endpoints": [
         "POST /devices/register",
         "GET /devices"
@@ -1379,7 +1343,6 @@
         "plan": "specs/epics/12-mobile/plan-12-05-background-playback.md",
         "mockups": []
       },
-      "linear": "HLB-136",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1411,7 +1374,6 @@
         "plan": "specs/epics/12-mobile/plan-12-06-offline-downloads.md",
         "mockups": []
       },
-      "linear": "HLB-137",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1443,7 +1405,6 @@
         "plan": "specs/epics/12-mobile/plan-12-07-share-cast.md",
         "mockups": []
       },
-      "linear": "HLB-138",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1472,7 +1433,6 @@
         "plan": "specs/epics/12-mobile/plan-12-08-haptics.md",
         "mockups": []
       },
-      "linear": "HLB-139",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1505,7 +1465,6 @@
         "plan": "specs/epics/12-mobile/plan-12-09-deep-linking.md",
         "mockups": []
       },
-      "linear": "HLB-140",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -1548,7 +1507,6 @@
         "plan": "specs/epics/12-mobile/plan-12-10-device-registration-api.md",
         "mockups": []
       },
-      "linear": "HLB-141",
       "api_endpoints": [
         "POST /devices/register",
         "GET /devices",
@@ -1589,7 +1547,6 @@
         "plan": "specs/epics/12-mobile/plan-12-11-downloaded-flag-api.md",
         "mockups": []
       },
-      "linear": "HLB-142",
       "api_endpoints": [
         "GET /videos"
       ],
@@ -1622,7 +1579,6 @@
         "plan": "specs/epics/13-desktop/plan-13-01-macos.md",
         "mockups": []
       },
-      "linear": "HLB-143",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1653,7 +1609,6 @@
         "plan": "specs/epics/13-desktop/plan-13-02-windows.md",
         "mockups": []
       },
-      "linear": "HLB-144",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1686,7 +1641,6 @@
         "plan": "specs/epics/13-desktop/plan-13-03-linux.md",
         "mockups": []
       },
-      "linear": "HLB-145",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1715,7 +1669,6 @@
         "plan": "specs/epics/13-desktop/plan-13-04-system-tray.md",
         "mockups": []
       },
-      "linear": "HLB-146",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1745,7 +1698,6 @@
         "plan": "specs/epics/13-desktop/plan-13-05-mdns-discovery.md",
         "mockups": []
       },
-      "linear": "HLB-147",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1774,7 +1726,6 @@
         "plan": "specs/epics/13-desktop/plan-13-06-drag-drop.md",
         "mockups": []
       },
-      "linear": "HLB-148",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1804,7 +1755,6 @@
         "plan": "specs/epics/13-desktop/plan-13-07-keyboard-shortcuts.md",
         "mockups": []
       },
-      "linear": "HLB-149",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1833,7 +1783,6 @@
         "plan": "specs/epics/13-desktop/plan-13-08-auto-update.md",
         "mockups": []
       },
-      "linear": "HLB-150",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1869,7 +1818,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-01-tvos.md",
         "mockups": []
       },
-      "linear": "HLB-151",
       "api_endpoints": [
         "POST /api/auth/pair",
         "GET /api/auth/pair/{code}",
@@ -1912,7 +1860,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-02-android-tv.md",
         "mockups": []
       },
-      "linear": "HLB-152",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -1952,7 +1899,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-03-10-foot-ui.md",
         "mockups": []
       },
-      "linear": "HLB-153",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -1987,7 +1933,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-04-voice-search.md",
         "mockups": []
       },
-      "linear": "HLB-154",
       "api_endpoints": [
         "GET /search",
         "POST /search",
@@ -2025,7 +1970,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-05-continue-watching.md",
         "mockups": []
       },
-      "linear": "HLB-155",
       "api_endpoints": [
         "GET /api/me/playback-state?in_progress=true"
       ],
@@ -2061,7 +2005,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-06-recommendations-ui.md",
         "mockups": []
       },
-      "linear": "HLB-156",
       "api_endpoints": [
         "GET /recommendations",
         "GET /api/recommendations?surface=tv-home",
@@ -2100,7 +2043,6 @@
         "plan": "specs/epics/14-tv-apps/plan-14-07-recommendations-api.md",
         "mockups": []
       },
-      "linear": "HLB-157",
       "api_endpoints": [
         "GET /recommendations",
         "GET /api/recommendations",
@@ -2138,7 +2080,6 @@
         "plan": "specs/epics/15-discovery/plan-15-01-mdns.md",
         "mockups": []
       },
-      "linear": "HLB-158",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2166,7 +2107,6 @@
         "plan": "specs/epics/15-discovery/plan-15-02-cloud-relay.md",
         "mockups": []
       },
-      "linear": "HLB-159",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2194,7 +2134,6 @@
         "plan": "specs/epics/15-discovery/plan-15-03-federation.md",
         "mockups": []
       },
-      "linear": "HLB-160",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2222,7 +2161,6 @@
         "plan": "specs/epics/15-discovery/plan-15-04-dlna-upnp.md",
         "mockups": []
       },
-      "linear": "HLB-161",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2250,7 +2188,6 @@
         "plan": "specs/epics/15-discovery/plan-15-05-qr-pairing.md",
         "mockups": []
       },
-      "linear": "HLB-162",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2278,7 +2215,6 @@
         "plan": "specs/epics/15-discovery/plan-15-06-pairing-api.md",
         "mockups": []
       },
-      "linear": "HLB-163",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2306,7 +2242,6 @@
         "plan": "specs/epics/15-discovery/plan-15-07-federation-api.md",
         "mockups": []
       },
-      "linear": "HLB-164",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2334,7 +2269,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-01-free-tier.md",
         "mockups": []
       },
-      "linear": "HLB-165",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2362,7 +2296,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-02-premium-features.md",
         "mockups": []
       },
-      "linear": "HLB-166",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2390,7 +2323,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-03-subscription-management.md",
         "mockups": []
       },
-      "linear": "HLB-167",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2420,7 +2352,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-04-license-validation.md",
         "mockups": []
       },
-      "linear": "HLB-168",
       "api_endpoints": [
         "GET /settings",
         "PUT /settings"
@@ -2453,7 +2384,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-05-telemetry-opt-in.md",
         "mockups": []
       },
-      "linear": "HLB-169",
       "api_endpoints": [
         "GET /settings",
         "PUT /settings"
@@ -2484,7 +2414,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-06-feature-flags.md",
         "mockups": []
       },
-      "linear": "HLB-170",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2514,7 +2443,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-07-telemetry-api.md",
         "mockups": []
       },
-      "linear": "HLB-171",
       "api_endpoints": [
         "GET /settings",
         "PUT /settings"
@@ -2546,7 +2474,6 @@
         "plan": "specs/epics/16-subscriptions/plan-16-08-feature-flags-api.md",
         "mockups": []
       },
-      "linear": "HLB-172",
       "api_endpoints": [],
       "db_tables": [
         "audit_log"
@@ -2576,7 +2503,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-01-design-tokens.md",
         "mockups": []
       },
-      "linear": "HLB-173",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2604,7 +2530,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-02-component-library.md",
         "mockups": []
       },
-      "linear": "HLB-174",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2632,7 +2557,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-03-motion.md",
         "mockups": []
       },
-      "linear": "HLB-175",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2660,7 +2584,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-04-loading-states.md",
         "mockups": []
       },
-      "linear": "HLB-176",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2688,7 +2611,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-05-error-empty-states.md",
         "mockups": []
       },
-      "linear": "HLB-177",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2719,7 +2641,6 @@
           "web/mockups/mockup-17-06-onboarding.html"
         ]
       },
-      "linear": "HLB-178",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2747,7 +2668,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-07-rtl-layout.md",
         "mockups": []
       },
-      "linear": "HLB-179",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2775,7 +2695,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-08-player-controls.md",
         "mockups": []
       },
-      "linear": "HLB-180",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2803,7 +2722,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-09-search-results.md",
         "mockups": []
       },
-      "linear": "HLB-181",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2831,7 +2749,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-10-processing-progress.md",
         "mockups": []
       },
-      "linear": "HLB-182",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2859,7 +2776,6 @@
         "plan": "specs/epics/17-ux-design-system/plan-17-11-transcript-presentation.md",
         "mockups": []
       },
-      "linear": "HLB-183",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2895,7 +2811,6 @@
         "plan": "specs/epics/18-performance/plan-18-01-latency-budgets.md",
         "mockups": []
       },
-      "linear": "HLB-184",
       "api_endpoints": [
         "GET /libraries",
         "POST /libraries",
@@ -2932,7 +2847,6 @@
         "plan": "specs/epics/18-performance/plan-18-02-search-performance.md",
         "mockups": []
       },
-      "linear": "HLB-185",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2960,7 +2874,6 @@
         "plan": "specs/epics/18-performance/plan-18-03-streaming-hot-path.md",
         "mockups": []
       },
-      "linear": "HLB-186",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -2988,7 +2901,6 @@
         "plan": "specs/epics/18-performance/plan-18-04-pipeline-throughput.md",
         "mockups": []
       },
-      "linear": "HLB-187",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3016,7 +2928,6 @@
         "plan": "specs/epics/18-performance/plan-18-05-memory-cpu-envelopes.md",
         "mockups": []
       },
-      "linear": "HLB-188",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3044,7 +2955,6 @@
         "plan": "specs/epics/18-performance/plan-18-06-client-perceived-performance.md",
         "mockups": []
       },
-      "linear": "HLB-189",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
@@ -3074,7 +2984,6 @@
         "plan": "specs/epics/18-performance/plan-18-07-database-query-performance.md",
         "mockups": []
       },
-      "linear": "HLB-190",
       "api_endpoints": [
         "GET /videos",
         "GET /queue/stats"
@@ -3105,7 +3014,6 @@
         "plan": "specs/epics/18-performance/plan-18-08-cache-layout-hit-rates.md",
         "mockups": []
       },
-      "linear": "HLB-191",
       "api_endpoints": [],
       "db_tables": [],
       "metadata": {
