@@ -25,7 +25,9 @@ CREATE TABLE metric_1h (name TEXT, labels TEXT, hour INTEGER, value REAL, min RE
 - Counters become rates per minute; gauges keep the last value (1 min) and min/max/avg (1 h).
 - **Only an allow-list** of series (`shared/metrics/dashboard-series.json`, about 200 series),
   so a new high-cardinality metric can't grow the store. Label values per series are capped at 50.
-- 7 days at 1 minute, 90 days at 1 hour. About 200 × 1,440 rows a day: a few MB.
+- 7 days at 1 minute, **30 days** at 1 hour (shortened with the owner's retention decision of
+  2026-11-03, to match the errors' 30 days). About 200 × 1,440 rows a day: a few MB, inside
+  `logs.db`'s share of the 1 GB cap.
 - Error counts per component come from 53.10's hours, not from metrics.
 
 ### 2. The dashboards (`/admin/dashboards`)
@@ -90,7 +92,7 @@ Overview and Storage on the Remote apps (Apple, Android), read-only.
 |---|---|---|---|---|
 | T01 | unit | fake `/metrics` text over time | scrape | rates, gauges, rollups right |
 | T02 | unit | series not allowed / too many labels | scrape | dropped, counted in `metric_dropped_total` |
-| T03 | unit | retention | sweep | 7 d / 90 d |
+| T03 | unit | retention | sweep | 7 d / 30 d |
 | T04 | unit | board API | each board | ≤ 50 series, downsampled |
 | T05 | role test | nobody, viewer, admin | | 401, 403, 200 |
 | T06 | unit (vitest) | board fixtures | render en/ar | text summaries, RTL |

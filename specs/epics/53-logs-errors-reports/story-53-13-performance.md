@@ -19,14 +19,14 @@ above budget, as `test-budget` does for test times.
 | `index_lag` | 500 lines/s | p95 write→indexed ≤ 2 s; `logs` role ≤ 3 % core, ≤ 120 MB RSS |
 | `index_catchup` | after the burst | caught up ≤ 2 min |
 | `tail_latency` | 500 lines/s, 3 tails | p95 ≤ 2 s |
-| `search_filters` | 30 M lines (14 d synthetic, realistic mix incl. Arabic) | p95 ≤ 300 ms (24 h, service + level) |
+| `search_filters` | 15 M lines (7 d synthetic, realistic mix incl. Arabic) | p95 ≤ 300 ms (24 h, service + level) |
 | `search_fulltext` | same | p95 ≤ 1.5 s |
 | `search_request` | same | p95 ≤ 300 ms |
-| `dashboard_90d` | 90 d of rollups | p95 ≤ 500 ms |
+| `dashboard_30d` | 30 d of rollups | p95 ≤ 500 ms |
 | `logger_overhead` (Go, Python) | 1 M log calls | ≤ 20 µs p99 per call |
-| `disk` | a day at 500/s | ≤ 2 GB segments + index growth within the cap |
+| `disk` | a simulated day at 500/s (~2 GB written) | the janitors hold segments ≤ 550 MB, `logs.db` ≤ 350 MB and the total ≤ 1 GB at every sample; `warn`+ of the last 24 h kept |
 
-The 30 M-line corpus is generated (seeded, `tools/logbench/corpus.go`) and cached per seed, like
+The 15 M-line corpus is generated (seeded, `tools/logbench/corpus.go`) and cached per seed, like
 the rehearsal seeds.
 
 ### 2. Where they run

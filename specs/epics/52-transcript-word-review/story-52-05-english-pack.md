@@ -1,6 +1,9 @@
 # Story 52.05 — English language pack
 
 > Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6
+> Installed as an Epic 51 component (`langpack-en`). Deterministic Hunspell checks only (owner's
+> decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English
+> has its own pack for its tokenizer rules (contractions, possessives, acronyms).
 
 ## Why
 

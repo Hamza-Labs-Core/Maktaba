@@ -2,6 +2,12 @@
 
 > For [README.md](README.md). Researched 2026-11-03; every source below was fetched that day.
 > Items that could not be confirmed are marked so.
+>
+> **Owner's decisions, 2026-11-03 ([README §8](README.md#8-decisions-2026-11-03)):** there is no
+> LLM judge (story 52.7 removed), so the LLM rows and §5 below are kept as background only; every
+> check is deterministic (CAMeL Tools for Arabic, Hunspell for English and ~100 other languages,
+> a fallback pack for the rest). Quran verse runs are checked against the bundled Tanzil text
+> (story 52.15) instead of only being protected.
 
 ## What the research decided
 
@@ -18,7 +24,7 @@
 | UAX #24 `Script` / `Script_Extensions`, with Common/Inherited resolved from context, detects code-switching | `word_check` splits sentences into script runs and routes each to its pack (52.3) |
 | wordfreq covers Arabic and ~40 languages, but its data froze at about 2021 | Fallback "dictionary" is a frequency floor: `UNSURE`, never `UNKNOWN` (52.3) |
 | Dictionaries lack names. TMDB credits give cast and characters ranked by `order` / `episode_count`, in Arabic with `language=ar` | The library gazetteer comes from metadata first, NER (spaCy `xx_ent_wiki_sm`, MIT) second (52.6) |
-| LLM correction can fix words no hypothesis had, which is also how it invents words. Confidence-filtered and detect-then-verify designs avoid damaging correct text | The judge only sees flagged or borderline sentences, returns JSON flags under a schema at temperature 0, and never rewrites (52.7) |
+| LLM correction can fix words no hypothesis had, which is also how it invents words. Confidence-filtered and detect-then-verify designs avoid damaging correct text | *First draft:* a judge that only flags (52.7). *Decided 2026-11-03:* no LLM judge at all; story 52.7 removed |
 | Whisper's prompt is cut to 224 tokens; faster-whisper's `hotwords` to 223 and ignored with `prefix` | The derived prompt and hotwords are trimmed to those limits, most-used names first (52.10) |
 | Confidence-based selection cut human transcription cost by ~70% against random | The queue orders by calibrated priority; corrections feed the calibration set (52.2, 52.10) |
 

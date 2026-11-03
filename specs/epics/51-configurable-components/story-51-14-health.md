@@ -75,7 +75,7 @@ maktaba_component_transition_seconds_bucket{id="youtube",to="running",le="5"} 12
   out of `out.Waiting`, so "N stages waiting" and the attention counts don't include them;
 - gives `WaitingOn` a `component` field (`"transcription"`) and the component's phase, so the
   tile can say **"Waiting: Transcription is off · 1,840 queued"** or **"Waiting: Transcription
-  is stopped until 06:00"**, with a link to `/settings/components`;
+  is stopped until you turn it on"**, with a link to `/settings/components`;
 - shows a `component_catchup` job (51.06) on the Queues page with its progress after the
   component is turned back on, with the words "Catching up after Transcription was off".
 
@@ -86,7 +86,7 @@ The tile is grey (the `off` token), never amber or red. Words, English and Arabi
 |---|---|---|
 | `queue.state.off` | Off | متوقف |
 | `queue.waiting.component_off` | Waiting: %s is off | في الانتظار: %s متوقف |
-| `queue.waiting.component_held` | Waiting: %s is stopped until %s | في الانتظار: %s متوقف حتى %s |
+| `queue.waiting.component_held` | Waiting: %s is stopped until you turn it on | في الانتظار: %s متوقف حتى تشغّله |
 | `queue.catchup` | Catching up after %s was off | استكمال ما فات بعد إيقاف %s |
 
 The Remote apps' queue screens (Apple `QueueView.swift`, Android remote) read the same
@@ -104,8 +104,8 @@ It gains two fields:
 
 - `bundle` is `component_meta.bundle` (51.02): `full`, `core`, `worker` or `custom`.
 - `components` is the sorted list of catalog ids with `want = enabled` on the home. Ids of
-  entry-point extensions (third-party, not in the catalog) are left out: a name could identify a
-  person. No counts, no machines, no media, no names.
+  entry-point extensions (third-party, not in the catalog; Epic 54 plugins later) are left out: a
+  name could identify a person. No counts, no machines, no media, no names.
 - **The cloud first.** Maktaba Cloud's validator refuses unknown fields
   (`cloud/internal/telemetry/validate.go` `strict`, `DisallowUnknownFields`) and unknown
   feature keys. So the cloud ships first: `ReportServer` gains `bundle` (one of the four) and

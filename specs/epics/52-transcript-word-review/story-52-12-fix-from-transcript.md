@@ -5,15 +5,16 @@
 ## Why
 
 Some mistakes are never flagged. Whisper can be confident and wrong, and a word can be in the
-dictionary and still be the wrong word. A reviewer who sees one while reading the transcript tab
-should fix it right there. That fix also teaches the vocabulary (52.10) and adds a known miss to
+dictionary and still be the wrong word. A home admin who sees one while reading the transcript
+tab should fix it right there (only home admins review, README §8 decision 1). That fix also teaches the vocabulary (52.10) and adds a known miss to
 the evaluation data (52.2).
 
 ## Description
 
 - The transcript tab in the video page (`TranscriptTab`, `web/src/pages/VideoDetail.tsx:385`) gains
-  an **edit mode** for users who may review the video's library. It is a pencil toggle, and the
-  API decides who gets it: `GET /api/videos/{id}/segments` returns `can_review: true|false`.
+  an **edit mode** for home admins. It is a pencil toggle, and the API decides who gets it:
+  `GET /api/videos/{id}/segments` returns `can_review: true|false` (true only for a home admin,
+  never from a library `write` or `admin` role).
 - In edit mode, words are selectable. The words of each sentence come from
   `Intl.Segmenter(lang, {granularity: "word"})` (UAX #29) with `isWordLike`. A click selects one
   word; Shift+click or a drag extends to a span within the sentence.
@@ -33,14 +34,15 @@ the evaluation data (52.2).
 - `before` is sent so a concurrent change is caught (409 `stale`), and the tab reloads that
   sentence.
 - Undo uses the same toast and route as the queue.
-- Viewers see the tab exactly as today: no pencil, no selectable words, no extra requests.
+- Viewers and users with `write` on the library see the tab exactly as today: no pencil, no
+  selectable words, no extra requests.
 - The big-screen view (`web/src/bigscreen/screens/Video.tsx`) is not changed.
 
 ## Acceptance criteria
 
-1. **Given** a reviewer of the video's library, **when** they open the transcript tab, **then** a
-   pencil toggle is shown. **Given** a viewer, **then** it is not, and the segments response says
-   `can_review: false`.
+1. **Given** a home admin, **when** they open the transcript tab, **then** a pencil toggle is
+   shown. **Given** a viewer, or a user with `write` on the video's library, **then** it is not,
+   and the segments response says `can_review: false`.
 2. **Given** edit mode, **when** the reviewer clicks a word and saves a new spelling, **then** the
    sentence shows the new word, a `manual` flag (status `corrected`) and an edit exist, and the
    subtitles follow within 60 s.
@@ -50,8 +52,8 @@ the evaluation data (52.2).
    all three, and `word_data` holds one word over their time.
 5. **Given** the sentence was changed by someone else after the tab loaded, **when** the reviewer
    saves, **then** the answer is 409 `stale`, the sentence reloads, and nothing is overwritten.
-6. **Given** a viewer calls `POST /api/videos/{id}/transcript/words` directly, **then** 403. With
-   no session, 401.
+6. **Given** a viewer, or a user with `write` or the library `admin` role who is not a home admin,
+   calls `POST /api/videos/{id}/transcript/words` directly, **then** 403. With no session, 401.
 7. **Given** a fix made here, **when** the reviewer presses Undo in the toast, **then** the edit
    is undone (52.9).
 8. **Given** a word that has an open flag, **when** it is selected, **then** the popover shows that

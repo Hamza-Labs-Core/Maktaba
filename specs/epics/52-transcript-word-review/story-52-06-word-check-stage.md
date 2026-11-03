@@ -1,6 +1,6 @@
 # Story 52.06 — `word_check`: flags, names and old transcripts
 
-> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5 · Needed by: 52.7, 52.8, 52.14
+> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5 · Needed by: 52.8, 52.14, 52.15
 
 ## Why
 
@@ -29,7 +29,10 @@ change, without the GPU.
 1. `word_data` → Whisper words, or none (old transcript).
 2. Script runs → pack tokens (52.3). Map each token to the Whisper words that overlap it in code
    points: its `prob` is the lowest of them, its flags the OR of theirs.
-3. Signals for each word token (numbers, punctuation and protected tokens are skipped):
+3. The pack's `scripture()` runs first (Arabic: the Quran check, 52.15). Words of a verse run
+   that equal the verse are protected; words that differ get `quran_mismatch` and skip the
+   ordinary signals below.
+4. Signals for each other word token (numbers, punctuation and protected tokens are skipped):
 
 | Signal | Source | Error probability |
 |---|---|---|
@@ -38,10 +41,14 @@ change, without the GPU.
 | `not_in_dictionary` | pack `known()`: `UNKNOWN` 0.5, `UNSURE` 0.1 | as listed, fitted |
 | `named_entity` | gazetteer match (§3) | multiplies the total by 0.5 |
 | `near_vocabulary` | one edit from a vocabulary term (52.10) | 0.5, and the term is a candidate |
+| `quran_mismatch` | 52.15's alignment against the matched verse | 0.8, fitted; the verse's word is a candidate |
 
-4. `priority = 1 − Π(1 − p_i)`; × 0.5 for a name match. A word is flagged when `priority` ≥ the
+5. `priority = 1 − Π(1 − p_i)`; × 0.5 for a name match. A word is flagged when `priority` ≥ the
    library's threshold (default 0.5, moved by sensitivity, 52.14).
-5. Adjacent flagged words in one sentence merge into one span (at most 4 words).
+6. Adjacent flagged words in one sentence merge into one span (at most 4 words).
+
+Every signal is deterministic (README §8, decision 3: no LLM judge). Running the stage twice on
+the same input writes byte-identical flags.
 
 ### 3. Names (the gazetteer)
 
@@ -62,7 +69,8 @@ for this library); a pack may add one later through `known()`'s analysis.
 
 Up to 5, best first, deduplicated by `key` (but different spellings of one key are kept, since
 a spelling fix is the point): second listen's word (`metadata.alt`), Whisper's replaced word,
-gazetteer spelling, vocabulary term, pack `suggest()`. Each with its source and a score.
+gazetteer spelling, vocabulary term, pack `suggest()`; for a `quran_mismatch`, the verse's word
+first (source `quran`). Each with its source and a score.
 
 ### 5. Budget and the poor-transcript flag
 
@@ -81,15 +89,27 @@ upsert the rest on `(transcript_id, segment_seq, char_start)`; never touch flags
 resolved (`accepted`, `corrected`, `name`, `dictionary`). A resolved word is not flagged again in
 the same transcript revision.
 
-### 7. Old transcripts (text only)
+### 7. Old transcripts (text only) and the backfill of all of them
 
 A sentence without `word_data` gets only `not_in_dictionary`, `named_entity`, `near_vocabulary`
-(and 52.7's `llm_disagrees`). Its words' times are **estimated** by code-point position between
-the sentence's `start_sec` and `end_sec`, and the flag has `scores.time_estimated = true`, so the
-clip (52.8) pads more. The text-only threshold is raised by 0.1 (one signal is weaker evidence).
-Backfill over existing transcripts is a separate low-priority enqueue, library by library, only
-after the owner says yes (README open question 2): an admin turns on the library's
-`word_review.backfill` setting (52.14), which enqueues its transcripts at the lowest priority, paused whenever `transcribe` has pending jobs.
+and `quran_mismatch` (52.15 finds verse runs from the text). Its words' times are **estimated** by
+code-point position between the sentence's `start_sec` and `end_sec`, and the flag has
+`scores.time_estimated = true`, so the clip (52.8) pads more. The text-only threshold is raised by
+0.1 (one signal is weaker evidence).
+
+The owner decided (README §8, decision 2) to text-check **all ~45k existing transcripts**:
+
+- When the stage first ships (and again whenever a library is added with old transcripts), a
+  one-time **backfill planner** enqueues `word_check` for every active transcript that has never
+  been checked, at the **lowest priority** of any stage, newest videos first.
+- The backfill claim is refused while `transcribe` has pending or running jobs (`JobDeferred`, no
+  attempt used), so it only runs in idle time and never delays transcription or `subtitle_gen`.
+  It also respects `wait_for_memory`.
+- `word_review.backfill` (52.14) defaults to **on**. An admin may turn it off for a library; its
+  pending backfill jobs are then cancelled, and new transcripts are still checked.
+- Progress (checked of total, estimated CPU-hours left) shows on the `word_check` queue tile.
+- Backfill is resumable: the fingerprint makes a checked transcript `unchanged`, so a restart or
+  a planner run again costs nothing for work already done.
 
 ### 8. Migration
 
@@ -110,7 +130,9 @@ after the owner says yes (README open question 2): an admin turns on the library
    `named_entity` is a reason, its priority is halved, and the speaker's spelling is a candidate.
 5. **Given** an English word inside an Arabic sentence, **when** checked, **then** the flag's
    `language` is `en` and the English pack decided it.
-6. **Given** a protected Quran run, **when** checked, **then** none of its words is flagged.
+6. **Given** a correctly heard Quran run, **when** checked, **then** none of its words is flagged;
+   **given** one misheard word in it, **then** only that word is flagged, with reason
+   `quran_mismatch` alone (52.15).
 7. **Given** a file with 300 suspect words in 1 audio hour and a budget of 40, **when** checked,
    **then** 40 flags are `open`, 260 `skipped` with `over_budget`, and one `transcript` flag exists.
 8. **Given** a resolved flag, **when** the same transcript is checked again, **then** the flag is
@@ -123,6 +145,11 @@ after the owner says yes (README open question 2): an admin turns on the library
     pack's language are queued again.
 12. **Given** the gold set, **when** `word_check` runs on it, **then** Arabic precision ≥ 0.50 and
     recall ≥ 0.60, English ≥ 0.60 / 0.60, and ≥ 18 of the 20 hearing-test spots are flagged.
+13. **Given** the stage first deployed on a home with existing transcripts, **then** the backfill
+    planner enqueues every unchecked active transcript at the lowest priority, and **given**
+    `transcribe` has pending jobs, **then** no backfill job runs until they finish.
+14. **Given** a library with `backfill = false`, **then** none of its old transcripts is
+    enqueued, and its pending backfill jobs are cancelled.
 
 ## Build plan
 
@@ -132,6 +159,8 @@ after the owner says yes (README open question 2): an admin turns on the library
 - `pipeline/src/maktaba_pipeline/word_review/signals.py`, `scoring.py`, `gazetteer.py`,
   `candidates.py`, `store.py` (new): pure functions plus the writer.
 - `pipeline/src/maktaba_pipeline/engine/graph.py`: the stage, the edge, `WORD_CHECK_VERSION`.
+- `pipeline/src/maktaba_pipeline/word_review/backfill.py` (new): the planner and the idle-only
+  claim rule for backfill jobs.
 - `pipeline/src/maktaba_pipeline/engine/stages/registry.py`: register it.
 - `shared/db/migrations/` next free slot, 0173+: `word_flags`, Postgres and SQLite twins.
 - `api/internal/handlers/review/` gets a read-only admin list in this story (full API in 52.8),
@@ -142,7 +171,9 @@ after the owner says yes (README open question 2): an admin turns on the library
 - Unit: scoring (combination, name halving, thresholds, sensitivity), span merging, budget,
   poor-transcript rule, token↔word mapping on mixed scripts, time estimation.
 - Stage tests on SQLite and scratch Postgres: fingerprint, upsert keeps resolved flags, delete of
-  stale open flags, `unchanged` second run.
+  stale open flags, `unchanged` second run (byte-identical flags).
+- Backfill: the planner enqueues only unchecked transcripts at the lowest priority; the claim is
+  deferred without using an attempt while `transcribe` has work; `backfill = false` cancels.
 - Gazetteer: names from fixtures of `speakers`, titles and enrich rows.
 - Eval: `eval --set ci` through the real `word_check` scoring, gated by 52.2's baseline.
 - Performance: a 9,000-word hour checks in ≤ 10 CPU-seconds on the home Mac (warm pack caches),
@@ -151,7 +182,9 @@ after the owner says yes (README open question 2): an admin turns on the library
 
 ### Rollout
 
-- `word_review.enabled` defaults to on for new transcripts and off for backfill.
+- `word_review.enabled` and `word_review.backfill` both default to on. New transcripts are checked
+  at once; the backfill of all ~45k existing transcripts starts in idle time behind
+  `transcribe`.
 - Live check after a day (read-only): flag rate ≤ 3% of words, open flags per audio hour ≤ the
   budget. If over, lower sensitivity before 52.11 opens the queue.
 - Back out: disable the stage (`POST /api/queues/word_check/pause`), or revert. Flags are only

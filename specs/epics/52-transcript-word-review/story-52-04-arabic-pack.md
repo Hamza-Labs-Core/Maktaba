@@ -1,6 +1,7 @@
 # Story 52.04 — Arabic language pack
 
-> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6
+> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6, 52.15
+> Installed as an Epic 51 component (`langpack-ar`).
 
 ## Why
 
@@ -55,11 +56,20 @@ In order, deduplicated by `key`, at most `n`:
 3. Analyser-accepted words one letter away on letters Whisper confuses in Arabic speech: ذ/ز/ظ,
    ث/س/ص, ض/د/ظ, ق/ك/ء, ح/ه, ع/ء/ا, ت/ط.
 
-### 5. Protected
+### 5. Protected and scripture (Quran)
 
-`classify.quran.verse_runs` over the keys: words in a detected verse run are protected (the
-second listen already never touches them). Default from README open question 4: never flag
-inside a verse run.
+The owner decided (README §8, decision 4) to **check** verse runs against the Quran text rather
+than never flag them. The pack's `scripture()` returns the verse runs found by the Quran aligner
+of story 52.15 (tolerant alignment against the bundled Tanzil text). `protected()` covers the
+words of those runs that equal the verse (or are a rasm variant of it); the words that differ are
+reported by 52.15 as `quran_mismatch`, not by this pack's dictionary. When the library turns the
+Quran check off, every word of a run is protected, as in the first draft.
+
+### 5a. Deterministic
+
+Every answer of this pack is deterministic: the same token, data files (`data_sha256`) and
+`version` give the same `known()`, `suggest()` and keys. No model is sampled and no LLM is called
+(README §8, decision 3).
 
 ### 6. Data and licences
 
@@ -78,8 +88,9 @@ inside a verse run.
 4. **Given** a nonsense token «كتسبلمن», **when** `known()` runs, **then** it returns `UNKNOWN`.
 5. **Given** «مدرسه», **when** `suggest()` runs, **then** «مدرسة» is first.
 6. **Given** «ﷺ» in a sentence, **when** tokenised, **then** it is a `symbol`, never checked.
-7. **Given** a sentence with a verse run, **when** `protected()` runs, **then** exactly the run's
-   tokens are protected.
+7. **Given** a sentence with a correctly heard verse run, **when** `protected()` runs, **then**
+   exactly the run's tokens are protected; **given** the same run with one misheard word, **then**
+   `scripture()` still returns the run and that word is not protected (52.15 flags it).
 8. **Given** a worker without CAMeL data, **when** `known()` runs, **then** every word is `UNSURE`
    (no `not_in_dictionary` flags), and the pack row says `analyser=unavailable`.
 9. **Given** 9,000 tokens of lecture text, **when** checked cold then warm, **then** warm takes

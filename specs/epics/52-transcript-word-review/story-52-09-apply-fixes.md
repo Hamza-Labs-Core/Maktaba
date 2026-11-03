@@ -54,7 +54,8 @@ batchID)`:
 - It sets `undone_at`, bumps `revision`, and puts the flag back to `open`. Flags it made stale
   are re-checked by the next `word_check` run.
 - Batch undo reverses a batch's edits newest first, in one transaction, all or nothing.
-- Who: an admin may undo anyone's edit. A reviewer may undo only their own (52.8 checks this).
+- Who: home admins only (README §8, decision 1); any admin may undo any edit (52.8 checks this).
+  A user with `write` on the library gets 403.
 
 ### 4. Carry-over when a transcript is replaced
 
@@ -73,7 +74,7 @@ This runs inside `_store`'s transaction, so the new transcript is never active w
 
 ### 5. History
 
-`GET /api/videos/{id}/transcript/edits` (admins and the library's reviewers) lists edits with
+`GET /api/videos/{id}/transcript/edits` (home admins only) lists edits with
 who, when, before and after, and undone. 52.11 shows it.
 
 ## Acceptance criteria
@@ -92,8 +93,8 @@ who, when, before and after, and undone. 52.11 shows it.
    return to what they were, the flag is `open` again, and `undone_at` is set.
 6. **Given** two edits on the same span, **when** someone undoes the first, **then** the answer is
    409 `changed_since` and nothing changes.
-7. **Given** a reviewer, **when** they try to undo another reviewer's edit, **then** 403. An admin
-   doing the same gets 200.
+7. **Given** a user with `write` on the library (not a home admin), **when** they try to undo any
+   edit or read the edit history, **then** 403. An admin undoing another admin's edit gets 200.
 8. **Given** a batch of 38 edits, **when** it is undone, **then** all 38 are reversed in one
    transaction. If one of them cannot be, none are, and the answer names it.
 9. **Given** a video with 5 live edits, **when** a relisten replaces its transcript and 4 of the

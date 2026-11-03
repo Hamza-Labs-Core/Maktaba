@@ -13,8 +13,8 @@ shape"). They get the same queue, with the same rules, enforced by the same API.
 ### 1. Where
 
 - **Apple:** the Remote app (`apps/apple/Remote`) on iPhone, iPad and Mac. It gets a **Word
-  review** screen in its navigation, shown only when `GET /api/review/summary` is non-empty for
-  the signed-in user.
+  review** screen in its navigation, shown **only to home admins** (README §8, decision 1; the
+  app hides it for anyone else, and the API's 403 is the rule).
 - **Android:** the Remote app (`apps/android/remote`) on phone, foldable and tablet. Same entry,
   same rule.
 - **Player builds never show it.** They are viewer-only (trail §2), and the API would refuse them
@@ -32,6 +32,8 @@ shape"). They get the same queue, with the same rules, enforced by the same API.
   - Play/pause, 0.75×, replay. Candidate buttons 1-5, an edit field, and Accept, Correct, Name,
     Dictionary, Skip.
   - "In N other places" with Apply to all, and a confirm that shows the count.
+  - For a `quran_mismatch` flag (52.15): the verse reference, the verse's word and the Tanzil
+    credit line, with the web's wording (`review.quran.*`); Dictionary is hidden.
 - **Gestures:** swipe left/right for next/previous (mirrored in RTL), long-press a candidate to
   hear the clip again. After an action, a snackbar or toast with Undo shows for 6 s.
 - **Hardware keyboard** (iPad, Mac, Android tablets with a keyboard): the same shortcuts as the web
@@ -63,9 +65,9 @@ shape"). They get the same queue, with the same rules, enforced by the same API.
 
 ## Acceptance criteria
 
-1. **Given** a reviewer signed in to the Remote app, **then** Word review is in the navigation
-   with the open count. **Given** a viewer, **then** it is not. **Given** a Player build, **then**
-   it never is.
+1. **Given** a home admin signed in to the Remote app, **then** Word review is in the navigation
+   with the open count. **Given** a viewer, or a user with `write` on a library who is not a home
+   admin, **then** it is not. **Given** a Player build, **then** it never is.
 2. **Given** the word screen, **when** it opens, **then** the clip plays the word with 1.5 s either
    side, and the highlighted word is readable in both themes.
 3. **Given** a candidate tapped, **then** the word is corrected, a toast with Undo shows, and the
@@ -74,10 +76,10 @@ shape"). They get the same queue, with the same rules, enforced by the same API.
    are mirrored, and every string is Arabic.
 5. **Given** an English transcript in the Arabic app (or the reverse), **then** the sentence reads
    in the transcript's direction.
-6. **Given** an iPad with a keyboard, **when** the reviewer holds ⌘, **then** the shortcut list
+6. **Given** an iPad with a keyboard, **when** the admin holds ⌘, **then** the shortcut list
    shows, and `J`, `K`, `Space`, `1`-`5`, `N`, `D`, `S` and `U` work as on the web.
-7. **Given** the API answers 403 (the user lost `write`), **then** the screen says so and returns
-   to the list. A 409 (locked or stale) shows the reason and reloads the word.
+7. **Given** the API answers 403 (the user is no longer a home admin), **then** the screen says
+   "Only home admins can review words" / «مراجعة الكلمات للمشرفين فقط» and leaves Word review. A 409 (locked or stale) shows the reason and reloads the word.
 8. **Given** a CI run, **then** the missing-Arabic tests on both platforms fail if a review string
    has no Arabic.
 

@@ -1,13 +1,13 @@
 # Story 52.10 — Vocabulary: learning from fixes
 
-> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: 52.7 (its glossary)
+> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)
 
 ## Why
 
 A lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times
 unless the system learns it. The owner wants each fix to count. This story turns fixes into a
 vocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second
-listen, the LLM judge and new transcriptions spell it right. It never re-transcribes the library
+listen and new transcriptions spell it right. It never re-transcribes the library
 by itself.
 
 ## Description
@@ -41,8 +41,6 @@ by itself.
   `vocabulary`) when the word is now known, or gain the candidate.
 - **The second listen's speller** (`stt/refine.py` `Speller`): vocabulary spellings come before
   the file's own and the dictionary's. Only hamza, «ة» and «ى» forms change, as today.
-- **The LLM judge** (52.7): the library's names and terms as a glossary, at most 150 entries by
-  `uses`.
 - **New transcriptions:** a *derived prompt*, made of the library's `stt.initial_prompt` (as the
   owner wrote it) plus the top vocabulary names and terms by `uses`. It is cut to Whisper's
   224-token prompt limit with the model's tokenizer. The owner's text always comes first and is
@@ -71,8 +69,9 @@ expire in 24 h). It is for anyone who later wants to fine-tune a model. Nothing 
 ### 7. Management page
 
 `web/src/pages/review/Vocabulary.tsx`: search, filter by kind, language and library, edit
-variants, delete, import and export. Admins see every library. A `write` reviewer sees and edits
-their libraries' entries only, and never home scope.
+variants, delete, import and export. Home admins only (README §8, decision 1): admins see and
+edit every library's entries and home scope; a user with `write` on a library gets 403 and never
+sees the page.
 
 ## Acceptance criteria
 
@@ -95,8 +94,8 @@ their libraries' entries only, and never home scope.
 7. **Given** an admin, **when** they choose "Transcribe again with the vocabulary" on a library,
    **then** they first see the audio hours and the GPU-time estimate, and nothing is enqueued
    until they confirm.
-8. **Given** a `write` reviewer of library A, **when** they add to, edit or delete vocabulary of
-   library B or home scope, **then** 403.
+8. **Given** a user with `write` on library A (not a home admin), **when** they list, add to, edit
+   or delete vocabulary of library A, library B or home scope, **then** 403.
 9. **Given** an import CSV with a bad row, **when** it is uploaded, **then** the good rows are
    added and the answer lists the bad rows with reasons.
 10. **Given** an export of corrections, **then** each row's clip URL plays the right span and
@@ -132,8 +131,9 @@ their libraries' entries only, and never home scope.
   folded letters.
 - `test_word_check.py`: a vocabulary key is `KNOWN`, `near_vocabulary` fires at distance 1 and
   not at 2, and re-scoring touches only same-key transcripts.
-- `vocabulary_test.go`: roles (nobody, viewer, other library's reviewer, home scope by a
-  reviewer → 401/403), import with bad rows, and the export CSV's columns.
+- `vocabulary_test.go`: roles in the `TestAdminOnly` style (nobody 401; viewer, `write` on the
+  library, library `admin` role without home admin, cloud-linked → 403; home admin → 200), import
+  with bad rows, and the export CSV's columns.
 - Evaluation (52.2): the gold set is run twice, without and then with a vocabulary built from half
   its corrections. Flags on the other half's repeated names must drop by ≥ 50%, and precision must
   not fall.

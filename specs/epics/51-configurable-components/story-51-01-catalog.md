@@ -191,7 +191,8 @@ runner's declared loop table must equal the catalog's loops for that host.
 
 - **Entry-point extensions** (third-party, H5) are not in the catalog. Their stages are
   grouped at runtime under `ext.<name>` with `switchable = true`, no words of their own
-  (the UI shows the manifest's label). The lint only checks built-in extensions.
+  (the UI shows the manifest's label). The lint only checks built-in extensions. Third-party
+  plugins proper, with a store and no internet access, are Epic 54, built on this catalog.
 - **Unreleased stages** (`StageDef.unreleased`) still belong to a component, so the day they
   ship they are switchable.
 - **Hidden or legacy stages** (`scan`, `extract`) are mapped like the others.

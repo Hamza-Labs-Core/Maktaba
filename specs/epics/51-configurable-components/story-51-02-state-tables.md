@@ -23,8 +23,7 @@ CREATE TABLE IF NOT EXISTS components (
     id          text PRIMARY KEY,                       -- catalog id
     want        text NOT NULL CHECK (want IN ('absent','installed','enabled')),
     hold_by     text,                                   -- user name, or 'seed'
-    hold_at     timestamptz,
-    hold_until  timestamptz,                            -- NULL with hold_at set: until started
+    hold_at     timestamptz,                            -- set: stopped until an admin starts it
     generation  bigint NOT NULL DEFAULT 1,
     updated_by  text NOT NULL,
     updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -36,7 +35,7 @@ CREATE TABLE IF NOT EXISTS component_overrides (
     node_id     uuid NOT NULL REFERENCES cluster_nodes(id) ON DELETE CASCADE,
     id          text NOT NULL,
     want        text CHECK (want IN ('absent','installed','enabled')),
-    hold_by     text, hold_at timestamptz, hold_until timestamptz,
+    hold_by     text, hold_at timestamptz,
     generation  bigint NOT NULL DEFAULT 1,
     updated_by  text NOT NULL,
     updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -116,7 +115,7 @@ runners rely on the 30 s poll (single-process SQLite rigs only, architecture §8
 
 ```go
 type Desired struct { ID, Want string; Hold *Hold; Generation int64 }
-type Hold struct { By string; At time.Time; Until *time.Time }
+type Hold struct { By string; At time.Time } // no expiry: a hold lasts until Start (owner, 2026-11-03)
 type Status struct { Machine, ID, Part, Phase string; Conditions []Condition;
                      ObservedGeneration int64; Version string; Detail map[string]any }
 
@@ -206,8 +205,9 @@ built in parallel without racing for slots.
   pruned by the home's housekeeping when the node row is gone (51.14 shows nothing for it).
 - **Clock skew on nodes**: `since` and `updated_at` are set by the database (`now()`), not
   by the node.
-- **Hold expiry** is not done by a trigger: each runner treats `hold_until < now()` as no
-  hold; the API clears expired holds when it next writes (51.08).
+- **Holds never expire.** There is no `hold_until` column: the owner chose only "until I
+  turn it on" (README §13, decision 2). A hold is a row value, so it survives restarts and
+  updates, and only Start (51.08) clears it.
 - **Big `detail`**: capped at 4 KB by the store; larger is truncated with `"truncated":true`.
 
 ## Build plan

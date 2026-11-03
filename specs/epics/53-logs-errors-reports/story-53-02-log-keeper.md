@@ -55,14 +55,20 @@ A janitor goroutine runs every 5 minutes:
 | Rule | Default | Setting (`[logs]` in `server.toml`, and the admin page in 53.11) |
 |---|---|---|
 | `debug` lines | 24 h (they are written to `<service>/debug/`, so dropping is deleting files) | `debug_retention` |
-| everything else | 14 days | `retention` |
-| total segment size | 2 GB | `max_segments_size` |
+| everything else | **7 days** (owner's decision, 2026-11-03) | `retention` |
+| all diagnostics on disk (segments + `logs.db` + reports) | **1 GB** in all (owner's decision, 2026-11-03) | `max_total_size` |
+| the segments' share of it | 550 MB (55 %; `logs.db` gets 35 % = 350 MB, reports 10 % = 100 MB) | `max_segments_size` (follows `max_total_size` unless set) |
 | data volume free space floor | 5 GB: below it, stop writing `debug` and delete the oldest hour until above | `min_free` |
 | hard floor | 1 GB free: write only `warn` and above | — |
 
 Oldest files go first, across all components, except the newest 24 h of `warn`+ lines of every
-component, which are kept whatever the cap (a component that logged little is never wiped out
-by a noisy one).
+component, which go last (a component that logged little is never wiped out by a noisy one);
+only when those alone pass the segments' share do the oldest of them go, so the 1 GB total holds.
+
+All of these are adjustable by an admin (53.11's Retention page, or `server.toml`): retention
+per kind (logs 1–90 days, errors 7–365, reports 7–365) and the total (256 MB–20 GB). The shares
+scale with the total. At the live home's normal rate (well under 50 lines/s, ~40 MB a day
+compressed) 7 days fits in the share; a noisy day hits the cap first, and the cap wins.
 
 ### 4. Reading without the index
 
@@ -87,9 +93,9 @@ little); the viewer moves to the index in 53.11.
 - **Given** the pipeline writes 20,000 debug lines a second for a minute,
   **when** the disk writer can't keep up,
   **then** the pipeline never blocks, debug lines are dropped, every `warn`+ line is kept, and `log_lines_dropped` says how many.
-- **Given** segments total 2.2 GB,
+- **Given** segments total 600 MB with the default 1 GB total,
   **when** the janitor runs,
-  **then** the oldest hours are deleted until ≤ 2 GB, and each component's newest 24 h of `warn`+ lines remain.
+  **then** the oldest hours are deleted until ≤ 550 MB, and each component's newest 24 h of `warn`+ lines remain.
 - **Given** the data volume has 900 MB free,
   **when** a child logs `info`,
   **then** the line is not written, a `warn` line still is, and System health shows "Low disk: logs reduced".

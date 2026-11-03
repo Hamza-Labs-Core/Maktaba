@@ -13,9 +13,10 @@ work as well in Arabic as in English, right to left, with every string in both l
 
 ### 1. Where it lives
 
-- A **Word review** entry in the main navigation. It shows only for admins and for users who may
-  review at least one library (`GET /api/review/summary` answers non-empty). It carries a badge
-  with the open count.
+- A **Word review** entry in the main navigation. It shows **only for home admins** (README §8,
+  decision 1): users with `write` or the library `admin` role on a library never see it, nor the
+  transcript tab's edit mode (52.12). Hiding it is a courtesy; the API's 403 is the rule (52.8).
+  It carries a badge with the open count.
 - Route `/review`, page `web/src/pages/review/Review.tsx`. The list and filter patterns come from
   `web/src/pages/queue/Failures.tsx`.
 - Sub-routes: `/review/history` (edits, with undo) and `/review/vocabulary` (52.10's page).
@@ -30,7 +31,11 @@ work as well in Arabic as in English, right to left, with every string in both l
     sentence before and after in a lighter tone.
   - The clip player: play/pause, 0.75× and 1×, replay. The clip auto-plays when the word opens.
   - The reasons in words ("Whisper was unsure", "The second listen heard «…»", "Not in the Arabic
-    dictionary", "Looks like a name", "The LLM disagrees").
+    dictionary", "Looks like a name", "Differs from the Quran text").
+  - For a `quran_mismatch` (52.15): the verse reference («البقرة ١٨٣» / "Al-Baqara 2:183"), the
+    verse's word ("The verse has: …" / «في الآية: …»), and the credit line "Quran text: Tanzil
+    Project (tanzil.net)" / «نص القرآن: مشروع تنزيل (tanzil.net)». "Add to dictionary" is hidden
+    for these, since a verse word is checked against the verse, not the dictionary.
   - Candidates 1-5 as buttons, with their source.
   - An edit field with the word.
   - Actions: Accept, Correct, Name, Add to dictionary, Skip.
@@ -78,8 +83,9 @@ The keys live under `review.*` in `web/src/i18n/en.json` and `ar.json`: `review.
 `review.correct`, `review.name`, `review.dictionary`, `review.skip`, `review.undo`,
 `review.applyAll` (with a plural count), `review.otherPlaces` (plural), `review.lockedBy`,
 `review.stale`, `review.reason.low_confidence`, `review.reason.not_in_dictionary`,
-`review.reason.listeners_disagree`, `review.reason.llm_disagrees`, `review.reason.named_entity`,
+`review.reason.listeners_disagree`, `review.reason.quran_mismatch`, `review.reason.named_entity`,
 `review.reason.near_vocabulary`, `review.reason.previous_fix`, `review.reason.manual`,
+`review.quran.*` (52.15: expected, missing, inserted, credit),
 `review.source.*`, `review.shortcuts.*`, `review.fixed`, `review.history.*`, `review.filters.*`.
 The Arabic plurals use the six ICU categories. The help page is
 `web/src/help/content/{en,ar}/word-review.md` (Epic 41), linked from the page.
@@ -95,7 +101,7 @@ The Arabic plurals use the six ICU categories. The help page is
 
 ## Acceptance criteria
 
-1. **Given** a reviewer with open flags, **when** they open `/review`, **then** the top-priority
+1. **Given** a home admin with open flags, **when** they open `/review`, **then** the top-priority
    word is shown with its sentence, and its clip starts playing within 700 ms on the LAN.
 2. **Given** the word is open, **when** they press `2`, **then** it is corrected to the second
    candidate, a toast with Undo shows, and the next word opens.
@@ -111,10 +117,13 @@ The Arabic plurals use the six ICU categories. The help page is
    shortcut fires. **When** they press `Enter`, **then** the correction is saved.
 8. **Given** a word flagged in 37 other places, **when** they press `A` and then `Enter` on a
    candidate, **then** all 38 change as one batch, and one Undo reverses all of them.
-9. **Given** a word another reviewer has open, **then** it shows "Being reviewed by <name>" and
-   its actions are off (an admin may take over).
-10. **Given** a user with only `read`, **then** the navigation shows no Word review entry, and
-    `/review` shows "You can't review words in any library".
+9. **Given** a word another admin has open, **then** it shows "Being reviewed by <name>" /
+   «يراجعها <name>» and its actions are off until the admin chooses Take over / «تولَّ المراجعة».
+10. **Given** a user with only `read`, **or** a user with `write` or the library `admin` role who
+    is not a home admin, **then** the navigation shows no Word review entry, and `/review` shows
+    "Only home admins can review words" / «مراجعة الكلمات للمشرفين فقط».
+13. **Given** a `quran_mismatch` flag, **then** the verse reference, the verse's word and the
+    Tanzil credit show in the current UI language, and "Add to dictionary" is hidden.
 11. **Given** a CI run, **then** the missing-Arabic test fails if any `review.*` key lacks an
     Arabic string.
 12. **Given** no open flags, **then** the page says "No words to review" with the time of the
@@ -148,8 +157,8 @@ The Arabic plurals use the six ICU categories. The help page is
 
 ### Rollout
 
-Phase 2 release, together with 52.8, 52.9 and 52.14. At first only admins see it (README R4).
-`write` reviewers see it once the owner answers open question 1.
+Phase 2 release, together with 52.8, 52.9 and 52.14. Only home admins ever see it (README §8,
+decision 1).
 
 ## Edge cases
 

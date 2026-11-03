@@ -32,7 +32,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | G3 | Homes reconnect without jitter, so they all retry at the same instants. | 50.03 |
 | G4 | One Let's Encrypt certificate **per home**, issued on demand and kept on one disk. Let's Encrypt's limit is 50 new certificates per domain per week, so a fresh standby can't get them in time. | 50.02 |
 | G5 | The relay queries Postgres on **every** request (`BySlug`, `Meter.Allow`), so a 30-second database failover fails 30 seconds of requests. | 50.05 |
-| G13 | The plan limits don't agree, and the relay doesn't enforce stream limits. The architecture doc says Pro 2 / Family 5 streams; `cloud/internal/billing/plans.go` has 1 / 4 / 10, and the cloud web app's strings say "Home" and "Pro". Only the billing API reports the limit; no relay enforces it. | 50.16 (counts across relays); the numbers are the owner's call (§13) |
+| G13 | The plan limits don't agree, and the relay doesn't enforce stream limits. The architecture doc says Pro 2 / Family 5 streams; `cloud/internal/billing/plans.go` has Free / Pro / Family with 1 / 4 / 10 streams and 5 / 100 / 500 GiB, the license maps them to `free` / `home` / `pro`, and the cloud web app's strings say "Home" and "Pro". Only the billing API reports the limit; no relay enforces it, and the byte cap cuts relayed play off with a `402`. **Decided (§13, decisions 4 and 6):** all of these are replaced by **Free** (no relay; direct remote free), **Basic** (relay capped at ~3 Mbps, 2 streams, 500 GB soft fair use) and **Pro** (full quality, an allowance, N streams, optional pay-as-you-go with a cap, paid extra streams); Family is dropped; prices TBD. The relay enforces each plan and never cuts a paid plan off; old names migrate `pro`→`basic`, `family`→`pro`. | 50.19 (plans, enforcement, metering, Stripe, migration); 50.16 keeps the counts across relays |
 | G14 | Nothing writes `direct_ip` / `direct_port`, so `direct_url` in the home list is in practice always empty. | 50.15 |
 | G12 | Architecture §13.10 and story 25.14 describe `NOTIFY tier_changed`, but neither the NOTIFY nor a LISTEN exists in the code, so a plan change reaches the relay only when it next queries. | 50.05, 50.17 |
 | G6 | Tunnels are held in one process's memory. Story 25.8's multi-relay routing ("consistent hash on `server_id` at the L4 LB") was never built, and Hetzner's load balancer can't do it. | 50.04, 50.16 |
@@ -63,7 +63,9 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 
 - More regions (US, Asia), and clients choosing the nearest relay (Tailscale-style). That is
   Phase 3, written down in §8 but not specced.
-- Changing plans, prices or caps (Epic 25.12 / 25.15).
+- Setting prices. The plans themselves are decided (§13 decision 4) and built in 50.19, which
+  replaces the tiers of Epic 25.12 / 25.15; the prices, Pro's allowance and stream count are
+  the owner's, still **TBD**.
 - End-to-end encryption through the relay (architecture §13.11 keeps the cloud in the trust
   boundary).
 
@@ -82,13 +84,14 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | F7 | **Status page** at `status.maktaba.tv`, hosted off Hetzner, and a banner in every app. | 50.11 |
 | F8 | **Incident handling.** Severity levels, runbooks, user messages in English and Arabic, postmortems. | 50.12 |
 | F9 | **Apps ride out the cloud being down.** They keep the last connection list, try direct addresses first, and show plain messages. | 50.13 |
-| F10 | **Direct remote like Plex.** UPnP / NAT-PMP, an outside reachability check, and HTTPS on the direct path. | 50.15 |
+| F10 | **Direct remote like Plex.** UPnP / NAT-PMP, an outside reachability check, and HTTPS on the direct path, with names on several separate direct-name domains (never under `maktaba.tv`). **Free on every plan.** | 50.15 |
+| F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through Stripe usage-based items. | 50.19 |
 
 ### 4.2 Non-functional: the numbers
 
 | Area | Target (Phase 1) | Target (Phase 2) | How it is measured |
 |---|---|---|---|
-| **Availability (SLO)** | **99.9 %** a month = at most **43.8 min** down | **99.95 %** = 21.9 min | The canary probe (50.10): `GET https://canary.relay.maktaba.tv/api/health` through the relay, plus `GET https://api.maktaba.tv/readyz`, every 30 s from two outside networks. A minute counts as down when both networks fail it. Planned work counts too. |
+| **Availability (SLO)** | **99.9 %** a month = at most **43.8 min** down | **99.95 %** = 21.9 min | The canary probe (50.10): `GET https://canary.relay.maktaba.tv/api/health` through the relay, plus `GET https://api.maktaba.tv/readyz`, every 30 s from two outside networks. A minute counts as down when both networks fail it. Planned work counts too. A **target, not a promise**: no credit or refund for downtime (§13 decision 1; 50.12). |
 | **RTO, one node lost** | relay and API serving again in **≤ 3 min** (expected ~90 s) | ≤ 30 s (homes already hold a second tunnel) | Failover rehearsal (50.06) and the canary. |
 | **RTO, data centre or zone lost** | ≤ 4 h, by a runbook: restore from backup in another zone or provider, then change DNS | ≤ 1 h | Restore drill (50.09). |
 | **RPO** | **0** while both nodes are healthy (synchronous replication); **≤ 60 s** if both are lost (WAL archived at least every 60 s) | same | Rehearsal checks the last committed row after failover. |
@@ -110,10 +113,10 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | Playback at home (LAN) | Yes: the home signs its own users in. | Yes. A test proves it with the cloud unreachable (50.13). |
 | A user already signed in through Maktaba Cloud | Their home session lasts. | Same. |
 | A **new** sign-in with a Maktaba Cloud account | Fails (the home checks the cloud's assertion). | Still fails, with a clear message suggesting the home password (50.13). |
-| Remote play over the **relay** | Down. | Down only if **both** nodes are down. |
-| Remote play over a **direct** address | In practice never: the home list has a `direct_url` field, but nothing fills it (G14). | Works from the app's **cached** connection list, over HTTPS, with ports opened by UPnP / NAT-PMP (50.13, 50.15). |
+| Remote play over the **relay** (Basic and Pro; Free has no relay) | Down. | Down only if **both** nodes are down. |
+| Remote play over a **direct** address (every plan, Free included) | In practice never: the home list has a `direct_url` field, but nothing fills it (G14). | Works from the app's **cached** connection list, over HTTPS, with ports opened by UPnP / NAT-PMP (50.13, 50.15). |
 | Cloud features on the home (relay plan flags) | 7-day grace on the last signed entitlement. | Same (story 25.26). |
-| Paying, changing plans | Stripe hosts checkout and retries webhooks for 3 days. | Same; nothing lost. |
+| Paying, changing plans | Stripe hosts checkout and retries webhooks for 3 days. | Same; nothing lost. Pay-as-you-go usage queues in Postgres and reaches Stripe later with the same idempotency identifiers (50.19). |
 | Push notifications | Down. | Down; the outbox in Postgres sends them after recovery if they are still within their TTL. |
 
 ### 4.4 Security
@@ -124,7 +127,8 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 - Replication and etcd traffic use TLS and SCRAM, even on the private network.
 - Production lives in **its own Hetzner project**, so the API token on the nodes (needed to
   move the Floating IP) can't touch anything else. The Cloudflare token is scoped to DNS edits
-  on the `maktaba.tv` zone only.
+  on the `maktaba.tv` zone only. The direct-name domains (50.15) are delegated to our own
+  responder, so no token touches them.
 - Backups are encrypted before they leave the machine (pgBackRest `aes-256-cbc`). The key and
   the cloud's own secrets (token secret, entitlement signing key, Stripe keys) are kept in the
   owner's password manager too, never in the repo, never in a backup bucket without
@@ -178,12 +182,13 @@ traffic). Every byte the direct path (50.15) carries instead is a byte we don't 
 |---|---|---|
 | Node A (FSN1) and node B (NBG1) | 2 × CPX22 = €39.98 | 2 × CX33 = €17.98 |
 | Hetzner backups for A and B (20 %) | €8.00 | €3.60 |
-| Witness W (HEL1): etcd member, monitoring, canary home | CPX22 €19.99 | CX23 €5.99 |
+| Witness W (HEL1): etcd member (its only witness job), with monitoring, canary home and restore drill as guests (decided: CPX22 now, §13 decision 3) | CPX22 €19.99 | CPX22 €19.99 (not waiting for CX23) |
 | Floating IPv4 + 3 primary IPv4 | €3.00 + €1.50 | same |
 | Object Storage (backups, HEL1) | €6.49 | same |
-| Second backup copy off Hetzner (Cloudflare R2, ~20 GB) | ~€0.30 | same |
+| Second backup copy off Hetzner (Cloudflare R2, ~20 GB; decided, §13 decision 2) | ~€0.30 | same |
+| Direct-name domains (3–4, registered by the owner, 50.15) | a domain's yearly fee ÷ 12 each, a few euros a month in all | same |
 | Outside probes, status page | €0 (free tiers, see 50.10 / 50.11) | same |
-| **Total** | **≈ €79** | **≈ €39** |
+| **Total** (before the direct-name domains) | **≈ €79** | **≈ €53** |
 
 At 1,000 homes the same layout moves A and B to CPX32 (€35.99 each): **≈ €117 orderable**.
 Traffic (10 TB) fits in the active node's 20 TB.
@@ -206,8 +211,8 @@ Traffic (10 TB) fits in the active node's 20 TB.
 
 | Homes | Ceiling a month (infrastructure + traffic) | Expected |
 |---|---|---|
-| 100 | **€100** | €39–79 |
-| 1,000 | **€250** | €70–117 |
+| 100 | **€100** | €53–79 |
+| 1,000 | **€250** | €84–117 |
 | 10,000 | **€1,000** | ≈ €481 |
 
 The admin revenue page (25.21) alerts when the month's spend passes 80 % of the ceiling for
@@ -310,8 +315,9 @@ Full detail and sources in [research.md](research.md) §2 and §6.
 | | Plex | Maktaba today | Maktaba after this epic |
 |---|---|---|---|
 | Direct remote | UPnP / NAT-PMP, or a manual port; plex.tv checks from outside | `http://<ip>:<port>` if the user forwarded a port | UPnP / NAT-PMP, manual port, outside check, HTTPS (50.15) |
-| HTTPS on the direct path | `*.<hash>.plex.direct` certificate per server, IP-encoded names | none | `*.<home-id>.direct.maktaba.tv` per home, IP-encoded names (50.15) |
-| Relay | fallback, capped at **2 Mbps**; since 2025-04-29 remote play needs a paid pass | fallback, paid plans only, capped by GB a month, no bitrate cap | same, on two nodes, then a pool |
+| HTTPS on the direct path | `*.<hash>.plex.direct` certificate per server, IP-encoded names | none | `*.<home-id>.<direct-domain>` per home, IP-encoded names, on several separate domains so Let's Encrypt's weekly limit is per domain (50.15) |
+| Direct remote, who gets it | since 2025-04-29 remote play needs a paid pass | — | **free on every plan** (50.15) |
+| Relay | fallback, capped at **2 Mbps**; needs a paid pass | fallback, paid plans only, capped by GB a month (then cut off), no bitrate cap | fallback, paid only: **Basic** capped at ~3 Mbps (the home transcodes), **Pro** full quality then Basic's cap; never cut off (50.19); on two nodes, then a pool |
 | How apps choose | connection list from plex.tv, flagged local / remote / relay | home list with `direct_url` and `relay_url`, not cached | connection list cached in the app, ranked local → direct → relay hint → relay (50.13) |
 | When the cloud is down | local sign-in often fails (July 2026: local servers unreachable for ~2 h) | local works; cloud sign-in and remote fail | local works; direct remote works from the cache; relay survives one node |
 | Status page | missed the July 2026 impact | none | driven by the canary probe, English and Arabic (50.11) |
@@ -319,8 +325,9 @@ Full detail and sources in [research.md](research.md) §2 and §6.
 **Copy:** direct first, router setup with an outside check, per-home certificates, a cached
 connection list. **Avoid:** local play depending on the cloud, a status page that's updated
 by hand, one DNS name for direct access with no fallback (Plex's April 2026 `plex.direct`
-fault), and a 2 Mbps relay cap (we charge for the relay, so it must be usable; quality is
-managed by the home's streaming ladder instead).
+fault), and charging for direct remote (ours is free). **Changed by the owner's decision:** we
+copy Plex's relay cap for **Basic** (about 3 Mbps, higher than Plex's 2 Mbps because Basic is
+paid), and Pro is uncapped within its allowance (§13 decision 4).
 
 ## 10. Stories
 
@@ -341,9 +348,10 @@ managed by the home's streaming ladder instead).
 | 50.13 | [Apps ride out a cloud outage](story-50-13-apps-ride-out-outage.md) | 1 | 50.11 |
 | 50.14 | [Load test and sizing](story-50-14-load-test.md) | 1 | 50.06, 50.08 |
 | 50.15 | [Direct remote access, like Plex](story-50-15-direct-remote.md) | 1b | 50.01 |
-| 50.16 | [A pool of relays](story-50-16-relay-pool.md) | 2 | 50.08, 50.14 |
+| 50.16 | [A pool of relays](story-50-16-relay-pool.md) | 2 | 50.08, 50.14, 50.19 |
 | 50.17 | [A stateless API pool](story-50-17-api-pool.md) | 2 | 50.08 |
 | 50.18 | [The database on its own nodes](story-50-18-database-nodes.md) | 2 | 50.09, 50.17 |
+| 50.19 | [Plans: Free, Basic and Pro, enforced by the relay and billed by usage](story-50-19-plans-relay-billing.md) | 1 | 50.04, 50.05 |
 
 ```mermaid
 graph LR
@@ -372,9 +380,13 @@ graph LR
   S08 --> S17[50.17 API pool]
   S09 --> S18[50.18 DB nodes]
   S17 --> S18
+  S04 --> S19[50.19 plans, metering, billing]
+  S05 --> S19
+  S19 --> S16
 ```
 
-Work that can start at once, in parallel: **50.01, 50.03, 50.05** (and 50.15 after 50.01).
+Work that can start at once, in parallel: **50.01, 50.03, 50.05** (and 50.15 after 50.01;
+50.19 after 50.04 and 50.05).
 
 Two edges come from [Epic 53](../53-logs-errors-reports/README.md): 50.10 needs 53.17 (the
 cloud's logs, error groups and application metrics to watch) and 50.11 needs 53.06 (the one
@@ -388,40 +400,84 @@ banner).
 
 Paid plans are switched on only when all of these hold:
 
-1. Stories **50.01 – 50.14** are merged, and their CI rehearsals pass on the deployed sha.
+1. Stories **50.01 – 50.14** and **50.19** are merged, and their CI rehearsals pass on the
+   deployed sha.
 2. The production pair has run for **14 days** with the canary at ≥ 99.9 %, including one
    **planned switchover** and one **forced failover** (power off the leader in the Hetzner
    console, by the owner) that met the RTO.
 3. A **restore** from the off-site backup into a scratch machine has passed, timed against the
    4 h RTO.
 4. The status page, alerts to the owner's phone, and the runbooks in 50.12 are live.
+5. The owner has set the prices, Pro's allowance and stream count, and the prices of a
+   pay-as-you-go GB and an extra stream; the catalog has no `TBD` left (50.19 T12).
 
-50.15 (direct remote) is recommended before launch but doesn't gate it: it cuts relay cost and
-keeps remote play working through a full cloud outage.
+50.15 (direct remote) is recommended before launch but doesn't gate it: it cuts relay cost,
+keeps remote play working through a full cloud outage, and is the only remote play Free homes
+get.
 
 ## 12. What the owner does (nothing here creates or buys anything)
 
 Building this epic calls no Hetzner, Cloudflare, DNS, Stripe or VPS API. The owner, when ready:
 
-1. Creates a Hetzner project for production, the nodes A, B and W, the private network, a
-   Floating IP and an Object Storage bucket (50.07 / 50.09 list the exact settings).
+1. Creates a Hetzner project for production, the nodes A, B and W (W a CPX22), the private
+   network, a Floating IP and an Object Storage bucket, and a Cloudflare R2 bucket for the
+   second backup copy (50.07 / 50.09 list the exact settings).
 2. Creates the scoped API tokens (Hetzner project token; Cloudflare DNS-edit token for
-   `maktaba.tv`; Object Storage keys) and stores them as GitHub `production` environment
-   secrets.
+   `maktaba.tv`; Object Storage and R2 keys) and stores them as GitHub `production`
+   environment secrets.
 3. Points the DNS names in 50.01 at the Floating IP.
 4. Picks the outside probe and status page provider (50.10 / 50.11 recommend free tiers).
+5. Registers the first 3–4 direct-name domains (never under `maktaba.tv`), delegates their `NS`
+   to the responder on A and B, adds their `CAA` records, and lists them in `direct.domains`
+   (50.15 §4); later domains are added the same way, by configuration only.
+6. Sets the prices and Pro's numbers, then creates the Stripe products, the flat prices for
+   Basic and Pro, the Billing Meter and metered price for pay-as-you-go GB, and the per-unit
+   price for extra streams, and puts their IDs in the `production` config (50.19 §6).
 
-## 13. Open questions for the owner
+## 13. Decisions (2026-11-03)
 
-1. **Credits for downtime:** offer paying users a pro-rata credit for a month below 99.9 %?
-   (Recommended: yes, automatic, shown on the status page. 50.12 has the wording.)
-2. **Off-Hetzner backup copy:** Cloudflare R2 (recommended: no egress fees) or none?
-3. **Witness size:** CPX22 (€19.99, orderable) or wait for CX23 (€5.99)?
-4. **Plan limits:** which stream limits are right: the architecture doc's Pro 2 / Family 5, or
-   the code's 1 / 4 / 10 (and the web app's "Home" / "Pro" names)? (G13)
-5. **A separate domain for direct names** (50.15): every home's certificate under
-   `maktaba.tv` counts against Let's Encrypt's 50-a-week limit for that domain. Register a
-   second domain only for direct names (recommended), or ask Let's Encrypt for a higher limit?
-6. **Direct remote on the Free plan?** Plex lets anyone use direct remote, then charged for
-   remote play from 2025. Recommended: direct remote free (it costs us almost nothing), the relay
-   paid.
+The owner's answers to the open questions, applied to the stories above.
+
+1. **Downtime credits: none.** The 99.9 % (Phase 2: 99.95 %) uptime target stays, with its
+   alerts, error budget and postmortems, and the status page publishes the measured figure.
+   But it is a target, not a promise: **no credit, refund or discount** for downtime. 50.12 §5
+   and 50.11 say so in English and Arabic (`uptime.policy`); no credit job, setting or Stripe
+   balance entry exists.
+2. **Off-Hetzner backup copy: yes, Cloudflare R2.** pgBackRest writes every backup and the WAL
+   archive to Hetzner Object Storage (repo1) and to R2 (repo2), each encrypted with its own
+   passphrase; the drill restores from R2 once a month; the encrypted secrets copy is in both
+   (50.09).
+3. **Witness: a Hetzner CPX22 (€19.99 a month), now.** Its witness job is etcd only (the third
+   vote), which needs about 1–2 vCPU, 1–2 GB RAM and ~20 GB disk. Monitoring, the canary home
+   and the restore drill share the machine as guests at lower priority and move off if they
+   ever crowd etcd. **Cloudflare can't host it:** Cloudflare sells no VMs, and Cloudflare Tunnel
+   is only a connector into a machine that already exists (50.07).
+4. **Plans: Free, Basic and Pro.** They replace both the architecture doc's Pro 2 / Family 5
+   and the code's 1 / 4 / 10 with its "Home" / "Pro" names (gap G13). Specced in **50.19**.
+   - **Free:** no relay. Play at home, plus direct remote (decision 6).
+   - **Basic (paid):** relay at capped quality like Plex, about **3 Mbps**; the home transcodes
+     down to it, which costs the home CPU or GPU time while a relayed stream plays (bounded by
+     the stream limit). At most **2 relayed streams** at once. A **500 GB a month fair-use soft
+     limit**: above it streams slow further (to 1.5 Mbps), they don't stop.
+   - **Pro (paid):** full-quality relay with a **monthly GB allowance** and **N relayed
+     streams**. Optional **pay-as-you-go GB**, off by default, with a **spending cap the user
+     sets**. When the allowance and the cap are used up it falls back to Basic's capped quality
+     and never cuts off. **Extra concurrent streams** are a paid add-on.
+   - **Family plan: dropped.** **Prices: TBD by the owner** (with Pro's allowance and N, and the
+     prices of a pay-as-you-go GB and an extra stream); the launch gate (§11) waits for them.
+   - 50.19 specs how the relay enforces each plan (refuse / full / capped / capped-slow, a cap
+     header the home transcodes to, pacing as a backstop, `relay_streams` counting), the
+     metering (bytes per mode per month, Pro's order: allowance, pay-as-you-go, capped), the
+     Stripe billing (a flat price per plan, a usage-based metered price on a Billing Meter for
+     pay-as-you-go, a per-unit price for extra streams), and the migration from today's code
+     names (`pro`→`basic`, then `family`→`pro`; license tier `home` read as `basic` during the
+     grace).
+5. **Direct-connection certificates: several separate direct-name domains, never under
+   `maktaba.tv`.** Start with 3–4. Each has its own Let's Encrypt limit of 50 new certificates a
+   week, so homes are assigned across the domains by the room each has left that week, and
+   adding a domain is configuration only. **ZeroSSL**, then **Google Trust Services**, take the
+   overflow; ask Let's Encrypt for higher limits as growth needs it. Paid per-home certificates
+   ($35–1,000 a year each at retail) were rejected (50.15 §4, 50.01).
+6. **Direct remote on Free: yes, free.** Only the relay is paid. The home never checks its plan
+   for direct access, and a Free home's connection list has local and direct entries only
+   (50.15 §5, 50.13).

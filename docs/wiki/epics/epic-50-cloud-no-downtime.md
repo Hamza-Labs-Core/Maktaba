@@ -16,7 +16,7 @@ of relays** (Phase 2).
 
 | | Phase 1 | Phase 2 |
 |---|---|---|
-| Availability | 99.9 % a month (43.8 min) | 99.95 % (21.9 min) |
+| Availability (a target, no credit for downtime) | 99.9 % a month (43.8 min) | 99.95 % (21.9 min) |
 | One node lost | back in ≤ 3 min, unattended | ≤ 30 s |
 | Data lost on failover | none (synchronous replication) | none |
 | Data lost in a disaster | ≤ 60 s (WAL archive), restore ≤ 4 h | ≤ 60 s, ≤ 1 h |
@@ -29,9 +29,11 @@ of relays** (Phase 2).
   three-member etcd decides the database leader; the leader holds the Floating IP and runs the
   cloud processes. Synchronous replication, a wildcard certificate on each node, blue-green
   deploys where homes move their tunnels before the old process stops, pgBackRest backups to
-  Object Storage, a canary home probed from outside, a status page off Hetzner.
-- **Phase 1b:** direct remote access like Plex: UPnP / NAT-PMP, an outside reachability check,
-  per-home HTTPS names.
+  Object Storage and Cloudflare R2, a canary home probed from outside, a status page off
+  Hetzner, and the Free / Basic / Pro plans enforced by the relay and billed through Stripe.
+- **Phase 1b:** direct remote access like Plex, **free on every plan**: UPnP / NAT-PMP, an
+  outside reachability check, per-home HTTPS names on several separate direct-name domains
+  (never under `maktaba.tv`).
 - **Phase 2:** a relay pool with rendezvous-hash assignment and two tunnels per home, any relay
   forwarding to the one that holds a tunnel, a stateless API pool behind Hetzner LB11, the
   database on three nodes.
@@ -58,12 +60,37 @@ of relays** (Phase 2).
 | 50.16 | [A pool of relays](../../../specs/epics/50-cloud-no-downtime/story-50-16-relay-pool.md) | 2 |
 | 50.17 | [A stateless API pool](../../../specs/epics/50-cloud-no-downtime/story-50-17-api-pool.md) | 2 |
 | 50.18 | [The database on its own nodes](../../../specs/epics/50-cloud-no-downtime/story-50-18-database-nodes.md) | 2 |
+| 50.19 | [Plans: Free, Basic and Pro, enforced by the relay and billed by usage](../../../specs/epics/50-cloud-no-downtime/story-50-19-plans-relay-billing.md) | 1 |
 
 The dependency graph and launch gate are in the [epic README](../../../specs/epics/50-cloud-no-downtime/README.md#10-stories).
 50.10 depends on [Epic 53.17](../../../specs/epics/53-logs-errors-reports/story-53-17-cloud-observability.md)
 (logs, error groups and application metrics of the cloud's processes) and 50.11 on
 [Epic 53.06](../../../specs/epics/53-logs-errors-reports/story-53-06-status-strip.md) (the one
 status strip every app draws).
+
+## Decisions (2026-11-03)
+
+The owner's answers to the epic's open questions (epic README §13):
+
+1. **No downtime credits.** The uptime target stays and is published; it is a target, not a
+   promise, and no credit or refund is given (50.11, 50.12).
+2. **Off-Hetzner backup copy on Cloudflare R2**, beside Hetzner Object Storage (50.09).
+3. **Witness: a Hetzner CPX22 now.** Its witness job is etcd only (about 1–2 vCPU, 1–2 GB RAM,
+   ~20 GB disk). Cloudflare can't host it: it sells no VMs, and Cloudflare Tunnel is only a
+   connector (50.07).
+4. **Plans: Free, Basic, Pro** (50.19), replacing the doc's Pro 2 / Family 5 and the code's
+   1 / 4 / 10 "Home" / "Pro". **Free:** no relay. **Basic:** relay capped at about 3 Mbps (the
+   home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use (then slower,
+   never stopped). **Pro:** full quality within a monthly allowance and N streams, optional
+   pay-as-you-go GB (off by default, capped by the user), then Basic's quality, never cut off;
+   extra streams are a paid add-on. Family is dropped; prices are TBD by the owner. Stripe bills
+   a flat price per plan, a metered price for pay-as-you-go and a per-unit price for extra
+   streams; old code names migrate `pro`→`basic`, `family`→`pro`.
+5. **Direct certificates on several separate domains** (3–4 to start, never under
+   `maktaba.tv`), homes spread across them by each domain's Let's Encrypt weekly room, more
+   domains by configuration only, ZeroSSL / Google Trust Services for overflow. Paid per-home
+   certificates rejected (50.15).
+6. **Direct remote is free on every plan; only the relay is paid** (50.15, 50.13).
 
 ## Key decisions
 
@@ -80,14 +107,18 @@ status strip every app draws).
 - **Hetzner's load balancer can't route by home** (round robin and least connections only, and
   1 TB a month on LB11), so Phase 2 routes in the relay: a tunnel directory and forwarding.
 - **Copy from Plex:** direct first, router setup with an outside check, per-home certificates,
-  a cached connection list. **Avoid:** local play depending on the cloud, a status page updated
-  by hand.
+  a cached connection list, a capped relay on the cheaper paid plan. **Avoid:** local play
+  depending on the cloud, a status page updated by hand, charging for direct remote.
+- **A paid plan never cuts relayed play off**: past its limits it steps down in quality. Only a
+  lapsed plan (no plan) ends relayed play.
 - **Names:** users get `maktaba.tv`, dev gets `maktaba.dev`. `maktaba.app` is not ours; older
-  specs that say it are fixed by story 50.01.
+  specs that say it are fixed by story 50.01. Direct names use their own separate domains.
 
 ## Costs (as of 2026-11-03)
 
 Hetzner raised prices twice in 2026, and its CX and CAX plans say "currently not available".
 Phase 1 is about **€79 a month** with plans that can be ordered today (2 × CPX22 + a CPX22
-witness, backups, Floating IP, Object Storage), or about **€39** if CX/CAX come back. Phase 2
+witness, backups, Floating IP, Object Storage, an R2 copy), or about **€53** if CX/CAX come
+back for A and B (the witness stays a CPX22), plus a few euros a month for the direct-name
+domains. Phase 2
 at about 10,000 homes is about **€481**. Details and sources: epic README §5 and research §4.
