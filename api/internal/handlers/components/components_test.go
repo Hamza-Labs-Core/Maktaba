@@ -37,6 +37,10 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');
 CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL,
 	updated_at TEXT NOT NULL DEFAULT (datetime('now')), updated_by TEXT);
+CREATE TABLE extensions (name TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0,
+	settings TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')));
+CREATE TABLE hdhr_device (id INTEGER PRIMARY KEY DEFAULT 1, device_id TEXT NOT NULL DEFAULT '',
+	enabled INTEGER NOT NULL DEFAULT 0);
 `
 
 func upStatements(sqlText string) []string {

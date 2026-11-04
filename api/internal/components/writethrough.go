@@ -100,12 +100,24 @@ func SetDesiredTx(ctx context.Context, s *store.Store, tx *sql.Tx, d store.Desir
 	if err != nil {
 		return store.Desired{}, err
 	}
-	if m, ok := Mirrors[d.ID]; ok {
-		if err := m.Write(ctx, tx, after.Want == comps.WantEnabled); err != nil {
-			return store.Desired{}, fmt.Errorf("components: the mirror of %s: %w", d.ID, err)
-		}
+	if err := writeMirror(ctx, tx, after); err != nil {
+		return store.Desired{}, err
 	}
 	return after, nil
+}
+
+// writeMirror writes the older switch of the row as written (after), inside tx. A
+// component with no mirror is left alone. The batch writes of Service.Apply (PUT, apply,
+// a bundle) call it for each row, as store.BatchPlan.AfterWrite.
+func writeMirror(ctx context.Context, tx *sql.Tx, after store.Desired) error {
+	m, ok := Mirrors[after.ID]
+	if !ok {
+		return nil
+	}
+	if err := m.Write(ctx, tx, after.Want == comps.WantEnabled); err != nil {
+		return fmt.Errorf("components: the mirror of %s: %w", after.ID, err)
+	}
+	return nil
 }
 
 // SetDesired is SetDesiredTx in a transaction of its own.

@@ -139,7 +139,9 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 				p.writes[i].Audit.BatchID = batch
 			}
 		}
-		return store.BatchPlan{Writes: p.writes, Bundle: p.bundle}, nil
+		// the mirrors (extensions.enabled, hdhr_device.enabled) commit with the rows, so
+		// the pipeline and older clients see the change at once (story 51.07)
+		return store.BatchPlan{Writes: p.writes, Bundle: p.bundle, AfterWrite: writeMirror}, nil
 	})
 	if err != nil {
 		return Result{}, err

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -89,5 +91,49 @@ func TestSetDesiredBatchAllOrNone(t *testing.T) {
 	m, _ := s.Meta(ctx)
 	if n != 0 || a != 0 || m.Bundle != "" || m.Revision != 0 {
 		t.Fatalf("rows %d, audit %d, bundle %q, revision %d after a refused batch", n, a, m.Bundle, m.Revision)
+	}
+}
+
+// AfterWrite runs in the batch's transaction after each row, with the row as written; its
+// error rolls back every row of the batch (story 51.07: the mirrors commit with the rows).
+func TestSetDesiredBatchAfterWriteInTheTransaction(t *testing.T) {
+	db := sqliteDB(t)
+	s := New(db)
+	var seen []Desired
+	if _, err := s.SetDesiredBatch(ctx, func(map[string]Desired, int64) (BatchPlan, error) {
+		return BatchPlan{Writes: []BatchWrite{
+			{Desired{ID: "llm", Want: components.WantEnabled}, audit("component.enable")},
+			{Desired{ID: "youtube", Want: components.WantInstalled}, audit("component.disable")},
+		}, AfterWrite: func(ctx context.Context, tx *sql.Tx, d Desired) error {
+			var n int
+			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM components WHERE id = $1`, d.ID).Scan(&n); err != nil || n != 1 {
+				t.Errorf("%s not visible in the transaction: %d %v", d.ID, n, err)
+			}
+			seen = append(seen, d)
+			return nil
+		}}, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != 2 || seen[0].ID != "llm" || seen[0].Generation != 1 || seen[1].Want != components.WantInstalled {
+		t.Fatalf("AfterWrite saw %+v", seen)
+	}
+	failed := errors.New("mirror failed")
+	_, err := s.SetDesiredBatch(ctx, func(map[string]Desired, int64) (BatchPlan, error) {
+		return BatchPlan{Writes: []BatchWrite{
+			{Desired{ID: "llm", Want: components.WantInstalled}, audit("component.disable")},
+			{Desired{ID: "youtube", Want: components.WantEnabled}, audit("component.enable")},
+		}, AfterWrite: func(_ context.Context, _ *sql.Tx, d Desired) error {
+			if d.ID == "youtube" {
+				return failed
+			}
+			return nil
+		}}, nil
+	})
+	if !errors.Is(err, failed) {
+		t.Fatalf("answered %v", err)
+	}
+	if d, _ := s.DesiredOf(ctx, "llm"); d.Want != components.WantEnabled {
+		t.Fatalf("llm written although the batch failed: %+v", d)
 	}
 }
