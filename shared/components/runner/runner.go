@@ -270,6 +270,10 @@ func (r *Runner) On(id string) bool {
 	return ok && g.on
 }
 
+// Machine is the machine whose desired state r follows (store.Home, or a joined
+// machine's cluster_nodes id).
+func (r *Runner) Machine() string { return r.machine }
+
 // Declared are the loop names declared so far, sorted.
 func (r *Runner) Declared() []string {
 	if r == nil {

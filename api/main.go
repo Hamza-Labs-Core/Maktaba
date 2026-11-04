@@ -326,7 +326,7 @@ func runServe() error {
 	// with handler or readiness pools.
 	// Epic 51 story 51.05: the background loops start and stop with their catalog
 	// component. Until the home's database is read every component is on, as before.
-	loops := components.NewRunner(logger)
+	loops := components.NewRunnerFor(logger, nodeMachine(nodeCfg))
 
 	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger, nodeCfg.Enabled)
 	loops.Declare("idempotency_sweep", runner.Func(func(context.Context) { idemSweep() }))
@@ -438,7 +438,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
 		if err != nil {
 			return err
 		}

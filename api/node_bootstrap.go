@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/vodfallback"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/clusterauth"
@@ -59,6 +60,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // nodeDBs are a full node's databases: the pair its handlers use (reads on the copy,
@@ -820,11 +822,20 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logge
 	safego.Go(logger, "cluster_copies", func() { copies.Run(context.Background()) })
 }
 
+// nodeMachine is this machine's id in the components' desired state: the node's, or ""
+// (the home).
+func nodeMachine(cfg nodemode.Config) string {
+	if cfg.Enabled {
+		return cfg.NodeID
+	}
+	return ""
+}
+
 // mountNode opens the home's database with the node's role, and this machine's copy of
 // it, and mounts what a full node serves itself: the library and queue reads (`any`),
 // the guide reads, this machine's routes (`local`); everything else is proxied to the
 // home.
-func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.Logger) (*nodeRuntime, func(), error) {
+func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, loops *runner.Runner, logger *slog.Logger) (*nodeRuntime, func(), error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return nil, nil, fmt.Errorf("node mode needs the home's database (DATABASE_URL, the node role's from node.json)")
@@ -848,6 +859,9 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 		dbs.close()
 		return nil, nil, err
 	}
+	// Epic 51: this machine's loops follow its own desired state (the home's with this
+	// machine's overrides), read from the home's database with the node's login
+	components.Start(loops, dbs.home, pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping), logger)
 	var streamingClient grpcstreaming.Client
 	if addr := os.Getenv("MAKTABA_STREAMING_ADDR"); addr != "" {
 		c := grpcstreaming.DefaultConfig()
