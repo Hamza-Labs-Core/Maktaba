@@ -70,6 +70,7 @@ import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.OnReselect
 import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 import com.hamzalabs.maktaba.player.shell.Route
+import com.hamzalabs.maktaba.player.shell.features
 import com.hamzalabs.maktaba.player.ui.components.Hero
 import com.hamzalabs.maktaba.player.ui.components.HeroPlaceholder
 import com.hamzalabs.maktaba.player.ui.components.Loading
@@ -112,6 +113,7 @@ fun HomeScreen(nav: PlayerNavigator) {
         admin = home.user.isAdmin,
         onSwitchHome = home.session::switchHome,
         onSignOut = home.session::signOut,
+        liveOn = home.features().isOn(Feature.LIVE_TV),
     )
 }
 
@@ -124,6 +126,7 @@ internal fun HomeContent(
     admin: Boolean,
     onSwitchHome: () -> Unit,
     onSignOut: () -> Unit,
+    liveOn: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val list = rememberLazyListState()
@@ -141,6 +144,9 @@ internal fun HomeContent(
     var pulling by remember { mutableStateOf(false) }
     val rails = state.rails
     val problem = state.problem
+    // with Live TV off no channel row, read at each draw: channels read before the home's first
+    // answer said it is off go when it does (story 51.11, as the Apple Player's Home)
+    val rows = if (liveOn) state.rows else state.rows.filter { it.key != KEY_LIVE }
     Box(Modifier.fillMaxSize().testTag("home")) {
         PullToRefreshBox(
             isRefreshing = pulling,
@@ -178,7 +184,7 @@ internal fun HomeContent(
                     if (panes is Panes.Book) {
                         // held like a book: the hero and the first rows on the start page, the
                         // rest on the other, read like a book's two pages; nothing under the hinge
-                        val (startRows, endRows) = bookPages(state.rows, hero = rails.featured != null)
+                        val (startRows, endRows) = bookPages(rows, hero = rails.featured != null)
                         HingeSplit(
                             panes,
                             first = {
@@ -189,7 +195,7 @@ internal fun HomeContent(
                             },
                         )
                     } else {
-                        HomeRows(state, state.rows, rails.featured, client, nav, list, Modifier.testTag("home-rows"), notInterested)
+                        HomeRows(state, rows, rails.featured, client, nav, list, Modifier.testTag("home-rows"), notInterested)
                     }
                 }
             }
