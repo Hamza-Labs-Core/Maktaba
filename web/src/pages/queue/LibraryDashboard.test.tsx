@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 import { Route, useLocation } from "react-router-dom";
 
 const { get, post, put, patch, del, hub } = vi.hoisted(() => {
@@ -193,6 +194,53 @@ describe("LibraryDashboard", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await userEvent.click(screen.getByRole("link", { name: /Archive/ }));
     expect(await screen.findByText("library page")).toBeInTheDocument();
+  });
+
+  // a board read on its way when a source is removed in the dialog still counts
+  // the source: its answer must not bring the old count back
+  it("a board read that began before a source was removed does not bring its count back", async () => {
+    const older = deferred<unknown>();
+    const fewer = {
+      ...summaries,
+      items: summaries.items.map((s) =>
+        s.library_id === "lib-2" ? { ...s, youtube: { ...s.youtube, sources: 2 } } : s
+      ),
+    };
+    // the first read, the one after Refresh (held), then the reads after the removal
+    const answers: unknown[] = [summaries, older.promise];
+    open({
+      "/api/queues/offline-summary": () => (answers.length ? answers.shift() : fewer),
+      "/api/libraries/lib-2/youtube/sources": () => ({
+        items: del.mock.calls.length ? [] : [source({ library_id: "lib-2" })],
+      }),
+    });
+    del.mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const badge = (n: number) =>
+      screen.queryByRole("button", {
+        name: `YouTube sources of قصة وآية: all ${n} off. Open them`,
+      });
+    await waitFor(() => expect(badge(3)).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect(get.mock.calls.filter((c) => c[0] === "/api/queues/offline-summary")).toHaveLength(2)
+    );
+
+    await userEvent.click(badge(3)!);
+    const dlg = await screen.findByRole("dialog");
+    await userEvent.click(
+      await within(dlg).findByRole("button", { name: "Remove UCaaaaaaaaaaaaaaaaaaaaaa" })
+    );
+    expect(del).toHaveBeenCalled();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(badge(2)).not.toBeNull());
+
+    older.resolve(summaries);
+    await act(async () => {
+      await older.promise;
+    });
+    expect(badge(2)).not.toBeNull();
+    expect(badge(3)).toBeNull();
   });
 
   it("without the summaries hides the filters that need them, and the badges", async () => {

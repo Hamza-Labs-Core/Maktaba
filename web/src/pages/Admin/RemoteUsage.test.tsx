@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -11,6 +11,7 @@ vi.mock("../../lib/api", async () => {
 import { I18nProvider } from "../../lib/i18n";
 import { RemoteUsage } from "./RemoteUsage";
 import type { RemoteControllerStatus } from "../../lib/tvRemoteApi";
+import { type Deferred, deferred } from "../../test/deferred";
 
 const remote: RemoteControllerStatus = {
   ready: true,
@@ -82,6 +83,42 @@ describe("RemoteUsage", () => {
     expect(screen.getByText(/Stored minutes: 610 of 1000/)).toBeInTheDocument();
     expect(screen.getByText(/no room for another broadcast/)).toBeInTheDocument();
     expect(screen.getByText(/no audio-only saving/)).toBeInTheDocument();
+  });
+
+  it("a push stopped stays stopped when a read begun before the stop lands last", async () => {
+    const two = {
+      ...remote,
+      pushes: [
+        remote.pushes[0]!,
+        { ...remote.pushes[0]!, id: "p2", channel_id: "7a2d0b3f-0000-4000-8000-000000000102" },
+      ],
+    };
+    const reads: Deferred[] = [];
+    get
+      .mockResolvedValueOnce({ integration: {}, remote: two })
+      .mockImplementationOnce(() => {
+        const d = deferred();
+        reads.push(d);
+        return d.promise;
+      })
+      .mockResolvedValue({ integration: {}, remote: { ...two, pushes: [] } });
+    post.mockResolvedValue(undefined);
+    render(
+      <I18nProvider>
+        <RemoteUsage />
+      </I18nProvider>
+    );
+    const user = userEvent.setup();
+    await screen.findByText("6f1c9a2e");
+    // p1 stopped: the list is read again, and that read is held
+    await user.click(screen.getAllByRole("button", { name: "Stop" })[0]!);
+    await waitFor(() => expect(reads).toHaveLength(1));
+    // p2 stopped: the read after it answers with neither running
+    await user.click(screen.getAllByRole("button", { name: "Stop" })[1]!);
+    expect(post).toHaveBeenCalledWith("/api/tv/remote/pushes/p2/stop");
+    await waitFor(() => expect(screen.queryByText("7a2d0b3f")).toBeNull());
+    await act(async () => reads[0]!.resolve({ integration: {}, remote: two }));
+    expect(screen.queryByText("7a2d0b3f")).toBeNull();
   });
 
   it("stops a push and rotates the signing key after confirmation", async () => {

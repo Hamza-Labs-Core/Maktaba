@@ -9,6 +9,7 @@ import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { PRODUCTION_STYLES, queueApi } from "../../lib/queueApi";
 import type { LibraryQueueRow, ProductionStyle, SeasonStyle } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import { useAction } from "./useAction";
 
 interface SeriesGroup {
@@ -48,17 +49,28 @@ export function StylePanel({
   const [items, setItems] = useState<SeasonStyle[] | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
   const groups = useMemo(() => groupBySeries(items ?? []), [items]);
+  // the Finds and the pins made here, in order: a Find that began before a pin
+  // (its answer still has the old style), or older than the one shown, is dropped
+  const order = useReadOrder();
 
   async function find() {
     setSaved(null);
-    const r = await run("find", () =>
-      queueApi.seasonStyles({
-        libraryId: library || undefined,
-        q: text.trim() || undefined,
-        pinned: pinnedOnly,
-        limit: 100,
-      })
-    );
+    const ticket = order.begin();
+    const r = await run("find", async () => {
+      try {
+        const found = await queueApi.seasonStyles({
+          libraryId: library || undefined,
+          q: text.trim() || undefined,
+          pinned: pinnedOnly,
+          limit: 100,
+        });
+        return order.fresh(ticket) ? found : undefined;
+      } catch (e) {
+        // a Find a newer answer or a pin replaced says nothing, not even its failure
+        if (order.fresh(ticket)) throw e;
+        return undefined;
+      }
+    });
     if (r) setItems(r.items ?? []);
   }
 
@@ -70,7 +82,9 @@ export function StylePanel({
 
   async function pinSeason(s: SeasonStyle, value: string) {
     const style = (value || null) as ProductionStyle | null;
-    const r = await run(s.season_id, () => queueApi.putSeasonStyle(s.season_id, style));
+    const r = await run(s.season_id, () =>
+      order.saving(() => queueApi.putSeasonStyle(s.season_id, style))
+    );
     if (r) {
       apply(new Set([s.season_id]), style);
       setSaved(
@@ -84,7 +98,7 @@ export function StylePanel({
   async function pinSeries(g: SeriesGroup, value: string) {
     if (value === "keep") return;
     const style = (value || null) as ProductionStyle | null;
-    const r = await run(g.id, () => queueApi.putSeriesStyle(g.id, style));
+    const r = await run(g.id, () => order.saving(() => queueApi.putSeriesStyle(g.id, style)));
     if (r) {
       apply(new Set(g.seasons.map((s) => s.season_id)), style);
       setSaved(

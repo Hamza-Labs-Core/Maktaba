@@ -8,6 +8,7 @@ import type { KeptPlan, SwitchProgress, SwitchStatus } from "../../lib/clusterAp
 import { ApiError } from "../../lib/api";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { axeViolations } from "../../test/axe";
+import { type Deferred, deferred } from "../../test/deferred";
 
 const { get, post, put } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -429,6 +430,87 @@ describe("Switching the home", () => {
     expect(
       within(screen.getByRole("dialog")).getByRole("button", { name: "Apply 0" })
     ).toBeDisabled();
+  });
+
+  describe("a change is not undone by a poll that began before it", () => {
+    /** The first read answers `first`; every later one is held for the test. */
+    function holdPolls(first: SwitchStatus) {
+      const reads: Deferred<SwitchStatus>[] = [];
+      get.mockResolvedValueOnce(first).mockImplementation(() => {
+        const d = deferred<SwitchStatus>();
+        reads.push(d);
+        return d.promise;
+      });
+      return reads;
+    }
+    const report = (state: "reported" | "dismissed") =>
+      status({
+        reports: [
+          {
+            id: "r1",
+            term: 2,
+            from_name: "Living Room PC",
+            state,
+            lost: false,
+            received_at: "2026-10-21T09:30:00Z",
+            applied_at: state === "dismissed" ? "2026-10-21T09:40:00Z" : null,
+            changes: 2,
+            transactions: 2,
+          },
+        ],
+      });
+
+    it("a switch called off stays off", async () => {
+      const reads = holdPolls(status({ current: progress() }));
+      post.mockResolvedValue({ state: "calling_off" });
+      renderCard();
+      const go = await screen.findByRole("button", { name: "Call the switch off" });
+      await act(async () => vi.advanceTimersByTimeAsync(SWITCH_POLL_MS));
+      expect(reads).toHaveLength(1);
+      fireEvent.click(go);
+      fireEvent.click(
+        within(screen.getByRole("dialog")).getByRole("button", { name: "Call it off" })
+      );
+      await vi.waitFor(() => expect(reads).toHaveLength(2));
+      await act(async () =>
+        reads[1]!.resolve(status({ current: progress({ state: "cancelled" }) }))
+      );
+      expect(screen.queryByRole("button", { name: "Call the switch off" })).toBeNull();
+      await act(async () => reads[0]!.resolve(status({ current: progress() })));
+      expect(screen.queryByRole("button", { name: "Call the switch off" })).toBeNull();
+    });
+
+    it("a standby mark shows the home's answer at once and stays", async () => {
+      const nas = (standby: boolean) =>
+        status({ standbys: [{ node_id: "n-nas", name: "NAS", standby, can: true }] });
+      const reads = holdPolls(nas(false));
+      put.mockResolvedValue({ standbys: nas(true).standbys });
+      renderCard();
+      const sw = await screen.findByRole("switch", { name: /NAS/ });
+      await act(async () => vi.advanceTimersByTimeAsync(SWITCH_POLL_MS));
+      expect(reads).toHaveLength(1);
+      fireEvent.click(sw);
+      // the home's answer is shown, not read again
+      await vi.waitFor(() => expect(screen.getByRole("switch", { name: /NAS/ })).toBeChecked());
+      await act(async () => reads[0]!.resolve(nas(false)));
+      expect(screen.getByRole("switch", { name: /NAS/ })).toBeChecked();
+    });
+
+    it("a report set aside stays set aside", async () => {
+      const reads = holdPolls(report("reported"));
+      post.mockResolvedValue({});
+      renderCard();
+      const dismiss = await screen.findByRole("button", { name: "Set aside" });
+      await act(async () => vi.advanceTimersByTimeAsync(SWITCH_POLL_MS));
+      expect(reads).toHaveLength(1);
+      fireEvent.click(dismiss);
+      await vi.waitFor(() => expect(reads).toHaveLength(2));
+      expect(post.mock.calls[0]![0]).toBe("/api/cluster/kept-aside/r1/dismiss");
+      await act(async () => reads[1]!.resolve(report("dismissed")));
+      expect(screen.queryByRole("button", { name: "Set aside" })).toBeNull();
+      await act(async () => reads[0]!.resolve(report("reported")));
+      expect(screen.queryByRole("button", { name: "Set aside" })).toBeNull();
+    });
   });
 
   it("says when switching isn't available", async () => {

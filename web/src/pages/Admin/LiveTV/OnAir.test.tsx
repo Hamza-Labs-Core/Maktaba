@@ -2,18 +2,21 @@
 // viewers; Move opens a host picker (online, not draining, or Automatic) and
 // POSTs the move; Stop asks first, then DELETEs the placement; Arabic renders.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../../lib/i18n";
 
-const { post, del } = vi.hoisted(() => ({ post: vi.fn(), del: vi.fn() }));
+const { get, post, del } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), del: vi.fn() }));
 vi.mock("../../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../../lib/api")>("../../../lib/api");
-  return { ...actual, api: { ...actual.api, post, delete: del } };
+  return { ...actual, api: { ...actual.api, get, post, delete: del } };
 });
 
 import { OnAir } from "./OnAir";
 import { clusterView } from "./fixtures";
+import type { TvClusterView } from "../../../lib/tvClusterApi";
+import { CLUSTER_POLL_MS, useTvCluster } from "./useTvCluster";
+import { deferred } from "../../../test/deferred";
 
 function renderOnAir(onChanged = vi.fn()) {
   render(
@@ -29,6 +32,7 @@ const row = (name: string) => screen.getByRole("cell", { name }).closest("tr") a
 describe("OnAir", () => {
   beforeEach(() => {
     localStorage.clear();
+    get.mockReset();
     post.mockReset();
     del.mockReset();
     post.mockResolvedValue({ channel_id: "c1", host_id: "h-pc", generation: 43 });
@@ -99,6 +103,42 @@ describe("OnAir", () => {
     expect(del).toHaveBeenCalledWith("/api/tv/cluster/channels/c1/placement");
     expect(onChanged).toHaveBeenCalled();
     expect(await screen.findByText("Seerah stopped.")).toBeInTheDocument();
+  });
+
+  it("a channel stopped while the page reads again stays stopped (useTvCluster)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const stopped = clusterView();
+      stopped.on_air = stopped.on_air.filter((c) => c.channel_id !== "c1");
+      const poll = deferred<TvClusterView>();
+      get
+        .mockResolvedValueOnce(clusterView())
+        .mockReturnValueOnce(poll.promise)
+        .mockResolvedValue(stopped);
+      function Wired() {
+        const c = useTvCluster();
+        return c.view ? <OnAir view={c.view} onChanged={c.reload} save={c.save} /> : null;
+      }
+      render(
+        <I18nProvider>
+          <Wired />
+        </I18nProvider>
+      );
+      await screen.findByRole("button", { name: "Stop Seerah" });
+      await act(async () => vi.advanceTimersByTimeAsync(CLUSTER_POLL_MS));
+      expect(get).toHaveBeenCalledTimes(2);
+      await userEvent.click(screen.getByRole("button", { name: "Stop Seerah" }));
+      await userEvent.click(
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "Stop" })
+      );
+      expect(del).toHaveBeenCalledWith("/api/tv/cluster/channels/c1/placement");
+      await vi.waitFor(() => expect(screen.queryByRole("cell", { name: "Seerah" })).toBeNull());
+      // the read begun before the stop lands last, with the channel still on air
+      await act(async () => poll.resolve(clusterView()));
+      expect(screen.queryByRole("cell", { name: "Seerah" })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders in Arabic", async () => {

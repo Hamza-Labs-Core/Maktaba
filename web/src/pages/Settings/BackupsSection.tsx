@@ -16,6 +16,7 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { ApiError } from "../../lib/api";
 import { formatBytes } from "../../lib/desktopSetup";
 import { useI18n } from "../../lib/i18n";
+import { useReadOrder } from "../../lib/readOrder";
 import { fieldErrors, problemMessage } from "../../lib/libraryAdminApi";
 import {
   HOURS,
@@ -121,6 +122,9 @@ export function BackupsSection({
   const [deleting, setDeleting] = useState<BackupDump | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  // A read begun before a dump was deleted (or the settings saved) still has
+  // the old list: it is dropped (lib/readOrder).
+  const order = useReadOrder();
 
   const show = useCallback(
     (d: BackupsDoc, resetForm: boolean) => {
@@ -135,11 +139,16 @@ export function BackupsSection({
 
   const load = useCallback(() => {
     setError(null);
+    const ticket = order.begin();
     serverSettingsApi
       .backups()
-      .then((d) => show(d, true))
-      .catch((e) => setError(problemMessage(e, t("common.error"))));
-  }, [show, t]);
+      .then((d) => {
+        if (order.fresh(ticket)) show(d, true);
+      })
+      .catch((e) => {
+        if (order.fresh(ticket)) setError(problemMessage(e, t("common.error")));
+      });
+  }, [show, t, order]);
   useEffect(load, [load]);
 
   if (error) {
@@ -190,7 +199,7 @@ export function BackupsSection({
     setErrors({});
     setFormError(null);
     try {
-      show(await serverSettingsApi.saveBackups(body), true);
+      show(await order.saving(() => serverSettingsApi.saveBackups(body)), true);
       setSaved(true);
     } catch (e) {
       const next: Record<string, string> = {};
@@ -235,15 +244,18 @@ export function BackupsSection({
     setDeleteBusy(true);
     setDeleteError(null);
     try {
-      show(await serverSettingsApi.deleteDump(deleting.name), false);
+      show(await order.saving(() => serverSettingsApi.deleteDump(deleting.name)), false);
       setDeleting(null);
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
         // gone already: show the dumps there are now
         setDeleting(null);
+        const ticket = order.begin();
         serverSettingsApi
           .backups()
-          .then((d) => show(d, false))
+          .then((d) => {
+            if (order.fresh(ticket)) show(d, false);
+          })
           .catch(() => undefined);
       } else if (e instanceof ApiError && e.status === 409) {
         setDeleteError(t("storage.backups.deleteInUse"));

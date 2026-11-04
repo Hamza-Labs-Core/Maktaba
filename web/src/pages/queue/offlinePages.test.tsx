@@ -2,8 +2,9 @@
 // action, the failures page's new reasons and Restore, admin-only rendering,
 // and axe.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 
 const { get, post, admin } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -22,7 +23,7 @@ import { Failures } from "./Failures";
 import { renderAt, routeGet } from "../../test/queueHarness";
 import { axeViolations } from "../../test/axe";
 import { LIB, fileAction, group, offlineItem, trash } from "../../test/fixtures/offline";
-import type { FailureItem } from "../../lib/queueApi";
+import type { DuplicateGroup, FailureItem } from "../../lib/queueApi";
 
 beforeEach(() => {
   get.mockReset();
@@ -162,6 +163,102 @@ describe("/queue/duplicates", () => {
     renderAt(<Duplicates />, "/queue/duplicates");
     expect(screen.queryByRole("article")).toBeNull();
     expect(get).not.toHaveBeenCalled();
+  });
+});
+
+// A read still on its way when a group is dismissed or applied lists the group
+// as open: it must not bring it back once the home has the decision.
+describe("/queue/duplicates, reads and decisions in order", () => {
+  const a = group({ id: "ga" });
+  const b = group({
+    id: "gb",
+    members: group().members.map((m, i) => ({
+      ...m,
+      video_id: `v-b-${i}`,
+      title: `Badr ${i + 1}`,
+    })),
+  });
+  // a group's heading is its keeper's title, bidi-isolated
+  const titled = (title: string) => new RegExp(`^\\W*${title}\\W*$`);
+  const shown = (g: DuplicateGroup) =>
+    screen.queryByRole("article", { name: titled(g.members[0].title ?? "") });
+  function answering(...answers: Promise<unknown>[]) {
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [], next: null }));
+  }
+  const settle = async (d: { promise: Promise<unknown> }) =>
+    act(async () => {
+      await d.promise;
+    });
+
+  it("a read that began before a Dismiss does not bring the group back", async () => {
+    const older = deferred<unknown>();
+    // the first read, the one after Apply on b (held), the one after Dismiss on a
+    answering(
+      Promise.resolve({ items: [a, b], next: null }),
+      older.promise,
+      Promise.resolve({ items: [{ ...b, status: "applied" }], next: null })
+    );
+    post.mockResolvedValue({ job_id: 1 });
+    renderAt(<Duplicates />, "/queue/duplicates");
+    await userEvent.click(
+      within(await screen.findByRole("article", { name: titled("Badr 1") })).getByRole("button", {
+        name: "Apply",
+      })
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await userEvent.click(within(shown(a)!).getByRole("button", { name: "Dismiss" }));
+    expect(post).toHaveBeenLastCalledWith(`/api/queues/duplicates/${a.id}/dismiss`);
+    await waitFor(() => expect(shown(a)).toBeNull());
+
+    older.resolve({ items: [a, b], next: null });
+    await settle(older);
+    expect(shown(a)).toBeNull();
+  });
+
+  it("a read that began before an Apply does not offer the group again", async () => {
+    const older = deferred<unknown>();
+    answering(
+      Promise.resolve({ items: [a, b], next: null }),
+      older.promise,
+      Promise.resolve({ items: [], next: null })
+    );
+    post.mockResolvedValue({ job_id: 1 });
+    renderAt(<Duplicates />, "/queue/duplicates");
+    await userEvent.click(
+      within(await screen.findByRole("article", { name: titled("Badr 1") })).getByRole("button", {
+        name: "Dismiss",
+      })
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await userEvent.click(within(shown(a)!).getByRole("button", { name: "Apply" }));
+    expect(post).toHaveBeenLastCalledWith(`/api/queues/duplicates/${a.id}/apply`, {
+      keeper_video_id: a.members[0].video_id,
+    });
+    expect(await screen.findByText("No duplicate groups match.")).toBeInTheDocument();
+
+    older.resolve({ items: [a, b], next: null });
+    await settle(older);
+    expect(shown(a)).toBeNull();
+    expect(shown(b)).toBeNull();
+  });
+
+  it("Show more read before a Dismiss does not append its older page", async () => {
+    const page2 = deferred<unknown>();
+    answering(
+      Promise.resolve({ items: [a], next: "c1" }),
+      page2.promise,
+      Promise.resolve({ items: [], next: null })
+    );
+    post.mockResolvedValue({ job_id: 1 });
+    renderAt(<Duplicates />, "/queue/duplicates");
+    await userEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    expect(get).toHaveBeenCalledTimes(2);
+    await userEvent.click(within(shown(a)!).getByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(shown(a)).toBeNull());
+
+    page2.resolve({ items: [b], next: null });
+    await settle(page2);
+    expect(shown(b)).toBeNull();
   });
 });
 

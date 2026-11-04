@@ -131,7 +131,11 @@ final class PlayerWatchUITests: PlayerUITestCase {
         let before = Int(state["position"] ?? "") ?? 0
         app.buttons["player.quality.3000"].tap()
         waitFor("a session capped at 3000 kb/s") { sessions().contains { $0["max_bitrate_kbps"] as? Int == 3000 } }
-        waitFor("it plays on, capped") { state["quality"] == "3000" && state["playing"] == "true" }
+        // the capped item reports playing before its seek to the start lands (position 0 on
+        // an iPad run of #624): its position is read once it has moved off 0
+        waitFor("it plays on, capped") {
+            state["quality"] == "3000" && state["playing"] == "true" && (Int(state["position"] ?? "") ?? 0) > 0
+        }
         let after = Int(state["position"] ?? "") ?? 0
         let reopened = try XCTUnwrap(sessions().last)
         XCTAssertEqual(reopened["video_id"] as? String, "v2")

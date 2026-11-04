@@ -55,6 +55,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -435,6 +438,72 @@ class ProfileScreenTest {
         // the rows stay; the failure is a snackbar, not the page's error
         compose.onNodeWithTag("history-v2").assertExists()
         compose.onNodeWithTag("history-v4").assertExists()
+    }
+
+    // ---------- a change while the list is read again (the read's older answer must not undo it) ----------
+
+    /** Shows [page] ([tag] on it), then shows it again with its read of [path] held. */
+    private fun shownAgainHeld(page: String, tag: String, path: String, body: String): FakeHome.Held {
+        open()
+        row(page).performClick()
+        waitForTag(tag)
+        // answered as the home has it when asked, held
+        val held = home.hold(path) { json(body) }
+        compose.onNodeWithTag("section-Home").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("section-Profile").performClick()
+        compose.settledUntil(5_000) { held.wasAsked }
+        return held
+    }
+
+    /** The held read is let go and answered: the home has nothing more under way. */
+    private fun answered(held: FakeHome.Held) {
+        held.release()
+        compose.registerIdlingResource(home.idling)
+        compose.waitForIdle()
+        gone("revalidating")
+    }
+
+    @Test
+    fun aHistoryRowForgottenWhileTheHistoryIsReadAgainStaysGone() {
+        val held = shownAgainHeld("profile-history", "history-v2", "/api/me/history", ProfileHome.HISTORY)
+        compose.onNodeWithTag("history-remove-v2").performClick()
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/history/v2" } }
+        gone("history-v2")
+
+        answered(held)
+        assertTrue("the forgotten row stays gone", compose.onAllNodes(hasTestTag("history-v2")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("history-v1").assertExists()
+    }
+
+    @Test
+    fun aSessionSignedOutWhileTheSessionsAreReadAgainStaysGone() {
+        val held = shownAgainHeld("profile-sessions", "session-s1", "/api/me/sessions", ProfileHome.SESSIONS)
+        compose.onNodeWithTag("session-sign-out-s1").performClick()
+        compose.settledUntil(5_000) { home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/me/sessions/s1" } }
+        gone("session-s1")
+
+        answered(held)
+        assertTrue("the signed-out session stays gone", compose.onAllNodes(hasTestTag("session-s1")).fetchSemanticsNodes().isEmpty())
+        compose.onNodeWithTag("session-s2").assertExists()
+    }
+
+    @Test
+    fun loadMoreAnsweredAfterARowIsForgottenDoesNotPutItBack() = runBlocking {
+        val more = """{"items":[{"video_id":"v5","title":"Andalusia, a History","duration_sec":2700,"times_watched":1,"total_watch_sec":300,"best_percent":10,"last_watched_at":"2026-10-10T09:00:00Z","position_sec":300,"completed":false}],"limit":50,"offset":3}"""
+        val state = ProfileState(home.home.client) {}
+        state.loadHistory()
+        // Load more: answered as the home has it when asked, held
+        val held = home.hold("/api/me/history") { r -> json(if (r.url.queryParameter("offset") != null) more else ProfileHome.HISTORY) }
+        val page = launch { state.moreHistory() }
+        withContext(Dispatchers.IO) { held.awaitAsked() }
+        state.forget((state.history as Load.Ready).value.first { it.videoId == "v2" })
+
+        held.release()
+        page.join()
+        val shown = (state.history as Load.Ready).value.map { it.videoId }
+        assertTrue("the forgotten row stays gone: $shown", "v2" !in shown)
+        assertEquals(null, state.problem)
     }
 }
 

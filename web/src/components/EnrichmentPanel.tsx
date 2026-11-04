@@ -29,6 +29,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api, ApiError } from "../lib/api";
 import { lookupMessage, useI18n } from "../lib/i18n";
 import { VIDEO_ANSWERS, forgetAnswers } from "../lib/pageCache";
+import { useReadOrder } from "../lib/readOrder";
 import { LinesPlaceholder, Loading } from "./Placeholders";
 
 interface FieldDiff {
@@ -111,24 +112,33 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
 
+  // the reads (the first, the poll while a search runs) and the decisions made
+  // here, in order: a read that began before an accept / dismiss / revert / search
+  // (its answer still has the old candidates), or older than the one shown, is dropped
+  const order = useReadOrder();
+
   const load = useCallback(() => {
+    const ticket = order.begin();
     api
       .get<{ candidates: Candidate[]; job?: Job | null; revertable?: string[] | null }>(
         `/api/videos/${encodeURIComponent(videoId)}/enrichment`
       )
       .then((r) => {
+        if (!order.fresh(ticket)) return;
         setCandidates(suggestions(r.candidates));
         setJob(r.job ?? null);
         setRevertable(r.revertable ?? []);
       })
-      .catch(() => setCandidates([]));
-  }, [videoId]);
+      .catch(() => order.fresh(ticket) && setCandidates([]));
+  }, [videoId, order]);
 
   useEffect(() => {
     setCandidates(null);
     setJob(null);
+    // another video's answer still on its way is not this one's
+    order.changed();
     load();
-  }, [load]);
+  }, [load, order]);
 
   // poll while the search runs (the engine's enrich job)
   useEffect(() => {
@@ -137,18 +147,24 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
     return () => window.clearTimeout(id);
   }, [job, load]);
 
-  const fail = (e: unknown) =>
+  const fail = (e: unknown) => {
     toast.show({
       message: e instanceof ApiError ? e.problem.title : t("common.error"),
       tone: "error",
     });
+    // a poll the failed change made stale was dropped: read again so a running
+    // search keeps being followed
+    if (isBusy(job)) load();
+  };
 
   async function accept(c: Candidate) {
     setBusy(true);
     try {
-      await api.post(`/api/videos/${encodeURIComponent(videoId)}/enrichment/accept`, {
-        external_id: c.external_id,
-      });
+      await order.saving(() =>
+        api.post(`/api/videos/${encodeURIComponent(videoId)}/enrichment/accept`, {
+          external_id: c.external_id,
+        })
+      );
       toast.show({ message: t("enrich.accepted"), tone: "success" });
       // the video's title and picture may have changed everywhere
       forgetAnswers(...VIDEO_ANSWERS);
@@ -164,9 +180,11 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
   async function dismiss(c: Candidate) {
     setBusy(true);
     try {
-      await api.post(`/api/videos/${encodeURIComponent(videoId)}/enrichment/dismiss`, {
-        external_id: c.external_id,
-      });
+      await order.saving(() =>
+        api.post(`/api/videos/${encodeURIComponent(videoId)}/enrichment/dismiss`, {
+          external_id: c.external_id,
+        })
+      );
       toast.show({ message: t("enrich.dismissed"), tone: "info" });
       load();
       onDecided?.("dismiss");
@@ -180,9 +198,11 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
   async function revert() {
     setBusy(true);
     try {
-      const r = await api.post<{ reverted?: string[] | null }>(
-        `/api/videos/${encodeURIComponent(videoId)}/enrichment/revert`,
-        {}
+      const r = await order.saving(() =>
+        api.post<{ reverted?: string[] | null }>(
+          `/api/videos/${encodeURIComponent(videoId)}/enrichment/revert`,
+          {}
+        )
       );
       toast.show({
         message: (r?.reverted ?? []).length > 0 ? t("enrich.reverted") : t("enrich.revertNothing"),
@@ -225,9 +245,12 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
   async function manualSearch() {
     setSearching(true);
     try {
-      const r = await api.post<{ candidates: Candidate[]; job?: Job | null }>(
-        `/api/videos/${encodeURIComponent(videoId)}/enrichment/search`,
-        { query: query.trim() }
+      // its answer is the candidates shown: a poll that began before it is older
+      const r = await order.saving(() =>
+        api.post<{ candidates: Candidate[]; job?: Job | null }>(
+          `/api/videos/${encodeURIComponent(videoId)}/enrichment/search`,
+          { query: query.trim() }
+        )
       );
       setCandidates(suggestions(r.candidates));
       setJob(r.job ?? null);
@@ -242,9 +265,11 @@ export function EnrichmentPanel({ videoId, shortcuts = false, onDecided }: Enric
   async function reenrich() {
     setSearching(true);
     try {
-      const r = await api.post<{ job?: Job | null }>(
-        `/api/videos/${encodeURIComponent(videoId)}/enrichment/reenrich`,
-        {}
+      const r = await order.saving(() =>
+        api.post<{ job?: Job | null }>(
+          `/api/videos/${encodeURIComponent(videoId)}/enrichment/reenrich`,
+          {}
+        )
       );
       setJob(r.job ?? null);
       toast.show({ message: t("enrich.queued"), tone: "info" });
