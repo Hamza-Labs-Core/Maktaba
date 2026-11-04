@@ -137,7 +137,7 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud
 
       # the packages' names, versions, dependencies and folder; on x86_64 also installed with
       # dpkg beside a stand-in maktaba (the test's packages are amd64): an existing install's

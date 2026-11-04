@@ -242,7 +242,7 @@ jobs:
         if: matrix.payload || matrix.linux_payload
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher tools/release
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud tools/release
           offline: "false"
 
       - uses: astral-sh/setup-uv@v8.1.0

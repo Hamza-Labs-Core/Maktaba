@@ -137,3 +137,17 @@ def test_the_action_retries_names_the_module_and_goes_offline() -> None:
     assert 'echo "GOPROXY=off" >> "${GITHUB_ENV}"' in run
     assert "GOFLAGS" not in run
     assert action["inputs"]["offline"]["default"] == "true"
+
+
+# what builds cloud/ (the cloudlink): `make build-go` and every app payload that runs it
+BUILDS_CLOUD = re.compile(r"\bmake (build-go|linux-app|mac-app|win-app)\b|/payload\.sh\b")
+
+
+def test_a_job_that_builds_the_cloudlink_downloads_cloud() -> None:
+    for workflow, job, steps in _go_jobs():
+        found = _download(steps)
+        if not found or str(found[1]["with"].get("offline", "true")) != "true":
+            continue
+        mods = str(found[1]["with"]["modules"]).split()
+        if any(BUILDS_CLOUD.search(str(s.get("run", ""))) for s in steps):
+            assert mods == ["all"] or "cloud" in mods, f"{workflow} {job}: builds the cloudlink offline without cloud"

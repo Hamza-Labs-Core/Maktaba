@@ -38,7 +38,7 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -196,7 +196,7 @@ jobs:
       - name: Go modules
         uses: ./.github/actions/go-mod-download
         with:
-          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher tools/release
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud tools/release
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
