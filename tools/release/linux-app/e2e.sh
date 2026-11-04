@@ -329,8 +329,10 @@ before_version="$(db_record version)" || die "no database record (state/database
 # (written by pip when it installs the package, by nothing else) and the venv.log lines the
 # update adds tell the two apart.
 [ -f "$DATA/venv/pyvenv.cfg" ] || die "no venv at $DATA/venv"
+# awk, not head: head leaves after the first line, and once the venv lists more than a pipe
+# holds, sort's write then fails (SIGPIPE), which under pipefail ended the script, exit 2
 record="$(find "$DATA/venv/lib" -path '*/site-packages/*.dist-info/RECORD' ! -path '*/maktaba_pipeline-*' -print 2>/dev/null |
-    LC_ALL=C sort | head -n 1)"
+    LC_ALL=C sort | awk 'NR == 1')"
 [ -n "$record" ] || die "no installed package in the venv"
 record_before="$(stat -c %y "$record")"
 venv_log_size="$(stat -c %s "$LOGS/venv.log" 2>/dev/null || echo 0)"
