@@ -314,10 +314,25 @@ func TestCrashBackoffAndCrashLoop(t *testing.T) {
 		t.Fatal("retried before 5 minutes")
 	}
 	clk.Advance(time.Second)
-	eventually(t, "the retry after 5 minutes", func() bool { return runs.Load() == 6 })
-	if got := statusOf(r, "analytics").Detail["loops"].(map[string]any)["usage_counter"].(map[string]any)["restarts"]; got != 6 {
-		t.Fatalf("restarts %v, want 6", got)
+	// the sixth run starting is not its crash counted: wait for the count itself (#645)
+	eventually(t, "the retry after 5 minutes, crashed", func() bool { return loopRestarts(r, "analytics", "usage_counter") == 6 })
+	if n := runs.Load(); n != 6 {
+		t.Fatalf("runs %d, want 6", n)
 	}
+}
+
+// loopRestarts is the restarts the component's status reports for one of its loops (-1
+// before it reports any).
+func loopRestarts(r *Runner, component, loop string) int {
+	loops, _ := statusOf(r, component).Detail["loops"].(map[string]any)
+	l, _ := loops[loop].(map[string]any)
+	switch n := l["restarts"].(type) {
+	case int:
+		return n
+	case float64:
+		return int(n)
+	}
+	return -1
 }
 
 // T04: a loop that returns nil while wanted is a one-shot: Off, exited, not restarted.
