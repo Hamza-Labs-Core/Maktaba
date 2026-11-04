@@ -88,6 +88,7 @@ from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest
 from ..engine.stages.content_hash import PENDING, is_pending
 from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path, staged_path
+from ..library_mgmt import youtube_derive
 from ..log import get_logger
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
@@ -150,7 +151,8 @@ class ImportReport:
     series_books: int = 0
     episode_tags: int = 0
     #: a cache folder whose channel another library already holds (youtube_channels keeps
-    #: one library per channel): "<folder> (<channel>): source added to its library, off"
+    #: one library per channel): "<folder> (<channel>)": recorded as a library of the
+    #: channel; its sources are derived from its links (slot 0182)
     youtube_shared: list[str] = field(default_factory=list)
     #: matched cache folders with no channel recorded: no source (the owner adds one)
     youtube_no_channel: list[str] = field(default_factory=list)
@@ -541,6 +543,8 @@ async def _import(
     await _youtube(db, cache, files, match, report)
     await _signals(db, cache, files, match)
     await _links(db, files, match)
+    # every matched library's YouTube sources from the links just written (slot 0182)
+    await youtube_derive.derive(db, sorted({str(lib) for _, lib in match.values()}))
     await _analyze(db)  # detect's writer reads videos and episodes per library
     detect_hashes: dict[UUID, str] = {}
     seasons = await _series(db, cache, match, report, detect_hashes)
@@ -799,13 +803,14 @@ async def _youtube(
             )
             if owner is not None and str(owner["library_id"]) == str(lib):
                 continue  # this library's already (an import run again)
-            # another library holds the channel: this one gets its own source of it, off,
-            # instead of none (youtube_sources is per library)
+            # another library holds the channel: this one is recorded as a library of it
+            # (slot 0182, many to many), never given a second source of the same channel;
+            # its sources are derived from its links once they are written (its own
+            # playlist when the channel is shared through playlists)
             await db.execute(
-                "INSERT INTO youtube_sources (library_id, kind, url, external_id, mode, added_at)"
-                " VALUES ($1, 'channel', $2, $3, 'off', $4)"
-                " ON CONFLICT (library_id, kind, external_id) DO NOTHING",
-                uid(lib), url, f["channel_id"], to_ts(db, now()),
+                "INSERT INTO youtube_channel_libraries (channel_id, library_id, updated_at)"
+                " VALUES ($1, $2, $3) ON CONFLICT (channel_id, library_id) DO NOTHING",
+                f["channel_id"], uid(lib), to_ts(db, now()),
             )  # fmt: skip
             rep.youtube_shared.append(f"{f['folder']} ({f['channel_id']})")
             _log.info(

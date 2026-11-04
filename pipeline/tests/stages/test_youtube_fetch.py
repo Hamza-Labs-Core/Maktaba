@@ -22,7 +22,7 @@ from maktaba_pipeline.engine.dispatch import dispatch_job
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES, GRAPH
 from maktaba_pipeline.engine.reconcile import reconcile_once
-from maktaba_pipeline.engine.sql import dumps, is_pg, loads, parse_ts, to_ts
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads, now, parse_ts, to_ts
 from maktaba_pipeline.engine.stages import _youtube_drain as drain
 from maktaba_pipeline.engine.watchers import watch_once
 from maktaba_pipeline.integrations import youtube_download as ytd
@@ -599,6 +599,35 @@ async def test_existing_channels_get_an_off_source(
         "SELECT mode, kind FROM youtube_sources WHERE library_id = $1", str(lib)
     )
     assert (row["mode"], row["kind"]) == ("off", "channel")
+
+
+@pytest.mark.asyncio
+async def test_a_channel_another_library_follows_gets_no_second_source(
+    db: Database, tmp_path: Path, fake: FakeYtDlp
+) -> None:
+    """Slot 0182: one library per channel source; the other library's sources come from
+    its linked videos (library_mgmt/youtube_derive.py)."""
+    from maktaba_pipeline.library_mgmt.youtube_sources import ensure_channel_sources
+
+    lib = await make_lib(db, tmp_path)
+    other = await make_library(db, "Follows it already")
+    await db.execute(
+        "INSERT INTO youtube_channels (channel_id, library_id, url) VALUES ($1,$2,$3)",
+        CHANNEL,
+        str(lib),
+        CHANNEL_URL,
+    )
+    await db.execute(
+        "INSERT INTO youtube_sources (library_id, kind, url, external_id, mode, added_at)"
+        " VALUES ($1, 'channel', $2, $3, 'new_only', $4)",
+        str(other),
+        CHANNEL_URL,
+        CHANNEL,
+        to_ts(db, now()),
+    )
+    assert await ensure_channel_sources(db, lib) == 0
+    rows_ = await db.fetch("SELECT library_id, mode FROM youtube_sources")
+    assert [(str(r["library_id"]), r["mode"]) for r in rows_] == [(str(other), "new_only")]
 
 
 # ------------------------------------------------------------------ the schedule
