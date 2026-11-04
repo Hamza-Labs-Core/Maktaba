@@ -352,6 +352,13 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would
 		// make it a home worker against this machine's own database.
+		//
+		// A home's cluster agent reaches this machine's api where [server] listen puts
+		// it (cluster/agent/service.py's MAKTABA_API_URL, whose default :8080 is wrong
+		// for any other port); a node's reaches the home through node.json instead.
+		if !NodeMode(cfg, n) && os.Getenv("MAKTABA_API_URL") == "" {
+			add("MAKTABA_API_URL", "http://"+LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()))
+		}
 		if NodeMode(cfg, n) {
 			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 func envMap(env []string) map[string]string {
@@ -81,6 +82,46 @@ func TestPipelineFullNodeEnv(t *testing.T) {
 	cfg.Server.Role = "home"
 	if m := envMap(childEnvOK(RolePipeline, cfg)); m["MAKTABA_NODE"] != "" || m["MAKTABA_DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("forced home got node env: %v", m)
+	}
+}
+
+// A home's pipeline (and its transcription workers) reaches its api for the cluster agent
+// at [server] listen's port on loopback, not the agent's :8080 default; a node gets none
+// (its agent dials the home from node.json), and an operator's own is kept.
+func TestHomePipelineGetsTheAPIListenForItsAgent(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
+	t.Setenv("MAKTABA_API_URL", "")
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	cfg.Server.Listen = "0.0.0.0:8088"
+	cfg.Pipeline.Instances = 1
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; got != "http://127.0.0.1:8088" {
+		t.Fatalf("MAKTABA_API_URL = %q, want http://127.0.0.1:8088", got)
+	}
+	procs, err := BuildPipelineInstances(Options{Config: cfg})
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("instances: %v (%d)", err, len(procs))
+	}
+	if got := envMap(procs[0].Cmd.Env)["MAKTABA_API_URL"]; got != "http://127.0.0.1:8088" {
+		t.Fatalf("worker MAKTABA_API_URL = %q", got)
+	}
+	cfg.Server.Listen = ""
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; got != "http://127.0.0.1:"+ports.APIPublic.PortString() {
+		t.Fatalf("no listen: MAKTABA_API_URL = %q", got)
+	}
+	nodeConfig = func() config.NodeConfig {
+		return config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001",
+			DatabaseURL: "postgres://node@home:5432/maktaba", Home: config.HomeRef{URL: "http://home:8080"}}
+	}
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; ok {
+		t.Fatalf("a node's pipeline got MAKTABA_API_URL = %q", v)
+	}
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	t.Setenv("MAKTABA_API_URL", "http://own:9000")
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; ok {
+		t.Fatalf("overrode the operator's MAKTABA_API_URL with %q", v)
 	}
 }
 
