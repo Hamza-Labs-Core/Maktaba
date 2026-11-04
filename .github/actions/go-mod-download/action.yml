@@ -9,7 +9,8 @@
 #
 # With `offline: true` (the default) it then sets GOPROXY=off for the job's later steps, so
 # `go build`, `go test` and `go run` read the module cache only: a module the list missed
-# fails at once, by name, instead of being fetched mid-test. GOFLAGS is left as it is.
+# fails at once, by name, instead of being fetched mid-test. GOFLAGS is left as it is, and
+# so is GOTOOLCHAIN for the later steps.
 # `offline: false` is for a job that builds other source than this checkout (an earlier
 # release's tree), or one no pull request runs yet. A job that `go install`s a tool
 # (nfpm) does so before this step, as it goes offline.
@@ -72,7 +73,10 @@ runs:
         for m in ${MODULES}; do
           [ -f "${m}/go.mod" ] || { echo "::error::go-mod-download: ${m} has no go.mod"; exit 1; }
           echo "==> go mod download (${m})"
-          attempt "the Go modules of ${m}" "${m}" go mod download
+          # GOTOOLCHAIN=auto: a module that asks for a newer Go than setup-go's (the api in the
+          # launcher job, whose steps run it with GOTOOLCHAIN=auto) fetches that toolchain here,
+          # into the module cache, where its later steps find it offline
+          attempt "the Go modules of ${m}" "${m}" env GOTOOLCHAIN=auto go mod download
         done
         if [ "${OFFLINE}" = true ]; then
           echo "GOPROXY=off" >> "${GITHUB_ENV}"
