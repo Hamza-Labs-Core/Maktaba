@@ -27,6 +27,7 @@ vi.mock("../../lib/api", async () => {
 import en from "../../i18n/en.json";
 import ar from "../../i18n/ar.json";
 import { ApiError } from "../../lib/api";
+import { useI18n } from "../../lib/i18n";
 import type { ComponentDetail, ComponentView, ListView, Preview } from "../../lib/componentsApi";
 import { adminUser, memberUser, renderPage } from "../../test/pageHarness";
 import { axeViolations } from "../../test/axe";
@@ -1455,6 +1456,46 @@ describe("Components page: offline files (story 51.16 §6)", () => {
     expect(
       await screen.findByText("Imported: Machine learning runtime. Turn on what you want to use.")
     ).toBeInTheDocument();
+  });
+
+  it("a refused import follows a switch of language (the error is said when shown)", async () => {
+    upload.mockRejectedValue(
+      new ApiError({
+        type: "about:blank",
+        title: "offline verify failed",
+        status: 422,
+        code: "offline_verify_failed",
+      } as never)
+    );
+    function ToArabic() {
+      const { setLocale } = useI18n();
+      return (
+        <button type="button" onClick={() => setLocale("ar")}>
+          to-ar
+        </button>
+      );
+    }
+    const user = userEvent.setup();
+    renderPage(
+      <>
+        <ToArabic />
+        <ComponentsSection />
+      </>,
+      { path: "/settings/components", user: adminUser }
+    );
+    await loaded();
+    await user.upload(
+      screen.getByTestId("comp-import-file"),
+      new File(["TAR"], "bad.tar", { type: "application/x-tar" })
+    );
+    expect(
+      await screen.findByText(EN["components.reason.offline_verify_failed"]!)
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "to-ar" }));
+    expect(
+      await screen.findByText(AR["components.reason.offline_verify_failed"]!)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN["components.reason.offline_verify_failed"]!)).toBeNull();
   });
 
   it("an import for another version is refused in words, with the version", async () => {

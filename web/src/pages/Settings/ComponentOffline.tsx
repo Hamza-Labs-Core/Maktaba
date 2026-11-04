@@ -59,7 +59,7 @@ export function OfflineDownload({ basedOn, onClose }: { basedOn: string; onClose
   const [name, setName] = useState<string | null>(null);
   const [progress, setProgress] = useState<InstallProgress | null>(null);
   const [url, setUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
   // while it builds: ask how far it is until it is a file, or it failed
@@ -78,7 +78,7 @@ export function OfflineDownload({ basedOn, onClose }: { basedOn: string; onClose
         setProgress(s.progress);
         timer = window.setTimeout(() => void ask(), OFFLINE_POLL_MS);
       } catch (e) {
-        if (alive) setError(packsErrorText(t, locale, e));
+        if (alive) setError(e);
       }
     };
     void ask();
@@ -86,7 +86,7 @@ export function OfflineDownload({ basedOn, onClose }: { basedOn: string; onClose
       alive = false;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [name, url, t, locale]);
+  }, [name, url]);
 
   const make = async () => {
     setBusy(true);
@@ -95,7 +95,7 @@ export function OfflineDownload({ basedOn, onClose }: { basedOn: string; onClose
       const r = await componentsApi.makeOffline({ bundle, ...(platform ? { platform } : {}) });
       setName(r.name);
     } catch (e) {
-      setError(packsErrorText(t, locale, e));
+      setError(e);
     } finally {
       setBusy(false);
     }
@@ -171,7 +171,7 @@ export function OfflineDownload({ basedOn, onClose }: { basedOn: string; onClose
           </a>
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error !== null && <p role="alert">{packsErrorText(t, locale, error)}</p>}
     </Modal>
   );
 }
@@ -187,7 +187,7 @@ export function OfflineImport({
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [percent, setPercent] = useState<number | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const send = async (file: File) => {
     setError(null);
@@ -210,7 +210,7 @@ export function OfflineImport({
       });
       onImported?.();
     } catch (e) {
-      setError(packsErrorText(t, locale, e));
+      setError(e);
     } finally {
       setPercent(null);
       if (input.current) input.current.value = "";
@@ -241,9 +241,10 @@ export function OfflineImport({
       {percent !== null && (
         <span role="status">{t("components.offline.importing", { percent: n(percent) })}</span>
       )}
-      {error && (
+      {/* the error is kept as it came and said in the page's language when shown */}
+      {error !== null && (
         <span role="alert" className="mkt-comp-import__error">
-          {error}
+          {packsErrorText(t, locale, error)}
         </span>
       )}
     </span>
