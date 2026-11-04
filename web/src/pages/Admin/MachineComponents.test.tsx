@@ -60,6 +60,7 @@ function comp(id: string, extra: Partial<MachineComponent> = {}): MachineCompone
     machines: [],
     required_by: [],
     install_size_mb: 0,
+    settings: [],
     here: {
       want: "enabled",
       hold: null,

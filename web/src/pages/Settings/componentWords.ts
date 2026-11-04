@@ -113,13 +113,15 @@ export function listParts(
 /**
  * A reason code in words. Codes may carry an id after a colon (the API's
  * `dependency_off:llm`, `want_missing:model.cohere-arabic`); it becomes the
- * {component} placeholder. An unknown code gives "" rather than the code.
+ * {component} placeholder. An unknown code gives "" rather than the code. A condition's
+ * params (`toml_superseded` {key, value}) fill the placeholders they name.
  */
 export function reasonText(
   t: T,
   locale: Locale,
   reason: string | undefined,
-  titleOf: (id: string) => string
+  titleOf: (id: string) => string,
+  params?: Record<string, unknown>
 ): string {
   if (!reason) return "";
   const [code, arg] = reason.split(":", 2) as [string, string | undefined];
@@ -129,7 +131,56 @@ export function reasonText(
   // a code that names another component but came without one says nothing rather than half
   if (!arg && /\{components?\}/.test(template)) return "";
   const name = arg ? titleOf(arg) : "";
-  return t(key, { component: name, components: name, value: arg ?? "" });
+  return filled(
+    t(key, { value: arg ?? "", ...paramVars(params), component: name, components: name })
+  );
+}
+
+/** The string and number params of a status or progress, as a message's variables. */
+export function paramVars(
+  params?: Record<string, unknown> | null
+): Record<string, string | number> {
+  const vars: Record<string, string | number> = {};
+  for (const [k, v] of Object.entries(params ?? {})) {
+    if (typeof v === "string" || typeof v === "number") vars[k] = v;
+  }
+  return vars;
+}
+
+/** A message with a placeholder nothing filled says nothing, never a raw `{name}`. */
+function filled(text: string): string {
+  return /\{\w+\}/.test(text) ? "" : text;
+}
+
+/**
+ * An install step in words (components.detail.<code>): the progress's name and byte counts
+ * and its params fill the placeholders; "" for an unknown code or one left unfilled.
+ */
+export function detailText(
+  t: T,
+  locale: Locale,
+  p:
+    | {
+        detail?: string;
+        name?: string;
+        done?: number;
+        total?: number;
+        params?: Record<string, unknown>;
+      }
+    | null
+    | undefined,
+  size: (bytes: number) => string
+): string {
+  if (!p?.detail) return "";
+  const key = `components.detail.${p.detail}`;
+  if (lookupMessage(locale, key) === undefined) return "";
+  const vars: Record<string, string | number> = { ...paramVars(p.params) };
+  if (p.name) vars.name = p.name;
+  if (p.total && p.total > 0) {
+    vars.done = size(p.done ?? 0);
+    vars.total = size(p.total);
+  }
+  return filled(t(key, vars));
 }
 
 /** Rows grouped in page order, each group in catalog order. Unknown groups go before core. */

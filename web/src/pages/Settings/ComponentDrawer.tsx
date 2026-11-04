@@ -4,12 +4,20 @@
 // last 20 changes from the audit log. Remove and Install live here; they go through the
 // same preview and dialog as the row's switch.
 //
-// Restarts, memory and disk per machine come with the health story (51.14): the status
-// rows do not carry them yet.
+// Each machine's health (story 51.14) shows under it: how long it has been running, its
+// restarts in the last 24 hours, its memory and its files on disk, and the last error. The
+// server.toml keys it owns are listed; a key the database overrides says so on the config
+// part's condition. Reset settings (51.13) opens the page's confirm dialog.
 import { useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Drawer } from "@ds/components/Drawer/Drawer";
-import { componentsApi, type ComponentDetail, type ComponentView } from "../../lib/componentsApi";
+import {
+  componentsApi,
+  restartsOf,
+  type ComponentDetail,
+  type ComponentView,
+  type Health,
+} from "../../lib/componentsApi";
 import { errorText } from "../../lib/errorText";
 import { useI18n } from "../../lib/i18n";
 import { useBytes } from "../../components/queue/offline";
@@ -24,6 +32,7 @@ export function ComponentDrawer({
   disabled,
   onClose,
   onAction,
+  onResetSettings,
 }: {
   view: ComponentView | null;
   /** the list's revision: the drawer reloads when anything changed */
@@ -32,6 +41,8 @@ export function ComponentDrawer({
   disabled: boolean;
   onClose: () => void;
   onAction: (view: ComponentView, action: Action) => void;
+  /** asks to reset its rules sections to the defaults (it owns at least one) */
+  onResetSettings: (view: ComponentView) => void;
 }) {
   const { t, locale, formatDate } = useI18n();
   const bytes = useBytes();
@@ -63,7 +74,10 @@ export function ComponentDrawer({
   if (!view) return null;
   const name = titleOf(view.id);
   const d = detail && detail.id === view.id ? detail : null;
-  const reason = (r?: string) => reasonText(t, locale, r, titleOf);
+  const reason = (r?: string, params?: Record<string, unknown>) =>
+    reasonText(t, locale, r, titleOf, params);
+  const tomlKeys = view.settings.filter((k) => k.startsWith("toml:")).map((k) => k.slice(5));
+  const ownsRules = view.settings.some((k) => k.startsWith("rules."));
   const machineName = (m: string) => (m === "home" ? t("components.drawer.home") : m);
   const requires = view.requires.map((group) =>
     group.length > 1
@@ -115,11 +129,29 @@ export function ComponentDrawer({
             </dd>
           </>
         )}
+        {tomlKeys.length > 0 && (
+          <>
+            <dt>{t("components.drawer.toml")}</dt>
+            <dd>
+              {tomlKeys.map((k, i) => (
+                <span key={k}>
+                  {i > 0 && (locale === "ar" ? "، " : ", ")}
+                  <code dir="ltr">{k}</code>
+                </span>
+              ))}
+            </dd>
+          </>
+        )}
       </dl>
 
-      {view.switchable && (
+      {(view.switchable || ownsRules) && (
         <div className="mkt-comp-drawer__actions">
-          {view.want === "absent" ? (
+          {ownsRules && (
+            <Button variant="secondary" disabled={disabled} onClick={() => onResetSettings(view)}>
+              {t("components.settings.reset")}
+            </Button>
+          )}
+          {!view.switchable ? null : view.want === "absent" ? (
             <Button
               variant="secondary"
               disabled={disabled}
@@ -149,7 +181,9 @@ export function ComponentDrawer({
               <strong>{machineName(m.machine)}</strong>
               {": "}
               {phaseWord(t, m.phase, view.kind)}
-              {reason(m.reason) && ` · ${reason(m.reason)}`}
+              {reason(m.reason, m.reason_params ?? undefined) &&
+                ` · ${reason(m.reason, m.reason_params ?? undefined)}`}
+              {m.health && <HealthFacts health={m.health} kind={view.kind} reason={reason} />}
               {(m.parts ?? []).map((p) => (
                 <div key={p.part} className="mkt-comp-drawer__part">
                   <span>
@@ -175,7 +209,9 @@ export function ComponentDrawer({
                               condition: conditionWord(t, c.type),
                             }
                           )}
-                          {c.status !== "true" && reason(c.reason) && ` · ${reason(c.reason)}`}
+                          {c.status !== "true" &&
+                            reason(c.reason, c.params) &&
+                            ` · ${typeof c.params?.key === "string" ? `${c.params.key}: ` : ""}${reason(c.reason, c.params)}`}
                         </li>
                       ))}
                     </ul>
@@ -206,6 +242,80 @@ export function ComponentDrawer({
 }
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
+
+/** One machine's uptime, restarts (24 h), memory, disk and last error (story 51.14). */
+function HealthFacts({
+  health,
+  kind,
+  reason,
+}: {
+  health: Health;
+  kind: string;
+  reason: (r?: string) => string;
+}) {
+  const { t, n, formatDate } = useI18n();
+  const bytes = useBytes();
+  const runs = kind.split("+").some((k) => k === "process" || k === "loop");
+  const mb = (v: number) => bytes(v * 1024 * 1024);
+  const uptime = health.since ? (Date.now() - Date.parse(health.since)) / 1000 : null;
+  return (
+    <div className="mkt-comp-drawer__health" data-testid="comp-health">
+      <dl className="mkt-comp-drawer__facts">
+        {uptime !== null && Number.isFinite(uptime) && (
+          <>
+            <dt>{t("components.drawer.uptime")}</dt>
+            <dd>{humanDuration(uptime, t, n)}</dd>
+          </>
+        )}
+        {runs && (
+          <>
+            <dt>{t("components.drawer.restarts")}</dt>
+            <dd>{n(restartsOf(health))}</dd>
+          </>
+        )}
+        {health.rss_mb != null && (
+          <>
+            <dt>{t("components.drawer.memory")}</dt>
+            <dd>{mb(health.rss_mb)}</dd>
+          </>
+        )}
+        {health.disk_mb != null && (
+          <>
+            <dt>{t("components.drawer.disk")}</dt>
+            <dd>{mb(health.disk_mb)}</dd>
+          </>
+        )}
+        {health.last_error_code && (
+          <>
+            <dt>{t("components.drawer.lastError")}</dt>
+            <dd>
+              {reason(health.last_error_code) || t("components.phase.failed")}
+              {health.last_error_at && (
+                <>
+                  {" · "}
+                  <time dateTime={health.last_error_at}>{formatDate(health.last_error_at)}</time>
+                </>
+              )}
+            </dd>
+          </>
+        )}
+      </dl>
+      {health.stale && <p className="mkt-comp-drawer__stale">{t("components.drawer.stale")}</p>}
+    </div>
+  );
+}
+
+/** Seconds as "2d 3h" / "4h 10m" / "5m" / "12s" (the Processes page's words). */
+function humanDuration(sec: number, t: T, n: (v: number) => string): string {
+  const s = Math.max(0, Math.floor(sec));
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d > 0) return t("health.processes.dur.days", { d: n(d), h: n(h) });
+  if (h > 0) return t("health.processes.dur.hours", { h: n(h), m: n(m) });
+  if (m > 0) return t("health.processes.dur.minutes", { m: n(m) });
+  return t("health.processes.dur.seconds", { s: n(s) });
+}
 
 function conditionWord(t: T, type: string): string {
   const key = `components.condition.type.${type}`;

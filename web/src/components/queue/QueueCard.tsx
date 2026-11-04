@@ -99,6 +99,19 @@ function LiveJobs({ jobs, queue }: { jobs: QueueLiveJob[]; queue: string }) {
   );
 }
 
+/**
+ * The catch-up line of the component_catchup stage while it has work (story 51.14):
+ * "Catching up after Transcription was off"; the components come from its jobs, and a job
+ * that does not name them reads "after a component was off". Null for any other stage.
+ */
+export function catchupLine(stage: string, summary: QueueSummary, t: T, sep = ", "): string | null {
+  if (stage !== "component_catchup") return null;
+  if (summary.counts.running === 0 && summary.counts.pending === 0) return null;
+  const ids = [...new Set(summary.running_jobs.flatMap((j) => j.components ?? []))];
+  if (ids.length === 0) return t("queue.catchupAny");
+  return t("queue.catchup", { component: ids.map((id) => componentTitle(id, t)).join(sep) });
+}
+
 export function QueueCard({
   info,
   summary,
@@ -108,9 +121,10 @@ export function QueueCard({
   extensionLabel,
   live = [],
 }: QueueCardProps) {
-  const { t, n } = useI18n();
+  const { t, n, locale } = useI18n();
   const fmt = useFmt();
   const state = queueVisualState(info, summary);
+  const catchup = catchupLine(info.stage, summary, t, locale === "ar" ? "، " : ", ");
   const servedBy = summary.served_by ?? [];
   const { counts, wave } = summary;
   const health = summary.health ?? null;
@@ -182,6 +196,15 @@ export function QueueCard({
             >
               <span aria-hidden="true">⏸ </span>
               {t("queue.card.pausedBy", { who: pauseOwner(info, t) })}
+            </span>
+          )}
+          {catchup && (
+            <span
+              className="mkt-q-card__flag mkt-q-card__flag--catchup"
+              data-testid="queue-card-catchup"
+            >
+              <span aria-hidden="true">↻ </span>
+              {catchup}
             </span>
           )}
           {service && counts.running > 0 && (
