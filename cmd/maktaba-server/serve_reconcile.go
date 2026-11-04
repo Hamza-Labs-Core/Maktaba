@@ -89,6 +89,8 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec.Log = log
 	// a dormant process is checked for memory before its first start (not_enough_memory)
 	rec.FreeMB = freeMB
+	// the rows' rss_mb (story 51.14): its processes' memory, read every few minutes
+	rec.RSS = hostinfo.ProcessRSS
 	// the asset half: what a crash left is tidied before anything reads it
 	m := newPacksManager(cfg, releaseDir, log)
 	for _, did := range m.Layout.Recover(m.Version) {

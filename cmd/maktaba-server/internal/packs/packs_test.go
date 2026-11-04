@@ -250,6 +250,28 @@ func TestFullHomeCountsAsInstalled(t *testing.T) {
 	}
 }
 
+// Story 51.14: an installed pack's row carries its folder's size on disk (disk_mb); an
+// asset from before packs (no folder) carries none, the catalog's size stands for it.
+func TestInstalledPackRowCarriesItsDiskSize(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home}
+	if err := f.m.Install(context.Background(), "runtime.ml", nil); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(f.m.Layout.Dir("runtime.ml"), f.m.Layout.Current("runtime.ml"))
+	if err := os.WriteFile(filepath.Join(dir, "big.bin"), make([]byte, 3<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.m.OnDisk = func(id string) bool { return id == "tool.yt-dlp" }
+	got := map[string]any{}
+	for _, row := range r.Rows() {
+		got[row.ID] = row.Detail["disk_mb"]
+	}
+	if got["runtime.ml"] != int64(4) || got["tool.yt-dlp"] != nil {
+		t.Fatalf("disk_mb runtime.ml %v (want 4: 3 MB and the pack's files), tool.yt-dlp %v", got["runtime.ml"], got["tool.yt-dlp"])
+	}
+}
+
 // T08 (the check the routes use): an enabled component that needs the asset holds it;
 // another installed model of an "any:" group frees it.
 func TestRequiredBy(t *testing.T) {

@@ -3,6 +3,8 @@ package packs
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -48,6 +50,7 @@ type Runner struct {
 	mu      sync.Mutex
 	ctx     context.Context
 	desired map[string]store.Desired
+	diskMB  map[string]int64 // an installed pack folder's size, by its path (measured once)
 	seen    bool
 	tried   map[string]int64
 	written []store.Status
@@ -208,6 +211,9 @@ func (r *Runner) Rows() []store.Status {
 			inst.Reason, inst.Params = p.Reason, p.Params
 		case installed:
 			row.Phase = components.PhaseOff
+			if mb, ok := r.packMB(id, comp); ok {
+				row.Detail = map[string]any{"disk_mb": mb}
+			}
 		case r.M.Version != "" && r.M.Layout.Missing(id) == r.M.Version:
 			// a rollback came back to this release and its folder was gone (story 51.18):
 			// installing it again clears this
@@ -226,6 +232,43 @@ func (r *Runner) Rows() []store.Status {
 		out = append(out, row)
 	}
 	return out
+}
+
+// packMB is the size of id's current pack folder on disk (story 51.14: the health's
+// disk_mb), measured once per folder; ok is false for an asset that is not a pack here or
+// has no folder (one from before packs: the catalog's sizes stand for it).
+func (r *Runner) packMB(id string, comp *components.Component) (int64, bool) {
+	if !strings.HasPrefix(comp.SourceFor(r.M.Platform), "pack:") {
+		return 0, false
+	}
+	cur := r.M.Layout.Current(id)
+	if cur == "" {
+		return 0, false
+	}
+	dir := filepath.Join(r.M.Layout.Dir(id), cur)
+	r.mu.Lock()
+	mb, ok := r.diskMB[dir]
+	r.mu.Unlock()
+	if ok {
+		return mb, true
+	}
+	var n int64
+	_ = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err == nil && d.Type().IsRegular() {
+			if info, err := d.Info(); err == nil {
+				n += info.Size()
+			}
+		}
+		return nil
+	})
+	mb = (n + 1<<20 - 1) >> 20
+	r.mu.Lock()
+	if r.diskMB == nil {
+		r.diskMB = map[string]int64{}
+	}
+	r.diskMB[dir] = mb
+	r.mu.Unlock()
+	return mb, true
 }
 
 func (r *Runner) report(ctx context.Context) {

@@ -123,6 +123,108 @@ type procView struct {
 	CrashLoop bool
 	// Missing: its program is not on this machine (Process.Present)
 	Missing bool
+	// Restarts24h: its restarts of the last 24 h; PID its running process (0: none)
+	Restarts24h int
+	PID         int
+}
+
+// restartWindow is the health's restart window (restarts_24h).
+const restartWindow = 24 * time.Hour
+
+// recentRestarts is ts less the restarts older than restartWindow at now.
+func recentRestarts(ts []time.Time, now time.Time) []time.Time {
+	i := 0
+	for i < len(ts) && now.Sub(ts[i]) > restartWindow {
+		i++
+	}
+	return ts[i:]
+}
+
+// restarts24 is the restarts of the last 24 h of a component's processes.
+func restarts24(own []procView) int {
+	n := 0
+	for _, p := range own {
+		n += p.Restarts24h
+	}
+	return n
+}
+
+// rssEvery is how often the reconciler reads its processes' memory; rssStep the change
+// (MB, or a tenth) that is written: a few MB either way rewrites no row (T09: an idle
+// machine writes nothing).
+const (
+	rssEvery = 5 * time.Minute
+	rssStep  = 64
+)
+
+// sampleRSS reads the memory of every running process, every rssEvery, into r.rss by
+// component (a component with none running has no entry).
+func (r *Reconciler) sampleRSS(views []procView) {
+	if r.RSS == nil {
+		return
+	}
+	now := time.Now()
+	if r.Now != nil {
+		now = r.Now()
+	}
+	r.mu.Lock()
+	due := r.rssAt.IsZero() || now.Sub(r.rssAt) >= rssEvery
+	if due {
+		r.rssAt = now
+	}
+	r.mu.Unlock()
+	if !due {
+		return
+	}
+	var pids []int
+	for _, p := range views {
+		if p.Running && p.PID > 0 {
+			pids = append(pids, p.PID)
+		}
+	}
+	got := r.RSS(pids)
+	sum := map[string]int64{}
+	for _, p := range views {
+		if b, ok := got[p.PID]; ok && p.Running && p.PID > 0 {
+			sum[p.Component] += int64(b >> 20)
+		}
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.rss == nil {
+		r.rss = map[string]int64{}
+	}
+	for id := range r.rss {
+		if _, ok := sum[id]; !ok {
+			delete(r.rss, id)
+		}
+	}
+	for id, mb := range sum {
+		if prev, ok := r.rss[id]; !ok || rssMoved(prev, mb) {
+			r.rss[id] = mb
+		}
+	}
+}
+
+// rssMoved: from prev to mb is a change worth a write (rssStep MB, or a tenth).
+func rssMoved(prev, mb int64) bool {
+	d := mb - prev
+	if d < 0 {
+		d = -d
+	}
+	return d >= rssStep || d*10 >= prev
+}
+
+// rssOf is component id's memory as last sampled, while one of its processes runs.
+func (r *Reconciler) rssOf(id string, own []procView) (int64, bool) {
+	running := false
+	for _, p := range own {
+		running = running || p.Running
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	mb, ok := r.rss[id]
+	return mb, ok && running
 }
 
 // procViews is every process, for the reconciler.
@@ -135,7 +237,7 @@ func (s *Supervisor) procViews() []procView {
 		out = append(out, procView{Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
 			Dormant: c.proc.Dormant, Allowed: c.allowed, Wanted: c.wanted, Draining: c.draining, Once: c.proc.Once,
 			State: c.status.State, Running: c.cmd != nil && c.cmd.Process != nil, Restarts: c.status.Restarts,
-			CrashLoop: c.failed, Missing: missing})
+			CrashLoop: c.failed, Missing: missing, Restarts24h: len(recentRestarts(c.restartAt, s.now())), PID: c.status.PID})
 	}
 	return out
 }

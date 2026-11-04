@@ -136,6 +136,9 @@ type Reconciler struct {
 	// OnDesired gets each desired state read from the database (the asset half acts on
 	// it: packs.Runner).
 	OnDesired func(desired map[string]store.Desired)
+	// RSS reads the resident memory of running pids, in bytes (hostinfo.ProcessRSS; nil:
+	// not measured): sampled every rssEvery for the rows' rss_mb (story 51.14).
+	RSS func(pids []int) map[int]uint64
 
 	table gateTable
 
@@ -152,6 +155,8 @@ type Reconciler struct {
 	passes   int
 	loopsCtx context.Context
 	health   map[string]*compHealth // story 51.14: transitions and last errors, by component
+	rssAt    time.Time              // the last RSS sample
+	rss      map[string]int64       // by component, MB, as last written (hysteresis: rssMoved)
 }
 
 // compHealth is what the status rows' detail carries of one component beyond its phase
@@ -813,6 +818,7 @@ func (r *Reconciler) runLoop(ctx context.Context, l *Loop, done chan struct{}) {
 // rows is the status of every component the supervisor has something of here.
 func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 	views := r.table.procViews()
+	r.sampleRSS(views)
 	procs := byComponent(views)
 	var out []store.Status
 	for _, comp := range r.reconciled(procs) {
@@ -855,6 +861,12 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		detail := r.healthDetail(comp.ID, dec.gen, phase, reason)
 		if restarts > 0 {
 			detail["restarts"] = restarts
+		}
+		if n := restarts24(own); n > 0 {
+			detail["restarts_24h"] = n
+		}
+		if mb, ok := r.rssOf(comp.ID, own); ok {
+			detail["rss_mb"] = mb
 		}
 		if len(detail) > 0 {
 			row.Detail = detail

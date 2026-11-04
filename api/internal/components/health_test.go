@@ -16,7 +16,7 @@ func TestHealthOf(t *testing.T) {
 	rows := []store.Status{
 		{Machine: "home", ID: "llm", Part: "supervisor", Phase: "running", Version: "1.2.3", Since: t0.Add(time.Minute),
 			UpdatedAt: t0.Add(2 * time.Minute),
-			Detail: map[string]any{"restarts": float64(3), "rss_mb": float64(512),
+			Detail: map[string]any{"restarts": float64(3), "restarts_24h": float64(2), "rss_mb": float64(512),
 				"last_error": map[string]any{"code": "crash_loop", "at": t0.Add(-time.Hour).Format(time.RFC3339Nano)}}},
 		{Machine: "home", ID: "llm", Part: "api", Phase: "running", Since: t0, UpdatedAt: t0},
 	}
@@ -24,7 +24,7 @@ func TestHealthOf(t *testing.T) {
 	if h == nil || h.Since == nil || !h.Since.Equal(t0.Add(time.Minute)) {
 		t.Fatalf("since = %+v", h)
 	}
-	if h.Restarts != 3 || h.Version != "1.2.3" || h.RSSMB == nil || *h.RSSMB != 512 || h.DiskMB != nil {
+	if h.Restarts != 3 || h.Restarts24h != 2 || h.Version != "1.2.3" || h.RSSMB == nil || *h.RSSMB != 512 || h.DiskMB != nil {
 		t.Fatalf("health = %+v", h)
 	}
 	if h.LastErrorCode != "crash_loop" || h.LastErrorAt == nil || !h.LastErrorAt.Equal(t0.Add(-time.Hour)) {
