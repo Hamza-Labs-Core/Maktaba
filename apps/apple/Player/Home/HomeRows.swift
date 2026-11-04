@@ -55,56 +55,18 @@ struct HomeRow: Hashable, Identifiable, Sendable {
     var id: String { key }
 }
 
-/// Home's hero (FR-10): the featured series (from its first lesson) or the video an admin picked.
-struct HomeHero: Codable, Hashable, Sendable {
-    let videoID: String
-    let videoTitle: String
-    let seriesID: String?
-    let seriesName: String?
-    let episodes: Int?
-    let durationSec: Double?
-    let picked: Bool
-    let progress: Double?
-
-    /// A series' hero opens the series; a video's opens its page.
-    var isSeries: Bool { seriesID != nil }
-
+extension HomeHero {
+    /// Opens the series, or the video's page.
     var details: PlayerRoute { seriesID.map { .series(id: $0) } ?? .video(id: videoID) }
-
-    init(_ f: Featured) {
-        videoID = f.video.id
-        videoTitle = f.video.displayTitle
-        let series = f.kind == "series" ? f.series : nil
-        seriesID = series?.id
-        seriesName = (series?.name).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-        episodes = series?.episodes
-        durationSec = f.video.durationSec
-        picked = f.picked
-        progress = f.video.progress > 0 ? f.video.progress : nil
-    }
 }
 
-/// What a video is called, for a recommendation's card.
-struct KnownVideo: Codable, Hashable, Sendable {
-    let title: String
-    let series: String?
-}
+/// Home's blocks, as the Player shows them.
+extension HomeModel {
+    /// The blocks under the hero, in FR-10's order, empty rows left out.
+    var sections: [HomeSection] { HomeLayout.sections(shelves, known: known) }
 
-/// A shelf of cards as the device keeps it (Live TV on now and retry tiles are not kept: one
-/// is stale within minutes, the other is no row).
-struct KeptShelf: Codable, Hashable, Sendable {
-    let key: String
-    let kind: HomeShelf.Kind
-    let cards: [HomeShelfCard]
-
-    init?(_ shelf: HomeShelf) {
-        guard case let .cards(cards) = shelf.content else { return nil }
-        key = shelf.key
-        kind = shelf.kind
-        self.cards = cards
-    }
-
-    var shelf: HomeShelf { HomeShelf(key: key, kind: kind, content: .cards(cards)) }
+    /// Home answered and has nothing at all (FR-13).
+    var isEmpty: Bool { loaded && HomeLayout.isEmpty(hero: hero, sections: sections) }
 }
 
 /// One block of Home under the hero: a row of cards, Live TV on now (one card per channel),

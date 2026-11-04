@@ -56,6 +56,15 @@ build fails when the two differ.
   iPhone, iPad and Android, Pause, Resume, Machines may ask to join and Drain. A change made while the
   page's read was on its way stays on screen as the home has it, instead of the old state
   coming back.
+- **A row removed, or a switch turned, while its list is read again stays as you left it.** On
+  iPhone, iPad, Mac and Android: Forget in History (and its Load more), signing a session out,
+  forgetting or clearing recent searches, Not interested on Home and pinning a library. On the
+  web: recent and saved searches, marking notifications read, the Machines page, the relay and
+  home-switch cards, Live TV's hosts, channels, changes and simulcast outputs, Updates, speech
+  models, the Cloudflare remote, backups, the processing queue's pages and panels, the library
+  dashboard's sources, the Style and Enrichment panels, and a series' watched count on a video.
+  A read that began before the change was saved no longer brings the removed row or the old
+  state back on screen.
 
 - **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
   transcribe.** Its capability report looked for the GPU only through `pynvml`, which no

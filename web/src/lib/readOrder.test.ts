@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { deferred } from "../test/deferred";
 import { readOrder } from "./readOrder";
-
-function deferred<T>() {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => (resolve = r));
-  return { promise, resolve };
-}
 
 describe("readOrder", () => {
   it("drops a read that began before a change", () => {
