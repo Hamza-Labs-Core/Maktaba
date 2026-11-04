@@ -56,7 +56,9 @@ covers that case:
   repository, which needs write access; a fork's pushes run in the fork.
 
 Merging the base in is still needed to merge. When you open a pull request that already
-conflicts, push again (or re-run the branch's last `CI (branch head)` run) to get a result.
+conflicts, re-run the branch's last `CI (branch head)` run, or push a commit that changes a
+file, to get a result (an empty commit starts no run: the trigger ignores pushes that change
+only the trail, and an empty one changes nothing).
 `tools/ci/ci_paths.py which --branch <files>` says which jobs a branch head runs.
 
 ## The jobs
