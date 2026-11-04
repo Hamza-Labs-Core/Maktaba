@@ -57,6 +57,9 @@ type JobRef struct {
 	Progress     *Progress  `json:"progress"`
 	// ClaimedBy is the worker (workers.id) running the job; null while it waits.
 	ClaimedBy *string `json:"claimed_by"`
+	// Components are the component ids a component_catchup job catches up on (its
+	// payload's components, story 51.06); absent on every other stage.
+	Components []string `json:"components,omitempty"`
 }
 
 // Pool is a worker pool row plus live usage.
