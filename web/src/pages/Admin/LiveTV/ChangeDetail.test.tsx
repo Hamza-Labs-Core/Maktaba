@@ -4,7 +4,7 @@
 // and the approve dialog (expected switch times, the param-change acknowledgement, the
 // second-admin rule).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { I18nProvider } from "../../../lib/i18n";
@@ -31,6 +31,8 @@ import {
   readyChange,
 } from "./changeFixtures";
 import type { TvChangeDetail } from "../../../lib/tvChanges";
+import { CHANGES_POLL_MS } from "./changeBits";
+import { type Deferred, deferred } from "../../../test/deferred";
 
 function renderDetail(id: string) {
   return render(
@@ -319,6 +321,78 @@ describe("Change detail", () => {
     post.mockResolvedValueOnce({ ...readyChange, state: "cancelled", allowed_actions: [] });
     await user.click(screen.getByRole("button", { name: "Cancel the change" }));
     expect(post).toHaveBeenCalledWith(`/api/tv/changes/${readyChange.id}/cancel`);
+  });
+});
+
+describe("Change detail: an action is not undone by a poll that began before it", () => {
+  /** The change's first read answers; every later one is held for the test. */
+  function holdChange(id: string) {
+    const reads: Deferred<TvChangeDetail>[] = [];
+    let first = true;
+    get.mockImplementation(async (path: string) => {
+      if (path !== `/api/tv/changes/${id}`) return answer(path);
+      if (first) {
+        first = false;
+        return answer(path);
+      }
+      const d = deferred<TvChangeDetail>();
+      reads.push(d);
+      return d.promise;
+    });
+    return reads;
+  }
+
+  /** Shows the change, then starts a poll that stays on its way. */
+  async function withHeldPoll(id: string) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const reads = holdChange(id);
+    renderDetail(id);
+    await screen.findByTestId("change-detail");
+    await act(async () => vi.advanceTimersByTimeAsync(CHANGES_POLL_MS));
+    expect(reads).toHaveLength(1);
+    return reads;
+  }
+
+  it("a cancelled change keeps no actions", async () => {
+    const reads = await withHeldPoll(readyChange.id);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("action-cancel"));
+    post.mockResolvedValueOnce({ ...readyChange, state: "cancelled", allowed_actions: [] });
+    await user.click(screen.getByRole("button", { name: "Cancel the change" }));
+    expect(await screen.findByText("Nothing to do in this state.")).toBeInTheDocument();
+    await act(async () => reads[0]!.resolve(readyChange));
+    expect(screen.queryAllByTestId(/^action-[a-z]+$/)).toHaveLength(0);
+  });
+
+  it("a staged draft stays queued", async () => {
+    const reads = await withHeldPoll(draftChange.id);
+    post.mockResolvedValueOnce({
+      ...draftChange,
+      diff: { ...draftChange.diff, stage: { requested_at: "x" } },
+    });
+    await userEvent.setup().click(screen.getByTestId("action-stage"));
+    await waitFor(() =>
+      expect(screen.getByTestId("progress")).toHaveTextContent("waiting for the change in flight")
+    );
+    await act(async () => reads[0]!.resolve(draftChange));
+    expect(screen.getByTestId("progress")).toHaveTextContent("waiting for the change in flight");
+  });
+
+  it("a rolled back change does not offer Roll back again", async () => {
+    const reads = await withHeldPoll(liveChange.id);
+    await screen.findByTestId("rollback-mode");
+    post.mockResolvedValueOnce({ mode: "warm", change_id: liveChange.id, op_id: 7 });
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("action-rollback"));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Roll back" })
+    );
+    // the read after the roll back answers: nothing more to do
+    await waitFor(() => expect(reads.length).toBeGreaterThan(1));
+    await act(async () => reads[1]!.resolve({ ...liveChange, allowed_actions: [] }));
+    expect(screen.queryByTestId("action-rollback")).toBeNull();
+    await act(async () => reads[0]!.resolve(liveChange));
+    expect(screen.queryByTestId("action-rollback")).toBeNull();
   });
 });
 

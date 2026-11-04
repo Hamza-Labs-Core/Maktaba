@@ -9,6 +9,7 @@ import { useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import type {
   Extension,
   FailureGroup,
@@ -43,7 +44,7 @@ import "../../styles/libdash.css";
 
 export function QueueOverview() {
   const { t, n } = useI18n();
-  const { snapshot: rawSnapshot, error: loadError, polling, reload } = useQueuesSnapshot();
+  const { snapshot: rawSnapshot, error: loadError, polling, reload, saving } = useQueuesSnapshot();
   // a payload that is not a snapshot (an HTML page from a proxy) counts as a load error
   const snapshot = useMemo(
     () => (rawSnapshot === null ? null : safeSnapshot(rawSnapshot)),
@@ -68,12 +69,16 @@ export function QueueOverview() {
     open: false,
   });
 
+  // "Needs attention" reads (a finished job, a new issue count) and the retries
+  // made here, in order: a read that began before a retry still has its group
+  const issuesOrder = useReadOrder();
   const loadIssues = useCallback(() => {
+    const ticket = issuesOrder.begin();
     queueApi
       .issues()
-      .then((r) => setIssues(safeGroups(r?.groups)))
+      .then((r) => issuesOrder.fresh(ticket) && setIssues(safeGroups(r?.groups)))
       .catch(() => {});
-  }, []);
+  }, [issuesOrder]);
   const loadLibraries = useCallback(() => {
     queueApi
       .libraries()
@@ -182,21 +187,23 @@ export function QueueOverview() {
 
   const onRetry = (g: FailureGroup) =>
     void action
-      .run(groupKey(g), () => queueApi.retry(g.stage, { cause: g.cause }))
+      .run(groupKey(g), () => issuesOrder.saving(() => queueApi.retry(g.stage, { cause: g.cause })))
       .then((r) => r && refreshAfter());
   // every group with a Retry button, one retry each (the same call as the button)
   const retryable = issues.filter((g) => g.action === "retry");
   const retryableCount = retryable.reduce((sum, g) => sum + g.count, 0);
   const onRetryAll = () =>
     void action
-      .run("retry-all", async () => {
-        for (const g of retryable) await queueApi.retry(g.stage, { cause: g.cause });
-        return true;
-      })
+      .run("retry-all", () =>
+        issuesOrder.saving(async () => {
+          for (const g of retryable) await queueApi.retry(g.stage, { cause: g.cause });
+          return true;
+        })
+      )
       .then((r) => r && refreshAfter());
   const onApply = (g: FailureGroup) =>
     void action
-      .run(groupKey(g), () => queueApi.apply(g.stage, { all: true }))
+      .run(groupKey(g), () => issuesOrder.saving(() => queueApi.apply(g.stage, { all: true })))
       .then((r) => r && refreshAfter());
 
   return (
@@ -218,7 +225,8 @@ export function QueueOverview() {
         onTogglePause={() =>
           void action
             .run("pause-all", () =>
-              snapshot.paused_all ? queueApi.resumeAll() : queueApi.pauseAll()
+              // a snapshot read under way still says the old state: not shown after this
+              saving(() => (snapshot.paused_all ? queueApi.resumeAll() : queueApi.pauseAll()))
             )
             .then(() => reload())
         }

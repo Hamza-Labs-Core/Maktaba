@@ -137,9 +137,14 @@ function ChannelsInner() {
 
   async function toggleEnabled(c: Channel) {
     if (!confirmLeavesPlan([c])) return;
-    setChannels((cs) => cs && cs.map((x) => (x.id === c.id ? { ...x, enabled: !c.enabled } : x)));
+    const flip = (cs: Channel[] | null) =>
+      cs && cs.map((x) => (x.id === c.id ? { ...x, enabled: !c.enabled } : x));
+    setChannels(flip);
     try {
       await channelsApi.update(c.id, { enabled: !c.enabled });
+      // saved: shown again, so a read begun while it was saved (it may not have
+      // the change) does not win (setData drops the reads begun before it)
+      setChannels(flip);
     } catch (e) {
       showError(e, t("common.error"));
     }
@@ -156,6 +161,14 @@ function ChannelsInner() {
     setChannels(next.map((c) => ({ ...c, number: numberOf.get(c.id) ?? c.number })));
     try {
       await channelsApi.reorder(changes);
+      // saved: the new numbers again, over a read begun while they were saved
+      setChannels(
+        (cs) =>
+          cs &&
+          cs
+            .map((c) => ({ ...c, number: numberOf.get(c.id) ?? c.number }))
+            .sort((a, b) => a.number - b.number)
+      );
     } catch (e) {
       showError(e, t("channels.reorderError"));
     }

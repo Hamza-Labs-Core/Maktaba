@@ -15,6 +15,7 @@ import type {
   FailureItem,
   FailureList,
 } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { waitingOnLabel } from "../../components/queue/QueueCard";
@@ -67,16 +68,22 @@ export function Failures() {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [prefixDraft, setPrefixDraft] = useState(filter.path_prefix ?? "");
 
+  // the list's reads (a filter, Load more) and the fixes made here, in order: a
+  // page read before a fix, or older than the one shown, is dropped
+  const order = useReadOrder();
+
   const load = useCallback(() => {
+    const ticket = order.begin();
     queueApi
       .failureItems(filter)
       .then((d) => {
+        if (!order.fresh(ticket)) return;
         if (!d || typeof d !== "object" || !Array.isArray(d.items)) throw new Error("not a list");
         setData(d);
         setError(false);
       })
-      .catch(() => setError(true));
-  }, [filter]);
+      .catch(() => order.fresh(ticket) && setError(true));
+  }, [filter, order]);
   useEffect(() => {
     setSelected(new Set());
     load();
@@ -85,10 +92,14 @@ export function Failures() {
 
   const more = () => {
     if (!data?.next) return;
+    const ticket = order.begin();
     queueApi
       .failureItems(filter, data.next)
-      .then((d) => setData((prev) => (prev ? { ...d, items: [...prev.items, ...d.items] } : d)))
-      .catch(() => setError(true));
+      .then((d) => {
+        if (!order.fresh(ticket)) return;
+        setData((prev) => (prev ? { ...d, items: [...prev.items, ...d.items] } : d));
+      })
+      .catch(() => order.fresh(ticket) && setError(true));
   };
 
   const setFilter = (k: (typeof FILTER_KEYS)[number], v: string) => {
@@ -102,7 +113,7 @@ export function Failures() {
     setBusy(true);
     setActionError(null);
     try {
-      const r = await queueApi.failureAction(req);
+      const r = await order.saving(() => queueApi.failureAction(req));
       setResult(r);
       setDialog(null);
       setSelected(new Set());
@@ -119,7 +130,7 @@ export function Failures() {
     setBusy(true);
     setActionError(null);
     try {
-      await queueApi.restoreFileAction(actionId);
+      await order.saving(() => queueApi.restoreFileAction(actionId));
       setNotice(t("queue.failures.restoreQueued"));
       load();
     } catch (e) {

@@ -4,10 +4,11 @@
 // previous / next lessons. A server without GET /api/me/videos/{id} shows none
 // of it.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderPage, memberUser } from "../test/pageHarness";
 import ar from "../i18n/ar.json";
+import { deferred } from "../test/deferred";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -119,6 +120,31 @@ describe("VideoDetail actions", () => {
         "aria-pressed",
         "true"
       )
+    );
+  });
+
+  it("marked watched while the series is first read: the older count does not come back", async () => {
+    serve();
+    const base = get.getMockImplementation()!;
+    const first = deferred();
+    const watched = structuredClone(EPISODES);
+    watched.seasons[0]!.episodes[1]!.watched = true;
+    let episodeReads = 0;
+    get.mockImplementation((url: string) => {
+      if (url !== "/api/series/s1/episodes?sort=episode") return base(url);
+      episodeReads += 1;
+      return episodeReads === 1 ? first.promise : Promise.resolve(watched);
+    });
+    post.mockResolvedValue({ updated: 1 });
+    open();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Mark watched" }));
+    const nav = await screen.findByRole("navigation", { name: "Lessons of the series" });
+    await waitFor(() => expect(nav).toHaveTextContent("2 of 3 lessons watched"));
+    // the read begun on opening the page lands last, the lesson not yet watched
+    await act(async () => first.resolve(EPISODES));
+    expect(screen.getByRole("navigation", { name: "Lessons of the series" })).toHaveTextContent(
+      "2 of 3 lessons watched"
     );
   });
 

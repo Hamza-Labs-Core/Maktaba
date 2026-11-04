@@ -13,17 +13,21 @@ import {
   type StreamingHost,
 } from "../../../lib/tvClusterApi";
 import { ConfirmDialog } from "./ConfirmDialog";
+import type { ReadOrder } from "../../../lib/readOrder";
 
 const AUTO = "";
 
 export function MoveDialog({
   channel,
   hosts,
+  save = (call) => call(),
   onClose,
   onMoved,
 }: {
   channel: OnAirChannel;
   hosts: StreamingHost[];
+  /** runs the move: the page's older reads are not applied */
+  save?: ReadOrder["saving"];
   onClose: () => void;
   onMoved: () => void | Promise<void>;
 }) {
@@ -37,7 +41,7 @@ export function MoveDialog({
     setBusy(true);
     setErr(null);
     try {
-      await tvClusterApi.move(channel.channel_id, target || undefined);
+      await save(() => tvClusterApi.move(channel.channel_id, target || undefined));
       await onMoved();
       onClose();
     } catch (e) {

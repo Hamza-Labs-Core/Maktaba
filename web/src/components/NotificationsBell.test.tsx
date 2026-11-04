@@ -1,7 +1,7 @@
 // Story 33.13 TC3: the bell - the unread count, the list (localised from key + params),
 // opening a notice marks it read and follows its link, mark all read, Escape closes.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { I18nProvider } from "../lib/i18n";
@@ -14,6 +14,7 @@ vi.mock("../lib/api", async () => {
 
 import { NotificationsBell, notificationVars } from "./NotificationsBell";
 import { notifications } from "../pages/Admin/LiveTV/changeFixtures";
+import { deferred } from "../test/deferred";
 
 function Where() {
   const loc = useLocation();
@@ -114,6 +115,47 @@ describe("NotificationsBell", () => {
     await userEvent.setup().click(screen.getByTestId("notifications-bell"));
     expect(screen.getByRole("dialog", { name: "الإشعارات" })).toHaveTextContent(
       "اجتاز تغيير البث رقم ٤٢ فحوصه وينتظر اعتمادك"
+    );
+  });
+
+  it("marks all read while a read is on its way: the older answer does not bring the badge back", async () => {
+    renderBell();
+    await screen.findByText("2");
+    // opening the list reads it again; that read is held
+    const held = deferred();
+    get.mockReturnValueOnce(held.promise);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("notifications-bell"));
+    post.mockResolvedValueOnce({ unread: 0 });
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+    expect(post).toHaveBeenCalledWith("/api/notifications/read-all");
+    await act(async () => held.resolve(notifications));
+    const bell = screen.getByTestId("notifications-bell");
+    expect(bell).toHaveAccessibleName("Notifications");
+    expect(document.querySelector(".mkt-bell__item--unread")).toBeNull();
+  });
+
+  it("opening a notice while a read is on its way: the older answer does not mark it unread again", async () => {
+    renderBell();
+    await screen.findByText("2");
+    const held = deferred();
+    get.mockReturnValueOnce(held.promise);
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("notifications-bell"));
+    post.mockResolvedValueOnce({ unread: 1 });
+    await user.click(screen.getByText(/needs your approval/));
+    await waitFor(() =>
+      expect(screen.getByTestId("where")).toHaveTextContent(notifications.items[0]!.link)
+    );
+    await act(async () => held.resolve(notifications));
+    expect(screen.getByTestId("notifications-bell")).toHaveAccessibleName(
+      "Notifications, 1 unread"
+    );
+    // the next read, begun after the save, is applied
+    get.mockResolvedValueOnce({ ...notifications, unread: 0, items: [] });
+    await user.click(screen.getByTestId("notifications-bell"));
+    await waitFor(() =>
+      expect(screen.getByTestId("notifications-bell")).toHaveAccessibleName("Notifications")
     );
   });
 

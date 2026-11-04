@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 
 const { get, put } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -181,6 +182,30 @@ describe("StylePanel", () => {
           .map((s) => (s as HTMLSelectElement).value)
       ).toEqual(["produced", "produced"])
     );
+  });
+
+  // a Find on its way when a season is pinned lists the season unpinned: its
+  // answer must not undo the pin on screen once the home has it
+  it("a Find that began before a pin does not undo the pin", async () => {
+    const older = deferred<{ items: SeasonStyle[] }>();
+    const answers: Promise<unknown>[] = [Promise.resolve({ items: [row({})] }), older.promise];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [row({})] }));
+    renderAt(<StylePanel libraries={librariesFixture} canEdit />, "/queue");
+    await userEvent.click(screen.getByRole("button", { name: "Find seasons" }));
+    const pin = await screen.findByRole("combobox", { name: "Style of الحبيب S1" });
+    await userEvent.click(screen.getByRole("button", { name: "Find seasons" }));
+    expect(get).toHaveBeenCalledTimes(2);
+
+    await userEvent.selectOptions(pin, "cinematic");
+    expect(put).toHaveBeenCalledWith(`/api/seasons/${SEASON}/style`, { style: "cinematic" });
+    await waitFor(() => expect(pin).toHaveValue("cinematic"));
+
+    older.resolve({ items: [row({})] });
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.getByRole("combobox", { name: "Style of الحبيب S1" })).toHaveValue("cinematic");
+    expect(screen.getByText("Pinned")).toBeInTheDocument();
   });
 
   it("a viewer can look but not pin", async () => {

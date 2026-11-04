@@ -5,7 +5,7 @@
 // it PUTs rights_confirmed; a 409 rights_confirmation_required from the
 // server opens the same dialog. Arabic renders.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within, waitFor } from "@testing-library/react";
+import { act, render, screen, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../../lib/i18n";
 import { ApiError } from "../../../lib/api";
@@ -23,6 +23,7 @@ vi.mock("../../../lib/api", async () => {
 
 import { SimulcastPanel } from "./Simulcast";
 import type { SimulcastView } from "../../../lib/tvSimulcastApi";
+import { type Deferred, deferred } from "../../../test/deferred";
 
 const channels = {
   items: [
@@ -169,6 +170,55 @@ describe("SimulcastPanel", () => {
     );
     await user.click(screen.getByRole("button", { name: "Start now" }));
     expect(post).toHaveBeenCalledWith("/api/tv/simulcast/outputs/a1/start");
+  });
+
+  it("an output stopped and a destination deleted stay so when an older read lands last", async () => {
+    const spare = {
+      id: "d2",
+      name: "Old Facebook",
+      kind: "facebook" as const,
+      ingest_url: "rtmps://live-api-s.facebook.com:443/rtmp/",
+      key_set: true,
+      stream_key_masked: "••••abcd",
+      in_use: false,
+    };
+    const before = view({ destinations: [...view().destinations, spare] });
+    const off = {
+      ...view().attachments[0]!,
+      output: { state: "off" as const, platform_note: false, minutes: 0 },
+    };
+    const after = view({ attachments: [off] });
+    const reads: Deferred<SimulcastView>[] = [];
+    let first = true;
+    get.mockImplementation((path: string) => {
+      if (path.startsWith("/api/channels") && !path.includes("simulcast"))
+        return Promise.resolve(channels);
+      if (first) {
+        first = false;
+        return Promise.resolve(before);
+      }
+      // the read after the stop is held; the one after the delete answers
+      if (reads.length === 0) {
+        const d = deferred<SimulcastView>();
+        reads.push(d);
+        return d.promise;
+      }
+      return Promise.resolve(after);
+    });
+    del.mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderPanel();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Stop now" }));
+    await waitFor(() => expect(reads).toHaveLength(1));
+    const row = screen.getByText("Old Facebook").closest("tr") as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Delete" }));
+    expect(del).toHaveBeenCalledWith("/api/tv/simulcast/destinations/d2");
+    await waitFor(() => expect(screen.queryByText("Old Facebook")).toBeNull());
+    // the read begun after the stop, before the delete, lands last
+    await act(async () => reads[0]!.resolve(before));
+    expect(screen.queryByText("Old Facebook")).toBeNull();
+    expect(screen.getByRole("button", { name: "Start now" })).toBeInTheDocument();
   });
 
   it("adds a destination with the platform's URL prefilled", async () => {

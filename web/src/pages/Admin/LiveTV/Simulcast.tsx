@@ -16,6 +16,7 @@ import { Select } from "@ds/components/Select/Select";
 import { ApiError } from "../../../lib/api";
 import { channelsApi, type Channel } from "../../../lib/channels";
 import { useI18n } from "../../../lib/i18n";
+import { useReadOrder } from "../../../lib/readOrder";
 import {
   simulcastErrCode,
   tvSimulcastApi,
@@ -120,12 +121,19 @@ export function SimulcastPanel() {
   const [busy, setBusy] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [hidden, setHidden] = useState(false);
+  // A read begun before a start, a stop or a removal (another's read after its
+  // own action) still has the old state: it is dropped (lib/readOrder).
+  const order = useReadOrder();
 
   const load = useCallback(async () => {
+    const ticket = order.begin();
     try {
-      setView(normalise(await tvSimulcastApi.status()));
+      const v = normalise(await tvSimulcastApi.status());
+      if (!order.fresh(ticket)) return;
+      setView(v);
       setLoadErr(null);
     } catch (e) {
+      if (!order.fresh(ticket)) return;
       // 403 / 404: no simulcast on this server (or not an admin) - leave the panel out
       if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
         setHidden(true);
@@ -133,7 +141,7 @@ export function SimulcastPanel() {
       }
       setLoadErr(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [order]);
   useEffect(() => {
     void load();
     channelsApi
@@ -162,7 +170,7 @@ export function SimulcastPanel() {
     setBusy(key);
     setMsg(null);
     try {
-      await f();
+      await order.saving(f);
       setMsg({ ok: true, text: ok });
       await load();
       return true;

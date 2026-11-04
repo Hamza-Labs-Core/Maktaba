@@ -10,6 +10,7 @@ import { Modal } from "@ds/components/Modal/Modal";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi, SOURCE_MODES } from "../../lib/queueApi";
 import type { SourceMode, YouTubeSource } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import { useFmt } from "./format";
 import { useAction } from "./useAction";
 // its own styles: Manage libraries opens it too, without the Queues page
@@ -133,7 +134,11 @@ export function YouTubeSourcesPanel({
 }) {
   const { t, n } = useI18n();
   const fmt = useFmt();
-  const { busy, error, run, clear } = useAction();
+  const { busy, error, run: runAction, clear } = useAction();
+  // the list's reads and the changes made here, in order: a read that began
+  // before a change (its answer still has the removed source, the old mode) is dropped
+  const order = useReadOrder();
+  const run = <T,>(key: string, fn: () => Promise<T>) => runAction(key, () => order.saving(fn));
   const [items, setItems] = useState<YouTubeSource[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [url, setUrl] = useState("");
@@ -151,11 +156,12 @@ export function YouTubeSourcesPanel({
   const load = useCallback(() => {
     if (!libId) return;
     setLoadError(false);
+    const ticket = order.begin();
     queueApi
       .sources(libId)
-      .then((r) => setItems(Array.isArray(r?.items) ? r.items : []))
-      .catch(() => setLoadError(true));
-  }, [libId]);
+      .then((r) => order.fresh(ticket) && setItems(Array.isArray(r?.items) ? r.items : []))
+      .catch(() => order.fresh(ticket) && setLoadError(true));
+  }, [libId, order]);
 
   useEffect(() => {
     setItems(null);
@@ -166,8 +172,10 @@ export function YouTubeSourcesPanel({
     setMode("new_and_backfill");
     setTartube({ open: false, path: "", channels: "" });
     clear();
+    // another library's list still on its way is not this one's
+    order.changed();
     load();
-  }, [load, clear]);
+  }, [load, clear, order]);
 
   if (!library) return null;
 

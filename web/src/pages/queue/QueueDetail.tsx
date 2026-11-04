@@ -7,6 +7,7 @@ import { Button } from "@ds/components/Button/Button";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import type {
   JobRef,
   LibraryQueueRow,
@@ -57,7 +58,11 @@ export function QueueDetail() {
   const { stage = "" } = useParams<{ stage: string }>();
   const { t, n } = useI18n();
   const fmt = useFmt();
-  const { snapshot: rawSnapshot } = useQueuesSnapshot();
+  const {
+    snapshot: rawSnapshot,
+    reload: reloadSnapshot,
+    saving: savingSnapshot,
+  } = useQueuesSnapshot();
   const snapshot = useMemo(() => safeSnapshot(rawSnapshot), [rawSnapshot]);
   const stream = useJobStream({ stage });
   const action = useAction();
@@ -76,26 +81,34 @@ export function QueueDetail() {
   // the stage the page shows now: a late answer for another stage is dropped
   const current = useRef(stage);
   current.current = stage;
+  // a detail read that began before a change here (a retry, a pause) or is
+  // older than the one shown is dropped; the rate chart's reads keep their order
+  const order = useReadOrder();
+  const rateOrder = useReadOrder();
 
   const load = useCallback(() => {
+    const ticket = order.begin();
     queueApi
       .detail(stage)
       .then((raw) => {
-        if (current.current !== stage) return;
+        if (current.current !== stage || !order.fresh(ticket)) return;
         const d = safeDetail(raw);
         if (!d) throw new Error("not a queue detail");
         setDetail(d);
         setFailure(null);
       })
       .catch((e: unknown) => {
-        if (current.current !== stage) return;
+        if (current.current !== stage || !order.fresh(ticket)) return;
         setFailure(e instanceof ApiError && e.status === 404 ? "missing" : "failed");
       });
+    const rateTicket = rateOrder.begin();
     queueApi
       .rate(stage, 6)
-      .then((r) => current.current === stage && setRate(arr(r?.points)))
+      .then((r) => {
+        if (current.current === stage && rateOrder.fresh(rateTicket)) setRate(arr(r?.points));
+      })
       .catch(() => {});
-  }, [stage]);
+  }, [stage, order, rateOrder]);
 
   useEffect(() => {
     setDetail(null);
@@ -186,8 +199,15 @@ export function QueueDetail() {
   const poolSize = pool?.effective_size ?? 0;
   const noWorker = !!summary.no_worker && counts.running === 0 && counts.pending > 0;
 
+  // A change the page shows (from the detail or the live snapshot): reads that
+  // began before it ends still have the old state and are not applied.
+  const save =
+    <T,>(fn: () => Promise<T>) =>
+    () =>
+      savingSnapshot(() => order.saving(fn));
   const afterAction = () => {
     load();
+    reloadSnapshot();
   };
 
   return (
@@ -222,7 +242,12 @@ export function QueueDetail() {
               variant="primary"
               loading={action.busy === "resume"}
               onClick={() =>
-                void action.run("resume", () => queueApi.resume(stage)).then(afterAction)
+                void action
+                  .run(
+                    "resume",
+                    save(() => queueApi.resume(stage))
+                  )
+                  .then(afterAction)
               }
             >
               {t("queue.detail.resume")}
@@ -243,7 +268,12 @@ export function QueueDetail() {
                 variant="secondary"
                 loading={action.busy === "pause"}
                 onClick={() =>
-                  void action.run("pause", () => queueApi.pause(stage, interrupt)).then(afterAction)
+                  void action
+                    .run(
+                      "pause",
+                      save(() => queueApi.pause(stage, interrupt))
+                    )
+                    .then(afterAction)
                 }
               >
                 {t("queue.detail.pause")}
@@ -256,9 +286,12 @@ export function QueueDetail() {
             loading={action.busy === "retry-all"}
             onClick={() =>
               void action
-                .run("retry-all", async () => {
-                  for (const g of retryGroups) await queueApi.retry(stage, { cause: g.cause });
-                })
+                .run(
+                  "retry-all",
+                  save(async () => {
+                    for (const g of retryGroups) await queueApi.retry(stage, { cause: g.cause });
+                  })
+                )
                 .then(afterAction)
             }
           >
@@ -308,7 +341,14 @@ export function QueueDetail() {
           currentStage={stage}
           stageLabel={stageLabel}
           busy={action.busy === "pool"}
-          onChange={(size) => void action.run("pool", () => queueApi.setPool(pool.pool, size))}
+          onChange={(size) =>
+            void action
+              .run(
+                "pool",
+                save(() => queueApi.setPool(pool.pool, size))
+              )
+              .then(reloadSnapshot)
+          }
         />
       )}
 
@@ -319,8 +359,11 @@ export function QueueDetail() {
             value={info.write_mode}
             onChange={(e) =>
               void action
-                .run("mode", () =>
-                  queueApi.patchStage(stage, { write_mode: e.target.value as "auto" | "review" })
+                .run(
+                  "mode",
+                  save(() =>
+                    queueApi.patchStage(stage, { write_mode: e.target.value as "auto" | "review" })
+                  )
                 )
                 .then(afterAction)
             }
@@ -454,12 +497,18 @@ export function QueueDetail() {
           nasP95Ms={snapshot?.health?.nas?.open_ms_p95}
           onRetry={(g) =>
             void action
-              .run(groupKey(g), () => queueApi.retry(stage, { cause: g.cause }))
+              .run(
+                groupKey(g),
+                save(() => queueApi.retry(stage, { cause: g.cause }))
+              )
               .then(afterAction)
           }
           onApply={(g) =>
             void action
-              .run(groupKey(g), () => queueApi.apply(stage, { all: true }))
+              .run(
+                groupKey(g),
+                save(() => queueApi.apply(stage, { all: true }))
+              )
               .then(afterAction)
           }
         />

@@ -2,7 +2,7 @@
 // the dumps go, when, how many are kept, the room they may take) and the dumps
 // there are.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, put, del } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), del: vi.fn() }));
@@ -15,6 +15,7 @@ import { ApiError } from "../../lib/api";
 import { BackupsSection } from "./BackupsSection";
 import { renderPage } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
+import { type Deferred, deferred } from "../../test/deferred";
 
 const GB = 2 ** 30;
 const HOME = "/Users/me/Library/Application Support/Maktaba";
@@ -261,6 +262,36 @@ describe("BackupsSection", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.queryByText("maktaba-20261025-030000.dump")).toBeNull();
     expect(screen.getByText(/All the dumps together/)).toHaveTextContent("3.0 GB");
+  });
+
+  it("a dump deleted while the list is read again (after a 404) stays gone", async () => {
+    const reads: Deferred[] = [];
+    routeGet(get, {
+      "/api/server/backups": () => {
+        if (del.mock.calls.length === 0) return DOC;
+        // the read after the first delete's 404 is held
+        const d = deferred();
+        reads.push(d);
+        return d.promise;
+      },
+    });
+    renderPage(<BackupsSection />, { path: "/settings/storage" });
+    const user = userEvent.setup();
+    const nightly = DUMPS[0]!.name;
+    const update = DUMPS[1]!.name;
+    // the nightly dump was removed elsewhere meanwhile: 404, and the list is read again
+    del.mockRejectedValueOnce(problem(404));
+    await user.click(await screen.findByRole("button", { name: `Delete ${nightly}` }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(reads).toHaveLength(1));
+    // the update dump is deleted: the home answers with no dumps left
+    del.mockResolvedValueOnce({ ...DOC, dumps: [], dumps_bytes: 0 });
+    await user.click(screen.getByRole("button", { name: `Delete ${update}` }));
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(screen.queryByText(update)).toBeNull());
+    // the read begun before that delete lands last, the update dump still there
+    await act(async () => reads[0]!.resolve({ ...DOC, dumps: [DUMPS[1]], dumps_bytes: 3 * GB }));
+    expect(screen.queryByText(update)).toBeNull();
   });
 
   it("cancelling the delete keeps the dump", async () => {

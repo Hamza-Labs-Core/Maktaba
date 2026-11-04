@@ -37,6 +37,7 @@ import { Markdown } from "../../lib/markdown";
 import { checkValue, useTk } from "./LiveTV/changeBits";
 import "../../styles/updates.css";
 import { accessAnswerWords, type HomeDb } from "../../lib/homeDb";
+import { useReadOrder } from "../../lib/readOrder";
 import {
   logsExportURL,
   logsLink,
@@ -203,18 +204,29 @@ export function AdminUpdates() {
   const [busy, setBusy] = useState(false);
   const [confirmNow, setConfirmNow] = useState(false);
 
+  // A poll begun before a change (pause, skip, cancel, unblock) still has the
+  // old state: none of its three reads is applied, nor one older than the shown
+  // answer (lib/readOrder).
+  const order = useReadOrder();
+
   const load = useCallback(async () => {
+    const ticket = order.begin();
     try {
       const o = await updatesApi.overview();
+      if (!order.fresh(ticket)) return;
       setOv(o);
       setError(false);
       const shown = o.run ?? o.last_run;
-      setView(shown ? await updatesApi.run(shown.id) : null);
-      setHistory((await updatesApi.runs(20)).items ?? []);
+      const v = shown ? await updatesApi.run(shown.id) : null;
+      if (!order.fresh(ticket)) return;
+      setView(v);
+      const items = (await updatesApi.runs(20)).items ?? [];
+      if (!order.fresh(ticket)) return;
+      setHistory(items);
     } catch {
-      setError(true);
+      if (order.fresh(ticket)) setError(true);
     }
-  }, []);
+  }, [order]);
 
   useEffect(() => {
     void load();
@@ -245,7 +257,7 @@ export function AdminUpdates() {
   const act = async (fn: () => Promise<unknown>, done: string) => {
     setBusy(true);
     try {
-      await fn();
+      await order.saving(fn);
       toast.show({ tone: "success", message: done });
       await load();
     } catch (e) {
