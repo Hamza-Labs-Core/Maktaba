@@ -21,6 +21,38 @@ type fakePacks struct {
 	refuse   error
 	made     []componentsh.OfflineRequest
 	pending  int // FetchOffline answers progress this many times before the file
+	// packsOff and packsErr are PacksOff's answer ([components] packs = "off")
+	packsOff bool
+	packsErr error
+}
+
+func (p *fakePacks) PacksOff(context.Context) (bool, error) { return p.packsOff, p.packsErr }
+
+// With packs off on this machine (offline mode) install of an asset not on disk is
+// refused, packs_disabled, exit 1, nothing applied; with packs on, or no answer, it is
+// asked as before; a component that is no asset is not refused.
+func TestComponentsCLIInstallRefusedWithPacksOff(t *testing.T) {
+	f := &fakeComponents{}
+	c, _, errOut := cli(f, false, "")
+	c.packs = &fakePacks{packsOff: true}
+	if code := runCLI(c, "install", "runtime.ml"); code != exitComponentsFailed || len(f.applied) != 0 ||
+		!strings.Contains(errOut.String(), "Refused (packs_disabled)") {
+		t.Fatalf("exit %d, applied %+v: %s", code, f.applied, errOut)
+	}
+	for name, pk := range map[string]*fakePacks{"packs on": {}, "no answer": {packsOff: true, packsErr: errors.New("404")}} {
+		f = &fakeComponents{}
+		c, _, errOut = cli(f, false, "")
+		c.packs = pk
+		if code := runCLI(c, "install", "runtime.ml"); code != 0 || len(f.applied) != 1 {
+			t.Fatalf("%s: exit %d, applied %+v: %s", name, code, f.applied, errOut)
+		}
+	}
+	f = &fakeComponents{}
+	c, out, _ := cli(f, false, "")
+	c.packs = &fakePacks{packsOff: true}
+	if code := runCLI(c, "install", "llm"); code != 0 || !strings.Contains(out.String(), "installed already") {
+		t.Fatalf("no asset: exit %d: %s", code, out)
+	}
 }
 
 func (p *fakePacks) ProgressOf(_ context.Context, ids []string) map[string]*components.InstallProgress {

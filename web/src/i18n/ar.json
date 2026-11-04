@@ -6309,6 +6309,7 @@
   "components.refused.other": "لا يمكن إجراء هذا التغيير الآن.",
   "components.refused.not_restartable": "لا يحتوي {name} على شيء يعمل بمفرده، فلا يمكن إعادة تشغيله.",
   "components.refused.not_running": "{name} لا يعمل، فلا يمكن إعادة تشغيله. شغّله أولًا.",
+  "components.refused.packs_disabled": "تثبيت المكونات متوقف على هذا الجهاز، فلا يمكن تثبيت {name} هنا. أضِفه من «استيراد ملف»، أو أعِد تفعيل التثبيت.",
   "components.stale": "غيّر شخص آخر هذا. هذه حالته الآن.",
   "components.undo": "تراجع",
   "components.done.on": "تم تشغيل {name}.",

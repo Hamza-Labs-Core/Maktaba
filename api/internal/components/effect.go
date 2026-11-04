@@ -106,6 +106,9 @@ const (
 	// group, an extension), or a component that is off, held or waiting
 	CodeNotRestartable = "not_restartable"
 	CodeNotRunning     = "not_running"
+	// an install of an asset not on this home while packs are off on its machine
+	// ([components] packs = "off": offline mode): nothing could install it
+	CodePacksDisabled = "packs_disabled"
 )
 
 // gate is what the desired state alone makes of one component, the way the runners

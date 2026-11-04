@@ -137,6 +137,31 @@ func (p *Packs) Progress(ctx context.Context, id string) (*svc.InstallProgress, 
 	return d.Progress, nil
 }
 
+// PacksOff reports whether this machine's supervisor has packs off ([components] packs
+// = "off", offline mode: it installs nothing). An error is no answer (a supervisor that
+// does not answer, or one before this route): the caller decides nothing from it.
+func (p *Packs) PacksOff(ctx context.Context) (bool, error) {
+	resp, err := p.Sup.Do(ctx, http.MethodGet, "/components/packs", nil, "")
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+	if err != nil {
+		return false, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("the supervisor answered %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+	}
+	var d struct {
+		Packs string `json:"packs"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil || (d.Packs != "on" && d.Packs != "off") {
+		return false, fmt.Errorf("the supervisor's answer: %s", strings.TrimSpace(string(raw)))
+	}
+	return d.Packs == "off", nil
+}
+
 // Restart asks the supervisor to restart id's running processes and answers how many
 // it restarted (0: none runs now).
 func (p *Packs) Restart(ctx context.Context, id string) (int, error) {
