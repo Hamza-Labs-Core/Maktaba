@@ -35,8 +35,8 @@
 #                        each asset that is not in the payload as a reproducible
 #                        <id>-<ver>-<platform>.tar.zst (tools/release/packs);
 #                        sign-and-release adds them and components-<ver>.json,
-#                        the signed index, before the checksums. A failed leg
-#                        leaves its packs out of the index; it holds nothing back.
+#                        the signed index, before the checksums. Every leg must
+#                        pass: a release never ships without a platform's packs.
 #   0. guard             the tag-order guard (_tag-guard.yml: above every
 #                        published release, on main, CI passed), which
 #                        also opens the tag's release as a DRAFT.
@@ -674,8 +674,10 @@ jobs:
   # wheelhouses today), built from the tagged commit by tools/release/packs/build.sh:
   # reproducible (the commit's time, sorted entries, zstd at one level), so a re-run builds
   # the same bytes and the signed checksums do not change. pip downloads any target's
-  # wheels, so every leg is a Linux runner. Like the Linux payloads they do not hold the
-  # release back: sign-and-release indexes the packs that built and warns about the rest.
+  # wheels, so every leg is a Linux runner. Unlike the Linux payloads they hold the release
+  # back: sign-and-release runs only when every leg passed, and the index refuses a release
+  # with any catalog pack missing (gen-components-index), so no platform ships without its
+  # packs.
   package-packs:
     name: package packs (${{ matrix.platform }})
     needs: [guard]
@@ -724,7 +726,8 @@ jobs:
           path: out/*
           # zstd already: no second compression
           compression-level: 0
-          if-no-files-found: ignore
+          # every catalog platform has packs: a leg that built none failed
+          if-no-files-found: error
           retention-days: 7
 
   # The Linux server payload (Epic 39 stories 39.2, 39.10): the tree the Linux
@@ -971,7 +974,8 @@ jobs:
 
   # The Linux payloads do not hold the release back: a leg that failed leaves its
   # architecture out (the notes say so), the rest is published; so does the server image,
-  # which is made of them. Every other job must pass.
+  # which is made of them. Every other job must pass, every leg of package-packs among them
+  # (tools/ci/tests/test_release_packs.py keeps it so).
   sign-and-release:
     name: sign + publish release
     needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs]
@@ -979,7 +983,8 @@ jobs:
       !cancelled() &&
       needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
       needs.build-images.result == 'success' && needs.package-archives.result == 'success' &&
-      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success'
+      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success' &&
+      needs.package-packs.result == 'success'
     runs-on: ubuntu-22.04
     # the packs are several GB to download, hash and attach
     timeout-minutes: 60
@@ -1061,10 +1066,8 @@ jobs:
           path: staged/linux-payload
           merge-multiple: true
 
-      # none when every leg failed
+      # every leg's: a failed download fails the release
       - name: Download the component packs
-        if: needs.package-packs.result != 'skipped'
-        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-packs-*
@@ -1131,15 +1134,13 @@ jobs:
           tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
               -C staged/web-dist -cf - . | gzip -n > "dist/maktaba-web-${TAG}.tar.gz"
           # The component packs (Epic 51 story 51.15): moved, not copied (several GB)
-          if [ -d staged/packs ]; then
-            find staged/packs -maxdepth 1 -type f -name '*.tar.zst*' -exec mv {} dist/ \;
-          fi
+          find staged/packs -maxdepth 1 -type f -name '*.tar.zst*' -exec mv {} dist/ \;
           ls -l dist
 
       # The signed component index (story 51.15): every pack in dist/ with its digest, size
       # and files.sha256, and every pinned model of the catalog. Before release.json, which
       # names it, and before the checksums, which sign it. The commit's time: a re-run
-      # writes the same file. A pack whose leg failed is left out with a warning.
+      # writes the same file. A catalog pack not in dist fails the release.
       - name: Write the component index
         env:
           TAG: ${{ github.ref_name }}
