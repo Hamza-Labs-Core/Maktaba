@@ -461,11 +461,20 @@ func TestAnOffComponentReadsOffWhateverItsStalePartsSay(t *testing.T) {
 	if roll, _, _, _ := statusOn(oldDrain, g, true); roll.Phase != components.PhaseDraining {
 		t.Fatalf("draining part at the old generation: %s", roll.Phase)
 	}
+	// a part alone at the old generation keeps its word: nothing has acted on the change
+	// yet (analytics' API loops still run until they report; components-live T14)
+	alone := []store.Status{{ID: "analytics", Part: "api", Phase: components.PhaseRunning, ObservedGeneration: 3,
+		Conditions: []store.Condition{{Type: components.CondReady, Status: "true"}}}}
+	if roll, _, _, _ := statusOn(alone, g, true); roll.Phase != components.PhaseRunning {
+		t.Fatalf("a part alone at the old generation: %s", roll.Phase)
+	}
 	// held: the stale part reads stopped, held
 	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled,
 		Hold: &store.Hold{By: "admin:test"}, Generation: 5}
 	hg := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
-	if roll, reason, _, _ := statusOn(in, hg, true); roll.Phase != components.PhaseStopped || reason != "held" {
+	held := slices.Clone(in)
+	held[0].Phase, held[0].ObservedGeneration = components.PhaseStopped, 5 // the supervisor acted
+	if roll, reason, _, _ := statusOn(held, hg, true); roll.Phase != components.PhaseStopped || reason != "held" {
 		t.Fatalf("held: %s %q", roll.Phase, reason)
 	}
 	// on again: a stale row is the part's own word until it reports
