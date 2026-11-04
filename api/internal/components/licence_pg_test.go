@@ -76,7 +76,13 @@ func TestLicenceLapseAndReturn(t *testing.T) {
 			time.Sleep(20 * time.Millisecond)
 		}
 	}
-	within(5*time.Second, "running", func() bool { return status().Phase == comps.PhaseRunning })
+	// running as the loaded desired state says (its generation): the runner's first report
+	// can go out before its first load, with the catalog's defaults (generation 0) and no
+	// licence read yet (an integration run asked Licensed then: true, not known)
+	within(5*time.Second, "running", func() bool {
+		s := status()
+		return s.Phase == comps.PhaseRunning && s.ObservedGeneration == genBefore
+	})
 	if lic, known := r.Licensed("cloud.relay"); !lic || !known {
 		t.Fatalf("Licensed %v %v while granted", lic, known)
 	}
