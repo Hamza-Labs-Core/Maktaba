@@ -142,25 +142,131 @@ jobs:
         working-directory: tools/affected-tests
         run: go build -o "$RUNNER_TEMP/affected-tests" .
       # data only from here on: coverage reports the builder parses, never run
-      - uses: actions/download-artifact@v8.0.1
+      - name: Download coverage-go
+        id: artifact-coverage-go
         continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: coverage-go
           path: ${{ runner.temp }}/data/coverage-go
-      - uses: actions/download-artifact@v8.0.1
+      - name: Wait 15s to retry the download of coverage-go
+        if: steps.artifact-coverage-go.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download coverage-go (attempt 2)
+        id: artifact-coverage-go-2
+        if: steps.artifact-coverage-go.outcome == 'failure'
         continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: coverage-go
+          path: ${{ runner.temp }}/data/coverage-go
+      - name: Wait 45s to retry the download of coverage-go
+        if: steps.artifact-coverage-go-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download coverage-go (attempt 3)
+        id: artifact-coverage-go-3
+        if: steps.artifact-coverage-go-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: coverage-go
+          path: ${{ runner.temp }}/data/coverage-go
+      - name: Check coverage-go downloaded
+        id: artifact-coverage-go-check
+        if: steps.artifact-coverage-go-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: coverage-go
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: the job goes on without it)"
+      - name: Download coverage-python
+        id: artifact-coverage-python
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: coverage-python
           path: ${{ runner.temp }}/data/coverage-python
+      - name: Wait 15s to retry the download of coverage-python
+        if: steps.artifact-coverage-python.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download coverage-python (attempt 2)
+        id: artifact-coverage-python-2
+        if: steps.artifact-coverage-python.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: coverage-python
+          path: ${{ runner.temp }}/data/coverage-python
+      - name: Wait 45s to retry the download of coverage-python
+        if: steps.artifact-coverage-python-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download coverage-python (attempt 3)
+        id: artifact-coverage-python-3
+        if: steps.artifact-coverage-python-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: coverage-python
+          path: ${{ runner.temp }}/data/coverage-python
+      - name: Check coverage-python downloaded
+        id: artifact-coverage-python-check
+        if: steps.artifact-coverage-python-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: coverage-python
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: the job goes on without it)"
       # the xccov and JaCoCo fragments CI's Apple and Android jobs left on main
-      - uses: actions/download-artifact@v8.0.1
+      - name: Download coverage-fragment-*
+        id: artifact-coverage-fragment
         if: github.event_name == 'workflow_run'
         continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           pattern: coverage-fragment-*
           path: ${{ runner.temp }}/data/coverage-fragments
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
+      - name: Wait 15s to retry the download of coverage-fragment-*
+        if: steps.artifact-coverage-fragment.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download coverage-fragment-* (attempt 2)
+        id: artifact-coverage-fragment-2
+        if: steps.artifact-coverage-fragment.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: coverage-fragment-*
+          path: ${{ runner.temp }}/data/coverage-fragments
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Wait 45s to retry the download of coverage-fragment-*
+        if: steps.artifact-coverage-fragment-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download coverage-fragment-* (attempt 3)
+        id: artifact-coverage-fragment-3
+        if: steps.artifact-coverage-fragment-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: coverage-fragment-*
+          path: ${{ runner.temp }}/data/coverage-fragments
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Check coverage-fragment-* downloaded
+        id: artifact-coverage-fragment-check
+        if: steps.artifact-coverage-fragment-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: coverage-fragment-*
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: the job goes on without it)"
       - name: Build the map
         env:
           GH_TOKEN: ${{ github.token }}

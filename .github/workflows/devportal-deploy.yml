@@ -96,11 +96,47 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       # the site the build job built, tested and scanned
-      - uses: actions/download-artifact@v8.0.1
+      - name: Download devportal-site
+        id: artifact-devportal-site
         if: steps.secrets.outputs.ok == 'true'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: devportal-site
           path: web/packages/devportal/dist
+      - name: Wait 15s to retry the download of devportal-site
+        if: steps.artifact-devportal-site.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download devportal-site (attempt 2)
+        id: artifact-devportal-site-2
+        if: steps.artifact-devportal-site.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: devportal-site
+          path: web/packages/devportal/dist
+      - name: Wait 45s to retry the download of devportal-site
+        if: steps.artifact-devportal-site-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download devportal-site (attempt 3)
+        id: artifact-devportal-site-3
+        if: steps.artifact-devportal-site-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: devportal-site
+          path: web/packages/devportal/dist
+      - name: Check devportal-site downloaded
+        id: artifact-devportal-site-check
+        if: steps.artifact-devportal-site-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: devportal-site
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Deploy
         if: steps.secrets.outputs.ok == 'true'

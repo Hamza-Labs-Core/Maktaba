@@ -297,10 +297,45 @@ jobs:
         app: [player, remote, tv]
     steps:
       - name: The bundles
+        id: artifact-maktaba-play-bundles
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: maktaba-play-bundles
           path: play
+      - name: Wait 15s to retry the download of maktaba-play-bundles
+        if: steps.artifact-maktaba-play-bundles.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: The bundles (attempt 2)
+        id: artifact-maktaba-play-bundles-2
+        if: steps.artifact-maktaba-play-bundles.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: maktaba-play-bundles
+          path: play
+      - name: Wait 45s to retry the download of maktaba-play-bundles
+        if: steps.artifact-maktaba-play-bundles-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: The bundles (attempt 3)
+        id: artifact-maktaba-play-bundles-3
+        if: steps.artifact-maktaba-play-bundles-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: maktaba-play-bundles
+          path: play
+      - name: Check maktaba-play-bundles downloaded
+        id: artifact-maktaba-play-bundles-check
+        if: steps.artifact-maktaba-play-bundles-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: maktaba-play-bundles
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       # Signed only: the bundles job names an unsigned bundle -unsigned and says signed=false,
       # so this file exists only when it was signed and jarsigner verified it.
