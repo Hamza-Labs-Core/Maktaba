@@ -60,10 +60,20 @@ $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- a done row that left done or its library: its subject goes when no done row is left
+-- a done row that left done or its library: its subject goes when no done row is left.
+-- The subject's row is locked first: two transactions taking away its last two done rows
+-- at once each see the other's row still there, so without the lock both keep the
+-- subject. With it the second waits for the first to end, and its check (a new
+-- statement, so a new snapshot) sees the first's row gone.
 CREATE OR REPLACE FUNCTION processing_done_subjects_left() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
+    PERFORM 1 FROM processing_done_subjects d
+      WHERE d.library_id = OLD.library_id AND d.stage = OLD.stage AND d.subject_id = OLD.subject_id
+        FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
     DELETE FROM processing_done_subjects d
      WHERE d.library_id = OLD.library_id AND d.stage = OLD.stage AND d.subject_id = OLD.subject_id
        AND NOT EXISTS (SELECT 1 FROM processing_jobs p
@@ -76,10 +86,21 @@ $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- deleted rows (one statement: the retention's batches, a removed video's cascade)
+-- deleted rows (one statement: the retention's batches, a removed video's cascade).
+-- The subjects' rows are locked first, as in processing_done_subjects_left, in key
+-- order so two deleting statements never wait on each other in a circle.
 CREATE OR REPLACE FUNCTION processing_done_subjects_gone() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
+    PERFORM 1 FROM processing_done_subjects d
+      JOIN (SELECT DISTINCT library_id, stage, subject_id
+              FROM gone WHERE state = 'done' AND library_id IS NOT NULL) g
+        ON d.library_id = g.library_id AND d.stage = g.stage AND d.subject_id = g.subject_id
+     ORDER BY d.library_id, d.stage, d.subject_id
+       FOR UPDATE OF d;
+    IF NOT FOUND THEN
+        RETURN NULL;
+    END IF;
     DELETE FROM processing_done_subjects d
      USING (SELECT DISTINCT library_id, stage, subject_id, subject_kind
               FROM gone WHERE state = 'done' AND library_id IS NOT NULL) g

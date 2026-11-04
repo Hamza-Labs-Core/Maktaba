@@ -109,7 +109,7 @@ func TestReadPaths_DoneSummaryMatchesRawCounts(t *testing.T) {
 
 	// a job that runs and finishes (the workers' path: pending, running, done)
 	var id int64
-	if err := db.QueryRow(`INSERT INTO processing_jobs (video_id, stage, state) VALUES ($1, 'probe', 'pending') RETURNING id`, vid(1)).Scan(&id); err != nil {
+	if err := db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state) VALUES ($1, (SELECT library_id FROM videos WHERE id = $1), 'probe', 'pending') RETURNING id`, vid(1)).Scan(&id); err != nil {
 		t.Fatal(err)
 	}
 	mustExec(t, db, `UPDATE processing_jobs SET state = 'running', started_at = now() WHERE id = $1`, id)
@@ -121,19 +121,23 @@ func TestReadPaths_DoneSummaryMatchesRawCounts(t *testing.T) {
 	sameDone(t, db, "progress write")
 
 	// the same subject done again later: one subject, a later time
-	mustExec(t, db, `INSERT INTO processing_jobs (video_id, stage, state, finished_at, outcome) VALUES ($1, 'probe', 'done', now(), 'unchanged')`, vid(1))
+	mustExec(t, db, `INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at, outcome) VALUES ($1, (SELECT library_id FROM videos WHERE id = $1), 'probe', 'done', now(), 'unchanged')`, vid(1))
 	sameDone(t, db, "done again")
 	// an older run inserted done does not move the time back
-	mustExec(t, db, `INSERT INTO processing_jobs (video_id, stage, state, finished_at, outcome) VALUES ($1, 'probe', 'done', now() - interval '3 days', 'unchanged')`, vid(1))
+	mustExec(t, db, `INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at, outcome) VALUES ($1, (SELECT library_id FROM videos WHERE id = $1), 'probe', 'done', now() - interval '3 days', 'unchanged')`, vid(1))
 	sameDone(t, db, "an older run")
 
 	// many subjects and stages in one statement; a failed and a cancelled row add nothing
-	mustExec(t, db, `INSERT INTO processing_jobs (video_id, stage, state, finished_at, outcome)
-		SELECT v.id, s.stage, 'done', now() - (random() * interval '5 days'), 'changed'
+	mustExec(t, db, `INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at, outcome)
+		SELECT v.id, v.library_id, s.stage, 'done', now() - (random() * interval '5 days'), 'changed'
 		  FROM videos v CROSS JOIN (VALUES ('probe'), ('link'), ('thumb_small')) s(stage)`)
-	mustExec(t, db, `INSERT INTO processing_jobs (video_id, stage, state, finished_at, error) VALUES ($1, 'transcribe', 'failed', now(), 'x')`, vid(2))
-	mustExec(t, db, `INSERT INTO processing_jobs (video_id, stage, state, finished_at) VALUES ($1, 'transcribe', 'cancelled', now())`, vid(3))
+	mustExec(t, db, `INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at, error) VALUES ($1, (SELECT library_id FROM videos WHERE id = $1), 'transcribe', 'failed', now(), 'x')`, vid(2))
+	mustExec(t, db, `INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at) VALUES ($1, (SELECT library_id FROM videos WHERE id = $1), 'transcribe', 'cancelled', now())`, vid(3))
 	sameDone(t, db, "bulk")
+	// the comparison is of something: 6 videos x 3 stages done (probe among them)
+	if n := doneSubjects(t, db, libA) + doneSubjects(t, db, libB); n != 18 {
+		t.Fatalf("summary rows after the bulk insert = %d, want 18", n)
+	}
 
 	// the retention: done rows older than a newer done row go, the subject stays
 	mustExec(t, db, `DELETE FROM processing_jobs j WHERE j.state = 'done' AND EXISTS (SELECT 1 FROM processing_jobs k
@@ -373,5 +377,103 @@ func TestReadPaths_BoundedOnALargeTable(t *testing.T) {
 	}
 	if n := rd.libraries.Builds() - before; n != 1 {
 		t.Fatalf("16 concurrent reads ran %d builds, want 1", n)
+	}
+}
+
+// Two transactions that take away a subject's last two done rows at once: each sees
+// the other's row still there when it checks, so without the triggers' lock on the
+// subject's row both would keep it, and the library's done count would stay one too
+// high. With the lock the second waits for the first, then sees no done row left.
+func TestReadPaths_LastTwoDoneRowsGoAtOnce(t *testing.T) {
+	db := parityDB(t)
+	const lib = "17500000-0000-4000-8000-0000000000c1"
+	const video = "17500000-0000-4000-8002-000000000001"
+	mustExec(t, db, `INSERT INTO libraries (id, name, roots) VALUES ($1, 'C', ARRAY['/c'])`, lib)
+	mustExec(t, db, `INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime)
+		VALUES ($1, $2, repeat('c', 64), '/c/1.mp4', '1.mp4', 1, now())`, video, lib)
+
+	for _, tc := range []struct {
+		name, take string // take: the statement that takes job $1 away from done
+	}{
+		{"deleted", `DELETE FROM processing_jobs WHERE id = $1`},
+		{"turned failed", `UPDATE processing_jobs SET state = 'failed', error = 'x' WHERE id = $1`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mustExec(t, db, `DELETE FROM processing_jobs WHERE video_id = $1`, video)
+			var a, b int64
+			for _, id := range []*int64{&a, &b} {
+				if err := db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at, outcome)
+					VALUES ($1, $2, 'probe', 'done', now(), 'changed') RETURNING id`, video, lib).Scan(id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if n := doneSubjects(t, db, lib); n != 1 {
+				t.Fatalf("before: %d subjects", n)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			tx1, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx1.Rollback() }()
+			tx2, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = tx2.Rollback() }()
+
+			if _, err := tx1.ExecContext(ctx, tc.take, a); err != nil {
+				t.Fatal(err)
+			}
+			// the second runs while the first is still open: it must wait for it
+			second := make(chan error, 1)
+			go func() {
+				_, err := tx2.ExecContext(ctx, tc.take, b)
+				second <- err
+			}()
+			waitForLockWait(t, db)
+			if err := tx1.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			if err := <-second; err != nil {
+				t.Fatal(err)
+			}
+			if err := tx2.Commit(); err != nil {
+				t.Fatal(err)
+			}
+			if n := doneSubjects(t, db, lib); n != 0 {
+				t.Fatalf("after both: %d subjects, want 0 (no done row is left)", n)
+			}
+			sameDone(t, db, tc.name+" at once")
+		})
+	}
+}
+
+func doneSubjects(t *testing.T, db *sql.DB, lib string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM processing_done_subjects WHERE library_id = $1`, lib).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// waitForLockWait waits until a backend of this database waits on a lock (the
+// second transaction on the subject's row), or 2 s: without the lock nothing
+// waits, and the test then goes on to find the row kept.
+func waitForLockWait(t *testing.T, db *sql.DB) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var n int
+		if err := db.QueryRow(`SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n > 0 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
