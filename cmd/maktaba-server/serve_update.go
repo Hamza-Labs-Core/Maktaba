@@ -954,6 +954,9 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		if p.Instance != "" && !p.Wanted {
 			continue // an on-demand process nobody asked for
 		}
+		if p.Blocked && p.PID == 0 {
+			continue // its component is off (Epic 51): built dormant, it is not meant to run
+		}
 		if p.Role == supervisor.RoleTVSlot {
 			// a slot starting, stopped or between two starts is the TV's doing (its change's
 			// staging slot starts, its swap stops a slot: 2026-10-28, "tv-slot/amber is
