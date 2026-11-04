@@ -896,6 +896,20 @@ function serveDetail(id: string, machines: ComponentDetail["machines"]) {
 }
 
 describe("Components page: the drawer's health (story 51.14)", () => {
+  it("the drawer's close button is in the page's language", async () => {
+    serveDetail("transcription", HEALTHY);
+    localStorage.setItem("mkt:locale", "ar");
+    const user = userEvent.setup();
+    open();
+    await waitFor(() => expect(document.querySelector("[data-component]")).not.toBeNull());
+    await user.click(within(row("transcription")).getAllByRole("button").at(-1)!);
+    const drawer = await screen.findByRole("dialog", {
+      name: AR["components.transcription.title"],
+    });
+    expect(within(drawer).getByRole("button", { name: AR["common.close"] })).toBeInTheDocument();
+    expect(within(drawer).queryByRole("button", { name: "Close" })).toBeNull();
+  });
+
   it("shows each machine's uptime, restarts in 24 h, memory, disk and last error", async () => {
     serveDetail("transcription", HEALTHY);
     const user = userEvent.setup();
@@ -1292,6 +1306,48 @@ describe("Components page: a reason's params fill its words", () => {
       expect(panel.textContent).not.toMatch(/\{\w+\}/);
     });
   }
+
+  for (const locale of ["en", "ar"] as const) {
+    it(`a param that is a component's id reads as its title, in the row and the drawer (${locale})`, async () => {
+      localStorage.setItem("mkt:locale", locale);
+      const M = locale === "ar" ? AR : EN;
+      const failed = {
+        phase: "failed",
+        reason: "pack_not_published",
+        reason_params: { name: "runtime.ml", version: "0.4.2" },
+      };
+      setRow("runtime.ml", failed);
+      serveDetail("runtime.ml", [{ machine: "home", observed_generation: 3, ...failed }]);
+      const user = userEvent.setup();
+      open();
+      await screen.findByRole("heading", { name: M["components.page.title"] });
+      await waitFor(() => expect(document.querySelector("[data-component]")).not.toBeNull());
+      const said = M["components.reason.pack_not_published"]!.replace(
+        "{name}",
+        M["components.runtime.ml.title"]!
+      );
+      const chip = within(row("runtime.ml")).getByTestId("comp-chip");
+      expect(chip).toHaveTextContent(said);
+      expect(chip.textContent).not.toContain("runtime.ml");
+      await user.click(within(row("runtime.ml")).getAllByRole("button").at(-1)!);
+      const drawer = await screen.findByRole("dialog", { name: M["components.runtime.ml.title"] });
+      await waitFor(() => expect(drawer).toHaveTextContent(said));
+      expect(drawer.textContent).not.toContain("runtime.ml");
+    });
+  }
+
+  it("a param that names no component stays as it came", async () => {
+    setRow("runtime.ml", {
+      phase: "failed",
+      reason: "pack_not_published",
+      reason_params: { name: "v0.4.2" },
+    });
+    open();
+    await loaded();
+    expect(within(row("runtime.ml")).getByTestId("comp-chip")).toHaveTextContent(
+      EN["components.reason.pack_not_published"]!.replace("{name}", "v0.4.2")
+    );
+  });
 
   it("has the words for an unpublished pack in English and Arabic", () => {
     expect(EN["components.reason.pack_not_published"]).toContain("{name}");

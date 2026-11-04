@@ -86,7 +86,13 @@ export function ComponentDrawer({
   );
 
   return (
-    <Drawer open onClose={onClose} title={name} className="mkt-comp-drawer">
+    <Drawer
+      open
+      onClose={onClose}
+      title={name}
+      className="mkt-comp-drawer"
+      closeLabel={t("common.close")}
+    >
       <p className="mkt-comp-drawer__desc">{t(view.desc_key)}</p>
       {view.hold && (
         <p>
