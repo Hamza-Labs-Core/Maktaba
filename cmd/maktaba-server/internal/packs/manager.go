@@ -305,6 +305,10 @@ func (m *Manager) index(ctx context.Context, id string, s *session) (*rv.Verifie
 	m.step(id, DetailIndex, rv.ComponentsIndexName(m.Version), 0, 0)
 	v, signed, err := m.VerifyIndex(ctx, m.Version, s.src)
 	if err != nil {
+		if ReasonOf(err) == ReasonPackNotPublished {
+			return nil, fail(ReasonPackNotPublished, map[string]any{"name": id, "version": m.Version},
+				"%s %s is not published: %v", id, m.Version, err)
+		}
 		return nil, err
 	}
 	s.idx, s.signed = v, signed
@@ -317,6 +321,11 @@ func (m *Manager) index(ctx context.Context, id string, s *session) (*rv.Verifie
 func (m *Manager) VerifyIndex(ctx context.Context, version string, src Source) (*rv.VerifiedIndex, Signed, error) {
 	signed, err := src.Signed(ctx, version)
 	if err != nil {
+		if errors.Is(err, errNotFound) {
+			// the release's own signed files are not there: not a cut download, a release
+			// not published (yet)
+			return nil, signed, wrap(ReasonPackNotPublished, map[string]any{"name": "v" + version}, err)
+		}
 		return nil, signed, wrap(ReasonDownloadFailed, map[string]any{"name": "release"}, err)
 	}
 	if m.Trusted == nil {

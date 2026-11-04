@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,6 +248,27 @@ func TestFullHomeCountsAsInstalled(t *testing.T) {
 		if row.ID == "runtime.ml" && (row.Phase != components.PhaseOff || row.Conditions[0].Status != "true") {
 			t.Fatalf("runtime.ml's row: %+v", row)
 		}
+	}
+}
+
+// A release whose signed files are not there (not published yet) is pack_not_published
+// naming the asset, not a download cut short (download_failed); the row says so.
+func TestAReleaseNotPublishedIsSaidSo(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	delete(f.served, rv.ChecksumsFile)
+	err := f.m.Install(context.Background(), "runtime.ml", nil)
+	if ReasonOf(err) != ReasonPackNotPublished || ParamsOf(err)["name"] != "runtime.ml" {
+		t.Fatalf("install from a release not published: %v (%s %v)", err, ReasonOf(err), ParamsOf(err))
+	}
+	r := &Runner{M: f.m, Machine: store.Home}
+	for _, row := range r.Rows() {
+		if row.ID == "runtime.ml" && (row.Phase != components.PhaseFailed || row.Reason() != ReasonPackNotPublished) {
+			t.Fatalf("runtime.ml's row: %+v", row)
+		}
+	}
+	// the catalog lists it (its words, components.reason.pack_not_published)
+	if !slices.Contains(components.Default().Reasons, ReasonPackNotPublished) {
+		t.Fatal("the catalog does not list pack_not_published")
 	}
 }
 

@@ -119,7 +119,7 @@ func packsFailure(err error) error {
 	switch packs.ReasonOf(err) {
 	case packs.ReasonVerifyFailed, packs.ReasonUnpackRefused:
 		code = "pack_verify_failed"
-	case packs.ReasonDownloadFailed:
+	case packs.ReasonDownloadFailed, packs.ReasonPackNotPublished:
 		code = "pack_download_failed"
 	case packs.ReasonBusy:
 		code = "components_busy"
