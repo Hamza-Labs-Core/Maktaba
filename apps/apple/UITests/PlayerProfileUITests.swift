@@ -211,13 +211,11 @@ final class PlayerProfileUITests: PlayerUITestCase {
         try auditPage("profile") {}
         try auditPage("history") {
             self.scrollUntil(self.element("profile.history"))
-            self.element("profile.history").tap()
-            XCTAssertTrue(self.element("history.v2").waitForExistence(timeout: 10))
+            XCTAssertTrue(self.tapUntil(self.element("profile.history"), shows: self.element("history.v2")), "the history")
         }
         try auditPage("sessions") {
             self.scrollUntil(self.element("profile.sessions"))
-            self.element("profile.sessions").tap()
-            XCTAssertTrue(self.element("session.sess-1").waitForExistence(timeout: 10))
+            XCTAssertTrue(self.tapUntil(self.element("profile.sessions"), shows: self.element("session.sess-1")), "the sessions")
         }
     }
 
