@@ -861,7 +861,7 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, loops *runner.
 	}
 	// Epic 51: this machine's loops follow its own desired state (the home's with this
 	// machine's overrides), read from the home's database with the node's login
-	components.Start(loops, dbs.home, pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping), logger)
+	components.Start(loops, dbs.home, func() string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) }, logger)
 	var streamingClient grpcstreaming.Client
 	if addr := os.Getenv("MAKTABA_STREAMING_ADDR"); addr != "" {
 		c := grpcstreaming.DefaultConfig()

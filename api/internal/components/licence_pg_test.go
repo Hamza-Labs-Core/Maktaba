@@ -53,7 +53,7 @@ func TestLicenceLapseAndReturn(t *testing.T) {
 		stops.Add(1)
 		return nil
 	})
-	Start(r, db, dsn, keptLog(t))
+	Start(r, db, func() string { return dsn }, keptLog(t))
 	status := func() store.Status {
 		rows, err := st.StatusOf(ctx, "cloud.relay")
 		if err != nil {

@@ -56,13 +56,14 @@ func TestAPIRunnerOnAJoinedMachineFollowsItsOverride(t *testing.T) {
 	}
 	home := NewRunner(keptLog(t))
 	home.Declare("tvchange_controller", loop(&homeOn))
-	Start(home, db, dsn, keptLog(t))
+	Start(home, db, func() string { return dsn }, keptLog(t))
 	node := NewRunnerFor(keptLog(t), n.id)
 	if node.Machine() != n.id {
 		t.Fatalf("the node's runner follows %q", node.Machine())
 	}
 	node.Declare("tvchange_controller", loop(&nodeOn))
-	Start(node, n.db, clustertest.WithUser(t, dsn, cluster.RoleName(n.id), "node-pass-a"), keptLog(t))
+	nodeDSN := clustertest.WithUser(t, dsn, cluster.RoleName(n.id), "node-pass-a")
+	Start(node, n.db, func() string { return nodeDSN }, keptLog(t))
 	st := New(db)
 	phase := func(machine string) string {
 		rows, err := st.StatusOf(context.Background(), "livetv")
@@ -117,7 +118,7 @@ func TestAPIRunnerFollowsTheHome(t *testing.T) {
 		stops.Add(1)
 		return nil
 	})
-	Start(r, db, dsn, keptLog(t))
+	Start(r, db, func() string { return dsn }, keptLog(t))
 	st := New(db)
 	phase := func() string {
 		rows, err := st.StatusOf(context.Background(), "livetv")

@@ -588,3 +588,23 @@ func TestServedComponentHasARow(t *testing.T) {
 		t.Fatalf("enabled: %+v", s)
 	}
 }
+
+// The parent context ends before the runner is closed (streaming's shutdown cancels its
+// background context first): a loop that returns on it is not started again, and again.
+func TestParentEndedStartsNothing(t *testing.T) {
+	clk := newClock()
+	parent, cancel := context.WithCancel(context.Background())
+	r := newRunner(t, clk, func(o *Options) { o.Context = parent })
+	var starts atomic.Int32
+	r.Declare("usage_counter", func(ctx context.Context) error {
+		starts.Add(1)
+		<-ctx.Done()
+		return nil
+	})
+	eventually(t, "the loop runs", func() bool { return starts.Load() == 1 })
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+	if n := starts.Load(); n != 1 {
+		t.Fatalf("the loop started %d times after its parent ended, want 0", n-1)
+	}
+}

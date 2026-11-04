@@ -604,7 +604,8 @@ func (r *Runner) apply() {
 	gates := *r.gates.Load()
 	for _, l := range r.loops {
 		g := gates[l.comp]
-		want := g.on && !r.closed
+		// an ended parent starts nothing: each start would return at once and start again
+		want := g.on && !r.closed && r.root.Err() == nil
 		switch {
 		case want && !l.alive && !l.waiting && !l.exited:
 			// a start from off is logged once; a restart after a crash is logged by ended

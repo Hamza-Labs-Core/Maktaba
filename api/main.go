@@ -557,7 +557,7 @@ func runServe() error {
 			// PATCH /api/settings (a renamed home) reads at once in /api/auth/me
 			runtimeSettings := runtimecfg.New(appDB)
 			// the runner reads the home's desired state from here on
-			components.Start(loops, appDB, pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), logger)
+			components.Start(loops, appDB, func() string { return pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping) }, logger)
 			var eventBus *eventbus.Bus
 			eventHub := ws.NewHub()
 			router.MountP6(r, router.P6Deps{
