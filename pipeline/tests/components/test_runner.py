@@ -315,6 +315,40 @@ async def test_a_component_whose_stages_lack_their_model_here_waits_on_it(
 
 
 @pytest.mark.asyncio
+async def test_a_process_stopped_before_its_pass_saw_the_off_reports_off_at_close(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The supervisor stops a process whose component was just turned off, often before
+    the runner's pass read the change. Its rows are written by nothing else: at close it
+    reads desired state once more and reports off at the new generation, not the waiting
+    (its model missing) of the old one."""
+    await sync_graph(db, GRAPH, gates={})
+    comp = default_catalog().get("transcription")
+    assert comp is not None
+    mine = set(comp.stages)
+    monkeypatch.setattr(
+        cluster_stages,
+        "_cannot_run",
+        lambda st, _h: "no Whisper model on this machine" if st.name in mine else None,
+    )
+    r, sel = _runner(db)
+    await r.prime()
+    sel.compute()
+    await _pass(r)
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    assert rows["transcription"].phase == "waiting"
+    before = rows["transcription"].observed_generation
+
+    await set_want(db, "transcription", "installed")  # no pass: the process is stopped first
+    await r.close()
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    desired, _ = await store.desired(db)
+    assert rows["transcription"].phase == "off"
+    assert rows["transcription"].observed_generation == desired["transcription"].generation
+    assert rows["transcription"].observed_generation > before
+
+
+@pytest.mark.asyncio
 async def test_the_rows_carry_the_last_transition(db: Database) -> None:
     """Story 51.14: each row's detail.last_transition is the time from the generation the
     runner acted on to the settled phase it reached (the supervisor's histogram reads it)."""

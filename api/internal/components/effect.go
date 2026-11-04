@@ -117,6 +117,9 @@ type gate struct {
 	on     bool
 	phase  string
 	reason string
+	// gen is the generation of the desired row the gate was read from (0: no row): a
+	// status row that observed an older one has not acted on it yet (settle).
+	gen int64
 }
 
 // gates computes every component's gate over rows, requirements first, every licence
@@ -175,6 +178,9 @@ func gatesOn(cat *components.Catalog, rows map[string]store.Desired, licensed fu
 		if a := missingAsset(cat, id, missing); g.on && c.Switchable && c.Kind != components.KindAsset && a != "" {
 			g = gate{on: true, phase: components.PhaseWaiting, reason: ReasonRequirementMissing + ":" + a}
 		}
+		if has {
+			g.gen = d.Generation
+		}
 		out[id] = g
 	}
 	// wants do not order the catalog: read them once every gate is known
@@ -225,7 +231,15 @@ func isMissingAsset(cat *components.Catalog, id string, missing func(string) boo
 // worker reports running); one that runs while g lacks what it wants is degraded. A
 // RequirementsMet that says neither yes nor why is given g's reason, so it names what
 // it waits on. Other rows are kept.
+//
+// A component its desired state turns off (off, held, not installed) reads that: a part
+// whose row observed an older generation reads g's phase. Such a part has not acted on
+// the change and, being a process the supervisor stops at once (the index worker), may
+// never report again: its last word (waiting on a model, running) is not the component's.
 func settle(rows []store.Status, g gate) []store.Status {
+	if !g.on && g.gen > 0 {
+		rows = quiet(rows, g)
+	}
 	code, asset, _ := strings.Cut(g.reason, ":")
 	needs := g.phase == components.PhaseWaiting && asset != "" &&
 		(code == ReasonRequirementMissing || code == "dependency_off")
@@ -264,6 +278,23 @@ func settle(rows []store.Status, g gate) []store.Status {
 			}
 		}
 		out[i].Conditions = conds
+	}
+	return out
+}
+
+// quiet is rows with each one that observed a generation older than g's read as g's
+// phase (Ready false, with g's reason): g is closed, and the part has not reported since.
+func quiet(rows []store.Status, g gate) []store.Status {
+	out, copied := rows, false
+	for i, r := range rows {
+		if r.ObservedGeneration >= g.gen || r.Phase == g.phase {
+			continue
+		}
+		if !copied {
+			out, copied = slices.Clone(rows), true
+		}
+		out[i].Phase = g.phase
+		out[i].Conditions = []store.Condition{{Type: components.CondReady, Status: "false", Reason: g.reason}}
 	}
 	return out
 }

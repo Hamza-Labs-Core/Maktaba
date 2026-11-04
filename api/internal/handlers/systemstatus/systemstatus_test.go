@@ -254,6 +254,34 @@ func TestProcesses(t *testing.T) {
 	want(t, got[1], StatusDegraded, "process_restarting")
 	want(t, got[2], StatusDown, "process_crash_loop")
 
+	// a process its component keeps from running (the language model server of an llm
+	// that is off, the relay of a held cloud link) is ok; one that should run and has
+	// stopped is not
+	sup2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"processes":[{"role":"ollama","state":"held","blocked":true,"component":"llm"},
+			{"role":"relay","state":"held","component":"cloud.link"},
+			{"role":"pipeline","instance":"index","state":"exited","blocked":true,"component":"search.semantic"},
+			{"role":"streaming","state":"exited","component":"livetv"}]}`))
+	}))
+	defer sup2.Close()
+	held := checkProcesses(context.Background(), newEnv(&Handler{SupervisorURL: sup2.URL}))
+	if len(held) != 4 {
+		t.Fatalf("processes: %+v", held)
+	}
+	want(t, held[0], StatusOK, "process_held")
+	if held[0].Details["component"] != "llm" {
+		t.Fatalf("details: %+v", held[0].Details)
+	}
+	want(t, held[1], StatusOK, "process_held")
+	want(t, held[2], StatusOK, "process_held")
+	want(t, held[3], StatusDegraded, "process_stopped")
+	if st, _, _, _ := rollup(held); st != StatusDegraded {
+		t.Fatalf("a stopped process that should run: overall %s", st)
+	}
+	if st, code, _, _ := rollup(held[:3]); st != StatusOK || code != "overall_ok" {
+		t.Fatalf("only held processes: overall %s %s", st, code)
+	}
+
 	gone := checkProcesses(context.Background(), newEnv(&Handler{SupervisorURL: "http://127.0.0.1:1"}))
 	want(t, only(t, gone), StatusDegraded, "process_supervisor_unreachable")
 }

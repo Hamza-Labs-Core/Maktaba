@@ -4900,6 +4900,7 @@
   "health.reason.pipeline_ok": "يجيب على {addr}.",
   "health.reason.process_crash_loop": "تتوقف مرارًا بعد وقت قصير من تشغيلها.",
   "health.reason.process_running": "تعمل.",
+  "health.reason.process_held": "لا تعمل: مكوّنها متوقف أو موقوف مؤقتًا أو ينتظر ما يحتاجه.",
   "health.reason.process_failed": "تعذّر إبقاؤها تعمل.",
   "health.reason.process_starting": "قيد التشغيل.",
   "health.reason.process_unhealthy": "تعمل لكنها لا تستجيب.",
