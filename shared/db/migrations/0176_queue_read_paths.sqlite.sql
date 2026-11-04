@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- SQLite parity sibling for slot 0175 (the queue reads stop scanning the jobs' history):
+-- SQLite parity sibling for slot 0176 (the queue reads stop scanning the jobs' history):
 -- processing_done_subjects and the triggers that keep it (row triggers: SQLite has no
 -- statement trigger, so a deleted done row checks its own subject), the live, done and
 -- awaiting-review indexes (no INCLUDE in SQLite), and the backfill.

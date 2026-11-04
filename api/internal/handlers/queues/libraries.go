@@ -20,7 +20,7 @@ SELECT library_id::text, count(*) FROM series_seasons
  WHERE retired_at IS NULL AND library_id IS NOT NULL GROUP BY library_id`
 
 	// libraryDoneSQL: the subjects done per library and stage, from the
-	// summary the processing_jobs triggers keep (slot 0175): one row per
+	// summary the processing_jobs triggers keep (slot 0176): one row per
 	// (library, stage, subject), however many times the subject ran, so the
 	// count no longer reads the jobs' history (count(DISTINCT subject_id)
 	// over every done row was a full scan of 3M+ rows).

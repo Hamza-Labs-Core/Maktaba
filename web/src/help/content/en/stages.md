@@ -253,6 +253,10 @@ Downloads the new uploads of a library's YouTube channels and playlists, with th
 
 Downloads the older videos of a library's YouTube sources in small batches, only when nothing else needs the YouTube slot. It can be paused on its own. It runs only for sources set to **New uploads and back catalogue** (see [YouTube sources](/help/processing#youtube-sources)), and each video goes on to **Convert to MP4** as soon as it lands.
 
+### Tartube import {#youtube-tartube}
+
+Makes the YouTube sources of every library from Tartube's records, started by **Import from Tartube…** on [Manage libraries](/help/library-management#tartube). Each channel or playlist whose Tartube folder is a library's folder becomes a source of that library, off, and what Tartube downloaded counts as downloaded. It turns nothing on and makes no library; a failed import is not tried again by itself.
+
 ## What the states and messages mean {#states}
 
 - **Starts here**: no step feeds this one; it is started by a run, a schedule or a button.

@@ -2,7 +2,7 @@
 -- +goose Up
 -- +goose StatementBegin
 --
--- Slot 0175 - the queue reads stop scanning the jobs' history.
+-- Slot 0176 - the queue reads stop scanning the jobs' history.
 --
 -- On the home (3.3M processing_jobs rows, 2.8 GB) GET /api/queues/libraries took 18-34 s
 -- and often failed, GET /api/queues 18-20 s, and the cluster hub's queue snapshot timed
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS processing_done_subjects (
 
 -- +goose StatementBegin
 COMMENT ON TABLE processing_done_subjects IS
-    'Slot 0175: the subjects with a done job per library and stage (GET /api/queues/libraries), kept by the processing_jobs triggers';
+    'Slot 0176: the subjects with a done job per library and stage (GET /api/queues/libraries), kept by the processing_jobs triggers';
 -- +goose StatementEnd
 
 -- +goose StatementBegin

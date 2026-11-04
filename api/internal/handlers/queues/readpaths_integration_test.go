@@ -3,7 +3,7 @@
 package queues
 
 // The queue reads behind the library dashboard and the queue snapshot against
-// a real, migrated Postgres (slot 0175):
+// a real, migrated Postgres (slot 0176):
 //
 //   - processing_done_subjects, which the processing_jobs triggers keep, says
 //     what count(DISTINCT subject_id) over the done rows says, through every way
@@ -33,7 +33,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 )
 
-// rawDoneSQL is what GET /api/queues/libraries counted before slot 0175, the
+// rawDoneSQL is what GET /api/queues/libraries counted before slot 0176, the
 // reference the summary must match.
 const rawDoneSQL = `
 SELECT library_id::text, stage, count(DISTINCT subject_id), max(COALESCE(finished_at, created_at))
@@ -200,7 +200,7 @@ func seedVideos(t *testing.T) int {
 // seedQueue fills processing_jobs the way the home's looks: ~20 done rows per
 // video over 30 days (some stages run many times), one pending row per video,
 // a few running and failed. The bulk insert skips the row triggers (as a
-// migration's backfill would see the rows) and then runs slot 0175's backfill.
+// migration's backfill would see the rows) and then runs slot 0176's backfill.
 func seedQueue(t *testing.T, db *sql.DB, videos int) {
 	t.Helper()
 	start := time.Now()
@@ -233,7 +233,7 @@ func seedQueue(t *testing.T, db *sql.DB, videos int) {
 		        now() - interval '2 days', now() - interval '1 day'
 		   FROM videos v WHERE hashtext(v.id::text) % 30 = 0`,
 		`ALTER TABLE processing_jobs ENABLE TRIGGER USER`,
-		// slot 0175's backfill
+		// slot 0176's backfill
 		`INSERT INTO processing_done_subjects AS d (library_id, stage, subject_id, subject_kind, last_at)
 		 SELECT library_id, stage, subject_id, min(subject_kind), max(COALESCE(finished_at, created_at))
 		   FROM processing_jobs WHERE state = 'done' AND library_id IS NOT NULL

@@ -74,6 +74,9 @@ type Handler struct {
 	// CPUCount feeds the "auto" size of the cpu pool; default
 	// runtime.NumCPU.
 	CPUCount func() int
+	// LocalPath turns a path in the database's form into this machine's
+	// (libpaths.ToLocal, which this package cannot import); nil: as it is.
+	LocalPath func(string) string
 
 	libMu sync.Mutex
 	// actCache keeps GET /api/queues/libraries/activity (one scan of the finished
@@ -155,6 +158,9 @@ func (h *Handler) mount(r chi.Router) {
 	r.Post("/api/libraries/{id}/youtube/sources", h.AddSource)
 	r.Patch("/api/libraries/{id}/youtube/sources/{sid}", h.PatchSource)
 	r.Delete("/api/libraries/{id}/youtube/sources/{sid}", h.DeleteSource)
+	r.Post("/api/libraries/{id}/youtube/guess", h.GuessSource)
+	r.Get("/api/queues/youtube-tartube", h.TartubeSources)
+	r.Post("/api/queues/youtube-tartube", h.ImportTartubeSources)
 	r.Get("/api/libraries/{id}/offline-summary", h.OfflineSummary)
 	r.Get("/api/queues/offline-summary", h.OfflineSummaries)
 	r.Get("/api/queues/offline-items", h.OfflineItems)

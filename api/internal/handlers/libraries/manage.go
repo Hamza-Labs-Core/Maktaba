@@ -79,6 +79,8 @@ type ManagedLibrary struct {
 	LastScan  *ScanSummary    `json:"last_scan"`
 	Scanning  bool            `json:"scanning"`
 	Conflicts []RootConflict  `json:"conflicts"`
+	// YouTube is what the library follows on YouTube (manage_youtube.go).
+	YouTube LibraryYouTube `json:"youtube"`
 }
 
 // ConflictMember is a library of a conflict group.
@@ -119,9 +121,10 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) (*principal.Principal,
 	return p, true
 }
 
-// Manage lists every library for the management page: three queries
+// Manage lists every library for the management page: five queries
 // whatever the number of libraries (the libraries, one GROUP BY over videos,
-// the latest scan per library), then the folder checks on this machine.
+// the latest scan per library, the YouTube sources and the channel guesses),
+// then the folder checks on this machine.
 func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 	if _, ok := requireAdmin(w, r); !ok {
 		return
@@ -140,6 +143,16 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 	scans, err := h.latestScans(ctx)
 	if err != nil {
 		httperror.Write(w, r, httperror.Internal("load scans").Wrap(err))
+		return
+	}
+
+	names := make(map[string]string, len(libs))
+	for _, l := range libs {
+		names[l.ID] = l.Name
+	}
+	yt, err := h.youTubeStates(ctx, names)
+	if err != nil {
+		httperror.Write(w, r, httperror.Internal("load youtube sources").Wrap(err))
 		return
 	}
 
@@ -162,6 +175,9 @@ func (h *Handler) Manage(w http.ResponseWriter, r *http.Request) {
 				mr.Reachable, mr.Problem = false, &msg
 			}
 			m.Roots = append(m.Roots, mr)
+		}
+		if y := yt[l.ID]; y != nil {
+			m.YouTube = *y
 		}
 		if s, ok := scans[l.ID]; ok {
 			s := s
