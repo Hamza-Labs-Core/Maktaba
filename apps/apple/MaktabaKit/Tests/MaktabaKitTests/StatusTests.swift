@@ -296,6 +296,23 @@ import Testing
         #expect(StatusWords.processName(role: "ollama", instance: nil, locale: ar) == "خادم النموذج اللغوي")
     }
 
+    /// The supervisor's pipeline instances read in words, never their ids, in both languages.
+    @Test func everyInstanceTheSupervisorRunsHasWords() {
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar")
+        #expect(StatusWords.processName(role: "pipeline", instance: "index", locale: en) == "Processing pipeline search index")
+        #expect(StatusWords.processName(role: "pipeline", instance: "chroma-copy", locale: en) == "Processing pipeline search index copy")
+        #expect(StatusWords.processName(role: "pipeline", instance: "stt-2", locale: en) == "Processing pipeline transcription 2")
+        #expect(StatusWords.processName(role: "pipeline", instance: "index", locale: ar) == "خط المعالجة فهرس البحث")
+        #expect(StatusWords.processName(role: "pipeline", instance: "stt-2", locale: ar) == "خط المعالجة النسخ النصي 2")
+        for i in ["index", "chroma-copy", "stt-1", "stt-3"] {
+            let name = StatusWords.processName(role: "pipeline", instance: i, locale: ar)
+            #expect(!name.unicodeScalars.contains { CharacterSet.letters.contains($0) && $0.isASCII }, "\(i): \(name)")
+        }
+        // a slot keeps its colour; an instance with no words shows as sent
+        #expect(StatusWords.processName(role: "tv-slot", instance: "blue", locale: ar) == "منفذ البث التلفزيوني أزرق")
+        #expect(StatusWords.processName(role: "pipeline", instance: "levitator", locale: en) == "Processing pipeline levitator")
+    }
+
     @Test func listsTheRecentEventsNewestFirst() throws {
         let d = try JSONDecoder.home.decode(ProcessesDoc.self, from: Data(Self.doc.utf8))
         let recent = d.recentEvents(3)
