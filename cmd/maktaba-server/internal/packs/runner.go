@@ -29,10 +29,12 @@ type StatusReporter interface {
 //
 // The rules keep a Full home as it is today:
 //   - a pack asset (runtime.ml, tool.yt-dlp) is installed when it is wanted and not on
-//     this machine (a Full home's venv counts as on it: Manager.OnDisk);
-//   - a model is installed only when its want is seen to change to installed or enabled
-//     while the server runs (a model the pipeline downloads itself on first use still
-//     does so);
+//     this machine (a Full home's venv counts as on it: Manager.OnDisk); an asset with
+//     no desired row is wanted (the catalog default, as the API reads it: enabled);
+//   - a model is installed only when an admin asks while the server runs: its want is
+//     seen to change to installed or enabled, or its row is written again (a new
+//     generation: the install route's retry). A model the pipeline downloads itself on
+//     first use still does so;
 //   - a removal runs only when the want is seen to change to absent, or to finish one a
 //     restart cut short (.removing);
 //   - each action runs once per desired generation: a failure is reported, and tried
@@ -76,8 +78,15 @@ func (r *Runner) Desired(desired map[string]store.Desired) {
 			continue
 		}
 		d, has := desired[id]
+		if !has {
+			// no row: the catalog default (the API's wantOf), generation 0
+			d = store.Desired{ID: id, Want: components.WantEnabled}
+		}
 		pd, phas := prev[id]
 		changed := !first && has && (!phas || pd.Want != d.Want)
+		// an admin asked again: the row was written while the server runs (the install
+		// route writes it again to retry a failed install)
+		asked := changed || (!first && has && phas && pd.Generation != d.Generation)
 		src := comp.SourceFor(r.M.Platform)
 		isPack, isModel := strings.HasPrefix(src, "pack:"), components.IsModelSource(src)
 		if !isPack && !isModel || r.M.Busy(id) {
@@ -89,9 +98,11 @@ func (r *Runner) Desired(desired map[string]store.Desired) {
 		if done && gen == d.Generation && !changed {
 			continue
 		}
-		wanted := has && (d.Want == components.WantInstalled || d.Want == components.WantEnabled)
+		wanted := d.Want == components.WantInstalled || d.Want == components.WantEnabled
 		switch {
-		case wanted && !r.M.Installed(id) && !r.M.Disabled && (isPack || changed):
+		case !has && r.M.Layout.Removing(id):
+			r.act(id, -1, func(ctx context.Context) error { return r.M.Remove(ctx, id) })
+		case wanted && !r.M.Installed(id) && !r.M.Disabled && (isPack || asked):
 			r.act(id, d.Generation, func(ctx context.Context) error { return r.M.Install(ctx, id, nil) })
 		case has && d.Want == components.WantAbsent && (changed || r.M.Layout.Removing(id)):
 			if by := RequiredBy(r.M.Catalog, id, desired, r.M.Installed); len(by) > 0 {
@@ -104,8 +115,6 @@ func (r *Runner) Desired(desired map[string]store.Desired) {
 			if r.M.Installed(id) || r.M.Layout.Removing(id) {
 				r.act(id, d.Generation, func(ctx context.Context) error { return r.M.Remove(ctx, id) })
 			}
-		case !has && r.M.Layout.Removing(id):
-			r.act(id, -1, func(ctx context.Context) error { return r.M.Remove(ctx, id) })
 		}
 	}
 }
@@ -185,7 +194,10 @@ func (r *Runner) Rows() []store.Status {
 		if comp.Kind != components.KindAsset || (len(comp.Platforms) > 0 && !slices.Contains(comp.Platforms, r.M.Platform)) {
 			continue
 		}
-		d := desired[id]
+		d, has := desired[id]
+		if !has {
+			d.Want = components.WantEnabled // the catalog default
+		}
 		row := store.Status{ID: id, ObservedGeneration: d.Generation}
 		installed := r.M.Installed(id)
 		inst := store.Condition{Type: components.CondInstalled, Status: "false"}

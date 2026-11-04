@@ -453,7 +453,7 @@ func (m *Manager) installFrom(ctx context.Context, dir string) ([]string, error)
 		// checked against the signed index: a damaged file says so, never "installed"
 		if m.Installed(id) {
 			if err := m.checkOfflineItem(ctx, s, dir, id); err != nil {
-				return done, fmt.Errorf("%s: %w", id, err)
+				return done, fmt.Errorf("%s: %w", id, fromFile(err))
 			}
 		}
 		if err := m.install(ctx, id, s, map[string]bool{}); err != nil {

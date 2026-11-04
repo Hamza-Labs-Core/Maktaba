@@ -277,11 +277,18 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 			if err != nil {
 				return c.fail(err)
 			}
-			if d.Want != catalog.WantAbsent {
+			switch {
+			case d.Want == catalog.WantAbsent:
+				ch.Want = catalog.WantInstalled
+			case node == "" && components.InstallAgain(d):
+				// wanted but not on this home (or its install failed): the row written
+				// again, a new generation the packs runner installs from
+				gen := d.Generation
+				ch.Want, ch.Generation, ch.Again = d.Want, &gen, true
+			default:
 				fmt.Fprintf(c.out, "%s is installed already (%s).\n", id, d.Want)
 				return 0
 			}
-			ch.Want = catalog.WantInstalled
 		case "stop":
 			ch.Hold = &on
 		case "start":

@@ -189,6 +189,7 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
       case "remove":
         return componentsApi.setWant(v.id, "absent", v.generation);
       case "install":
+      case "retry":
         return componentsApi.install(v.id);
       case "stop":
         return componentsApi.stop(v.id);
@@ -256,6 +257,12 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
     async (v: ComponentView, action: Action) => {
       if (busy) return;
       setFlash(null);
+      // an asset the home wants but has not got (or whose install failed): the install
+      // route asks for it again and nothing else changes, so there is nothing to preview
+      if (action === "retry" || (action === "install" && v.want !== "absent")) {
+        await commit(v, action, false, false);
+        return;
+      }
       setBusy(v.id);
       let preview: Preview;
       try {

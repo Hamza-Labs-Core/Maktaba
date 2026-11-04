@@ -33,7 +33,7 @@ func (f *fakeComponents) Show(_ context.Context, id string) (components.Detail, 
 	if strings.HasPrefix(id, "runtime.") {
 		kind = catalog.KindAsset
 	}
-	return components.Detail{View: components.View{ID: id, Kind: kind, Want: catalog.WantEnabled}}, nil
+	return components.Detail{View: components.View{ID: id, Kind: kind, Want: catalog.WantEnabled, Switchable: true}}, nil
 }
 
 func (f *fakeComponents) Preview(context.Context, components.Request) (components.Preview, error) {
@@ -90,6 +90,26 @@ func TestComponentsCLINeedsYesWithoutATerminal(t *testing.T) {
 	}
 	if len(f.applied) != 0 || !strings.Contains(errOut.String(), "--yes") || !strings.Contains(out.String(), "classify: running -> degraded") {
 		t.Fatalf("applied %v; out %q; err %q", f.applied, out, errOut)
+	}
+}
+
+// install of a wanted asset that is not on this home writes its row again (the packs
+// runner installs from the new generation), as the OS user; a component that is on and
+// not an asset is installed already, nothing applied.
+func TestComponentsCLIInstallAsksAgainForAMissingAsset(t *testing.T) {
+	f := &fakeComponents{}
+	c, _, _ := cli(f, false, "")
+	if code := runCLI(c, "install", "runtime.ml"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if len(f.applied) != 1 || !f.applied[0].Changes[0].Again || f.applied[0].Changes[0].Want != catalog.WantEnabled ||
+		f.actors[0] != (components.Actor{By: "maya", Source: "cli"}) {
+		t.Fatalf("applied %+v as %+v", f.applied, f.actors)
+	}
+	f = &fakeComponents{}
+	c, out, _ := cli(f, false, "")
+	if code := runCLI(c, "install", "llm"); code != 0 || len(f.applied) != 0 || !strings.Contains(out.String(), "installed already") {
+		t.Fatalf("exit %d, applied %+v: %s", code, f.applied, out)
 	}
 }
 

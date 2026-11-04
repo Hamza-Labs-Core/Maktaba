@@ -293,8 +293,11 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}})
 }
 
-// install puts a component that is absent on disk, off (installed); one that is there
-// already is answered as it is. The supervisor's reconciler does the download.
+// install puts a component that is absent on disk, off (installed). An asset that is
+// wanted (its row, or the catalog default with no row) but not on this home, or whose
+// install failed, gets its row written again as it is (component.install, a new
+// generation): the supervisor's packs runner hears the change and installs it, or tries
+// the failed install again. Anything else is answered as it is.
 func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.known(w, r)
 	if !ok {
@@ -305,12 +308,16 @@ func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	if d.Want != components.WantAbsent {
-		common.WriteJSON(w, r, http.StatusOK, d)
-		return
-	}
+	WithProgress(r.Context(), h.Packs, &d.View)
 	gen := d.Generation
-	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantInstalled, Generation: &gen}}})
+	switch {
+	case d.Want == components.WantAbsent:
+		h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantInstalled, Generation: &gen}}})
+	case svc.InstallAgain(d):
+		h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: d.Want, Generation: &gen, Again: true}}})
+	default:
+		common.WriteJSON(w, r, http.StatusOK, d)
+	}
 }
 
 // stop holds a component until start. A hold has no end time: a body that asks for one

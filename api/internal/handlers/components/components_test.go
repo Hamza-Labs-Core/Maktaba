@@ -226,6 +226,7 @@ var routes = []struct{ method, path, body string }{
 	{"PUT", "/api/components/llm", `{"want":"installed"}`},
 	{"DELETE", "/api/components/youtube", ""},
 	{"POST", "/api/components/youtube/install", ""},
+	{"POST", "/api/components/model.embedder/install", ""},
 	{"POST", "/api/components/transcription/stop", ""},
 	{"POST", "/api/components/transcription/start", ""},
 	{"POST", "/api/components/preview", `{"changes":[{"id":"llm","want":"installed"}]}`},
@@ -347,6 +348,57 @@ func TestRemoveRequired(t *testing.T) {
 	decode(t, f.do("POST", "/api/components/youtube/install", "", admin()), 200, nil)
 	if f.audits(t) != n {
 		t.Fatal("a second install wrote")
+	}
+}
+
+// Install of a wanted asset that is not on disk: with no desired row (a fresh home's seed
+// leaves the search model so) it writes the row as the catalog default (enabled), audited
+// component.install; asked again (Retry after a failure) it writes a new generation; once
+// the home reports it installed, it writes nothing.
+func TestInstallWantedAssetNotOnDisk(t *testing.T) {
+	f := newFixture(t)
+	const id = "model.embedder"
+	if _, err := f.db.Exec(`DELETE FROM components WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	var v svc.Detail
+	decode(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), 200, &v)
+	d := f.want(t, id)
+	if !v.HasRow || v.Want != components.WantEnabled || d.Want != components.WantEnabled {
+		t.Fatalf("no row written: has_row %v want %q, row %+v", v.HasRow, v.Want, d)
+	}
+	if n := f.audits(t); n != 1 {
+		t.Fatalf("%d audit rows", n)
+	}
+	var action, source string
+	if err := f.db.QueryRow(`SELECT action, actor_source FROM audit_log WHERE target_id = ? ORDER BY id DESC LIMIT 1`, id).Scan(&action, &source); err != nil ||
+		action != svc.ActionInstall || source != "web" {
+		t.Fatalf("audited %q %q %v", action, source, err)
+	}
+	// Retry: the same want, a new generation the packs runner acts on
+	decode(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), 200, nil)
+	if again := f.want(t, id); again.Generation <= d.Generation || again.Want != components.WantEnabled || f.audits(t) != 2 {
+		t.Fatalf("retry: %+v after %+v, %d audit rows", again, d, f.audits(t))
+	}
+	// installed at home: nothing to ask
+	if err := f.st.ReportStatus(context.Background(), store.Home, "packs", []store.Status{{ID: id, Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	gen := f.want(t, id).Generation
+	decode(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), 200, nil)
+	if f.want(t, id).Generation != gen || f.audits(t) != 2 {
+		t.Fatal("an install of an asset on disk wrote")
+	}
+	// a viewer cannot ask
+	if rec := f.do("POST", "/api/components/runtime.ml/install", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer: %d", rec.Code)
+	}
+	// a component that is not an asset and is on is answered as it is
+	g := f.want(t, "youtube").Generation
+	decode(t, f.do("POST", "/api/components/youtube/install", "", admin()), 200, nil)
+	if f.want(t, "youtube").Generation != g {
+		t.Fatal("install of an enabled process wrote")
 	}
 }
 

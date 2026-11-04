@@ -2374,7 +2374,8 @@
     "pack_not_published",
     "install_failed",
     "busy",
-    "not_configured"
+    "not_configured",
+    "offline_verify_failed"
   ],
   "schema": 1
 }

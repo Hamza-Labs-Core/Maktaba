@@ -4,7 +4,8 @@
 //   GET    /api/components              ListView (catalog order)
 //   GET    /api/components/{id}         Detail: the view plus status parts and the last 20 changes
 //   PUT    /api/components/{id}         {want, generation?, with_conflicts?} -> Detail
-//   POST   /api/components/{id}/install want installed when absent -> Detail
+//   POST   /api/components/{id}/install want installed when absent; a wanted asset not on this
+//                                        home (or whose install failed): asked again -> Detail
 //   POST   /api/components/{id}/stop    no body: hold until start -> Detail
 //   POST   /api/components/{id}/start   clears the hold -> Detail
 //   POST   /api/components/{id}/restart no body: process and loop kinds -> Detail (or empty);
@@ -278,6 +279,8 @@ export interface InstallProgress {
   reason?: string;
   params?: Record<string, unknown>;
   busy: boolean;
+  /** whether the asset is on this machine now */
+  installed?: boolean;
 }
 
 export interface ImportResult {

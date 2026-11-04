@@ -246,6 +246,9 @@ func (m *Manager) install(ctx context.Context, id string, s *session, seen map[s
 		return err
 	}
 	defer func() {
+		if _, file := s.src.(*FolderSource); file {
+			err = fromFile(err) // an offline file's copy, not a download
+		}
 		m.end(id, err)
 		if err != nil {
 			m.logf("level=error %s: not installed (%s): %v", id, ReasonOf(err), err)
