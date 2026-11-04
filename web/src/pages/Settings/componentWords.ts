@@ -129,17 +129,28 @@ export function reasonText(
   const key = `components.reason.${code}`;
   const template = lookupMessage(locale, key);
   if (template === undefined) return "";
-  // a code that names another component but came without one says nothing rather than half
-  if (!arg && /\{components?\}/.test(template)) return "";
-  const name = arg ? titleOf(arg) : "";
+  // the id comes after the colon (the API's form) or in the params (the supervisor's
+  // {component} and the runners' {components: [...]}); without one, the text says nothing
+  const ids = arg ? [arg] : paramIds(params);
+  const name = ids.length ? joinNames(locale, ids.map(titleOf)) : "";
   return filled(
     t(key, {
       value: arg ?? "",
       ...namedParams(params, titleOf),
-      component: name,
-      components: name,
+      ...(name ? { component: name, components: name } : {}),
     })
   );
+}
+
+/** The component ids a reason's params name: {component: id} or {components: [ids]}. */
+function paramIds(params: Record<string, unknown> | undefined): string[] {
+  const one = params?.component;
+  if (typeof one === "string" && one) return [one];
+  const many = params?.components;
+  if (Array.isArray(many))
+    return many.filter((v): v is string => typeof v === "string" && v !== "");
+  if (typeof many === "string" && many) return [many];
+  return [];
 }
 
 /**
