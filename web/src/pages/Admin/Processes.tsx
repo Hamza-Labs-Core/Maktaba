@@ -185,8 +185,12 @@ function detailText(
     for (const [k, v] of Object.entries(p.detail_params ?? {})) {
       if (v !== null && v !== undefined) vars[k] = typeof v === "number" ? v : String(v);
     }
-    const text = t(key, vars);
-    if (text !== key) return text;
+    const template = t(key);
+    // a code sent without a value its words need (an older home) says the
+    // home's English instead of a raw {percent}
+    const names = [...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+    const complete = names.every((n) => n in vars);
+    if (template !== key && complete) return t(key, vars);
   }
   return p.detail || null;
 }

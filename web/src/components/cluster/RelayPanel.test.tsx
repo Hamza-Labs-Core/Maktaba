@@ -32,7 +32,7 @@ const status = (enabled = true): RelayStatus => ({
       name: "plex",
       configured: true,
       enabled: true,
-      upstream: "192.168.1.10:32400",
+      upstream: "192.0.2.10:32400",
       allow: [
         { method: "GET", path: "/library/sections", use: "sections" },
         { method: "DELETE", path: "/library/metadata/{key} (collections only)", use: "x" },
@@ -95,7 +95,7 @@ describe("Relay panel", () => {
     expect(get).toHaveBeenCalledWith("/api/cluster/relay");
     expect(screen.getByText(/600 calls a minute/)).toBeInTheDocument();
     expect(screen.getByText("Ready")).toBeInTheDocument();
-    expect(screen.getByText(/192\.168\.1\.10:32400/)).toBeInTheDocument();
+    expect(screen.getByText(/192\.0\.2\.10:32400/)).toBeInTheDocument();
     expect(screen.getByText("Allowed calls (2)")).toBeInTheDocument();
     expect(screen.getByText(/cloudflare_stream/)).toBeInTheDocument();
     const table = screen.getByRole("table");

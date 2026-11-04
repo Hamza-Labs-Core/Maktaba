@@ -87,7 +87,7 @@ class FakeRemoteHome : ExternalResource() {
 
     companion object {
         /**
-         * A real home's Needs attention on build 0.3.62 (2026-11-03): what the home sent, with the
+         * Shaped like a home's Needs attention on build 0.3.62 (2026-11-03): what the home sent, with the
          * generated causes ("kind:normalised message") and an ffmpeg tail with a repr's `\n`.
          */
         val ISSUES = """{"groups":[
@@ -96,7 +96,7 @@ class FakeRemoteHome : ExternalResource() {
             {"stage":"plex_groups","cause":"plex_unreachable","label":"Plex is unreachable","count":2,"action":"open_settings","sample_message":"relay: no answer from the home"},
             {"stage":"chapter_thumbs","cause":"ffmpeg_rc","label":"ffmpeg failed on the file","count":1,"action":"retry","sample_message":"ing thread with return code -22 (Invalid argument)\\n[out#0/image2 @ 0x6000]"},
             {"stage":"check_clips","cause":"model_unavailable:<n> of <n> clips got no answer from the model","label":"model_unavailable:<n> of <n> clips got no answer from the model","count":1,"action":"retry","sample_message":"4 of 4 clips got no answer from the model"},
-            {"stage":"subtitle_gen","cause":"nas_timeout:<path> شاهين/المعجزات والخوارق..برهان النبوة الثاني<n> | دلائل النبوة <n> | محمد شاهين.mp<n>>: no answer","label":"nas_timeout:<path> شاهين/المعجزات والخوارق..برهان النبوة الثاني<n> | دلائل النبوة <n> | محمد شاهين.mp<n>>: no answer","count":1,"action":"retry","sample_message":"/Volumes/Media/شاهين/المعجزات والخوارق..برهان النبوة الثاني 2 | دلائل النبوة 3 | محمد شاهين.mp4: no answer"}
+            {"stage":"subtitle_gen","cause":"nas_timeout:<path> محاضرات/سلسلة التاريخ..الجزء الثاني<n> | دروس عامة <n> | مكتبة البيت.mp<n>>: no answer","label":"nas_timeout:<path> محاضرات/سلسلة التاريخ..الجزء الثاني<n> | دروس عامة <n> | مكتبة البيت.mp<n>>: no answer","count":1,"action":"retry","sample_message":"/Volumes/Media/محاضرات/سلسلة التاريخ..الجزء الثاني 2 | دروس عامة 3 | مكتبة البيت.mp4: no answer"}
         ]}"""
 
         fun json(body: String, code: Int = 200): MockResponse =

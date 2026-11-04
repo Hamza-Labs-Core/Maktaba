@@ -388,6 +388,11 @@
     <string name="cause">Cause</string>
     <string name="fixed_on_web">This one is fixed from the home\'s web page (%1$s).</string>
     <string name="nothing_needs_attention">Nothing needs attention</string>
+    <!-- check_clips' message: %1$d clips of %2$d got no answer; the quantity is %2$d -->
+    <plurals name="clips_no_answer">
+        <item quantity="one">%1$d of %2$d clip got no answer from the model</item>
+        <item quantity="other">%1$d of %2$d clips got no answer from the model</item>
+    </plurals>
     <plurals name="jobs">
         <item quantity="one">%1$d job</item>
         <item quantity="other">%1$d jobs</item>

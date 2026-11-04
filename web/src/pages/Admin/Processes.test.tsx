@@ -98,6 +98,43 @@ describe("ProcessesCard", () => {
     ).toBeInTheDocument();
   });
 
+  it("fills the transcription tools' percent, and says the English when a home sends no values", async () => {
+    get.mockResolvedValue({
+      available: true,
+      processes: [
+        {
+          role: "pipeline",
+          state: "starting",
+          restarts: 0,
+          detail_code: "venv_building",
+          detail_params: { step: "torch", done: 4, total: 9, percent: 40, message: "torch" },
+          detail: "Installing the transcription tools: torch (40%)",
+        },
+        {
+          role: "tv-slot",
+          instance: "amber",
+          state: "starting",
+          restarts: 0,
+          detail_code: "venv_building",
+          detail: "building the pipeline's Python environment (4 of 9)",
+        },
+      ],
+      events: [],
+    } satisfies ProcessesDoc);
+    renderCard();
+    await waitFor(() => expect(screen.getByTestId("process-pipeline")).toBeInTheDocument());
+    expect(
+      within(screen.getByTestId("process-pipeline")).getByText(
+        "Installing the transcription tools (40%)."
+      )
+    ).toBeInTheDocument();
+    const bare = within(screen.getByTestId("process-tv-slot-amber"));
+    expect(
+      bare.getByText("building the pipeline's Python environment (4 of 9)")
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/\{percent\}/)).not.toBeInTheDocument();
+  });
+
   it("shows each process with its state, restarts and last crash", async () => {
     get.mockResolvedValue(doc);
     renderCard();

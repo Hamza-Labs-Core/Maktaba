@@ -1012,7 +1012,7 @@ mod tests {
         assert!(matches!(plan(&older, true), Plan::Older { .. }));
 
         // what tells it: a joined machine's node.json, whatever its server says
-        let joined = r#"{"node_id":"n1","name":"studio","private_key":"k","home":{"url":"http://192.168.50.177:8080"}}"#;
+        let joined = r#"{"node_id":"n1","name":"studio","private_key":"k","home":{"url":"http://192.0.2.20:8080"}}"#;
         assert!(managed_by_home(Some(joined), None, false));
         assert!(managed_by_home(Some(joined), Some(false), false));
         assert!(managed_by_home(Some(joined), Some(true), false));

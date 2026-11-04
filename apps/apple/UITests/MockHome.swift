@@ -427,7 +427,7 @@ final class MockHome: @unchecked Sendable {
             "last_update":{"at":"\#(time(-86400 * 2))","ended_at":"\#(time(-86400 * 2))","source":"run","to":"0.3.40","outcome":"installed"}},
            {"id":"n1","name":"Basement PC","role":"node","version":"0.3.40","state":"app_staged","target":"0.3.43","platform":"windows/amd64"},
            {"id":"n2","name":"Attic","role":"node","version":"0.3.40","state":"needs_person","target":"0.3.43","platform":"linux/amd64",
-            "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf has no entry for host 192.168.1.20"}}],
+            "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf has no entry for host 192.0.2.20"}}],
          "tv_held":{"run_id":"r9","version":"0.3.40","outcome":"held","number":12,"held_on":"0.3.39","state":"held",
                     "failed":["slot.health"],"checks":[{"check":"slot.health","result":"fail","code":"slot.release_mismatch",
                               "value":"the staging slot runs another release (release_mismatch)"}]}}
@@ -457,7 +457,8 @@ final class MockHome: @unchecked Sendable {
            {"role":"api","state":"running","pid":101,"restarts":0,"crash_loop":false,"uptime_sec":93784},
            {"role":"streaming","state":"running","pid":102,"restarts":1,"crash_loop":false,"uptime_sec":3725},
            {"role":"pipeline","state":"starting","pid":103,"restarts":0,"crash_loop":false,"uptime_sec":12,
-            "detail":"building the pipeline's Python environment (4 of 9)","detail_code":"venv_building"},
+            "detail":"Installing the transcription tools: torch (44%)","detail_code":"venv_building",
+            "detail_params":{"step":"torch","done":4,"total":9,"percent":44,"message":"torch"}},
            {"role":"tv-slot","instance":"blue","state":"running","pid":104,"restarts":0,"crash_loop":false,"uptime_sec":93700},
            {"role":"tv-slot","instance":"green","state":"stopped","restarts":0,"crash_loop":false},
            {"role":"tv-slot","instance":"amber","wanted":true,"state":"backoff","restarts":4,"crash_loop":true,

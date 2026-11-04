@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.FailureGroup
 import com.hamzalabs.maktaba.core.api.HealthNow
@@ -472,7 +473,7 @@ internal fun StageFailures(groups: List<FailureGroup>?) {
         else -> groups.forEach { g ->
             Column {
                 Text(stringResource(R.string.count_label, g.count, say.groupTitle(g)), style = MaterialTheme.typography.bodyLarge)
-                g.sampleMessage?.takeIf { it.isNotEmpty() }?.let { Text(readableMessage(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3) }
+                g.sampleMessage?.takeIf { it.isNotEmpty() }?.let { Text(say.sampleMessage(it), style = MaterialTheme.typography.bodySmall.copy(textDirection = TextDirection.Content), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3) }
                 g.lastAt?.let { Text(stringResource(R.string.last_at, say.whenText(it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }

@@ -95,7 +95,7 @@ describe("AdminAuditLog (test-cases/admin-audit.md)", () => {
             event: "login.failed",
             actor_user_id: "u1",
             target_id: "u1",
-            payload: { ip: "10.0.0.2" },
+            payload: { ip: "198.51.100.2" },
             ts: "2026-10-18T10:00:00.123456789Z",
           },
           {
@@ -127,7 +127,7 @@ describe("AdminAuditLog (test-cases/admin-audit.md)", () => {
       "login.failed",
       "u1",
       "u1",
-      '{"ip":"10.0.0.2"}',
+      '{"ip":"198.51.100.2"}',
     ]);
     expect(within(rows[1]).getAllByRole("cell")[4]).toHaveTextContent("note");
     expect(get).toHaveBeenCalledTimes(1);

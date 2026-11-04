@@ -95,7 +95,7 @@ class StartScreensScreenshotTest {
         show { HomePicker(session, MaktabaApp.Player) }
         // past the search for homes on the network (it says when it found none)
         compose.mainClock.advanceTimeBy(7_000)
-        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Maktaba Home")).fetchSemanticsNodes().isNotEmpty() }
         capture(name)
     }
 
@@ -139,10 +139,10 @@ class StartScreensScreenshotTest {
         const val FOLDABLE = "w673dp-h841dp-xhdpi"
         const val TABLET = "w1280dp-h800dp-xhdpi"
 
-        val HOME = Home(url = "http://192.168.1.20:8088", name = "Darwish home")
+        val HOME = Home(url = "http://192.0.2.20:8088", name = "Maktaba Home")
 
         // a fixed code and approve address, so the QR is the same on every run
-        val CODE = """{"code":"ABCD1234","device_code":"scratch-device-secret","verify_url":"http://192.168.1.20:8088/pair?code=ABCD-1234","interval":2}"""
+        val CODE = """{"code":"ABCD1234","device_code":"scratch-device-secret","verify_url":"http://192.0.2.20:8088/pair?code=ABCD-1234","interval":2}"""
 
         fun json(body: String, code: Int = 200): MockResponse =
             MockResponse.Builder().code(code).setHeader("Content-Type", "application/json").body(body).build()

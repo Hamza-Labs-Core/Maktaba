@@ -109,6 +109,14 @@ class SayTest {
             en.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
         )
         assertEquals("something new", en.processDetail(ProcessStatus(role = "pipeline", detailCode = "brand_new", detail = "something new")))
+        assertEquals(
+            "جارٍ تثبيت أدوات التفريغ (40%).",
+            ar.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
+        )
+        // the code without its value (an older home): its English, not "(%)"
+        val bare = ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "building the pipeline's Python environment (4 of 9)")
+        assertEquals("building the pipeline's Python environment (4 of 9)", en.processDetail(bare))
+        assertEquals("building the pipeline's Python environment (4 of 9)", ar.processDetail(bare))
         assertEquals("killed by SIGKILL", en.exit("crash", -1, "SIGKILL"))
         assertEquals("exited with code 1", en.exit("crash", 1, null))
         assertEquals("stopped responding and was restarted", en.exit("hang", -1, null))

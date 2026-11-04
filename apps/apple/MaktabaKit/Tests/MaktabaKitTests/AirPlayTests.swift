@@ -12,7 +12,7 @@ import UIKit
 // (never the loopback proxy), when the item is switched, the LAN proxy that serves one channel
 // only, and the commands routed to the player.
 @Suite struct AirPlayRoutes {
-    let signed = URL(string: "http://192.168.50.177:8088/stream/3f1c7a0e-0000-4000-8000-000000000001/manifest.m3u8?sig=abc")!
+    let signed = URL(string: "http://203.0.113.177:8088/stream/3f1c7a0e-0000-4000-8000-000000000001/manifest.m3u8?sig=abc")!
     let proxied = URL(string: "http://127.0.0.1:50123/secret/stream/3f1c7a0e-0000-4000-8000-000000000001/manifest.m3u8?sig=abc")!
 
     @Test func aVideoPlaysThroughTheProxyOnTheDeviceAndSignedOnAReceiver() {
@@ -25,7 +25,7 @@ import UIKit
 
     @Test func aChannelAtHomeGoesToTheLANProxyOnAReceiver() {
         let loop = URL(string: "http://127.0.0.1:50123/s/stream/channel/c/index.m3u8")!
-        let lan = URL(string: "http://192.168.50.20:50124/t/stream/channel/c/index.m3u8")!
+        let lan = URL(string: "http://203.0.113.20:50124/t/stream/channel/c/index.m3u8")!
         #expect(RouteURL.live(path: .lan, route: .device, proxied: loop, lanProxied: lan, relay: nil) == .url(loop))
         #expect(RouteURL.live(path: .lan, route: .receiver, proxied: loop, lanProxied: lan, relay: nil) == .url(lan))
         // no LAN address (cellular only): it stays where it was and the receiver says it failed
@@ -39,7 +39,7 @@ import UIKit
     }
 
     @Test func theChannelScopeIsItsPlaylistsDirectory() {
-        let u = URL(string: "http://192.168.50.177:8088/stream/channel/0b5e/index.m3u8")!
+        let u = URL(string: "http://203.0.113.177:8088/stream/channel/0b5e/index.m3u8")!
         #expect(RouteURL.channelScope(u) == "/stream/channel/0b5e/")
     }
 
@@ -59,9 +59,9 @@ import UIKit
             LANAddress.Interface(name: "pdp_ip0", address: "10.64.1.2"),   // cellular
             LANAddress.Interface(name: "en5", address: "169.254.3.4"),     // link-local
             LANAddress.Interface(name: "en2", address: "172.20.0.9"),
-            LANAddress.Interface(name: "en0", address: "192.168.50.20"),
+            LANAddress.Interface(name: "en0", address: "192.168.0.20"),
         ]
-        #expect(LANAddress.pick(from: all) == "192.168.50.20", "Wi-Fi first")
+        #expect(LANAddress.pick(from: all) == "192.168.0.20", "Wi-Fi first")
         #expect(LANAddress.pick(from: Array(all.dropLast())) == "172.20.0.9")
         #expect(LANAddress.pick(from: Array(all.prefix(3))) == nil, "no LAN: no address")
         #expect(!LANAddress.isPrivate("8.8.8.8") && !LANAddress.isPrivate("172.32.0.1"))
@@ -69,14 +69,14 @@ import UIKit
 }
 
 @Suite struct AirPlayLANProxy {
-    let home = URL(string: "http://192.168.50.177:8088")!
+    let home = URL(string: "http://203.0.113.177:8088")!
 
     @Test func itServesOnlyTheChannelUnderItsSecretAtTheLANAddress() throws {
         let proxy = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.lan", home: home)),
-                                    reach: .lan(host: "192.168.50.20"), onlyUnder: "/stream/channel/c1/")
+                                    reach: .lan(host: "203.0.113.20"), onlyUnder: "/stream/channel/c1/")
         let s = proxy.secret
         #expect(proxy.remote(forTarget: "/\(s)/stream/channel/c1/index.m3u8")?.absoluteString
-            == "http://192.168.50.177:8088/stream/channel/c1/index.m3u8")
+            == "http://203.0.113.177:8088/stream/channel/c1/index.m3u8")
         #expect(proxy.remote(forTarget: "/\(s)/stream/channel/c1/seg-12.ts") != nil)
         for refused in [
             "/\(s)/stream/channel/c2/index.m3u8",         // another channel
@@ -90,8 +90,8 @@ import UIKit
 
     @Test func itListensOnTheLANAddressAloneNotEveryInterface() throws {
         let lan = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.lan3", home: home)),
-                                  reach: .lan(host: "192.168.50.20"))
-        #expect(lan.boundHost == "192.168.50.20", "not cellular or a VPN")
+                                  reach: .lan(host: "203.0.113.20"))
+        #expect(lan.boundHost == "203.0.113.20", "not cellular or a VPN")
         let loop = try StreamProxy(client: APIClient(home: home, tokens: TokenStore(app: "test.proxy.lan4", home: home)))
         #expect(loop.boundHost == "127.0.0.1")
     }

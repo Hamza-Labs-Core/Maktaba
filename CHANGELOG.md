@@ -36,6 +36,19 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Processes no longer show a raw `{percent}`, and the Remote's Needs attention reads right in
+  Arabic.** A process whose detail code came without its values (an older home, a test
+  fixture) showed its words' placeholder, as in "Installing the transcription tools
+  ({percent}%)". The iPhone Remote, the Android Remote and the web's Processes card now fill the
+  values when they are sent and say the home's own sentence when they are not. On the Android
+  Remote, the check-clips count ("4 of 4 clips got no answer from the model") is said in the
+  app's language with its plural, so the Arabic no longer puts the number at the wrong end, and
+  each sample message keeps its own direction. The Arabic bar label for Needs attention is
+  «انتباه», the same word as the screen's title «ما يحتاج إلى انتباه».
+- **Test data is neutral.** The Android, Android TV, Apple and web tests and their screenshot
+  references use an invented home ("Maktaba Home"), addresses from the documentation ranges
+  (192.0.2.x, 198.51.100.x, 203.0.113.x) or `.local` names, and an invented media path.
+
 - **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
   logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
   data, or its stall notice) did not change the playback phase, so the channel banner did not

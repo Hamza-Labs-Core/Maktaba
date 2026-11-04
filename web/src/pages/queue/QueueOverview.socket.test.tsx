@@ -88,7 +88,7 @@ describe("QueueOverview on the cluster socket", () => {
       type: "job",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         node_name: "Studio Mac",
         job: {
           event: "progress",
@@ -121,7 +121,7 @@ describe("QueueOverview on the cluster socket", () => {
       type: "job",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         node_name: "Studio Mac",
         job: {
           event: "done",
@@ -160,7 +160,7 @@ describe("QueueOverview on the cluster socket", () => {
         running: [
           {
             session: "s2",
-            ip: "10.0.0.6",
+            ip: "198.51.100.6",
             node_name: "Linux Box",
             worker_id: "node-1-7",
             host: "linux",

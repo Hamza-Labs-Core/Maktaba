@@ -5,7 +5,7 @@
    "created_at": "{{now-432000}}",
    "last_seen_at": "{{now-60}}",
    "expires_at": "{{now+2160000}}",
-   "ip": "192.168.1.20",
+   "ip": "192.0.2.20",
    "user_agent": "Maktaba/1.0 (iPhone; iOS 26.0)",
    "current": false
   },

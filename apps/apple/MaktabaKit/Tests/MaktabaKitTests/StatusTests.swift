@@ -34,7 +34,7 @@ import Testing
        {"id":"home","name":"Mac mini","role":"home","version":"0.3.40","state":"up_to_date","platform":"darwin/arm64",
         "last_update":{"id":"a1","at":"2026-10-30T03:00:00Z","ended_at":"2026-10-30T03:10:00Z","source":"run","to":"0.3.40","outcome":"installed"}},
        {"id":"n1","name":"Basement PC","role":"node","version":"0.3.39","state":"needs_a_reboot","target":"0.3.40",
-        "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf rejects 192.168.1.20","fails":4}},
+        "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf rejects 192.0.2.20","fails":4}},
        {"id":"n2","name":"Attic","role":"node","version":"0.3.40","state":"up_to_date","home_db":{"ok":true}}],
      "stuck":{"version":"0.3.43","code":"tv_busy","windows":3,"since":"2026-10-27T03:00:00Z"},
      "tv_held":{"run_id":"r9","version":"0.3.40","outcome":"held","number":12,"held_on":"0.3.39","failed":["slot.health"],
@@ -276,6 +276,27 @@ import Testing
         // a state the app does not know shows raw; a field of the wrong shape reads as absent
         #expect(d.processes[3].stateText == "levitating" && d.processes[3].lastProbe?.failures == 3)
         #expect(d.processes[4].restarts == 0 && d.processes[4].stateText == "Stopped")
+    }
+
+    @Test func fillsTheVenvBuildsPercentInBothLanguages() throws {
+        let json = #"""
+        {"available":true,"processes":[
+          {"role":"pipeline","state":"starting","restarts":0,"detail":"Installing the transcription tools: torch (40%)",
+           "detail_code":"venv_building","detail_params":{"step":"torch","done":4,"total":9,"percent":40,"message":"torch"}},
+          {"role":"pipeline","instance":"old","state":"starting","restarts":0,
+           "detail":"building the pipeline's Python environment (4 of 9)","detail_code":"venv_building"}],"events":[]}
+        """#
+        let d = try JSONDecoder.home.decode(ProcessesDoc.self, from: Data(json.utf8))
+        let venv = d.processes[0]
+        #expect(venv.detailText(locale: Locale(identifier: "en")) == "Installing the transcription tools (40%).")
+        #expect(venv.detailText(locale: Locale(identifier: "ar")) == "جارٍ تثبيت أدوات التفريغ (40%).")
+        // a home that sends the code without its values: its English, never a raw {percent}
+        let bare = d.processes[1]
+        for lang in ["en", "ar"] {
+            let text = try #require(bare.detailText(locale: Locale(identifier: lang)))
+            #expect(!text.contains("{"), "\(lang): \(text)")
+            #expect(text == "building the pipeline's Python environment (4 of 9)")
+        }
     }
 
     @Test func listsTheRecentEventsNewestFirst() throws {

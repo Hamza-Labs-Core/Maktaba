@@ -19,7 +19,7 @@ import Testing
         let model = try group("model_unavailable:<n> of <n> clips got no answer from the model")
         #expect(model.title(locale: en) == "The model did not answer")
         #expect(model.title(locale: ar) == "لم يُجب النموذج")
-        let nas = try group("nas_timeout:<path> شاهين/المعجزات والخوارق..برهان النبوة الثاني<n> | دلائل النبوة <n>.mp<n>>: no answer")
+        let nas = try group("nas_timeout:<path> محاضرات/سلسلة التاريخ..الجزء الثاني<n> | دروس عامة <n>.mp<n>>: no answer")
         #expect(nas.title(locale: en) == "NAS read timed out")
         #expect(nas.title(locale: ar) == "انتهت مهلة القراءة من NAS")
         // a chapter's frames fail as ffmpeg does
@@ -62,8 +62,8 @@ import Testing
     }
 
     @Test func anArabicFileNameInAnEnglishLineIsIsolated() {
-        #expect(AttentionWords.isolateRTL("/Volumes/Media/شاهين/المعجزات.mp4: no answer")
-            == "\u{2068}/Volumes/Media/شاهين/المعجزات.mp4\u{2069}: no answer")
+        #expect(AttentionWords.isolateRTL("/Volumes/Media/محاضرات/الدرس.mp4: no answer")
+            == "\u{2068}/Volumes/Media/محاضرات/الدرس.mp4\u{2069}: no answer")
         // nothing right-to-left: as it was
         #expect(AttentionWords.isolateRTL("read failed: head, tail") == "read failed: head, tail")
     }

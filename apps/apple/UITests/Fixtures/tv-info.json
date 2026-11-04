@@ -1,8 +1,8 @@
 {
- "stream_base_url": "http://192.168.1.10:8081",
- "hdhr_address": "192.168.1.10:8081",
- "xmltv_url": "http://192.168.1.10:8081/xmltv.xml",
- "m3u_url": "http://192.168.1.10:8081/lineup.m3u",
+ "stream_base_url": "http://192.0.2.10:8081",
+ "hdhr_address": "192.0.2.10:8081",
+ "xmltv_url": "http://192.0.2.10:8081/xmltv.xml",
+ "m3u_url": "http://192.0.2.10:8081/lineup.m3u",
  "base_from_config": false,
  "xmltv_path": "/xmltv.xml",
  "m3u_path": "/lineup.m3u",

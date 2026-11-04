@@ -39,11 +39,11 @@ import Testing
 @Suite struct Machines {
     static let overview = #"""
     {"home":{"instance_id":"i","name":"Living room","accept_joins":true,"accept_joins_until":"2026-10-25T21:30:00Z",
-             "roles_supported":true,"roles_reason":null,"web_url":"http://192.168.50.177:8088","version":"0.36.2"},
+             "roles_supported":true,"roles_reason":null,"web_url":"http://203.0.113.177:8088","version":"0.36.2"},
      "nodes":[
        {"id":"n1","name":"zeta","state":"approved","expired":false,"online":true,"os":"darwin","arch":"arm64","version":"0.36.2",
         "code_attempts":0,"attempts_left":5,"created_at":"2026-10-01T00:00:00Z","last_seen_at":"2026-10-25T20:29:58.5Z","updated_at":"2026-10-01T00:00:00Z"},
-       {"id":"n2","name":"Basement","state":"pending","expired":false,"online":false,"remote_addr":"192.168.50.20",
+       {"id":"n2","name":"Basement","state":"pending","expired":false,"online":false,"remote_addr":"203.0.113.20",
         "attempts_left":3,"expires_at":"2026-10-25T20:45:00Z","created_at":"2026-10-25T20:30:00Z","updated_at":"2026-10-25T20:30:00Z"},
        {"id":"n3","name":"old","state":"revoked","expired":false,"online":false,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"},
        {"id":"n4","name":"Attic","state":"pending","expired":true,"online":false,"created_at":"2026-10-25T00:00:00Z","updated_at":"2026-10-25T00:00:00Z"},
@@ -56,7 +56,7 @@ import Testing
         #expect(o.home.acceptJoinsUntil == Date(timeIntervalSince1970: 1792963800))
         #expect(o.sortedNodes.map(\.id) == ["n2", "n5", "n1", "n4", "n3"])
         let basement = try #require(o.nodes.first { $0.id == "n2" })
-        #expect(basement.group == .asking && basement.attemptsLeft == 3 && basement.remoteAddr == "192.168.50.20")
+        #expect(basement.group == .asking && basement.attemptsLeft == 3 && basement.remoteAddr == "203.0.113.20")
         #expect(o.nodes.first { $0.id == "n1" }?.platform == "darwin arm64")
         #expect(o.nodes.first { $0.id == "n3" }?.platform == nil)
         // fractions of a second, as Go writes them

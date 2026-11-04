@@ -28,7 +28,7 @@ const S1 = {
   created_at: "2026-10-01T09:00:00Z",
   last_seen_at: "2026-10-19T07:00:00Z",
   expires_at: "2026-11-01T09:00:00Z",
-  ip: "192.168.1.20",
+  ip: "192.0.2.20",
   user_agent: "Mozilla/5.0 (Macintosh) Firefox/131",
   current: true,
 };
@@ -37,11 +37,11 @@ const S2 = {
   created_at: "2026-10-10T09:00:00Z",
   last_seen_at: "2026-10-18T07:00:00Z",
   expires_at: "2026-11-10T09:00:00Z",
-  ip: "10.0.0.5",
+  ip: "198.51.100.5",
   user_agent: "Maktaba-iOS/1.4",
   current: false,
 };
-const S3 = { ...S2, id: "s3", ip: "10.0.0.6", user_agent: "Maktaba-Android/2.0" };
+const S3 = { ...S2, id: "s3", ip: "198.51.100.6", user_agent: "Maktaba-Android/2.0" };
 
 function problem(status: number, title: string, detail?: string) {
   return new ApiError({ type: "about:blank", status, title, detail });
@@ -92,7 +92,7 @@ describe("Sessions (test-cases/account-sessions.md)", () => {
     expect(headers).toEqual(["Device", "IP address", "Signed in", "Last active", "Actions"]);
     const r1 = row("Mozilla/5.0 (Macintosh) Firefox/131");
     expect(within(r1).getByText("This session")).toBeInTheDocument();
-    expect(within(r1).getByText("192.168.1.20")).toHaveClass("mkt-mono");
+    expect(within(r1).getByText("192.0.2.20")).toHaveClass("mkt-mono");
     expect(within(r1).getByText("Current")).toBeInTheDocument();
     const r2 = row("Maktaba-iOS/1.4");
     expect(within(r2).getByRole("button", { name: "Revoke" })).toBeInTheDocument();

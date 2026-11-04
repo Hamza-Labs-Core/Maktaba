@@ -29,7 +29,7 @@ describe("AdminExtensions", () => {
     const plex = (await screen.findByRole("heading", { name: "Plex" })).closest("section")!;
     expect(within(plex).getByText("version 1.2.0")).toBeInTheDocument();
     expect(within(plex).getByText("Configured")).toBeInTheDocument();
-    expect(within(plex).getByLabelText(/Server address/)).toHaveValue("http://192.168.1.10:32400");
+    expect(within(plex).getByLabelText(/Server address/)).toHaveValue("http://192.0.2.10:32400");
     const dz = screen.getByRole("heading", { name: "dizqueTV" }).closest("section")!;
     expect(within(dz).getByText("Not configured")).toBeInTheDocument();
     expect(within(dz).getByRole("switch", { name: "Enabled" })).not.toBeChecked();
@@ -47,13 +47,13 @@ describe("AdminExtensions", () => {
     put.mockResolvedValue(extensionsFixture[0]);
     await userEvent.click(within(plex).getByRole("button", { name: "Save settings" }));
     expect(put).toHaveBeenCalledWith("/api/extensions/plex", {
-      settings: { url: "http://192.168.1.10:32400", path_map: "/data=Z:/" },
+      settings: { url: "http://192.0.2.10:32400", path_map: "/data=Z:/" },
     });
     // typing one sends it
     await userEvent.type(token, "new-token");
     await userEvent.click(within(plex).getByRole("button", { name: "Save settings" }));
     expect(put).toHaveBeenLastCalledWith("/api/extensions/plex", {
-      settings: { url: "http://192.168.1.10:32400", path_map: "/data=Z:/", token: "new-token" },
+      settings: { url: "http://192.0.2.10:32400", path_map: "/data=Z:/", token: "new-token" },
     });
     expect(await within(plex).findAllByText("Settings saved.")).not.toHaveLength(0);
   });

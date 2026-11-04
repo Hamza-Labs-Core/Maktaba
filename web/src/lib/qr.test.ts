@@ -57,7 +57,7 @@ describe("encodeQR", () => {
   it("draws the finder, timing and dark-module patterns", () => {
     for (const text of [
       "A",
-      "maktaba://connect?id=x&n=Home&u=http%3A%2F%2F192.168.1.5%3A8088",
+      "maktaba://connect?id=x&n=Home&u=http%3A%2F%2F192.0.2.5%3A8088",
       "بيت".repeat(40),
     ]) {
       const m = encodeQR(text)!;
@@ -74,7 +74,7 @@ describe("encodeQR", () => {
   });
 
   it("is the same symbol for the same text", () => {
-    const s = "http://192.168.1.5:8088/pair?code=ABCD-1234";
+    const s = "http://192.0.2.5:8088/pair?code=ABCD-1234";
     expect(rows(encodeQR(s)!)).toEqual(rows(encodeQR(s)!));
   });
 });

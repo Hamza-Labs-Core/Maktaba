@@ -115,7 +115,7 @@ class ProfileApiTest {
         val s = client().signInSessions()
         assertEquals("/api/me/sessions", last().url.encodedPath)
         assertEquals(2, s.size)
-        assertEquals("192.168.1.20", s[0].ip)
+        assertEquals("192.0.2.20", s[0].ip)
         assertTrue(s[0].userAgent!!.contains("Safari"))
         assertEquals("2026-11-01T08:59:00Z", s[0].lastSeenAt)
         assertFalse(s[0].current)

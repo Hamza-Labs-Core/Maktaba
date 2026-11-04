@@ -104,8 +104,11 @@ public struct ProcessStatus: Decodable, Identifiable, Sendable {
     /// values, else the English the supervisor wrote, else its code.
     public var detailText: String? { detailText() }
 
+    /// A code whose words name a value the home did not send (an older home, a stripped
+    /// fixture) says the home's English instead: never a raw `{percent}`.
     public func detailText(locale: Locale = AppLanguage.locale) -> String? {
-        if let detailCode, StatusWords.processDetails[detailCode] != nil {
+        if let detailCode, let en = StatusWords.processDetails[detailCode],
+           templateNames(en).isSubset(of: Set(detailParams.keys)) {
             return filled(StatusWords.processDetails, "setup.starting.detail.", detailCode, detailParams, locale)
         }
         return detail ?? detailCode.map { $0.replacingOccurrences(of: "_", with: " ") }
