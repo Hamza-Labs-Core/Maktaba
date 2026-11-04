@@ -13,6 +13,7 @@ from maktaba_pipeline.cluster import stages as cluster_stages
 from maktaba_pipeline.cluster.stages import StageSelector
 from maktaba_pipeline.components import runner as runner_mod
 from maktaba_pipeline.components import store
+from maktaba_pipeline.components.catalog import default as default_catalog
 from maktaba_pipeline.components.runner import ComponentRunner, gate_open, instance_part
 from maktaba_pipeline.engine.graph import GRAPH
 from maktaba_pipeline.engine.sql import dumps, is_pg, loads
@@ -285,7 +286,7 @@ async def test_a_component_whose_stages_lack_their_model_here_waits_on_it(
     """Enabled, but none of its stages can run here (the engine cannot load the model:
     stage_unavailable_here): the row says it waits on the model, never running."""
     await sync_graph(db, GRAPH, gates={})
-    comp = runner_mod.default().get("transcription")
+    comp = default_catalog().get("transcription")
     assert comp is not None
     mine = set(comp.stages)
     monkeypatch.setattr(

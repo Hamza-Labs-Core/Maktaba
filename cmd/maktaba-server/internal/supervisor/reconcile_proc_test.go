@@ -63,14 +63,14 @@ func TestAllowStopsWithCatalogGraceAndNoRestart(t *testing.T) {
 // there, and once it is, the gate opened starts that program.
 func TestDormantProgramFoundAfterTheBoot(t *testing.T) {
 	p, _ := fakeProc(t, RoleOllama, "serve")
-	real, env := p.Cmd.Path, p.Cmd.Env
+	bin, env := p.Cmd.Path, p.Cmd.Env
 	p.Cmd = exec.Command(filepath.Join(t.TempDir(), "not-yet", "ollama"), p.Cmd.Args[1:]...)
 	p.Cmd.Env = env
 	var found atomic.Bool
 	p.Dormant = true
 	p.Path = func() string {
 		if found.Load() {
-			return real
+			return bin
 		}
 		return ""
 	}

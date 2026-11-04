@@ -305,7 +305,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 			}
 			procs = append(procs, p)
 		}
-	} else if wholeMachine && reconciled && !(pg != nil && pg.Frozen()) {
+	} else if wholeMachine && reconciled && (pg == nil || !pg.Frozen()) {
 		// with its credentials here and cloud.link off, built dormant: enabling the
 		// component starts it without a restart (story 51.04)
 		if p, ok := supervisor.BuildHeldRelay(sopts); ok {
