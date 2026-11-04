@@ -20,7 +20,7 @@ const proc = (over: Partial<ClusterProcess> = {}): ClusterProcess => ({
   kind: "node",
   node_id: "n1",
   node_name: "Studio Mac",
-  ip: "10.0.0.5",
+  ip: "198.51.100.5",
   host: "studio",
   worker_id: "node-n1-1",
   pid: 42,
@@ -86,7 +86,11 @@ describe("clusterReducer", () => {
       s = clusterReducer(s, {
         type: "event",
         name: "log",
-        data: { session: "s1", ip: "10.0.0.5", record: { ts: i, level: "info", event: `e${i}` } },
+        data: {
+          session: "s1",
+          ip: "198.51.100.5",
+          record: { ts: i, level: "info", event: `e${i}` },
+        },
         at: i,
       });
     expect(s.logs).toHaveLength(MAX_LIVE_LOGS);
@@ -130,7 +134,7 @@ describe("clusterReducer", () => {
         name: "job",
         data: {
           session: "s1",
-          ip: "10.0.0.5",
+          ip: "198.51.100.5",
           job: { event: "done", job_id: 7, stage: "transcribe", duration_ms: 900 },
         },
       },

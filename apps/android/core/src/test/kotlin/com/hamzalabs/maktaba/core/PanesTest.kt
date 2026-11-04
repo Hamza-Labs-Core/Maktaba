@@ -56,9 +56,9 @@ class PanesTest {
 
     @Test
     fun aStreamSessionPlaysFromTheHome() {
-        val home = "http://192.168.50.177:8088".toHttpUrl()
+        val home = "http://203.0.113.177:8088".toHttpUrl()
         val hls = StreamSession("s1", "transcode", manifestUrl = "/stream/s1/master.m3u8?sig=a", expiresAt = "2026-10-25T12:00:00.5Z")
-        assertEquals("http://192.168.50.177:8088/stream/s1/master.m3u8?sig=a", hls.playbackUrl(home).toString())
+        assertEquals("http://203.0.113.177:8088/stream/s1/master.m3u8?sig=a", hls.playbackUrl(home).toString())
         assertTrue(hls.isHls)
         assertEquals(1792929600500L, hls.expiresMillis)
         val direct = StreamSession("s2", "direct", directUrl = "/stream/s2/file?sig=b", manifestUrl = "/stream/s2/m.m3u8")

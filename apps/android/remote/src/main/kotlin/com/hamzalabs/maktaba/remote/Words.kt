@@ -148,14 +148,19 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
     /** A process's state as the web says it: a stopped one not wanted now is standing by. */
     fun processState(p: ProcessStatus): String = processState(if (p.wanted == false && p.state == "stopped") "standby" else p.state)
 
-    /** Why a process is not started, in the web's words (its detail_code with its values), else the home's English. */
+    /**
+     * Why a process is not started, in the web's words (its detail_code with its values), else the home's English.
+     * A code sent without a value its words need (an older home) says the English too, never "(%)".
+     */
     fun processDetail(p: ProcessStatus): String? {
+        val english = p.detail?.takeIf { it.isNotEmpty() }
         p.detailCode?.let { code ->
             WebWords.processDetail[code]?.let { template ->
-                return fill(template, strings(p.detailParams))
+                val vars = strings(p.detailParams)
+                if (template.args.all { it in vars }) return fill(template, vars)
             }
         }
-        return p.detail?.takeIf { it.isNotEmpty() }
+        return english
     }
 
     fun exit(reason: String, code: Int?, signal: String?): String = when {

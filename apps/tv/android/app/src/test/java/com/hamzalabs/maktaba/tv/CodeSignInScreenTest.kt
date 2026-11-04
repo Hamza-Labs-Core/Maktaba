@@ -58,7 +58,7 @@ class CodeSignInScreenTest {
                         verticalArrangement = Arrangement.Center,
                     ) {
                         CodeSignInContent(
-                            homeName = "Darwish home",
+                            homeName = "Maktaba Home",
                             code = DeviceCode(code = "ABCD1234", deviceCode = "secret", verifyUrl = URL),
                             approveUrl = URL,
                             expiresInSec = 9 * 60 + 58L,

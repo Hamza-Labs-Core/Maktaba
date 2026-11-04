@@ -47,7 +47,7 @@ fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 run() {
     local name="$1" out rc=0; shift
     out="$(perl -e 'alarm 30; exec @ARGV' "$@" 2>&1)" || rc=$?
-    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | head -1)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
+    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | sed -n 1p)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
 }
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/mac-app-check.XXXXXX")"
@@ -89,7 +89,7 @@ while IFS= read -r f; do
     if otool -L "$f" | tail -n +2 | awk '{print $1}' |
         grep -vE '^(/usr/lib/|/System/Library/|@loader_path/|@rpath/|@executable_path/)' | grep -q .; then
         fail "${f#"$PAYLOAD"/}: links outside the payload: $(otool -L "$f" | tail -n +2 | awk '{print $1}' |
-            grep -vE '^(/usr/lib/|/System/Library/|@loader_path/|@rpath/|@executable_path/)' | head -2 | tr '\n' ' ')"
+            grep -vE '^(/usr/lib/|/System/Library/|@loader_path/|@rpath/|@executable_path/)' | sed -n 1,2p | tr '\n' ' ')"
         bad=$((bad + 1))
     fi
 done < <(find "$PAYLOAD" -type f -print0 | xargs -0 file | awk -F': ' '/Mach-O/ {print $1}')

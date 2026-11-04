@@ -54,7 +54,7 @@ fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
 run() {
     local name="$1" out rc=0; shift
     out="$(timeout 60 "$@" 2>&1)" || rc=$?
-    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | head -1)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
+    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | sed -n 1p)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
 }
 
 SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/linux-app-check.XXXXXX")"
@@ -70,14 +70,14 @@ echo "files"
 run "files.sha256" "$PY" -I "$SCRIPT_DIR/payload_tool.py" verify "$PAYLOAD"
 # a hard link would be one entry the runtime copy cannot make again (it copies files and
 # symlinks), and the release tarball stores it as a link the unpack refuses
-linked="$(find "$PAYLOAD" -type f -links +1 -print 2>/dev/null | head -5)"
+linked="$(find "$PAYLOAD" -type f -links +1 -print 2>/dev/null | sed -n 1,5p)"
 if [ -z "$linked" ]; then ok "no hard links"; else fail "hard links in the payload: $linked"; fi
 max_glibc="$("$PY" -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["min_glibc"])' "$PAYLOAD/payload.json" 2>/dev/null || echo "")"
 if [ -n "$max_glibc" ]; then
     if out="$(tool elf "$PAYLOAD" --max-glibc "$max_glibc" 2>&1)"; then
         ok "ELF files: $(printf '%s\n' "$out" | tail -1)"
     else
-        fail "ELF files: $(printf '%s\n' "$out" | head -5)"
+        fail "ELF files: $(printf '%s\n' "$out" | sed -n 1,5p)"
     fi
 else
     fail "payload.json has no min_glibc"
@@ -150,18 +150,18 @@ if [ -z "$inside" ]; then ok "no ffmpeg in the payload"; else fail "ffmpeg is in
 rc=0
 out="$(MAKTABA_CONFIG="$SCRATCH/server.toml" timeout 60 "$PAYLOAD/bin/maktaba-server" ffmpeg 2>&1)" || rc=$?
 case "$FFMPEG_WANT:$rc" in
-    ok:0) ok "maktaba-server ffmpeg: $(printf '%s\n' "$out" | head -1)" ;;
+    ok:0) ok "maktaba-server ffmpeg: $(printf '%s\n' "$out" | sed -n 1p)" ;;
     lacks:1 | missing:1)
         if printf '%s\n' "$out" | grep -q "^problem ffmpeg_$FFMPEG_WANT\b" && printf '%s\n' "$out" | grep -q '^install '; then
-            ok "maktaba-server ffmpeg says $FFMPEG_WANT, with the command: $(printf '%s\n' "$out" | sed -n 's/^install //p' | head -1)"
+            ok "maktaba-server ffmpeg says $FFMPEG_WANT, with the command: $(printf '%s\n' "$out" | sed -n 's/^install //p' | sed -n 1p)"
         else
             fail "maktaba-server ffmpeg (exit $rc) does not say ffmpeg_$FFMPEG_WANT with an install command: $(printf '%s\n' "$out" | tail -4)"
         fi ;;
     *) fail "maktaba-server ffmpeg (exit $rc, $FFMPEG_WANT expected): $(printf '%s\n' "$out" | tail -4)" ;;
 esac
 if [ "$FFMPEG_WANT" = ok ]; then
-    ff="$(printf '%s\n' "$out" | sed -n 's/^ffmpeg //p' | head -1)"
-    fp="$(printf '%s\n' "$out" | sed -n 's/^ffprobe //p' | head -1)"
+    ff="$(printf '%s\n' "$out" | sed -n 's/^ffmpeg //p' | sed -n 1p)"
+    fp="$(printf '%s\n' "$out" | sed -n 's/^ffprobe //p' | sed -n 1p)"
     if [ -n "$ff" ] && timeout 60 "$ff" -hide_banner -loglevel error -f lavfi -i testsrc=duration=1:size=320x240:rate=25 \
             -f lavfi -i sine=frequency=440:duration=1 -c:v libx264 -c:a aac -shortest "$SCRATCH/t.mp4" 2>"$SCRATCH/ff.log"; then
         run "ffprobe reads it back" "$fp" -v error -show_entries stream=codec_name -of csv=p=0 "$SCRATCH/t.mp4"

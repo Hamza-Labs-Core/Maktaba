@@ -50,6 +50,22 @@ build fails when the two differ.
   after 8 seconds they say the read is slow, after 30 seconds that it failed, each with Try
   again, and a refresh that fails keeps the tiles with a notice (English and Arabic).
 
+- **Processes no longer show a raw `{percent}`, and the Remote's Needs attention reads right in
+  Arabic.** A process whose detail code came without its values (an older home, a test
+  fixture) showed its words' placeholder, as in "Installing the transcription tools
+  ({percent}%)". The iPhone Remote, the Android Remote and the web's Processes card now fill the
+  values when they are sent and say the home's own sentence when they are not. On the Android
+  Remote, the check-clips count ("4 of 4 clips got no answer from the model") is said in the
+  app's language with its plural, so the Arabic no longer puts the number at the wrong end, and
+  each sample message keeps its own direction. The Arabic bar label for Needs attention is
+  «انتباه», the same word as the screen's title «ما يحتاج إلى انتباه».
+- **Apple Player: a quality change while paused stays paused.** Choosing a quality reopened
+  the video and played it for a moment before pausing it again, and the controls then said
+  it was playing. A paused video now reopens at the new quality paused, and the controls say
+  so.
+- **Test data is neutral.** The Android, Android TV, Apple and web tests and their screenshot
+  references use an invented home ("Maktaba Home"), addresses from the documentation ranges
+  (192.0.2.x, 198.51.100.x, 203.0.113.x) or `.local` names, and an invented media path.
 - **Every library's YouTube sources come from its linked videos.** The sources were seeded
   once from the channels list, which keeps one library per channel, so 10 libraries had none:
   seven that share one channel through a playlist each, and others whose channel was never

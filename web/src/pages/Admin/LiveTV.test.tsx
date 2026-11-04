@@ -29,10 +29,10 @@ import type { TvClusterView } from "../../lib/tvClusterApi";
 import { deferred } from "../../test/deferred";
 
 const info = {
-  stream_base_url: "http://192.168.1.20:8782",
-  hdhr_address: "192.168.1.20:8782",
-  xmltv_url: "http://192.168.1.20:8782/xmltv.xml",
-  m3u_url: "http://192.168.1.20:8782/lineup.m3u",
+  stream_base_url: "http://192.0.2.20:8782",
+  hdhr_address: "192.0.2.20:8782",
+  xmltv_url: "http://192.0.2.20:8782/xmltv.xml",
+  m3u_url: "http://192.0.2.20:8782/lineup.m3u",
   base_from_config: true,
   xmltv_path: "/xmltv.xml",
   m3u_path: "/lineup.m3u",
@@ -98,8 +98,8 @@ const plexEmpty = {
     dizquetv_present: true,
     channels: { lineup: 3, mapped: null, in_sync: null },
     target: {
-      tuner_url: "http://192.168.1.20:8782",
-      xmltv_url: "http://192.168.1.20:8782/xmltv.xml",
+      tuner_url: "http://192.0.2.20:8782",
+      xmltv_url: "http://192.0.2.20:8782/xmltv.xml",
       source: "env",
     },
     warnings: [],
@@ -181,9 +181,9 @@ describe("AdminLiveTV", () => {
 
   it("shows the Plex addresses and steps", async () => {
     renderPage();
-    expect(await screen.findByDisplayValue("192.168.1.20:8782")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("http://192.168.1.20:8782/xmltv.xml")).toBeInTheDocument();
-    expect(screen.getByDisplayValue("http://192.168.1.20:8782/lineup.m3u")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("192.0.2.20:8782")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("http://192.0.2.20:8782/xmltv.xml")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("http://192.0.2.20:8782/lineup.m3u")).toBeInTheDocument();
     expect(screen.getByText(/Live TV & DVR → Set up/)).toBeInTheDocument();
     expect(screen.getByText("A1B2C3D4")).toBeInTheDocument();
   });
@@ -194,7 +194,7 @@ describe("AdminLiveTV", () => {
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
     renderPage();
     await user.click(await screen.findByRole("button", { name: /copy xmltv guide/i }));
-    expect(writeText).toHaveBeenCalledWith("http://192.168.1.20:8782/xmltv.xml");
+    expect(writeText).toHaveBeenCalledWith("http://192.0.2.20:8782/xmltv.xml");
     expect(await screen.findByText("Copied")).toBeInTheDocument();
   });
 
@@ -209,9 +209,7 @@ describe("AdminLiveTV", () => {
     await user.click(await screen.findByRole("button", { name: /copy m3u playlist/i }));
     expect(writeText).not.toHaveBeenCalled(); // not a secure context
     expect(exec).toHaveBeenCalledWith("copy");
-    const field = screen.getByDisplayValue(
-      "http://192.168.1.20:8782/lineup.m3u"
-    ) as HTMLInputElement;
+    const field = screen.getByDisplayValue("http://192.0.2.20:8782/lineup.m3u") as HTMLInputElement;
     expect(document.activeElement).toBe(field);
     expect((field.selectionEnd ?? 0) - (field.selectionStart ?? 0)).toBe(field.value.length);
     expect(await screen.findByText("Copied")).toBeInTheDocument();
@@ -228,7 +226,7 @@ describe("AdminLiveTV", () => {
     await user.click(await screen.findByRole("button", { name: /copy hdhomerun address/i }));
     expect(await screen.findByText("Copy failed")).toBeInTheDocument();
     expect(screen.getByText(/press Ctrl\+C/)).toBeInTheDocument();
-    expect(document.activeElement).toBe(screen.getByDisplayValue("192.168.1.20:8782"));
+    expect(document.activeElement).toBe(screen.getByDisplayValue("192.0.2.20:8782"));
   });
 
   it("shows the Plex status with other tuners left alone, dizqueTV not named", async () => {
@@ -247,8 +245,8 @@ describe("AdminLiveTV", () => {
     await user.click(await screen.findByRole("button", { name: "Add Maktaba to Plex" }));
     expect(post).not.toHaveBeenCalled();
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("http://192.168.1.20:8782 is added");
-    expect(dialog).toHaveTextContent("XMLTV guide http://192.168.1.20:8782/xmltv.xml");
+    expect(dialog).toHaveTextContent("http://192.0.2.20:8782 is added");
+    expect(dialog).toHaveTextContent("XMLTV guide http://192.0.2.20:8782/xmltv.xml");
     expect(dialog).toHaveTextContent('as "Add Another Device" does');
     expect(dialog).toHaveTextContent("Other tuners in Plex stay as they are");
     expect(dialog).not.toHaveTextContent(/dizqueTV/);

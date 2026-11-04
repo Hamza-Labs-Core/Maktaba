@@ -570,7 +570,7 @@ jobs:
       - name: What failed
         if: failure()
         run: |
-          grep -E '^\s+rehearsal_.*(Error|error|want|not |FAIL|timed out)' "$RUNNER_TEMP/scenario.out" | head -40 || true
+          grep -E '^\s+rehearsal_.*(Error|error|want|not |FAIL|timed out)' "$RUNNER_TEMP/scenario.out" | sed -n 1,40p || true
           ls -la "$RUNNER_TEMP/rh-logs" 2>/dev/null || true
 
       - name: Keep the servers' logs

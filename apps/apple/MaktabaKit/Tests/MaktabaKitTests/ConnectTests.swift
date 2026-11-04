@@ -6,11 +6,11 @@ import Testing
 
 @Suite struct ConnectLinks {
     @Test func readsAHomesLink() throws {
-        let link = try #require(ConnectLink(string: "maktaba://connect?id=home-1&n=Living%20room&u=http://192.168.1.20:8088&u=https://abc.relay.maktaba.tv/&u=http://192.168.1.20:8088&u=ftp://x&u=notaurl%20at%20all"))
+        let link = try #require(ConnectLink(string: "maktaba://connect?id=home-1&n=Living%20room&u=http://192.0.2.20:8088&u=https://abc.relay.maktaba.tv/&u=http://192.0.2.20:8088&u=ftp://x&u=notaurl%20at%20all"))
         #expect(link.homeID == "home-1")
         #expect(link.name == "Living room")
         // in the link's order (local first), once each, http(s) only, no trailing slash
-        #expect(link.urls.map(\.absoluteString) == ["http://192.168.1.20:8088", "https://abc.relay.maktaba.tv"])
+        #expect(link.urls.map(\.absoluteString) == ["http://192.0.2.20:8088", "https://abc.relay.maktaba.tv"])
     }
 
     @Test func keepsAHomesBasePath() throws {
@@ -20,11 +20,11 @@ import Testing
     }
 
     @Test(arguments: [
-        "maktaba:connect?u=http://10.0.0.5:8088",
-        "MAKTABA://CONNECT?u=http://10.0.0.5:8088",
+        "maktaba:connect?u=http://198.51.100.5:8088",
+        "MAKTABA://CONNECT?u=http://198.51.100.5:8088",
     ])
     func readsEitherForm(text: String) {
-        #expect(ConnectLink(string: text)?.urls.first?.absoluteString == "http://10.0.0.5:8088")
+        #expect(ConnectLink(string: text)?.urls.first?.absoluteString == "http://198.51.100.5:8088")
     }
 
     @Test(arguments: [
@@ -43,10 +43,10 @@ import Testing
     @Test func tellsWhatACodeHolds() throws {
         let link = try #require(ConnectLink(string: "maktaba://connect?u=http://h:8088"))
         #expect(ScannedCode.parse("maktaba://connect?u=http://h:8088") == .connect(link))
-        #expect(ScannedCode.parse("http://192.168.1.20:8088/pair?code=abcd-1234") == .signInCode("ABCD-1234"))
+        #expect(ScannedCode.parse("http://192.0.2.20:8088/pair?code=abcd-1234") == .signInCode("ABCD-1234"))
         #expect(ScannedCode.parse("https://h.example.com/maktaba/pair?code=ABCD1234") == .signInCode("ABCD-1234"))
         #expect(ScannedCode.parse("abcd 1234") == .signInCode("ABCD-1234"))
-        #expect(ScannedCode.parse("http://192.168.1.20:8088") == .address(URL(string: "http://192.168.1.20:8088")!))
+        #expect(ScannedCode.parse("http://192.0.2.20:8088") == .address(URL(string: "http://192.0.2.20:8088")!))
         // a page with ?code= that is not the approve page is an address
         #expect(ScannedCode.parse("http://h:8088/videos?code=ABCD1234") == .address(URL(string: "http://h:8088")!))
         #expect(ScannedCode.parse("   ") == nil)
@@ -104,7 +104,7 @@ import Testing
     @Test func oneHomeAnnouncedTwiceIsListedOnce() {
         var homes = FoundHomes()
         let url = URL(string: "http://nas.local:8088")!
-        homes.add("nas (2)", .init(name: "Living room", url: URL(string: "http://192.168.1.20:8088")!, homeID: "home-1"))
+        homes.add("nas (2)", .init(name: "Living room", url: URL(string: "http://192.0.2.20:8088")!, homeID: "home-1"))
         homes.add("nas", .init(name: "Living room", url: url, homeID: "home-1"))
         // no id: the same address is the same home
         homes.add("old", .init(name: "Box", url: URL(string: "http://box.local:8088")!, homeID: nil))
@@ -123,15 +123,15 @@ import Testing
     @Test func triesWhatWasTypedThenTheHostThenTheOtherScheme() {
         #expect(Home.candidates(for: "nas.example.com/maktaba/").map(\.absoluteString)
             == ["https://nas.example.com/maktaba", "https://nas.example.com", "http://nas.example.com/maktaba", "http://nas.example.com"])
-        #expect(Home.candidates(for: "192.168.1.20:8088").map(\.absoluteString)
-            == ["http://192.168.1.20:8088", "https://192.168.1.20:8088"])
+        #expect(Home.candidates(for: "maktaba.local:8088").map(\.absoluteString)
+            == ["http://maktaba.local:8088", "https://maktaba.local:8088"])
         // a scheme typed is kept
-        #expect(Home.candidates(for: "http://10.0.0.5:8088").map(\.absoluteString) == ["http://10.0.0.5:8088"])
+        #expect(Home.candidates(for: "http://198.51.100.5:8088").map(\.absoluteString) == ["http://198.51.100.5:8088"])
         #expect(Home.candidates(for: "  ").isEmpty && Home.candidates(for: "ftp://x").isEmpty)
     }
 
     @Test func showsAnAddressShort() {
-        #expect(Home(url: URL(string: "http://192.168.1.20:8088")!, name: "x").displayAddress == "192.168.1.20:8088")
+        #expect(Home(url: URL(string: "http://192.0.2.20:8088")!, name: "x").displayAddress == "192.0.2.20:8088")
         #expect(Home(url: URL(string: "https://nas.example.com/maktaba")!, name: "x").displayAddress == "nas.example.com/maktaba")
     }
 }
@@ -140,7 +140,7 @@ import Testing
     @Test func theQRCodeHoldsTheHomesOwnAddressWhenItGivesOne() throws {
         let json = #"{"code":"ABCD-1234","device_code":"dc","expires_at":"2099-01-01T00:00:00.5Z","verify_path":"/pair?code=ABCD-1234","interval":2,"verify_url":"https://abc.relay.maktaba.tv/pair?code=ABCD-1234"}"#
         let p = try JSONDecoder().decode(DevicePairing.self, from: Data(json.utf8))
-        #expect(p.verifyURL(home: URL(string: "http://192.168.1.20:8088")!)?.absoluteString == "https://abc.relay.maktaba.tv/pair?code=ABCD-1234")
+        #expect(p.verifyURL(home: URL(string: "http://192.0.2.20:8088")!)?.absoluteString == "https://abc.relay.maktaba.tv/pair?code=ABCD-1234")
         #expect(p.expiresAt > .now)
     }
 

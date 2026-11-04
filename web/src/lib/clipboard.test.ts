@@ -27,7 +27,7 @@ describe("copyText", () => {
     const exec = vi.fn().mockReturnValue(true);
     setEnv(false, undefined, exec);
     const field = document.createElement("input");
-    field.value = "http://192.168.1.20:8782/xmltv.xml";
+    field.value = "http://192.0.2.20:8782/xmltv.xml";
     document.body.appendChild(field);
     expect(await copyText(field.value, field)).toBe(true);
     expect(exec).toHaveBeenCalledWith("copy");

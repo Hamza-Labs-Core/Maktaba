@@ -23,7 +23,7 @@ fi
 for b in ffmpeg ffprobe; do
   command -v "$b" >/dev/null || { echo "::error::$b not on PATH"; exit 1; }
 done
-ffmpeg -hide_banner -version | head -1
+ffmpeg -hide_banner -version | sed -n 1p
 
 # module | package | tests (exact names)
 suites=(

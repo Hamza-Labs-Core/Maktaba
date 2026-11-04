@@ -637,7 +637,7 @@ export const extensionsFixture: Extension[] = [
         label: "Server address",
         type: "url",
         required: true,
-        help: "For example http://192.168.1.10:32400",
+        help: "For example http://192.0.2.10:32400",
       },
       { key: "token", label: "Token", type: "secret", required: true },
       {
@@ -647,7 +647,7 @@ export const extensionsFixture: Extension[] = [
         help: "PLEX=LOCAL pairs, comma separated",
       },
     ],
-    settings: { url: "http://192.168.1.10:32400", path_map: "/data=Z:/" },
+    settings: { url: "http://192.0.2.10:32400", path_map: "/data=Z:/" },
     secrets_set: ["token"],
   },
   {

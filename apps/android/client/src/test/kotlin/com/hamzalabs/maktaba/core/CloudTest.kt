@@ -312,9 +312,9 @@ class CloudTest {
     fun aCloudHomeKeepsItsAddressesAcrossRestarts() {
         val store = MapStore()
         val s = AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() })
-        s.use(Home("https://kitchen.relay.example", "Kitchen", homeId, addresses = listOf("http://192.168.1.5:8088"), cloudServer = homeId))
+        s.use(Home("https://kitchen.relay.example", "Kitchen", homeId, addresses = listOf("http://192.0.2.5:8088"), cloudServer = homeId))
         val again = AppSession(store, CoroutineScope(Dispatchers.Unconfined), { MemoryTokens() }).homes.value.single()
-        assertEquals(listOf("http://192.168.1.5:8088"), again.addresses)
+        assertEquals(listOf("http://192.0.2.5:8088"), again.addresses)
         assertEquals(homeId, again.cloudServer)
         // a home saved before addresses existed still loads
         store.put("homes", """[{"url":"http://a:8088","name":"Studio"}]""")

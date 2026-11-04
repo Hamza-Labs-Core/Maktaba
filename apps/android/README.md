@@ -48,7 +48,7 @@ emulator -avd Maktaba_Fold
 
 The Pixel 9 Pro Fold profile has the fold postures: the emulator's Extended controls → Virtual
 sensors → Posture (closed, half open, open), or `adb emu fold` / `adb emu unfold`. An emulator
-reaches a home on the Mac's network by its address (`192.168.50.177:8088`).
+reaches a home on the Mac's network by its address (`192.0.2.20:8088`).
 
 ## How it works
 

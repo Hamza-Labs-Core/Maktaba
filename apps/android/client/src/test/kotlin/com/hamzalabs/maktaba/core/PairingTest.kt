@@ -43,22 +43,22 @@ class PairingTest {
 
     @Test
     fun aScannedApprovePageGivesItsCode() {
-        assertEquals("ABCD1234", PairingCode.fromScan("http://192.168.1.5:8088/pair?code=ABCD-1234"))
+        assertEquals("ABCD1234", PairingCode.fromScan("http://192.0.2.5:8088/pair?code=ABCD-1234"))
         assertEquals("ABCD1234", PairingCode.fromScan("https://example.com/maktaba/pair?code=abcd1234&x=1"))
         assertEquals("ABCD1234", PairingCode.fromScan("ABCD-1234"))
-        assertNull("a page without a code", PairingCode.fromScan("http://192.168.1.5:8088/pair"))
+        assertNull("a page without a code", PairingCode.fromScan("http://192.0.2.5:8088/pair"))
         assertNull(PairingCode.fromScan("maktaba://connect?u=http://a"))
     }
 
     @Test
     fun theQrHoldsTheHomesApproveAddress() {
         val code = DeviceCode("ABCD-1234", "dc", verifyPath = "/pair?code=ABCD-1234")
-        assertEquals("http://192.168.1.5:8088/pair?code=ABCD-1234", code.approveUrl("http://192.168.1.5:8088".toHttpUrl()))
+        assertEquals("http://192.0.2.5:8088/pair?code=ABCD-1234", code.approveUrl("http://192.0.2.5:8088".toHttpUrl()))
         assertEquals("under the base path", "https://example.com/maktaba/pair?code=ABCD-1234", code.approveUrl("https://example.com/maktaba".toHttpUrl()))
         assertEquals(
             "the home's own verify_url first",
-            "https://darwish.maktaba.tv/pair?code=ABCD-1234",
-            code.copy(verifyUrl = "https://darwish.maktaba.tv/pair?code=ABCD-1234").approveUrl("http://192.168.1.5:8088".toHttpUrl()),
+            "https://myhome.maktaba.tv/pair?code=ABCD-1234",
+            code.copy(verifyUrl = "https://myhome.maktaba.tv/pair?code=ABCD-1234").approveUrl("http://192.0.2.5:8088".toHttpUrl()),
         )
     }
 
@@ -278,14 +278,14 @@ class PairingTest {
             when (r.url.encodedPath) {
                 "/maktaba/api/pairing/device" -> json(201, codeJson("ABCD-1234", "secret"))
                 "/maktaba/api/pairing/device/token" -> json(200, """{"access_token":"a1","refresh_token":"r1"}""")
-                "/maktaba/api/auth/me" -> json(200, """{"id":"u1","username":"amina","home_name":"Darwish home"}""")
+                "/maktaba/api/auth/me" -> json(200, """{"id":"u1","username":"amina","home_name":"Maktaba Home"}""")
                 else -> json(404, "{}")
             }
         }
         val tokens = mutableMapOf<String, MemoryTokens>()
         val s = AppSession(MapStore(), CoroutineScope(Dispatchers.Unconfined), { tokens.getOrPut(it) { MemoryTokens() } })
         val base = server.url("/maktaba").toString().trimEnd('/')
-        s.use(Home(base, "Darwish"))
+        s.use(Home(base, "Maktaba Home"))
         var shown: DeviceCode? = null
         s.signInWithCode("Pixel", onCode = { shown = it }, sleep = {})
         assertEquals("ABCD-1234", shown?.code)

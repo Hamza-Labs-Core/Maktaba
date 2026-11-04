@@ -94,7 +94,7 @@ jobs:
           mkdir -p "$out"
           for m in client core remote player; do
             # build/reports/jacoco/test/jacocoTestReport.xml (JVM), build/reports/coverage/test/<variant>/report.xml
-            report=$(find "$m/build/reports/jacoco" "$m/build/reports/coverage" -name '*.xml' 2>/dev/null | head -n1 || true)
+            report=$(find "$m/build/reports/jacoco" "$m/build/reports/coverage" -name '*.xml' 2>/dev/null | sed -n 1p || true)
             if [ -z "$report" ]; then echo "::warning::no coverage report for $m"; continue; fi
             cp "$report" "$out/$m.jacoco.xml"
             echo "android:apps/android/$m/src/test" >"$out/$m.jacoco.xml.id"

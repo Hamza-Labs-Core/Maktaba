@@ -436,6 +436,12 @@ func filled(_ table: [String: String], _ prefix: String, _ value: String, _ para
     return s
 }
 
+/// The {name}s a template takes.
+func templateNames(_ template: String) -> Set<String> {
+    let names = template.matches(of: /\{(\w+)\}/).map { String($0.output.1) }
+    return Set(names)
+}
+
 /// A value's words from `table`, whose catalog keys are `prefix` + the value, in `locale`'s
 /// language; a value with no words shows as sent, its underscores as spaces.
 func words(_ table: [String: String], _ prefix: String, _ value: String, _ locale: Locale = AppLanguage.locale) -> String {

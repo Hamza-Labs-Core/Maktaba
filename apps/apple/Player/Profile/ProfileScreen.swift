@@ -19,6 +19,9 @@ struct ProfileScreen: View {
     /// pushed: the section's stack holds `PlayerRoute`s only, and a view pushed beside them
     /// would be put under a video opened from it.
     @State private var page: ProfilePage?
+    /// The launch's `-maktaba-profile` page was shown (once a process: Back and the person's
+    /// own taps then stay; `ShellLaunch.profilePage`).
+    @MainActor private static var launchPageApplied = false
     #if DEBUG
     /// The last link opened, in a Debug launch with `-maktaba-record-opens` (the UI tests
     /// check the address instead of leaving the app).
@@ -65,7 +68,12 @@ struct ProfileScreen: View {
             }
         }
         #endif
-        .onAppear { PlaybackPreferences.resetIfAsked() }
+        .onAppear {
+            PlaybackPreferences.resetIfAsked()
+            guard !Self.launchPageApplied else { return }
+            Self.launchPageApplied = true
+            if let launch = ShellLaunch.profilePage().flatMap(ProfilePage.init(launchID:)) { page = launch }
+        }
         .task { await model.loadRoot() }
     }
 
@@ -334,6 +342,14 @@ enum ProfilePage: Hashable, Identifiable {
         case .diagnostics: "diagnostics"
         case let .playlist(p): "playlist.\(p.id)"
         }
+    }
+
+    /// A page a launch opens on (`-maktaba-profile`, by its `id`); a playlist needs its
+    /// summary, so it is not one.
+    init?(launchID: String) {
+        guard let page = [ProfilePage.history, .favorites, .playlists, .sessions, .playback, .diagnostics]
+            .first(where: { $0.id == launchID }) else { return nil }
+        self = page
     }
 
     /// Where Back goes: a playlist to the playlists, the rest to the first screen.

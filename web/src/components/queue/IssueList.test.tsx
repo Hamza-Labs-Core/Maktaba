@@ -40,7 +40,7 @@ describe("groupTitle", () => {
     expect(groupTitle(model, en)).toBe("The model did not answer");
     expect(groupTitle(model, ar)).toBe("لم يُجب النموذج");
     const nas = group(
-      "nas_timeout:<path> شاهين/المعجزات والخوارق..برهان النبوة الثاني<n> | دلائل النبوة <n>.mp<n>>: no answer"
+      "nas_timeout:<path> محاضرات/سلسلة التاريخ..الجزء الثاني<n> | دروس عامة <n>.mp<n>>: no answer"
     );
     expect(groupTitle(nas, en)).toBe("NAS read timed out");
     expect(groupTitle(nas, ar)).toBe("انتهت مهلة القراءة من NAS");
@@ -83,8 +83,8 @@ describe("readableMessage", () => {
   });
 
   it("isolates an Arabic file name in an English line", () => {
-    expect(isolateRtl("/Volumes/Media/شاهين/المعجزات.mp4: no answer")).toBe(
-      "⁨/Volumes/Media/شاهين/المعجزات.mp4⁩: no answer"
+    expect(isolateRtl("/Volumes/Media/محاضرات/الدرس.mp4: no answer")).toBe(
+      "⁨/Volumes/Media/محاضرات/الدرس.mp4⁩: no answer"
     );
     // nothing right-to-left: as it was
     expect(isolateRtl("read failed: head, tail")).toBe("read failed: head, tail");
@@ -109,13 +109,13 @@ describe("IssueList", () => {
     const { container } = renderList([
       group("nas_timeout:<path>: no answer", {
         label: "NAS read timed out",
-        sample_message: "/Volumes/Media/شاهين/المعجزات.mp4: no answer\\nretry later",
+        sample_message: "/Volumes/Media/محاضرات/الدرس.mp4: no answer\\nretry later",
       }),
     ]);
     expect(screen.getByText("انتهت مهلة القراءة من NAS")).toBeInTheDocument();
     expect(screen.queryByText(/NAS read timed out/)).toBeNull();
     expect(container.querySelector(".mkt-q-issue__msg")?.textContent).toBe(
-      "⁨/Volumes/Media/شاهين/المعجزات.mp4⁩: no answer\nretry later"
+      "⁨/Volumes/Media/محاضرات/الدرس.mp4⁩: no answer\nretry later"
     );
   });
 });

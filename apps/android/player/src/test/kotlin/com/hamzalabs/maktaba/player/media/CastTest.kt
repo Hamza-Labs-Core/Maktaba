@@ -133,7 +133,7 @@ class CastTest {
 
     @Test
     fun theConverterKeepsTheUrlAndTitleBothWays() {
-        val url = "http://192.168.1.20:8088/stream/direct/0b5c7a3e-2f7d-4c55-9d43-6a7c1e0f9a11?sig=abc"
+        val url = "http://192.0.2.20:8088/stream/direct/0b5c7a3e-2f7d-4c55-9d43-6a7c1e0f9a11?sig=abc"
         val item = MediaItem.Builder()
             .setUri(url)
             .setMediaMetadata(MediaMetadata.Builder().setTitle("Omar").build())

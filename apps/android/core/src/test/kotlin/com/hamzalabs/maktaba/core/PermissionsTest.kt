@@ -101,7 +101,7 @@ class PermissionsTest {
 
     @Test
     fun learnMoreOpensTheHomesHelp() {
-        assertEquals("http://192.168.1.20:8088/help/android-apps#permissions", permissionsHelpUrl("http://192.168.1.20:8088/"))
+        assertEquals("http://192.0.2.20:8088/help/android-apps#permissions", permissionsHelpUrl("http://192.0.2.20:8088/"))
         assertEquals("https://home.example/help/android-tv#permissions", permissionsHelpUrl("https://home.example", "android-tv"))
     }
 }

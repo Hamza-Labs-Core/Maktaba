@@ -29,13 +29,13 @@ class DiagnosticsTest {
 
     @Test
     fun `a logged transport failure leaves out the home's address`() {
-        val line = AppLog.describe(ApiException.Transport("failed to connect to /192.168.1.20 (port 8080)"))
+        val line = AppLog.describe(ApiException.Transport("failed to connect to /192.0.2.20 (port 8080)"))
         assertEquals("Unreachable Transport", line)
     }
 
     @Test
     fun `a redacted throwable keeps classes and frames, not messages`() {
-        val cause = IOException("token=abc.def at 10.0.0.5")
+        val cause = IOException("token=abc.def at 198.51.100.5")
         val e = IllegalStateException("user alice not found", cause)
         val r = Redacted.of(e)
         val text = r.stackTraceToString()
@@ -43,7 +43,7 @@ class DiagnosticsTest {
         assertTrue(text.contains("Caused by: java.io.IOException"))
         assertFalse(text.contains("alice"))
         assertFalse(text.contains("token"))
-        assertFalse(text.contains("10.0.0.5"))
+        assertFalse(text.contains("198.51.100.5"))
         assertEquals(e.stackTrace.toList(), r.stackTrace.toList())
     }
 
