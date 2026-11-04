@@ -1494,11 +1494,48 @@ jobs:
 
       # every leg's: a failed download fails the release
       - name: Download the component packs
+        id: artifact-release-packs
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-packs-*
           path: staged/packs
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-packs-*
+        if: steps.artifact-release-packs.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the component packs (attempt 2)
+        id: artifact-release-packs-2
+        if: steps.artifact-release-packs.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-packs-*
+          path: staged/packs
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-packs-*
+        if: steps.artifact-release-packs-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the component packs (attempt 3)
+        id: artifact-release-packs-3
+        if: steps.artifact-release-packs-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-packs-*
+          path: staged/packs
+          merge-multiple: true
+      - name: Check release-packs-* downloaded
+        id: artifact-release-packs-check
+        if: steps.artifact-release-packs-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-packs-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       # One artifact per build-images matrix leg ("digest-<svc>", each a
       # single file named "<svc>" holding "<svc> sha256:...").
