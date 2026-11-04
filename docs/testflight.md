@@ -68,8 +68,8 @@ App records can't be created through the API, so the first upload fails until th
    For the Mac app pick the **macOS** platform, and for the Apple TV app **tvOS**, in the
    New App form. The iPad, Mac and Apple TV apps each have their own bundle ID, so each needs
    its own record. The Maktaba Remote iPad record already exists (made on 2026-11-03, with its
-   first build, 0.3.73, uploaded from Xcode): its SKU is its bundle ID. If the name "Maktaba TV" is taken, pick another that
-   starts with Maktaba.
+   first build, 0.3.73, uploaded from Xcode): its SKU is its bundle ID. If the name
+   "Maktaba TV" is taken, pick another that starts with Maktaba.
 
    If a bundle ID isn't in the list, register it first: Certificates, Identifiers & Profiles →
    Identifiers → **+** → App IDs. Opening the target once in Xcode with automatic signing
