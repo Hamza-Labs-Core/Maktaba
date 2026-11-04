@@ -92,6 +92,7 @@ export type StepName =
   | "storage"
   | "admin"
   | "libraries"
+  | "bundle"
   | "models"
   | "plex"
   | "venv"

@@ -55,7 +55,8 @@ class PlayerUITestCase: XCTestCase {
     /// So before the first test the app goes the way a test takes it, on a mock home of its
     /// own (the test's mock sees none of it): launched, signed in, the shell drawn on
     /// Libraries, and read until three snapshots running each come back within 2 s (a page
-    /// read at its usual pace); then closed. What it took is in the test log and the result
+    /// read at its usual pace), and one full accessibility audit run (a process's first is
+    /// slow as well); then closed. What it took is in the test log and the result
     /// bundle. A later test process (after a crash) finds the simulator ready and pays one
     /// sign-in.
     ///
@@ -106,8 +107,14 @@ class PlayerUITestCase: XCTestCase {
                 quick = took < 2 ? quick + 1 : 0
             }
             let pace = !shell ? "no shell in 120 s" : quick >= 3 ? "read at its usual pace" : "still slow after 180 s"
-            let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s", drawn, pace,
-                              Date().timeIntervalSince(start), looks.joined(separator: ", "))
+            // the process's first full accessibility audit is slow too (15 to 16 s on CI, 2 to
+            // 2.5 s after; one of a single cheap type warmed nothing): a full one here, its
+            // findings ignored, so a first test's audit keeps to its deadline
+            let audited = Date()
+            if shell { try? app.performAccessibilityAudit(for: XCUIAccessibilityAuditType.all.subtracting(.dynamicType)) { _ in true } }
+            let audit = Date().timeIntervalSince(audited)
+            let note = String(format: "signed in, shell drawn at %.0f s; %@ at %.0f s; snapshots took %@ s; first audit %.1f s",
+                              drawn, pace, Date().timeIntervalSince(start), looks.joined(separator: ", "), audit)
             // in the test log, and kept with the result bundle
             print("PlayerUITestCase warm-up: \(note)")
             let kept = XCTAttachment(string: note)
@@ -133,8 +140,9 @@ class PlayerUITestCase: XCTestCase {
         app.terminate()
     }
 
-    /// Opens the app. `fresh`: as a first run (no homes, the permissions walkthrough passed
-    /// with its checks faked); otherwise the home and the sign-in of the last launch are kept.
+    /// Opens the app. `fresh`: as a first run (no homes), past the permissions walkthrough
+    /// (`-maktaba-permissions-seen`, its checks faked); otherwise the home and the sign-in of
+    /// the last launch are kept.
     /// The tokens are kept in a file, not the Keychain (`-maktaba-secrets-in-file`,
     /// `UITestSecrets`): the app is built unsigned on CI, and an unsigned app may not use the
     /// Keychain, so it would be signed out at each launch.
@@ -155,7 +163,11 @@ class PlayerUITestCase: XCTestCase {
         // the dark theme (screenshots are dark by default; FR-2)
         if let theme { args += ["-theme", theme] }
         if fresh {
-            args += ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
+            // past the walkthrough with no tap: a Continue tap was lost in the simulator itself
+            // (backboardd attached XCTest's digitizer twice, "unknown digitizer", and skipped
+            // the touch; iPad runs of #608). The walkthrough's taps are PermissionsUITests'.
+            args += ["-maktaba-permissions-reset", "-maktaba-permissions-seen", "-maktaba-permissions-fake", "granted",
+                     "-maktaba-session-reset"]
             if resetSettings { args.append("-maktaba-settings-reset") }
         }
         if let sections { args += ["-maktaba-sections", sections.joined(separator: ",")] }
@@ -166,19 +178,6 @@ class PlayerUITestCase: XCTestCase {
         args.append(TextSizeHook.flag)
         app.launchArguments = args + extra
         app.launch()
-        if fresh {
-            let walkthrough = element("permissions.walkthrough")
-            if walkthrough.waitForExistence(timeout: 10 * patience) {
-                // the sheet is in the tree as it starts to slide up, and UIKit takes no touch
-                // while a presentation runs: a tap 0.5 s after it appeared was dropped and the
-                // walkthrough stayed (an iPhone run on #618). Continue is tapped once it stands
-                // still, the presentation over.
-                let go = app.buttons["permissions.continue"]
-                waitUntilStill(go, timeout: 5 * patience)
-                go.tap()
-                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5 * patience), "the permissions walkthrough closes")
-            }
-        }
     }
 
     /// Waits (at most `timeout`) until `e` can be tapped and its frame is the same on two looks
@@ -445,6 +444,17 @@ class PlayerUITestCase: XCTestCase {
     /// words repeat (below).
     nonisolated fileprivate static let barEdge: CGFloat = 44
 
+    /// A contrast issue on an element with a shimmer inside its frame (a card whose poster is
+    /// still loading): the audit measures the element's whole frame and names it by its label,
+    /// and there the light passing over the placeholder is two close surface colours by
+    /// design, not text. An iPad run of #608 failed a card's Arabic title, drawn light on the
+    /// dark page, for its shimmering poster above it. The shimmer itself has no text.
+    func contrastOverShimmer(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+        guard issue.auditType == .contrast, let f = issue.element?.frame, !f.isEmpty else { return false }
+        return app.descendants(matching: .any).matching(identifier: "shimmer").allElementsBoundByIndex
+            .contains { f.contains($0.frame) }
+    }
+
     func contrastOutOfView(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
         guard issue.auditType == .contrast else { return false }
         let page = shown ?? (try? Shown(app.snapshot())) ?? Shown()
@@ -555,9 +565,20 @@ class PlayerUITestCase: XCTestCase {
     /// 2026: four runs, iPhone and iPad), while the same tests passed on the same commits on
     /// other runners. A drag that moves for half a second and stops before it lifts is
     /// followed however its touches are paced.
+    ///
+    /// It holds still for 3 s before it moves. A scroll view takes no pan while the system
+    /// may still claim the touch (SpringBoard's own gestures have to fail first), and on a
+    /// saturated runner that decision came late: in an iPad run of #608 the simulator's log
+    /// has SpringBoard silent from the touch-down until "UIKit magic hysteresis reached with
+    /// no gestures still recognizing", 1.34 s later and after the lift, while the app logged
+    /// "ignoring pan gesture … because system gestures are possible" for every move, so a
+    /// 300-pt drag mid-screen moved nothing. Every other drag of that run was decided within
+    /// 0.3 s. The hold lets the decision land before the finger moves; 3 s is the margin over
+    /// the 1.34 s seen, so it is not to be shortened. The guide's cells have no long-press
+    /// action, so the hold itself does nothing.
     func drag(_ element: XCUIElement, by offset: CGVector, from point: CGVector = CGVector(dx: 0.5, dy: 0.5)) {
         let start = element.coordinate(withNormalizedOffset: point)
-        start.press(forDuration: 0.05, thenDragTo: start.withOffset(offset),
+        start.press(forDuration: 3, thenDragTo: start.withOffset(offset),
                     withVelocity: XCUIGestureVelocity(rawValue: 400), thenHoldForDuration: 0.3)
     }
 

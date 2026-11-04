@@ -200,6 +200,12 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 - **Does Maktaba fix it itself?** Yes: it tries again at once, then later, then in the next quiet window. Machines download from the home first, then from GitHub.
 - **What you can do:** Check the network and the free disk space, then press **Retry**, or wait.
 
+### The parts you added could not be readied {#code-packs}
+
+- **What it means:** This home uses parts added after it was installed. Each version has its own copy of them, so the update gets the new version's parts before it switches. One of them could not be downloaded, did not pass its check, is missing from the new version, or was still being installed. Nothing was changed: the home keeps running the version it has.
+- **Does Maktaba fix it itself?** Yes, for a download that failed or a part still being installed: it tries again at the next try. A part that did not pass its check is never used.
+- **What you can do:** Check the network and the free disk space, then press **Retry**. If it keeps failing, wait for the next version.
+
 ### Write the window as HH:MM-HH:MM {#bad-window}
 
 - **What it means:** The **Quiet window** is not written correctly, or it is 30 minutes or shorter.

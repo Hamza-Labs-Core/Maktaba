@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -221,5 +222,53 @@ func TestPGRolesProbeWithoutCreateRole(t *testing.T) {
 	ok, reason := (&PGRoles{DB: plain}).Supported(context.Background())
 	if ok || reason != ReasonCannotCreate {
 		t.Errorf("supported = %v %q", ok, reason)
+	}
+}
+
+// A deleted machine's component status rows go with it (Epic 51 story 51.02), and the
+// housekeeping prune takes rows whose machine has no node row; the home's stay.
+func TestPGDeletedNodeStatusPruned(t *testing.T) {
+	db, _ := scratchDB(t)
+	ctx := context.Background()
+	store := &PGStore{DB: db}
+	now := time.Now().UTC()
+	gone, kept := uuid.NewString(), uuid.NewString()
+	for _, id := range []string{gone, kept} {
+		if err := store.PutPending(ctx, Node{ID: id, Name: "m-" + id[:8], NodePubkey: "K-" + id, CreatedAt: now}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	orphan := uuid.NewString() // a machine that reported after its delete
+	for _, m := range []string{"home", gone, kept, orphan} {
+		if _, err := db.Exec(`INSERT INTO component_status (machine, id, part, phase) VALUES ($1, 'transcription', 'pipeline', 'running')`, m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	machines := func() []string {
+		t.Helper()
+		rows, err := db.Query(`SELECT machine FROM component_status ORDER BY machine`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = rows.Close() }()
+		var out []string
+		for rows.Next() {
+			var m string
+			_ = rows.Scan(&m)
+			out = append(out, m)
+		}
+		return out
+	}
+	if err := store.DeleteNode(ctx, gone); err != nil {
+		t.Fatal(err)
+	}
+	if got := machines(); slices.Contains(got, gone) || len(got) != 3 {
+		t.Fatalf("after the delete: %v", got)
+	}
+	if n, err := store.PruneComponentStatus(ctx); err != nil || n != 1 {
+		t.Fatalf("pruned %d, %v", n, err)
+	}
+	if got := machines(); len(got) != 2 || !slices.Contains(got, "home") || !slices.Contains(got, kept) {
+		t.Fatalf("after the prune: %v", got)
 	}
 }

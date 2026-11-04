@@ -8,6 +8,7 @@ struct Shimmer: View {
     var cornerRadius: CGFloat = MaktabaTokens.Radius.md
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.shimmerStill) private var still
 
     /// One pass of the light, as the web's `mk-skeleton-shimmer`.
     static let period: TimeInterval = 1.4
@@ -16,8 +17,8 @@ struct Shimmer: View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
         // drawn per frame (no view moves, so the element keeps its own frame); paused and
         // plain under Reduce Motion
-        TimelineView(.animation(minimumInterval: nil, paused: reduceMotion)) { context in
-            if reduceMotion {
+        TimelineView(.animation(minimumInterval: nil, paused: reduceMotion || still)) { context in
+            if reduceMotion || still {
                 shape.fill(Color.mktSurface)
             } else {
                 let t = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
@@ -32,6 +33,13 @@ struct Shimmer: View {
         .accessibilityLabel(Text("Loading…", tableName: "Components", comment: "A placeholder while a picture or a row loads"))
         .accessibilityIdentifier("shimmer")
     }
+}
+
+extension EnvironmentValues {
+    /// The shimmer drawn plain and still, as under Reduce Motion: the Debug gallery's
+    /// `-maktaba-gallery-still`, for the UI tests' accessibility audit, which samples a
+    /// moving light between two frames (and then cannot name what it measured).
+    @Entry var shimmerStill = false
 }
 
 /// `placeholder` once a load has taken 0.4 s (`PlaceholderTiming`), nothing before: a quick

@@ -134,7 +134,11 @@ fun SessionGate(
     when (val phase = session.phase.collectAsState().value) {
         AppSession.Phase.ChoosingHome -> HomePicker(session, app)
         AppSession.Phase.SigningIn -> SignIn(session, app)
-        is AppSession.Phase.SignedIn -> content(phase.user, phase.client)
+        is AppSession.Phase.SignedIn -> {
+            // what the home has on, asked again each time the app comes to the front (51.11)
+            FollowCapabilities(session)
+            content(phase.user, phase.client)
+        }
     }
     // a home's link the app was opened with: over whatever shows, until confirmed or dismissed
     session.link.collectAsState().value?.let { ConnectLinkDialog(session, it) }

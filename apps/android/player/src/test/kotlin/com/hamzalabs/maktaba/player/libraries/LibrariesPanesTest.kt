@@ -136,7 +136,9 @@ class LibrariesPanesTest {
         val list = compose.onNodeWithTag("libraries-list").getUnclippedBoundsInRoot()
         assertTrue("the page is above the list", detail.bottom <= list.top)
         assertEquals("the list starts after the hinge", (hinge.last / density), list.top.value, 2f)
-        // choosing on the bottom half changes the top one
+        // choosing on the bottom half changes the top one: its rows come with the list's own
+        // read, after the page's (a CI run of #608 tapped before they were there)
+        waitForTag("library-l2")
         compose.onNodeWithTag("library-l2").performClick()
         pageTitled("Lessons")
     }

@@ -61,8 +61,13 @@ enum PlayerSection: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     /// `sections` with Live TV only when the person may watch a channel (`hasChannels`;
     /// nil: the home has not said yet), never leaving no section (`LiveSectionGate`).
-    static func shown(_ sections: [PlayerSection], hasChannels: Bool?) -> [PlayerSection] {
-        guard hasChannels != true else { return sections }
+    ///
+    /// With Live TV off on the home (`liveTVOff`, story 51.11) a viewer has no Live TV section
+    /// at all, and an admin keeps it: its screen says it is off and where to turn it on.
+    static func shown(_ sections: [PlayerSection], hasChannels: Bool?, liveTVOff: Bool = false,
+                      admin: Bool = false) -> [PlayerSection] {
+        if liveTVOff, admin { return sections }
+        guard hasChannels != true || liveTVOff else { return sections }
         let without = sections.filter { $0 != .liveTV }
         return without.isEmpty ? sections : without
     }

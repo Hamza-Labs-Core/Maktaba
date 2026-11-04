@@ -46,6 +46,7 @@ import { LiveMachines } from "../../components/cluster/LiveMachines";
 import { LlmPanel } from "../../components/cluster/LlmPanel";
 import type { LogTarget } from "../../components/cluster/LogViewer";
 import { LogsPanel } from "../../components/cluster/LogsPanel";
+import { MachineComponents, WorkerChoice } from "./MachineComponents";
 import {
   HOME_HOST,
   countsKey,
@@ -707,6 +708,8 @@ function PendingRow({
   const [code, setCode] = useState("");
   // a copy of this home's database on the machine: the admin's choice, off by default
   const [full, setFull] = useState(false);
+  // story 51.12: the worker components to keep on it (null: nothing offered)
+  const [keep, setKeep] = useState<string[] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const left = secondsUntil(node.expires_at);
@@ -721,7 +724,7 @@ function PendingRow({
     }
     setBusy(true);
     setMessage(null);
-    save(() => clusterApi.approve(node.id, digits, full))
+    save(() => clusterApi.approve(node.id, digits, full, keep ?? undefined))
       .then(() => {
         setCode("");
         onChanged();
@@ -789,6 +792,7 @@ function PendingRow({
           onChange={(e) => setFull(e.currentTarget.checked)}
         />
         <p className="mkt-mc-muted">{t("machines.pending.fullCopyHelp")}</p>
+        <WorkerChoice node={node.id} disabled={busy || expired} onChange={setKeep} />
         <div className="mkt-mc-actions">
           <Button type="submit" disabled={busy || expired || code.trim() === ""}>
             {t("machines.pending.approve")}
@@ -1200,6 +1204,12 @@ const MachineCard = memo(function MachineCard({
               source={node.path_map_source}
               busy={busy}
               onSave={(path_map) => update({ path_map })}
+            />
+            <MachineComponents
+              node={node.id}
+              name={node.name}
+              stageLabel={queueLabel}
+              onChanged={onChanged}
             />
             <StageTable node={node} busy={busy} onSet={update} queueLabel={queueLabel} />
           </>

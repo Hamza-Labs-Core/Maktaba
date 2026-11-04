@@ -66,7 +66,29 @@ func Refusal(f Feature, tier string) *httperror.Error {
 
 // StoreRef hands the entitlement Store to middleware built before the
 // store (the router's chain is built first). Empty: the free tier.
-type StoreRef struct{ p atomic.Pointer[Store] }
+type StoreRef struct {
+	p     atomic.Pointer[Store]
+	relay atomic.Pointer[func() (bool, bool)]
+}
+
+// SetRelayLicensed hands RelayGate the cloud.relay component's Licensed condition (Epic
+// 51 story 51.19): f answers whether the licence its desired row publishes grants it now,
+// and whether that is known (not with the components' kill switch, nor before the API
+// has published).
+func (r *StoreRef) SetRelayLicensed(f func() (licensed, known bool)) { r.relay.Store(&f) }
+
+// relayRefused is the component's condition: refused when it is known and false.
+func (r *StoreRef) relayRefused() bool {
+	if r == nil {
+		return false
+	}
+	f := r.relay.Load()
+	if f == nil {
+		return false
+	}
+	licensed, known := (*f)()
+	return known && !licensed
+}
 
 // Set publishes the store.
 func (r *StoreRef) Set(s *Store) { r.p.Store(s) }
@@ -108,7 +130,10 @@ var relayOpen = []string{"/healthz", "/readyz", "/api/health", "/api/system/heal
 
 // RelayGate refuses a request the cloud relay forwarded unless the
 // license grants cloud_relay (story 16.1: free is LAN-only). It must run
-// after middleware.StripVia.
+// after middleware.StripVia. It asks the cloud.relay component's Licensed
+// condition too (story 51.19, SetRelayLicensed): the same answer, from the
+// row the runners read; its own store check stays, so neither can open
+// remote access the other refuses, and the refusal is the same body.
 func RelayGate(ref *StoreRef) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,13 +142,20 @@ func RelayGate(ref *StoreRef) func(http.Handler) http.Handler {
 				return
 			}
 			s := ref.Store()
-			if !s.Allows(FeatureCloudRelay) {
+			if !s.Allows(FeatureCloudRelay) || ref.relayRefused() {
 				httperror.Write(w, r, Refusal(FeatureCloudRelay, s.TierName()))
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// ComponentRefusal is Refusal for turning on a component whose licence flag is f (Epic 51
+// story 51.19): the same problem, so a client that reads license-required keeps working,
+// with code licence_missing and the component.
+func ComponentRefusal(component string, f Feature, tier string) *httperror.Error {
+	return Refusal(f, tier).With("code", "licence_missing").With("component", component)
 }
 
 func relayIsOpen(path string) bool {

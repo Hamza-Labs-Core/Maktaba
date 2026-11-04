@@ -153,4 +153,7 @@ type Store interface {
 	// ClearSealed drops envelopes of approved machines whose worker has
 	// registered, or that were approved before cutoff.
 	ClearSealed(ctx context.Context, cutoff time.Time) error
+	// PruneComponentStatus deletes the component status rows of machines whose node row
+	// is gone (Epic 51 story 51.02: the home's housekeeping), and answers how many.
+	PruneComponentStatus(ctx context.Context) (int64, error)
 }

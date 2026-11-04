@@ -5,9 +5,9 @@
 #   bin/       maktaba-server (web UI embedded) maktaba-api maktaba-streaming maktaba-launcher
 #   postgres/  bin/ lib/ share/          PostgreSQL 16, relocatable, with pgvector
 #   ffmpeg/    ffmpeg ffprobe            static
-#   ollama/    ollama llama-server       the language model server (arm64)
+#   ollama/    ollama llama-server       the language model server (arm64; the full flavour only)
 #   python/    CPython 3.12              python-build-standalone, stdlib precompiled
-#   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt
+#   pipeline/  maktaba_pipeline-<v>-py3-none-any.whl constraints.txt constraints-core.txt
 #   migrations/                          the database's schema (shared/db/migrations): maktaba-api finds them beside bin/
 #   licenses/  the third-party licences and where their sources are
 #   payload.json                         what is inside, with versions and checksums
@@ -23,12 +23,17 @@
 # It also writes <build>/tauri.mac-app.conf.json, the config overlay `tauri build --config`
 # takes to bundle the payload and the LaunchAgent.
 #
-# Usage: payload.sh [--version VERSION] [--build DIR] [--cache DIR] [--sign IDENTITY]
+# Two flavours (Epic 51 story 51.17): full (today's) and core, which leaves out ollama (a
+# Core home adds the language model later as the runtime.ollama pack). payload.json says
+# which.
+#
+# Usage: payload.sh [--version VERSION] [--build DIR] [--cache DIR] [--sign IDENTITY] [--flavour full|core]
 #   --version  release tag (default: git describe)
 #   --build    work directory (default: build/mac-app); the payload is <build>/server
 #   --cache    downloads (default: <build>/downloads, or $MAC_APP_CACHE)
 #   --sign     codesign identity (default: $APPLE_SIGNING_IDENTITY; empty = unsigned,
 #              "-" = ad-hoc without the hardened runtime, for local tests)
+#   --flavour  full (default) or core (no ollama/)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,16 +46,19 @@ VERSION="${VERSION:-}"
 BUILD="$REPO_ROOT/build/mac-app"
 CACHE="${MAC_APP_CACHE:-}"
 IDENTITY="${APPLE_SIGNING_IDENTITY:-}"
+FLAVOUR="${MAC_APP_FLAVOUR:-full}"
 while [ $# -gt 0 ]; do
     case "$1" in
         --version) [ $# -ge 2 ] || die "--version needs a value"; VERSION="$2"; shift 2 ;;
         --build)   [ $# -ge 2 ] || die "--build needs a value"; BUILD="$2"; shift 2 ;;
         --cache)   [ $# -ge 2 ] || die "--cache needs a value"; CACHE="$2"; shift 2 ;;
         --sign)    [ $# -ge 2 ] || die "--sign needs a value"; IDENTITY="$2"; shift 2 ;;
+        --flavour) [ $# -ge 2 ] || die "--flavour needs a value"; FLAVOUR="$2"; shift 2 ;;
         -h|--help) sed -n '2,/^set -e/p' "$0" | sed -e '$d' -e 's/^# \{0,1\}//'; exit 0 ;;
         *)         die "unknown option '$1'" ;;
     esac
 done
+case "$FLAVOUR" in full|core) ;; *) die "--flavour is full or core, not '$FLAVOUR'" ;; esac
 [ "$(uname -s)" = Darwin ] || die "the Mac app payload is built on macOS (codesign, ditto)"
 for t in go uv pnpm curl unzip shasum codesign file lipo make xcrun; do
     command -v "$t" >/dev/null 2>&1 || die "$t is required"
@@ -67,7 +75,7 @@ mkdir -p "$CACHE"
 OUT="$BUILD/server"
 WORK="$BUILD/work"
 rm -rf "$OUT" "$WORK"
-mkdir -p "$OUT"/{bin,postgres,ffmpeg,ollama,pipeline,licenses} "$WORK"
+mkdir -p "$OUT"/{bin,postgres,ffmpeg,pipeline,licenses} "$WORK"
 
 # sha256, fetch (download once, always checked against pins.env), check_pins
 # shellcheck source-path=SCRIPTDIR source=lib.sh
@@ -148,8 +156,10 @@ Build scripts and the versions of every library linked in:
 EOF
 
 # --- Ollama (the language model server of the LLM stages) ----------------------------------------
+# the full flavour only: a Core app installs it later as the runtime.ollama pack
+if [ "$FLAVOUR" = full ]; then
 log "Ollama $OLLAMA_VERSION"
-mkdir -p "$WORK/ollama" "$OUT/licenses/ollama"
+mkdir -p "$WORK/ollama" "$OUT/ollama" "$OUT/licenses/ollama"
 tar -xzf "$(fetch "$OLLAMA_URL" "$OLLAMA_SHA256" "ollama-$OLLAMA_VERSION-darwin.tgz")" -C "$WORK/ollama"
 # ollama runs GGUF models (qwen2.5:7b) in llama-server, its llama.cpp runner, with the Metal
 # backend built in: both self-contained on arm64. The release is universal: the x86_64
@@ -180,6 +190,9 @@ builds in (llama.cpp, ggml, Go, cpp-httplib, fmt, …) are in licenses/ollama/.
 Binaries: $OLLAMA_URL (arm64 halves)
 Source:   https://github.com/ollama/ollama/tree/v$OLLAMA_VERSION
 EOF
+else
+    log "core flavour: no Ollama"
+fi
 
 # --- Python --------------------------------------------------------------------------------------
 log "Python $PYTHON_VERSION"
@@ -208,9 +221,13 @@ fi
 "$REPO_ROOT/deploy/packaging/node/build-release.sh" --version "$pyver" --out "$WORK/node" >/dev/null
 whl=("$WORK"/node/maktaba_pipeline-*-py3-none-any.whl)
 cons=("$WORK"/node/maktaba-pipeline-*-constraints.txt)
+cons_core=("$WORK"/node/maktaba-pipeline-*-constraints-core.txt)
 [ "${#whl[@]}" -eq 1 ] && [ -f "${whl[0]}" ] || die "expected one pipeline wheel"
+[ -f "${cons_core[0]}" ] || die "expected the core constraints (build-release.sh)"
 cp "${whl[0]}" "$OUT/pipeline/"
 cp "${cons[0]}" "$OUT/pipeline/constraints.txt"
+# a venv with no ML extras (story 51.17): the runtime's pins alone
+cp "${cons_core[0]}" "$OUT/pipeline/constraints-core.txt"
 
 # --- the database's migrations: setup's finish and the api's auto-migrate run from the user's
 # data directory, never a checkout, so the payload carries them (maktaba-api: beside bin/) -------
@@ -219,19 +236,25 @@ cp -R "$REPO_ROOT/shared/db/migrations" "$OUT/migrations"
 
 # --- payload.json --------------------------------------------------------------------------------
 WHEEL_NAME="$(basename "${whl[0]}")"
+OLLAMA_LINE=""
+if [ "$FLAVOUR" = full ]; then
+    OLLAMA_LINE="\"ollama\": {\"version\": \"$OLLAMA_VERSION\", \"source\": \"$OLLAMA_URL\", \"sha256\": \"$OLLAMA_SHA256\"},"
+fi
 cat >"$OUT/payload.json" <<EOF
 {
   "schema": 1,
   "version": "$VERSION",
   "platform": "darwin-arm64",
+  "flavour": "$FLAVOUR",
   "postgres": {"version": "$POSTGRES_VERSION", "source": "$POSTGRES_URL", "sha256": "$POSTGRES_SHA256"},
   "pgvector": {"version": "$PGVECTOR_VERSION", "source": "$PGVECTOR_URL", "sha256": "$PGVECTOR_SHA256"},
   "ffmpeg": {"version": "$FFMPEG_VERSION", "source": "$FFMPEG_URL", "sha256": "$FFMPEG_SHA256",
              "ffprobe_source": "$FFPROBE_URL", "ffprobe_sha256": "$FFPROBE_SHA256"},
   "python": {"version": "$PYTHON_VERSION", "source": "$PYTHON_URL", "sha256": "$PYTHON_SHA256"},
-  "ollama": {"version": "$OLLAMA_VERSION", "source": "$OLLAMA_URL", "sha256": "$OLLAMA_SHA256"},
+  $OLLAMA_LINE
   "pipeline": {"wheel": "$WHEEL_NAME", "sha256": "$(sha256 "$OUT/pipeline/$WHEEL_NAME")",
-               "constraints_sha256": "$(sha256 "$OUT/pipeline/constraints.txt")"}
+               "constraints_sha256": "$(sha256 "$OUT/pipeline/constraints.txt")",
+               "constraints_core_sha256": "$(sha256 "$OUT/pipeline/constraints-core.txt")"}
 }
 EOF
 rm -rf "$WORK"

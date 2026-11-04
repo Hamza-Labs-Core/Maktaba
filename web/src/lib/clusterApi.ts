@@ -292,8 +292,13 @@ export const clusterApi = {
   putSettings: (body: { accept_joins?: boolean; name?: string }) =>
     api.put<ClusterHome>("/api/cluster/settings", body),
   /** full: the admin allows the machine a copy of this home's database */
-  approve: (id: string, code: string, full = false) =>
-    api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/approve`, { code, full }),
+  /** components (story 51.12): the worker components to keep on it; the rest are set off there */
+  approve: (id: string, code: string, full = false, components?: string[]) =>
+    api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/approve`, {
+      code,
+      full,
+      ...(components ? { components } : {}),
+    }),
   reject: (id: string) => api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/reject`),
   revoke: (id: string) => api.post<ClusterNode>(`/api/cluster/nodes/${q(id)}/revoke`),
   updateNode: (id: string, body: NodeUpdate) =>

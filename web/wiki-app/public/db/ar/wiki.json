@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 123,
+    "endpoint": 143,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -3022,7 +3022,7 @@
       "epic": "51-configurable-components",
       "phase": 5,
       "engine": null,
-      "content": "كل جزء من مكتبة يمكن تشغيله أو إيقافه أو إضافته لاحقًا أو الاستغناء عنه.\n\nالمتطلب: اليوم يبدأ كل عامل وكل ميزة فورًا. بدلًا من ذلك يجب أن يُدار كلٌّ منها بالتهيئة أو الإعدادات، فيمكن إيقافه وتشغيله، وتفعيله وتعطيله، مع باقات خادم تُشحن بالمكوّنات أو من دونها، ومكوّنات يمكن إضافتها لاحقًا.",
+      "content": "كل جزء من مكتبة يمكن تشغيله أو إيقافه أو إضافته لاحقًا أو الاستغناء عنه.\n\nيبدأ كل عامل وكل ميزة فور تثبيتهما. والمتطلب (2026-11-03): أن يُدار كلٌّ منها بالتهيئة والإعدادات، فيمكن تفعيله وتعطيله وتشغيله وإيقافه؛ وأن تأتي الخوادم في باقات بمكوّنات أو من دونها؛ وأن يمكن إضافة المكوّنات لاحقًا.",
       "tags": [
         "epic",
         "51-configurable-components",
@@ -3061,7 +3061,7 @@
         "lang": "ar",
         "source": {
           "title": "e477ecaac88382d3",
-          "content": "39c37087d916b294"
+          "content": "3d3f9a48c23bc9b7"
         }
       }
     },
@@ -9376,6 +9376,639 @@
         "lang": "ar",
         "source": {
           "content": "28d7952fae0e7094"
+        }
+      }
+    },
+    {
+      "id": "ep-get-capabilities",
+      "type": "endpoint",
+      "title": "GET /capabilities",
+      "content": "ما هو مفعَّل على هذا الجهاز الرئيسي",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-7.10",
+        "story-8.7",
+        "story-51.9",
+        "story-51.11",
+        "story-54.1",
+        "story-54.21"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/capabilities",
+        "tag": "Components",
+        "operationId": "getCapabilities"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "1172a39e811bea2e"
+        }
+      }
+    },
+    {
+      "id": "ep-get-components",
+      "type": "endpoint",
+      "title": "GET /components",
+      "content": "عرض المكوّنات",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-25.15",
+        "story-25.16",
+        "story-28.5",
+        "story-28.6",
+        "story-29.3",
+        "story-48.16",
+        "story-48.35",
+        "story-51.1",
+        "story-51.2",
+        "story-51.3",
+        "story-51.4",
+        "story-51.5",
+        "story-51.6",
+        "story-51.7",
+        "story-51.8",
+        "story-51.9",
+        "story-51.10",
+        "story-51.11",
+        "story-51.12",
+        "story-51.13",
+        "story-51.14",
+        "story-51.15",
+        "story-51.16",
+        "story-51.17",
+        "story-51.18",
+        "story-51.19",
+        "story-52.12",
+        "story-52.14",
+        "story-53.6",
+        "story-53.7",
+        "story-53.11",
+        "story-53.12",
+        "story-53.15",
+        "story-54.7",
+        "story-54.8",
+        "story-54.10",
+        "story-54.17",
+        "story-54.20",
+        "story-54.23",
+        "story-54.27",
+        "story-54.36"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components",
+        "tag": "Components",
+        "operationId": "listComponents"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "d69c7271a43c42be"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-preview",
+      "type": "endpoint",
+      "title": "POST /components/preview",
+      "content": "معاينة تغيير",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.10",
+        "story-51.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/preview",
+        "tag": "Components",
+        "operationId": "previewComponents"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "214c7870c13550b7"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-apply",
+      "type": "endpoint",
+      "title": "POST /components/apply",
+      "content": "تطبيق تغيير",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/apply",
+        "tag": "Components",
+        "operationId": "applyComponents"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "443837c8968c9a3a"
+        }
+      }
+    },
+    {
+      "id": "ep-get-components-bundles",
+      "type": "endpoint",
+      "title": "GET /components/bundles",
+      "content": "عرض الحزم",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-51.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components/bundles",
+        "tag": "Components",
+        "operationId": "listBundles"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "5da6c3a137f0f6b8"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-bundle",
+      "type": "endpoint",
+      "title": "POST /components/bundle",
+      "content": "التبديل إلى حزمة",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/bundle",
+        "tag": "Components",
+        "operationId": "applyBundle"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "296fd2380660f4e9"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-offline",
+      "type": "endpoint",
+      "title": "POST /components/offline",
+      "content": "إنشاء ملف حزم للاستخدام دون اتصال",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/offline",
+        "tag": "Components",
+        "operationId": "makeOfflinePacks"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e9eb865952926650"
+        }
+      }
+    },
+    {
+      "id": "ep-get-components-offline-name",
+      "type": "endpoint",
+      "title": "GET /components/offline/{name}",
+      "content": "تنزيل ملف حزم للاستخدام دون اتصال",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components/offline/{name}",
+        "tag": "Components",
+        "operationId": "getOfflinePacks"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "0f2a0eda19487352"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-import",
+      "type": "endpoint",
+      "title": "POST /components/import",
+      "content": "استيراد ملف حزم للاستخدام دون اتصال",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/import",
+        "tag": "Components",
+        "operationId": "importOfflinePacks"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "9cf88e132deed9b0"
+        }
+      }
+    },
+    {
+      "id": "ep-get-components-id",
+      "type": "endpoint",
+      "title": "GET /components/{id}",
+      "content": "قراءة مكوّن واحد",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.12",
+        "story-51.13",
+        "story-51.16",
+        "story-51.19"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components/{id}",
+        "tag": "Components",
+        "operationId": "getComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "ccfe5d0afef58c6b"
+        }
+      }
+    },
+    {
+      "id": "ep-put-components-id",
+      "type": "endpoint",
+      "title": "PUT /components/{id}",
+      "content": "ضبط ما ينبغي أن يعمل",
+      "tags": [
+        "api",
+        "Components",
+        "put"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.12",
+        "story-51.13",
+        "story-51.16",
+        "story-51.19"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/components/{id}",
+        "tag": "Components",
+        "operationId": "setComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "1c97d085a768ab8c"
+        }
+      }
+    },
+    {
+      "id": "ep-delete-components-id",
+      "type": "endpoint",
+      "title": "DELETE /components/{id}",
+      "content": "إزالة مكوّن",
+      "tags": [
+        "api",
+        "Components",
+        "delete"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.12",
+        "story-51.13",
+        "story-51.16",
+        "story-51.19"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/components/{id}",
+        "tag": "Components",
+        "operationId": "removeComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "653639c4aa13859e"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-install",
+      "type": "endpoint",
+      "title": "POST /components/{id}/install",
+      "content": "تثبيت مكوّن",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/install",
+        "tag": "Components",
+        "operationId": "installComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "96e7c55c1057646c"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-stop",
+      "type": "endpoint",
+      "title": "POST /components/{id}/stop",
+      "content": "إيقاف مكوّن مؤقتًا",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/stop",
+        "tag": "Components",
+        "operationId": "stopComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e7c1d07cf7dc6d38"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-start",
+      "type": "endpoint",
+      "title": "POST /components/{id}/start",
+      "content": "استئناف مكوّن",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/start",
+        "tag": "Components",
+        "operationId": "startComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "1d0f62743c7afe4a"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-restart",
+      "type": "endpoint",
+      "title": "POST /components/{id}/restart",
+      "content": "إعادة تشغيل مكوّن",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/restart",
+        "tag": "Components",
+        "operationId": "restartComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "dc3671b2aeb030fa"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-settings-reset",
+      "type": "endpoint",
+      "title": "POST /components/{id}/settings/reset",
+      "content": "إعادة إعدادات مكوّن إلى قيمها الافتراضية",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.13"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/settings/reset",
+        "tag": "Components",
+        "operationId": "resetComponentSettings"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "4c12d70964173a35"
+        }
+      }
+    },
+    {
+      "id": "ep-put-components-id-machines-node",
+      "type": "endpoint",
+      "title": "PUT /components/{id}/machines/{node}",
+      "content": "ضبط ما ينبغي أن يعمل على جهاز واحد",
+      "tags": [
+        "api",
+        "Components",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/components/{id}/machines/{node}",
+        "tag": "Components",
+        "operationId": "setComponentOnMachine"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "a2b42f97c5f706f7"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-machines-node-stop",
+      "type": "endpoint",
+      "title": "POST /components/{id}/machines/{node}/stop",
+      "content": "إيقاف مكوّن مؤقتًا على جهاز واحد",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/machines/{node}/stop",
+        "tag": "Components",
+        "operationId": "stopComponentOnMachine"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "83d456f07c1a4518"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-machines-node-start",
+      "type": "endpoint",
+      "title": "POST /components/{id}/machines/{node}/start",
+      "content": "استئناف مكوّن على جهاز واحد",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/machines/{node}/start",
+        "tag": "Components",
+        "operationId": "startComponentOnMachine"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "9962fb2d100450f3"
         }
       }
     },

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -127,7 +128,64 @@ func queryJobRefs(ctx context.Context, db *sql.DB, q string, args ...any) ([]Job
 		}
 		out = append(out, j)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	_ = rows.Close()
+	if err := withCatchupComponents(ctx, db, out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// catchupStage is the pipeline's job that queues what a component missed while it was
+// off (story 51.06).
+const catchupStage = "component_catchup"
+
+// withCatchupComponents fills Components of each component_catchup job from its payload
+// ({"components": [{"component": id, "off_since": ...}]}). There are few such jobs, so
+// each is read by its id.
+func withCatchupComponents(ctx context.Context, db *sql.DB, refs []JobRef) error {
+	for i := range refs {
+		if refs[i].Stage != catchupStage {
+			continue
+		}
+		var raw []byte
+		err := db.QueryRowContext(ctx, `SELECT payload FROM processing_jobs WHERE id = $1`, refs[i].ID).Scan(&raw)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		refs[i].Components = catchupComponents(raw)
+	}
+	return nil
+}
+
+// catchupComponents are the component ids of a catch-up payload, in its order; an entry
+// may also be the id alone.
+func catchupComponents(payload []byte) []string {
+	var p struct {
+		Components []json.RawMessage `json:"components"`
+	}
+	if json.Unmarshal(payload, &p) != nil {
+		return nil
+	}
+	out := []string{}
+	for _, e := range p.Components {
+		var entry struct {
+			Component string `json:"component"`
+		}
+		var id string
+		switch {
+		case json.Unmarshal(e, &entry) == nil && entry.Component != "":
+			out = append(out, entry.Component)
+		case json.Unmarshal(e, &id) == nil && id != "":
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // subjectKey identifies a subject for batched label lookups.

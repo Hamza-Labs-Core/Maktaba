@@ -138,7 +138,9 @@ that touch `tools/release/*/payload.sh`, the constraints or the catalog, and fro
 3. **Idle memory** (N8): start the Core payload (`maktaba-launcher serve`, scratch data dir),
    wait for `/healthz`, idle 120 s, sum RSS of every child: ≤ **700 MB**.
 4. **Processes** (N9): exactly postgres, api, streaming, pipeline besides supervisor and
-   launcher.
+   launcher. The supervisor's own mDNS loop announces through the system's responder
+   (`dns-sd` through a small `sh` on macOS, `avahi-publish-service` on Linux): a helper of the
+   supervisor, listed apart and not counted; its memory counts in N8.
 5. Write `bundle-size.json` as an artifact and in the run summary; compare with
    `tools/release/bundle-size-baseline.json` (new, seeded with the v0.3.62 numbers of §1) and
    fail on a budget breach or a growth of more than 10 % over the baseline without the file

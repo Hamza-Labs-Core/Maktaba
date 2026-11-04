@@ -4,7 +4,9 @@ package main
 
 import (
 	"context"
+	"io/fs"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -328,7 +330,8 @@ func TestMigrationBillingProviderNeutral(t *testing.T) {
 	e.exec(`INSERT INTO provider_events (provider, provider_event_id, type, payload) VALUES ('otherpay', 'evt_m', 't', '{}')`)
 	e.exec(`DELETE FROM provider_events WHERE provider = 'otherpay'`)
 
-	if err := mig.Down(ctx, 1); err != nil {
+	// down to before 00160001: it and every migration after it (00510001 and on)
+	if err := mig.Down(ctx, stepsDownTo(t, "00160001")); err != nil {
 		t.Fatalf("down: %v", err)
 	}
 	if got := cols("provider_events"); len(got) != 0 {
@@ -346,6 +349,25 @@ func TestMigrationBillingProviderNeutral(t *testing.T) {
 	if e.count(`SELECT count(*) FROM provider_events WHERE provider_event_id = 'evt_m' AND provider = 'legacy'`) != 1 {
 		t.Fatal("ledger row lost in the round trip (or not marked legacy)")
 	}
+}
+
+// stepsDownTo is how many steps down undo migration version and every one after it.
+func stepsDownTo(t *testing.T, version string) int {
+	t.Helper()
+	names, err := fs.Glob(migrations.FS, "*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, name := range names {
+		if v, _, _ := strings.Cut(name, "_"); v >= version {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatalf("no migration %s", version)
+	}
+	return n
 }
 
 // forge changes the signature's last hex digit to another one, so it never matches. (Setting

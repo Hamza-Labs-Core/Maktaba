@@ -74,6 +74,7 @@ import {
 } from "./searchShared";
 import { errorText } from "../lib/errorText";
 import { cachedAnswer, keepAnswer } from "../lib/pageCache";
+import { FeatureOffNote, useCapabilities, useFeatureGate } from "../lib/capabilities";
 import { useReadOrder } from "../lib/readOrder";
 
 const VIEW_KEY = "mkt:search:view";
@@ -190,6 +191,14 @@ export function Search() {
   const [ytAvailable, setYtAvailable] = useState(false);
   const [ytPending, setYtPending] = useState(false);
   const ytAvailableRef = useRef(false);
+  // Story 51.11: with search by meaning off the home answers by words only, so
+  // there is no mode to pick (an admin reads why); with YouTube off there is no
+  // YouTube leg for a viewer, and an admin reads that it is off.
+  const caps = useCapabilities();
+  const meaningOff = caps.features.semantic_search === "off";
+  const ytGate = useFeatureGate("youtube");
+  const ytGateRef = useRef(ytGate);
+  ytGateRef.current = ytGate;
   // The last search, so an import can run it again.
   const lastSearch = useRef<{ term: string; mode: Mode; yt: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -401,7 +410,8 @@ export function Search() {
         mode: m,
         yt: opts.youtube ?? lastSearch.current?.yt ?? false,
       };
-      const withYt = opts.youtube === true && ytAvailableRef.current;
+      const withYt =
+        opts.youtube === true && ytAvailableRef.current && ytGateRef.current === "show";
       if (opts.youtube !== undefined && !withYt) {
         ytSeq.current += 1;
         setYoutube(null);
@@ -527,7 +537,7 @@ export function Search() {
         if (g === gen.current) setPending(false);
       }
       if (g !== gen.current) return;
-      if (yt && ytAvailableRef.current) void runYouTube(query);
+      if (yt && ytAvailableRef.current && ytGateRef.current === "show") void runYouTube(query);
       else {
         ytSeq.current += 1;
         setYoutube(null);
@@ -780,15 +790,17 @@ export function Search() {
                 <option key={s} value={s} />
               ))}
             </datalist>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as Mode)}
-              aria-label={t("search.mode")}
-            >
-              <option value="hybrid">{t("search.mode.hybrid")}</option>
-              <option value="fts">{t("search.mode.fts")}</option>
-              <option value="semantic">{t("search.mode.semantic")}</option>
-            </select>
+            {!meaningOff && (
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as Mode)}
+                aria-label={t("search.mode")}
+              >
+                <option value="hybrid">{t("search.mode.hybrid")}</option>
+                <option value="fts">{t("search.mode.fts")}</option>
+                <option value="semantic">{t("search.mode.semantic")}</option>
+              </select>
+            )}
             <Button type="submit" loading={pending}>
               {t("nav.search")}
             </Button>
@@ -796,7 +808,7 @@ export function Search() {
               {t("search.save")}
             </Button>
             <PageHelp />
-            {ytAvailable && (
+            {ytAvailable && ytGate === "show" && (
               <label className="mkt-search__yt-toggle">
                 <input
                   type="checkbox"
@@ -807,6 +819,12 @@ export function Search() {
               </label>
             )}
           </form>
+
+          {meaningOff && caps.admin && (
+            <p className="mkt-muted mkt-search__words-only" role="note">
+              {t("capabilities.wordsOnly")}
+            </p>
+          )}
 
           {notice && (
             <div className="mkt-search__notice" role="status">
@@ -894,7 +912,9 @@ export function Search() {
             </ResultSection>
           )}
 
-          {ytAvailable && withYouTube && (ytPending || youtube) && (
+          {snap && ytGate === "explain" && <FeatureOffNote id="youtube" />}
+
+          {ytAvailable && ytGate === "show" && withYouTube && (ytPending || youtube) && (
             <YouTubeSection
               block={youtube}
               pending={ytPending}

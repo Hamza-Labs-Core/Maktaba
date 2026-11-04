@@ -33,6 +33,10 @@ const (
 	StateExited State = "exited"
 	// StateStopped: stopped by a supervisor shutdown.
 	StateStopped State = "stopped"
+	// StateHeld: its component's gate is closed (Allow) and it does not run: a Snapshot
+	// reports it so, whatever the loop was at when the gate closed (a wait between two
+	// restarts reads held, not backoff, and has no next restart).
+	StateHeld State = "held"
 )
 
 // Exit reasons recorded in ExitInfo.Reason and Event.Reason.
@@ -78,7 +82,8 @@ type ProbeInfo struct {
 type ChildStatus struct {
 	Role     Role   `json:"role"`
 	Instance string `json:"instance,omitempty"`
-	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby).
+	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby). An
+	// always-on process that is held (Blocked, no pid) is not wanted until its gate opens.
 	Wanted        bool       `json:"wanted"`
 	State         State      `json:"state"`
 	PID           int        `json:"pid,omitempty"`
@@ -103,6 +108,10 @@ type ChildStatus struct {
 	// Adopted: the process runs from before this supervisor started (handed over
 	// across its restart, story 35.7); it is watched, not waited for.
 	Adopted bool `json:"adopted,omitempty"`
+	// Component is the catalog component the process belongs to (Epic 51 story 51.04).
+	Component string `json:"component,omitempty"`
+	// Blocked: its component's gate is closed (Allow): it does not run, wanted or not.
+	Blocked bool `json:"blocked,omitempty"`
 }
 
 // Event is one entry of the supervisor's event log (start, exit,
@@ -209,6 +218,16 @@ func (s *Supervisor) snapshot(llm *llmserver.Status, ff *ffmpeg.Report) Snapshot
 		st.CrashLoop = c.failed && !(st.PID > 0 && st.UptimeSec >= s.policy.HealthyAfter.Seconds())
 		st.LastExit = copyPtr(st.LastExit)
 		st.LastProbe = copyPtr(st.LastProbe)
+		if st.Blocked && st.PID == 0 {
+			// its component is off: nothing restarts or loops until the gate opens
+			st.State, st.NextRestartAt, st.CrashLoop = StateHeld, nil, false
+			if !c.proc.OnDemand {
+				// and an always-on process is not wanted until it opens: nothing waits on
+				// it (an update's checks, healthyFor, the health page); it starts once the
+				// gate opens (c.wanted is kept). An on-demand one keeps whether it was asked for.
+				st.Wanted = false
+			}
+		}
 		out.Processes = append(out.Processes, st)
 	}
 	from := 0
@@ -252,6 +271,13 @@ func (s *Supervisor) Handler() http.Handler {
 		parts := strings.Split(strings.Trim(strings.TrimPrefix(r.URL.Path, "/slots/"), "/"), "/")
 		if len(parts) != 2 || (parts[1] != "start" && parts[1] != "stop") {
 			http.Error(w, "POST /slots/{instance}/start|stop", http.StatusBadRequest)
+			return
+		}
+		// story 51.04: no slot starts while its component (livetv.slots) is off
+		if comp, open, ok := s.Gate(RoleTVSlot, parts[0]); ok && !open && parts[1] == "start" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"code": "component_off", "component": comp})
 			return
 		}
 		if parts[1] == "start" && r.ContentLength > 0 {

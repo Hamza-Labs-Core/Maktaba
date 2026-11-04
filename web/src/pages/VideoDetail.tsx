@@ -28,6 +28,7 @@ import { LoadError } from "../components/LoadError";
 import { MediaContextCard } from "../components/MediaContextCard";
 import { EnrichmentPanel } from "../components/EnrichmentPanel";
 import { useAuth } from "../lib/auth";
+import { FeatureOffNote, useFeatureGate } from "../lib/capabilities";
 import { DisplayTitle, type DisplayTitleVideo } from "./DisplayTitle";
 import {
   analyticsApi,
@@ -126,6 +127,9 @@ const PROBLEM_STATES: Record<string, "warn" | "error"> = {
 export function VideoDetail() {
   const { videoId } = useParams();
   const { t } = useI18n();
+  // story 51.11: a feature that is off is no tab for a viewer; an admin's tab says so
+  const transcriptGate = useFeatureGate("transcripts");
+  const chaptersGate = useFeatureGate("chapters");
   const { user } = useAuth();
   // The video, kept per id: after a switch to another video, the old one is
   // never shown under the new id.
@@ -230,16 +234,34 @@ export function VideoDetail() {
       label: t("video.tab.metadata"),
       content: <EnrichmentPanel videoId={videoId} />,
     },
-    {
-      id: "transcript",
-      label: t("video.tab.transcript"),
-      content: <TranscriptTab videoId={videoId} />,
-    },
-    {
-      id: "chapters",
-      label: t("video.tab.chapters"),
-      content: <ChaptersTab videoId={videoId} />,
-    },
+    ...(transcriptGate === "hide"
+      ? []
+      : [
+          {
+            id: "transcript",
+            label: t("video.tab.transcript"),
+            content:
+              transcriptGate === "explain" ? (
+                <FeatureOffNote id="transcripts" />
+              ) : (
+                <TranscriptTab videoId={videoId} />
+              ),
+          },
+        ]),
+    ...(chaptersGate === "hide"
+      ? []
+      : [
+          {
+            id: "chapters",
+            label: t("video.tab.chapters"),
+            content:
+              chaptersGate === "explain" ? (
+                <FeatureOffNote id="chapters" />
+              ) : (
+                <ChaptersTab videoId={videoId} />
+              ),
+          },
+        ]),
     {
       id: "files",
       label: t("video.tab.files"),

@@ -122,8 +122,15 @@ final class Playback {
 
     /// Play or pause what is open (the keyboard's space, the Playback menu, the controls).
     /// Pausing reports the position.
-    func togglePause() {
-        guard let p = player else { return }
+    func togglePause(from source: String = "controls") {
+        guard let p = player else {
+            Log.ui.info("playback: \(source, privacy: .public) play/pause with no player")
+            return
+        }
+        // each play and pause in the app's log: a UI test's pause that did not hold (an iPhone
+        // run of #608 played on after the tap) says there what played it again
+        let rate = p.rate, at = p.currentTime().seconds
+        Log.ui.info("playback: \(source, privacy: .public) \(rate > 0 ? "pause" : "play", privacy: .public) at \(at, privacy: .public) s")
         if p.rate > 0 {
             p.pause()
             report()
@@ -342,6 +349,7 @@ final class Playback {
                 startNowPlaying()
             }
             ended = false
+            Log.ui.info("playback: opened at \(start, privacy: .public) s, playing")
             p.play()
             isPlaying = true
         } catch is CancellationError {
@@ -558,6 +566,7 @@ final class Playback {
         openedAt = .now
         if at.isFinite, at > 0 { p.seek(to: CMTime(seconds: at, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
         if wasPlaying { p.play() }
+        Log.ui.info("playback: route change reopened at \(at, privacy: .public) s, playing \(wasPlaying, privacy: .public)")
         let to = route.rawValue
         Log.ui.info("playback route: \(to, privacy: .public)")
     }
@@ -578,9 +587,9 @@ final class Playback {
 
     private func remoteHandlers() -> RemoteHandlers {
         RemoteHandlers(
-            play: { [weak self] in if self?.isPlaying == false { self?.togglePause() } },
-            pause: { [weak self] in if self?.isPlaying == true { self?.togglePause() } },
-            toggle: { [weak self] in self?.togglePause() },
+            play: { [weak self] in if self?.isPlaying == false { self?.togglePause(from: "remote play") } },
+            pause: { [weak self] in if self?.isPlaying == true { self?.togglePause(from: "remote pause") } },
+            toggle: { [weak self] in self?.togglePause(from: "remote toggle") },
             skip: { [weak self] in self?.skip(by: $0) },
             next: next == nil ? nil : { [weak self] in self?.playNext() },
             seek: { [weak self] in self?.seek(to: $0) }

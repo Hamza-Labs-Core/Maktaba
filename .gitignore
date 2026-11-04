@@ -175,3 +175,6 @@ web/node_modules/
 # Claude Code runtime metadata
 .claude/scheduled_tasks.lock
 .claude/
+
+# components-live / components-chaos logs of a local run (tests/components/rig.py)
+components-logs/

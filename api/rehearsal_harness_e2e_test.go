@@ -59,6 +59,11 @@ type rehearsalKit struct {
 	// from, this commit, and this commit as the release after it
 	prev, failed, cur, next string
 	rev                     int // this commit's newest migration slot
+	// after is this commit as the release after next (story 51.18, scenario 13: a release
+	// that passes after a rollback); platform is the packs' (packs/<version>/: the
+	// tool.yt-dlp pack of cur, next and after and its components index). "" in a kit of a
+	// tree from before the packs.
+	after, platform string
 }
 
 const (
@@ -104,6 +109,10 @@ func loadKit(t *testing.T) *rehearsalKit {
 			k.next = val
 		case "REV":
 			k.rev, _ = strconv.Atoi(val)
+		case "AFTER":
+			k.after = val
+		case "PLATFORM":
+			k.platform = val
 		}
 	}
 	if k.prev == "" || k.cur == "" || k.next == "" || k.rev == 0 {
@@ -309,6 +318,11 @@ type rehearsal struct {
 	python string // the pipeline's interpreter (a venv of the e2e wheel)
 	shim   string // a PATH folder whose open and xdg-open do nothing
 	start  time.Time
+	// story 51.18: packs, a release published carries the kit's packs of its version
+	// and its signed components index; corruptPack: the versions whose pack has one byte
+	// changed after the release was signed (the pack fails its verification)
+	packs       bool
+	corruptPack map[string]bool
 }
 
 // newRehearsal sets up a rehearsal: its folder, the fake GitHub and Sigstore, the
@@ -397,8 +411,14 @@ func (r *rehearsal) publish(version, dir string) *releaseverifytest.FakeRelease 
 	feed, _ := json.Marshal(map[string]any{"version": version, "notes": "rehearsal", "pub_date": time.Now().UTC().Format(time.RFC3339),
 		"platforms": map[string]any{feedPlatformKey(): map[string]any{"url": base + appFile, "signature": "rehearsal"}}})
 	rel.Files["latest.json"] = feed
+	if r.packs {
+		r.attachPacks(rel, version)
+	}
 	if err := rel.Rebuild(r.ss, releaseverifytest.GitHubRelease(updateRepo, tag)); err != nil {
 		t.Fatal(err)
+	}
+	if r.corruptPack[version] {
+		r.corruptPacks(rel)
 	}
 	r.gh.publish(rel)
 	r.logf("published %s on the fake GitHub", tag)

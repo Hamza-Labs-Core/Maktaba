@@ -19,9 +19,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
 	tvremoteh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvremote"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvremote"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // OpenHomeSecrets loads (or creates) the key file and returns the store,
@@ -57,7 +57,10 @@ func OpenHomeSecrets(ctx context.Context, db *sql.DB, keyPath string, logger *sl
 
 // P32RemoteDeps bundles the integration's dependencies.
 type P32RemoteDeps struct {
-	DB      *sql.DB
+	DB *sql.DB
+	// Loops is the API's component runner (Epic 51): the loops below start and stop
+	// with their component. nil: they just run (tests).
+	Loops   *runner.Runner
 	Secrets secrets.Store
 	Logger  *slog.Logger
 	// NoLoop: do not start the remote controller's loop (tests).
@@ -85,11 +88,12 @@ func WireP32Remote(q *queues.Handler, d P32RemoteDeps) (*tvremote.Integration, *
 	// Epic 34: the public site's state, posted outward to its Worker
 	pub := &tvremote.Publisher{Ctl: ctl}
 	if d.DB != nil && !d.NoLoop {
-		safego.Go(d.Logger, "tvremote_controller", func() { ctl.Run(context.Background()) })
-		safego.Go(d.Logger, "tvremote_publisher", func() { pub.Run(context.Background()) })
+		// one component: they share the controller, so they stop and start together
+		d.Loops.Declare("tvremote_controller", runner.Func(ctl.Run))
+		d.Loops.Declare("tvremote_publisher", runner.Func(pub.Run))
 		// story 32.11: the TV numbers the control centre charts, every minute
 		sampler := &tvremote.HealthSampler{DB: d.DB, Remote: ctl, Logger: d.Logger}
-		safego.Go(d.Logger, "tvremote_health_sampler", func() { sampler.Run(context.Background()) })
+		d.Loops.Declare("tvremote_health_sampler", runner.Func(sampler.Run))
 	}
 	if q.Testers == nil {
 		q.Testers = map[string]queues.ExtensionTester{}

@@ -83,6 +83,58 @@ func TestParseValid(t *testing.T) {
 	}
 }
 
+// Epic 51 story 51.14 T09: a server report may carry the home's bundle and its enabled
+// component ids; a bad bundle, a bad id, a repeat or more than 80 ids is refused.
+func TestParseComponents(t *testing.T) {
+	with := func(bundle any, ids []any) []byte {
+		s := serverBatch()
+		r := s["report"].(map[string]any)
+		if bundle != nil {
+			r["bundle"] = bundle
+		}
+		if ids != nil {
+			r["components"] = ids
+		}
+		return envelope(s)
+	}
+	bs, err := Parse(with("core", []any{"transcription", "backups", "model.whisper-turbo"}), testNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := bs[0].Server
+	if got.Bundle != "core" || strings.Join(got.Components, ",") != "backups,model.whisper-turbo,transcription" {
+		t.Fatalf("bundle %q components %v", got.Bundle, got.Components)
+	}
+	// an older home sends neither
+	if bs, err := Parse(with(nil, nil), testNow); err != nil || bs[0].Server.Bundle != "" || len(bs[0].Server.Components) != 0 {
+		t.Fatalf("no fields: %+v %v", bs, err)
+	}
+	many := make([]any, 81)
+	for i := range many {
+		many[i] = "c" + strings.Repeat("x", i%5) + string(rune('a'+i%26)) + string(rune('a'+i/26))
+	}
+	for name, body := range map[string][]byte{
+		"bundle":      with("everything", nil),
+		"empty":       with("", nil),
+		"not a text":  with(3, nil),
+		"bad id":      with("full", []any{"Sara's plugin"}),
+		"path id":     with("full", []any{"../etc"}),
+		"repeat":      with("full", []any{"llm", "llm"}),
+		"81 ids":      with("full", many),
+		"not a list":  with("full", nil),
+		"id a number": with("full", []any{7}),
+	} {
+		if name == "not a list" {
+			s := serverBatch()
+			s["report"].(map[string]any)["components"] = "llm"
+			body = envelope(s)
+		}
+		if _, err := Parse(body, testNow); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
 // The coordinator's amendment: app, platform, form factor, os, arch and
 // install kind are bounded tokens, not a fixed list.
 func TestParseAcceptsTokens(t *testing.T) {

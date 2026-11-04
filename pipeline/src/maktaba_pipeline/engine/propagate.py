@@ -32,13 +32,18 @@ from .sql import dumps, loads, now, to_ts, uid
 from .subjects import library_of_video, season_of_video
 
 __all__ = [
+    "SKIPPED_COMPONENT_OFF",
     "FinishResult",
     "after_legacy_done",
+    "enqueue_dependents",
     "enqueue_follow_up",
     "finalize_success",
     "last_success",
     "resolve_edge",
 ]
+
+#: an edge into a stage whose component is off (Epic 51): no job made, logged as skipped
+SKIPPED_COMPONENT_OFF = "skipped_component_off"
 
 #: outcomes that count as "the last successful run" for skip checks and change detection
 _SUCCESS_OUTCOMES = ("changed", "unchanged", "skipped_unchanged", "imported")
@@ -199,34 +204,13 @@ async def finalize_success(
             return None
 
         triggered: list[dict[str, Any]] = []
-        reason = {
-            "why": f"{stage.name} output changed",
-            "by": f"job:{job.id}",
-            "from_stage": stage.name,
-        }
         # an edge declared when="always" fires on every finished run, changed or not
         # (not while a run waits for review or inputs)
         settled = final_outcome not in ("awaiting_review", "waiting_inputs")
         if changed or settled:
-            for edge in stage.edges:
-                if edge.legacy or not (changed or edge.when == "always"):
-                    continue
-                target = graph.get(edge.to)
-                if target is None:
-                    continue
-                for kind, sid in await resolve_edge(db, edge, job, changed_subjects):
-                    if kind not in target.subject_kinds:
-                        continue
-                    res = await enqueue_job(
-                        db,
-                        subject_kind=kind,
-                        subject_id=sid,
-                        stage=edge.to,
-                        force_cascade=job.force_cascade,
-                        reason=reason,
-                        triggered_by=job.id,
-                    )
-                    triggered.append(_trig(edge.to, kind, sid, res))
+            triggered = await enqueue_dependents(
+                db, job, stage, graph, changed=changed, changed_subjects=changed_subjects
+            )
         for req in requests:
             if req.stage not in stage.may_request:
                 raise GraphViolation(
@@ -250,6 +234,53 @@ async def finalize_success(
 
         await _log_finish(db, job, stage, final_outcome, triggered, row, t)
         return FinishResult(final_outcome, changed, tuple(triggered), follow)
+
+
+async def enqueue_dependents(
+    db: Any,
+    job: Job,
+    stage: StageDef,
+    graph: Mapping[str, StageDef],
+    *,
+    changed: bool,
+    changed_subjects: Sequence[tuple[SubjectKind, UUID]] = (),
+    only: str | None = None,
+    priority: int | None = None,
+    reason: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Enqueue what ``job``'s edges lead to: every edge when ``changed``, else the
+    ``when="always"`` ones; ``only`` keeps the edges into that one stage (the component
+    catch-up, Epic 51). An edge into a stage its component switched off makes no job
+    (outcome ``skipped_component_off``, logged by the caller)."""
+    reason = reason or {
+        "why": f"{stage.name} output changed",
+        "by": f"job:{job.id}",
+        "from_stage": stage.name,
+    }
+    triggered: list[dict[str, Any]] = []
+    for edge in stage.edges:
+        if edge.legacy or not (changed or edge.when == "always"):
+            continue
+        if only is not None and edge.to != only:
+            continue
+        target = graph.get(edge.to)
+        if target is None:
+            continue
+        for kind, sid in await resolve_edge(db, edge, job, changed_subjects):
+            if kind not in target.subject_kinds:
+                continue
+            res = await enqueue_job(
+                db,
+                subject_kind=kind,
+                subject_id=sid,
+                stage=edge.to,
+                priority=priority,
+                force_cascade=job.force_cascade,
+                reason=reason,
+                triggered_by=job.id,
+            )
+            triggered.append(_trig(edge.to, kind, sid, res))
+    return triggered
 
 
 def _trig(
@@ -313,6 +344,19 @@ async def _log_finish(
         )
         return
     await log_event(db, **common, level="info", kind="done", message=f"{stage.label}: {outcome}")
+    # Epic 51: the edges into a stage whose component is off made no job (the catch-up
+    # makes them when it comes back)
+    skipped = [t for t in triggered if t["outcome"] == SKIPPED_COMPONENT_OFF]
+    if skipped:
+        await log_event(
+            db,
+            **common,
+            level="info",
+            kind="skipped",
+            message="component off: " + ", ".join(sorted({t["stage"] for t in skipped})),
+            data={"outcome": SKIPPED_COMPONENT_OFF, "to": skipped[:100]},
+        )
+        triggered = [t for t in triggered if t["outcome"] != SKIPPED_COMPONENT_OFF]
     if triggered:
         await log_event(
             db,

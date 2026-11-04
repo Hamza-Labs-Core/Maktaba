@@ -18,6 +18,10 @@ android {
         targetSdk = 37
         versionCode = providers.gradleProperty("maktaba.versionCode").orNull?.toInt() ?: 2
         versionName = providers.gradleProperty("maktaba.versionName").orNull ?: "0.2.0"
+        // story 51.11's build switch, read by capabilitiesGate(): on unless -Pmaktaba.capabilitiesGate=off
+        val capabilitiesGate = providers.gradleProperty("maktaba.capabilitiesGate").orNull.orEmpty()
+        require(capabilitiesGate.all { it.isLetterOrDigit() }) { "maktaba.capabilitiesGate is on or off" }
+        buildConfigField("String", "CAPABILITIES_GATE", "\"$capabilitiesGate\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -56,6 +60,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // English and Arabic ship together: a string with no Arabic fails lint (and TranslationsTest).
@@ -68,7 +73,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // The code screen's tests run on the JVM (Robolectric): they need the app's resources, and
+    // The code screen's and the tab bar's (story 51.11) tests run on the JVM (Robolectric): they need
+    // the app's resources, and
     // Robolectric's native graphics for the screenshots.
     testOptions {
         unitTests.isIncludeAndroidResources = true
@@ -110,6 +116,7 @@ dependencies {
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.espresso.core)
     testImplementation(libs.robolectric)
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)

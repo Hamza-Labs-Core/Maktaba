@@ -28,6 +28,56 @@ import Testing
         #expect(s.rows.map(\.state) == ["No worker", "Running", "Paused", "Off"])
     }
 
+    /// Epic 51 (51.14's off tile): a stage its component holds back says which and why, in the
+    /// web's words; a failing stage stays failing.
+    @Test func aStageItsComponentHoldsBackSaysWhich() throws {
+        let json = #"""
+        {"at":"2026-10-25T20:30:00Z","paused_all":false,"issues_count":0,
+         "stages":[
+           {"stage":"transcribe","label":"Transcribe","lane":"b","lane_order":1,"hidden":false,"enabled":false,"paused":false},
+           {"stage":"index","label":"Index","lane":"b","lane_order":2,"hidden":false,"enabled":true,"paused":false},
+           {"stage":"subtitle_gen","label":"Subtitles","lane":"b","lane_order":3,"hidden":false,"enabled":false,"paused":false}],
+         "queues":[
+           {"stage":"transcribe","counts":{"pending":1840,"ready":0,"running":0,"failed_open":0,"done_24h":0},
+            "rate_per_min":0,"eta_sec":null,"waiting_reason":"component_off","no_worker":false,"component":"transcription",
+            "health":{"state":"off","window_hours":6,"waiting":[{"on":"component:transcription","count":1840,"component":"transcription","phase":"off"}]}},
+           {"stage":"index","counts":{"pending":3,"ready":0,"running":0,"failed_open":0,"done_24h":0},
+            "rate_per_min":0,"eta_sec":null,"waiting_reason":"component_held","no_worker":false,"component":"search.semantic",
+            "health":{"state":"off","waiting":[{"on":"component:search.semantic","count":3,"component":"search.semantic","phase":"stopped"}]}},
+           {"stage":"subtitle_gen","counts":{"pending":0,"ready":0,"running":0,"failed_open":20,"done_24h":0},
+            "rate_per_min":0,"eta_sec":null,"waiting_reason":"component_off","no_worker":false,"component":"subtitles",
+            "health":{"state":"failing","waiting":[]}}]}
+        """#
+        let s = try JSONDecoder.home.decode(QueueSnapshot.self, from: Data(json.utf8))
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar")
+        let t = try #require(s.rows.first { $0.id == "transcribe" })
+        #expect(t.componentHold == ComponentHold(component: "transcription", stopped: false, queued: 1840))
+        #expect(t.status == .componentOff && t.state == "Off")
+        #expect(t.componentLine(en) == "Waiting: the Transcription component is off · 1,840 queued")
+        #expect(t.componentLine(ar)?.hasPrefix("في الانتظار: المكوّن التفريغ النصي متوقف · ") == true)
+        let i = try #require(s.rows.first { $0.id == "index" })
+        #expect(i.componentLine(en) == "Waiting: the Smart search component is stopped until you turn it on · 3 queued")
+        let sub = try #require(s.rows.first { $0.id == "subtitle_gen" })
+        #expect(sub.componentHold == nil && sub.componentLine(en) == nil)
+        #expect(QueueWords.componentTitle("from.the.future", en) == "from.the.future")
+        for id in QueueWords.componentTitles.keys {
+            #expect(QueueWords.componentTitle(id, ar) != QueueWords.componentTitle(id, en), "\(id) has its Arabic")
+        }
+    }
+
+    /// A home that sends the waiting reason and the component but no health still says it.
+    @Test func theWaitingReasonAloneSaysTheComponent() throws {
+        let json = #"""
+        {"at":"2026-10-25T20:30:00Z","paused_all":false,"issues_count":0,
+         "stages":[{"stage":"enrich","label":"Enrich","lane":"b","lane_order":1,"hidden":false,"enabled":false,"paused":false}],
+         "queues":[{"stage":"enrich","counts":{"pending":2,"ready":1,"running":0,"failed_open":0,"done_24h":0},
+            "rate_per_min":0,"eta_sec":null,"waiting_reason":"component_held","no_worker":false,"component":"enrich"}]}
+        """#
+        let s = try JSONDecoder.home.decode(QueueSnapshot.self, from: Data(json.utf8))
+        let e = try #require(s.rows.first)
+        #expect(e.componentLine(Locale(identifier: "en")) == "Waiting: the Details lookup component is stopped until you turn it on · 3 queued")
+    }
+
     /// A stage the snapshot has no counts for yet still shows, idle.
     @Test func aStageWithoutCountsIsIdle() throws {
         let s = try JSONDecoder.home.decode(QueueSnapshot.self, from: Data(Self.snapshot.utf8))

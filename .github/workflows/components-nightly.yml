@@ -1,0 +1,19 @@
+# Epic 51 (story 51.06): components-chaos every night on main (N6: 100 flips under load,
+# zero jobs lost, failed or cancelled). The PR runs are ci.yml's, on runner changes.
+
+name: Components nightly
+
+on:
+  schedule:
+    - cron: '37 5 * * *' # nightly, 05:37 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chaos:
+    uses: ./.github/workflows/_components.yml
+    with:
+      live: false
+      chaos: true

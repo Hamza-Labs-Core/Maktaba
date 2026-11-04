@@ -76,6 +76,8 @@ tags:
   description: Health, version, metrics. Open to monitoring agents.
 - name: WebSocket
   description: Real-time event channel (documented; protocol is WS).
+- name: Components
+  description: Turn each part of Maktaba on or off, stop and start it, and see what runs on each machine. The capabilities route is open to every signed-in client; the rest are admin only.
 security:
 - bearerAuth: []
 - cookieAuth: []
@@ -3951,6 +3953,967 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: streamQueues
+  /capabilities:
+    get:
+      tags:
+      - Components
+      summary: What this home has on
+      description: Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves.
+      responses:
+        '200':
+          description: The features.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '304':
+          description: Unchanged since the ETag sent.
+      operationId: getCapabilities
+  /components:
+    get:
+      tags:
+      - Components
+      summary: List the components
+      description: 'Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason''s message fills in, absent when it has none), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home''s bundle.'
+      responses:
+        '200':
+          description: The components.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: listComponents
+  /components/preview:
+    post:
+      tags:
+      - Components
+      summary: Preview a change
+      description: 'What a set of changes, or a bundle, would do, without changing anything: each component''s phase before and after, what conflicts, what is refused and why, how many queued jobs wait, and how long stopping takes.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                changes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      want:
+                        type: string
+                        enum:
+                        - enabled
+                        - installed
+                        - absent
+                      hold:
+                        type: boolean
+                      generation:
+                        type: integer
+                with_conflicts:
+                  type: boolean
+                generation:
+                  type: integer
+                bundle:
+                  type: string
+                  enum:
+                  - full
+                  - core
+                  - worker
+      responses:
+        '200':
+          description: The preview.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: previewComponents
+  /components/apply:
+    post:
+      tags:
+      - Components
+      summary: Apply a change
+      description: 'Applies a set of changes, or a bundle, in one transaction: all of it or none. Each change is checked against what the earlier ones leave.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                changes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      want:
+                        type: string
+                        enum:
+                        - enabled
+                        - installed
+                        - absent
+                      hold:
+                        type: boolean
+                      generation:
+                        type: integer
+                with_conflicts:
+                  type: boolean
+                generation:
+                  type: integer
+                bundle:
+                  type: string
+                  enum:
+                  - full
+                  - core
+                  - worker
+      responses:
+        '200':
+          description: What changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: applyComponents
+  /components/bundles:
+    get:
+      tags:
+      - Components
+      summary: List the bundles
+      description: The bundles (`full`, `core`, `worker`), what each holds, and which one the home is based on.
+      responses:
+        '200':
+          description: The bundles.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: listBundles
+  /components/bundle:
+    post:
+      tags:
+      - Components
+      summary: Switch to a bundle
+      description: 'The difference to a bundle, applied in one batch: what it leaves out stops and keeps its files (`remove_unused` removes them), and what it holds is turned on. `dry_run` only answers the difference.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bundle:
+                  type: string
+                  enum:
+                  - full
+                  - core
+                  - worker
+                dry_run:
+                  type: boolean
+                remove_unused:
+                  type: boolean
+                generation:
+                  type: integer
+              required:
+              - bundle
+      responses:
+        '200':
+          description: What changed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: applyBundle
+  /components/offline:
+    post:
+      tags:
+      - Components
+      summary: Make an offline pack file
+      description: Builds one file with the packs a bundle or chosen components need, for a home without internet, and answers its name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                bundle:
+                  type: string
+                components:
+                  type: array
+                  items:
+                    type: string
+                platform:
+                  type: string
+      responses:
+        '200':
+          description: The file's name.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: makeOfflinePacks
+  /components/offline/{name}:
+    get:
+      tags:
+      - Components
+      summary: Download an offline pack file
+      parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: getOfflinePacks
+  /components/import:
+    post:
+      tags:
+      - Components
+      summary: Import an offline pack file
+      description: Checks every pack in the file against the signed release index, then installs them.
+      parameters:
+      - name: name
+        in: query
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/x-tar:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: The packs installed.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: importOfflinePacks
+  /components/{id}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    get:
+      tags:
+      - Components
+      summary: Read one component
+      description: The component as in the list, plus each machine's status rows and its last 20 audit entries.
+      responses:
+        '200':
+          description: The component.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: getComponent
+    put:
+      tags:
+      - Components
+      summary: Set what should run
+      description: Sets `want` to `enabled`, `installed` (files kept, not running) or `absent`. Pass the row's `generation` to refuse a change made meanwhile; `with_conflicts` also turns off what conflicts with it. A change that changes nothing writes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                want:
+                  type: string
+                  enum:
+                  - enabled
+                  - installed
+                  - absent
+                generation:
+                  type: integer
+                with_conflicts:
+                  type: boolean
+              required:
+              - want
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: The licence this component needs is missing (`licence_missing`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: setComponent
+    delete:
+      tags:
+      - Components
+      summary: Remove a component
+      description: 'The same as `want: absent`. `purge=true` also deletes the component''s settings.'
+      parameters:
+      - name: purge
+        in: query
+        schema:
+          type: boolean
+          default: false
+        description: Also delete the component's settings.
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: removeComponent
+  /components/{id}/install:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    post:
+      tags:
+      - Components
+      summary: Install a component
+      description: Moves an absent component to `installed`; the supervisor downloads and checks its pack. A component already installed answers unchanged.
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: The licence this component needs is missing (`licence_missing`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: installComponent
+  /components/{id}/stop:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    post:
+      tags:
+      - Components
+      summary: Stop a component
+      description: 'Holds the component until it is started again: its processes stop and its stages keep their queued work. A hold has no end time; a body with `until` is refused.'
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: stopComponent
+  /components/{id}/start:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    post:
+      tags:
+      - Components
+      summary: Start a component
+      description: Clears the hold.
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: startComponent
+  /components/{id}/restart:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 'The component''s id in the catalog.'
+    post:
+      tags:
+      - Components
+      summary: Restart a component
+      description: 'Restarts a running component: its processes through this machine''s supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.'
+      responses:
+        '200':
+          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again.'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '202':
+          description: 'None of its processes runs now: the supervisor starts them (`restarted` is 0).'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: 'This server runs under no supervisor, or the supervisor does not answer.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: restartComponent
+  /components/{id}/settings/reset:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    post:
+      tags:
+      - Components
+      summary: Reset a component's settings
+      description: Deletes the settings this component owns, so each falls back to its default.
+      responses:
+        '200':
+          description: The settings were reset.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: resetComponentSettings
+  /components/{id}/machines/{node}:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    - name: node
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 'A machine: `home`, or a joined node''s id.'
+    put:
+      tags:
+      - Components
+      summary: Set what should run on one machine
+      description: 'An override for one machine; `want: null` follows the home again.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                want:
+                  type: string
+                  enum:
+                  - enabled
+                  - installed
+                  - absent
+                  nullable: true
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: setComponentOnMachine
+  /components/{id}/machines/{node}/stop:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    - name: node
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 'A machine: `home`, or a joined node''s id.'
+    post:
+      tags:
+      - Components
+      summary: Stop a component on one machine
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: stopComponentOnMachine
+  /components/{id}/machines/{node}/start:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: The component's id in the catalog.
+    - name: node
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 'A machine: `home`, or a joined node''s id.'
+    post:
+      tags:
+      - Components
+      summary: Start a component on one machine
+      responses:
+        '200':
+          description: The component after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: startComponentOnMachine
 components:
   securitySchemes:
     bearerAuth:
@@ -5655,6 +6618,11 @@ components:
           - object
           - 'null'
           additionalProperties: true
+        components:
+          type: array
+          items:
+            type: string
+          description: 'A `component_catchup` job: the components it catches up, from its payload. Absent on every other job.'
     QueueEdge:
       type: object
       description: One edge of the stage graph.

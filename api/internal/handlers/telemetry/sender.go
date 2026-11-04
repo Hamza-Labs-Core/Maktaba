@@ -297,7 +297,7 @@ func fit(rows []Row) []Row {
 
 // send posts rows; true when the next request may follow at once.
 func (s *Sender) send(ctx context.Context, url string, now time.Time, rows []Row) bool {
-	status, retryAfter, err := s.post(ctx, url, rows)
+	status, retryAfter, answer, err := s.post(ctx, url, rows)
 	switch {
 	case err == nil && status/100 == 2:
 		ids := make([]int64, len(rows))
@@ -323,6 +323,17 @@ func (s *Sender) send(ctx context.Context, url string, now time.Time, rows []Row
 				s.send(ctx, url, now, []Row{r})
 			}
 			return false
+		}
+		if status == http.StatusBadRequest && rows[0].Kind == KindServer && namesComponentFields(answer) {
+			if older, ok := withoutComponentFields(rows[0].Body); ok {
+				// an older Maktaba Cloud that does not know the fields: the report goes
+				// again without them, once (the stripped body has none to strip)
+				s.logger().Info("telemetry: Maktaba Cloud refused the components of the report; sending it without them",
+					"event", "telemetry_components_refused")
+				r := rows[0]
+				r.Body = older
+				return s.send(ctx, url, now, []Row{r})
+			}
 		}
 		s.logger().Warn("telemetry: Maktaba Cloud refused a batch; dropped",
 			"status", status, "kind", rows[0].Kind, "event", "telemetry_refused")
@@ -370,20 +381,54 @@ func backoff(attempts int) time.Duration {
 	return d
 }
 
-func (s *Sender) post(ctx context.Context, url string, rows []Row) (int, time.Duration, error) {
+// namesComponentFields: a refusal that may be about the report's bundle or components
+// (Maktaba Cloud names the field, or, before it knew them, says a field is not allowed).
+func namesComponentFields(answer string) bool {
+	a := strings.ToLower(answer)
+	return strings.Contains(a, "bundle") || strings.Contains(a, "components") || strings.Contains(a, "not allowed")
+}
+
+// withoutComponentFields is a server batch's body without the report's bundle and
+// components; ok is false when it has neither.
+func withoutComponentFields(body []byte) ([]byte, bool) {
+	var batch map[string]json.RawMessage
+	if json.Unmarshal(body, &batch) != nil {
+		return nil, false
+	}
+	var rep map[string]json.RawMessage
+	if json.Unmarshal(batch["report"], &rep) != nil {
+		return nil, false
+	}
+	_, hasB := rep["bundle"]
+	_, hasC := rep["components"]
+	if !hasB && !hasC {
+		return nil, false
+	}
+	delete(rep, "bundle")
+	delete(rep, "components")
+	raw, err := json.Marshal(rep)
+	if err != nil {
+		return nil, false
+	}
+	batch["report"] = raw
+	out, err := json.Marshal(batch)
+	return out, err == nil
+}
+
+func (s *Sender) post(ctx context.Context, url string, rows []Row) (int, time.Duration, string, error) {
 	batches := make([]json.RawMessage, len(rows))
 	for i, r := range rows {
 		batches[i] = r.Body
 	}
 	body, err := json.Marshal(map[string]any{"schema": 1, "batches": batches})
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url+IngestPath, bytes.NewReader(body))
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	c := s.Client
@@ -394,15 +439,15 @@ func (s *Sender) post(ctx context.Context, url string, rows []Row) (int, time.Du
 	if err != nil {
 		var uerr interface{ Timeout() bool }
 		if errors.As(err, &uerr) && uerr.Timeout() {
-			return 0, 0, errors.New("timed out")
+			return 0, 0, "", errors.New("timed out")
 		}
-		return 0, 0, errors.New("unreachable")
+		return 0, 0, "", errors.New("unreachable")
 	}
 	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+	answer, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	var after time.Duration
 	if secs, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && secs > 0 {
 		after = time.Duration(secs) * time.Second
 	}
-	return resp.StatusCode, after, nil
+	return resp.StatusCode, after, string(answer), nil
 }

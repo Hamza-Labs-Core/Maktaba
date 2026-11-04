@@ -47,10 +47,14 @@ func stepVenv(s *setupRun, _ json.RawMessage) (any, error) {
 	defer logFile.Close()
 	// a stop asks the bootstrap (appvenv: SIGTERM, on Windows CTRL_BREAK to its
 	// own process group; killed only after 45 s), which stops pip and says where it was
+	// story 51.17: the bundle chosen decides the extras (Core: none, constraints-core.txt)
+	extras, none := choiceVenvSpec(s.cfg.StateDir())
 	res, err := appvenv.Run(s.ctx, appvenv.Spec{
-		Payload: payload,
-		Venv:    filepath.Join(s.cfg.StateDir(), "venv"),
-		Log:     io.MultiWriter(logFile, s.log),
+		Payload:  payload,
+		Venv:     filepath.Join(s.cfg.StateDir(), "venv"),
+		Log:      io.MultiWriter(logFile, s.log),
+		Extras:   extras,
+		NoExtras: none,
 	}, func(p appvenv.Progress) {
 		// the bootstrap's progress is 0..1 over the whole run and never goes back
 		s.progress("venv", p.Message, uint64(p.Fraction*1000), 1000)

@@ -17,12 +17,60 @@ struct LiveTVScreen: View {
     /// Now or Guide; a UI test may open on the guide (`ShellLaunch.liveMode`).
     @SceneStorage("live.mode") private var mode = ShellLaunch.liveMode().flatMap(Mode.init(rawValue:)) ?? .now
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// Whether Live TV was off when the screen came into view (story 51.11): decided as it
+    /// opens, so a screen already open is not torn down when Live TV goes off; its next call
+    /// answers 409 `component_off` and says so.
+    @State private var openedOff: Bool
+
+    init(context: PlayerContext) {
+        self.context = context
+        _openedOff = State(initialValue: !context.session.capabilities.current.isOn(.liveTV))
+    }
     /// The launch's `-maktaba-live` was applied (once a process: the person's own taps then
     /// stay). A scene restored from the last run brings its own `live.mode`, which wins over
     /// the default above: on CI a guide test opened on Now after an earlier test left it there.
     @MainActor private static var launchModeApplied = false
 
     var body: some View {
+        Group {
+            if openedOff {
+                off
+            } else {
+                live
+            }
+        }
+        // decided again each time the screen comes into view (the tab chosen again)
+        .onAppear { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
+        // opened before the home first said what is on (a slow home, a launch into Live TV):
+        // that first answer decides, once; a later change leaves the open screen as it is
+        .onChange(of: context.session.capabilities.answered) { _, answered in
+            if answered { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
+        }
+    }
+
+    /// Live TV is off on the home (story 51.11): an admin reads so, with a button to the
+    /// Components page (a viewer has no Live TV section; should one reach it, the 409's words).
+    private var off: some View {
+        Group {
+            if context.session.capabilities.current.isAdmin {
+                FeatureOffNote(.liveTV, home: context.client.home)
+            } else {
+                Text(verbatim: ErrorStrings.forPreferredLanguages().text(.off))
+                    .foregroundStyle(Color.mktMuted)
+                    .padding(MaktabaTokens.Spacing.s5)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .maktabaSurface()
+        .navigationTitle(Text(PlayerSection.liveTV.title))
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("screen.liveTV")
+    }
+
+    private var live: some View {
         VStack(spacing: 0) {
             Picker(selection: $mode) {
                 Text("Now", tableName: "Live", comment: "Live TV: what is on now on every channel").tag(Mode.now)

@@ -140,6 +140,11 @@ func TestSchedulerBlockers(t *testing.T) {
 		if HomeBlocked([]ProcState{{Role: "api", State: "backoff"}}, nil, f.now) != BlockRoleNotRunning {
 			t.Fatal("a role in backoff did not block")
 		}
+		// Epic 51: a process built dormant whose component is off (the LLM's ollama) is not a
+		// role that should run
+		if got := HomeBlocked([]ProcState{{Role: "ollama", Wanted: true, Blocked: true, State: "held"}}, nil, f.now); got != "" {
+			t.Fatalf("a process whose component is off blocked the update (%s)", got)
+		}
 		if HomeBlocked([]ProcState{{Role: "tv-slot", Instance: "amber", State: "stopped"}}, nil, f.now) != "" {
 			t.Fatal("an on-demand slot nobody asked for blocked")
 		}

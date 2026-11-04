@@ -55,6 +55,9 @@ type rule struct {
 // The names tauri gives the updater bundles (desktop-release.yml renames the
 // macOS archive, whose name carries no architecture, to Maktaba_<v>_<arch>).
 var rules = []rule{
+	// the Mac's Core app (story 51.17: no ollama) updates from keys of its own; before the
+	// Full rule, which its name would match too
+	{regexp.MustCompile(`^Maktaba-Core_.+_aarch64\.app\.tar\.gz$`), []string{"darwin-aarch64-core-app", "darwin-aarch64-core"}},
 	{regexp.MustCompile(`_aarch64\.app\.tar\.gz$`), []string{"darwin-aarch64-app", "darwin-aarch64"}},
 	{regexp.MustCompile(`_x64\.app\.tar\.gz$`), []string{"darwin-x86_64-app", "darwin-x86_64"}},
 	{regexp.MustCompile(`_x64-setup\.exe$`), []string{"windows-x86_64-nsis", "windows-x86_64"}},
