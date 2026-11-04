@@ -356,7 +356,7 @@ redesign it.
 |---|---|---|
 | Catalog ids and kinds (`core.postgres`, `core.api`, `core.streaming`, `core.pipeline`, `transcription`, `search.semantic`, `livetv.slots`, …) | `shared/components/catalog.go` (`Default`, `ByProcess`, `ByStage`, `ByLoop`) | 53.01 (`component` field), 53.03 (status groups), 53.11 (filters) |
 | The supervisor's reconciler and its desired-state cache `<state>/state/components.json`, read without Postgres | `cmd/maktaba-server/internal/supervisor/reconcile.go`, `compcache.go` | 53.03 (`off`), 53.04, 53.05 |
-| Actual state: `component_status` rows, phases and reason codes (`crash_loop`, `held`, `boot_flag`, `reconcile_off`, …) | migration `0175_components.sql`, `shared/components/store` | 53.03, 53.05, 53.11 |
+| Actual state: `component_status` rows, phases and reason codes (`crash_loop`, `held`, `boot_flag`, `reconcile_off`, …) | migration `0178_components.sql`, `shared/components/store` | 53.03, 53.05, 53.11 |
 | Health on `GET /api/components` and `/{id}` (`health.restarts`, `last_error_code`, `stale`) and the supervisor's `maktaba_component_up`, `maktaba_component_restarts_total`, `maktaba_component_transition_seconds` | `api/internal/components/health.go` (story 51.14) | 53.04, 53.12 |
 | Admin routes: `PUT /api/components/{id}`, `POST /api/components/{id}/stop` and `/start` (a hold until start) | `api/internal/handlers/components`; contract in `shared/api/openapi.yaml` (tag Components) | 53.04, 53.05 (links, never a second switch) |
 | `GET /api/capabilities` and `capabilities_changed` on `/ws/home`; `409 component_off` | `api/internal/handlers/components/capabilities.go` (story 51.09) | 53.06 (off is not down) |

@@ -125,7 +125,7 @@ table stays for the legacy path only.
 
 ### 4.3 The flag model
 
-One row per suspect word or short span (`word_flags`, slot 0182+, Postgres and SQLite twins):
+One row per suspect word or short span (`word_flags`, slot 0184+, Postgres and SQLite twins):
 
 | Column | Type | Notes |
 |---|---|---|

@@ -110,7 +110,7 @@ The lock is released on resolve, on skip, or when it expires.
 - `api/internal/router/p6.go`: mount `review.Routes`. `api/internal/router/placement.go`: list
   the routes as home-only (a node never serves them).
 - `streaming/internal/handlers/clip.go`: the clip endpoint, signature check, ffmpeg, cache.
-- `shared/db/migrations/0182+_word_flags_lock.sql` and `.sqlite.sql`: `locked_by UUID NULL`,
+- `shared/db/migrations/0184+_word_flags_lock.sql` and `.sqlite.sql`: `locked_by UUID NULL`,
   `locked_until TIMESTAMPTZ NULL` on `word_flags`.
 - `web/src/lib/reviewApi.ts`: typed client (used by 52.11), with reason and status codes as one
   union that a test checks against the Go constants.

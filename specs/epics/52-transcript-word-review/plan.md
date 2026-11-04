@@ -95,8 +95,8 @@ one integration branch, one PR per phase, not one PR per story.
 
 ## 3. Migrations
 
-Slot numbers are taken at merge time; the next free slot is 0182 (`0181_component_licence.sql` is the highest once
-Epic 51 merges). Each has a
+Slot numbers are taken at merge time; the next free slot is 0184 (`0183_queue_read_paths.sql` is the highest
+today). Each has a
 Postgres file and a SQLite twin, passes `tools/migration-lint`, and is additive (no table
 rewrite on the 23 M-row `transcript_segments`: `ADD COLUMN` without a default is metadata-only).
 

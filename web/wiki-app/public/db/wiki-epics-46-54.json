@@ -3871,7 +3871,7 @@
       "title": "Vocabulary: learning from fixes",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.10 — Vocabulary: learning from fixes\n\n> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)\n\n## Why\n\nA lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times\nunless the system learns it. Each fix must count. This story turns fixes into a\nvocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second\nlisten and new transcriptions spell it right. It never re-transcribes the library\nby itself.\n\n## Description\n\n### 1. Tables (slot 0182+)\n\n- `vocabulary (id, scope 'home'",
+      "content": "# Story 52.10 — Vocabulary: learning from fixes\n\n> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)\n\n## Why\n\nA lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times\nunless the system learns it. Each fix must count. This story turns fixes into a\nvocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second\nlisten and new transcriptions spell it right. It never re-transcribes the library\nby itself.\n\n## Description\n\n### 1. Tables (slot 0184+)\n\n- `vocabulary (id, scope 'home'",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -4248,7 +4248,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-post-components-id-stop"
+        "ep-post-components-id-stop",
+        "ep-post-components-id-restart"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-04-recovery-console.md",
@@ -4260,7 +4261,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "POST /components/{id}/stop"
+        "POST /components/{id}/stop",
+        "POST /components/{id}/restart"
       ],
       "db_tables": [
         "audit_log"
@@ -4926,7 +4928,8 @@
         "ep-get-components-id",
         "ep-put-components-id",
         "ep-delete-components-id",
-        "ep-post-components-id-install"
+        "ep-post-components-id-install",
+        "ep-post-components-id-restart"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-08-grants-roles.md",
@@ -4943,7 +4946,8 @@
         "GET /components/{id}",
         "PUT /components/{id}",
         "DELETE /components/{id}",
-        "POST /components/{id}/install"
+        "POST /components/{id}/install",
+        "POST /components/{id}/restart"
       ],
       "db_tables": [
         "audit_log",

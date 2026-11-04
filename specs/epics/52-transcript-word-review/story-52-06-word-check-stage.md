@@ -175,7 +175,7 @@ Decided (README §8, decision 2): text-check **all ~45k existing transcripts**:
 - `pipeline/src/maktaba_pipeline/word_review/backfill.py` (new): the planner and the idle-only
   claim rule for backfill jobs.
 - `pipeline/src/maktaba_pipeline/engine/stages/registry.py`: register it.
-- `shared/db/migrations/` next free slot, 0182 (0181 is the highest once Epic 51 merges):
+- `shared/db/migrations/` next free slot, 0184 (0183 is the highest today):
   `word_flags`, Postgres and SQLite twins.
 - `shared/components/catalog.toml` (and the pipeline copy, `make catalog-sync`): `word_check` in
   `review.words`'s `stages` (the entry itself is 52.16).

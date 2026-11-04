@@ -66,7 +66,7 @@ Rules every pack keeps:
   found (`components.packs.pack_dir(id)`, 52.16). Otherwise its script falls to the fallback.
   The switch is the component's (`POST /api/components/lang.ar/install`, `DELETE /api/components/lang.ar`);
   this epic adds no second switch.
-- `language_packs` table (next free slot, 0182; 0181 is the highest once Epic 51 merges):
+- `language_packs` table (next free slot, 0184; 0183 is the highest today):
   `code PK, component, version, data_sha256, tokenizer, state ('loaded'|'off'|'missing'|'error'),
   error, loaded_at`. It is a **report**, written by the registry on each load, read by
   `GET /api/language-packs` (52.14). It has no `enabled` column.

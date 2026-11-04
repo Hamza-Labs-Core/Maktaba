@@ -403,7 +403,7 @@ says plainly where it does not:
 | Need | Epic 51 gives | This epic adds |
 |---|---|---|
 | A component per plugin | a catalog fixed per release (`catalog.toml`, `go:embed` plus the pipeline's copy; unknown fields and kinds refused; the `catalog` CI job) | the `plugin` kind and run-time entries from `plugin_installs`, merged into every consumer (**54.37**) |
-| Desired and actual state | `components`, `component_overrides`, `component_status`, `component_meta` (migrations 0175–0177, 0181); `NOTIFY components_changed`; `store.Watcher` | nothing: plugin rows are ordinary rows keyed `plugin.<id>` |
+| Desired and actual state | `components`, `component_overrides`, `component_status`, `component_meta` (migrations 0178–0181); `NOTIFY components_changed`; `store.Watcher` | nothing: plugin rows are ordinary rows keyed `plugin.<id>` |
 | Switching | `PUT /api/components/{id}` (`want` `enabled` / `installed` / `absent`), `POST …/stop` and `…/start` (a hold until Start), `DELETE`, `POST /api/components/preview` and `/apply` (contract: `shared/api/openapi.yaml`, tag Components); audit `component.enable`, `.disable`, `.remove`, `.hold`, `.release`; CLI `maktaba-server components …` | `/api/plugins/*` writing the same rows (54.08); keep-off (54.07). There is no restart route in either |
 | Gates | `runner.Gates`: want, hold, requirements, licence flag | grants, compatibility, revocation, unreviewed policy and entitlement gates (54.37 §3) |
 | Reason codes | `reasons` in `catalog.toml`, refused by `store.ReportStatus` when unknown; words `components.reason.<code>` | twelve new codes with en and ar words (54.37 §3) |
