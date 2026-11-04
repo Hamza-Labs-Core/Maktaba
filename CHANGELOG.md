@@ -36,6 +36,7 @@ build fails when the two differ.
 
 ### Fixed
 
+- PROBE: a throwaway line that conflicts with main (ci-branch.yml live check; never merged).
 - **The home's database no longer runs out of connections.** The API's background jobs (the
   update check, the health samples, housekeeping) failed now and then with Postgres error
   53300 ("remaining connection slots are reserved"): the bundled Postgres allowed its default
