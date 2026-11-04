@@ -1,8 +1,9 @@
 # Reusable gate for the native Apple apps (Epic 42, `apps/apple` and the Apple TV app in
-# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote, Maktaba Player
-# for iPhone and the Mac, Maktaba TV), and their String Catalogs in English and Arabic; and,
-# in other jobs, the Player's UI tests on throwaway iPhone and iPad simulators and the Apple
-# TV app's Live TV, Home and Libraries UI tests on a throwaway Apple TV simulator.
+# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote for iPhone and
+# iPad, Maktaba Player for iPhone and the Mac, Maktaba TV), and their String Catalogs in
+# English and Arabic; and, in other jobs, the Player's UI tests on throwaway iPhone and iPad
+# simulators and the Apple TV app's Live TV, Home and Libraries UI tests on a throwaway Apple
+# TV simulator.
 #
 # The catalogs: tools/apple/check-string-catalogs.py fails on a key without its Arabic
 # (state "translated") and, reading the .stringsdata the builds write (project.yml sets
@@ -98,6 +99,7 @@ jobs:
             echo "::endgroup::"
           }
           build "Maktaba Remote" "generic/platform=iOS Simulator"
+          build "Maktaba Remote iPad" "generic/platform=iOS Simulator"
           build "Maktaba Player" "generic/platform=iOS Simulator"
           build "Maktaba Player Mac" "platform=macOS"
           build "Maktaba TV" "generic/platform=tvOS Simulator"

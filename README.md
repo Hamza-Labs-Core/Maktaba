@@ -24,7 +24,7 @@ today:
 | Platform | Maktaba Player (watch) | Maktaba Remote (run the home; admins only) | Maktaba TV | Maktaba (the server and the web app) |
 |---|---|---|---|---|
 | **iPhone** | Yes (TestFlight) | Yes (TestFlight) | — | — |
-| **iPad** | Yes (TestFlight, *Maktaba Player for iPad*) | In the code, not on TestFlight yet | — | — |
+| **iPad** | Yes (TestFlight, *Maktaba Player for iPad*) | Yes (TestFlight, *Maktaba Remote iPad*) | — | — |
 | **Mac** | Yes (TestFlight, *Maktaba Player for Mac*) | — | — | Yes (Maktaba.app, Apple silicon) |
 | **Apple TV** | — | — | Yes (TestFlight) | — |
 | **Android phone and tablet** | Yes (Google Play testing) | Yes (Google Play testing) | — | — |
@@ -287,8 +287,7 @@ reaches testers as an update, and attaches the installable files to the
 | App | Platform | How to get it | Built by |
 |---|---|---|---|
 | **Maktaba Player** (watch) | iPhone · iPad (*Maktaba Player for iPad*) · Mac, macOS 15+ (*Maktaba Player for Mac*) | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
-| **Maktaba Remote** (run the home; admins only) | iPhone | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
-| **Maktaba Remote** for iPad | iPad | not on TestFlight yet: the `Maktaba Remote iPad` scheme (`com.hamzalabs.maktaba.remote.tablet`) builds from source, but no release uploads it | — |
+| **Maktaba Remote** (run the home; admins only) | iPhone · iPad (*Maktaba Remote iPad*) | TestFlight | [`testflight.yml`](.github/workflows/testflight.yml) |
 | **Maktaba TV** | Apple TV (tvOS 26) | TestFlight on the Apple TV | [`testflight.yml`](.github/workflows/testflight.yml) |
 | **Maktaba Player** and **Maktaba Remote** | Android phones, foldables and tablets | Google Play internal testing (`maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, signed with the Play upload key) | [`play-bundles.yml`](.github/workflows/play-bundles.yml) |
 | **Maktaba TV** | Android TV and Google TV | Google Play internal testing (`maktaba-tv-<version>.aab`); or sideload `maktaba-tv-<version>.apk` when a release carries it (only signed builds are attached) | [`play-bundles.yml`](.github/workflows/play-bundles.yml), [`tv-release.yml`](.github/workflows/tv-release.yml) |
