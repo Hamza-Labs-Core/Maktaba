@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 142,
+    "endpoint": 143,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -8010,6 +8010,29 @@
         "path": "/components/{id}/start",
         "tag": "Components",
         "operationId": "startComponent"
+      }
+    },
+    {
+      "id": "ep-post-components-id-restart",
+      "type": "endpoint",
+      "title": "POST /components/{id}/restart",
+      "content": "Restart a component",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/restart",
+        "tag": "Components",
+        "operationId": "restartComponent"
       }
     },
     {

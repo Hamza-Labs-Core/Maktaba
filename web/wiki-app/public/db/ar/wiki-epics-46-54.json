@@ -3904,7 +3904,8 @@
         "ep-put-components-id",
         "ep-delete-components-id",
         "ep-post-components-id-stop",
-        "ep-post-components-id-start"
+        "ep-post-components-id-start",
+        "ep-post-components-id-restart"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-08-admin-api-cli.md",
@@ -3920,7 +3921,8 @@
         "PUT /components/{id}",
         "DELETE /components/{id}",
         "POST /components/{id}/stop",
-        "POST /components/{id}/start"
+        "POST /components/{id}/start",
+        "POST /components/{id}/restart"
       ],
       "db_tables": [
         "audit_log"

@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 142,
+    "endpoint": 143,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -9870,6 +9870,35 @@
         "lang": "ar",
         "source": {
           "content": "1d0f62743c7afe4a"
+        }
+      }
+    },
+    {
+      "id": "ep-post-components-id-restart",
+      "type": "endpoint",
+      "title": "POST /components/{id}/restart",
+      "content": "إعادة تشغيل مكوّن",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/restart",
+        "tag": "Components",
+        "operationId": "restartComponent"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "dc3671b2aeb030fa"
         }
       }
     },
