@@ -12,7 +12,7 @@ die() { echo "runtime.ollama: $*" >&2; exit 1; }
 pins="${REPO_ROOT:?}/tools/release/mac-app/pins.env"
 pin() { sed -n "s/^$1=//p" "$pins" | head -n 1; }
 version="$(pin OLLAMA_VERSION)" url="$(pin OLLAMA_URL)" sha="$(pin OLLAMA_SHA256)"
-[ -n "$version" ] && [ -n "$url" ] && [ -n "$sha" ] || die "no Ollama pin in $pins"
+if [ -z "$version" ] || [ -z "$url" ] || [ -z "$sha" ]; then die "no Ollama pin in $pins"; fi
 work="${WORK:?}"
 mkdir -p "$work/x" "$stage/ollama" "$stage/licenses/ollama"
 tgz="$work/ollama-$version-darwin.tgz"

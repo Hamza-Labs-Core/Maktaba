@@ -41,7 +41,7 @@ jobs:
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
       - name: shellcheck
-        run: shellcheck tools/release/packs/*.sh tools/release/packs/recipes/*.sh
+        run: shellcheck -x tools/release/packs/*.sh tools/release/packs/recipes/*.sh
 
       - name: build.sh (T09)
         run: bash tools/release/packs/test_build.sh 2>&1 | tee packs-logs-test-build.log
