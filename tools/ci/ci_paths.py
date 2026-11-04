@@ -3,22 +3,28 @@
 
 .github/ci-paths.yml holds the path filters ci.yml's `changes` job evaluates on a pull
 request; each job's `if:` (and the inputs it hands its reusable workflow) reads them as
-`needs.changes.outputs.<filter>`. On a push every filter is true: main gets the full run,
-except a push that changes only the Claude trail, which the push trigger's paths-ignore
-starts no run for.
+`needs.changes.outputs.<filter>`. On a push to main or release/** every filter is true: main
+gets the full run, except a push that changes only the Claude trail, which the push
+trigger's paths-ignore starts no run for. A branch head (ci-branch.yml calls ci.yml for a
+pull request that conflicts with its base) picks its jobs as a pull request does, from its
+changes since the merge-base, and runs all of a pull request's jobs but the `pr-event` ones.
 
     ci_paths.py guard               # fails on a job that could silently never run
     ci_paths.py which FILE...       # the jobs a pull request changing FILEs runs
-    ci_paths.py which --push        # the jobs a push runs
+    ci_paths.py which --branch FILE...  # the jobs a branch head changing FILEs runs
+    ci_paths.py which --push        # the jobs a push to main runs
 
 The guard (run in the lint job, on every pull request) checks that:
 
 - every filter's globs are ones paths-filter and this script read alike;
-- the changes job has one output per filter, true on a push;
+- the changes job has one output per filter, true on a push to main or release/**;
 - every job is gated by filters (and runs when any one of them alone is true, the jobs it
   needs skipped or not), or is marked in ci.yml with a `# ci-paths:` comment in its block:
   `always-run` (runs on a pull request that matches no filter), `push-only`, `pr-only`
-  (not on a push), `not-a-gate` (not in ci-success's needs);
+  (not on a push to main), `pr-event` (reads the pull request event: not on a branch
+  head), `not-a-gate` (not in ci-success's needs);
+- a branch head runs exactly the jobs a pull request with the same changes runs, but the
+  `pr-event` ones;
 - every filter is some job's; every job but the not-a-gate ones is in ci-success's needs;
 - on a push every job runs but the pr-only ones;
 - every tracked file is matched by a filter or listed in NOT_IN_CI below.
@@ -43,6 +49,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 CI_YML = ROOT / ".github" / "workflows" / "ci.yml"
+BRANCH_YML = ROOT / ".github" / "workflows" / "ci-branch.yml"
 FILTERS_YML = ROOT / ".github" / "ci-paths.yml"
 FILTERS_REF = ".github/ci-paths.yml"
 
@@ -78,6 +85,8 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/_tag-guard.yml": "the tag workflows' first job",
     ".github/workflows/_pr-body-check.yml": "pr-body-check runs on every pull request",
     ".github/workflows/coverage-map.yml": "runs after CI on main (the affected-tests map)",
+    ".github/workflows/ci-branch.yml": "calls ci.yml on a conflicting pull request's branch head",
+    "tools/ci/branch_head.py": "ci-branch.yml's guard; its tests (tools/ci/tests) run on every pull request",
     ".githooks/**": "the pre-push hook: the affected-tests job shellchecks it on every pull request",
     "tools/ci/ci_paths.py": "this guard: the lint job runs it on every pull request",
     "tools/ci/apple_player_scope.py": "run by the changes job on every pull request",
@@ -97,7 +106,7 @@ NOT_IN_CI: dict[str, str] = {
     "tools/image-size-guard.sh": "make image-size-guard, run by hand",
 }
 
-MARKERS = {"always-run", "push-only", "pr-only", "not-a-gate"}
+MARKERS = {"always-run", "push-only", "pr-only", "pr-event", "not-a-gate"}
 # The Claude trail: a pull request that changes only this file runs no job (trail updates go
 # in their own pull requests, with no CI and no tests). The changes job's `repo` output
 # (its own paths-filter step, where every glob must match) is true when any other file
@@ -106,6 +115,11 @@ MARKERS = {"always-run", "push-only", "pr-only", "not-a-gate"}
 TRAIL = "docs/claude-trail.md"
 REPO = "repo"
 REPO_FILTERS = {REPO: [f"!{TRAIL}"]}
+# the changes job's step whose `full` output is true on a push to main or release/**
+SCOPE = "scope"
+# the events simulate() knows: a pull request, a push to main, a branch head (ci-branch.yml)
+EVENTS = ("pull_request", "push", "branch")
+_A_SHA = "0" * 39 + "1"
 GATE = "ci-success"
 CHANGES = "changes"
 # a pattern paths-filter (picomatch) and _glob read alike
@@ -299,6 +313,9 @@ class _Eval:
             for i, a in enumerate(args[1:]):
                 s = s.replace("{%d}" % i, str(a))
             return s
+        if name == "startsWith":
+            a, b = (str(x).lower() for x in args)
+            return a.startswith(b)
         if name == "contains":
             hay, needle = args
             return needle in hay if isinstance(hay, (list, str)) else False
@@ -410,22 +427,29 @@ def simulate(
     repo: bool | None = None,
 ) -> dict[str, Run | None]:
     """Which jobs run (each assumed to pass) when the given filters are true. `repo`: a file
-    other than the trail changed (by default, when a filter is true)."""
+    other than the trail changed (by default, when a filter is true). `event`: a pull
+    request, a push to main, or a branch head (ci-branch.yml's call, a push with `base`)."""
+    if event not in EVENTS:
+        raise ValueError(f"event {event!r} is not one of {EVENTS}")
     true_filters = set(true_filters)
     repo = bool(true_filters) if repo is None else repo
     changes = wf.jobs[CHANGES]
+    full = event == "push"
     step_outputs: dict[str, Any] = {
+        SCOPE: {"outputs": {"full": "true" if full else "false"}},
         "filter": {"outputs": {}},
         REPO: {"outputs": {}},
         "apple": {"outputs": {"player_ui": "true" if apple_scope else "false"}},
     }
     base_ctx: dict[str, Any] = {
         "github": {
-            "event_name": event,
+            "event_name": "push" if event == "branch" else event,
+            "ref": {"pull_request": "refs/pull/1/merge", "push": "refs/heads/main"}.get(event, "refs/heads/a-branch"),
             "event": {"pull_request": {"head": {"repo": {"fork": fork}}}} if event == "pull_request" else {},
         },
+        "inputs": {"base": _A_SHA if event == "branch" else ""},
     }
-    if event == "pull_request":
+    if not full:
         step_outputs["filter"]["outputs"] = {name: "true" for name in true_filters}
         step_outputs[REPO]["outputs"] = {REPO: "true" if repo else "false"}
     outs = {
@@ -482,8 +506,8 @@ def push_paths_ignore(path: Path | None = None) -> list[str]:
 
 def which(files: Sequence[str], **kw: Any) -> dict[str, Run | None]:
     """The jobs a change runs; none (no run at all) for a push its paths-ignore skips."""
-    if kw.get("event") == "push" and files:
-        ignored = push_paths_ignore()
+    if kw.get("event") in ("push", "branch") and files:
+        ignored = push_paths_ignore(BRANCH_YML if kw["event"] == "branch" else None)
         if all(any(matches(p, f) for p in ignored) for f in files):
             return {}
     wf = load_workflow()
@@ -551,14 +575,21 @@ def guard(
         missing = sorted((set(named) | {REPO}) - set(outputs))
         extra = sorted(set(outputs) - set(named) - {REPO})
         errs.append(f"the changes job's outputs are not the filters (missing {missing}, not filters {extra})")
+    full_first = f"steps.{SCOPE}.outputs.full == 'true' ||"
     for k, v in outputs.items():
         e = _strip(str(v)).strip()
         step_id = REPO if k == REPO else "filter"
-        if not e.startswith("github.event_name != 'pull_request' ||") or f"steps.{step_id}.outputs.{k} == 'true'" not in e:
+        if not e.startswith(full_first) or f"steps.{step_id}.outputs.{k} == 'true'" not in e:
             errs.append(
-                f"changes output {k} must be `github.event_name != 'pull_request' || "
-                f"steps.{step_id}.outputs.{k} == 'true'` (true on a push)"
+                f"changes output {k} must be `{full_first} "
+                f"steps.{step_id}.outputs.{k} == 'true'` (true on a push to main or release/**)"
             )
+    for sid in ("filter", REPO):
+        s = next((x for x in changes.get("steps", []) if x.get("id") == sid), {})
+        if str(s.get("if", "")).strip() != f"steps.{SCOPE}.outputs.full != 'true'":
+            errs.append(f"the changes job's `{sid}` step must run when steps.{SCOPE}.outputs.full != 'true'")
+        if (s.get("with") or {}).get("base") != "${{ inputs.base }}":
+            errs.append(f"the changes job's `{sid}` step must compare a branch head with base: ${{{{ inputs.base }}}}")
 
     used: set[str] = set()
     needs_of_gate = set(_needs(wf.jobs.get(GATE, {})))
@@ -571,6 +602,20 @@ def guard(
     nothing = simulate(wf, set(), repo=True)
     trail_only = simulate(wf, set(), repo=False)
     on_push = simulate(wf, set(), event="push")
+    # a branch head runs what a pull request with the same changes runs, but the pr-event jobs
+    pr_event = {j for j, m in wf.markers.items() if "pr-event" in m}
+    for label, kw in [("no filter", {"repo": True}), ("only the trail", {"repo": False})] + [
+        (f"{name} alone", {"true_filters": {name}}) for name in sorted(named)
+    ]:
+        tf = kw.pop("true_filters", set())
+        pr_jobs = {j for j, r in simulate(wf, tf, **kw).items() if r} - pr_event  # type: ignore[arg-type]
+        branch = simulate(wf, tf, event="branch", **kw)  # type: ignore[arg-type]
+        branch_jobs = {j for j, r in branch.items() if r}
+        if branch_jobs != pr_jobs:
+            errs.append(
+                f"a branch head with {label} changed runs {sorted(branch_jobs - pr_jobs)} and not "
+                f"{sorted(pr_jobs - branch_jobs)}, unlike a pull request (mark a job pr-event if meant)"
+            )
     for j, job in wf.jobs.items():
         if j in (CHANGES, GATE):
             continue
@@ -659,7 +704,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("guard")
     w = sub.add_parser("which")
     w.add_argument("files", nargs="*")
-    w.add_argument("--push", action="store_true")
+    w.add_argument("--push", action="store_true", help="a push to main or release/**")
+    w.add_argument("--branch", action="store_true", help="a branch head (ci-branch.yml)")
     w.add_argument("--apple-player-scope", action="store_true", help="the project file has a Player change")
     a = ap.parse_args(argv)
     if a.cmd == "guard":
@@ -669,7 +715,8 @@ def main(argv: list[str] | None = None) -> int:
         if not errs:
             print("ci-paths: every job is gated by a filter or marked, every filter used, every file covered")
         return 1 if errs else 0
-    runs = which(a.files, event="push" if a.push else "pull_request", apple_scope=a.apple_player_scope)
+    event = "push" if a.push else "branch" if a.branch else "pull_request"
+    runs = which(a.files, event=event, apple_scope=a.apple_player_scope)
     print(_show(runs))
     return 0
 

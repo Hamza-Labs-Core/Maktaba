@@ -364,7 +364,8 @@ def _resolve(value: str, ctx: dict[str, object]) -> str:
 def _concurrency(workflow: str, **github: object) -> tuple[str, bool]:
     conc = yaml.safe_load((WORKFLOWS / workflow).read_text(encoding="utf-8"))["concurrency"]
     ctx: dict[str, object] = {"github": {"run_attempt": "1", **github}}
-    return _resolve(conc["group"], ctx), ci_paths.evaluate(conc["cancel-in-progress"], ctx) is True
+    cancel = conc["cancel-in-progress"]
+    return _resolve(conc["group"], ctx), (cancel if isinstance(cancel, bool) else ci_paths.evaluate(cancel, ctx) is True)
 
 
 def _push(sha: str, ref: str = "refs/heads/main", attempt: str = "1") -> dict[str, object]:
@@ -441,3 +442,166 @@ def test_coverage_map_skips_a_cancelled_ci_run_in_a_group_of_its_own() -> None:
         cond = wf["jobs"][job]["if"]
         assert ci_paths.evaluate(cond, ctx("success")) is True, job
         assert ci_paths.evaluate(cond, ctx("cancelled")) is False, job
+
+
+# ---- a branch head: CI on a conflicting pull request's own commits (ci-branch.yml) ------
+
+BRANCH_WF = WORKFLOWS / "ci-branch.yml"
+TAG_GUARD = ci_paths.ROOT / "tools" / "release" / "tag-guard.sh"
+
+
+def _yaml(path: Path) -> dict[str, object]:
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data["on"] = data.get("on", data.get(True))  # YAML 1.1 reads a bare `on` key as true
+    return data
+
+
+def test_ci_branch_runs_on_every_other_branchs_push_and_never_on_pull_request_target() -> None:
+    on = _yaml(BRANCH_WF)["on"]
+    assert set(on) == {"push"}, "a push trigger only: never pull_request_target (it runs a fork's code with secrets)"
+    assert on["push"]["branches"] == ["**", "!main", "!release/**"]  # main and release/**: ci.yml's own push
+    assert on["push"]["paths-ignore"] == [ci_paths.TRAIL]
+    for wf in WORKFLOWS.glob("*.yml"):
+        if wf.name != "labeler.yml":  # labels only: no checkout of the pull request's code
+            assert "pull_request_target" not in _yaml(wf)["on"], wf.name
+
+
+def test_ci_yml_keeps_its_pull_request_and_main_triggers_and_is_callable_with_a_base() -> None:
+    on = _yaml(ci_paths.CI_YML)["on"]
+    assert on["pull_request"] == {"branches": ["main", "release/**"]}  # the merge ref still gates the merge
+    assert on["push"]["branches"] == ["main", "release/**"]
+    assert on["workflow_call"]["inputs"] == {
+        "base": {
+            "description": on["workflow_call"]["inputs"]["base"]["description"],
+            "type": "string",
+            "required": True,
+        }
+    }
+
+
+def test_ci_branch_calls_ci_yml_only_when_its_guard_says_so_with_the_merge_base() -> None:
+    jobs = _yaml(BRANCH_WF)["jobs"]
+    assert set(jobs) == {"pr", "ci"}  # no job of its own is named ci-success: its rollup is `ci / ci-success`
+    pr, ci = jobs["pr"], jobs["ci"]
+    assert any("tools/ci/branch_head.py" in str(s.get("run", "")) for s in pr["steps"])
+    assert pr["outputs"] == {"run": "${{ steps.pr.outputs.run }}", "base": "${{ steps.pr.outputs.base }}"}
+    assert ci["needs"] == ["pr"]
+    assert ci["if"] == "needs.pr.outputs.run == 'true'"
+    assert ci["uses"] == "./.github/workflows/ci.yml"
+    assert ci["with"] == {"base": "${{ needs.pr.outputs.base }}"}
+    assert "secrets" not in ci  # ci.yml reads no secret
+
+
+def _permissions(path: Path) -> dict[str, str]:
+    """Every permission a workflow's jobs (and the reusable workflows they call) ask for."""
+    wf = _yaml(path)
+    out: dict[str, str] = dict(wf.get("permissions") or {})
+    for job in wf["jobs"].values():
+        out.update({k: v for k, v in (job.get("permissions") or {}).items() if out.get(k) != "write"})
+        uses = str(job.get("uses", ""))
+        if uses.startswith("./.github/workflows/"):
+            for k, v in _permissions(ci_paths.ROOT / uses[2:]).items():
+                if out.get(k) != "write":
+                    out[k] = v
+    return out
+
+
+def test_ci_branch_grants_every_permission_ci_yml_asks_for() -> None:
+    # a called job asking for more than its caller grants fails the whole run at startup
+    granted = _yaml(BRANCH_WF)["jobs"]["ci"]["permissions"]
+    rank = {"none": 0, "read": 1, "write": 2}
+    for k, v in _permissions(ci_paths.CI_YML).items():
+        assert rank[granted.get(k, "none")] >= rank[v], f"ci-branch.yml's ci job grants {k}: {granted.get(k)}, ci.yml asks {v}"
+
+
+def test_ci_reads_no_secret() -> None:
+    # a branch head runs with the repository's secrets (a push takes write access); none are read
+    for wf in [ci_paths.CI_YML, BRANCH_WF, *WORKFLOWS.glob("_*.yml")]:
+        if wf.name != "_tag-guard.yml":
+            assert "secrets." not in wf.read_text(encoding="utf-8"), wf.name
+
+
+def test_a_branch_heads_run_has_its_own_group_per_branch_and_a_newer_push_cancels_it() -> None:
+    feat = _push("aaa", ref="refs/heads/feat/x") | {"ref_name": "feat/x"}
+    assert _concurrency("ci-branch.yml", **feat) == ("ci-branch-feat/x", True)
+    # ci.yml, called on it: its commit's own group, never the pull request's (ci-<number>),
+    # so neither run cancels the other
+    assert _concurrency("ci.yml", **feat) == ("ci-aaa", False)
+
+
+def test_the_tag_guard_waits_on_ci_yml_runs_only() -> None:
+    # a branch head's runs are ci-branch.yml's: never what lets a tag through
+    assert 'ci="${CI_WORKFLOW:-ci.yml}"' in TAG_GUARD.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("name", list(CASES))
+def test_a_branch_head_runs_what_its_pull_request_would(name: str) -> None:
+    files, jobs, want_parts = CASES[name]
+    runs = run(*files, event="branch")
+    assert ran(runs) == (ALWAYS - {"pr-body-check"}) | jobs
+    for job, want in want_parts.items():
+        assert parts(runs, job) == want
+
+
+def test_a_branch_head_checks_its_tests_from_the_merge_base() -> None:
+    job = ci_paths.load_workflow().jobs["affected-tests"]
+    env = next(s for s in job["steps"] if "gate" in str(s.get("run", "")))["env"]
+    assert env["BASE"] == "${{ github.event.pull_request.base.sha || inputs.base }}"
+    assert env["HEAD"] == "${{ github.event.pull_request.head.sha || github.sha }}"
+
+
+def test_a_branch_heads_filters_compare_against_the_merge_base() -> None:
+    changes = ci_paths.load_workflow().jobs["changes"]
+    steps = {s.get("id"): s for s in changes["steps"]}
+    for sid in ("filter", "repo"):
+        assert steps[sid]["with"]["base"] == "${{ inputs.base }}"
+        assert steps[sid]["with"]["ref"] == "${{ github.event_name == 'push' && github.sha || '' }}"
+    assert "--base \"${BASE:-HEAD^1}\"" in steps["apple"]["run"]
+    assert steps["apple"]["env"] == {"BASE": "${{ inputs.base }}"}
+    assert "git fetch --no-tags --depth=1 origin \"$BASE\"" in steps["scope"]["run"]
+
+
+def test_a_branch_head_of_only_the_trail_starts_no_run() -> None:
+    assert run("docs/claude-trail.md", event="branch") == {}
+    assert ran(run("docs/claude-trail.md", "README.md", event="branch")) == ALWAYS - {"pr-body-check"}
+
+
+def test_a_branch_head_never_saves_main_s_linux_downloads() -> None:
+    assert run("tools/release/linux-app/pins.env", event="branch")["linux-app-downloads"] is None
+
+
+def test_guard_catches_a_pull_request_event_job_not_marked_pr_event() -> None:
+    # pr-body-check reads the pull request event, so a branch head skips it: unmarked, that
+    # is a branch head running less than its pull request would
+    wf = ci_paths.load_workflow()
+    wf.markers["pr-body-check"] -= {"pr-event"}
+    assert any(
+        "a branch head with no filter changed runs [] and not ['pr-body-check']" in e for e in ci_paths.guard(wf)
+    )
+
+
+def test_guard_catches_an_output_not_true_on_a_full_run() -> None:
+    wf = ci_paths.load_workflow()
+    wf.jobs["changes"]["outputs"]["lint_go"] = "${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_go == 'true' }}"
+    assert any("changes output lint_go must be" in e for e in ci_paths.guard(wf))
+
+
+def test_guard_catches_a_filter_step_without_the_merge_base() -> None:
+    wf = ci_paths.load_workflow()
+    step = next(s for s in wf.jobs["changes"]["steps"] if s.get("id") == "filter")
+    del step["with"]["base"]
+    assert any("`filter` step must compare a branch head" in e for e in ci_paths.guard(wf))
+
+
+@pytest.mark.parametrize(
+    ("event", "ref", "want"),
+    [
+        ("push", "refs/heads/main", True),
+        ("push", "refs/heads/release/0.3", True),
+        ("push", "refs/heads/feat/x", False),
+        ("pull_request", "refs/pull/1/merge", False),
+    ],
+)
+def test_linux_downloads_only_on_main_and_release_pushes(event: str, ref: str, want: bool) -> None:
+    cond = ci_paths.load_workflow().jobs["linux-app-downloads"]["if"]
+    assert ci_paths.evaluate(cond, {"github": {"event_name": event, "ref": ref}}) is want

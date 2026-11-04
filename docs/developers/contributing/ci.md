@@ -27,6 +27,38 @@ file matches one of them. Each gated job runs only when its filter is true.
 So a change to `pipeline/` runs the pipeline lint and unit jobs, not the Apple or
 Android builds; a change to `apps/android/` runs the Android jobs, not the Go tests.
 
+## A pull request that conflicts with its base
+
+`ci.yml` tests a pull request's merge ref. When the pull request conflicts with its base,
+GitHub cannot build that ref and starts no `pull_request` run, so the branch would get no
+CI result until the base is merged in again. A second workflow,
+[.github/workflows/ci-branch.yml](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/.github/workflows/ci-branch.yml),
+covers that case:
+
+- It runs on every push to a branch other than `main` and `release/*`. Its first job,
+  `pr` (`tools/ci/branch_head.py`), finds the branch's open pull request into `main` or
+  `release/*`.
+- No pull request, or a mergeable one: nothing more runs. A mergeable pull request's own
+  `pull_request` run tests the merge ref, so there is no double run.
+- A pull request that conflicts (or whose mergeability GitHub has not worked out after two
+  minutes): it calls `ci.yml` on the branch head itself. The path filters compare the head
+  with its merge-base with the pull request's base, not with the base's current tip, so
+  the same jobs run as for the pull request, except `pr-body-check` (it reads the pull
+  request event). `affected-tests` checks the commits since the merge-base.
+- Its checks are named `ci / <job>`, and its rollup is `ci / ci-success`. The required
+  `ci-success` check only ever comes from `ci.yml`'s own runs, and a pull request needs no
+  conflicts to merge anyway, so its `pull_request` run still gates the merge. The tag guard
+  waits only on `ci.yml`'s runs.
+- One concurrency group per branch: a newer push cancels the branch's older run. It does
+  not share the `pull_request` run's group, where whichever event came second would
+  cancel the other.
+- No job in `ci.yml` reads a secret. A push event fires only for a push to this
+  repository, which needs write access; a fork's pushes run in the fork.
+
+Merging the base in is still needed to merge. When you open a pull request that already
+conflicts, push again (or re-run the branch's last `CI (branch head)` run) to get a result.
+`tools/ci/ci_paths.py which --branch <files>` says which jobs a branch head runs.
+
 ## The jobs
 
 | Job | What it covers |

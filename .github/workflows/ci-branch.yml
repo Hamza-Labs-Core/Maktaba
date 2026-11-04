@@ -1,0 +1,80 @@
+# CI on a branch head: a pull request's CI result whatever its base is doing.
+#
+# ci.yml runs on a pull request's merge ref. When the pull request conflicts with its base,
+# GitHub cannot build that ref and starts no pull_request run at all, so a large branch got
+# no CI result until the base was merged in again. This workflow runs on every push to a
+# branch other than main and release/** (those run ci.yml's own push trigger), and:
+#
+# - `pr` (tools/ci/branch_head.py) looks for the branch's open pull request into main or
+#   release/**. None, or every one mergeable: nothing more runs (a mergeable pull request's
+#   pull_request run tests the merge ref, so there is no double run). One that conflicts
+#   (or whose mergeability GitHub has not worked out after two minutes): `ci` runs.
+# - `ci` calls ci.yml on the branch head itself, its path filters comparing against the
+#   merge-base with the pull request's base (`base`), not the base's tip.
+#
+# Its checks are named `ci / <job>` (`ci / ci-success` for the rollup), never `ci-success`
+# itself: the check branch protection requires is only ever reported by ci.yml's own runs
+# (the pull_request run gates the merge, a merge needs a mergeable pull request anyway).
+# The tag guard (tools/release/tag-guard.sh) asks for ci.yml's runs, so a run of this
+# workflow never lets a tag through, and coverage-map.yml follows only the CI workflow.
+#
+# Secrets: none of ci.yml's jobs read a secret. A push event only fires for a push to this
+# repository, which takes write access (a collaborator); a fork's pushes run in the fork.
+#
+# tools/ci/tests/test_ci_paths.py pins the trigger, the group and the call.
+
+name: CI (branch head)
+
+on:
+  push:
+    branches: ['**', '!main', '!release/**']
+    # a trail-only commit tests nothing (ci.yml's pull requests run no job for it either)
+    paths-ignore: ['docs/claude-trail.md']
+
+permissions:
+  contents: read
+
+concurrency:
+  # One group per branch: a newer push cancels the branch's older run. Not shared with the
+  # pull_request run's group (ci.yml, `ci-<number>`): there, whichever of the two events
+  # came second would cancel the other, and a cancelled pull_request run fails `ci-success`.
+  group: ci-branch-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  pr:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      run: ${{ steps.pr.outputs.run }}
+      base: ${{ steps.pr.outputs.base }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          sparse-checkout: tools/ci
+          persist-credentials: false
+      - name: Does the branch's pull request conflict with its base?
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: python3 tools/ci/branch_head.py --repo "$REPO" --branch "$BRANCH" --sha "$SHA"
+
+  ci:
+    needs: [pr]
+    if: needs.pr.outputs.run == 'true'
+    # every permission a job of ci.yml or its reusable workflows asks for (a called job may
+    # not ask for more than its caller grants; fork-rerun-comment's write never runs on a push)
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+      actions: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      base: ${{ needs.pr.outputs.base }}
