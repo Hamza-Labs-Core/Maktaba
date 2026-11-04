@@ -105,7 +105,8 @@ func (d *diskAssets) onDisk(id string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.have == nil || time.Since(d.at) > 5*time.Second {
-		have := componentseed.Assets(components.Default(), componentseed.Disk{Config: d.cfg, ReleaseDir: d.releaseDir, Ollama: d.ollama})
+		have := componentseed.Assets(components.Default(), componentseed.Disk{Config: d.cfg, ReleaseDir: d.releaseDir, Ollama: d.ollama,
+			Python: supervisor.PipelinePython(supervisor.Options{Config: d.cfg, ReleaseDir: d.releaseDir})})
 		venvs := []string{filepath.Join(d.cfg.StateDir(), "venv")}
 		if d.releaseDir != "" {
 			venvs = append(venvs, filepath.Join(d.releaseDir, "venv"))

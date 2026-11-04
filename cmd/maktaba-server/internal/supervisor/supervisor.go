@@ -435,6 +435,10 @@ func pythonFor(opts Options) string {
 	return pythonExecutable(opts.ReleaseDir)
 }
 
+// PipelinePython is the interpreter the pipeline runs with for opts (pythonFor): what the
+// asset checks look in (componentseed.Disk.Python).
+func PipelinePython(opts Options) string { return pythonFor(opts) }
+
 // PipelineOwnEnv says whether the pipeline runs the environment built from this
 // release's own wheel (a plain server's <release>/venv, the desktop app's venv from its
 // payload), and so answers with the release's version (Epic 35 story 35.4 AC7): not
