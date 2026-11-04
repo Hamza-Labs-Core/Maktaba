@@ -215,7 +215,10 @@ def test_rules_sections_exist() -> None:
 
 def _check_copy() -> None:
     shared = (_SHARED / "catalog.toml").read_bytes()
-    assert catalog.raw() == shared, "the pipeline's catalog.toml differs: run make catalog-sync"
+    # a plain raise, not assert: pytest would diff the two files line by line (untruncated
+    # under CI=true), which takes over a second and trips the unit soft cap
+    if catalog.raw() != shared:
+        raise AssertionError("the pipeline's catalog.toml differs: run make catalog-sync")
 
 
 # T05: the packaged copy is the shared file, byte for byte.
