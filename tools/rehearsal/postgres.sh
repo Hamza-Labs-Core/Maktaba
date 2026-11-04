@@ -38,7 +38,7 @@ have="$(sha256sum "$dl/$file" | awk '{print $1}')"
 [ "$want" = "$have" ] || { echo "postgres.sh: $file: sha256 $have, checksums.txt says $want" >&2; exit 1; }
 mkdir -p "$dl/x"
 tar -xzf "$dl/$file" -C "$dl/x" --wildcards '*/postgres/*'
-src="$(dirname "$(dirname "$(find "$dl/x" -path '*/postgres/bin/postgres' -type f | head -1)")")"
+src="$(dirname "$(dirname "$(find "$dl/x" -path '*/postgres/bin/postgres' -type f | sed -n 1p)")")"
 [ -x "$src/bin/postgres" ] || { echo "postgres.sh: no postgres/bin/postgres in $file" >&2; exit 1; }
 mkdir -p "$(dirname "$out")"
 rm -rf "$out"

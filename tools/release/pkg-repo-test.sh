@@ -308,8 +308,8 @@ if [ "${rpms}" = true ] && has docker && docker info >/dev/null 2>&1 && has pyth
             set -u
             dnf_=(dnf -y --disablerepo="*" --enablerepo=maktaba)
             dnf4=false
-            dnf --version 2>/dev/null | head -1 | grep -q "^4\." && dnf4=true
-            echo "== $(dnf --version 2>/dev/null | head -1)"
+            dnf --version 2>/dev/null | sed -n 1p | grep -q "^4\." && dnf4=true
+            echo "== $(dnf --version 2>/dev/null | sed -n 1p)"
             cp /repos/good.repo /etc/yum.repos.d/maktaba.repo
             "${dnf_[@]}" --refresh makecache || { echo "makecache of the repository failed"; exit 1; }
             n="$("${dnf_[@]}" -q list --showduplicates --available maktaba-server 2>/dev/null | grep -c "^maktaba-server\.$(uname -m) ")"

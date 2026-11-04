@@ -65,7 +65,7 @@ for mod in "${modules[@]}"; do
   if [[ $test_rc -ne 0 ]]; then
     echo "::error::go test failed in $mod (exit $test_rc) — cannot measure coverage"
     # what failed (the passing packages' lines are left out)
-    grep -E -A30 '^(--- FAIL|FAIL|panic:)|\[(setup|build) failed\]' "$out" | head -150 || true
+    grep -E -A30 '^(--- FAIL|FAIL|panic:)|\[(setup|build) failed\]' "$out" | sed -n 1,150p || true
     rc=1
     continue
   fi

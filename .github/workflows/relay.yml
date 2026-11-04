@@ -363,7 +363,7 @@ jobs:
             read -r run status conclusion <<<"$(release_run)" || true
             if [ -n "${run}" ]; then
               guard="$(gh run view "${run}" --repo "${GITHUB_REPOSITORY}" --json jobs \
-                --jq '.jobs[] | select(.name | startswith("guard")) | .conclusion' 2>/dev/null | head -1 || true)"
+                --jq '.jobs[] | select(.name | startswith("guard")) | .conclusion' 2>/dev/null | sed -n 1p || true)"
               if [ "${guard}" = failure ]; then
                 echo "::error::the tag guard refused ${TAG} (release.yml run ${run}): it is never published; nothing deployed"
                 exit 1

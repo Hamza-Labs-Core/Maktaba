@@ -134,7 +134,7 @@ jobs:
           APT_CACHE_DIR: /home/runner/apt-cache
         run: |
           tools/ci/apt-install.sh ffmpeg >/dev/null
-          ffmpeg -hide_banner -version | head -1
+          ffmpeg -hide_banner -version | sed -n 1p
 
       - name: Pipeline file tests, real ffmpeg
         working-directory: pipeline

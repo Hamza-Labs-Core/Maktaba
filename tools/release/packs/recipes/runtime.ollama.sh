@@ -10,7 +10,7 @@ stage="$1" platform="$2"
 die() { echo "runtime.ollama: $*" >&2; exit 1; }
 [ "$platform" = darwin-arm64 ] || die "a pack of darwin-arm64 only, not $platform"
 pins="${REPO_ROOT:?}/tools/release/mac-app/pins.env"
-pin() { sed -n "s/^$1=//p" "$pins" | head -n 1; }
+pin() { sed -n "s/^$1=//p" "$pins" | sed -n 1p; }
 version="$(pin OLLAMA_VERSION)" url="$(pin OLLAMA_URL)" sha="$(pin OLLAMA_SHA256)"
 if [ -z "$version" ] || [ -z "$url" ] || [ -z "$sha" ]; then die "no Ollama pin in $pins"; fi
 work="${WORK:?}"

@@ -28,7 +28,7 @@ jobs:
 
       - name: shellcheck
         run: |
-          shellcheck --version | head -2
+          shellcheck --version | sed -n 1,2p
           shellcheck -x tools/release/win-app/payload.sh tools/release/win-app/check.sh \
             tools/release/win-app/build-app.sh tools/release/win-app/test-hooks.sh \
             deploy/packaging/node/build-release.sh

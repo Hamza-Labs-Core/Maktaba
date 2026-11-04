@@ -32,7 +32,7 @@ if [ -z "$key" ]; then
 fi
 # one PEM PUBLIC KEY block and nothing else
 lines="$(printf '%s\n' "$key" | sed '/^[[:space:]]*$/d')"
-first="$(printf '%s\n' "$lines" | head -n 1)"
+first="$(printf '%s\n' "$lines" | sed -n 1p)"
 last="$(printf '%s\n' "$lines" | tail -n 1)"
 if [ "$first" != "-----BEGIN PUBLIC KEY-----" ] || [ "$last" != "-----END PUBLIC KEY-----" ]; then
   echo "license-key: MAKTABA_LICENSE_PUBKEY is not one PEM PUBLIC KEY block" >&2
