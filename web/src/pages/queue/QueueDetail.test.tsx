@@ -1,6 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred, type Deferred } from "../../test/deferred";
 
 const { get, post, put, patch, hub } = vi.hoisted(() => {
   const channels = new Map<string, Set<(ev: unknown) => void>>();
@@ -27,6 +28,7 @@ vi.mock("../../lib/api", async () => {
 vi.mock("../../lib/ws", () => ({ subscribe: hub.subscribe }));
 
 import { QueueDetail } from "./QueueDetail";
+import { SNAPSHOT_POLL_MS, SNAPSHOT_SILENCE_MS } from "../../lib/useQueueStream";
 import { renderAt, routeGet } from "../../test/queueHarness";
 import {
   detailFixture,
@@ -212,5 +214,148 @@ describe("QueueDetail", () => {
     );
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByRole("checkbox", { name: "Place episodes" })).toBeChecked();
+  });
+});
+
+// A read still on its way when the queue is changed here has the old state: once
+// the home has the change, its answer must not undo it on screen.
+describe("QueueDetail, reads and changes in order", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    get.mockReset();
+    post.mockReset().mockResolvedValue(undefined);
+    patch.mockReset().mockResolvedValue({});
+    hub.reset();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const user = () => userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+  const calls = (path: string) => get.mock.calls.filter((c) => String(c[0]).split("?")[0] === path);
+  /** The answers in turn, then `rest` for every read after them. */
+  const inTurn =
+    (rest: unknown, ...answers: unknown[]) =>
+    () =>
+      answers.length ? answers.shift() : rest;
+  function routes(stage: string, queues: () => unknown, detail: () => unknown) {
+    routeGet(get, {
+      "/api/queues": queues,
+      [`/api/queues/${stage}`]: detail,
+      [`/api/queues/${stage}/rate`]: rateFixture,
+      "/api/queues/libraries": { items: librariesFixture },
+      "/api/activity": { items: [], next: null },
+    });
+    return renderAt(<QueueDetail />, `/queue/${stage}`, "/queue/:stage");
+  }
+  const withStage = (stage: string, over: Record<string, unknown>) => ({
+    ...snapshotFixture,
+    stages: snapshotFixture.stages.map((s) => (s.stage === stage ? { ...s, ...over } : s)),
+  });
+  /** The SSE stream is silent: after its 10 s the page polls /api/queues every 5 s. */
+  const untilThePoll = () =>
+    act(async () => {
+      await vi.advanceTimersByTimeAsync(SNAPSHOT_SILENCE_MS + SNAPSHOT_POLL_MS);
+    });
+  const answer = async (d: Deferred<unknown>, v: unknown) => {
+    d.resolve(v);
+    await act(async () => {
+      await d.promise;
+    });
+  };
+
+  it.each([
+    ["Retry", /^Retry 2/, "retry" as const, "/api/queues/fingerprint/retry"],
+    ["Apply", /^Apply$/, "apply" as const, "/api/queues/fingerprint/apply"],
+  ])(
+    "a reload after a finished job that began before %s does not bring the group back",
+    async (_what, button, action, url) => {
+      const base = detailFixture("fingerprint");
+      const before = { ...base, failures: base.failures.map((g) => ({ ...g, action })) };
+      const older = deferred<unknown>();
+      routes(
+        "fingerprint",
+        () => snapshotFixture,
+        inTurn({ ...base, failures: [] }, before, older.promise)
+      );
+      const u = user();
+      await screen.findByRole("button", { name: button });
+      // a job finishes: the page reads the queue again, at most once per 10 s
+      act(() => hub.emit("jobs", events.jobFinished(jobRef({ id: 4242, stage: "fingerprint" }))));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(11_000);
+      });
+      expect(calls("/api/queues/fingerprint")).toHaveLength(2);
+
+      await u.click(screen.getByRole("button", { name: button }));
+      expect(post).toHaveBeenCalledWith(url, expect.anything());
+      expect(await screen.findByText("Nothing needs attention.")).toBeInTheDocument();
+
+      await answer(older, before);
+      expect(screen.getByText("Nothing needs attention.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: button })).toBeNull();
+    }
+  );
+
+  it("a snapshot poll that began before Pause does not show the queue running again", async () => {
+    const older = deferred<unknown>();
+    const paused = withStage("fingerprint", { paused: true });
+    routes("fingerprint", inTurn(paused, snapshotFixture, older.promise), () =>
+      detailFixture("fingerprint")
+    );
+    const u = user();
+    await screen.findByRole("button", { name: "Pause this queue" });
+    await untilThePoll();
+    expect(calls("/api/queues")).toHaveLength(2);
+
+    await u.click(screen.getByRole("button", { name: "Pause this queue" }));
+    expect(post).toHaveBeenCalledWith("/api/queues/fingerprint/pause");
+    // the home's stream says so
+    act(() => hub.emit("queues", { type: "queues.snapshot", payload: paused }));
+    expect(await screen.findByRole("button", { name: "Resume this queue" })).toBeInTheDocument();
+
+    await answer(older, snapshotFixture);
+    expect(screen.getByRole("button", { name: "Resume this queue" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause this queue" })).toBeNull();
+  });
+
+  it("a snapshot poll that began before Resume does not show the queue paused again", async () => {
+    const older = deferred<unknown>();
+    const paused = withStage("link", { paused: true });
+    routes("link", inTurn(snapshotFixture, paused, older.promise), () => detailFixture("link"));
+    const u = user();
+    await screen.findByRole("button", { name: "Resume this queue" });
+    await untilThePoll();
+    expect(calls("/api/queues")).toHaveLength(2);
+
+    await u.click(screen.getByRole("button", { name: "Resume this queue" }));
+    expect(post).toHaveBeenCalledWith("/api/queues/link/resume");
+    act(() => hub.emit("queues", { type: "queues.snapshot", payload: snapshotFixture }));
+    expect(await screen.findByRole("button", { name: "Pause this queue" })).toBeInTheDocument();
+
+    await answer(older, paused);
+    expect(screen.getByRole("button", { name: "Pause this queue" })).toBeInTheDocument();
+  });
+
+  it("a snapshot poll that began before a write-mode change does not set it back", async () => {
+    const older = deferred<unknown>();
+    const review = withStage("plex_collection", { write_mode: "review" });
+    routes("plex_collection", inTurn(review, snapshotFixture, older.promise), () =>
+      detailFixture("plex_collection")
+    );
+    const u = user();
+    const mode = await screen.findByRole("combobox", { name: "Writes to other systems" });
+    expect(mode).toHaveValue("auto");
+    await untilThePoll();
+    expect(calls("/api/queues")).toHaveLength(2);
+
+    await u.selectOptions(mode, "review");
+    expect(patch).toHaveBeenCalledWith("/api/queues/plex_collection", { write_mode: "review" });
+    act(() => hub.emit("queues", { type: "queues.snapshot", payload: review }));
+    await waitFor(() => expect(mode).toHaveValue("review"));
+
+    await answer(older, snapshotFixture);
+    expect(screen.getByRole("combobox", { name: "Writes to other systems" })).toHaveValue("review");
   });
 });

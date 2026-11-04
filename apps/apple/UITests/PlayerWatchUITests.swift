@@ -131,9 +131,9 @@ final class PlayerWatchUITests: PlayerUITestCase {
         let before = Int(state["position"] ?? "") ?? 0
         app.buttons["player.quality.3000"].tap()
         waitFor("a session capped at 3000 kb/s") { sessions().contains { $0["max_bitrate_kbps"] as? Int == 3000 } }
-        // a reopened player says it plays before its first position comes in (0 until then:
-        // an iPhone run read "0 once it played on"), so the read waits for a real one
-        waitFor("it plays on, capped, at a position") {
+        // the capped item reports playing before its seek to the start lands (position 0 on
+        // an iPad run of #624, an iPhone run of #608): its position is read once it has moved off 0
+        waitFor("it plays on, capped") {
             state["quality"] == "3000" && state["playing"] == "true" && (Int(state["position"] ?? "") ?? 0) > 0
         }
         let after = Int(state["position"] ?? "") ?? 0

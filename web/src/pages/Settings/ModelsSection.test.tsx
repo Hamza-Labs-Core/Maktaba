@@ -17,6 +17,7 @@ vi.mock("../../lib/api", async () => {
 import { ApiError, type Problem } from "../../lib/api";
 import { memberUser, quietCrash, renderPage } from "../../test/pageHarness";
 import { ModelsSection } from "./ModelsSection";
+import { deferred } from "../../test/deferred";
 import en from "../../i18n/en.json";
 
 type M = Record<string, unknown>;
@@ -257,6 +258,49 @@ describe("Settings models (test-cases/settings-models.md)", () => {
     expect(del).toHaveBeenCalledWith("/api/models/e5");
     await waitFor(() => expect(within(card("E5 base")).getByText("Available")).toBeInTheDocument());
     expect(buttons(card("E5 base"))).toEqual(["Download"]);
+  });
+
+  it("SMD-07: a model deleted while a download's poll is on its way stays deleted", async () => {
+    const user = fakeClock();
+    const busy = { ...large, status: "downloading", progress: 20 };
+    const before = [small, busy, e5];
+    const after = [small, busy, { ...e5, status: "available", progress: 0 }];
+    const poll = deferred();
+    get
+      .mockImplementationOnce(() => Promise.resolve(structuredClone(before)))
+      .mockImplementationOnce(() => poll.promise)
+      .mockImplementation(() => Promise.resolve(structuredClone(after)));
+    renderModels();
+    await screen.findByRole("progressbar");
+    await tick(600);
+    expect(modelCalls()).toBe(2);
+    await user.click(within(card("E5 base")).getByRole("button", { name: "Delete" }));
+    expect(del).toHaveBeenCalledWith("/api/models/e5");
+    await waitFor(() => expect(within(card("E5 base")).getByText("Available")).toBeInTheDocument());
+    // the poll begun before the delete lands last, the model still downloaded
+    await act(async () => poll.resolve(structuredClone(before)));
+    expect(within(card("E5 base")).getByText("Available")).toBeInTheDocument();
+    expect(buttons(card("E5 base"))).toEqual(["Download"]);
+  });
+
+  it("SMD-05: a model activated while a download's poll is on its way stays active", async () => {
+    const user = fakeClock();
+    const busy = { ...large, status: "downloading", progress: 20 };
+    const before = [small, busy, e5];
+    const after = [small, busy, { ...e5, status: "active", active: true }];
+    const poll = deferred();
+    get
+      .mockImplementationOnce(() => Promise.resolve(structuredClone(before)))
+      .mockImplementationOnce(() => poll.promise)
+      .mockImplementation(() => Promise.resolve(structuredClone(after)));
+    renderModels();
+    await screen.findByRole("progressbar");
+    await tick(600);
+    await user.click(within(card("E5 base")).getByRole("button", { name: "Activate" }));
+    expect(patch).toHaveBeenCalledWith("/api/models/e5/activate");
+    await waitFor(() => expect(within(card("E5 base")).getByText("Active")).toBeInTheDocument());
+    await act(async () => poll.resolve(structuredClone(before)));
+    expect(within(card("E5 base")).getByText("Active")).toBeInTheDocument();
   });
 
   it("SMD-08: Test a model shows pass / fail", async () => {

@@ -17,6 +17,7 @@
 //                        every 30 s.
 import { useEffect, useRef, useState } from "react";
 import type { JobEvent } from "./clusterApi";
+import { useReadOrder } from "./readOrder";
 import { socketFallback, useSocketTopic, type HubMessage } from "./clusterSocket";
 import { queueApi } from "./queueApi";
 import type { JobRef, JobState, LogLine, QueuesSnapshot, WorkerHost } from "./queueApi";
@@ -34,6 +35,11 @@ export interface SnapshotState {
   /** true while the live streams are silent and we are polling instead. */
   polling: boolean;
   reload: () => void;
+  /**
+   * Runs a change the snapshot shows (pause, resume, a pool size): no snapshot
+   * read that began before it ends is applied after it.
+   */
+  saving<T>(save: () => Promise<T>): Promise<T>;
 }
 
 function isSnapshot(v: unknown): v is QueuesSnapshot {
@@ -53,19 +59,29 @@ export function useQueuesSnapshot(): SnapshotState {
   const [error, setError] = useState(false);
   const [polling, setPolling] = useState(false);
   const alive = useRef(true);
+  // the REST reads, the socket's and the SSE stream's pushes and the changes
+  // made here, in order: an older REST answer never overrides a newer push
+  const order = useReadOrder();
+  // a pushed snapshot is an answer that lands as it is taken
+  const pushed = (s: QueuesSnapshot) => {
+    if (!order.fresh(order.begin())) return;
+    setSnapshot(s);
+    setError(false);
+  };
 
-  const fetchOnce = useRef(() =>
-    queueApi
+  const fetchOnce = useRef(() => {
+    const ticket = order.begin();
+    return queueApi
       .snapshot()
       .then((s) => {
-        if (!alive.current) return;
+        if (!alive.current || !order.fresh(ticket)) return;
         setSnapshot(s);
         setError(false);
       })
       .catch(() => {
-        if (alive.current) setError(true);
-      })
-  );
+        if (alive.current && order.fresh(ticket)) setError(true);
+      });
+  });
 
   useEffect(() => {
     alive.current = true;
@@ -77,9 +93,7 @@ export function useQueuesSnapshot(): SnapshotState {
 
   const status = useSocketTopic("queues", (msg) => {
     const s = hubSnapshot(msg);
-    if (!s) return;
-    setSnapshot(s);
-    setError(false);
+    if (s) pushed(s);
   });
   const sse = socketFallback(status);
 
@@ -110,8 +124,7 @@ export function useQueuesSnapshot(): SnapshotState {
       if (ev.type !== "queues.snapshot" || !ev.payload) return;
       stopPolling();
       armSilence();
-      setSnapshot(ev.payload as unknown as QueuesSnapshot);
-      setError(false);
+      pushed(ev.payload as unknown as QueuesSnapshot);
     });
     return () => {
       off();
@@ -120,7 +133,13 @@ export function useQueuesSnapshot(): SnapshotState {
     };
   }, [sse]);
 
-  return { snapshot, error, polling, reload: () => void fetchOnce.current() };
+  return {
+    snapshot,
+    error,
+    polling,
+    reload: () => void fetchOnce.current(),
+    saving: order.saving,
+  };
 }
 
 // ---- job stream ----------------------------------------------------------

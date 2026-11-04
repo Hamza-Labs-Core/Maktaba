@@ -17,6 +17,7 @@ import com.hamzalabs.maktaba.core.api.homeRails
 import com.hamzalabs.maktaba.core.api.recommendations
 import com.hamzalabs.maktaba.core.api.videoDetail
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.player.ReadOrder
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -62,6 +63,9 @@ class HomeState(
     var loading by mutableStateOf(false)
         private set
 
+    /** The order of the recommendations' reads and Not interested: a read older than one is dropped. */
+    private val recsOrder = ReadOrder()
+
     private var restored = false
     private val asking = mutableSetOf<String>()
 
@@ -89,6 +93,7 @@ class HomeState(
     /** Reads Home, its recommendations and Live TV on now together. */
     suspend fun load() {
         loading = true
+        val ticket = recsOrder.begin()
         try {
             coroutineScope {
                 val r = async { runCatching { client.recommendations() } }
@@ -108,7 +113,8 @@ class HomeState(
                 rails = h
                 problem = null
                 stale = false
-                r.await().onSuccess { recs = it }.onFailure { extraFailed("recommendations", it) }
+                // read before a Not interested saved: it still has the card, so it is dropped
+                r.await().onSuccess { if (recsOrder.fresh(ticket)) recs = it }.onFailure { extraFailed("recommendations", it) }
                 n.await().onSuccess { now = it }.onFailure { extraFailed("live now", it); now = null }
                 save()
             }
@@ -151,20 +157,36 @@ class HomeState(
         val before = recs
         drop(videoId)
         return try {
-            client.dismissRecommendation(videoId)
+            recsOrder.saving { client.dismissRecommendation(videoId) }
             save()
             true
         } catch (e: CancellationException) {
-            recs = before
+            putBack(videoId, before)
             throw e
         } catch (e: ApiException.SignedOut) {
             signedOut()
             false
         } catch (e: Exception) {
             AppLog.failure("player home not interested", e)
-            recs = before
+            putBack(videoId, before)
             false
         }
+    }
+
+    /**
+     * The card [videoId] back where it was in [before] (its rail, its place), into the rows shown
+     * now: only that card, so nothing newer shown since is undone.
+     */
+    private fun putBack(videoId: String, before: Recommendations?) {
+        val now = recs ?: return
+        val was = before?.rails.orEmpty().firstOrNull { rail -> rail.items.any { it.videoId == videoId } } ?: return
+        val at = was.items.indexOfFirst { it.videoId == videoId }
+        recs = now.copy(
+            rails = now.rails.map { rail ->
+                if (rail.id != was.id || rail.items.any { it.videoId == videoId }) rail
+                else rail.copy(items = rail.items.toMutableList().apply { add(at.coerceIn(0, size), was.items[at]) })
+            },
+        )
     }
 
     private fun drop(videoId: String) {

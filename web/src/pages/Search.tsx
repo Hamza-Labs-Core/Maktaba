@@ -75,6 +75,7 @@ import {
 import { errorText } from "../lib/errorText";
 import { cachedAnswer, keepAnswer } from "../lib/pageCache";
 import { FeatureOffNote, useCapabilities, useFeatureGate } from "../lib/capabilities";
+import { useReadOrder } from "../lib/readOrder";
 
 const VIEW_KEY = "mkt:search:view";
 
@@ -265,20 +266,39 @@ export function Search() {
     };
   }, []);
 
-  const refreshSaved = () =>
-    api
-      .get<{ items: SavedSearch[] }>("/api/search/saved")
-      .then((r) => setSaved(listOf(r?.items)))
-      .catch(() => setSaved([]));
+  // A read of either list that began before a removal still has the removed
+  // row: it is dropped (lib/readOrder).
+  const savedOrder = useReadOrder();
+  const recentOrder = useReadOrder();
+  const savedRef = useRef(saved);
+  savedRef.current = saved;
+  const recentRef = useRef(recent);
+  recentRef.current = recent;
 
-  const refreshRecent = useCallback(
-    () =>
-      api
-        .get<{ items: RecentSearch[] }>("/api/search/recent")
-        .then((r) => setRecent(listOf(r?.items).filter((x) => typeof x.search_id === "string")))
-        .catch(() => setRecent([])),
-    [setRecent]
-  );
+  const refreshSaved = () => {
+    const ticket = savedOrder.begin();
+    return api
+      .get<{ items: SavedSearch[] }>("/api/search/saved")
+      .then((r) => {
+        if (savedOrder.fresh(ticket)) setSaved(listOf(r?.items));
+      })
+      .catch(() => {
+        if (savedOrder.fresh(ticket)) setSaved([]);
+      });
+  };
+
+  const refreshRecent = useCallback(() => {
+    const ticket = recentOrder.begin();
+    return api
+      .get<{ items: RecentSearch[] }>("/api/search/recent")
+      .then((r) => {
+        if (recentOrder.fresh(ticket))
+          setRecent(listOf(r?.items).filter((x) => typeof x.search_id === "string"));
+      })
+      .catch(() => {
+        if (recentOrder.fresh(ticket)) setRecent([]);
+      });
+  }, [recentOrder, setRecent]);
 
   useEffect(() => {
     void refreshSaved();
@@ -711,15 +731,31 @@ export function Search() {
     showUrl({ q: r.q, mode: m, sid: r.search_id }, true);
   }
 
+  // The row leaves the screen once the home has removed it, and the list is
+  // read again; a read that began before the removal is dropped.
   const removeRecent = (id: string) =>
-    void api
-      .delete(`/api/search/recent/${encodeURIComponent(id)}`)
-      .then(refreshRecent)
+    void recentOrder
+      .saving(() => api.delete(`/api/search/recent/${encodeURIComponent(id)}`))
+      .then(() => {
+        setRecent(recentRef.current.filter((r) => r.search_id !== id));
+        return refreshRecent();
+      })
       .catch(() => {});
   const clearRecent = () =>
-    void api
-      .delete("/api/search/recent")
-      .then(refreshRecent)
+    void recentOrder
+      .saving(() => api.delete("/api/search/recent"))
+      .then(() => {
+        setRecent([]);
+        return refreshRecent();
+      })
+      .catch(() => {});
+  const removeSaved = (id: string) =>
+    void savedOrder
+      .saving(() => api.delete(`/api/search/saved/${encodeURIComponent(id)}`))
+      .then(() => {
+        setSaved(savedRef.current.filter((s) => s.id !== id));
+        return refreshSaved();
+      })
       .catch(() => {});
 
   // Links from the results carry the search and both pages, so the
@@ -914,12 +950,7 @@ export function Search() {
                       type="button"
                       className="mkt-icon-btn"
                       aria-label={`${t("common.delete")} ${s.q}`}
-                      onClick={() =>
-                        void api
-                          .delete(`/api/search/saved/${encodeURIComponent(s.id)}`)
-                          .then(refreshSaved)
-                          .catch(() => {})
-                      }
+                      onClick={() => removeSaved(s.id)}
                     >
                       ×
                     </button>

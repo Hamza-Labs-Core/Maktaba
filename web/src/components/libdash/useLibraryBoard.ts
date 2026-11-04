@@ -6,6 +6,7 @@
 // empty, so the rest still shows.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queueApi } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import type {
   LibraryActivityResponse,
   LibraryQueueRow,
@@ -27,6 +28,11 @@ export interface LibraryBoard {
   stages: StageInfo[];
   error: boolean;
   reload: () => void;
+  /**
+   * Reads again after a change made elsewhere (a source removed, work queued):
+   * the reads under way began before it and are dropped.
+   */
+  reloadAfterChange: () => void;
 }
 
 export function activityById(r: LibraryActivityResponse | null | undefined): Map<string, Activity> {
@@ -57,34 +63,43 @@ export function useLibraryBoard(days = 14): LibraryBoard {
   const [stages, setStages] = useState<StageInfo[]>([]);
   const [error, setError] = useState(false);
   const alive = useRef(true);
+  // One ticket per round of the four reads: an answer from an older round (it
+  // began before a change, or a newer round's answer is already shown) is dropped.
+  const order = useReadOrder();
 
   const reload = useCallback(() => {
+    const ticket = order.begin();
+    const fresh = () => alive.current && order.fresh(ticket);
     queueApi
       .libraries()
       .then((r) => {
-        if (!alive.current) return;
+        if (!fresh()) return;
         setRows(safeLibraries(r?.items));
         setError(false);
       })
-      .catch(() => alive.current && setError(true));
+      .catch(() => fresh() && setError(true));
     queueApi
       .offlineSummaries()
       .then((r) => {
-        if (alive.current && Array.isArray(r?.items))
+        if (Array.isArray(r?.items) && fresh())
           setOffline(Object.fromEntries(r.items.map((s) => [s.library_id, s])));
       })
       .catch(() => {});
     queueApi
       .libraryActivity(days)
-      .then((r) => alive.current && setActivity(activityById(r)))
+      .then((r) => fresh() && setActivity(activityById(r)))
       .catch(() => {});
     queueApi
       .snapshot()
       .then((s) => {
-        if (alive.current && Array.isArray(s?.stages)) setStages(s.stages.map(safeStage));
+        if (Array.isArray(s?.stages) && fresh()) setStages(s.stages.map(safeStage));
       })
       .catch(() => {});
-  }, [days]);
+  }, [days, order]);
+  const reloadAfterChange = useCallback(() => {
+    order.changed();
+    reload();
+  }, [order, reload]);
 
   useEffect(() => {
     alive.current = true;
@@ -95,7 +110,7 @@ export function useLibraryBoard(days = 14): LibraryBoard {
   }, [reload]);
 
   return useMemo(
-    () => ({ rows, offline, activity, stages, error, reload }),
-    [rows, offline, activity, stages, error, reload]
+    () => ({ rows, offline, activity, stages, error, reload, reloadAfterChange }),
+    [rows, offline, activity, stages, error, reload, reloadAfterChange]
   );
 }

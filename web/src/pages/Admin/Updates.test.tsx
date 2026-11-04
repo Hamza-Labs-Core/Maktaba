@@ -3,7 +3,8 @@
 // under way step by step, and offers Cancel (before the switch), Retry, Skip, Roll back
 // and Resume; it pauses and resumes automatic updates.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { deferred } from "../../test/deferred";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post, put, downloadBlob } = vi.hoisted(() => ({
@@ -661,6 +662,110 @@ describe("Admin Updates", () => {
     await waitFor(() =>
       expect(put).toHaveBeenCalledWith("/api/cluster/updates/settings", { auto_install: true })
     );
+  });
+
+  describe("a change is not undone by a poll that began before it", () => {
+    const cancelledRun = { ...liveRun, state: "cancelled", finished_at: finishedAt };
+    const cancelledOv = overview({ run: null, last_run: cancelledRun });
+    const cancelledView = { ...runView, state: "cancelled", finished_at: finishedAt };
+    const pausedOv = (over: Record<string, unknown> = {}) =>
+      overview({
+        policy: { auto_install: false, channel: "stable", window: "03:00-05:00" },
+        ...over,
+      });
+
+    /**
+     * The page follows a run; the next poll's read of `held` (the overview or the run's
+     * own, the first and second of its three reads) stays on its way. Reads answer
+     * `before` until the change is made and `after` from then on.
+     */
+    async function race(
+      held: "overview" | "run",
+      before: { ov: unknown; view: unknown },
+      after: { ov: unknown; view: unknown },
+      change: () => Promise<void>,
+      check: () => void
+    ) {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      try {
+        const poll = deferred();
+        let phase: "shown" | "poll" | "changed" = "shown";
+        let holding = false;
+        const hold = () => {
+          if (phase !== "poll" || holding) return null;
+          holding = true;
+          return poll.promise;
+        };
+        get.mockImplementation((path: string) => {
+          const s = phase === "changed" ? after : before;
+          if (path === "/api/cluster/updates") {
+            if (held === "overview") return hold() ?? Promise.resolve(s.ov);
+            return Promise.resolve(s.ov);
+          }
+          if (path.startsWith("/api/cluster/updates/runs?")) return Promise.resolve({ items: [] });
+          if (path.startsWith("/api/cluster/updates/runs/")) {
+            if (held === "run") return hold() ?? Promise.resolve(s.view);
+            return Promise.resolve(s.view);
+          }
+          return Promise.reject(new Error("unexpected " + path));
+        });
+        renderPage();
+        await screen.findByTestId("updates-run");
+        // the page's own read and its settings card's (read once) have answered
+        await waitFor(() =>
+          expect(get.mock.calls.filter((c) => c[0] === "/api/cluster/updates")).toHaveLength(2)
+        );
+        phase = "poll";
+        await act(async () => vi.advanceTimersByTimeAsync(5000));
+        await waitFor(() => expect(holding).toBe(true));
+        phase = "changed";
+        await change();
+        await waitFor(check);
+        // the poll begun before the change lands last, with the old state
+        await act(async () => poll.resolve(held === "overview" ? before.ov : before.view));
+        check();
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+
+    const noCancel = () => {
+      expect(screen.queryByRole("button", { name: "Cancel this update" })).toBeNull();
+      expect(screen.getByTestId("updates-next")).not.toHaveTextContent("Updating to 1.5.0 now.");
+    };
+
+    it("a cancelled run stays cancelled when the poll's overview lands last", async () => {
+      post.mockResolvedValue({ cancelled: true });
+      await race(
+        "overview",
+        { ov: overview({ run: liveRun }), view: runView },
+        { ov: cancelledOv, view: cancelledView },
+        () => userEvent.click(screen.getByRole("button", { name: "Cancel this update" })),
+        noCancel
+      );
+    });
+
+    it("a cancelled run stays cancelled when the poll's read of the run lands last", async () => {
+      post.mockResolvedValue({ cancelled: true });
+      await race(
+        "run",
+        { ov: overview({ run: liveRun }), view: runView },
+        { ov: cancelledOv, view: cancelledView },
+        () => userEvent.click(screen.getByRole("button", { name: "Cancel this update" })),
+        noCancel
+      );
+    });
+
+    it("paused automatic updates stay paused during a run", async () => {
+      put.mockResolvedValue({ section: "updates", changed: ["auto_install"] });
+      await race(
+        "overview",
+        { ov: overview({ run: liveRun }), view: runView },
+        { ov: pausedOv({ run: liveRun }), view: runView },
+        () => userEvent.click(screen.getByRole("button", { name: "Pause automatic updates" })),
+        () => expect(screen.getAllByTestId("updates-paused")[0]).toBeInTheDocument()
+      );
+    });
   });
 
   it("reads in Arabic", async () => {

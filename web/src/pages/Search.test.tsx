@@ -25,6 +25,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import { ApiError } from "../lib/api";
 import en from "../i18n/en.json";
 import { adminUser, memberUser, quietCrash, renderPage } from "../test/pageHarness";
+import { type Deferred, deferred } from "../test/deferred";
 import {
   type Corpus,
   fakeSearchServer,
@@ -1189,5 +1190,99 @@ describe("Search results redesign (test-cases/search.md SRC-28..)", () => {
     await waitFor(() => expect(loc()).toBe("/search?q=kahf&mode=hybrid&sid=sid-1"));
     expect(await screen.findByText("Fresh")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("These results were refreshed");
+  });
+});
+
+describe("Search: a removal is not undone by a read that began before it", () => {
+  const recentRow = (sid: string, q: string) => ({
+    search_id: sid,
+    q,
+    mode: "fts",
+    created_at: "2026-10-22T09:00:00Z",
+    title_count: 1,
+    transcript_count: 0,
+    live: false,
+  });
+
+  /** Holds every GET of `path` until the test answers it. */
+  function holdReads(path: string) {
+    const reads: Deferred[] = [];
+    const base = get.getMockImplementation()!;
+    get.mockImplementation((url: string) => {
+      if (url !== path) return base(url);
+      const d = deferred();
+      reads.push(d);
+      return d.promise;
+    });
+    return reads;
+  }
+
+  it("SRC-35: a recent search removed while the list is read again leaves at once and stays gone", async () => {
+    serveSearch({ search_id: "sid-new", page_size: 20, videos: [], videos_total: 0 });
+    const reads = holdReads("/api/search/recent");
+    del.mockResolvedValue(undefined);
+    renderSearchPage();
+    const recent = screen.getByRole("complementary", { name: "Recent searches" });
+    await waitFor(() => expect(reads).toHaveLength(1));
+    await act(async () => reads[0]!.resolve({ items: [recentRow("sid-k", "kahf")] }));
+    await within(recent).findByRole("button", { name: /^kahf/ });
+    // a search reads the list again; that read is still on its way
+    await submit("noor");
+    await waitFor(() => expect(reads).toHaveLength(2));
+    await userEvent.setup().click(within(recent).getByRole("button", { name: "Remove kahf" }));
+    // the row leaves once the home removed it, before the next read answers
+    await waitFor(() => expect(within(recent).queryByRole("button", { name: /^kahf/ })).toBeNull());
+    await waitFor(() => expect(reads).toHaveLength(3));
+    await act(async () => reads[2]!.resolve({ items: [recentRow("sid-n", "noor")] }));
+    // the older read lands last, still with the removed row
+    await act(async () =>
+      reads[1]!.resolve({ items: [recentRow("sid-n", "noor"), recentRow("sid-k", "kahf")] })
+    );
+    expect(within(recent).getByRole("button", { name: /^noor/ })).toBeInTheDocument();
+    expect(within(recent).queryByRole("button", { name: /^kahf/ })).toBeNull();
+  });
+
+  it("SRC-35: Clear all while the list is read again leaves it empty", async () => {
+    serveSearch({ search_id: "sid-new", page_size: 20, videos: [], videos_total: 0 });
+    const reads = holdReads("/api/search/recent");
+    del.mockResolvedValue(undefined);
+    renderSearchPage();
+    const recent = screen.getByRole("complementary", { name: "Recent searches" });
+    await waitFor(() => expect(reads).toHaveLength(1));
+    await act(async () => reads[0]!.resolve({ items: [recentRow("sid-k", "kahf")] }));
+    await within(recent).findByRole("button", { name: /^kahf/ });
+    await submit("noor");
+    await waitFor(() => expect(reads).toHaveLength(2));
+    await userEvent.setup().click(within(recent).getByRole("button", { name: "Clear all" }));
+    expect(await within(recent).findByText("Nothing here yet.")).toBeInTheDocument();
+    await act(async () => reads[1]!.resolve({ items: [recentRow("sid-k", "kahf")] }));
+    expect(within(recent).queryByRole("button", { name: /^kahf/ })).toBeNull();
+  });
+
+  it("SRC-20: a saved search deleted while the list is read again leaves at once and stays gone", async () => {
+    serveSearch({});
+    const reads = holdReads("/api/search/saved");
+    post.mockResolvedValue({});
+    del.mockResolvedValue(undefined);
+    renderSearchPage();
+    const user = userEvent.setup();
+    const aside = screen.getByRole("complementary", { name: "Saved searches" });
+    const fox = { id: "s1", q: "fox", mode: "fts" };
+    const dog = { id: "s2", q: "dog", mode: "hybrid" };
+    await waitFor(() => expect(reads).toHaveLength(1));
+    await act(async () => reads[0]!.resolve({ items: [fox] }));
+    await within(aside).findByRole("button", { name: "fox" });
+    // saving reads the list again; that read is still on its way
+    await user.type(screen.getByRole("combobox", { name: "Search" }), "dog");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(reads).toHaveLength(2));
+    await user.click(within(aside).getByRole("button", { name: "Delete fox" }));
+    expect(del).toHaveBeenCalledWith("/api/search/saved/s1");
+    await waitFor(() => expect(within(aside).queryByRole("button", { name: "fox" })).toBeNull());
+    await waitFor(() => expect(reads).toHaveLength(3));
+    await act(async () => reads[2]!.resolve({ items: [dog] }));
+    await act(async () => reads[1]!.resolve({ items: [fox, dog] }));
+    expect(within(aside).getByRole("button", { name: "dog" })).toBeInTheDocument();
+    expect(within(aside).queryByRole("button", { name: "fox" })).toBeNull();
   });
 });

@@ -10,13 +10,17 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { clusterApi, type StandbyHome } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { useFmt } from "../queue/format";
+import type { ReadOrder } from "../../lib/readOrder";
 
 export function StandbyHomes({
   standbys,
   onChange,
+  save = (call) => call(),
 }: {
   standbys: StandbyHome[];
   onChange: (next: StandbyHome[]) => void;
+  /** runs the mark's home call: the card's older reads are not applied */
+  save?: ReadOrder["saving"];
 }) {
   const { t } = useI18n();
   const f = useFmt();
@@ -24,8 +28,7 @@ export function StandbyHomes({
   const [busy, setBusy] = useState<string | null>(null);
   const set = (s: StandbyHome, on: boolean) => {
     setBusy(s.node_id);
-    clusterApi
-      .setStandby(s.node_id, on)
+    save(() => clusterApi.setStandby(s.node_id, on))
       .then((r) => onChange(r.standbys ?? []))
       .catch(() =>
         toast.show({ id: "standby", tone: "error", message: t("machines.standby.failed") })

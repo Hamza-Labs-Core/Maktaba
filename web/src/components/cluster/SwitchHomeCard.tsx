@@ -10,7 +10,7 @@
 //   POST /api/cluster/switchover                  {to_node}
 //   POST /api/cluster/switchover/{id}/cancel      {force, confirm}
 //   POST /api/cluster/switchover/{id}/checklist   {item, done}
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
@@ -21,13 +21,23 @@ import {
   clusterApi,
   type SwitchCandidate,
   type SwitchIntegration,
+  type StandbyHome,
   type SwitchProgress,
   type SwitchStatus,
 } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { useReadOrder, type ReadOrder } from "../../lib/readOrder";
 import { useFmt } from "../queue/format";
 import { KeptAside } from "./KeptAside";
 import { StandbyHomes } from "./StandbyHomes";
+
+/**
+ * Runs a change's home call (cancel, a checklist tick, a standby mark, setting a
+ * report aside): the card's polls begun before it ends are not applied.
+ */
+export type Save = ReadOrder["saving"];
+/** No order to keep: the call alone (the view shown without its card). */
+export const plainSave: Save = (save) => save();
 
 export const SWITCH_POLL_MS = 5_000;
 
@@ -65,14 +75,18 @@ export function SwitchHomeCard() {
   const [error, setError] = useState(false);
   const last = useRef("");
   const reload = useRef<() => void>(() => {});
+  // A poll that began before a change still has the old state (the switch not
+  // cancelled, the mark not set): it is dropped (lib/readOrder).
+  const order = useReadOrder();
 
   useEffect(() => {
     let alive = true;
     const load = () => {
+      const ticket = order.begin();
       clusterApi
         .switchover()
         .then((s) => {
-          if (!alive) return;
+          if (!alive || !order.fresh(ticket)) return;
           setError(false);
           const key = JSON.stringify(s);
           if (key === last.current) return;
@@ -80,7 +94,7 @@ export function SwitchHomeCard() {
           setStatus(s);
         })
         .catch(() => {
-          if (alive) setError(true);
+          if (alive && order.fresh(ticket)) setError(true);
         });
     };
     reload.current = load;
@@ -90,19 +104,38 @@ export function SwitchHomeCard() {
       alive = false;
       clearInterval(id);
     };
+  }, [order]);
+
+  // the standby homes as the home answered the mark: shown at once
+  const onStandbys = useCallback((standbys: StandbyHome[]) => {
+    last.current = "";
+    setStatus((s) => (s ? { ...s, standbys } : s));
   }, []);
 
-  return <SwitchHomeView status={status} error={error} onRefresh={() => reload.current()} />;
+  return (
+    <SwitchHomeView
+      status={status}
+      error={error}
+      onRefresh={() => reload.current()}
+      save={order.saving}
+      onStandbys={onStandbys}
+    />
+  );
 }
 
 export const SwitchHomeView = memo(function SwitchHomeView({
   status,
   error,
   onRefresh,
+  save = plainSave,
+  onStandbys,
 }: {
   status: SwitchStatus | null;
   error: boolean;
   onRefresh?: () => void;
+  save?: Save;
+  /** the standby homes the home answered a mark with; without it the card reads again */
+  onStandbys?: (standbys: StandbyHome[]) => void;
 }) {
   const { t } = useI18n();
   const f = useFmt();
@@ -117,8 +150,7 @@ export const SwitchHomeView = memo(function SwitchHomeView({
   const start = (c: SwitchCandidate) => {
     setAsking(null);
     setBusy(true);
-    clusterApi
-      .startSwitch(c.node_id)
+    save(() => clusterApi.startSwitch(c.node_id))
       .then(() =>
         toast.show({
           id: "switch",
@@ -157,7 +189,7 @@ export const SwitchHomeView = memo(function SwitchHomeView({
       )}
 
       {current && <Progress p={current} />}
-      {current && !current.new_home && <CancelSwitch p={current} onDone={onRefresh} />}
+      {current && !current.new_home && <CancelSwitch p={current} onDone={onRefresh} save={save} />}
 
       {!current && candidates.length > 0 && (
         <ul className="mkt-cl-switch__candidates">
@@ -180,10 +212,18 @@ export const SwitchHomeView = memo(function SwitchHomeView({
         <p className="mkt-mc-muted">{t("machines.switch.none")}</p>
       )}
 
-      {!current && lastOne && <Result p={lastOne} onRefresh={onRefresh} />}
+      {!current && lastOne && <Result p={lastOne} onRefresh={onRefresh} save={save} />}
 
-      {status && <StandbyHomes standbys={status.standbys ?? []} onChange={() => onRefresh?.()} />}
-      {status && <KeptAside reports={status.reports ?? []} onDone={() => onRefresh?.()} />}
+      {status && (
+        <StandbyHomes
+          standbys={status.standbys ?? []}
+          save={save}
+          onChange={(next) => (onStandbys ? onStandbys(next) : onRefresh?.())}
+        />
+      )}
+      {status && (
+        <KeptAside reports={status.reports ?? []} save={save} onDone={() => onRefresh?.()} />
+      )}
 
       {asking && (
         <Modal
@@ -219,7 +259,7 @@ export const SwitchHomeView = memo(function SwitchHomeView({
  * taking over is asked, and one that does not answer is called off only with its name
  * typed (should it be the home after all, the old home stops taking changes once it hears
  * from it, and keeps aside what it took meanwhile). */
-function CancelSwitch({ p, onDone }: { p: SwitchProgress; onDone?: () => void }) {
+function CancelSwitch({ p, onDone, save }: { p: SwitchProgress; onDone?: () => void; save: Save }) {
   const { t } = useI18n();
   const toast = useToast();
   const [asking, setAsking] = useState(false);
@@ -235,8 +275,7 @@ function CancelSwitch({ p, onDone }: { p: SwitchProgress; onDone?: () => void })
   };
   const send = (force: boolean) => {
     setBusy(true);
-    clusterApi
-      .cancelSwitch(p.id, force, force ? typed : "")
+    save(() => clusterApi.cancelSwitch(p.id, force, force ? typed : ""))
       .then(() => {
         close();
         toast.show({
@@ -386,10 +425,12 @@ function Integrations({
   p,
   checklist,
   onRefresh,
+  save = plainSave,
 }: {
   p: SwitchProgress;
   checklist?: boolean;
   onRefresh?: () => void;
+  save?: Save;
 }) {
   const { t } = useI18n();
   const items = Object.entries(p.integrations ?? {}).filter(([, v]) => v.state !== "not_used");
@@ -399,7 +440,7 @@ function Integrations({
     return (
       <>
         <IntegrationList items={items} />
-        <Checklist p={p} needs={needs} onRefresh={onRefresh} />
+        <Checklist p={p} needs={needs} onRefresh={onRefresh} save={save} />
       </>
     );
   }
@@ -471,18 +512,19 @@ function Checklist({
   p,
   needs,
   onRefresh,
+  save,
 }: {
   p: SwitchProgress;
   needs: [string, SwitchIntegration][];
   onRefresh?: () => void;
+  save: Save;
 }) {
   const { t } = useI18n();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const mark = (item: string, done: boolean) => {
     setBusy(true);
-    clusterApi
-      .checklistDone(p.id, item, done)
+    save(() => clusterApi.checklistDone(p.id, item, done))
       .then(() => onRefresh?.())
       .catch(() => toast.show({ id: "checklist", tone: "error", message: t("common.error") }))
       .finally(() => setBusy(false));
@@ -510,7 +552,7 @@ function Checklist({
   );
 }
 
-function Result({ p, onRefresh }: { p: SwitchProgress; onRefresh?: () => void }) {
+function Result({ p, onRefresh, save }: { p: SwitchProgress; onRefresh?: () => void; save: Save }) {
   const { t } = useI18n();
   return (
     <div className="mkt-cl-switch__result">
@@ -522,7 +564,7 @@ function Result({ p, onRefresh }: { p: SwitchProgress; onRefresh?: () => void })
       </p>
       {p.state === "failed" && p.detail && <p className="mkt-mc-warn">{p.detail}</p>}
       <Machines p={p} />
-      <Integrations p={p} checklist={p.state === "done"} onRefresh={onRefresh} />
+      <Integrations p={p} checklist={p.state === "done"} onRefresh={onRefresh} save={save} />
     </div>
   );
 }

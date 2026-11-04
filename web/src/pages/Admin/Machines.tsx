@@ -81,6 +81,7 @@ import { safeHttpUrl } from "../../lib/navigation";
 import { logWindow, nodeLogsLink } from "../../lib/logLinks";
 import { accessAnswerWords, homeDbOf, type HomeDb } from "../../lib/homeDb";
 import { TitleRow } from "../../help/HelpLink";
+import { useReadOrder, type ReadOrder } from "../../lib/readOrder";
 import "../../styles/queue.css";
 import "../../styles/machines.css";
 import "../../styles/cluster.css";
@@ -292,6 +293,9 @@ function useErrorToast() {
 
 type JobCounts = Record<string, number> | null;
 
+/** Runs a change's home call so that no read begun before it ends is applied. */
+type Save = ReadOrder["saving"];
+
 const Approvals = memo(function Approvals({
   queueLabel,
   jobs,
@@ -307,28 +311,31 @@ const Approvals = memo(function Approvals({
   const [view, setView] = useState<ClusterView | null>(null);
   const [error, setError] = useState(false);
   const alive = useRef(true);
+  // A poll that began before a change (join on/off, pause, remove) still has
+  // the old state: it is dropped, and so is one older than the shown answer.
+  const order = useReadOrder();
+  const save = order.saving;
 
-  const load = useCallback(
-    () =>
-      clusterApi
-        .getCluster()
-        .then((v) => {
-          if (!alive.current) return;
-          const safe = safeView(v);
-          setView((prev) => reconcileView(prev, safe));
-          setError(false);
-          onHomeDbDown?.(
-            safe.nodes
-              .filter((n) => n.online && homeDbOf(n.update_state)?.ok === false)
-              .map((n) => n.id)
-              .join("\n")
-          );
-        })
-        .catch(() => {
-          if (alive.current) setError(true);
-        }),
-    [onHomeDbDown]
-  );
+  const load = useCallback(() => {
+    const ticket = order.begin();
+    return clusterApi
+      .getCluster()
+      .then((v) => {
+        if (!alive.current || !order.fresh(ticket)) return;
+        const safe = safeView(v);
+        setView((prev) => reconcileView(prev, safe));
+        setError(false);
+        onHomeDbDown?.(
+          safe.nodes
+            .filter((n) => n.online && homeDbOf(n.update_state)?.ok === false)
+            .map((n) => n.id)
+            .join("\n")
+        );
+      })
+      .catch(() => {
+        if (alive.current && order.fresh(ticket)) setError(true);
+      });
+  }, [onHomeDbDown, order]);
 
   useEffect(() => {
     alive.current = true;
@@ -372,7 +379,12 @@ const Approvals = memo(function Approvals({
         {error && <span className="mkt-mc-muted">{t("machines.stale")}</span>}
       </p>
       {view.home ? (
-        <HomeCard home={view.home} onChanged={reload} jobs={jobs ? (jobs[HOME_HOST] ?? 0) : null} />
+        <HomeCard
+          home={view.home}
+          onChanged={reload}
+          save={save}
+          jobs={jobs ? (jobs[HOME_HOST] ?? 0) : null}
+        />
       ) : (
         // no home in the answer: say so here and keep the rest of the page
         <section className="mkt-mc-card mkt-mc-home" aria-labelledby="mkt-mc-home-h">
@@ -392,7 +404,7 @@ const Approvals = memo(function Approvals({
         ) : (
           <ul className="mkt-mc-list">
             {pending.map((n) => (
-              <PendingRow key={n.id} node={n} onChanged={reload} />
+              <PendingRow key={n.id} node={n} onChanged={reload} save={save} />
             ))}
           </ul>
         )}
@@ -410,6 +422,7 @@ const Approvals = memo(function Approvals({
                 key={n.id}
                 node={n}
                 onChanged={reload}
+                save={save}
                 queueLabel={queueLabel}
                 jobs={jobs ? (jobs[n.id] ?? 0) : null}
               />
@@ -426,10 +439,12 @@ const Approvals = memo(function Approvals({
 const HomeCard = memo(function HomeCard({
   home,
   onChanged,
+  save,
   jobs,
 }: {
   home: ClusterHome;
   onChanged: () => void;
+  save: Save;
   jobs: number | null;
 }) {
   const { t, locale } = useI18n();
@@ -441,8 +456,7 @@ const HomeCard = memo(function HomeCard({
 
   const toggle = (on: boolean) => {
     setBusy(true);
-    clusterApi
-      .putSettings({ accept_joins: on })
+    save(() => clusterApi.putSettings({ accept_joins: on }))
       .then(onChanged)
       .catch(showError)
       .finally(() => setBusy(false));
@@ -505,8 +519,7 @@ const HomeCard = memo(function HomeCard({
             busy={busy}
             onSave={(pm) => {
               setBusy(true);
-              clusterApi
-                .setHomePathMap(pm)
+              save(() => clusterApi.setHomePathMap(pm))
                 .then(onChanged)
                 .catch(showError)
                 .finally(() => setBusy(false));
@@ -680,7 +693,15 @@ function platform(node: ClusterNode): string {
   return [node.os, node.arch].filter(Boolean).join(" · ");
 }
 
-function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => void }) {
+function PendingRow({
+  node,
+  onChanged,
+  save,
+}: {
+  node: ClusterNode;
+  onChanged: () => void;
+  save: Save;
+}) {
   const { t, n } = useI18n();
   const fmt = useFmt();
   const showError = useErrorToast();
@@ -703,8 +724,7 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
     }
     setBusy(true);
     setMessage(null);
-    clusterApi
-      .approve(node.id, digits, full, keep ?? undefined)
+    save(() => clusterApi.approve(node.id, digits, full, keep ?? undefined))
       .then(() => {
         setCode("");
         onChanged();
@@ -730,8 +750,7 @@ function PendingRow({ node, onChanged }: { node: ClusterNode; onChanged: () => v
 
   const reject = () => {
     setBusy(true);
-    clusterApi
-      .reject(node.id)
+    save(() => clusterApi.reject(node.id))
       .then(onChanged)
       .catch(showError)
       .finally(() => setBusy(false));
@@ -1088,11 +1107,13 @@ function useCopyNote(copy: NodeCopy | undefined): { text: string; warn: boolean 
 const MachineCard = memo(function MachineCard({
   node,
   onChanged,
+  save,
   queueLabel,
   jobs,
 }: {
   node: ClusterNode;
   onChanged: () => void;
+  save: Save;
   queueLabel: (stage: string) => string;
   jobs: number | null;
 }) {
@@ -1112,13 +1133,14 @@ const MachineCard = memo(function MachineCard({
   const webUrl = safeHttpUrl(node.web_url);
   const homeDb = homeDbOf(node.update_state);
 
-  const run = (p: Promise<unknown>) => {
+  const run = (call: () => Promise<unknown>) => {
     setBusy(true);
-    p.then(onChanged)
+    save(call)
+      .then(onChanged)
       .catch(showError)
       .finally(() => setBusy(false));
   };
-  const update = (body: NodeUpdate) => run(clusterApi.updateNode(node.id, body));
+  const update = (body: NodeUpdate) => run(() => clusterApi.updateNode(node.id, body));
 
   return (
     <li className={`mkt-mc-card mkt-mc-node mkt-mc-node--${status}`}>
@@ -1238,7 +1260,7 @@ const MachineCard = memo(function MachineCard({
                 onClick={() => {
                   const which = confirm;
                   setConfirm(null);
-                  run(
+                  run(() =>
                     which === "revoke" ? clusterApi.revoke(node.id) : clusterApi.removeNode(node.id)
                   );
                 }}

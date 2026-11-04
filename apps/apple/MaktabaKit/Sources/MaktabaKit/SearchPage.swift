@@ -8,31 +8,31 @@ import Observation
 /// The screen keeps one for as long as its tab lives, so another section and back finds the
 /// same query and results.
 @MainActor @Observable
-final class SearchModel {
+public final class SearchModel {
     /// How long typing rests before the field asks for suggestions.
-    static let suggestDelay: Duration = .milliseconds(250)
+    public static let suggestDelay: Duration = .milliseconds(250)
 
     /// What a submitted search found.
-    struct Results {
+    public struct Results {
         /// The query as it was sent.
-        let query: String
+        public let query: String
         /// The kept result set ("" when the home kept none: no more pages).
-        let searchID: String
+        public let searchID: String
         /// How many of each group a page holds.
-        let pageSize: Int
-        var titles: [SearchVideo]
-        var titlesTotal: Int
+        public let pageSize: Int
+        public internal(set) var titles: [SearchVideo]
+        public internal(set) var titlesTotal: Int
         /// The next page's offset of Titles; nil at the end.
-        var titlesNext: Int?
-        var transcripts: [SearchVideo]
-        var transcriptsTotal: Int
-        var transcriptsNext: Int?
+        public internal(set) var titlesNext: Int?
+        public internal(set) var transcripts: [SearchVideo]
+        public internal(set) var transcriptsTotal: Int
+        public internal(set) var transcriptsNext: Int?
         /// The meaning half did not answer: text matches only.
-        let degraded: Bool
+        public let degraded: Bool
 
-        var isEmpty: Bool { titles.isEmpty && transcripts.isEmpty }
+        public var isEmpty: Bool { titles.isEmpty && transcripts.isEmpty }
 
-        init(_ a: SearchAnswer, sent: String) {
+        public init(_ a: SearchAnswer, sent: String) {
             query = a.query.isEmpty ? sent : a.query
             searchID = a.searchID
             pageSize = max(a.pageSize, 1)
@@ -48,30 +48,33 @@ final class SearchModel {
     }
 
     /// What is typed in the field.
-    var query = ""
+    public var query = ""
     /// The person's own past searches starting with what is typed (`GET /api/search/suggest`).
-    private(set) var suggestions: [String] = []
+    public private(set) var suggestions: [String] = []
     /// Recent searches, newest first (`GET /api/search/recent`).
-    private(set) var recent: [RecentSearch] = []
+    public private(set) var recent: [RecentSearch] = []
     /// The last submitted search's answer; nil before the first.
-    private(set) var results: Results?
+    public private(set) var results: Results?
     /// A search is on its way.
-    private(set) var searching = false
+    public private(set) var searching = false
     /// A page after the first is on its way.
-    private(set) var paging = false
+    public private(set) var paging = false
     /// Why the last search failed; nil when it did not.
-    private(set) var problem: HomeFailure?
+    public private(set) var problem: HomeFailure?
     /// The query of the last submit (what Try again sends again).
-    private(set) var submitted: String?
+    public private(set) var submitted: String?
 
     private let client: APIClient
     private let signedOut: @MainActor () -> Void
     /// Search by meaning is on on the home (51.11); off, a search asks for words only.
     private let byMeaning: @MainActor () -> Bool
     private var generation = 0
+    /// The recent searches' reads against forgetting them: a read that began before one was
+    /// forgotten still has it, so it is dropped (else it comes back while the home has let it go).
+    @ObservationIgnored private let recentOrder = ReadOrder()
 
-    init(client: APIClient, byMeaning: @escaping @MainActor () -> Bool = { true },
-         signedOut: @escaping @MainActor () -> Void) {
+    public init(client: APIClient, byMeaning: @escaping @MainActor () -> Bool = { true },
+                signedOut: @escaping @MainActor () -> Void) {
         self.client = client
         self.byMeaning = byMeaning
         self.signedOut = signedOut
@@ -82,11 +85,11 @@ final class SearchModel {
 
     /// The query as it is sent: only the spaces around it go. Nothing else changes (no
     /// normalising, no removing an Arabic word's diacritics): the home ranks it.
-    static func sendable(_ q: String) -> String { q.trimmingCharacters(in: .whitespacesAndNewlines) }
+    public static func sendable(_ q: String) -> String { q.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Asks for the suggestions for `q`; blank, or the query just submitted, asks nothing.
     /// A failure keeps the list empty.
-    func suggest(_ q: String) async {
+    public func suggest(_ q: String) async {
         let q = Self.sendable(q)
         guard !q.isEmpty, q != submitted.map(Self.sendable) else {
             suggestions = []
@@ -99,13 +102,17 @@ final class SearchModel {
         }
     }
 
-    func loadRecent() async {
-        await quietly("search recent") { recent = try await client.recentSearches() }
+    public func loadRecent() async {
+        let ticket = recentOrder.begin()
+        await quietly("search recent") {
+            let found = try await client.recentSearches()
+            if recentOrder.fresh(ticket) { recent = found }
+        }
     }
 
     /// Runs `q` in hybrid mode (words only while search by meaning is off). A newer submit
     /// wins over an older one still on its way.
-    func submit(_ q: String) async {
+    public func submit(_ q: String) async {
         let sent = Self.sendable(q)
         guard !sent.isEmpty else { return }
         // the same search already on its way (a suggestion's tap and the field's submit)
@@ -135,32 +142,32 @@ final class SearchModel {
     }
 
     /// Submits the last query again (the error's Try again).
-    func retry() async {
+    public func retry() async {
         if let submitted { await submit(submitted) }
     }
 
     /// The next page of Titles.
-    func moreTitles() async {
+    public func moreTitles() async {
         await page(.titles)
     }
 
     /// The next page of In the transcript.
-    func moreTranscripts() async {
+    public func moreTranscripts() async {
         await page(.transcripts)
     }
 
     /// Forgets one recent search on the home, then here.
-    func forget(_ r: RecentSearch) async {
+    public func forget(_ r: RecentSearch) async {
         await quietly("search forget") {
-            try await client.forgetRecentSearch(r.searchID)
+            try await recentOrder.saving { try await client.forgetRecentSearch(r.searchID) }
             recent.removeAll { $0.searchID == r.searchID }
         }
     }
 
     /// Forgets every recent search on the home, then here.
-    func clearRecent() async {
+    public func clearRecent() async {
         await quietly("search clear") {
-            try await client.forgetRecentSearch()
+            try await recentOrder.saving { try await client.forgetRecentSearch() }
             recent = []
         }
     }

@@ -291,12 +291,12 @@ function Dashboard() {
       <YouTubeSourcesDialog
         library={sourcesOf}
         onClose={() => setSourcesOf(null)}
-        onChanged={board.reload}
+        onChanged={board.reloadAfterChange}
       />
       <OfflineActionDialog
         target={offlineAction}
         onClose={() => setOfflineAction(null)}
-        onDone={board.reload}
+        onDone={board.reloadAfterChange}
       />
       <RetriggerDialog
         open={requeue !== null}
@@ -304,7 +304,7 @@ function Dashboard() {
         stages={board.stages}
         libraries={board.rows ?? []}
         initialSubjects={requeue ?? undefined}
-        onDone={board.reload}
+        onDone={board.reloadAfterChange}
       />
     </section>
   );

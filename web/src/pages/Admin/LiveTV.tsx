@@ -264,7 +264,7 @@ function Message({ ok, text }: { ok: boolean; text: string }) {
 /** Streaming hosts and On air (Epic 32): hidden when the server has no cluster view. */
 function ClusterSections() {
   const { t } = useI18n();
-  const { view, error, unavailable, reload } = useTvCluster();
+  const { view, error, unavailable, reload, save } = useTvCluster();
   if (unavailable) return null;
   if (!view) {
     return error ? (
@@ -274,7 +274,7 @@ function ClusterSections() {
   return (
     <>
       {error && <p className="mkt-livetv__hint">{t("tv.cluster.staleView", { error })}</p>}
-      <StreamingHosts view={view} onChanged={reload} />
+      <StreamingHosts view={view} onChanged={reload} save={save} />
       <p className="mkt-livetv__hint" data-testid="cluster-help">
         <a href={docLink("streamingHosts")} target="_blank" rel="noreferrer">
           {t("tv.cluster.helpHosts")}
@@ -288,7 +288,7 @@ function ClusterSections() {
           {t("tv.cluster.helpFailover")}
         </a>
       </p>
-      <OnAir view={view} onChanged={reload} />
+      <OnAir view={view} onChanged={reload} save={save} />
     </>
   );
 }
