@@ -23,6 +23,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
+
 	_ "github.com/lib/pq"
 )
 
@@ -78,12 +80,7 @@ func TestRealPostgresClientCertificates(t *testing.T) {
 	if p, err := strconv.Atoi(os.Getenv("MAKTABA_TEST_PG_PORT")); err == nil && p > 0 {
 		port = p
 	} else {
-		ln, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			t.Fatal(err)
-		}
-		port = ln.Addr().(*net.TCPAddr).Port
-		_ = ln.Close()
+		port = testport.Free(t)
 	}
 	root, err := os.MkdirTemp("", "mkln") // short: the unix socket path is limited
 	if err != nil {
