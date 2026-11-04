@@ -139,6 +139,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum', 'tools/release/go.sum') }}
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher tools/release
+          offline: "false"
+
       # the release's pack build (tools/rehearsal/build.sh: the tool.yt-dlp pack of each of
       # this commit's releases, scenarios 13 and 14)
       - uses: astral-sh/setup-uv@v8.1.0
@@ -284,6 +291,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+
       - name: Download rehearsal-kit
         id: artifact-rehearsal-kit
         if: steps.cache.outputs.cache-hit != 'true'
@@ -422,6 +436,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
 
       - name: Download rehearsal-kit
         id: artifact-rehearsal-kit

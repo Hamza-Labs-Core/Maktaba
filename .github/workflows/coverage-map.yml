@@ -60,6 +60,13 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache: false
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
+
       - name: Per-package coverage
         run: |
           set -euo pipefail
@@ -137,6 +144,13 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache: false
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/affected-tests
+
       # build the tool from main's checkout before any artifact arrives
       - name: Build the map builder
         working-directory: tools/affected-tests

@@ -60,6 +60,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming
+
       - name: Apt package cache
         id: apt-cache
         # the runner's Ubuntu mirror has stalled installs at 50 KB/s: packages are kept

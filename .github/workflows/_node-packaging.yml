@@ -129,6 +129,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release shared/go/releaseverify
+
       # every module both go.sums name, so the cache this job saves holds what
       # sign-and-release runs too (gen-release-json, release-order, releaseverify's tests);
       # a cache hit reads them from disk, and go mod verify checks them against go.sum
@@ -274,6 +280,13 @@ jobs:
             go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
           fi
           echo "$(go env GOPATH)/bin" >>"${GITHUB_PATH}"
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+
       - name: apt and dnf repositories
         run: REQUIRE=apt,rpm,dnf bash tools/release/pkg-repo-test.sh
       - name: Homebrew formula and cask
@@ -511,6 +524,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('cmd/maktaba-server/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server
 
       - name: Download node-release
         id: artifact-node-release

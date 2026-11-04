@@ -83,6 +83,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+
       - name: golangci-lint (cloud)
         uses: golangci/golangci-lint-action@v9.2.1
         with:
@@ -142,6 +148,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
+
       - name: Wait for Postgres
         # pg_isready flips healthy before the DB accepts non-loopback
         # connections; poll once more (belt-and-braces, mirrors
@@ -198,6 +210,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('cloud/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cloud
 
       # Same reproducibility envelope as release.yml's cloud binary leg
       # (-trimpath, -buildid=, -s -w, -X main.*). VERSION is the tag on a
@@ -337,6 +355,13 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+          offline: "false"
 
       - name: Wait for the published release, then ask whether it is the latest
         id: gate

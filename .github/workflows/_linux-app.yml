@@ -133,6 +133,12 @@ jobs:
           CGO_ENABLED: "0"
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher
+
       # the packages' names, versions, dependencies and folder; on x86_64 also installed with
       # dpkg beside a stand-in maktaba (the test's packages are amd64): an existing install's
       # own update goes in with maktaba-full there, and maktaba cannot be removed from under it

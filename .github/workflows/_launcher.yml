@@ -38,6 +38,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-launcher/go.sum', 'cmd/maktaba-server/go.sum', 'shared/go/layout/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher shared/go/layout
+
       - name: layout
         working-directory: shared/go/layout
         run: go test -count=1 ./...
@@ -190,6 +196,12 @@ jobs:
           GOTOOLCHAIN: auto
           CGO_ENABLED: "0"
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server cmd/maktaba-launcher
 
       - name: Build, package and install three versions
         run: |

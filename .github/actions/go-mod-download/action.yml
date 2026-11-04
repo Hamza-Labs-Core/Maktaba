@@ -1,0 +1,80 @@
+# Downloads a job's Go modules before anything builds or tests, retrying a failed
+# download, then leaves the rest of the job on the module cache.
+#
+# One proxy hiccup (`proxy.golang.org/...zip: stream error: ... INTERNAL_ERROR`) failed an
+# integration job at setup before any test ran (#628). Here each module directory's
+# `go mod download` gets up to three attempts, 15 s then 45 s apart; when the third fails
+# too, the job fails with an `::error::` naming the directory and the module that would not
+# download. Only the download retries: no build or test step does.
+#
+# With `offline: true` (the default) it then sets GOPROXY=off for the job's later steps, so
+# `go build`, `go test` and `go run` read the module cache only: a module the list missed
+# fails at once, by name, instead of being fetched mid-test. GOFLAGS is left as it is.
+# `offline: false` is for a job that builds other source than this checkout (an earlier
+# release's tree), or one no pull request runs yet. A job that `go install`s a tool
+# (nfpm) does so before this step, as it goes offline.
+#
+# Use it after setup-go and .github/actions/go-cache (so a restored cache makes it a no-op):
+#
+#   - name: Go modules
+#     uses: ./.github/actions/go-mod-download
+#     with:
+#       modules: api streaming
+#
+# tools/ci/tests/test_go_mod_download.py keeps every Go job using it.
+
+name: Go modules (download with retries)
+description: go mod download per module directory, three attempts each, then GOPROXY=off for the job.
+
+inputs:
+  modules:
+    description: module directories (whitespace-separated, from the repository root), or `all` for every go.mod in the checkout
+    required: true
+  offline:
+    description: "'true' sets GOPROXY=off for the job's later steps"
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        MODULES: ${{ inputs.modules }}
+        OFFLINE: ${{ inputs.offline }}
+      run: |
+        set -euo pipefail
+        if [ "${MODULES}" = all ]; then
+          MODULES=$(git ls-files '*go.mod' | xargs -n1 dirname | tr '\n' ' ')
+        fi
+        [ -n "${MODULES}" ] || { echo "::error::go-mod-download: no modules given"; exit 1; }
+        log=$(mktemp)
+        # attempt WHAT DIR CMD...: up to three tries, 15 s then 45 s apart
+        attempt() {
+          local what=$1 dir=$2; shift 2
+          local n=1 wait
+          while :; do
+            if (cd "${dir}" && "$@") >"${log}" 2>&1; then return 0; fi
+            cat "${log}"
+            if [ "${n}" -ge 3 ]; then
+              # the module go names in its error ("go: path@version: ..."), else the directory
+              local mod
+              mod=$(grep -oE '[A-Za-z0-9._~/-]+@v[0-9][^ :"]*' "${log}" | head -n1 || true)
+              echo "::error::${what} never downloaded after 3 attempts${mod:+: ${mod}} ($(grep -v '^\s*$' "${log}" | tail -n1))"
+              exit 1
+            fi
+            wait=$(( n == 1 ? 15 : 45 ))
+            echo "::warning::${what}: attempt ${n} failed, retrying in ${wait}s"
+            sleep "${wait}"
+            n=$(( n + 1 ))
+          done
+        }
+        for m in ${MODULES}; do
+          [ -f "${m}/go.mod" ] || { echo "::error::go-mod-download: ${m} has no go.mod"; exit 1; }
+          echo "==> go mod download (${m})"
+          attempt "the Go modules of ${m}" "${m}" go mod download
+        done
+        if [ "${OFFLINE}" = true ]; then
+          echo "GOPROXY=off" >> "${GITHUB_ENV}"
+          echo "later steps read the module cache only (GOPROXY=off)"
+        fi

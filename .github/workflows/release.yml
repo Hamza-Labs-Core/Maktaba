@@ -150,6 +150,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cloud
+          offline: "false"
+
       - name: Set up pnpm
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
         uses: pnpm/action-setup@v6.0.8
@@ -277,6 +284,13 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api cmd/maktaba-server cmd/maktaba-launcher
+          offline: "false"
 
       - name: Download web bundle
         id: artifact-release-web-bundle
@@ -879,6 +893,13 @@ jobs:
             shared/go/componentpack/go.sum
             shared/components/go.sum
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+          offline: "false"
+
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           # the uv package-node writes the release's constraints with: the same pins
@@ -942,6 +963,13 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher
+          offline: "false"
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -1231,6 +1259,13 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum', 'shared/go/componentpack/go.sum', 'shared/components/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release shared/go/releaseverify shared/go/componentpack shared/components
+          offline: "false"
 
       - name: Go modules (from the cache, verified)
         run: |
@@ -1899,6 +1934,13 @@ jobs:
           GOTOOLCHAIN: auto
           CGO_ENABLED: "0"
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server
+          offline: "false"
 
       - name: The release's signed set and this architecture's packs
         env:
