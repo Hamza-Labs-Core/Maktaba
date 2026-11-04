@@ -14,6 +14,7 @@ import {
   type OnAirState,
   type TvClusterView,
 } from "../../../lib/tvClusterApi";
+import type { ReadOrder } from "../../../lib/readOrder";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { MoveDialog } from "./MoveDialog";
 import { ChannelLogo } from "../../../components/ChannelLogo";
@@ -28,9 +29,12 @@ const STATE_TONE: Record<OnAirState, "success" | "warn" | "neutral" | "accent"> 
 export function OnAir({
   view,
   onChanged,
+  save = (call) => call(),
 }: {
   view: TvClusterView;
   onChanged: () => void | Promise<void>;
+  /** runs a stop or a move: the page's older reads are not applied (useTvCluster) */
+  save?: ReadOrder["saving"];
 }) {
   const { t, n, formatDate } = useI18n();
   const [moving, setMoving] = useState<OnAirChannel | null>(null);
@@ -43,7 +47,7 @@ export function OnAir({
     setBusy(true);
     setMsg(null);
     try {
-      await tvClusterApi.stop(ch.channel_id);
+      await save(() => tvClusterApi.stop(ch.channel_id));
       setStopping(null);
       setMsg({ ok: true, text: t("tv.cluster.onAir.stopped", { name: ch.name }) });
       await onChanged();
@@ -149,6 +153,7 @@ export function OnAir({
         <MoveDialog
           channel={moving}
           hosts={view.hosts}
+          save={save}
           onClose={() => setMoving(null)}
           onMoved={async () => {
             setMsg({ ok: true, text: t("tv.cluster.onAir.moved", { name: moving.name }) });

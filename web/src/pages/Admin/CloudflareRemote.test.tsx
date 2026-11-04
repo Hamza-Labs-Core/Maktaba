@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post, put, del } = vi.hoisted(() => ({
@@ -14,6 +14,7 @@ vi.mock("../../lib/api", async () => {
 });
 
 import { AdminExtensions } from "./Extensions";
+import { type Deferred, deferred } from "../../test/deferred";
 import { renderAt, routeGet } from "../../test/queueHarness";
 import type { Extension } from "../../lib/queueApi";
 import type { RemoteIntegration, RemoteTestResult } from "../../lib/tvRemoteApi";
@@ -136,6 +137,70 @@ describe("Cloudflare Stream card", () => {
     await userEvent.click(within(c).getByRole("switch", { name: "Remote viewing" }));
     expect(put).toHaveBeenCalledWith("/api/tv/remote/enabled", { enabled: true });
     expect(await within(c).findByText("Remote viewing is on")).toBeInTheDocument();
+  });
+
+  it("remote viewing turned on while the status is read again stays on", async () => {
+    const ready = status({ last_test: green, can_enable: true });
+    const reads: Deferred[] = [];
+    routeGet(get, {
+      "/api/extensions": { extensions: [cfExt] },
+      "/api/tv/remote": () => {
+        // the reads begun after Test connection (the panel's and its usage's) are
+        // held until remote viewing is switched on
+        if (post.mock.calls.length > 0 && put.mock.calls.length === 0) {
+          const d = deferred();
+          reads.push(d);
+          return d.promise;
+        }
+        return ready;
+      },
+    });
+    renderAt(<AdminExtensions />, "/admin/extensions");
+    post.mockResolvedValue(green);
+    put.mockResolvedValue(status({ last_test: green, can_enable: true, enabled: true }));
+    const c = await card();
+    await within(c).findByText(/Last test passed/);
+    await userEvent.click(within(c).getByRole("button", { name: "Test connection" }));
+    await vi.waitFor(() => expect(reads).toHaveLength(2));
+    await userEvent.click(within(c).getByRole("switch", { name: "Remote viewing" }));
+    expect(put).toHaveBeenCalledWith("/api/tv/remote/enabled", { enabled: true });
+    expect(await within(c).findByText("Remote viewing is on")).toBeInTheDocument();
+    // the read begun before the switch lands last, remote viewing still off
+    await act(async () => reads.forEach((r) => r.resolve(ready)));
+    expect(within(c).getByText("Remote viewing is on")).toBeInTheDocument();
+  });
+
+  it("a removed integration stays removed while the status is read again", async () => {
+    const ready = status({ last_test: green, can_enable: true });
+    const gone = status({ configured: false, token_set: false, account_id: "" });
+    const reads: Deferred[] = [];
+    routeGet(get, {
+      "/api/extensions": { extensions: [cfExt] },
+      "/api/tv/remote": () => {
+        // the reads begun after Test connection are held until the removal
+        if (post.mock.calls.length > 0 && del.mock.calls.length === 0) {
+          const d = deferred();
+          reads.push(d);
+          return d.promise;
+        }
+        return del.mock.calls.length > 0 ? gone : ready;
+      },
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderAt(<AdminExtensions />, "/admin/extensions");
+    post.mockResolvedValue(green);
+    del.mockResolvedValue({ deleted_inputs: ["i1"], deleted_signing_key: "k1", errors: [] });
+    const c = await card();
+    await within(c).findByText(/Last test passed/);
+    await userEvent.click(within(c).getByRole("button", { name: "Test connection" }));
+    await vi.waitFor(() => expect(reads).toHaveLength(2));
+    await userEvent.click(within(c).getByRole("button", { name: "Remove integration" }));
+    expect(await within(c).findByText(/1 live inputs deleted at Cloudflare/)).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect(within(c).queryByRole("button", { name: "Remove integration" })).toBeNull()
+    );
+    await act(async () => reads.forEach((r) => r.resolve(ready)));
+    expect(within(c).queryByRole("button", { name: "Remove integration" })).toBeNull();
   });
 
   it("shows a token that cannot be opened any more", async () => {

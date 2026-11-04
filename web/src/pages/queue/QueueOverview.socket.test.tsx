@@ -2,7 +2,9 @@
 // queues, jobs and workers come from the socket; the SSE stream takes over
 // when the socket cannot connect.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 
 const { get, post, hub } = vi.hoisted(() => {
   const channels = new Map<string, Set<(ev: unknown) => void>>();
@@ -40,10 +42,15 @@ import {
   workersFixture,
 } from "../../test/fixtures/queues";
 
-function setup(queues: unknown = new Promise(() => {})) {
+function setup(
+  queues: unknown = new Promise(() => {}),
+  issues: unknown = { groups: failureGroupsFixture }
+) {
+  // a function answers each read in turn
+  const each = (v: unknown) => (typeof v === "function" ? (v as () => unknown) : () => v);
   routeGet(get, {
-    "/api/queues": () => queues,
-    "/api/issues": { groups: failureGroupsFixture },
+    "/api/queues": each(queues),
+    "/api/issues": each(issues),
     "/api/queues/libraries": { items: librariesFixture },
     "/api/queues/health": { series: healthSeriesFixture },
     "/api/workers": { workers: workersFixture },
@@ -238,6 +245,84 @@ describe("QueueOverview on the cluster socket", () => {
       hub.emit("queues", { type: "queues.snapshot", at: "x", payload: snapshotFixture });
     });
     expect(await screen.findByRole("link", { name: "Length" })).toBeInTheDocument();
+  });
+
+  // the first REST read can answer after the socket's first push: it is older
+  it("an older REST snapshot does not override a newer socket push", async () => {
+    const rest = deferred<unknown>();
+    setup(rest.promise);
+    const ws = FakeSocket.last;
+    ws.open();
+    ws.recv({ type: "queues", data: { ...snapshotFixture, paused_all: true } });
+    expect(await screen.findByRole("button", { name: "Resume all" })).toBeInTheDocument();
+
+    rest.resolve(snapshotFixture);
+    await act(async () => {
+      await rest.promise;
+    });
+    expect(screen.getByRole("button", { name: "Resume all" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause all" })).toBeNull();
+  });
+
+  it("a snapshot read that began before Pause all does not show the queues running again", async () => {
+    const older = deferred<unknown>();
+    const paused = { ...snapshotFixture, paused_all: true };
+    // the first read, the one after Retry (held), then every read after Pause all
+    const answers: unknown[] = [snapshotFixture, older.promise];
+    setup(() => (answers.length ? answers.shift() : paused));
+    post.mockResolvedValue({ enqueued: 1, coalesced: 0 });
+    FakeSocket.last.open();
+    await userEvent.click(await screen.findByRole("button", { name: /Retry 2 \(NAS open p95/ }));
+    await waitFor(() =>
+      expect(get.mock.calls.filter((c) => c[0] === "/api/queues")).toHaveLength(2)
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Pause all" }));
+    expect(post).toHaveBeenCalledWith("/api/queues/pause-all");
+    expect(await screen.findByRole("button", { name: "Resume all" })).toBeInTheDocument();
+
+    older.resolve(snapshotFixture);
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.getByRole("button", { name: "Resume all" })).toBeInTheDocument();
+  });
+
+  // "Needs attention" is read again when the issue count changes: a read on its
+  // way when a group is retried still has the group
+  it("a Needs attention read that began before a Retry does not bring the group back", async () => {
+    const older = deferred<unknown>();
+    const all = { groups: failureGroupsFixture };
+    const retried = { groups: failureGroupsFixture.filter((g) => g.stage !== "fingerprint") };
+    // on mount, at the first snapshot, at the next count (held), then after the retry
+    const answers: unknown[] = [all, all, older.promise];
+    setup(new Promise(() => {}), () => (answers.length ? answers.shift() : retried));
+    post.mockResolvedValue({ enqueued: 2, coalesced: 0 });
+    const ws = FakeSocket.last;
+    ws.open();
+    ws.recv({ type: "queues", data: snapshotFixture });
+    const retry = { name: /Retry 2 \(NAS open p95/ };
+    expect(await screen.findByRole("button", retry)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(get.mock.calls.filter((c) => c[0] === "/api/issues")).toHaveLength(2)
+    );
+    ws.recv({
+      type: "queues",
+      data: { ...snapshotFixture, issues_count: snapshotFixture.issues_count + 1 },
+    });
+    await waitFor(() =>
+      expect(get.mock.calls.filter((c) => c[0] === "/api/issues")).toHaveLength(3)
+    );
+
+    await userEvent.click(screen.getByRole("button", retry));
+    expect(post).toHaveBeenCalledWith("/api/queues/fingerprint/retry", { cause: "nas_timeout" });
+    await waitFor(() => expect(screen.queryByRole("button", retry)).toBeNull());
+
+    older.resolve(all);
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.queryByRole("button", retry)).toBeNull();
   });
 
   it("uses SSE when there is no WebSocket at all", async () => {

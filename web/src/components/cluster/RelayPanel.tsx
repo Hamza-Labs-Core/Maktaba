@@ -14,6 +14,7 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { rulesApi, rulesError } from "../../lib/rulesApi";
 import { useClusterFmt } from "./format";
 import { relayStatusOf } from "./RelayDoorCard";
+import { useReadOrder } from "../../lib/readOrder";
 
 export const RELAY_POLL_MS = 5_000;
 
@@ -25,15 +26,23 @@ export function RelayPanel() {
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // A poll that began before the switch was saved still has the old state:
+  // it is dropped (lib/readOrder).
+  const order = useReadOrder();
+
   const load = useCallback(() => {
+    const ticket = order.begin();
     clusterChannelApi
       .relay()
       .then((s) => {
+        if (!order.fresh(ticket)) return;
         setStatus(relayStatusOf(s));
         setError(false);
       })
-      .catch(() => setError(true));
-  }, []);
+      .catch(() => {
+        if (order.fresh(ticket)) setError(true);
+      });
+  }, [order]);
 
   useEffect(() => {
     load();
@@ -43,8 +52,8 @@ export function RelayPanel() {
 
   const toggle = (on: boolean) => {
     setBusy(true);
-    rulesApi
-      .patch("relay", on ? {} : { enabled: false }, on ? ["enabled"] : [])
+    order
+      .saving(() => rulesApi.patch("relay", on ? {} : { enabled: false }, on ? ["enabled"] : []))
       .then(load)
       .catch((e: unknown) => toast.show({ tone: "error", message: rulesError(e).message }))
       .finally(() => setBusy(false));

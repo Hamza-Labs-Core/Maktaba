@@ -18,6 +18,7 @@ import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
 import { cachedAnswer, forgetAnswers, keepAnswer } from "../../../lib/pageCache";
 import { Loading } from "../../../components/Placeholders";
+import { useReadOrder } from "../../../lib/readOrder";
 import {
   ACTION_ORDER,
   checksSummary,
@@ -109,13 +110,19 @@ function DetailInner() {
   const [point, setPoint] = useState<RollbackPoint | null>(null);
   // a change the server does not know (404) is not polled again
   const [gone, setGone] = useState(false);
+  // A poll begun before an action (cancel, stage, roll back) still has the
+  // change as it was: it is dropped, and so is one older than the shown answer.
+  const order = useReadOrder();
 
   const load = useCallback(async () => {
+    const ticket = order.begin();
     try {
       const c = await tvChangesApi.get(id);
+      if (!order.fresh(ticket)) return;
       setChange((prev) => reconcile(prev, c));
       setError(null);
     } catch (e) {
+      if (!order.fresh(ticket)) return;
       if (e instanceof ApiError && e.status === 404) {
         // gone: not what a return shows either
         setGone(true);
@@ -124,7 +131,7 @@ function DetailInner() {
       }
       setError(actionError(t, e));
     }
-  }, [id, t, kept]);
+  }, [id, t, kept, order]);
 
   // what a return shows first; an action changed the list of changes too
   useEffect(() => {
@@ -179,8 +186,9 @@ function DetailInner() {
     setBusy(a);
     setMsg(null);
     try {
-      const out =
-        a === "stage" ? await tvChangesApi.stage(change.id) : await tvChangesApi.verify(change.id);
+      const out = await order.saving(() =>
+        a === "stage" ? tvChangesApi.stage(change.id) : tvChangesApi.verify(change.id)
+      );
       if (out && typeof out === "object" && "id" in (out as object))
         setChange(out as TvChangeDetail);
       acted();
@@ -196,7 +204,7 @@ function DetailInner() {
     if (!change) return;
     setBusy("rollback");
     try {
-      const r = await tvChangesApi.rollback();
+      const r = await order.saving(() => tvChangesApi.rollback());
       // the lineup went back: every kept change, channel and guide is stale
       forgetAnswers("admin:tv-change", "admin:channels", "admin:filler-pools", "guide:");
       // degraded: only the database was rolled back (no TV slot is live)
@@ -218,7 +226,7 @@ function DetailInner() {
     if (!change) return;
     setBusy("cancel");
     try {
-      setChange(await tvChangesApi.cancel(change.id));
+      setChange(await order.saving(() => tvChangesApi.cancel(change.id)));
       acted();
       setMsg({ ok: true, text: t("tvchanges.done.cancel") });
       setDialog(null);
@@ -468,6 +476,8 @@ function DetailInner() {
           meId={user?.id}
           onClose={() => setDialog(null)}
           onDone={(c) => {
+            // the home's answer: a poll begun before it is older
+            order.changed();
             setChange(c);
             // approved, scheduled or promoted: the lineup changes as rollback's does
             forgetAnswers("admin:tv-changes", "admin:channels", "admin:filler-pools", "guide:");

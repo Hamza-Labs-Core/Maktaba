@@ -20,6 +20,11 @@ import {
   type TvClusterSettings,
   type TvClusterView,
 } from "../../../lib/tvClusterApi";
+import type { ReadOrder } from "../../../lib/readOrder";
+
+/** Runs a change's home call so the page's older reads are not applied (useTvCluster). */
+type Save = ReadOrder["saving"];
+const plainSave: Save = (call) => call();
 import { ConfirmDialog } from "./ConfirmDialog";
 
 type Msg = { ok: boolean; text: string } | null;
@@ -48,9 +53,11 @@ function Message({ msg }: { msg: Msg }) {
 export function StreamingHosts({
   view,
   onChanged,
+  save = plainSave,
 }: {
   view: TvClusterView;
   onChanged: () => void | Promise<void>;
+  save?: Save;
 }) {
   const { t } = useI18n();
   const twoHomes = view.notices.filter((x) => x.kind === "two_homes");
@@ -82,13 +89,15 @@ export function StreamingHosts({
           ))}
         </ul>
       )}
-      {view.settings && <ClusterSettings settings={view.settings} onChanged={onChanged} />}
+      {view.settings && (
+        <ClusterSettings settings={view.settings} onChanged={onChanged} save={save} />
+      )}
       {view.hosts.length === 0 ? (
         <p className="mkt-livetv__hint">{t("tv.cluster.hosts.none")}</p>
       ) : (
         <div className="mkt-tvc-cards">
           {view.hosts.map((h) => (
-            <HostCard key={h.host_id} host={h} onChanged={onChanged} />
+            <HostCard key={h.host_id} host={h} onChanged={onChanged} save={save} />
           ))}
         </div>
       )}
@@ -99,9 +108,11 @@ export function StreamingHosts({
 function ClusterSettings({
   settings: s,
   onChanged,
+  save,
 }: {
   settings: TvClusterSettings;
   onChanged: () => void | Promise<void>;
+  save: Save;
 }) {
   const { t } = useI18n();
   const [spill, setSpill] = useState(String(s.spill_at));
@@ -113,7 +124,7 @@ function ClusterSettings({
     setBusy(true);
     setMsg(null);
     try {
-      await tvClusterApi.setSetting(name, value);
+      await save(() => tvClusterApi.setSetting(name, value));
       setMsg({ ok: true, text: t("tv.cluster.saved") });
       await onChanged();
     } catch (e) {
@@ -188,9 +199,11 @@ const isHttpUrl = (v: string) => {
 function HostCard({
   host,
   onChanged,
+  save,
 }: {
   host: StreamingHost;
   onChanged: () => void | Promise<void>;
+  save: Save;
 }) {
   const { t, n, formatDate } = useI18n();
   const isHome = host.role === "home";
@@ -217,7 +230,7 @@ function HostCard({
     setMsg(null);
     setConfirmMove(false);
     try {
-      await tvClusterApi.updateHost(host.host_id, body);
+      await save(() => tvClusterApi.updateHost(host.host_id, body));
       setMsg({ ok: true, text: okText });
       await onChanged();
     } catch (e) {

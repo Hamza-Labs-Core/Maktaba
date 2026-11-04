@@ -1,8 +1,10 @@
 // Epic 47 on the Queues page: the action dialog, the YouTube sources dialog and the per-item panel, per state and
 // action, admin-only rendering, and axe.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 
 const { get, post, patch, del } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -160,6 +162,37 @@ describe("YouTubeSourcesDialog", () => {
     expect(onChanged).toHaveBeenCalled();
   });
 
+  it("a list read before a removal does not bring the removed source back", async () => {
+    const older = deferred<unknown>();
+    const answers: Promise<unknown>[] = [
+      Promise.resolve({ items: [source()] }),
+      // the read after the mode change: held
+      older.promise,
+      // the read after the removal
+      Promise.resolve({ items: [] }),
+    ];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [] }));
+    patch.mockResolvedValue({ source: source(), refresh: null });
+    del.mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderAt(<YouTubeSourcesDialog library={lib} onClose={() => {}} />, "/queue");
+    const name = "UCaaaaaaaaaaaaaaaaaaaaaa";
+    expect(await screen.findByRole("link", { name })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(`Mode of ${name}`), "new_only");
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole("button", { name: `Remove ${name}` }));
+    expect(del).toHaveBeenCalledWith(`${sourcesUrl}/${source().id}`);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByRole("link", { name })).toBeNull());
+
+    older.resolve({ items: [source()] });
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.queryByRole("link", { name })).toBeNull();
+  });
+
   it("saves the options as the pipeline reads them", async () => {
     routeGet(get, { [sourcesUrl]: { items: [source()] } });
     patch.mockResolvedValue({ source: source(), refresh: null });
@@ -302,5 +335,67 @@ describe("OfflineItemsPanel", () => {
     await waitFor(() =>
       expect(get.mock.calls.some((c) => String(c[0]).includes("step=dedup"))).toBe(true)
     );
+  });
+
+  // every finished job reloads the list: one still on its way when a job is
+  // cancelled has the job as running, and must not bring it back
+  it("a reload that began before a Cancel does not bring the cancelled job back", async () => {
+    const older = deferred<unknown>();
+    const answers: Promise<unknown>[] = [
+      Promise.resolve({ items: [offlineItem()], next: null }),
+      older.promise,
+      Promise.resolve({ items: [], next: null }),
+    ];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [], next: null }));
+    post.mockResolvedValue({});
+    function Ticking() {
+      const [tick, setTick] = useState(0);
+      return (
+        <>
+          <button onClick={() => setTick((n) => n + 1)}>job finished</button>
+          <OfflineItemsPanel tick={tick} />
+        </>
+      );
+    }
+    renderAt(<Ticking />, "/queue");
+    expect(await screen.findByRole("link", { name: /Lecture 05/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "job finished" }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel Lecture 05" }));
+    expect(post).toHaveBeenCalledWith("/api/jobs/501/cancel");
+    expect(await screen.findByText(/Nothing is waiting/)).toBeInTheDocument();
+
+    older.resolve({ items: [offlineItem()], next: null });
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.queryByRole("link", { name: /Lecture 05/ })).toBeNull();
+    expect(screen.getByText(/Nothing is waiting/)).toBeInTheDocument();
+  });
+
+  it("Show more read before a Cancel does not append its older page", async () => {
+    const page2 = deferred<unknown>();
+    const answers: Promise<unknown>[] = [
+      Promise.resolve({ items: [offlineItem()], next: "c1" }),
+      page2.promise,
+      Promise.resolve({ items: [], next: null }),
+    ];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [], next: null }));
+    post.mockResolvedValue({});
+    renderAt(<OfflineItemsPanel />, "/queue");
+    expect(await screen.findByRole("link", { name: /Lecture 05/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(get).toHaveBeenLastCalledWith(expect.stringContaining("before=c1"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel Lecture 05" }));
+    expect(await screen.findByText(/Nothing is waiting/)).toBeInTheDocument();
+
+    page2.resolve({ items: [offlineItem({ id: 502, subject_label: "Lecture 06" })], next: null });
+    await act(async () => {
+      await page2.promise;
+    });
+    expect(screen.queryByRole("link", { name: /Lecture 06/ })).toBeNull();
+    expect(screen.getByText(/Nothing is waiting/)).toBeInTheDocument();
   });
 });

@@ -10,6 +10,7 @@ import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import type { DuplicateGroup, DuplicateMember } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useFmt } from "../../components/queue/format";
 import { useBytes } from "../../components/queue/offline";
@@ -130,16 +131,22 @@ export function Duplicates() {
     [status, tier, library]
   );
 
+  // the list's reads (a filter, Load more) and Apply / Dismiss, in order: a page
+  // read before a change, or older than the one shown, is dropped
+  const order = useReadOrder();
+
   const load = useCallback(() => {
     setLoadError(false);
+    const ticket = order.begin();
     queueApi
       .duplicates(filter())
       .then((r) => {
+        if (!order.fresh(ticket)) return;
         setGroups(Array.isArray(r?.items) ? r.items : []);
         setNext(r?.next ?? null);
       })
-      .catch(() => setLoadError(true));
-  }, [filter]);
+      .catch(() => order.fresh(ticket) && setLoadError(true));
+  }, [filter, order]);
 
   useEffect(() => {
     if (admin) load();
@@ -147,13 +154,15 @@ export function Duplicates() {
 
   const more = () => {
     if (!next) return;
+    const ticket = order.begin();
     queueApi
       .duplicates(filter(), next)
       .then((r) => {
+        if (!order.fresh(ticket)) return;
         setGroups((prev) => [...(prev ?? []), ...(r?.items ?? [])]);
         setNext(r?.next ?? null);
       })
-      .catch(() => setLoadError(true));
+      .catch(() => order.fresh(ticket) && setLoadError(true));
   };
 
   const setParam = (k: string, v: string) => {
@@ -169,7 +178,9 @@ export function Duplicates() {
 
   const apply = async (g: DuplicateGroup) => {
     const chosen = keeperOf(g) ?? undefined;
-    const r = await run(`apply:${g.id}`, () => queueApi.applyDuplicate(g.id, chosen));
+    const r = await run(`apply:${g.id}`, () =>
+      order.saving(() => queueApi.applyDuplicate(g.id, chosen))
+    );
     if (r) {
       setNotice(t("queue.dup.applied"));
       load();
@@ -177,7 +188,9 @@ export function Duplicates() {
   };
 
   const dismiss = async (g: DuplicateGroup) => {
-    const r = await run(`dismiss:${g.id}`, () => queueApi.dismissDuplicate(g.id));
+    const r = await run(`dismiss:${g.id}`, () =>
+      order.saving(() => queueApi.dismissDuplicate(g.id))
+    );
     if (r) {
       setNotice(t("queue.dup.dismissed"));
       load();
@@ -191,10 +204,12 @@ export function Duplicates() {
       !(g.job && LIVE.has(g.job.state))
   );
   const applyAllExact = async () => {
-    const r = await run("apply-exact", async () => {
-      for (const g of openExact) await queueApi.applyDuplicate(g.id, keeperOf(g) ?? undefined);
-      return openExact.length;
-    });
+    const r = await run("apply-exact", () =>
+      order.saving(async () => {
+        for (const g of openExact) await queueApi.applyDuplicate(g.id, keeperOf(g) ?? undefined);
+        return openExact.length;
+      })
+    );
     if (r !== undefined) {
       setNotice(t("queue.dup.appliedAll", { n: n(r) }));
       load();

@@ -16,8 +16,18 @@ import { ApiError, downloadBlob, type Problem } from "../../lib/api";
 import { clusterApi, type KeptPlan, type KeptReport } from "../../lib/clusterApi";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { useFmt } from "../queue/format";
+import type { ReadOrder } from "../../lib/readOrder";
 
-export function KeptAside({ reports, onDone }: { reports: KeptReport[]; onDone: () => void }) {
+export function KeptAside({
+  reports,
+  onDone,
+  save = (call) => call(),
+}: {
+  reports: KeptReport[];
+  onDone: () => void;
+  /** runs a change's home call: the card's older reads are not applied */
+  save?: ReadOrder["saving"];
+}) {
   const { t } = useI18n();
   if (reports.length === 0) return null;
   return (
@@ -25,14 +35,22 @@ export function KeptAside({ reports, onDone }: { reports: KeptReport[]; onDone: 
       <h3 className="mkt-mc-section__subtitle">{t("machines.kept.title")}</h3>
       <ul className="mkt-cl-switch__reports">
         {reports.map((r) => (
-          <Report key={r.id} r={r} onDone={onDone} />
+          <Report key={r.id} r={r} onDone={onDone} save={save} />
         ))}
       </ul>
     </div>
   );
 }
 
-function Report({ r, onDone }: { r: KeptReport; onDone: () => void }) {
+function Report({
+  r,
+  onDone,
+  save,
+}: {
+  r: KeptReport;
+  onDone: () => void;
+  save: ReadOrder["saving"];
+}) {
   const { t } = useI18n();
   const f = useFmt();
   const toast = useToast();
@@ -52,8 +70,7 @@ function Report({ r, onDone }: { r: KeptReport; onDone: () => void }) {
   };
   const apply = (p: KeptPlan) => {
     setBusy(true);
-    clusterApi
-      .keptApply(r.id, p.hash)
+    save(() => clusterApi.keptApply(r.id, p.hash))
       .then((res) => {
         setPlan(null);
         toast.show({
@@ -78,8 +95,7 @@ function Report({ r, onDone }: { r: KeptReport; onDone: () => void }) {
   };
   const dismiss = () => {
     setBusy(true);
-    clusterApi
-      .keptDismiss(r.id)
+    save(() => clusterApi.keptDismiss(r.id))
       .then(() => {
         setPlan(null);
         onDone();

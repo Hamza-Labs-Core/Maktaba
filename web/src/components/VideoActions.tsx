@@ -28,6 +28,7 @@ import { formatDuration } from "./VideoViews";
 import { AddToPlaylist } from "./AddToPlaylist";
 import { FeatureOnHome } from "./FeatureOnHome";
 import { errorText } from "../lib/errorText";
+import { useReadOrder } from "../lib/readOrder";
 
 /** Resume is offered past the first 30 seconds of an unfinished video. */
 export const RESUME_MIN_SEC = 30;
@@ -43,6 +44,9 @@ export function VideoActions({ videoId }: { videoId: string }) {
   // clicked before Mark watched came back) never lands on the next one
   const shown = useRef(videoId);
   shown.current = videoId;
+  // A read of the series begun before Mark watched was saved still counts the
+  // lesson as it was: it is dropped (lib/readOrder).
+  const order = useReadOrder();
 
   useEffect(() => {
     let cancelled = false;
@@ -53,8 +57,9 @@ export function VideoActions({ videoId }: { videoId: string }) {
         if (cancelled) return;
         setMine(m);
         if (m.series) {
+          const ticket = order.begin();
           seriesPosition(m.series, videoId)
-            .then((p) => !cancelled && setPos(p))
+            .then((p) => !cancelled && order.fresh(ticket) && setPos(p))
             .catch(() => {});
         }
       })
@@ -62,7 +67,7 @@ export function VideoActions({ videoId }: { videoId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [videoId]);
+  }, [videoId, order]);
 
   if (!mine) return null;
 
@@ -79,13 +84,14 @@ export function VideoActions({ videoId }: { videoId: string }) {
     const next = !mine.completed;
     setBusy(true);
     try {
-      await markWatched([id], next);
+      await order.saving(() => markWatched([id], next));
       if (shown.current !== id) return;
       setMine((m) => (m && m.video_id === id ? { ...m, completed: next, position_sec: 0 } : m));
       // the series' "n of m watched" counts this lesson now
       if (series) {
+        const ticket = order.begin();
         seriesPosition(series, id)
-          .then((p) => shown.current === id && setPos(p))
+          .then((p) => shown.current === id && order.fresh(ticket) && setPos(p))
           .catch(() => {});
       }
       toast.show({

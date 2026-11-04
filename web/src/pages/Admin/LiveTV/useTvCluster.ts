@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../../../lib/api";
 import { tvClusterApi, type TvClusterView } from "../../../lib/tvClusterApi";
+import { useReadOrder, type ReadOrder } from "../../../lib/readOrder";
 
 export const CLUSTER_POLL_MS = 5000;
 
@@ -13,6 +14,11 @@ export interface TvClusterState {
   /** the server has no cluster view for this user */
   unavailable: boolean;
   reload: () => Promise<void>;
+  /**
+   * Runs a change's home call (a host switched off, a channel stopped): a read
+   * begun before it ends still has the old state and is not applied.
+   */
+  save: ReadOrder["saving"];
 }
 
 export function useTvCluster(): TvClusterState {
@@ -21,16 +27,18 @@ export function useTvCluster(): TvClusterState {
   const [unavailable, setUnavailable] = useState(false);
   const off = useRef(false);
   const alive = useRef(true);
+  const order = useReadOrder();
 
   const reload = useCallback(async () => {
     if (off.current) return;
+    const ticket = order.begin();
     try {
       const v = await tvClusterApi.get();
-      if (!alive.current) return;
+      if (!alive.current || !order.fresh(ticket)) return;
       setView(v);
       setError(null);
     } catch (e) {
-      if (!alive.current) return;
+      if (!alive.current || !order.fresh(ticket)) return;
       if (e instanceof ApiError && (e.status === 403 || e.status === 404)) {
         off.current = true;
         setUnavailable(true);
@@ -38,7 +46,7 @@ export function useTvCluster(): TvClusterState {
       }
       setError(e instanceof Error ? e.message : String(e));
     }
-  }, []);
+  }, [order]);
 
   useEffect(() => {
     alive.current = true;
@@ -68,5 +76,5 @@ export function useTvCluster(): TvClusterState {
     };
   }, [reload]);
 
-  return { view, error, unavailable, reload };
+  return { view, error, unavailable, reload, save: order.saving };
 }

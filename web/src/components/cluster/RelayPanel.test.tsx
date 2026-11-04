@@ -1,12 +1,13 @@
 // Story 31.R — the Relay tab on /admin/machines: the home's service door,
 // its switch (rules section "relay") and the recent relayed calls.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../lib/i18n";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import type { RelayStatus } from "../../lib/clusterApi";
 import { axeViolations } from "../../test/axe";
+import { deferred } from "../../test/deferred";
 
 const { get, patch } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -119,6 +120,24 @@ describe("Relay panel", () => {
       screen.getByRole("switch", { name: "Relay extension calls for machines" })
     );
     expect(patch).toHaveBeenLastCalledWith("/api/rules/relay", { set: {}, reset: ["enabled"] });
+  });
+
+  it("switched off while a poll is on its way: the older answer does not switch it back on", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    get.mockResolvedValueOnce(status(true));
+    patch.mockResolvedValue({ section: "relay", changed: ["enabled"] });
+    renderPanel();
+    const name = "Relay extension calls for machines";
+    await screen.findByRole("switch", { name });
+    const poll = deferred<RelayStatus>();
+    get.mockReturnValueOnce(poll.promise).mockResolvedValue(status(false));
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(get).toHaveBeenCalledTimes(2);
+    await userEvent.click(screen.getByRole("switch", { name }));
+    expect(await screen.findByText("Off: Plex stages run on the home only")).toBeInTheDocument();
+    await act(async () => poll.resolve(status(true)));
+    expect(screen.getByRole("switch", { name })).not.toBeChecked();
+    expect(screen.getByText("Off: Plex stages run on the home only")).toBeInTheDocument();
   });
 
   it("says when the home has no door", async () => {

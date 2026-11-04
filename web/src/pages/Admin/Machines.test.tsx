@@ -1,7 +1,7 @@
 // Epic 31 — /admin/machines: the home card, pending join requests
 // (approve with the pairing code) and the joined machines.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { I18nProvider } from "../../lib/i18n";
@@ -31,6 +31,7 @@ import type { ClusterNode, ClusterView } from "../../lib/clusterApi";
 import { Machines } from "./Machines";
 import { WorkersStrip } from "../../components/queue/WorkersStrip";
 import { axeViolations } from "../../test/axe";
+import { type Deferred, deferred } from "../../test/deferred";
 
 const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
 const NOW = new Date().toISOString();
@@ -547,6 +548,106 @@ describe("Machines admin page", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("Machines admin page: a change is not undone by a poll that began before it", () => {
+  /** Every GET /api/cluster after the first is held until the test answers it. */
+  function holdPolls() {
+    const reads: Deferred<ClusterView>[] = [];
+    let first = true;
+    get.mockImplementation((url: string) => {
+      if (url !== "/api/cluster") return Promise.resolve(fixture());
+      if (first) {
+        first = false;
+        return Promise.resolve(fixture());
+      }
+      const d = deferred<ClusterView>();
+      reads.push(d);
+      return d.promise;
+    });
+    return reads;
+  }
+
+  beforeEach(() => {
+    localStorage.clear();
+    get.mockReset();
+    post.mockReset();
+    put.mockReset();
+    del.mockReset();
+    post.mockResolvedValue({});
+    put.mockResolvedValue({});
+    del.mockResolvedValue(undefined);
+    authState.user = { username: "admin", is_admin: true };
+  });
+
+  /**
+   * The page shows the fixture; a poll begins and is held; `act` changes
+   * something and its save answers; the read after the save answers `after`;
+   * then the held poll lands with the old fixture, and `check` still holds.
+   */
+  async function race(
+    act_: () => Promise<void>,
+    after: (v: ClusterView) => void,
+    check: () => void
+  ) {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const reads = holdPolls();
+      renderPage();
+      await screen.findByText(/Home NAS box/);
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(reads).toHaveLength(1);
+      await act_();
+      await vi.waitFor(() => expect(reads).toHaveLength(2));
+      const now = fixture();
+      after(now);
+      await act(async () => reads[1]!.resolve(now));
+      check();
+      await act(async () => reads[0]!.resolve(fixture()));
+      check();
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  it("accepting new machines stays on", async () => {
+    await race(
+      () => userEvent.click(screen.getByRole("switch", { name: "Accept new machines" })),
+      (v) => (v.home!.accept_joins = true),
+      () => expect(screen.getByRole("switch", { name: "Accept new machines" })).toBeChecked()
+    );
+  });
+
+  it("a drained machine stays drained", async () => {
+    await race(
+      () => userEvent.click(screen.getByRole("switch", { name: /Drain/ })),
+      (v) => (v.nodes[1] = { ...baseNode, drain: true }),
+      () => expect(screen.getByRole("switch", { name: /Drain/ })).toBeChecked()
+    );
+  });
+
+  it("a revoked machine stays revoked", async () => {
+    await race(
+      async () => {
+        await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
+        const dialog = await screen.findByRole("dialog");
+        await userEvent.click(within(dialog).getByRole("button", { name: "Revoke" }));
+      },
+      (v) => (v.nodes[1] = { ...baseNode, state: "revoked", online: false }),
+      () =>
+        expect(
+          within(screen.getByRole("article", { name: "Studio Mac" })).getByText("Revoked")
+        ).toBeInTheDocument()
+    );
+  });
+
+  it("a rejected request stays gone", async () => {
+    await race(
+      () => userEvent.click(screen.getByRole("button", { name: "Reject" })),
+      (v) => (v.nodes = [baseNode]),
+      () => expect(screen.queryByText("Linux · x86_64")).toBeNull()
+    );
   });
 });
 

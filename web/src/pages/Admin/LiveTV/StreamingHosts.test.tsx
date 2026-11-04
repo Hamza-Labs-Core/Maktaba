@@ -3,19 +3,21 @@
 // off; the cluster settings write PATCH /api/rules/tv_cluster; a two_homes
 // notice is a red banner with both names; Arabic renders right to left.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "../../../lib/i18n";
 
-const { put, patch } = vi.hoisted(() => ({ put: vi.fn(), patch: vi.fn() }));
+const { get, put, patch } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn(), patch: vi.fn() }));
 vi.mock("../../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../../lib/api")>("../../../lib/api");
-  return { ...actual, api: { ...actual.api, put, patch } };
+  return { ...actual, api: { ...actual.api, get, put, patch } };
 });
 
 import { StreamingHosts } from "./StreamingHosts";
 import { clusterView } from "./fixtures";
 import type { TvClusterView } from "../../../lib/tvClusterApi";
+import { CLUSTER_POLL_MS, useTvCluster } from "./useTvCluster";
+import { deferred } from "../../../test/deferred";
 
 function renderHosts(view: TvClusterView = clusterView(), onChanged = vi.fn()) {
   render(
@@ -31,6 +33,7 @@ const card = (name: string) => screen.getByRole("article", { name });
 describe("StreamingHosts", () => {
   beforeEach(() => {
     localStorage.clear();
+    get.mockReset();
     put.mockReset();
     patch.mockReset();
     put.mockResolvedValue({});
@@ -173,6 +176,41 @@ describe("StreamingHosts", () => {
     expect(banner).toHaveTextContent("Mac-Studio and Mac-Mini both say they are the home");
     expect(screen.getByText("No room")).toBeInTheDocument();
     expect(screen.getByText(/no host has room for Seerah/)).toBeInTheDocument();
+  });
+
+  it("a machine switched off while the page reads again stays off (useTvCluster)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const off = clusterView();
+      off.hosts = off.hosts.map((h) => (h.host_id === "h-pc" ? { ...h, enabled: false } : h));
+      const poll = deferred<TvClusterView>();
+      get
+        .mockResolvedValueOnce(clusterView())
+        .mockReturnValueOnce(poll.promise)
+        .mockResolvedValue(off);
+      function Wired() {
+        const c = useTvCluster();
+        return c.view ? <StreamingHosts view={c.view} onChanged={c.reload} save={c.save} /> : null;
+      }
+      render(
+        <I18nProvider>
+          <Wired />
+        </I18nProvider>
+      );
+      const sw = () =>
+        within(card("Gaming-PC")).getByRole("switch", { name: "Stream on this machine" });
+      await screen.findByRole("article", { name: "Gaming-PC" });
+      await act(async () => vi.advanceTimersByTimeAsync(CLUSTER_POLL_MS));
+      expect(get).toHaveBeenCalledTimes(2);
+      await userEvent.click(sw());
+      expect(put).toHaveBeenCalledWith("/api/tv/cluster/hosts/h-pc", { enabled: false });
+      await vi.waitFor(() => expect(sw()).not.toBeChecked());
+      // the read begun before the change lands last, with the machine still on
+      await act(async () => poll.resolve(clusterView()));
+      expect(sw()).not.toBeChecked();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("renders in Arabic", () => {
