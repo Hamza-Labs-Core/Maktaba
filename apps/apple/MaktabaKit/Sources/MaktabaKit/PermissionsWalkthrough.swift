@@ -46,7 +46,13 @@ struct PermissionsGate: ViewModifier {
     @Environment(\.scenePhase) private var phase
 
     func body(content: Content) -> some View {
-        presented(content)
+        content
+            .sheet(isPresented: $model.isPresented, onDismiss: { model.dismiss() }) {
+                PermissionsWalkthrough(model: model, appName: appName)
+                    #if os(macOS)
+                    .frame(minWidth: 520, minHeight: 440)
+                    #endif
+            }
             .task { await model.refresh() }
             .onChange(of: phase) { _, now in
                 if now == .active { Task { await model.refresh() } }
@@ -57,69 +63,7 @@ struct PermissionsGate: ViewModifier {
             }
             #endif
     }
-
-    #if os(iOS)
-    /// On iPhone and iPad the walkthrough is drawn over the app in its own view, not in a
-    /// UIKit sheet: UIKit dropped the sheet's dismissal, both the binding going false and the
-    /// sheet's own dismiss, with Continue tapped well after the sheet stood still (iPad runs of
-    /// PRs #595 and #608), so the walkthrough stayed. Here Continue's state change closes it
-    /// the moment it is made, with no presentation to finish first.
-    private func presented(_ content: Content) -> some View {
-        content
-            // the app under it is out of reach for VoiceOver (and the UI tests) while it is up
-            .accessibilityHidden(model.isPresented)
-            .overlay {
-                if model.isPresented {
-                    PermissionsCover(model: model, appName: appName)
-                        .transition(.opacity)
-                }
-            }
-            .animation(.easeInOut(duration: 0.2), value: model.isPresented)
-    }
-    #else
-    private func presented(_ content: Content) -> some View {
-        content
-            .sheet(isPresented: $model.isPresented, onDismiss: { model.dismiss() }) {
-                PermissionsWalkthrough(model: model, appName: appName)
-                    #if os(macOS)
-                    .frame(minWidth: 520, minHeight: 440)
-                    #endif
-            }
-    }
-    #endif
 }
-
-#if os(iOS)
-/// The walkthrough over the app: the whole screen on an iPhone, a card over a dimmed app on
-/// an iPad (where a sheet stood). The dimmed part takes the touches, so the app under it
-/// gets none until Continue.
-struct PermissionsCover: View {
-    let model: PermissionsModel
-    let appName: String
-    @Environment(\.horizontalSizeClass) private var width
-
-    var body: some View {
-        if width == .regular {
-            ZStack {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .accessibilityHidden(true)
-                PermissionsWalkthrough(model: model, appName: appName)
-                    .frame(maxWidth: 580, maxHeight: 680)
-                    .background(.background, in: RoundedRectangle(cornerRadius: 20))
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(.separator))
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .padding(24)
-            }
-            .accessibilityAddTraits(.isModal)
-        } else {
-            PermissionsWalkthrough(model: model, appName: appName)
-                .background(.background)
-                .accessibilityAddTraits(.isModal)
-        }
-    }
-}
-#endif
 
 /// Each permission the app needs: why, where it stands, and a button that asks or opens the
 /// settings pane. English or Arabic (right to left) after the person's first language.
@@ -128,7 +72,7 @@ public struct PermissionsWalkthrough: View {
     let appName: String
     let words: PermissionsStrings
     @Environment(\.openURL) private var openURL
-    /// Closes the sheet this walkthrough is in (Mac, Apple TV), whatever its binding says.
+    /// Closes the sheet this walkthrough is in, whatever its binding says.
     @Environment(\.dismiss) private var close
 
     public init(model: PermissionsModel, appName: String, words: PermissionsStrings = .forPreferredLanguages()) {
@@ -165,13 +109,12 @@ public struct PermissionsWalkthrough: View {
             Divider()
             HStack {
                 Spacer()
-                // the model's flag closes it; in a sheet (Mac, Apple TV) the sheet's own
-                // dismiss too
+                // the model's flag, and the sheet itself: on a loaded iPad simulator the
+                // flag going false alone once left the sheet up, its Continue pressed (PR
+                // #595's iPad run); the sheet's own dismiss closes it either way
                 Button(words.text(model.requiredMissing ? .notNow : .continue)) {
                     model.dismiss()
-                    #if !os(iOS)
                     close()
-                    #endif
                 }
                     .buttonStyle(.borderedProminent)
                     #if !os(tvOS)

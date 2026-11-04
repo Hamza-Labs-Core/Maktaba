@@ -140,8 +140,9 @@ class PlayerUITestCase: XCTestCase {
         app.terminate()
     }
 
-    /// Opens the app. `fresh`: as a first run (no homes, the permissions walkthrough passed
-    /// with its checks faked); otherwise the home and the sign-in of the last launch are kept.
+    /// Opens the app. `fresh`: as a first run (no homes), past the permissions walkthrough
+    /// (`-maktaba-permissions-seen`, its checks faked); otherwise the home and the sign-in of
+    /// the last launch are kept.
     /// The tokens are kept in a file, not the Keychain (`-maktaba-secrets-in-file`,
     /// `UITestSecrets`): the app is built unsigned on CI, and an unsigned app may not use the
     /// Keychain, so it would be signed out at each launch.
@@ -162,7 +163,11 @@ class PlayerUITestCase: XCTestCase {
         // the dark theme (screenshots are dark by default; FR-2)
         if let theme { args += ["-theme", theme] }
         if fresh {
-            args += ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
+            // past the walkthrough with no tap: a Continue tap was lost in the simulator itself
+            // (backboardd attached XCTest's digitizer twice, "unknown digitizer", and skipped
+            // the touch; iPad runs of #608). The walkthrough's taps are PermissionsUITests'.
+            args += ["-maktaba-permissions-reset", "-maktaba-permissions-seen", "-maktaba-permissions-fake", "granted",
+                     "-maktaba-session-reset"]
             if resetSettings { args.append("-maktaba-settings-reset") }
         }
         if let sections { args += ["-maktaba-sections", sections.joined(separator: ",")] }
@@ -173,19 +178,6 @@ class PlayerUITestCase: XCTestCase {
         args.append(TextSizeHook.flag)
         app.launchArguments = args + extra
         app.launch()
-        if fresh {
-            let walkthrough = element("permissions.walkthrough")
-            if walkthrough.waitForExistence(timeout: 10 * patience) {
-                // drawn over the app in its own view (`PermissionsCover`), not a UIKit sheet:
-                // a sheet took no touch while it slid up (an iPhone run on #618), and once
-                // dropped its dismissal after Continue, standing still (an iPad run of #608).
-                // Continue closes it at once, so one tap once it can be tapped.
-                let go = app.buttons["permissions.continue"]
-                waitUntilStill(go, timeout: 5 * patience)
-                go.tap()
-                XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5 * patience), "the permissions walkthrough closes")
-            }
-        }
     }
 
     /// Waits (at most `timeout`) until `e` can be tapped and its frame is the same on two looks

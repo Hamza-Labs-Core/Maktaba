@@ -168,6 +168,21 @@ struct SlowToStartProbe: LocalNetworkProbe {
         #expect(!d.bool(forKey: PermissionsModel.askedKey))
     }
 
+    /// A UI test of another screen starts past the walkthrough (`-maktaba-permissions-seen`
+    /// after the reset): no walkthrough, and the check still runs. A tap on Continue was lost
+    /// in the simulator itself (its digitizer attached twice), so the setup taps nothing.
+    @Test func seenAtLaunchShowsNoWalkthrough() async {
+        let d = freshDefaults()
+        let args = ["app", "-maktaba-permissions-reset", "-maktaba-permissions-seen", "-maktaba-permissions-fake", "granted"]
+        PermissionsModel.applyLaunchArguments(args, defaults: d)
+        #expect(d.bool(forKey: PermissionsModel.seenKey))
+        #expect(!d.bool(forKey: PermissionsModel.askedKey))
+        let m = PermissionsModel.forThisApp(arguments: args, environment: [:], defaults: d)
+        await m.refresh()
+        #expect(!m.isPresented)
+        #expect(m.state(of: .localNetwork) == .granted)
+    }
+
     /// The clock starts when the browse is read: a reader held back past the timeout still
     /// hears the answer.
     @Test func aSlowStartStillHearsTheAnswer() async {
