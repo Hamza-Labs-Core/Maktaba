@@ -87,6 +87,10 @@ The processing pipeline's search port, used for searching by meaning. When it do
 
 A process maktaba-server runs (the API, streaming, the pipeline): **Running**, restarting, failed or in a crash loop. See [Processes](#process-states).
 
+### Components {#item-components}
+
+The parts of Maktaba you can turn on and off (transcription, Live TV, YouTube and the rest), on every machine. Only a part that **failed**, or stayed **degraded** for more than 10 minutes, needs a look. A part you turned off or stopped, or one waiting for a part you turned off, is your choice and never counts. Open [Components](/settings/components) to see why a part failed and to start it again.
+
 ### Workers {#item-workers}
 
 All workers together: how many are online. **Down** when no worker runs: nothing is processed. Start the pipeline (or the Mac app) on at least one machine.

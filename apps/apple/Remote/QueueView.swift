@@ -172,6 +172,13 @@ struct StageRow: View {
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                // Epic 51: its component holds the stage back (the web's grey off tile)
+                if let line = row.componentLine() {
+                    Text(verbatim: line)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("queue.component.\(row.id)")
+                }
             }
             Spacer()
             if busy {
@@ -235,6 +242,20 @@ struct StageView: View {
         List {
             ProblemSection()
             if let row {
+                if let line = row.componentLine() {
+                    // Epic 51: the stage waits on its component; it is turned on in Components
+                    Section {
+                        Text(verbatim: line)
+                            .accessibilityIdentifier("queue.component")
+                        if let home = model.session.client?.home {
+                            Link(destination: Capabilities.componentsPage(home)) {
+                                Text(verbatim: FeatureWords.turnOn)
+                            }
+                            .foregroundStyle(Color.brass)
+                            .accessibilityIdentifier("queue.components")
+                        }
+                    }
+                }
                 Section {
                     LabeledContent("State") { StateBadge(row: row) }
                     LabeledContent("Waiting", value: row.waiting, format: .number)

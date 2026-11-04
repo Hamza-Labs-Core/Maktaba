@@ -14,7 +14,9 @@
 #
 # A release is public only when it is complete (H2/B2: a home that looked at a release
 # before its release.json existed never verified it again):
-#   - release.yml's signed set: release.json, checksums.txt and its Sigstore bundle;
+#   - release.yml's signed set: release.json, checksums.txt and its Sigstore bundle, and
+#     components-<version>.json, the signed component index (its packs, <id>-<version>-
+#     <platform>.tar.zst and their .partN, are attached with the rest);
 #   - the apps that carry the server (darwin-aarch64, windows-x86_64, linux-x86_64,
 #     linux-aarch64) in its latest.json, when the repository has the updater key
 #     (vars.TAURI_UPDATER_PUBKEY: REQUIRE_FEED=true).
@@ -128,7 +130,8 @@ publish() {
     id="$(release_id)"
     [ -n "${id}" ] || { echo "release ${tag}: none yet"; return 0; }
     names="$(asset_names "${id}")"
-    for a in release.json checksums.txt checksums.txt.sigstore.json; do
+    # the signed component index (Epic 51 story 51.15) is part of release.yml's signed set
+    for a in release.json checksums.txt checksums.txt.sigstore.json "components-${tag#v}.json"; do
         grep -qx "${a}" <<<"${names}" || missing+=("${a} (release.yml)")
     done
     tmp="$(mktemp -d)"

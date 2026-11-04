@@ -23,6 +23,8 @@ struct PlayerShell: View {
     let context: PlayerContext
     @Binding var playing: Bool
     let sections: [PlayerSection]
+    /// Live TV is left out of `sections` because it is off on the home (`LiveSectionGate`).
+    let liveTVHidden: Bool
     /// A deep link's page (`maktaba://video/{id}`, `PlayerApp`), opened on the section in view
     /// and then cleared.
     @Binding var link: PlayerRoute?
@@ -38,27 +40,53 @@ struct PlayerShell: View {
     @State private var windowPlayer = WindowPlayer()
     #endif
 
+    /// A link into Live TV while it is off for this viewer (story 51.11): Home, and a short
+    /// line saying Live TV isn't available on this home.
+    @State private var unavailable: Bool
+    /// A launch into Live TV the shell could not settle when it was built: the home had not
+    /// said yet what is on, or whether this person has a channel (a slow home: CI's loaded
+    /// simulators answered after `LiveSectionGate.patience`). Settled once both are known
+    /// (`settleLaunch`), unless the person chose a section first.
+    @State private var liveUnsettled: Bool
+
     init(context: PlayerContext, playing: Binding<Bool>, link: Binding<PlayerRoute?> = .constant(nil),
          sections: [PlayerSection] = PlayerSection.visible(),
-         start: PlayerSection? = ShellLaunch.section(), route: PlayerRoute? = ShellLaunch.route()) {
+         start: PlayerSection? = ShellLaunch.section(), route: PlayerRoute? = ShellLaunch.route(),
+         liveTVHidden: Bool = false) {
         self.context = context
         _playing = playing
         _link = link
         self.sections = sections
+        let toLive: Bool = if start == .liveTV { true } else if case .channel = route { true } else { false }
+        let blocked = liveTVHidden && toLive
+        self.liveTVHidden = liveTVHidden
         let first = start.flatMap { sections.contains($0) ? $0 : nil } ?? sections.first ?? .libraries
+        _liveUnsettled = State(initialValue: toLive && !blocked
+            && (first != .liveTV || !context.session.capabilities.answered))
         _selection = State(initialValue: first)
-        _paths = State(initialValue: route.map { [first: [$0]] } ?? [:])
+        _paths = State(initialValue: (blocked ? nil : route).map { [first: [$0]] } ?? [:])
+        _unavailable = State(initialValue: blocked)
+    }
+
+    /// The tabs in view: `sections`, and the one chosen when a feature that went off took it
+    /// away (story 51.11). The shell is never rebuilt for a change of sections: each tab keeps
+    /// its stack, the open screen stays (it says the feature is off when its next call fails)
+    /// and goes with the next choice of another tab.
+    private var shown: [PlayerSection] {
+        ShellTabs.shown(offered: sections, selected: selection, order: PlayerSection.allCases)
     }
 
     var body: some View {
         Group {
-            if sections.count == 1, let only = sections.first {
+            if shown.count == 1, let only = shown.first {
                 // its stack (and the routes) without a tab bar; Libraries stays its split view
                 stack(only)
             } else {
                 tabs
             }
         }
+        .onChange(of: context.session.capabilities.answered) { settleLaunch() }
+        .onChange(of: sections) { settleLaunch() }
         .onChange(of: link, initial: true) { _, route in
             guard let route else { return }
             link = nil
@@ -67,8 +95,25 @@ struct PlayerShell: View {
         .sheet(isPresented: Binding { linked != nil } set: { if !$0 { linked = nil } }) {
             if let linked { LinkedRouteSheet(context: context, route: linked) }
         }
+        .overlay(alignment: .bottom) {
+            if unavailable {
+                Text(verbatim: FeatureWords.unavailable(.liveTV))
+                    .font(.maktabaBody(15, weight: .medium, relativeTo: .subheadline))
+                    .foregroundStyle(Color.mktText)
+                    .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    .padding(.vertical, MaktabaTokens.Spacing.s3)
+                    .background(Color.mktSurface, in: .capsule)
+                    .padding(.bottom, 88)
+                    .padding(.horizontal, MaktabaTokens.Spacing.s4)
+                    .accessibilityIdentifier("shell.unavailable")
+                    .task {
+                        try? await Task.sleep(for: .seconds(5))
+                        unavailable = false
+                    }
+            }
+        }
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
-        .playerMenuTarget(sections: sections, selection: chosen)
+        .playerMenuTarget(sections: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
         #if os(macOS)
@@ -89,7 +134,7 @@ struct PlayerShell: View {
 
     private var tabs: some View {
         TabView(selection: chosen) {
-            ForEach(sections) { section in
+            ForEach(shown) { section in
                 Tab(value: section, role: section == .search ? .search : nil) {
                     stack(section)
                 } label: {
@@ -110,7 +155,25 @@ struct PlayerShell: View {
         } set: { new in
             if new == selection { paths[new] = [] }
             selection = new
+            liveUnsettled = false
         }
+    }
+
+    /// The shell came before the home said what is on, or whether this person has a channel:
+    /// a launch into Live TV lands there once its section shows (an admin's screen says it is
+    /// off), or, off for this viewer, lands on Home and says so, as at a launch after it.
+    private func settleLaunch() {
+        guard liveUnsettled, context.session.capabilities.answered else { return }
+        if sections.contains(.liveTV) {
+            selection = .liveTV
+            liveUnsettled = false
+        } else if liveTVHidden {
+            paths[.liveTV] = nil
+            if selection == .liveTV { selection = sections.first ?? .libraries }
+            unavailable = true
+            liveUnsettled = false
+        }
+        // else the home has not said yet whether this person has a channel: its answer settles
     }
 
     /// A deep link's page: pushed on the chosen section's stack, or in a sheet over a section

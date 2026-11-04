@@ -2,6 +2,9 @@ package com.hamzalabs.maktaba.core.session
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
+import com.hamzalabs.maktaba.core.api.Capabilities
+import com.hamzalabs.maktaba.core.api.CapabilitiesAnswer
+import com.hamzalabs.maktaba.core.api.capabilities
 import com.hamzalabs.maktaba.core.api.DeviceCode
 import com.hamzalabs.maktaba.core.api.DeviceSignIn
 import com.hamzalabs.maktaba.core.api.ErrorKind
@@ -18,6 +21,8 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import okhttp3.HttpUrl
@@ -115,6 +120,11 @@ class AppSession(
     val now: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
     progressState: MutableStateFlow<ConnectProgress?> = MutableStateFlow(null),
+    /**
+     * Story 51.11's build switch ([com.hamzalabs.maktaba.core.api.capabilitiesGate] of the app's
+     * build; on when the app does not say): off, [capabilities] stays every feature on.
+     */
+    val capabilitiesGate: Boolean = true,
 ) {
     sealed interface Phase {
         data object ChoosingHome : Phase
@@ -130,6 +140,67 @@ class AppSession(
 
     private val _phase = MutableStateFlow<Phase>(Phase.ChoosingHome)
     val phase: StateFlow<Phase> = _phase.asStateFlow()
+
+    private val _capabilities = MutableStateFlow(Capabilities.AllOn)
+
+    /**
+     * What the home in use has on (story 51.11): every feature on until it answers, and the last
+     * good answer kept when a refresh fails (an app never hides a feature because the home did
+     * not answer). Asked at sign-in, when the app comes to the front and every
+     * [CAPABILITIES_EVERY_MS] while it is there ([followCapabilities]); another home, or signing
+     * out, starts again from every feature on.
+     */
+    val capabilities: StateFlow<Capabilities> = _capabilities.asStateFlow()
+
+    /** The client [capabilities] were answered by (null: none yet). */
+    private var capabilitiesOf: ApiClient? = null
+    private val capabilitiesLock = Mutex()
+
+    /**
+     * Asks the signed-in home what it has on, with the answer's ETag (a 304 keeps it). A failure
+     * keeps the last good answer; an answer from a client no longer in use is dropped.
+     */
+    suspend fun refreshCapabilities() {
+        if (!capabilitiesGate) return
+        val c = (_phase.value as? Phase.SignedIn)?.client ?: return
+        capabilitiesLock.withLock {
+            if (c !== client) return
+            val etag = if (capabilitiesOf === c) _capabilities.value.etag else null
+            val answer = try {
+                c.capabilities(etag)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return // the last good answer stays
+            }
+            if (c !== client) return
+            when (answer) {
+                is CapabilitiesAnswer.Updated -> {
+                    _capabilities.value = answer.capabilities.copy(etag = answer.etag)
+                    capabilitiesOf = c
+                }
+                CapabilitiesAnswer.NotModified -> capabilitiesOf = c
+            }
+        }
+    }
+
+    /**
+     * Keeps [capabilities] fresh while the app is in front: asks now, then every
+     * [CAPABILITIES_EVERY_MS]. The apps run it while they are started (`ON_START` to `ON_STOP`),
+     * so coming to the front asks again and nothing is asked in the background.
+     */
+    suspend fun followCapabilities(everyMs: Long = CAPABILITIES_EVERY_MS) {
+        while (true) {
+            refreshCapabilities()
+            delay(everyMs)
+        }
+    }
+
+    /** Another home or signed out: every feature on again until that home answers. */
+    private fun forgetCapabilities() {
+        capabilitiesOf = null
+        _capabilities.value = Capabilities.AllOn
+    }
 
     private val _restoreProblem = MutableStateFlow<ErrorKind?>(null)
     /** Why the kept sign-in could not be checked (the home did not answer): try again, or sign in. */
@@ -282,6 +353,7 @@ class AppSession(
         val tokens = tokensFor(chosen.url)
         val c = clientFor(chosen.httpUrl, tokens)
         client = c
+        forgetCapabilities()
         _phase.value = Phase.SigningIn
         _restoreProblem.value = null
         // the home just found stays said ("Found …") over the sign-in; anything else is over
@@ -608,6 +680,7 @@ class AppSession(
     fun switchHome() {
         _current.value = null
         client = null
+        forgetCapabilities()
         _progress.value = null
         succeeded()
         again = null
@@ -701,12 +774,14 @@ class AppSession(
 
     fun signOut() {
         _current.value?.let { tokensFor(it.url).clear() }
+        forgetCapabilities()
         _progress.value = null
         _phase.value = Phase.SigningIn
     }
 
     /** A screen saw `ApiException.SignedOut`: back to signing in. */
     fun signedOut() {
+        forgetCapabilities()
         _progress.value = null
         _phase.value = Phase.SigningIn
     }
@@ -715,6 +790,8 @@ class AppSession(
         if (c !== client) return
         named(me.homeName)
         _phase.value = Phase.SignedIn(me.user, c)
+        // what this home has on, at sign-in (the apps then follow it while in front)
+        scope.launch { refreshCapabilities() }
     }
 
     /** The current home's name as the home says it (null: it did not say, so the name stays). */
@@ -751,6 +828,9 @@ class AppSession(
 
         /** How long a home that does not answer is looked for on the network before it counts as failed. */
         const val LOOK_MS = 15_000L
+
+        /** How often a home's capabilities are asked again while the app is in front (story 51.11). */
+        const val CAPABILITIES_EVERY_MS = 5 * 60_000L
 
         /** Why [e] failed, as a person reads it ([password]: a 400-403 is the username and password). */
         fun reasonFor(e: Throwable, password: Boolean = false): FailReason {

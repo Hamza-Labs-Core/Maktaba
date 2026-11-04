@@ -39,6 +39,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/link"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/discovery"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -47,6 +48,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/telemetry"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/watch"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/nodemode"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
@@ -54,7 +57,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/sharepath"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
@@ -63,6 +65,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/usage"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	errrpt "github.com/Hamza-Labs-Core/Maktaba/shared/errrpt/go"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
@@ -112,6 +115,8 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "components":
+			os.Exit(runComponents(os.Args[2:]))
 		case "hash-password":
 			if err := runHashPassword(os.Stdin, os.Stdout); err != nil {
 				fmt.Fprintf(os.Stderr, "hash-password: %v\n", err)
@@ -186,6 +191,8 @@ Commands:
   plex-link  Store the Plex server an account token reaches (the desktop
              app's first-run setup; see "plex-link --help")
   keys       Generate or rotate RS256 JWT keys (Story 10.6)
+  components List, turn on, off, stop or start the components
+             (see "components --help"; Epic 51 story 51.08)
   cloudflare spike
              Run the Cloudflare Stream spike against a real account
              (credentials from the environment; tools/tv/cf-spike.md)
@@ -317,8 +324,17 @@ func runServe() error {
 	// no-DB stub). The Postgres store opens its own small pool for the
 	// same isolation reason P6 does — the replay path must not contend
 	// with handler or readiness pools.
+	// Epic 51 story 51.05: the background loops start and stop with their catalog
+	// component. Until the home's database is read every component is on, as before.
+	loops := components.NewRunnerFor(logger, nodeMachine(nodeCfg))
+	// the Cloudflare Stream integration is the home API's alone (no stage, no loop): its
+	// component's status row is the API's
+	if !nodeCfg.Enabled {
+		loops.Serve("ext.cloudflare_stream")
+	}
+
 	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger, nodeCfg.Enabled)
-	safego.Go(logger, "idempotency_sweep", idemSweep)
+	loops.Declare("idempotency_sweep", runner.Func(func(context.Context) { idemSweep() }))
 	defer idemClose()
 
 	// Health-aggregator stats: a dedicated small pool for the live
@@ -330,12 +346,21 @@ func runServe() error {
 	// Epic 16: the entitlement store is built with the app DB below; the
 	// relay gate in the router's chain reads it through this reference.
 	licRef := &subscriptions.StoreRef{}
+	// Epic 51 story 51.19: the gate also asks the cloud.relay component's Licensed
+	// condition (the row the runners read), the same answer from one source
+	licRef.SetRelayLicensed(func() (bool, bool) { return loops.Licensed("cloud.relay") })
 	// Epic 44 story 44.5: the API's use per app and day. It counts once the
 	// app database is attached (below) and is written every minute and at
 	// shutdown.
 	usageCounter := &usage.Counter{Logger: logger}
+	// Epic 51 story 51.09: which features are on (GET /api/capabilities) and the
+	// component_off check, from memory. Every feature is on until the database is read;
+	// either kill switch keeps it so.
+	capabilities := components.NewCapabilities(components.CapabilitiesOptions{Logger: logger,
+		AllOn: components.CapabilitiesGateOff() || runner.ReconcileOff()})
 
 	r := router.New(router.Deps{
+		Capabilities:       capabilities,
 		License:            licRef,
 		Usage:              usageCounter,
 		IdempotencyStore:   idemStore,
@@ -375,7 +400,7 @@ func runServe() error {
 	supervisorURL := os.Getenv("MAKTABA_SUPERVISOR_URL")
 	router.MountProcesses(r, router.ProcessesDeps{SupervisorURL: supervisorURL})
 	if recorder := processRecorder(supervisorURL, statsDB, nodeCfg.Enabled, logger); recorder != nil {
-		safego.Go(logger, "process_recorder", func() { recorder.Run(context.Background()) })
+		loops.Declare("process_recorder", runner.Func(recorder.Run))
 	}
 
 	// Epic 28 (Auto-Update) — the update-check service (Story 28.2) and
@@ -389,7 +414,7 @@ func runServe() error {
 	var updater *system.Updater
 	if !nodeCfg.Enabled {
 		updater = buildUpdater(logger)
-		safego.Go(logger, "update_checker", func() { updater.Run(context.Background()) })
+		loops.Declare("update_checker", runner.Func(updater.Run))
 		router.MountP28(r, router.P28Deps{Updater: updater, Updates: updatesRef})
 		logger.Info("p28: auto-update surface mounted", "event", "p28_mounted")
 	}
@@ -418,7 +443,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
 		if err != nil {
 			return err
 		}
@@ -531,12 +556,20 @@ func runServe() error {
 			// one runtime settings reader for the settings and auth surfaces: a
 			// PATCH /api/settings (a renamed home) reads at once in /api/auth/me
 			runtimeSettings := runtimecfg.New(appDB)
+			// the runner reads the home's desired state from here on
+			components.Start(loops, appDB, func() string { return pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping) }, logger)
+			var eventBus *eventbus.Bus
+			eventHub := ws.NewHub()
 			router.MountP6(r, router.P6Deps{
-				Settings: runtimeSettings,
-				Secrets:  homeSecrets,
+				EventHub:     eventHub,
+				OnBus:        func(b *eventbus.Bus) { eventBus = b },
+				Capabilities: capabilities,
+				Loops:        loops,
+				Settings:     runtimeSettings,
+				Secrets:      homeSecrets,
 				OnQueues: func(q *queues.Handler) {
 					_, remoteCtl, mountRemote = router.WireP32Remote(q, router.P32RemoteDeps{
-						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub,
+						DB: appDB, Secrets: homeSecrets, Logger: logger, Notifier: notifyHub, Loops: loops,
 					})
 				},
 				DB:                   appDB,
@@ -575,12 +608,14 @@ func runServe() error {
 			homeDir := newHomeDirectory(licCloud)
 			p10Deps.Home = homeDir.Info
 			if licRefresher != nil {
-				safego.Go(logger, "license_refresher", func() { licRefresher.Run(context.Background()) })
+				loops.Declare("license_refresher", runner.Func(licRefresher.Run))
 			}
 			if licVerifier != nil {
 				// a license applied by `maktaba-api license apply` (or another replica) is
 				// taken up within a minute, without a restart
-				safego.Go(logger, "license_reload", func() { reloadLicense(context.Background(), entStore, licVerifier, time.Minute, logger) })
+				loops.Declare("license_reload", runner.Func(func(ctx context.Context) {
+					reloadLicense(ctx, entStore, licVerifier, time.Minute, logger)
+				}))
 			}
 
 			// Phase 9 (Epic 10 stories 10.2-10.5, 10.16) — auth surface.
@@ -610,7 +645,7 @@ func runServe() error {
 				if agent := os.Getenv("MAKTABA_CLOUDLINK_ADMIN"); agent != "" {
 					rep := cloudlink.NewReporter(agent, p9.Cloud.Store, logger)
 					p9.Cloud.Store.Changed = rep.Kick
-					safego.Go(logger, "cloudlink_reporter", func() { rep.Run(context.Background(), 30*time.Minute) })
+					loops.Declare("cloudlink_reporter", runner.Func(func(ctx context.Context) { rep.Run(ctx, 30*time.Minute) }))
 				}
 				csrf = p9.CSRF
 				logger.Info("p9: auth handlers mounted", "event", "p9_mounted")
@@ -660,10 +695,10 @@ func runServe() error {
 			// Epic 33: TV changes (/api/tv/changes, releases, slots) and the change
 			// controller (staged -> verified -> approved -> swapped)
 			tvChanges := router.MountP33(r, router.P33Deps{DB: appDB, Logger: logger, RunController: true,
-				Notifier: notifyHub})
+				Notifier: notifyHub, Loops: loops})
 			// Epic 35 story 35.3: update policy, release catalog and the quiet-window
 			// scheduler (/api/cluster/updates). Verification is story 35.1's.
-			router.MountP35(r, router.P35Deps{DB: appDB, Logger: logger, Current: version.Version, Notifier: notifyHub,
+			router.MountP35(r, router.P35Deps{DB: appDB, Loops: loops, Logger: logger, Current: version.Version, Notifier: notifyHub,
 				BaseChannel: version.Channel(), Ref: updatesRef, RunLoops: true, Hub: hubRef, GitHubBaseURL: e2eGitHubAPI(),
 				Verifier: updates.ReleaseVerifier{Trust: updater}, DataDir: statsDataDir, TV: tvChanges})
 			logger.Info("p27: live-channel + guide handlers mounted",
@@ -675,14 +710,20 @@ func runServe() error {
 			// boot goroutine (interrupted-session reap every minute +
 			// daily retention purge), mirroring runPairingSweep.
 			router.MountP29(r, router.P29Deps{DB: appDB, Driver: "postgres", License: licRef, Secrets: homeSecrets})
+			// Epic 51 story 51.08: the components' admin routes (desired state, holds,
+			// preview and apply), the same service the `components` CLI uses
+			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
+			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
+				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
+				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
 				Logger:        logger,
 			}
-			safego.Go(logger, "watch_reaper", func() { reaper.Run(context.Background()) })
+			loops.Declare("watch_reaper", runner.Func(reaper.Run))
 			usageCounter.Attach(appDB)
-			safego.Go(logger, "usage_counter", func() { usageCounter.Run(context.Background(), usage.DefaultFlushEvery) })
+			loops.Declare("usage_counter", runner.Func(func(ctx context.Context) { usageCounter.Run(ctx, usage.DefaultFlushEvery) }))
 			logger.Info("p29: watch-analytics handlers mounted + reaper started",
 				"event", "p29_mounted")
 
@@ -695,13 +736,13 @@ func runServe() error {
 				CloudURL:     telemetryURL(licCloud),
 				RemoteAccess: func() bool { return licCloud().Claimed },
 			}); sender != nil {
-				safego.Go(logger, "telemetry_sender", func() { sender.Run(context.Background()) })
+				loops.Declare("telemetry_sender", runner.Func(sender.Run))
 			}
 
 			// Epic 31 (multi-instance) — instance identity, the LAN
 			// announcement (MAKTABA_DISCOVERY_MDNS=0 turns it off), the
 			// machine join/approve/revoke surface and its housekeeping.
-			clusterClose, verifier, hl := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, updatesRef, notifyHub, homeDir, logger)
+			clusterClose, verifier, hl := mountCluster(r, appDB, dsn, publicAddr, homeSecrets, hubRef, updatesRef, notifyHub, homeDir, loops, logger)
 			defer clusterClose()
 			nodeVerifier = verifier
 			homeLinkSrv = hl
@@ -714,7 +755,7 @@ func runServe() error {
 			// hard-deletes them past the 7-day retention horizon so
 			// `pairing_tickets` cannot grow unbounded. Same context/log
 			// convention as runIdempotencySweep.
-			safego.Go(logger, "pairing_sweep", func() { runPairingSweep(pairingStore, logger) })
+			loops.Declare("pairing_sweep", runner.Func(func(ctx context.Context) { runPairingSweep(ctx, pairingStore, logger) }))
 		}
 	} else {
 		logger.Info("p6: DATABASE_URL unset; handlers unwired",
@@ -785,7 +826,7 @@ func runServe() error {
 	// `rotation_overlap_sec` has elapsed since the previous-key was
 	// added, drop it. 60s tick is much finer than the 24h overlap so
 	// the reaper is essentially free.
-	safego.Go(logger, "jwt_key_reaper", func() {
+	loops.Declare("jwt_key_reaper", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
 		t := time.NewTicker(60 * time.Second)
 		defer t.Stop()
 		for {
@@ -799,7 +840,7 @@ func runServe() error {
 				}
 			}
 		}
-	})
+	})))
 
 	select {
 	case <-ctx.Done():
@@ -936,12 +977,17 @@ const (
 // loop alive so a transient failure self-heals next tick). Works
 // against any PairingStore backend — the Postgres `pairing_tickets`
 // table or the in-memory dev store — via the Sweep seam.
-func runPairingSweep(s discovery.PairingStore, logger *slog.Logger) {
+func runPairingSweep(ctx context.Context, s discovery.PairingStore, logger *slog.Logger) {
 	t := time.NewTicker(pairingSweepInterval)
 	defer t.Stop()
-	for range t.C {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
 		before := time.Now().UTC().Add(-pairingRetention)
-		if _, err := s.Sweep(context.Background(), before); err != nil {
+		if _, err := s.Sweep(ctx, before); err != nil {
 			logger.Warn("pairing: sweep failed; expired tickets will accrue until it recovers",
 				"err", err, "event", "pairing_sweep_failed")
 		}

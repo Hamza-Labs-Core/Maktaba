@@ -40,6 +40,10 @@ public struct SessionGate<Content: View>: View {
         // the homes on this network, the whole time the app is in front (browsed afresh
         // each time it comes back): a saved home is found again where it announces itself
         .onChange(of: scenePhase != .background, initial: true) { _, front in session.discover(front) }
+        // what the home has on, asked again each time the app comes to the front (story 51.11)
+        .onChange(of: scenePhase == .active) { _, active in
+            if active, session.signedIn { Task { await session.capabilities.refresh() } }
+        }
         #if os(macOS)
         // a link opened on the Mac goes to the window already open, not a new one
         .handlesExternalEvents(preferring: ["*"], allowing: ["*"])

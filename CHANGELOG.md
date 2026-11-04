@@ -41,7 +41,7 @@ build fails when the two differ.
   failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
   every 10 seconds: each read counted the jobs' whole history, and every request ran it
   again. A new table keeps the items each stage has finished per library, kept up to date by
-  the database as jobs finish (slot 0176, filled from the existing jobs when it is added);
+  the database as jobs finish (slot 0183, filled from the existing jobs when it is added);
   three new indexes cover the waiting, finished and awaiting-review jobs, and the failed
   items' latest runs are read one step each. On 3.1 million jobs the library numbers are
   built in about 0.14 s and the queue snapshot in about 0.11 s. Every reader shares one
@@ -129,6 +129,18 @@ build fails when the two differ.
 
 ### Added
 
+- **Every part of Maktaba can be turned on or off, stopped and started (Epic 51).** One catalog
+  (`shared/components/catalog.toml`) names each worker, stage, queue loop, extension and model
+  as a component, with what it needs and what it conflicts with. Admin > Components shows each
+  one's state on every machine, previews what a change does (queued jobs kept, what else stops)
+  and applies it in one step; a stopped component keeps its queue and picks up again when
+  started. The API enforces every rule (`/api/components`, admin only; a route whose component
+  is off answers `409 component_off`), and `GET /api/capabilities` tells every app what is on,
+  so the web, Android and Apple apps hide what is off from a viewer and tell an admin where to
+  turn it on, in English and Arabic. Setup offers three bundles (Full, today's Maktaba; Core,
+  a smaller download; Worker, for a joined machine), the bundle can be changed later, and a
+  component added later downloads as a signed pack, or from an offline file for a home without
+  internet. `[components] reconcile = off` in `server.toml` leaves everything as it is.
 - **Every YouTube source has an on/off switch, and Manage libraries shows each library's
   YouTube.** In YouTube sources… each channel or playlist, off or on, has its **Downloads**
   switch; turning it on brings it back in the mode it had when it was last on (kept per source),

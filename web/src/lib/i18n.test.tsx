@@ -3,6 +3,8 @@
 // <html dir> stamping, bidi isolate helper.
 import { describe, it, expect } from "vitest";
 import { render, screen, act } from "@testing-library/react";
+import { Modal } from "@ds/components/Modal/Modal";
+import { Drawer } from "@ds/components/Drawer/Drawer";
 import { I18nProvider, useI18n, bidiIsolate } from "./i18n";
 
 function Probe() {
@@ -45,6 +47,26 @@ describe("i18n", () => {
     expect(document.documentElement.dir).toBe("rtl");
     // ar-EG formats with Arabic-Indic digits.
     expect(screen.getByTestId("num").textContent).toMatch(/[٠-٩]/);
+  });
+
+  it("a dialog's and a drawer's close button speak the page's language", () => {
+    render(
+      <I18nProvider>
+        <Probe />
+        <Modal open onClose={() => {}} title="m">
+          body
+        </Modal>
+        <Drawer open onClose={() => {}} title="d">
+          body
+        </Drawer>
+      </I18nProvider>
+    );
+    expect(screen.getAllByRole("button", { name: "Close", hidden: true })).toHaveLength(2);
+    act(() => {
+      screen.getByText("ar").click();
+    });
+    expect(screen.getAllByRole("button", { name: "إغلاق", hidden: true })).toHaveLength(2);
+    expect(screen.queryAllByRole("button", { name: "Close", hidden: true })).toHaveLength(0);
   });
 
   it("bidiIsolate wraps a string in FSI…PDI", () => {

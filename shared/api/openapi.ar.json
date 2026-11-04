@@ -93,6 +93,10 @@
       "en": "Real-time event channel (documented; protocol is WS).",
       "ar": "قناة أحداث فورية (موثّقة هنا؛ البروتوكول هو WS)."
     },
+    "/tags/16/name": {
+      "en": "Components",
+      "ar": "المكوّنات"
+    },
     "/paths/~1auth~1login/post/summary": {
       "en": "Authenticate with username and password",
       "ar": "المصادقة باسم المستخدم وكلمة المرور"
@@ -1673,6 +1677,478 @@
       "en": "WebSocket",
       "ar": "البث الفوري (WebSocket)"
     },
+    "/paths/~1capabilities/get/summary": {
+      "en": "What this home has on",
+      "ar": "ما هو مفعَّل على هذا الجهاز الرئيسي"
+    },
+    "/paths/~1capabilities/get/description": {
+      "en": "Each feature a client shows (`live_tv`, `transcripts`, `search`, ...) and whether it is on, off, or not available, so an app hides or explains what is off. Answers 304 to a matching `If-None-Match`; `/ws/home` sends `capabilities_changed` when it moves.",
+      "ar": "كل ميزة يعرضها العميل (`live_tv` و`transcripts` و`search`، وغيرها) وهل هي مفعَّلة أو متوقفة أو غير متاحة، كي يُخفي التطبيق ما توقف أو يشرح سببه. يُجيب بالرمز 304 عند تطابق `If-None-Match`، ويُرسل `/ws/home` الحدث `capabilities_changed` عند تغيّرها."
+    },
+    "/paths/~1capabilities/get/responses/200/description": {
+      "en": "The features.",
+      "ar": "الميزات."
+    },
+    "/paths/~1capabilities/get/responses/304/description": {
+      "en": "Unchanged since the ETag sent.",
+      "ar": "لم يتغيّر شيء منذ وسم ETag المُرسَل."
+    },
+    "/paths/~1components/get/summary": {
+      "en": "List the components",
+      "ar": "عرض المكوّنات"
+    },
+    "/paths/~1components/get/description": {
+      "en": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason's message fills in, absent when it has none), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home's bundle.",
+      "ar": "كل مكوّنات الكتالوج بترتيبها: ما ينبغي أن يعمل (`want` والإيقاف المؤقت)، وما يعمل فعلًا على كل جهاز (`phase` و`reason`، و`reason_params`: القيم التي تملأ بها رسالةُ السبب فراغاتها، ولا تظهر إن لم تكن لها قيم)، وما يحتاجه كل مكوّن وما يحتاج إليه، والإعدادات التي يملكها (`settings` كما يسردها الكتالوج: `rules.<section>` و`toml:<key>` و`ext:<name>`)، وحزمة الجهاز الرئيسي."
+    },
+    "/paths/~1components/get/responses/200/description": {
+      "en": "The components.",
+      "ar": "المكوّنات."
+    },
+    "/paths/~1components/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1preview/post/summary": {
+      "en": "Preview a change",
+      "ar": "معاينة تغيير"
+    },
+    "/paths/~1components~1preview/post/description": {
+      "en": "What a set of changes, or a bundle, would do, without changing anything: each component's phase before and after, what conflicts, what is refused and why, how many queued jobs wait, and how long stopping takes.",
+      "ar": "ما ستُحدثه مجموعة تغييرات أو حزمة دون تغيير أي شيء: مرحلة كل مكوّن قبل التغيير وبعده، وما يتعارض، وما يُرفض وسببه، وعدد المهام المنتظرة، والمدة التي يستغرقها الإيقاف."
+    },
+    "/paths/~1components~1preview/post/responses/200/description": {
+      "en": "The preview.",
+      "ar": "المعاينة."
+    },
+    "/paths/~1components~1preview/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1apply/post/summary": {
+      "en": "Apply a change",
+      "ar": "تطبيق تغيير"
+    },
+    "/paths/~1components~1apply/post/description": {
+      "en": "Applies a set of changes, or a bundle, in one transaction: all of it or none. Each change is checked against what the earlier ones leave.",
+      "ar": "يطبّق مجموعة تغييرات أو حزمة في معاملة واحدة: إما كلها وإما لا شيء. ويُفحص كل تغيير على ما تتركه التغييرات التي قبله."
+    },
+    "/paths/~1components~1apply/post/responses/200/description": {
+      "en": "What changed.",
+      "ar": "ما تغيّر."
+    },
+    "/paths/~1components~1apply/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1apply/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1apply/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1bundles/get/summary": {
+      "en": "List the bundles",
+      "ar": "عرض الحزم"
+    },
+    "/paths/~1components~1bundles/get/description": {
+      "en": "The bundles (`full`, `core`, `worker`), what each holds, and which one the home is based on.",
+      "ar": "الحزم (`full` و`core` و`worker`)، وما تضمّه كل منها، والحزمة التي يقوم عليها الجهاز الرئيسي."
+    },
+    "/paths/~1components~1bundles/get/responses/200/description": {
+      "en": "The bundles.",
+      "ar": "الحزم."
+    },
+    "/paths/~1components~1bundles/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1bundle/post/summary": {
+      "en": "Switch to a bundle",
+      "ar": "التبديل إلى حزمة"
+    },
+    "/paths/~1components~1bundle/post/description": {
+      "en": "The difference to a bundle, applied in one batch: what it leaves out stops and keeps its files (`remove_unused` removes them), and what it holds is turned on. `dry_run` only answers the difference.",
+      "ar": "الفرق بين الوضع الحالي وحزمة ما، يُطبَّق دفعة واحدة: ما تستبعده الحزمة يتوقف وتبقى ملفاته (ويحذفها `remove_unused`)، وما تضمّه يُشغَّل. ومع `dry_run` يُعاد الفرق دون تطبيقه."
+    },
+    "/paths/~1components~1bundle/post/responses/200/description": {
+      "en": "What changed.",
+      "ar": "ما تغيّر."
+    },
+    "/paths/~1components~1bundle/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1bundle/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1bundle/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1offline/post/summary": {
+      "en": "Make an offline pack file",
+      "ar": "إنشاء ملف حزم للاستخدام دون اتصال"
+    },
+    "/paths/~1components~1offline/post/description": {
+      "en": "Builds one file with the packs a bundle or chosen components need, for a home without internet, and answers its name.",
+      "ar": "ينشئ ملفًا واحدًا يضم الحزم التي تحتاجها حزمة أو مكوّنات مختارة، لجهاز رئيسي بلا إنترنت، ويُعيد اسمه."
+    },
+    "/paths/~1components~1offline/post/responses/200/description": {
+      "en": "The file's name.",
+      "ar": "اسم الملف."
+    },
+    "/paths/~1components~1offline/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1offline/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1offline/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1offline~1{name}/get/summary": {
+      "en": "Download an offline pack file",
+      "ar": "تنزيل ملف حزم للاستخدام دون اتصال"
+    },
+    "/paths/~1components~1offline~1{name}/get/responses/200/description": {
+      "en": "The file.",
+      "ar": "الملف."
+    },
+    "/paths/~1components~1offline~1{name}/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1import/post/summary": {
+      "en": "Import an offline pack file",
+      "ar": "استيراد ملف حزم للاستخدام دون اتصال"
+    },
+    "/paths/~1components~1import/post/description": {
+      "en": "Checks every pack in the file against the signed release index, then installs them.",
+      "ar": "يتحقق من كل حزمة في الملف مقابل فهرس الإصدار الموقَّع، ثم يثبّتها."
+    },
+    "/paths/~1components~1import/post/responses/200/description": {
+      "en": "The packs installed.",
+      "ar": "الحزم المثبّتة."
+    },
+    "/paths/~1components~1import/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1import/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1import/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}/get/summary": {
+      "en": "Read one component",
+      "ar": "قراءة مكوّن واحد"
+    },
+    "/paths/~1components~1{id}/get/description": {
+      "en": "The component as in the list, plus each machine's status rows and its last 20 audit entries.",
+      "ar": "المكوّن كما يظهر في القائمة، ومعه صفوف حالته على كل جهاز وآخر 20 مُدخَلًا في سجل التدقيق."
+    },
+    "/paths/~1components~1{id}/get/responses/200/description": {
+      "en": "The component.",
+      "ar": "المكوّن."
+    },
+    "/paths/~1components~1{id}/get/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}/put/summary": {
+      "en": "Set what should run",
+      "ar": "ضبط ما ينبغي أن يعمل"
+    },
+    "/paths/~1components~1{id}/put/description": {
+      "en": "Sets `want` to `enabled`, `installed` (files kept, not running) or `absent`. Pass the row's `generation` to refuse a change made meanwhile; `with_conflicts` also turns off what conflicts with it. A change that changes nothing writes nothing.",
+      "ar": "يضبط `want` على `enabled`، أو `installed` (تبقى الملفات ولا يعمل)، أو `absent`. أرسل `generation` الخاص بالصف ليُرفض التغيير إن عدّله أحد في الأثناء، ويوقف `with_conflicts` أيضًا ما يتعارض معه. والتغيير الذي لا يغيّر شيئًا لا يكتب شيئًا."
+    },
+    "/paths/~1components~1{id}/put/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}/put/responses/403/description": {
+      "en": "The licence this component needs is missing (`licence_missing`).",
+      "ar": "الترخيص الذي يحتاجه هذا المكوّن غير موجود (`licence_missing`)."
+    },
+    "/paths/~1components~1{id}/put/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}/delete/summary": {
+      "en": "Remove a component",
+      "ar": "إزالة مكوّن"
+    },
+    "/paths/~1components~1{id}/delete/description": {
+      "en": "The same as `want: absent`. `purge=true` also deletes the component's settings.",
+      "ar": "مثل `want: absent`. ويحذف `purge=true` إعدادات المكوّن أيضًا."
+    },
+    "/paths/~1components~1{id}/delete/parameters/0/description": {
+      "en": "Also delete the component's settings.",
+      "ar": "احذف إعدادات المكوّن أيضًا."
+    },
+    "/paths/~1components~1{id}/delete/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}/delete/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}/delete/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}/delete/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}~1install/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1install/post/summary": {
+      "en": "Install a component",
+      "ar": "تثبيت مكوّن"
+    },
+    "/paths/~1components~1{id}~1install/post/description": {
+      "en": "Moves an absent component to `installed`; the supervisor downloads and checks its pack. A component already installed answers unchanged.",
+      "ar": "ينقل المكوّن غير المثبّت إلى `installed`، ثم ينزّل المشرف على العمليات حزمته ويتحقق منها. والمكوّن المثبّت من قبل يُعاد كما هو."
+    },
+    "/paths/~1components~1{id}~1install/post/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}~1install/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}~1install/post/responses/403/description": {
+      "en": "The licence this component needs is missing (`licence_missing`).",
+      "ar": "الترخيص الذي يحتاجه هذا المكوّن غير موجود (`licence_missing`)."
+    },
+    "/paths/~1components~1{id}~1install/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}~1stop/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1stop/post/summary": {
+      "en": "Stop a component",
+      "ar": "إيقاف مكوّن مؤقتًا"
+    },
+    "/paths/~1components~1{id}~1stop/post/description": {
+      "en": "Holds the component until it is started again: its processes stop and its stages keep their queued work. A hold has no end time; a body with `until` is refused.",
+      "ar": "يوقف المكوّن مؤقتًا حتى يُستأنف: تتوقف عملياته، وتحتفظ مراحله بالمهام المنتظرة في طوابيرها. وليس للإيقاف المؤقت وقت انتهاء، فيُرفض الطلب إن تضمّن `until`."
+    },
+    "/paths/~1components~1{id}~1stop/post/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}~1stop/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}~1stop/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1stop/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}~1start/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1start/post/summary": {
+      "en": "Start a component",
+      "ar": "استئناف مكوّن"
+    },
+    "/paths/~1components~1{id}~1start/post/description": {
+      "en": "Clears the hold.",
+      "ar": "يُلغي الإيقاف المؤقت."
+    },
+    "/paths/~1components~1{id}~1start/post/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}~1start/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}~1start/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1start/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}~1restart/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1restart/post/summary": {
+      "en": "Restart a component",
+      "ar": "إعادة تشغيل مكوّن"
+    },
+    "/paths/~1components~1{id}~1restart/post/description": {
+      "en": "Restarts a running component: its processes through this machine's supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.",
+      "ar": "يعيد تشغيل مكوّن يعمل: عملياته عبر المشرف على هذا الجهاز، وحلقاته في الواجهة البرمجية تُلغى ثم تبدأ من جديد. ولا تتغير الحالة المطلوبة، وتُسجَّل إعادة التشغيل باسم `component.restart`."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/200/description": {
+      "en": "The component after the restart, with `restarted`: how many of its processes and loops started again.",
+      "ar": "المكوّن بعد إعادة التشغيل، ومعه `restarted`: عدد عملياته وحلقاته التي بدأت من جديد."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/202/description": {
+      "en": "None of its processes runs now: the supervisor starts them (`restarted` is 0).",
+      "ar": "لا تعمل أي من عملياته الآن، والمشرف يشغّلها (`restarted` قيمته 0)."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/409/description": {
+      "en": "Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.",
+      "ar": "رُفض الطلب (`code`): `not_restartable` (مراحل أو إضافة أو ملف، أو حلقات تعمل في خدمة أخرى)، أو `not_running` (متوقف أو موقوف مؤقتًا، أو ينتظر ما يحتاج إليه)، أو `not_switchable` (جزء من الخادم). ولم يُعَد تشغيل شيء."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/503/description": {
+      "en": "This server runs under no supervisor, or the supervisor does not answer.",
+      "ar": "هذا الخادم لا يعمل تحت مشرف، أو أن المشرف لا يجيب."
+    },
+    "/paths/~1components~1{id}~1settings~1reset/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1settings~1reset/post/summary": {
+      "en": "Reset a component's settings",
+      "ar": "إعادة إعدادات مكوّن إلى قيمها الافتراضية"
+    },
+    "/paths/~1components~1{id}~1settings~1reset/post/description": {
+      "en": "Deletes the settings this component owns, so each falls back to its default.",
+      "ar": "يحذف الإعدادات التي يملكها هذا المكوّن، فيعود كل منها إلى قيمته الافتراضية."
+    },
+    "/paths/~1components~1{id}~1settings~1reset/post/responses/200/description": {
+      "en": "The settings were reset.",
+      "ar": "أُعيدت الإعدادات إلى قيمها الافتراضية."
+    },
+    "/paths/~1components~1{id}~1settings~1reset/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/parameters/1/description": {
+      "en": "A machine: `home`, or a joined node's id.",
+      "ar": "الجهاز: `home` للجهاز الرئيسي، أو معرّف عقدة منضمّة."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/put/summary": {
+      "en": "Set what should run on one machine",
+      "ar": "ضبط ما ينبغي أن يعمل على جهاز واحد"
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/put/description": {
+      "en": "An override for one machine; `want: null` follows the home again.",
+      "ar": "قيمة خاصة بجهاز واحد تتقدّم على قيمة الجهاز الرئيسي، و`want: null` يعيده إلى اتّباع الجهاز الرئيسي."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/put/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/put/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/put/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}/put/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/parameters/1/description": {
+      "en": "A machine: `home`, or a joined node's id.",
+      "ar": "الجهاز: `home` للجهاز الرئيسي، أو معرّف عقدة منضمّة."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/post/summary": {
+      "en": "Stop a component on one machine",
+      "ar": "إيقاف مكوّن مؤقتًا على جهاز واحد"
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/post/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1stop/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/parameters/1/description": {
+      "en": "A machine: `home`, or a joined node's id.",
+      "ar": "الجهاز: `home` للجهاز الرئيسي، أو معرّف عقدة منضمّة."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/post/summary": {
+      "en": "Start a component on one machine",
+      "ar": "استئناف مكوّن على جهاز واحد"
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/post/responses/200/description": {
+      "en": "The component after the change.",
+      "ar": "المكوّن بعد التغيير."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/post/responses/400/description": {
+      "en": "Invalid request.",
+      "ar": "طلب غير صالح."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1machines~1{node}~1start/post/responses/409/description": {
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+    },
+    "/tags/16/description": {
+      "en": "Turn each part of Maktaba on or off, stop and start it, and see what runs on each machine. The capabilities route is open to every signed-in client; the rest are admin only.",
+      "ar": "تشغيل كل جزء من مكتبة أو إيقافه، وإيقافه مؤقتًا واستئنافه، ومعرفة ما يعمل على كل جهاز. مسار القدرات متاح لكل عميل مسجَّل الدخول، وبقية المسارات للمشرفين وحدهم."
+    },
     "/paths/~1libraries~1{id}~1youtube~1sources~1{sid}/patch/summary": {
       "en": "Switch a source on or off, or change its mode, folder or options",
       "ar": "تشغيل مصدر أو إيقافه، أو تغيير وضعه أو مجلده أو خياراته"
@@ -1756,6 +2232,10 @@
     "/paths/~1queues~1youtube-tartube/post/responses/422/description": {
       "en": "A path that is not an absolute path to Tartube's .json export or its .db.",
       "ar": "مسار ليس مسارًا مطلقًا إلى تصدير Tartube بصيغة .json أو إلى ملف .db."
+    },
+    "/components/schemas/QueueJobRef/properties/components/description": {
+      "en": "A `component_catchup` job: the components it catches up, from its payload. Absent on every other job.",
+      "ar": "في مهمة `component_catchup`: المكوّنات التي تلحق بها، من حمولة المهمة. ولا تظهر في أي مهمة أخرى."
     }
   }
 }

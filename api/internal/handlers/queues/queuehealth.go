@@ -5,7 +5,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // Epic 40 (queue health): a tile is red only when many recent jobs fail
@@ -20,7 +23,15 @@ const (
 	HealthOK      = "ok"
 	HealthWaiting = "waiting"
 	HealthFailing = "failing"
+	// HealthOff (Epic 51 story 51.14): the stage's component is turned off or stopped
+	// by an admin (or its only parked jobs wait on a component): a choice, not a
+	// problem. Grey, and never counted with the waiting stages. Failing still wins.
+	HealthOff = "off"
 )
+
+// componentParkPrefix is the parked_on of a job held back by its component
+// ("component:transcription").
+const componentParkPrefix = "component:"
 
 // queueHealthRules is the slice of rules.queue_health the API uses.
 type queueHealthRules struct {
@@ -85,6 +96,10 @@ type WaitingOn struct {
 	Healthy *bool      `json:"healthy"`
 	Message *string    `json:"message"`
 	Since   *time.Time `json:"since"`
+	// Component and Phase (Epic 51): the catalog component the jobs wait on
+	// ("transcription") and its phase ("off", or "stopped" while an admin holds it).
+	Component string `json:"component,omitempty"`
+	Phase     string `json:"phase,omitempty"`
 }
 
 // FailingSignature is the error that makes a stage red.
@@ -111,6 +126,39 @@ type healthInputs struct {
 	Waiting    []WaitingOn
 	FailedOpen map[string]int // open failed items by signature
 	Ignored    int
+	// Component is set while the stage's component holds it back (job_stages
+	// disabled_reason component_off / component_held, story 51.06).
+	Component *componentHold
+}
+
+// componentHold is a stage held back by its component: the catalog id, its phase
+// (off, or stopped while held) and the jobs queued behind it.
+type componentHold struct {
+	ID     string
+	Phase  string
+	Queued int
+}
+
+// componentHoldOf is the hold of a stage from its job_stages row, nil when its
+// component does not hold it back.
+func componentHoldOf(st StageInfo, queued int) *componentHold {
+	if st.Enabled || st.DisabledReason == nil {
+		return nil
+	}
+	phase := ""
+	switch WaitingReason(*st.DisabledReason) {
+	case WaitComponentOff:
+		phase = components.PhaseOff
+	case WaitComponentHeld:
+		phase = components.PhaseStopped
+	default:
+		return nil
+	}
+	id := stageComponent(st.Stage)
+	if id == nil {
+		return nil
+	}
+	return &componentHold{ID: *id, Phase: phase, Queued: queued}
 }
 
 // failingClass: only an unexplained or a passing failure can make a
@@ -148,11 +196,29 @@ func stageHealth(in healthInputs, cfg queueHealthRules) StageHealth {
 			h.Failing.Class = "unknown"
 		}
 	} else {
+		parked, onComponent := 0, 0
 		for _, w := range h.Waiting {
 			if w.Count > 0 {
-				h.State = HealthWaiting
-				break
+				parked++
+				if strings.HasPrefix(w.On, componentParkPrefix) {
+					onComponent++
+				}
 			}
+		}
+		switch {
+		case in.Component != nil || (parked > 0 && parked == onComponent):
+			h.State = HealthOff
+		case parked > 0:
+			h.State = HealthWaiting
+		}
+	}
+	if c := in.Component; c != nil {
+		h.Waiting = withComponent(h.Waiting, *c)
+	}
+	for i := range h.Waiting {
+		if id, ok := strings.CutPrefix(h.Waiting[i].On, componentParkPrefix); ok && h.Waiting[i].Component == "" {
+			h.Waiting[i].Component = id
+			h.Waiting[i].Phase = components.PhaseOff
 		}
 	}
 	for sig, n := range in.FailedOpen {
@@ -161,6 +227,22 @@ func stageHealth(in healthInputs, cfg queueHealthRules) StageHealth {
 		}
 	}
 	return h
+}
+
+// withComponent puts the component's entry first in waiting: the jobs queued behind
+// it (an entry already parked on it is merged in, keeping the larger count).
+func withComponent(waiting []WaitingOn, c componentHold) []WaitingOn {
+	on := componentParkPrefix + c.ID
+	out := []WaitingOn{{On: on, Count: c.Queued, Component: c.ID, Phase: c.Phase}}
+	for _, w := range waiting {
+		if w.On == on {
+			out[0].Count = max(out[0].Count, w.Count)
+			out[0].Since = w.Since
+			continue
+		}
+		out = append(out, w)
+	}
+	return out
 }
 
 // ---------- loading ----------
@@ -311,18 +393,21 @@ func openBySignature(groups []FailureGroup) map[string]map[string]int {
 
 // HealthRollup is Epic 40's tile health over every stage, for the System
 // health page (api/internal/handlers/systemstatus): the stages that are
-// failing or waiting, and the items that need an admin.
+// failing or waiting, and the items that need an admin. Off holds the stages
+// whose component an admin turned off or stopped (Epic 51): never in Waiting,
+// never attention.
 type HealthRollup struct {
 	Stages   int      `json:"stages"`
 	Failing  []string `json:"failing"`
 	Waiting  []string `json:"waiting"`
+	Off      []string `json:"off"`
 	NeedsYou int      `json:"needs_you"`
 }
 
 // HealthRollup computes every stage's tile health the way BuildSnapshot does,
 // without the counts, pools and flows the tiles also show.
 func (h *Handler) HealthRollup(ctx context.Context) (HealthRollup, error) {
-	out := HealthRollup{Failing: []string{}, Waiting: []string{}}
+	out := HealthRollup{Failing: []string{}, Waiting: []string{}, Off: []string{}}
 	now := h.now()
 	stages, err := h.loadStages(ctx)
 	if err != nil {
@@ -342,12 +427,15 @@ func (h *Handler) HealthRollup(ctx context.Context) (HealthRollup, error) {
 		sh := stageHealth(healthInputs{
 			Failures: hd.failures[st.Stage], DoneWindow: hd.done[st.Stage], Waiting: hd.waiting[st.Stage],
 			FailedOpen: open[st.Stage], Ignored: hd.ignored[st.Stage],
+			Component: componentHoldOf(st, 0),
 		}, hd.cfg)
 		switch sh.State {
 		case HealthFailing:
 			out.Failing = append(out.Failing, st.Stage)
 		case HealthWaiting:
 			out.Waiting = append(out.Waiting, st.Stage)
+		case HealthOff:
+			out.Off = append(out.Off, st.Stage)
 		}
 		out.NeedsYou += sh.NeedsYou
 	}

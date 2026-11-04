@@ -36,6 +36,7 @@ import {
 } from "../../components/queue/OfflineActionDialog";
 import { YouTubeSourcesDialog } from "../../components/queue/YouTubeSourcesDialog";
 import { RetriggerDialog, type RetriggerSubject } from "../../components/queue/RetriggerDialog";
+import { FeatureOffNote, useFeatureGate } from "../../lib/capabilities";
 import "../../styles/queue.css";
 import "../../styles/libdash.css";
 
@@ -54,6 +55,7 @@ const isSort = (v: string | null): v is Sort => !!v && (SORTS as readonly string
 function Dashboard() {
   const { t, n, locale } = useI18n();
   const board = useLibraryBoard();
+  const ytGate = useFeatureGate("youtube");
   const stream = useJobStream();
   useThrottledReload(board.reload, stream.finishedTick, 15_000);
   const [params, setParams] = useSearchParams();
@@ -209,7 +211,11 @@ function Dashboard() {
             <Menu
               className="mkt-q-libs__bulk"
               trigger={t("queue.libs.withSelected", { n: n(selected.length) })}
-              items={OFFLINE_ACTIONS.map((a) => ({
+              // YouTube off on the home (Epic 51): no refresh to offer; the note says where to
+              // turn it on (the route answers 409 component_off)
+              items={OFFLINE_ACTIONS.filter(
+                (a) => a !== "youtube_refresh" || ytGate === "show"
+              ).map((a) => ({
                 id: a,
                 label: t(`queue.offline.action.${a}`),
                 onSelect: () =>
@@ -222,6 +228,7 @@ function Dashboard() {
             <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
               {t("libdash.bulk.clear")}
             </Button>
+            {ytGate === "explain" && <FeatureOffNote id="youtube" />}
           </>
         )}
       </div>

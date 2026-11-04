@@ -298,3 +298,37 @@
 .mkt-mc-weblink:focus-visible {
   color: var(--color-accent-text);
 }
+
+/* Epic 51 (story 51.12): one machine's components and the approve form's worker choice */
+.mkt-mc-comp-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mkt-mc-comp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-inline-size: 0;
+}
+.mkt-mc-components {
+  scroll-margin-block-start: var(--space-4);
+}
+.mkt-mc-worker-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+.mkt-mc-worker-choice__item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+}

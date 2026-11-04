@@ -502,6 +502,9 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
 	m.TVHandover = u.tvHandover
+	// Epic 51 story 51.18: the new release's packs fetched before the switch, those of
+	// releases no longer kept pruned at the commit (and at each start)
+	m.Packs = &updater.Packs{M: newPacksManager(cfg, releaseDir, os.Stderr), Source: src}
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
 		m.RestoreBack = u.restoreBack(cfg, releaseDir, pg)
@@ -552,6 +555,7 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	u.m = m
 	m.Start(ctx)
 	m.Resume()
+	go m.PrunePacks()
 	fmt.Fprintf(os.Stderr, "[serve] updates: %s install (%s)\n", inst.Kind(), dir)
 	return u
 }
@@ -949,6 +953,9 @@ func (h *machineHealth) Check(ctx context.Context, want string) updater.Verdict 
 		}
 		if p.Instance != "" && !p.Wanted {
 			continue // an on-demand process nobody asked for
+		}
+		if p.Blocked && p.PID == 0 {
+			continue // its component is off (Epic 51): built dormant, it is not meant to run
 		}
 		if p.Role == supervisor.RoleTVSlot {
 			// a slot starting, stopped or between two starts is the TV's doing (its change's

@@ -55,7 +55,8 @@ struct VideoScreen: View {
         } else if let problem = page.problem {
             HomeErrorView(problem, video: false) { _ in Task { await page.load() } }
         } else if let video = page.video {
-            VideoDetails(page: page, video: video, client: context.client, area: area)
+            VideoDetails(page: page, video: video, client: context.client, area: area,
+                         caps: context.session.capabilities.current)
                 .refreshable { await page.load() }
         } else {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -69,6 +70,8 @@ private struct VideoDetails: View {
     let video: VideoInfo
     let client: APIClient
     let area: CGSize
+    /// What the home has on (51.11).
+    var caps: Capabilities = .allOn
 
     @Environment(\.dynamicTypeSize) private var typeSize
     private let gutter = MaktabaTokens.Spacing.s4
@@ -92,7 +95,13 @@ private struct VideoDetails: View {
                         .padding(.horizontal, gutter)
                         .accessibilityIdentifier("video.description")
                 }
-                if !page.chapters.isEmpty {
+                // chapters and the transcript: left out while off on the home, and explained
+                // to an admin (51.11)
+                switch caps.place(.chapters, lines: !page.chapters.isEmpty) {
+                case .note:
+                    section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
+                    FeatureOffNote(.chapters, home: client.home, compact: true).padding(.horizontal, gutter)
+                case .lines:
                     section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.chapters) { c in
@@ -101,8 +110,14 @@ private struct VideoDetails: View {
                                 .accessibilityIdentifier("video.chapter.\(c.seq)")
                         }
                     }
+                case .nothing:
+                    EmptyView()
                 }
-                if !page.transcript.isEmpty {
+                switch caps.place(.transcripts, lines: !page.transcript.isEmpty) {
+                case .note:
+                    section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
+                    FeatureOffNote(.transcripts, home: client.home, compact: true).padding(.horizontal, gutter)
+                case .lines:
                     section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.transcript) { s in
@@ -110,6 +125,8 @@ private struct VideoDetails: View {
                                 .accessibilityIdentifier("video.segment.\(s.seq)")
                         }
                     }
+                case .nothing:
+                    EmptyView()
                 }
                 if !page.nextEpisodes.isEmpty {
                     Rail(Text("Next episodes", tableName: "Video", comment: "The episodes after this one, a row's title"),

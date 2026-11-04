@@ -27,6 +27,8 @@ import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
 import { Select } from "@ds/components/Select/Select";
 import { Toggle } from "@ds/components/Choice/Toggle";
+import { Radio, RadioGroup } from "@ds/components/Choice/Radio";
+import { Checkbox } from "@ds/components/Choice/Checkbox";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { useI18n } from "../../lib/i18n";
 import {
@@ -79,13 +81,23 @@ export type Screen =
   | "storage"
   | "admin"
   | "libraries"
+  | "bundle"
   | "models"
   | "plex"
   | "permissions"
   | "install"
   | "move"
   | "starting";
-const ORDER: Screen[] = ["check", "storage", "admin", "libraries", "models", "plex", "install"];
+const ORDER: Screen[] = [
+  "check",
+  "storage",
+  "admin",
+  "libraries",
+  "bundle",
+  "models",
+  "plex",
+  "install",
+];
 /** A Mac asks for its permissions before the server first starts (a grant
  * reaches only the processes started after it). */
 const MAC_ORDER: Screen[] = [
@@ -93,13 +105,23 @@ const MAC_ORDER: Screen[] = [
   "storage",
   "admin",
   "libraries",
+  "bundle",
   "models",
   "plex",
   "permissions",
   "install",
 ];
 
-const orderOf = (platform: Platform): Screen[] => (platform === "macos" ? MAC_ORDER : ORDER);
+/** What the bundle chosen needs of setup (story 51.17): the models screen and the
+ * language model only when it holds them. Before the choice: everything, as before. */
+export interface BundleNeeds {
+  models: boolean;
+  llm: boolean;
+}
+const ALL_NEEDS: BundleNeeds = { models: true, llm: true };
+
+export const orderOf = (platform: Platform, needs: BundleNeeds = ALL_NEEDS): Screen[] =>
+  (platform === "macos" ? MAC_ORDER : ORDER).filter((s) => s !== "models" || needs.models);
 
 /** The steps on this platform (the step counter's total). */
 const OrderContext = createContext<Screen[]>(ORDER);
@@ -255,7 +277,8 @@ export function SetupWizard({
   // whether this machine runs the second listen (check says): the models step
   // asks for its Hugging Face sign-in only then
   const [secondListen, setSecondListen] = useState<boolean | undefined>(undefined);
-  const order = orderOf(platform);
+  const [needs, setNeeds] = useState<BundleNeeds>(ALL_NEEDS);
+  const order = orderOf(platform, needs);
   // the way the user went: a screen with nothing to show passes them on that way
   const [dir, setDir] = useState<1 | -1>(1);
   const go = (d: 1 | -1) => {
@@ -314,6 +337,19 @@ export function SetupWizard({
         return <Admin {...props} />;
       case "libraries":
         return <Libraries {...props} />;
+      case "bundle":
+        return (
+          <Bundle
+            {...props}
+            chosen={(n) => {
+              // the next screen in the order the choice makes (no models screen for Core)
+              setNeeds(n);
+              setDir(1);
+              const o = orderOf(platform, n);
+              setScreen(o[o.indexOf("bundle") + 1] ?? "starting");
+            }}
+          />
+        );
       case "models":
         return <Models {...props} secondListen={secondListen} />;
       case "plex":
@@ -327,7 +363,7 @@ export function SetupWizard({
           />
         );
       case "install":
-        return <Install {...props} />;
+        return <Install {...props} needs={needs} />;
       case "starting":
         return <ServerStarting api={api} platform={platform} />;
     }
@@ -1029,6 +1065,160 @@ function Libraries({ api, step, platform, next, back }: StepProps) {
   );
 }
 
+interface BundleOption {
+  id: "full" | "core" | "worker" | "custom";
+  enables: { id: string; title_key: string; kind: string }[];
+  download_bytes: number;
+  disk_bytes: number;
+  runs: boolean;
+  warnings: CheckNote[];
+  needs_models: boolean;
+  needs_llm: boolean;
+}
+
+interface BundleCheck {
+  bundles: BundleOption[];
+  /** the payload's flavour: a Core app preselects Core */
+  preselected: string;
+  ram_bytes: number;
+  chosen?: { bundle: string; base?: string; enable?: string[] };
+}
+
+interface BundleResult {
+  bundle: string;
+  enabled: string[];
+  download_bytes: number;
+  needs_models: boolean;
+  needs_llm: boolean;
+}
+
+/** "Choose what to run" (Epic 51 story 51.17): Full, Core, Worker machine or Custom.
+ * The choice decides the first desired state, the venv's extras and whether the models
+ * and the language model are downloaded; Settings → Components changes it later. */
+function Bundle({
+  api,
+  step,
+  platform,
+  back,
+  chosen,
+}: StepProps & { chosen: (needs: BundleNeeds) => void }) {
+  const { t } = useI18n();
+  const words = platformWords(t, platform);
+  const [res, setRes] = useState<BundleCheck | null>(null);
+  const [error, setError] = useState<StepError | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [pick, setPick] = useState<BundleOption["id"]>("full");
+  const [ticks, setTicks] = useState<Set<string>>(new Set());
+  const s = useStep(api);
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    api
+      .runStep<BundleCheck>("bundle", { check_only: true })
+      .then((r) => {
+        if (!alive) return;
+        setRes(r);
+        const before = r.chosen?.bundle;
+        const known = r.bundles.some((b) => b.id === before);
+        setPick(
+          (known ? before : r.preselected === "core" ? "core" : "full") as BundleOption["id"]
+        );
+        if (r.chosen?.enable) setTicks(new Set(r.chosen.enable));
+      })
+      .catch((e) => alive && setError(asError(e)));
+    return () => {
+      alive = false;
+    };
+  }, [api, attempt]);
+  const byId = (id: string) => res?.bundles.find((b) => b.id === id);
+  // Custom's ticks: what Full adds to Core (assets come with what needs them)
+  const coreIds = new Set((byId("core")?.enables ?? []).map((e) => e.id));
+  const extras = (byId("full")?.enables ?? []).filter(
+    (e) => !coreIds.has(e.id) && e.kind !== "asset"
+  );
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const input =
+      pick === "custom" ? { bundle: "custom", base: "core", enable: [...ticks] } : { bundle: pick };
+    const r = await s.run<BundleResult>("bundle", input);
+    if (r) chosen({ models: r.needs_models, llm: r.needs_llm });
+  };
+  return (
+    <Frame
+      title={t("setup.bundle.title")}
+      step={step}
+      error={error ?? s.formError}
+      onBack={back}
+      next={
+        error ? (
+          <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
+            {t("common.retry")}
+          </Button>
+        ) : undefined
+      }
+    >
+      {!res && !error && <p role="status">{t("setup.bundle.checking", words)}</p>}
+      {res && (
+        <form className="mkt-setup__form" onSubmit={submit}>
+          <p>{t("setup.bundle.intro")}</p>
+          <RadioGroup legend={t("setup.bundle.title")} name="mkt-setup-bundle">
+            {res.bundles.map((b) => (
+              <div key={b.id} className="mkt-setup__option">
+                <Radio
+                  name="mkt-setup-bundle"
+                  value={b.id}
+                  checked={pick === b.id}
+                  onChange={() => setPick(b.id)}
+                  label={t(`setup.bundle.${b.id}`)}
+                />
+                <p className="mkt-setup__note">
+                  {t("setup.bundle.download", { size: formatBytes(b.download_bytes) })}
+                </p>
+                {pick === b.id &&
+                  b.warnings.map((n) => (
+                    <p key={n.code} className="mkt-setup__warn">
+                      {n.code === "low_memory"
+                        ? t("setup.bundle.lowMemory", { ram: formatBytes(res.ram_bytes) })
+                        : n.message}
+                    </p>
+                  ))}
+              </div>
+            ))}
+          </RadioGroup>
+          {pick === "custom" && (
+            <fieldset className="mkt-setup__ticks">
+              <legend>{t("setup.bundle.customIntro")}</legend>
+              {extras.map((e) => (
+                <Checkbox
+                  key={e.id}
+                  label={t(e.title_key)}
+                  checked={ticks.has(e.id)}
+                  onChange={(ev) => {
+                    const next = new Set(ticks);
+                    if (ev.target.checked) next.add(e.id);
+                    else next.delete(e.id);
+                    setTicks(next);
+                  }}
+                />
+              ))}
+              {s.fieldError("enable") && (
+                <p className="mkt-setup__warn" role="alert">
+                  {s.fieldError("enable")}
+                </p>
+              )}
+            </fieldset>
+          )}
+          <div className="mkt-setup__actions">
+            <Button type="submit" loading={s.busy}>
+              {t("setup.next")}
+            </Button>
+          </div>
+        </form>
+      )}
+    </Frame>
+  );
+}
+
 function Models({
   api,
   step,
@@ -1300,7 +1490,14 @@ function Approval({
   );
 }
 
-function Install({ api, step, platform, next, back }: StepProps) {
+function Install({
+  api,
+  step,
+  platform,
+  next,
+  back,
+  needs = ALL_NEEDS,
+}: StepProps & { needs?: BundleNeeds }) {
   const { t } = useI18n();
   const [phase, setPhase] = useState<"venv" | "models" | "llm" | "finish" | "approval" | "failed">(
     "venv"
@@ -1315,6 +1512,8 @@ function Install({ api, step, platform, next, back }: StepProps) {
   const mounted = useRef(true);
   const nextRef = useRef(next);
   nextRef.current = next;
+  const needsRef = useRef(needs);
+  needsRef.current = needs;
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -1330,23 +1529,28 @@ function Install({ api, step, platform, next, back }: StepProps) {
         setPhase("venv");
         await api.runStep("venv", {}, (p) => mounted.current && setProgress(p));
         if (!mounted.current) return;
-        // the models the workers load, with the venv's own download (it resumes)
-        setPhase("models");
-        setProgress(null);
-        await api.runStep(
-          "models",
-          { action: "download" },
-          (p) => mounted.current && setProgress(p)
-        );
+        // the models the workers load, with the venv's own download (it resumes);
+        // a bundle with no model (Core) downloads none
+        if (needsRef.current.models) {
+          setPhase("models");
+          setProgress(null);
+          await api.runStep(
+            "models",
+            { action: "download" },
+            (p) => mounted.current && setProgress(p)
+          );
+        }
         // The language model of the LLM stages (about 5 GB). Only too little disk
         // stops setup: any other failure (no network, no bundled server) leaves it
         // to the server, which downloads a missing model in the background.
-        setPhase("llm");
-        setProgress(null);
-        try {
-          await api.runStep("llm", {}, (p) => mounted.current && setProgress(p));
-        } catch (e) {
-          if (asError(e).code === "disk_full") throw e;
+        if (needsRef.current.llm) {
+          setPhase("llm");
+          setProgress(null);
+          try {
+            await api.runStep("llm", {}, (p) => mounted.current && setProgress(p));
+          } catch (e) {
+            if (asError(e).code === "disk_full") throw e;
+          }
         }
         if (!mounted.current) return;
         setPhase("finish");

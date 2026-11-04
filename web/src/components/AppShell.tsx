@@ -31,6 +31,7 @@ import { UpdateBanner } from "./UpdateBanner";
 import { MacPermissionsReminder } from "./MacPermissions/MacPermissionsReminder";
 import { TelemetryPrompt } from "./TelemetryPrompt";
 import { IS_REMOTE, SERVER_PAGES } from "../lib/edition";
+import { useFeatureGate } from "../lib/capabilities";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
 // the More menu, and More in the phone tab bar (Settings lives behind it).
@@ -178,6 +179,10 @@ export function AppShell() {
   const manage = SERVER_PAGES && !!user?.is_admin;
   const healthDown = useSystemStatus(manage) === "down";
   const pins = usePins(user?.id);
+  // story 51.11: a viewer has no Guide while Live TV is off; an admin keeps it
+  // and the page says it is off
+  const guideGate = useFeatureGate("live_tv");
+  const shown = <T extends { to: string }>(item: T) => item.to !== "/guide" || guideGate !== "hide";
 
   useEffect(() => {
     focusSearchRef(searchRef.current);
@@ -273,7 +278,7 @@ export function AppShell() {
       </header>
       <div className="mkt-shell__body">
         <nav className="mkt-shell__nav" aria-label={t("nav.primary")}>
-          {NAV.map((item) => (
+          {NAV.filter(shown).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -391,7 +396,7 @@ export function AppShell() {
         </span>
       )}
       <nav className="mkt-shell__tabbar" aria-label={t("nav.primary")}>
-        {TABS.map((item) => (
+        {TABS.filter(shown).map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

@@ -58,6 +58,29 @@ func TestTheRelayRunsOnTheHomeWithItsCredentials(t *testing.T) {
 	}
 }
 
+// Story 51.04: a home with its credentials and [cloud] off builds the agent dormant, so
+// enabling cloud.link starts it live; one with nothing to link with builds none, and one
+// that runs the agent anyway gets no second copy.
+func TestTheRelayIsBuiltDormantWhenItCouldLink(t *testing.T) {
+	cfg := relayHome(t)
+	t.Setenv("MAKTABA_CLOUDLINK_BIN", os.Args[0])
+	opts := Options{Config: cfg}
+	if _, ok := BuildHeldRelay(opts); ok {
+		t.Fatal("no credentials and no claim, yet a dormant relay is built")
+	}
+	if err := os.WriteFile(RelayCredPath(), []byte("sealed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p, ok := BuildHeldRelay(opts)
+	if !ok || !p.Dormant || p.Role != RoleRelay {
+		t.Fatalf("credentials kept and [cloud] off: dormant relay %v, %+v", ok, p)
+	}
+	opts.Config.Cloud.Enabled = true
+	if _, ok := BuildHeldRelay(opts); ok {
+		t.Fatal("[cloud] on runs the relay already, yet a dormant one is built too")
+	}
+}
+
 // The relay reaches the whole home (web UI, /api, /stream/) through the web port on
 // loopback; the API port only on a machine with no web UI.
 func TestTheRelayReachesTheWebPort(t *testing.T) {

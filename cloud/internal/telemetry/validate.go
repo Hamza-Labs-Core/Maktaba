@@ -23,13 +23,15 @@ import (
 
 // Limits of one envelope (the contract).
 const (
-	MaxBody        = 512 << 10
-	MaxBatches     = 20
-	MaxEvents      = 100
-	MaxVitals      = 50
-	MaxReportApps  = 50
-	MaxFeatures    = 50
-	MaxErrors      = 50
+	MaxBody       = 512 << 10
+	MaxBatches    = 20
+	MaxEvents     = 100
+	MaxVitals     = 50
+	MaxReportApps = 50
+	MaxFeatures   = 50
+	MaxErrors     = 50
+	// MaxComponents bounds a server report's enabled component ids (Epic 51).
+	MaxComponents  = 80
 	MaxMessageLen  = 300
 	MaxFrameLen    = 200
 	MaxStackLen    = 2000
@@ -62,7 +64,13 @@ var (
 	reFeature   = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
 	reShortCode = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,64}$`)
 	reRoute     = regexp.MustCompile(`^/[A-Za-z0-9/:_.~-]{0,119}$`)
+	// a component id as Maktaba's catalog writes them (shared/components/catalog.toml)
+	reComponent = regexp.MustCompile(`^[a-z][a-z0-9_]{0,31}(\.[a-z0-9_-]{1,32}){0,3}$`)
 )
+
+// Bundles are the bundle names a server report may carry (Epic 51: the home's
+// component_meta.bundle).
+var Bundles = map[string]bool{"full": true, "core": true, "worker": true, "custom": true}
 
 // Envelope is the request body.
 type Envelope struct {
@@ -92,6 +100,10 @@ type ServerReport struct {
 	Apps        []ReportApp
 	Features    map[string]any
 	Errors      []ReportError
+	// Bundle and Components (Epic 51 story 51.14): the home's bundle and the catalog
+	// ids it has enabled, sorted. Empty when the home did not send them (an older one).
+	Bundle     string
+	Components []string
 }
 
 // ReportApp is one app line of a server report.
@@ -297,6 +309,8 @@ type rawReport struct {
 		Message string `json:"message"`
 		Count   int64  `json:"count"`
 	} `json:"errors"`
+	Bundle     *string  `json:"bundle"`
+	Components []string `json:"components"`
 }
 
 func parseServer(rb rawBatch, now time.Time) (*ServerReport, error) {
@@ -383,6 +397,27 @@ func parseServer(rb rawBatch, now time.Time) (*ServerReport, error) {
 		}
 		rep.Errors = append(rep.Errors, ReportError{Message: msg, Count: e.Count})
 	}
+	if rr.Bundle != nil {
+		if !Bundles[*rr.Bundle] {
+			return nil, bad("report.bundle must be full, core, worker or custom")
+		}
+		rep.Bundle = *rr.Bundle
+	}
+	if len(rr.Components) > MaxComponents {
+		return nil, bad("report.components has more than %d entries", MaxComponents)
+	}
+	seen := map[string]bool{}
+	for i, id := range rr.Components {
+		if !reComponent.MatchString(id) {
+			return nil, bad("report.components[%d] is not a component id", i)
+		}
+		if seen[id] {
+			return nil, bad("report.components[%d] repeats %q", i, id)
+		}
+		seen[id] = true
+		rep.Components = append(rep.Components, id)
+	}
+	sort.Strings(rep.Components)
 	return rep, nil
 }
 

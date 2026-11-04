@@ -41,3 +41,24 @@ func TestRestartStartsItAgainWithFreshArguments(t *testing.T) {
 		t.Error("an unknown instance was accepted")
 	}
 }
+
+// An admin's restart of a component restarts each of its running processes, and nothing
+// for a component with no process running.
+func TestRestartComponent(t *testing.T) {
+	p, _ := fakeProc(t, RoleAPI, "serve")
+	p.Component = "transcription"
+	s := New([]Process{p}, testPolicy())
+	running(t, s)
+	first := waitFor(t, s, "api running", func(sn Snapshot) bool { return proc(sn, RoleAPI).State == StateRunning })
+	pid := proc(first, RoleAPI).PID
+	if n := s.RestartComponent("transcription"); n != 1 {
+		t.Fatalf("restarted %d", n)
+	}
+	waitFor(t, s, "started again", func(sn Snapshot) bool {
+		a := proc(sn, RoleAPI)
+		return a.State == StateRunning && a.PID != 0 && a.PID != pid
+	})
+	if n := s.RestartComponent("llm"); n != 0 {
+		t.Fatalf("a component with no process: %d", n)
+	}
+}

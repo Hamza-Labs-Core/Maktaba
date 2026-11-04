@@ -90,6 +90,56 @@ function storageStep(answer = STORAGE) {
 
 type Handler = (input: Record<string, unknown>, onProgress?: (p: StepProgress) => void) => unknown;
 
+/** The bundle step (story 51.17): its check_only answer, and the bundle chosen saved. */
+const option = (id: string, needs: boolean, extra: Record<string, unknown> = {}) => ({
+  id,
+  enables: [],
+  download_bytes: needs ? 6 * 2 ** 30 : 150 * 2 ** 20,
+  disk_bytes: 8 * 2 ** 30,
+  runs: true,
+  warnings: [],
+  needs_models: needs,
+  needs_llm: needs,
+  ...extra,
+});
+const BUNDLES = {
+  bundles: [
+    option("full", true, {
+      warnings: [{ code: "low_memory", params: { ram_bytes: 8 * 2 ** 30 }, message: "en" }],
+      enables: [
+        {
+          id: "transcription",
+          title_key: "components.transcription.title",
+          kind: "stages+process",
+        },
+        { id: "media.thumbnails", title_key: "components.media.thumbnails.title", kind: "stages" },
+      ],
+    }),
+    option("core", false, {
+      enables: [
+        { id: "media.thumbnails", title_key: "components.media.thumbnails.title", kind: "stages" },
+      ],
+    }),
+    option("worker", true),
+    option("custom", false),
+  ],
+  preselected: "full",
+  ram_bytes: 8 * 2 ** 30,
+};
+function bundleStep(answer: Record<string, unknown> = BUNDLES) {
+  return vi.fn((input: Record<string, unknown>) => {
+    if (input.check_only) return answer;
+    const core = input.bundle === "core";
+    return {
+      bundle: input.bundle,
+      enabled: [],
+      download_bytes: 0,
+      needs_models: !core,
+      needs_llm: !core,
+    };
+  });
+}
+
 function stepError(code: string, message: string, field?: string): StepError {
   return { code, message, field, details: [] };
 }
@@ -101,7 +151,7 @@ function fakeApi(steps: Partial<Record<StepName, Handler>> = {}, state: Partial<
       input: Record<string, unknown>,
       onProgress?: (p: StepProgress) => void
     ) => {
-      const h = steps[step];
+      const h = steps[step] ?? (step === "bundle" ? bundleStep() : undefined);
       if (!h) return {};
       return h(input, onProgress);
     }
@@ -161,7 +211,7 @@ describe("SetupWizard", () => {
     expect(await screen.findByText("Indexing, transcription and search")).toBeInTheDocument();
     expect(screen.getByText("96.0 GB (needs 16.0 GB)")).toBeInTheDocument();
     // a Mac asks for its permissions too
-    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 9")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
   });
 
@@ -212,7 +262,7 @@ describe("SetupWizard", () => {
         /RTX 2080 SUPER has 8\.0 GB: the second listen needs a graphics card with 9\.5 GB/
       )
     ).toBeInTheDocument();
-    expect(screen.getByText("Step 1 of 8")).toBeInTheDocument();
+    expect(screen.getByText("Step 1 of 9")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     // where the data goes: the suggested folder, as it is
     expect(await screen.findByRole("textbox", { name: /^Folder/ })).toHaveValue(
@@ -224,6 +274,8 @@ describe("SetupWizard", () => {
     await userEvent.type(again, "a long passphrase");
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     await userEvent.type(await screen.findByLabelText("Folders (one per line)"), "/Volumes/Media");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("heading", { name: "Choose what to run" });
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
     // the models step stays (the NAS copy is chosen there), without the token
     expect(
@@ -264,7 +316,7 @@ describe("SetupWizard", () => {
       expect(
         await screen.findByRole("heading", { name: "Where Maktaba keeps its data" })
       ).toBeInTheDocument();
-      expect(screen.getByText("Step 2 of 8")).toBeInTheDocument();
+      expect(screen.getByText("Step 2 of 9")).toBeInTheDocument();
       expect(storage).toHaveBeenCalledWith({ check_only: true }, undefined);
       expect(await screen.findByRole("textbox", { name: /^Folder/ })).toHaveValue(
         "/Volumes/Big/Maktaba"
@@ -284,7 +336,7 @@ describe("SetupWizard", () => {
       expect(
         await screen.findByRole("heading", { name: "Your admin account" })
       ).toBeInTheDocument();
-      expect(screen.getByText("Step 3 of 8")).toBeInTheDocument();
+      expect(screen.getByText("Step 3 of 9")).toBeInTheDocument();
     });
 
     it("warns about a small disk and blocks one too small", async () => {
@@ -404,7 +456,7 @@ describe("SetupWizard", () => {
 
     it("counts the step on Windows too", async () => {
       renderWizard(fakeApi({ storage: storageStep() }, { platform: "windows" }), "storage");
-      expect(await screen.findByText("Step 2 of 7")).toBeInTheDocument();
+      expect(await screen.findByText("Step 2 of 8")).toBeInTheDocument();
     });
   });
 
@@ -466,9 +518,78 @@ describe("SetupWizard", () => {
         expect.any(Function)
       )
     );
+    // "Choose what to run": Full preselected
+    expect(await screen.findByRole("heading", { name: "Choose what to run" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(
       await screen.findByRole("heading", { name: "Transcription models" })
     ).toBeInTheDocument();
+  });
+
+  describe("bundle (story 51.17)", () => {
+    it("Core: no models screen, no model or language model download", async () => {
+      const bundle = bundleStep();
+      const models = vi.fn(() => ({}));
+      const llm = vi.fn(() => ({}));
+      const venv = vi.fn(() => ({}));
+      const api = fakeApi({ bundle, models, llm, venv }, { platform: "windows" });
+      renderWizard(api, "bundle");
+      expect(
+        await screen.findByRole("heading", { name: "Choose what to run" })
+      ).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: /^Full/ })).toBeChecked();
+      expect(screen.getByText(/This computer has 8\.0 GB/)).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("radio", { name: /^Core/ }));
+      expect(screen.queryByText(/This computer has 8\.0 GB/)).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(bundle).toHaveBeenCalledWith({ bundle: "core" }, expect.any(Function))
+      );
+      // past the models screen, straight to Plex
+      expect(await screen.findByRole("heading", { name: "Plex (optional)" })).toBeInTheDocument();
+      await userEvent.click(screen.getByRole("button", { name: "Skip" }));
+      // the install builds the venv and finishes without the models or the language model
+      await waitFor(() => expect(venv).toHaveBeenCalled());
+      await waitFor(() => expect(api.finishSetup).toHaveBeenCalled());
+      expect(models).not.toHaveBeenCalled();
+      expect(llm).not.toHaveBeenCalled();
+    });
+
+    it("a Core app preselects Core; Custom sends its ticks", async () => {
+      const bundle = bundleStep({ ...BUNDLES, preselected: "core" });
+      renderWizard(fakeApi({ bundle }), "bundle");
+      expect(await screen.findByRole("radio", { name: /^Core/ })).toBeChecked();
+      await userEvent.click(screen.getByRole("radio", { name: /^Custom/ }));
+      await userEvent.click(screen.getByRole("checkbox", { name: "Transcription" }));
+      await userEvent.click(screen.getByRole("button", { name: "Next" }));
+      await waitFor(() =>
+        expect(bundle).toHaveBeenCalledWith(
+          { bundle: "custom", base: "core", enable: ["transcription"] },
+          expect.any(Function)
+        )
+      );
+    });
+
+    it("has its words in English and Arabic", async () => {
+      const en = (await import("../../i18n/en.json")).default as Record<string, string>;
+      const ar = (await import("../../i18n/ar.json")).default as Record<string, string>;
+      for (const k of [
+        "title",
+        "intro",
+        "full",
+        "core",
+        "worker",
+        "custom",
+        "download",
+        "lowMemory",
+        "checking",
+        "customIntro",
+      ]) {
+        expect(en[`setup.bundle.${k}`], k).toBeTruthy();
+        expect(ar[`setup.bundle.${k}`], k).toBeTruthy();
+      }
+      expect(ar["setup.bundle.title"]).toBe("اختر ما يعمل");
+    });
   });
 
   it("libraries: a bad path-map line is caught before the step", async () => {
@@ -582,7 +703,7 @@ describe("SetupWizard", () => {
       renderWith(fakeApi({ plex, venv: () => new Promise(() => {}) }), p, "plex");
       await userEvent.click(await screen.findByRole("button", { name: "Skip" }));
       expect(await screen.findByRole("heading", { name: "Permissions" })).toBeInTheDocument();
-      expect(screen.getByText("Step 7 of 8")).toBeInTheDocument();
+      expect(screen.getByText("Step 8 of 9")).toBeInTheDocument();
       const fda = screen.getByTestId("perm-full_disk_access");
       expect(within(fda).getByText("Off")).toBeInTheDocument();
       await userEvent.click(within(fda).getByRole("button", { name: "Open System Settings" }));
@@ -637,7 +758,7 @@ describe("SetupWizard", () => {
         p,
         "plex"
       );
-      expect(await screen.findByText("Step 6 of 7")).toBeInTheDocument();
+      expect(await screen.findByText("Step 7 of 8")).toBeInTheDocument();
       await userEvent.click(screen.getByRole("button", { name: "Skip" }));
       expect(
         await screen.findByRole("heading", { name: "Getting Maktaba ready" })
