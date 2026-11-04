@@ -378,6 +378,20 @@ GRAPH: tuple[StageDef, ...] = (
         # downloads the next one (download, convert, dedup; decided 2026-10-28)
         may_request=("convert_mp4", "youtube_backfill"),
     ),
+    # slot 0175: every library's YouTube sources from Tartube's records (off), and what
+    # Tartube downloaded seeded done. An admin runs it (Admin > Libraries); on the home,
+    # where Tartube's database is.
+    StageDef(
+        name="youtube_tartube",
+        label="Tartube import",
+        subject_kinds=("catalog",),
+        pool="network_yt",
+        lane="sources",
+        lane_order=4,
+        version=1,
+        placement="home",
+        max_attempts=1,
+    ),
     # Exact upload dates per video for series members (mediaintel "exact"); off until the
     # "exactdates" rules enable it. Detect runs again on the dates it finds.
     StageDef(

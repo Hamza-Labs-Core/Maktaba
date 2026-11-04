@@ -4,13 +4,15 @@ package queues
 //
 //	GET    /api/libraries/{id}/youtube/sources          the list, with each source's downloads
 //	POST   /api/libraries/{id}/youtube/sources          {url, mode?, folder?, options?}
-//	PATCH  /api/libraries/{id}/youtube/sources/{sid}    {mode?, folder?, options?}
+//	PATCH  /api/libraries/{id}/youtube/sources/{sid}    {mode? | on?, folder?, options?}
 //	DELETE /api/libraries/{id}/youtube/sources/{sid}
 //	GET    /api/queues/youtube-downloads                the downloads (filters, keyset paging)
 //
 // A new source is resolved with `yt-dlp --flat-playlist -J --playlist-end 1`
 // (the one thing the API runs itself). A source that is turned on (added on,
-// or off -> on) queues the library's refresh.
+// or off -> on) queues the library's refresh. Every mode other than off the API
+// sets is kept as the source's last_on_mode (slot 0175): {"on": true} turns a
+// source back on in it (new_and_backfill when it was never on).
 
 import (
 	"context"
@@ -66,6 +68,7 @@ type YouTubeSource struct {
 	ExternalID    string          `json:"external_id"`
 	Folder        *string         `json:"folder"`
 	Mode          string          `json:"mode"`
+	LastOnMode    *string         `json:"last_on_mode"`
 	AddedAt       *time.Time      `json:"added_at"`
 	Options       json.RawMessage `json:"options"`
 	Status        *string         `json:"status"`
@@ -75,7 +78,7 @@ type YouTubeSource struct {
 	Downloads     SourceDownloads `json:"downloads"`
 }
 
-const sourceCols = `s.id::text, s.library_id::text, s.kind, s.url, s.external_id, s.folder, s.mode, s.added_at,
+const sourceCols = `s.id::text, s.library_id::text, s.kind, s.url, s.external_id, s.folder, s.mode, s.last_on_mode, s.added_at,
        COALESCE(s.options, '{}'::jsonb), s.status, s.error, s.last_checked_at, s.last_fetched_at,
        count(d.youtube_id) FILTER (WHERE d.state = 'wanted' AND NOT d.backfill),
        count(d.youtube_id) FILTER (WHERE d.state = 'wanted' AND d.backfill),
@@ -89,17 +92,17 @@ const sourceCols = `s.id::text, s.library_id::text, s.kind, s.url, s.external_id
 
 func scanSource(rs rowScanner) (YouTubeSource, error) {
 	var s YouTubeSource
-	var folder, status, serr sql.NullString
+	var folder, lastOn, status, serr sql.NullString
 	var added, checked, fetched sql.NullTime
 	var opts []byte
 	d := &s.Downloads
-	err := rs.Scan(&s.ID, &s.LibraryID, &s.Kind, &s.URL, &s.ExternalID, &folder, &s.Mode, &added, &opts,
+	err := rs.Scan(&s.ID, &s.LibraryID, &s.Kind, &s.URL, &s.ExternalID, &folder, &s.Mode, &lastOn, &added, &opts,
 		&status, &serr, &checked, &fetched, &d.Wanted, &d.Backfill, &d.Downloading, &d.Done, &d.Failed,
 		&d.Skipped, &d.Gone)
 	if err != nil {
 		return s, err
 	}
-	s.Folder, s.Status, s.Error = nullStrPtr(folder), nullStrPtr(status), nullStrPtr(serr)
+	s.Folder, s.LastOnMode, s.Status, s.Error = nullStrPtr(folder), nullStrPtr(lastOn), nullStrPtr(status), nullStrPtr(serr)
 	s.AddedAt, s.LastCheckedAt, s.LastFetchedAt = nullTimePtr(added), nullTimePtr(checked), nullTimePtr(fetched)
 	s.Options = json.RawMessage(opts)
 	return s, nil
@@ -226,10 +229,13 @@ func validFolder(f string) bool {
 	return f != "" && len(f) <= 255 && !badFolder.MatchString(f) && !strings.HasPrefix(f, ".maktaba")
 }
 
-// SourceRequest is the body of POST (url required) and PATCH.
+// SourceRequest is the body of POST (url required) and PATCH. On (PATCH only,
+// never with Mode) is the switch: false is mode off, true turns an off source
+// back on in its last_on_mode.
 type SourceRequest struct {
 	URL     string         `json:"url"`
 	Mode    *string        `json:"mode"`
+	On      *bool          `json:"on"`
 	Folder  *string        `json:"folder"`
 	Options map[string]any `json:"options"`
 }
@@ -238,6 +244,9 @@ func (req SourceRequest) validate(create bool) (opts map[string]any, e *httperro
 	var errs []httperror.FieldError
 	if req.Mode != nil && !sourceModes[*req.Mode] {
 		errs = append(errs, httperror.FieldError{Field: "mode", Message: "off, new_and_backfill or new_only"})
+	}
+	if req.On != nil && (create || req.Mode != nil) {
+		errs = append(errs, httperror.FieldError{Field: "on", Message: "on or mode, not both; a new source takes mode"})
 	}
 	if req.Folder != nil && *req.Folder != "" && !validFolder(*req.Folder) {
 		errs = append(errs, httperror.FieldError{Field: "folder", Message: "a folder inside the library's first root"})
@@ -339,10 +348,10 @@ func (h *Handler) AddSource(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	var sid string
-	err = tx.QueryRowContext(ctx, `INSERT INTO youtube_sources (library_id, kind, url, external_id, folder, mode, added_at, options)
-		VALUES ($1, $2, $3, $4, $5, $6, now(), $7::jsonb)
+	err = tx.QueryRowContext(ctx, `INSERT INTO youtube_sources (library_id, kind, url, external_id, folder, mode, last_on_mode, added_at, options)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, now(), $8::jsonb)
 		ON CONFLICT (library_id, kind, external_id) DO NOTHING RETURNING id::text`,
-		id, res.Kind, res.URL, res.ExternalID, nullable(req.Folder), mode, string(optsJSON)).Scan(&sid)
+		id, res.Kind, res.URL, res.ExternalID, nullable(req.Folder), mode, lastOnFor(mode), string(optsJSON)).Scan(&sid)
 	if errors.Is(err, sql.ErrNoRows) {
 		httperror.Write(w, r, httperror.Conflict("", "this library already follows "+res.Kind+" "+res.ExternalID).
 			With("external_id", res.ExternalID))
@@ -392,9 +401,39 @@ func sourceParams(w http.ResponseWriter, r *http.Request) (string, string, bool)
 	return id, sid, true
 }
 
+// lastOnFor is the last_on_mode a source written in mode keeps: the mode, or
+// NULL for off (the column then keeps what it had).
+func lastOnFor(mode string) any {
+	if mode == ModeOff {
+		return nil
+	}
+	return mode
+}
+
+// switchedMode is the mode a PATCH sets, or "" for none: mode as given, or the
+// switch's (on: the source's last mode on, new_and_backfill when it never was;
+// an on source stays as it is).
+func switchedMode(req SourceRequest, oldMode string, lastOn sql.NullString) string {
+	switch {
+	case req.Mode != nil:
+		return *req.Mode
+	case req.On == nil:
+		return ""
+	case !*req.On:
+		return ModeOff
+	case oldMode != ModeOff:
+		return ""
+	case lastOn.Valid && sourceModes[lastOn.String] && lastOn.String != ModeOff:
+		return lastOn.String
+	default:
+		return ModeNewAndBackfill
+	}
+}
+
 // PatchSource implements PATCH /api/libraries/{id}/youtube/sources/{sid}:
-// mode, folder and options (null clears an option to its default; options
-// given replace the stored ones). Turning a source on queues a refresh.
+// mode (or the on switch), folder and options (null clears an option to its
+// default; options given replace the stored ones). Turning a source on queues
+// a refresh.
 func (h *Handler) PatchSource(w http.ResponseWriter, r *http.Request) {
 	id, sid, ok := sourceParams(w, r)
 	if !ok {
@@ -418,8 +457,9 @@ func (h *Handler) PatchSource(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	var oldMode string
-	err = tx.QueryRowContext(ctx, `SELECT mode FROM youtube_sources WHERE id = $1 AND library_id = $2 FOR UPDATE`,
-		sid, id).Scan(&oldMode)
+	var lastOn sql.NullString
+	err = tx.QueryRowContext(ctx, `SELECT mode, last_on_mode FROM youtube_sources WHERE id = $1 AND library_id = $2 FOR UPDATE`,
+		sid, id).Scan(&oldMode, &lastOn)
 	if errors.Is(err, sql.ErrNoRows) {
 		httperror.Write(w, r, httperror.NotFound("source not found"))
 		return
@@ -433,8 +473,12 @@ func (h *Handler) PatchSource(w http.ResponseWriter, r *http.Request) {
 		args = append(args, v)
 		sets = append(sets, col+" = $"+strconv.Itoa(len(args)))
 	}
-	if req.Mode != nil {
-		add("mode", *req.Mode)
+	newMode := switchedMode(req, oldMode, lastOn)
+	if newMode != "" {
+		add("mode", newMode)
+		if newMode != ModeOff {
+			add("last_on_mode", newMode)
+		}
 	}
 	if req.Folder != nil {
 		add("folder", nullable(req.Folder))
@@ -453,7 +497,7 @@ func (h *Handler) PatchSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := SourceWriteResponse{}
-	if oldMode == ModeOff && req.Mode != nil && *req.Mode != ModeOff {
+	if oldMode == ModeOff && newMode != "" && newMode != ModeOff {
 		er, err := enqueueRefresh(ctx, tx, id, "youtube source turned on")
 		if err != nil {
 			writeErr(w, r, "enqueue", err)
@@ -462,8 +506,11 @@ func (h *Handler) PatchSource(w http.ResponseWriter, r *http.Request) {
 		out.Refresh = &LibraryActionResult{LibraryID: id, JobID: er.JobID, Outcome: er.Outcome}
 	}
 	change := map[string]any{"library_id": id, "old_mode": oldMode}
-	if req.Mode != nil {
-		change["mode"] = *req.Mode
+	if req.On != nil {
+		change["on"] = *req.On
+	}
+	if newMode != "" {
+		change["mode"] = newMode
 	}
 	if req.Folder != nil {
 		change["folder"] = *req.Folder

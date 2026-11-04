@@ -18,6 +18,8 @@ exports. The import:
 
 Nothing here writes: :func:`downloaded_ids` returns the ids, and
 :func:`maktaba_pipeline.library_mgmt.youtube_sources.seed_done` records them.
+:func:`read_tartube` also returns Tartube's channels and playlists (its name is the
+download folder, its source the URL): :mod:`.tartube_sources` makes them sources.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import datetime as _dt
 import json
 import os
 import pickle
+import unicodedata
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
@@ -34,10 +37,13 @@ from typing import Any
 
 __all__ = [
     "ImportReport",
+    "TartubeSource",
     "TartubeRecord",
     "TartubeRefused",
     "StubUnpickler",
     "downloaded_ids",
+    "downloaded_by_parent",
+    "read_tartube",
     "load_pickle",
     "read_export",
     "records_from_pickle",
@@ -271,19 +277,60 @@ def _mio_records(doc: Mapping[str, Any]) -> Iterator[TartubeRecord]:
         )
 
 
-def read_export(path: str) -> list[TartubeRecord]:
-    """The video records of a Tartube (or Make-It-Offline) JSON export."""
+@dataclass(frozen=True, slots=True)
+class TartubeSource:
+    """A Tartube channel or playlist: ``name`` is its download folder, ``url`` its
+    source (None when Tartube has none)."""
+
+    kind: str  # "channel" | "playlist", as Tartube calls it
+    name: str
+    url: str | None
+
+
+def _read_doc(path: str) -> dict[str, Any]:
     if os.path.getsize(path) > MAX_JSON_BYTES:
         raise ValueError(f"{path} is larger than {MAX_JSON_BYTES} bytes")
     with open(path, encoding="utf-8") as f:
         doc = json.load(f)
-    if not isinstance(doc, dict):
-        raise ValueError(f"{path} is not a Tartube export")
+    if not isinstance(doc, dict) or not (
+        isinstance(doc.get("db_dict"), dict) or isinstance(doc.get("videos"), list)
+    ):
+        raise ValueError(f"{path} is not a Tartube export (no db_dict or videos)")
+    return doc
+
+
+def _records_of(doc: Mapping[str, Any]) -> list[TartubeRecord]:
     if isinstance(doc.get("db_dict"), dict):
         return list(_walk_native(doc["db_dict"], (None, None)))
-    if isinstance(doc.get("videos"), list):
-        return list(_mio_records(doc))
-    raise ValueError(f"{path} is not a Tartube export (no db_dict or videos)")
+    return list(_mio_records(doc))
+
+
+def _walk_sources(tree: Mapping[str, Any]) -> Iterator[TartubeSource]:
+    for node in tree.values():
+        if not isinstance(node, dict):
+            continue
+        kind, name = node.get("type"), _str(node.get("name"))
+        if kind in ("channel", "playlist") and name:
+            yield TartubeSource(str(kind), name, _str(node.get("source")))
+        children = node.get("db_dict")
+        if isinstance(children, dict) and kind in ("folder", "channel", "playlist"):
+            yield from _walk_sources(children)
+
+
+def _sources_of(doc: Mapping[str, Any]) -> list[TartubeSource]:
+    if isinstance(doc.get("db_dict"), dict):
+        return list(_walk_sources(doc["db_dict"]))
+    out: list[TartubeSource] = []
+    for key, kind in (("channels", "channel"), ("playlists", "playlist")):
+        for c in doc.get(key) or []:
+            if isinstance(c, dict) and _str(c.get("name")):
+                out.append(TartubeSource(kind, str(c["name"]), _str(c.get("url"))))
+    return out
+
+
+def read_export(path: str) -> list[TartubeRecord]:
+    """The video records of a Tartube (or Make-It-Offline) JSON export."""
+    return _records_of(_read_doc(path))
 
 
 def _attrs(obj: Any) -> dict[str, Any]:
@@ -299,16 +346,31 @@ def _kind(obj: Any) -> str | None:
     return None
 
 
-def records_from_pickle(root: Any) -> list[TartubeRecord]:
-    """The video records of a loaded ``tartube.db`` (its ``media_reg_dict``)."""
-    reg: Any = None
+def _registry(root: Any) -> dict[Any, Any]:
     if isinstance(root, dict):
         for key in ("media_reg_dict", "media_registry", "media_dict"):
             if isinstance(root.get(key), dict):
-                reg = root[key]
-                break
-    if not isinstance(reg, dict):
-        raise ValueError("no media registry in the Tartube database")
+                return dict(root[key])
+    raise ValueError("no media registry in the Tartube database")
+
+
+def sources_from_pickle(root: Any) -> list[TartubeSource]:
+    """The channels and playlists of a loaded ``tartube.db``."""
+    out: list[TartubeSource] = []
+    for obj in _registry(root).values():
+        kind = _kind(obj)
+        if kind not in ("channel", "playlist"):
+            continue
+        a = _attrs(obj)
+        name = _str(a.get("name"))
+        if name:
+            out.append(TartubeSource(kind, name, _str(a.get("source"))))
+    return out
+
+
+def records_from_pickle(root: Any) -> list[TartubeRecord]:
+    """The video records of a loaded ``tartube.db`` (its ``media_reg_dict``)."""
+    reg = _registry(root)
     out: list[TartubeRecord] = []
     for key, obj in reg.items():
         if _kind(obj) != "video":
@@ -412,32 +474,41 @@ def _matches(rec: TartubeRecord, wanted: Iterable[str]) -> bool:
     return False
 
 
-def downloaded_ids(
-    path: str,
-    *,
-    database: str | None = None,
-    channels: Iterable[str] = (),
-    to_local: Callable[[str], str] = lambda p: p,
-) -> tuple[list[str], ImportReport]:
-    """The YouTube ids Tartube downloaded, read from ``path`` (a JSON export, or
-    ``tartube.db`` itself). ``database``: the ``tartube.db`` to fall back to for what the
-    export lacks (default: ``tartube.db`` beside the export, when there is one).
-    ``channels``: only videos under these channels or playlists (a name or part of the
-    URL); empty: all."""
-    rep = ImportReport()
-    is_json = path.lower().endswith(".json")
-    if is_json:
-        recs = read_export(path)
+def read_tartube(
+    path: str, *, database: str | None = None, rep: ImportReport | None = None
+) -> tuple[list[TartubeSource], list[TartubeRecord]]:
+    """Tartube's channels and playlists, and its video records, read from ``path`` (a
+    JSON export, or ``tartube.db`` itself). ``database``: the ``tartube.db`` to fall back
+    to for what the export lacks (default: ``tartube.db`` beside the export, when there is
+    one); its channels and playlists are added to the export's (the newer database knows
+    the ones added since the export)."""
+    rep = rep if rep is not None else ImportReport()
+    if path.lower().endswith(".json"):
+        doc = _read_doc(path)
+        recs, srcs = _records_of(doc), _sources_of(doc)
         lacks = any(r.dl_flag is None for r in recs)
         db_path = database or os.path.join(os.path.dirname(path), "tartube.db")
-        if lacks and os.path.isfile(db_path):
-            unp = _load(db_path, rep)
-            recs = _merge(recs, records_from_pickle(unp))
+        if (lacks or database) and os.path.isfile(db_path):
+            root = _load(db_path, rep)
+            recs = _merge(recs, records_from_pickle(root))
+            have = {s.name for s in srcs}
+            srcs += [s for s in sources_from_pickle(root) if s.name not in have]
     else:
-        recs = records_from_pickle(_load(path, rep))
+        root = _load(path, rep)
+        recs, srcs = records_from_pickle(root), sources_from_pickle(root)
     rep.records = len(recs)
-    wanted = [c for c in channels if c and c.strip()]
-    ids: dict[str, None] = {}
+    return srcs, recs
+
+
+def _downloaded(
+    recs: Iterable[TartubeRecord],
+    rep: ImportReport,
+    wanted: list[str],
+    to_local: Callable[[str], str],
+) -> dict[str, list[str]]:
+    """The downloaded ids by their channel or playlist's name ("" for none)."""
+    seen: set[str] = set()
+    out: dict[str, list[str]] = {}
     for r in recs:
         if wanted and not _matches(r, wanted):
             rep.filtered += 1
@@ -460,12 +531,55 @@ def downloaded_ids(
                 rep.unverified += 1
         else:
             rep.unverified += 1
-        if r.vid not in ids:
-            ids[r.vid] = None
+        if r.vid not in seen:
+            seen.add(r.vid)
+            out.setdefault(r.parent[0] or "", []).append(r.vid)
             label = r.parent[0] or r.parent[1] or "(none)"
             rep.by_parent[label] = rep.by_parent.get(label, 0) + 1
-    rep.downloaded = len(ids)
-    return list(ids), rep
+    rep.downloaded = len(seen)
+    return out
+
+
+def downloaded_ids(
+    path: str,
+    *,
+    database: str | None = None,
+    channels: Iterable[str] = (),
+    to_local: Callable[[str], str] = lambda p: p,
+) -> tuple[list[str], ImportReport]:
+    """The YouTube ids Tartube downloaded, read from ``path`` (a JSON export, or
+    ``tartube.db`` itself). ``database``: the ``tartube.db`` to fall back to for what the
+    export lacks (default: ``tartube.db`` beside the export, when there is one).
+    ``channels``: only videos under these channels or playlists (a name or part of the
+    URL); empty: all."""
+    rep = ImportReport()
+    _, recs = read_tartube(path, database=database, rep=rep)
+    wanted = [c for c in channels if c and c.strip()]
+    by = _downloaded(recs, rep, wanted, to_local)
+    return [i for ids in by.values() for i in ids], rep
+
+
+def downloaded_by_parent(
+    recs: Iterable[TartubeRecord], to_local: Callable[[str], str] = lambda p: p
+) -> tuple[dict[str, list[str]], ImportReport]:
+    """:func:`downloaded_ids` of records already read, by their channel or playlist's
+    name (folded with :func:`folder_key`)."""
+    rep = ImportReport()
+    by: dict[str, list[str]] = {}
+    for name, ids in _downloaded(recs, rep, [], to_local).items():
+        by.setdefault(folder_key(name), []).extend(ids)
+    return by, rep
+
+
+def folder_key(name: str) -> str:
+    """A folder name as Tartube's and a library root's are compared: Unicode NFC,
+    case-folded, outer spaces and invisible marks (LRM/RLM, PDF) dropped."""
+    s = unicodedata.normalize("NFC", name)
+    s = "".join(ch for ch in s if ch not in _INVISIBLE)
+    return s.strip().casefold()
+
+
+_INVISIBLE = frozenset("\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069\ufeff")
 
 
 def _load(path: str, rep: ImportReport) -> Any:

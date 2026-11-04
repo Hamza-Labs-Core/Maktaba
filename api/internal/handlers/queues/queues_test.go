@@ -175,7 +175,12 @@ func TestEveryRouteIsAdminOnly(t *testing.T) {
 		{"GET", "/api/libraries/{id}/youtube/sources", "/api/libraries/" + uidA + "/youtube/sources", ""},
 		{"POST", "/api/libraries/{id}/youtube/sources", "/api/libraries/" + uidA + "/youtube/sources", `{"url":"https://www.youtube.com/@x"}`},
 		{"PATCH", "/api/libraries/{id}/youtube/sources/{sid}", "/api/libraries/" + uidA + "/youtube/sources/" + uidB, `{"mode":"off"}`},
+		// the switch is a PATCH too: a second body for the same route
+		{"PATCH", "/api/libraries/{id}/youtube/sources/{sid}", "/api/libraries/" + uidA + "/youtube/sources/" + uidB, `{"on":true}`},
 		{"DELETE", "/api/libraries/{id}/youtube/sources/{sid}", "/api/libraries/" + uidA + "/youtube/sources/" + uidB, ""},
+		{"POST", "/api/libraries/{id}/youtube/guess", "/api/libraries/" + uidA + "/youtube/guess", ""},
+		{"GET", "/api/queues/youtube-tartube", "/api/queues/youtube-tartube", ""},
+		{"POST", "/api/queues/youtube-tartube", "/api/queues/youtube-tartube", `{"path":"/x/tartube.db"}`},
 		{"GET", "/api/libraries/{id}/offline-summary", "/api/libraries/" + uidA + "/offline-summary", ""},
 		{"GET", "/api/queues/offline-summary", "/api/queues/offline-summary", ""},
 		{"GET", "/api/queues/offline-items", "/api/queues/offline-items", ""},
