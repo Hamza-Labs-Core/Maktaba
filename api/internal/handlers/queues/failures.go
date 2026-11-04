@@ -20,8 +20,9 @@ import (
 //
 // The CTE first finds the subjects that have any failed row (partial
 // index processing_jobs_failed_cause_idx) and only then pulls their
-// newest row through processing_jobs_subject_history_idx, so the cost
-// follows the number of failing subjects, not the table size.
+// newest row through processing_jobs_subject_history_idx (one backward
+// index step each, LIMIT 1: a subject with hundreds of runs reads one),
+// so the cost follows the number of failing subjects, not the table size.
 const latestFailedCTE = `
 WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage
@@ -33,12 +34,15 @@ WITH f AS (
                           AND fi.subject_id = processing_jobs.subject_id
                           AND fi.stage = processing_jobs.stage)
 ), latest AS (
-    SELECT DISTINCT ON (j.subject_kind, j.subject_id, j.stage)
-           j.id, j.stage, j.subject_kind, j.subject_id, j.state,
-           j.error_cause, j.error, j.finished_at, j.created_at
-      FROM processing_jobs j
-      JOIN f ON f.subject_kind = j.subject_kind AND f.subject_id = j.subject_id AND f.stage = j.stage
-     ORDER BY j.subject_kind, j.subject_id, j.stage, j.id DESC
+    SELECT l.id, l.stage, l.subject_kind, l.subject_id, l.state,
+           l.error_cause, l.error, l.finished_at, l.created_at
+      FROM f
+      CROSS JOIN LATERAL (
+           SELECT j.id, j.stage, j.subject_kind, j.subject_id, j.state,
+                  j.error_cause, j.error, j.finished_at, j.created_at
+             FROM processing_jobs j
+            WHERE j.subject_kind = f.subject_kind AND j.subject_id = f.subject_id AND j.stage = f.stage
+            ORDER BY j.id DESC LIMIT 1) l
 )`
 
 const failureGroupsSQL = latestFailedCTE + `

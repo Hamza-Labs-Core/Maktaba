@@ -60,6 +60,10 @@ var copyReviewed = []string{
 	// slot 0182: the libraries a channel's linked videos are in, and what the derivation
 	// decided for each library's sources (ids and counts, no secret)
 	"youtube_channel_libraries", "youtube_source_decisions",
+	// slot 0183: the subjects with a done job per library and stage, derived from the
+	// copied processing_jobs (ids and times only); copied so a replica's library rows
+	// read the same as the home's
+	"processing_done_subjects",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

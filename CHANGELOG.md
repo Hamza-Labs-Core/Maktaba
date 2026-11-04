@@ -36,6 +36,20 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The library dashboard and the queue page load at once on a large home.** On a home with
+  3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
+  failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
+  every 10 seconds: each read counted the jobs' whole history, and every request ran it
+  again. A new table keeps the items each stage has finished per library, kept up to date by
+  the database as jobs finish (slot 0183, filled from the existing jobs when it is added);
+  three new indexes cover the waiting, finished and awaiting-review jobs, and the failed
+  items' latest runs are read one step each. On 3.1 million jobs the library numbers are
+  built in about 0.14 s and the queue snapshot in about 0.11 s. Every reader shares one
+  build, a slow or failed rebuild serves the last numbers instead of an error, and a pause
+  or a pool change shows at once. The dashboard and a library's page no longer wait forever:
+  after 8 seconds they say the read is slow, after 30 seconds that it failed, each with Try
+  again, and a refresh that fails keeps the tiles with a notice (English and Arabic).
+
 - **Processes no longer show a raw `{percent}`, and the Remote's Needs attention reads right in
   Arabic.** A process whose detail code came without its values (an older home, a test
   fixture) showed its words' placeholder, as in "Installing the transcription tools

@@ -34,6 +34,10 @@ type Rule struct {
 	// Once makes the rule single-use (consumed on first match), so a
 	// test can answer the same fragment differently on the next call.
 	Once bool
+	// Hook, when set, runs before the answer (outside the driver's lock,
+	// so it may block to hold a statement "running"); an error it returns
+	// is the statement's error.
+	Hook func() error
 
 	used bool
 }
@@ -177,6 +181,11 @@ func (s *stmt) Exec(args []driver.Value) (driver.Result, error) {
 	if r == nil {
 		return driver.RowsAffected(0), nil
 	}
+	if r.Hook != nil {
+		if err := r.Hook(); err != nil {
+			return nil, err
+		}
+	}
 	if r.Err != nil {
 		return nil, r.Err
 	}
@@ -188,6 +197,11 @@ func (s *stmt) Query(args []driver.Value) (driver.Rows, error) {
 	r := s.c.match(s.q)
 	if r == nil {
 		return &rows{}, nil
+	}
+	if r.Hook != nil {
+		if err := r.Hook(); err != nil {
+			return nil, err
+		}
 	}
 	if r.Err != nil {
 		return nil, r.Err

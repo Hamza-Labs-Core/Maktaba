@@ -235,6 +235,15 @@ function Dashboard() {
 
       <StatusLegend />
 
+      {board.error && board.rows && (
+        <p className="mkt-ld__stale" role="alert">
+          {t("libdash.staleError")}{" "}
+          <Button size="sm" variant="secondary" onClick={board.reload}>
+            {t("common.retry")}
+          </Button>
+        </p>
+      )}
+
       {board.error && !board.rows ? (
         <ErrorState
           kind="server"
@@ -247,9 +256,17 @@ function Dashboard() {
           }
         />
       ) : board.rows === null ? (
-        <p className="mkt-muted" role="status">
-          {t("libdash.loading")}
-        </p>
+        <div className="mkt-ld__wait" role="status">
+          <p className="mkt-muted">{t("libdash.loading")}</p>
+          {board.slow && (
+            <p className="mkt-muted">
+              {t("libdash.slow")}{" "}
+              <Button size="sm" variant="secondary" onClick={board.reload}>
+                {t("common.retry")}
+              </Button>
+            </p>
+          )}
+        </div>
       ) : shown.length === 0 ? (
         <EmptyState
           title={t("libdash.empty.title")}
