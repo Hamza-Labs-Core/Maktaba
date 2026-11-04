@@ -282,7 +282,10 @@ var processReasons = map[string]string{
 func checkProcesses(ctx context.Context, e *env) []Item {
 	var doc struct {
 		Processes []struct {
-			Role      string `json:"role"`
+			Role string `json:"role"`
+			// Instance names one of a role's several processes (the pipeline's index
+			// worker, stt-1); empty for a role with one
+			Instance  string `json:"instance"`
 			State     string `json:"state"`
 			Restarts  int    `json:"restarts"`
 			CrashLoop bool   `json:"crash_loop"`
@@ -306,10 +309,19 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 	}
 	out := []Item{}
 	for _, p := range doc.Processes {
-		it := base("process:"+p.Role, GroupServices, KindProcess, p.Role)
+		// one item per process: a role's instances each get their own id and name
+		id, name := p.Role, p.Role
+		if p.Instance != "" {
+			id = p.Role + "-" + p.Instance
+			name = p.Role + " " + p.Instance
+		}
+		it := base("process:"+id, GroupServices, KindProcess, name)
 		st, code := processState(p.State, p.CrashLoop, p.Blocked)
 		it.set(st, code, map[string]any{"role": p.Role, "restarts": p.Restarts}, processReasons[code])
-		it.Details = map[string]any{"state": p.State, "restarts": p.Restarts, "uptime_seconds": int64(p.UptimeSec)}
+		it.Details = map[string]any{"role": p.Role, "state": p.State, "restarts": p.Restarts, "uptime_seconds": int64(p.UptimeSec)}
+		if p.Instance != "" {
+			it.Details["instance"] = p.Instance
+		}
 		if p.Component != "" {
 			it.Details["component"] = p.Component
 		}

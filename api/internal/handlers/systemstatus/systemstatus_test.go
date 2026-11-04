@@ -274,6 +274,15 @@ func TestProcesses(t *testing.T) {
 	}
 	want(t, held[1], StatusOK, "process_held")
 	want(t, held[2], StatusOK, "process_held")
+	// one of a role's several processes is its own item: its id and details name the
+	// instance, so two pipeline processes never share an id or a name
+	if held[2].ID != "process:pipeline-index" || held[2].Details["instance"] != "index" ||
+		held[2].Details["role"] != "pipeline" {
+		t.Fatalf("instance: %s %+v", held[2].ID, held[2].Details)
+	}
+	if got[2].ID != "process:pipeline" || got[2].Details["instance"] != nil {
+		t.Fatalf("a role with one process: %s %+v", got[2].ID, got[2].Details)
+	}
 	want(t, held[3], StatusDegraded, "process_stopped")
 	if st, _, _, _ := rollup(held); st != StatusDegraded {
 		t.Fatalf("a stopped process that should run: overall %s", st)

@@ -14,6 +14,7 @@ import type { HealthStatus, StatusItem, StatusReport } from "../../lib/systemSta
 import { useFmt, type Fmt } from "../../components/queue/format";
 import { componentTitle } from "../../components/cluster/format";
 import { HelpLink } from "../../help/HelpLink";
+import { roleName } from "./Processes";
 import { systemHealthHelp } from "../../help/registry";
 
 export const GROUPS = ["services", "workers", "dependencies", "integrations", "queues_tv"] as const;
@@ -72,9 +73,10 @@ export function itemName(it: StatusItem, t: T): string {
   if (NAMED.has(it.id)) return t(`health.item.${it.id}`);
   switch (it.kind) {
     case "process": {
-      const k = `health.processes.role.${it.name}`;
-      const s = t(k);
-      return s === k ? it.name : s;
+      // the role and, for one of a role's several processes, its instance's words
+      const role = typeof it.details?.role === "string" ? it.details.role : it.name;
+      const instance = typeof it.details?.instance === "string" ? it.details.instance : undefined;
+      return roleName(t, role, instance);
     }
     case "dependency":
       return dependencyName(it.name, t);

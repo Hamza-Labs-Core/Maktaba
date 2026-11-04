@@ -123,4 +123,23 @@ describe("every System health item has its name in Arabic", () => {
       "Language model (future)"
     );
   });
+
+  it("each of a role's processes by its own name (two pipeline tiles never read the same)", () => {
+    const proc = (name: string, details: Record<string, unknown>): StatusItem => ({
+      ...failed,
+      id: `process:${name}`,
+      kind: "process",
+      name,
+      details,
+    });
+    const main = proc("pipeline", { role: "pipeline" });
+    const index = proc("pipeline index", { role: "pipeline", instance: "index" });
+    const en = tFor("en");
+    const ar = tFor("ar");
+    expect(itemName(main, en)).toBe("Processing pipeline");
+    expect(itemName(index, en)).toBe("Processing pipeline · search index");
+    expect(itemName(index, ar)).not.toBe(itemName(main, ar));
+    expect(itemName(index, ar)).toMatch(ARABIC);
+    expect(itemName(index, ar)).not.toMatch(LATIN);
+  });
 });
