@@ -512,6 +512,40 @@ func TestListAndShowCarrySettings(t *testing.T) {
 	}
 }
 
+// The reason's params ride with it, as text, on the component and on each machine: the
+// page fills components.reason.<reason> from them.
+func TestReasonParams(t *testing.T) {
+	f := newFixture(t)
+	if err := f.st.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{
+		Machine: store.Home, ID: "transcription", Part: "supervisor", Phase: components.PhaseFailed,
+		Conditions: []store.Condition{
+			{Type: "Ready", Status: "true"},
+			{Type: "Started", Status: "false", Reason: "settings_invalid", Params: map[string]any{"name": "release", "holder_pid": 4242}},
+		}}}); err != nil {
+		t.Fatal(err)
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	want := map[string]any{"name": "release", "holder_pid": "4242"}
+	got, _ := one["reason_params"].(map[string]any)
+	if one["reason"] != "settings_invalid" || len(got) != 2 || got["name"] != want["name"] || got["holder_pid"] != want["holder_pid"] {
+		t.Fatalf("component: reason %v, params %v", one["reason"], one["reason_params"])
+	}
+	machines, _ := one["machines"].([]any)
+	if len(machines) != 1 {
+		t.Fatalf("machines %v", one["machines"])
+	}
+	if mp, _ := machines[0].(map[string]any)["reason_params"].(map[string]any); mp["name"] != "release" {
+		t.Fatalf("machine params %v", machines[0])
+	}
+	// no reason, no params
+	var llm map[string]any
+	decode(t, f.do("GET", "/api/components/llm", "", admin()), 200, &llm)
+	if _, has := llm["reason_params"]; has {
+		t.Fatalf("llm %v", llm["reason_params"])
+	}
+}
+
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)

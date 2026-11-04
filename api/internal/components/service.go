@@ -3,7 +3,9 @@ package components
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -190,10 +192,13 @@ func (s *Service) queued(ctx context.Context, ids []string) int {
 
 // MachineView is one machine's status of a component: the worst of its parts.
 type MachineView struct {
-	Machine            string `json:"machine"`
-	Phase              string `json:"phase"`
-	Reason             string `json:"reason,omitempty"`
-	ObservedGeneration int64  `json:"observed_generation"`
+	Machine string `json:"machine"`
+	Phase   string `json:"phase"`
+	Reason  string `json:"reason,omitempty"`
+	// ReasonParams fill the reason's words (components.reason.<reason>): the params of
+	// the status condition that gave the reason, as text ({"name":"release"}).
+	ReasonParams       map[string]string `json:"reason_params,omitempty"`
+	ObservedGeneration int64             `json:"observed_generation"`
 	// Health is the machine's uptime, restarts, last error, version, memory and disk
 	// (story 51.14, health.go).
 	Health *Health        `json:"health,omitempty"`
@@ -228,12 +233,14 @@ type View struct {
 	HasRow     bool        `json:"has_row"`
 	// Phase and Reason are the home's status (the worst of its parts); with no status
 	// row yet, what the desired state makes of it (Expected).
-	Phase         string        `json:"phase"`
-	Reason        string        `json:"reason,omitempty"`
-	Expected      Effect        `json:"expected"`
-	Machines      []MachineView `json:"machines"`
-	RequiredBy    []string      `json:"required_by"`
-	InstallSizeMB int64         `json:"install_size_mb"`
+	Phase  string `json:"phase"`
+	Reason string `json:"reason,omitempty"`
+	// ReasonParams are the home's reason's params (MachineView.ReasonParams).
+	ReasonParams  map[string]string `json:"reason_params,omitempty"`
+	Expected      Effect            `json:"expected"`
+	Machines      []MachineView     `json:"machines"`
+	RequiredBy    []string          `json:"required_by"`
+	InstallSizeMB int64             `json:"install_size_mb"`
 	// Health is the home's (machines[0] when it is the home); nil with no status row
 	// from the home yet.
 	Health *Health `json:"health,omitempty"`
@@ -406,14 +413,15 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 	}
 	for _, m := range machines {
 		roll := store.Rollup(byMachine[m])
-		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: roll.Reason(), ObservedGeneration: roll.ObservedGeneration,
-			Health: healthOf(c, byMachine[m], roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
+		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: roll.Reason(), ReasonParams: reasonParams(roll),
+			ObservedGeneration: roll.ObservedGeneration,
+			Health:             healthOf(c, byMachine[m], roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
 		if parts {
 			mv.Parts = byMachine[m]
 		}
 		v.Machines = append(v.Machines, mv)
 		if m == store.Home {
-			v.Phase, v.Reason, v.Health = mv.Phase, mv.Reason, mv.Health
+			v.Phase, v.Reason, v.ReasonParams, v.Health = mv.Phase, mv.Reason, mv.ReasonParams, mv.Health
 		}
 	}
 	v.RequiredBy = requiredBy(cat, snap.rows, c.ID)
@@ -462,6 +470,36 @@ func (s *Service) bundleLine(snap *snapshot) BundleLine {
 	line.Base = base
 	line.Plus, line.Minus = diff(base)
 	return line
+}
+
+// reasonParams are the params of the condition that gives s its reason (the first false
+// one with a reason, as Status.Reason), each as text; nil when it has none.
+func reasonParams(s store.Status) map[string]string {
+	for _, c := range s.Conditions {
+		if c.Status != "false" || c.Reason == "" {
+			continue
+		}
+		if len(c.Params) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(c.Params))
+		for k, v := range c.Params {
+			switch x := v.(type) {
+			case string:
+				out[k] = x
+			case nil:
+				out[k] = ""
+			default:
+				b, err := json.Marshal(x)
+				if err != nil {
+					b = []byte(fmt.Sprint(x))
+				}
+				out[k] = string(b)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func nonNil(s []string) []string {
