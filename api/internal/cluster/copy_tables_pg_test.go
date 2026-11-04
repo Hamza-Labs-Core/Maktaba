@@ -57,6 +57,9 @@ var copyReviewed = []string{
 	"youtube_downloads", "youtube_sources",
 	// slot 0172: each stage's and pool's place in the fair share of claims (numbers only)
 	"claim_shares",
+	// slot 0182: the libraries a channel's linked videos are in, and what the derivation
+	// decided for each library's sources (ids and counts, no secret)
+	"youtube_channel_libraries", "youtube_source_decisions",
 	// slot 0183: the subjects with a done job per library and stage, derived from the
 	// copied processing_jobs (ids and times only); copied so a replica's library rows
 	// read the same as the home's

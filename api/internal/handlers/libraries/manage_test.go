@@ -61,7 +61,15 @@ func manageDB(t *testing.T) *sql.DB {
 		`CREATE TABLE user_library_pins (user_id TEXT NOT NULL, library_id TEXT NOT NULL, position INTEGER NOT NULL,
 			created_at TEXT NOT NULL, PRIMARY KEY (user_id, library_id))`,
 		`CREATE TABLE youtube_sources (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, kind TEXT NOT NULL,
-			url TEXT NOT NULL, external_id TEXT NOT NULL, mode TEXT NOT NULL, last_on_mode TEXT, added_at TIMESTAMP)`,
+			url TEXT NOT NULL, external_id TEXT NOT NULL, mode TEXT NOT NULL, last_on_mode TEXT, added_at TIMESTAMP,
+			derived_at TIMESTAMP)`,
+		`CREATE TABLE youtube_source_decisions (library_id TEXT PRIMARY KEY, outcome TEXT NOT NULL, kind TEXT,
+			external_ids TEXT NOT NULL DEFAULT '[]', created TEXT NOT NULL DEFAULT '[]', clash_external_id TEXT,
+			clash_library_id TEXT, linked_videos INTEGER NOT NULL DEFAULT 0, matched_videos INTEGER NOT NULL DEFAULT 0,
+			reason TEXT NOT NULL, seen TEXT NOT NULL DEFAULT '[]', decided_at TIMESTAMP NOT NULL)`,
+		`CREATE TABLE youtube_channels (channel_id TEXT PRIMARY KEY, library_id TEXT, url TEXT NOT NULL, title TEXT)`,
+		`CREATE TABLE youtube_playlists (playlist_id TEXT PRIMARY KEY, channel_id TEXT, title TEXT NOT NULL,
+			is_real BOOLEAN NOT NULL)`,
 		`CREATE TABLE youtube_source_guesses (library_id TEXT PRIMARY KEY, kind TEXT, external_id TEXT, url TEXT,
 			title TEXT, evidence TEXT, sample_youtube_id TEXT, ids_found INTEGER NOT NULL DEFAULT 0,
 			ids_matched INTEGER NOT NULL DEFAULT 0, looked_at TIMESTAMP NOT NULL)`,
@@ -662,5 +670,63 @@ func TestManageCarriesEachLibrarysYouTube(t *testing.T) {
 	}
 	if o := by["Other"]; o.Guess == nil || o.Guess.ExternalID != nil || len(o.Guess.FollowedBy) != 0 {
 		t.Errorf("Other (looked, nothing found) = %+v", o)
+	}
+}
+
+// Slot 0182: a source the pipeline derived from the linked videos says so (off, with its
+// switch), and a library whose channel is another library's source (the derivation's
+// clash) shows it as its guess with the library that follows it: the duplicate hint.
+func TestManageShowsDerivedSourcesAndClashes(t *testing.T) {
+	db := manageDB(t)
+	addLibrary(t, db, libBig, "Big", t0, "/m/a")
+	addLibrary(t, db, libSmall, "Small", t0, "/m/s")
+	addLibrary(t, db, libNested, "Nested", t0, "/m/n")
+	mustExec(t, db, `INSERT INTO youtube_sources (id, library_id, kind, url, external_id, mode, added_at, derived_at) VALUES
+		('s1', $1, 'channel', 'https://www.youtube.com/channel/UCheld', 'UCheld', 'off', $3, NULL),
+		('s2', $2, 'playlist', 'https://www.youtube.com/playlist?list=PLmine', 'PLmine', 'off', $3, $3)`,
+		libBig, libSmall, t0)
+	mustExec(t, db, `INSERT INTO youtube_channels (channel_id, library_id, url, title) VALUES
+		('UCheld', $1, 'https://www.youtube.com/channel/UCheld', 'Held channel')`, libBig)
+	mustExec(t, db, `INSERT INTO youtube_source_decisions (library_id, outcome, kind, clash_external_id,
+		clash_library_id, linked_videos, matched_videos, reason, decided_at) VALUES
+		($1, 'clash', 'channel', 'UCheld', $2, 1, 1, 'another library''s source', $3),
+		($4, 'playlist', 'playlist', NULL, NULL, 5, 5, 'its playlist', $3)`, libNested, libBig, t0, libSmall)
+	rec := call(t, &Handler{DB: db, PathChecker: fakeChecker{}}, "GET", "/api/libraries/manage", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp ManageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]LibraryYouTube{}
+	for _, l := range resp.Items {
+		by[l.Name] = l.YouTube
+	}
+	if b := by["Big"]; b.Source == nil || b.Source.Derived {
+		t.Errorf("Big = %+v (made another way)", b)
+	}
+	if s := by["Small"]; s.Source == nil || !s.Source.Derived || s.Source.Mode != "off" || s.Guess != nil {
+		t.Errorf("Small = %+v (a derived source, off)", s)
+	}
+	n := by["Nested"]
+	if n.Sources != 0 || n.Guess == nil || !n.Guess.Derived || n.Guess.ExternalID == nil || *n.Guess.ExternalID != "UCheld" ||
+		n.Guess.Evidence == nil || *n.Guess.Evidence != "linked" || n.Guess.Title == nil || *n.Guess.Title != "Held channel" ||
+		len(n.Guess.FollowedBy) != 1 || n.Guess.FollowedBy[0].Name != "Big" {
+		t.Errorf("Nested = %+v (the clash is the duplicate hint)", n)
+	}
+	// an admin's own look wins over the derivation's clash
+	mustExec(t, db, `INSERT INTO youtube_source_guesses (library_id, kind, external_id, url, title, evidence,
+		ids_found, ids_matched, looked_at) VALUES ($1, 'channel', 'UCother', 'https://www.youtube.com/channel/UCother',
+		'Other', 'filename', 2, 2, $2)`, libNested, t0)
+	rec = call(t, &Handler{DB: db, PathChecker: fakeChecker{}}, "GET", "/api/libraries/manage", "")
+	resp = ManageResponse{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range resp.Items {
+		if l.Name == "Nested" && (l.YouTube.Guess == nil || l.YouTube.Guess.Derived) {
+			t.Errorf("Nested after a look = %+v", l.YouTube)
+		}
 	}
 }

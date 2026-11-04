@@ -50,8 +50,27 @@ build fails when the two differ.
   after 8 seconds they say the read is slow, after 30 seconds that it failed, each with Try
   again, and a refresh that fails keeps the tiles with a notice (English and Arabic).
 
+- **Every library's YouTube sources come from its linked videos.** The sources were seeded
+  once from the channels list, which keeps one library per channel, so 10 libraries had none:
+  seven that share one channel through a playlist each, and others whose channel was never
+  listed. Maktaba now works them out itself from what the link stage learned of each video
+  (its `.info.json` file or its title): the real playlists most of a library's linked videos
+  sit in, when no other library's videos make up those playlists, else the channel most of
+  them come from. A source found this way is added off and says so on the library's card; no
+  source already there changes, and none is turned on. A channel or playlist is never the
+  source of two libraries: the card shows the library that already follows it, with Merge.
+  It runs after each new link and in the reconciler's pass every 6 hours
+  (`MAKTABA_YT_DERIVE_HOURS`), whose first pass after the update covers the links made before
+  it; each decision and its reason is kept (`youtube_source_decisions`, slot 0182), and
+  `python -m maktaba_pipeline.tools.youtube_derive` prints them (a dry run unless `--apply`).
+  Every channel a linked video names is now known, with all the libraries its videos are in
+  (`youtube_channel_libraries`), so the title match also finds a shared channel's videos.
+  **Look for its channel** reads the linked videos first and gives the same answer, and the
+  MediaIntel import no longer gives a second library a source of a channel another library
+  holds.
+
 - **The MediaIntel import says what it does not seed.** A folder whose YouTube channel another
-  library already holds now gets that channel as a source of its own (off) and is listed, and a
+  library already holds is now listed (its sources come from its linked videos), and a
   folder with no channel id is listed and logged, instead of both being passed over in silence.
 
 - **The home's database no longer runs out of connections.** The API's background jobs (the

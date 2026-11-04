@@ -532,8 +532,9 @@ async def test_the_machines_path_map_wins_over_its_shares(
 @pytest.mark.asyncio
 async def test_a_shared_channel_and_a_folder_without_one_are_recorded(db: Database) -> None:
     """youtube_channels keeps one library per channel: a second library of the same
-    channel used to get nothing, silently. It gets its own source now (off), and both it
-    and a folder that names no channel are in the report."""
+    channel is recorded as one of its libraries (slot 0182), never given a second source
+    of the same channel (its sources come from its links), and both it and a folder that
+    names no channel are in the report."""
     from maktaba_pipeline.tools.import_mediaintel import ImportReport, _youtube
 
     first, second, third = [await make_library(db, n) for n in ("First", "Second", "Third")]
@@ -556,9 +557,11 @@ async def test_a_shared_channel_and_a_folder_without_one_are_recorded(db: Databa
         "SELECT library_id FROM youtube_channels WHERE channel_id = 'UCshared'"
     )
     assert str(holder) == str(first)
-    rows = await db.fetch(
-        "SELECT library_id, mode FROM youtube_sources WHERE external_id = 'UCshared'"
+    rows = await db.fetch("SELECT library_id FROM youtube_sources WHERE external_id = 'UCshared'")
+    assert [str(r["library_id"]) for r in rows] == []
+    libs = await db.fetch(
+        "SELECT library_id FROM youtube_channel_libraries WHERE channel_id = 'UCshared'"
     )
-    assert [(str(r["library_id"]), r["mode"]) for r in rows] == [(str(second), "off")]
+    assert [str(r["library_id"]) for r in libs] == [str(second)]
     assert rep.youtube_shared == ["Y:/b (UCshared)"] and rep.youtube_no_channel == ["Y:/c"]
     assert "1 folders name no channel" in rep.render()

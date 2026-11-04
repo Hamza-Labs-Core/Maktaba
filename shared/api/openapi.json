@@ -4151,7 +4151,7 @@
           "Queue"
         ],
         "summary": "Look for the channel a library's files come from",
-        "description": "Reads the YouTube ids in the library's file names (`#<id>`, `[<id>]`) and up to 40 of its `.info.json` files, and resolves them through what Maktaba already knows of YouTube, with no network. The answer is kept and shown on the library's card; nothing is added or turned on. Home admins only (403 otherwise); audited.",
+        "description": "The library's linked videos come first, so the answer agrees with the sources Maktaba derives from them (slot 0182): the playlist or channel the derivation chose (or the one another library already follows), else the channel most linked videos are from; `ids_found` is then the linked videos, `ids_matched` those of the answer, and `evidence` says whether most links came from `.info.json` files or from titles. Only a library with no link has its files read: the YouTube ids in its file names (`#<id>`, `[<id>]`) and up to 40 of its `.info.json` files, resolved through what Maktaba already knows of YouTube, with no network. The answer is kept and shown on the library's card; nothing is added or turned on. Home admins only (403 otherwise); audited.",
         "parameters": [
           {
             "name": "id",
