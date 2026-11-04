@@ -91,6 +91,10 @@ build fails when the two differ.
 
 ### Added
 
+- **Maktaba Remote for iPad on TestFlight.** Every release tag now uploads the iPad Remote
+  (`Maktaba Remote iPad`, `com.hamzalabs.maktaba.remote.tablet`) to TestFlight beside the
+  other five Apple apps, and pull requests build it in the Apple apps check.
+
 - **A library dashboard and a page for each library.** Processing > Library dashboard
   (`/queue/libraries`, admins) shows one tile per library: overall progress as a gauge, done,
   running, waiting and failed as a bar, the last two weeks' finished jobs as a small chart, and

@@ -19,7 +19,7 @@ The apps are in testing, so they come from **TestFlight**, not the App Store yet
 
 1. Ask the home's owner to add your Apple ID to the apps' testers group in TestFlight (App Store Connect). You get an email invitation.
 2. Install **TestFlight** from the App Store, on the device you want the app on.
-3. Open the invitation, or TestFlight, and tap **Install** next to the app. iPhone: **Maktaba Player** and **Maktaba Remote**. iPad: **Maktaba Player for iPad**. Mac: **Maktaba Player for Mac**, in TestFlight for Mac. Maktaba Remote's own iPad app is not in TestFlight yet.
+3. Open the invitation, or TestFlight, and tap **Install** next to the app. iPhone: **Maktaba Player** and **Maktaba Remote**. iPad: **Maktaba Player for iPad** and **Maktaba Remote iPad**. Mac: **Maktaba Player for Mac**, in TestFlight for Mac.
 
 Each new Maktaba release arrives in TestFlight as an update.
 

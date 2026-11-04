@@ -19,7 +19,7 @@
 
 1. اطلب من مالك الجهاز الرئيسي إضافة معرّف Apple الخاص بك إلى مجموعة مختبري التطبيقات في TestFlight (في App Store Connect). تصلك دعوة بالبريد الإلكتروني.
 2. ثبّت **TestFlight** من App Store، على الجهاز الذي تريد التطبيق عليه.
-3. افتح الدعوة، أو TestFlight، واضغط **تثبيت** بجانب التطبيق. على iPhone: **Maktaba Player** و**Maktaba Remote**. على iPad: **Maktaba Player for iPad**. على الماك: **Maktaba Player for Mac**، في TestFlight للماك. أما تطبيق تحكّم مكتبة الخاص بـiPad فليس في TestFlight بعد.
+3. افتح الدعوة، أو TestFlight، واضغط **تثبيت** بجانب التطبيق. على iPhone: **Maktaba Player** و**Maktaba Remote**. على iPad: **Maktaba Player for iPad** و**Maktaba Remote iPad**. على الماك: **Maktaba Player for Mac**، في TestFlight للماك.
 
 يصل كل إصدار جديد من مكتبة إلى TestFlight تحديثًا.
 
