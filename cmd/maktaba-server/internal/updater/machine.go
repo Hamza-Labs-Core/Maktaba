@@ -240,6 +240,9 @@ type Machine struct {
 	// parallel, nothing checked) is what failed on 2026-10-28. An error leaves the record
 	// restoring, and the release before puts it back at its start, as before (nil: always so).
 	RestoreBack func(ctx context.Context, j *Journal, reason string) error
+	// Packs fetches the new release's packs before the switch, and prunes those of
+	// releases no longer kept (story 51.18, packs.go); nil: no packs step.
+	Packs *Packs
 
 	mu      sync.Mutex
 	j       *Journal
@@ -516,7 +519,7 @@ func (m *Machine) Prepare(job Job) error {
 		case StatePrepared, StateOrdered, StateAppStaged, StateAborted, StatePrepareFailed:
 			// what the run it replaces staged goes (an order waiting for the home's go gives
 			// way to the newer run: the app forgets it)
-			_ = m.Installer.Discard(context.Background(), old.clone())
+			_ = m.discard(old.clone())
 		}
 	}
 	now := m.now()
@@ -563,6 +566,11 @@ func (m *Machine) prepare(ctx context.Context) {
 			if err := m.withJournal(func(j *Journal) error { return m.Installer.Preflight(ctx, j) }); err != nil {
 				return "", err
 			}
+			if m.Packs != nil {
+				if err := m.Packs.room(ctx, j); err != nil {
+					return "", err
+				}
+			}
 			if j.Job.Home && m.Rehearser != nil {
 				return "", m.Rehearser.Check(ctx, j.Job.Rehearse, j.Job.RehearseMaxGB)
 			}
@@ -575,6 +583,13 @@ func (m *Machine) prepare(ctx context.Context) {
 			return "", m.withJournal(func(j *Journal) error { return m.Installer.Smoke(ctx, j) })
 		}},
 		{StepRehearse, m.rehearse},
+	}
+	if m.Packs != nil {
+		// story 51.18: the new release's packs, after its own files and before its test run
+		steps = append(steps[:2], append([]struct {
+			name string
+			run  func(ctx context.Context) (string, error)
+		}{{StepPacks, m.packsStep}}, steps[2:]...)...)
 	}
 	for _, s := range steps {
 		if err := m.beginStep(s.name); err != nil {
@@ -591,7 +606,7 @@ func (m *Machine) prepare(ctx context.Context) {
 			_ = m.endStep(s.name, "failed", f.Error())
 			_ = m.mutate(func(j *Journal) { j.State, j.Error = StatePrepareFailed, f })
 			m.errorf("prepare failed at %s: %s", s.name, f.Error())
-			_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+			_ = m.withJournal(func(j *Journal) error { return m.discard(j) })
 			return
 		}
 		state := "done"
@@ -611,7 +626,7 @@ func (m *Machine) prepare(ctx context.Context) {
 		j.HandsOver, j.HandoverWhy = ho, hoWhy
 	})
 	if stopped {
-		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+		_ = m.withJournal(func(j *Journal) error { return m.discard(j) })
 		m.logf("prepare aborted")
 		return
 	}
@@ -674,7 +689,7 @@ func (m *Machine) abortCut(step string) {
 	m.mu.Unlock()
 	if aborting {
 		_ = m.endStep(step, "failed", "aborted")
-		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+		_ = m.withJournal(func(j *Journal) error { return m.discard(j) })
 		m.logf("prepare aborted")
 		return
 	}
@@ -724,7 +739,7 @@ func (m *Machine) Abort(runID string) error {
 		err := m.saveLocked()
 		m.mu.Unlock()
 		// the order withdrawn too: the app forgets what it staged
-		_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+		_ = m.withJournal(func(j *Journal) error { return m.discard(j) })
 		return err
 	case StatePrepareFailed, StateAborted:
 		m.mu.Unlock()
@@ -944,7 +959,7 @@ func (m *Machine) orderFailed(runID string, err error) {
 	}
 	m.mu.Unlock()
 	if withdraw != nil {
-		_ = m.Installer.Discard(context.Background(), withdraw)
+		_ = m.discard(withdraw)
 		m.logf("the app could not take the order: %s", f.Error())
 	}
 }
@@ -994,7 +1009,7 @@ func (m *Machine) Resume() {
 				j.Error = &Failure{Step: StepOrder, Code: "replaced_by_newer",
 					Detail: fmt.Sprintf("%s runs now, newer than %s", running, j.Job.Version)}
 			})
-			_ = m.withJournal(func(j *Journal) error { return m.Installer.Discard(context.Background(), j) })
+			_ = m.withJournal(func(j *Journal) error { return m.discard(j) })
 			m.logf("%s runs now, newer than %s: its order is withdrawn", running, j.Job.Version)
 			return
 		}
@@ -1325,6 +1340,9 @@ func (m *Machine) commit() bool {
 	}
 	_ = m.endStep(StepWatch, "done", "")
 	_ = m.endStep(StepCommit, "done", "")
+	// story 51.18: the packs of releases no longer kept go with them, before the run says
+	// it is committed
+	m.prunePacks(true)
 	_ = m.mutate(func(j *Journal) { j.State, j.Step = StateCommitted, "" })
 	m.logf("committed %s", j.Job.Version)
 	m.replaceLauncher()
@@ -1440,6 +1458,7 @@ func (m *Machine) rollback(reason string) {
 	// stopped before the switch back: a push after it would write back the guard the
 	// switch back cleared
 	stopKeeping()
+	m.checkKeptPacks(j)
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
 		if migrated {
 			// the new release stays, and so does its database: no start may put the dump

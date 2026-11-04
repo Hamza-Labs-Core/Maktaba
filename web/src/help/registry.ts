@@ -67,6 +67,7 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/settings/models", { topic: "settings", anchor: "models-tab" }],
   ["/settings/about", { topic: "settings", anchor: "about-tab" }],
   ["/settings/storage", { topic: "storage" }],
+  ["/settings/components", { topic: "components" }],
   ["/settings/*", { topic: "settings" }],
   ["/account", { topic: "account", anchor: "profile" }],
   ["/account/devices", { topic: "account", anchor: "devices" }],
@@ -163,6 +164,8 @@ export function causeHelp(cause: string | null | undefined): HelpRef {
 export const WAITING_REASONS = [
   "disabled",
   "not_configured",
+  "component_off",
+  "component_held",
   "paused_all",
   "paused",
   "awaiting_review",
@@ -244,6 +247,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "tv_slot",
   "tv_tuner",
   "host_access",
+  "components",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {
@@ -372,6 +376,17 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["no_release", "code-download"],
   ["withdrawn", "code-download"],
   ["turned_prerelease", "code-download"],
+  // updates#code-packs (Epic 51 story 51.18: the parts added later, fetched before the switch)
+  ["pack_verify_failed", "code-packs"],
+  ["pack_download_failed", "code-packs"],
+  ["index_missing", "code-packs"],
+  ["index_expired", "code-packs"],
+  ["index_wrong_version", "code-packs"],
+  ["index_replayed", "code-packs"],
+  ["pack_missing", "code-packs"],
+  ["components_busy", "code-packs"],
+  ["packs_disabled", "code-packs"],
+  ["packs_failed", "code-packs"],
   // updates#run-failed
   ["bad_job", "run-failed"],
   ["cancelled", "run-failed"],

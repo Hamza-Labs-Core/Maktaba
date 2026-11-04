@@ -253,7 +253,7 @@ fun ComposeContentTestRule.setLive(
     setContent {
         var playing by remember { mutableStateOf(false) }
         val fake = home.home
-        val signedIn = remember { PlayerHome(fake.session, fake.user, fake.client, fake.themes, onPlaying = { playing = it }) }
+        val signedIn = remember { PlayerHome(fake.session, fake.user, fake.client, fake.themes, onPlaying = { playing = it }, capabilities = fake.capabilities) }
         val context = LocalContext.current
         val images = remember { portlessPictures(context) }
         MaktabaTheme(ThemeMode.Dark, forceDark = playing) {

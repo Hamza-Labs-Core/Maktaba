@@ -60,24 +60,38 @@ export function pausedOf(
   return null;
 }
 
+type T = (key: string, vars?: Record<string, string | number>) => string;
+
+/** A catalog component's title in the page's language (its id when the catalog of this
+ *  page does not know it: a newer release's component). */
+export function componentTitle(id: string, t: T): string {
+  const key = `components.${id}.title`;
+  const word = t(key);
+  return word === key ? id : word;
+}
+
+/** The words of a reason code ("component_off:transcription" → "Transcription is off"). */
+export function reasonWords(code: string, t: T): string {
+  const [head, ...rest] = String(code).split(":");
+  const h = head.trim();
+  const key = `machines.reason.${h}`;
+  const detail = rest.join(":").trim();
+  if (h === "paused") {
+    const why = pausedReason(detail);
+    if (why) return t(why.key, why.vars);
+  }
+  if ((h === "component_off" || h === "component_held") && detail) {
+    return t(key, { component: componentTitle(detail, t) });
+  }
+  const word = t(key);
+  if (word === key) return code;
+  return detail ? `${word}: ${detail}` : word;
+}
+
 export function useClusterFmt(): ClusterFmt {
   const { t, locale } = useI18n();
   const loc = locale === "ar" ? "ar-EG" : "en";
-  const reason = useCallback(
-    (code: string) => {
-      const [head, ...rest] = String(code).split(":");
-      const key = `machines.reason.${head.trim()}`;
-      const detail = rest.join(":").trim();
-      if (head.trim() === "paused") {
-        const why = pausedReason(detail);
-        if (why) return t(why.key, why.vars);
-      }
-      const word = t(key);
-      if (word === key) return code;
-      return detail ? `${word}: ${detail}` : word;
-    },
-    [t]
-  );
+  const reason = useCallback((code: string) => reasonWords(code, t), [t]);
   return useMemo(() => {
     const unit = (v: number, u: string, digits: number) =>
       new Intl.NumberFormat(loc, {

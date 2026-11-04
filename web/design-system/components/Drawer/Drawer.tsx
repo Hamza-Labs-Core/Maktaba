@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { clsx } from "../internal/clsx";
 import { useFieldId } from "../internal/useId";
+import { useLabels } from "../internal/labels";
 import { useFocusTrap } from "../internal/useFocusTrap";
 import { useInertBackground } from "../internal/useInertBackground";
 import { usePortalHost } from "../internal/usePortalHost";
@@ -19,9 +20,20 @@ export interface DrawerProps {
   side?: "start" | "end";
   children: ReactNode;
   className?: string;
+  /** the close button's accessible name (default: the LabelsProvider's, else "Close") */
+  closeLabel?: string;
 }
 
-export function Drawer({ open, onClose, title, side = "end", children, className }: DrawerProps) {
+export function Drawer({
+  open,
+  onClose,
+  title,
+  side = "end",
+  children,
+  className,
+  closeLabel,
+}: DrawerProps) {
+  const labels = useLabels();
   const ref = useFocusTrap<HTMLDivElement>(open, onClose);
   const titleId = useFieldId();
   const host = usePortalHost(open, "drawer");
@@ -58,7 +70,12 @@ export function Drawer({ open, onClose, title, side = "end", children, className
           <h2 className="mk-drawer__title" id={titleId}>
             {title}
           </h2>
-          <button type="button" className="mk-overlay__close" aria-label="Close" onClick={onClose}>
+          <button
+            type="button"
+            className="mk-overlay__close"
+            aria-label={closeLabel ?? labels.close}
+            onClick={onClose}
+          >
             <svg viewBox="0 0 16 16" width={16} height={16} aria-hidden="true">
               <path
                 d="M4 4l8 8M12 4l-8 8"

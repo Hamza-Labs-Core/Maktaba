@@ -55,6 +55,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.window.core.layout.WindowSizeClass
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.Capabilities
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.Chapter
 import com.hamzalabs.maktaba.core.api.Episode
 import com.hamzalabs.maktaba.core.api.Failure
@@ -73,6 +75,7 @@ import com.hamzalabs.maktaba.core.api.setFavorite
 import com.hamzalabs.maktaba.core.api.videoDetail
 import com.hamzalabs.maktaba.core.api.watchedFraction
 import com.hamzalabs.maktaba.core.ui.ErrorState
+import com.hamzalabs.maktaba.core.ui.FeatureOffNote
 import com.hamzalabs.maktaba.core.ui.MaktabaTheme
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
 import com.hamzalabs.maktaba.core.ui.Message
@@ -85,6 +88,7 @@ import com.hamzalabs.maktaba.player.R
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 import com.hamzalabs.maktaba.player.shell.Route
+import com.hamzalabs.maktaba.player.shell.features
 import com.hamzalabs.maktaba.player.ui.components.PosterCard
 import com.hamzalabs.maktaba.player.ui.components.PosterSize
 import com.hamzalabs.maktaba.player.ui.components.ProgressStrip
@@ -291,6 +295,8 @@ fun VideoScreen(id: String, nav: PlayerNavigator) {
                     page = page,
                     video = video,
                     client = client,
+                    features = home.features(),
+                    homeUrl = home.webUrl,
                     onOpen = { nav.open(it) },
                     onFavorite = { scope.launch { if (!page.toggleFavorite()) snackbar.showSnackbar(saveFailed) } },
                     onWatched = { scope.launch { if (!page.toggleWatched()) snackbar.showSnackbar(saveFailed) } },
@@ -308,6 +314,8 @@ private fun VideoDetails(
     page: VideoPage,
     video: VideoDetail,
     client: ApiClient,
+    features: Capabilities,
+    homeUrl: String,
     onOpen: (Route) -> Unit,
     onFavorite: () -> Unit,
     onWatched: () -> Unit,
@@ -399,7 +407,11 @@ private fun VideoDetails(
                 Text(it, Modifier.padding(horizontal = gutter), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
             }
 
-            if (page.chapters.isNotEmpty()) {
+            // a feature off on the home (story 51.11): hidden from a viewer, explained to an admin
+            if (features.explains(Feature.CHAPTERS)) {
+                Section(stringResource(R.string.video_chapters))
+                FeatureOffNote(Feature.CHAPTERS, homeUrl)
+            } else if (page.chapters.isNotEmpty() && features.isOn(Feature.CHAPTERS)) {
                 Section(stringResource(R.string.video_chapters))
                 Column {
                     page.chapters.forEach { c ->
@@ -413,7 +425,10 @@ private fun VideoDetails(
                 }
             }
 
-            if (page.transcript.isNotEmpty()) {
+            if (features.explains(Feature.TRANSCRIPTS)) {
+                Section(stringResource(R.string.video_transcript))
+                FeatureOffNote(Feature.TRANSCRIPTS, homeUrl)
+            } else if (page.transcript.isNotEmpty() && features.isOn(Feature.TRANSCRIPTS)) {
                 Section(stringResource(R.string.video_transcript))
                 Column {
                     page.transcript.forEach { s ->

@@ -58,7 +58,7 @@ func ResolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback
 func resolveReleaseBinary(binRoot, version, wantSHA256, currentVersion, fallback string,
 	kept func(version string) []string) (ReleaseBinary, error) {
 	v := strings.TrimSpace(version)
-	if v == "" || strings.ContainsAny(v, `/\`) || v == "." || v == ".." {
+	if v == "" || strings.ContainsAny(v, `/\`) || v == "." || strings.Contains(v, "..") {
 		return ReleaseBinary{}, fmt.Errorf("%w: bad version %q", ErrReleaseBinaryMissing, version)
 	}
 	// a release directory is named by the bare version (layout.NormalizeVersion); a release

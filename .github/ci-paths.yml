@@ -107,12 +107,53 @@ lint_pipeline:
   - *make
   - *pipeline
   - '.github/workflows/_lint.yml'
+  # story 51.13: the rules schema's versions against the last release tag
+  - 'api/internal/handlers/rules/schema.json'
+  - 'tools/ci/rules_schema_versions.py'
 
 lint_web:
   - *ci
   - *make
   - *web
   - '.github/workflows/_lint.yml'
+
+# the component catalog (Epic 51, story 51.01): the catalog and its pipeline copy, what
+# it must cover (the graph, the extensions, the supervisor's roles, the loop start
+# files), the words its titles and reasons need, and the checks themselves
+catalog:
+  - *ci
+  - *make
+  - '.github/workflows/_lint.yml'
+  - 'shared/components/**'
+  - 'pipeline/src/maktaba_pipeline/components/**'
+  - 'pipeline/tests/components/**'
+  - 'pipeline/src/maktaba_pipeline/engine/graph.py'
+  - 'pipeline/src/maktaba_pipeline/extensions/**'
+  - 'pipeline/src/maktaba_pipeline/runtime.py'
+  - 'pipeline/src/maktaba_pipeline/rules.py'
+  - 'cmd/maktaba-server/internal/supervisor/**'
+  - 'cmd/maktaba-server/cmd_serve.go'
+  - 'api/main.go'
+  - 'api/cluster_bootstrap.go'
+  - 'api/node_bootstrap.go'
+  - 'api/internal/router/**'
+  - 'api/internal/flags/declarations.go'
+  - 'api/internal/flags/licence.go'
+  - 'api/internal/flags/catalog_licence_test.go'
+  - 'streaming/*_wire.go'
+  - 'streaming/main.go'
+  - 'streaming/sharemap.go'
+  - 'streaming/components*.go'
+  - 'api/node_link.go'
+  - 'api/internal/components/loops*.go'
+  - 'web/src/i18n/en.json'
+  - 'web/src/i18n/ar.json'
+  # story 51.11: the apps' "is off" sentences are the web's (catalog_words.mjs checkApps)
+  - 'apps/android/core/src/main/res/values/strings.xml'
+  - 'apps/android/core/src/main/res/values-ar/strings.xml'
+  - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Localizable.xcstrings'
+  - 'tools/ci/catalog_words.mjs'
+  - 'tools/ci/catalog_words.test.mjs'
 
 # ---- unit (_unit.yml) -----------------------------------------------------------------
 
@@ -185,6 +226,54 @@ compat_prev:
   - 'shared/**'
   - 'tools/compat-prev/**'
   - '.github/workflows/_integration.yml'
+
+# Epic 51 (story 51.06): components-live, real sleepy workers switching components on
+# Postgres: the pipeline's runner and what it drives (the selection, the stage rows, the
+# enqueue, the claims and drains), the components' migrations, the catalog and the drivers
+components:
+  - *ci
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/src/maktaba_pipeline/components/**'
+  - 'pipeline/src/maktaba_pipeline/runtime.py'
+  - 'pipeline/src/maktaba_pipeline/cluster/stages.py'
+  - 'pipeline/src/maktaba_pipeline/engine/sync.py'
+  - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
+  - 'pipeline/src/maktaba_pipeline/engine/propagate.py'
+  - 'pipeline/src/maktaba_pipeline/engine/claim.py'
+  - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
+  - 'pipeline/src/maktaba_pipeline/pipeline/shutdown.py'
+  - 'pipeline/src/maktaba_pipeline/pipeline/runner.py'
+  - 'pipeline/tests/engine/migrate.py'
+  - 'shared/components/**'
+  - 'shared/db/migrations/*component*'
+  - 'tests/__init__.py'
+  - 'tests/components/**'
+  - '.github/workflows/_components.yml'
+  # the API the scenarios through the Components page's calls run (51.10 T14, 51.14 T13):
+  # the components service and routes, the Queues tile and System health
+  - 'api/go.mod'
+  - 'api/go.sum'
+  - 'api/main.go'
+  - 'api/internal/components/**'
+  - 'api/internal/handlers/components/**'
+  - 'api/internal/handlers/queues/queuehealth.go'
+  - 'api/internal/handlers/queues/snapshot.go'
+  - 'api/internal/handlers/systemstatus/**'
+  - 'api/internal/router/components_routes.go'
+
+# components-chaos on a pull request: the runner, the drain and the claims it stops
+components_chaos:
+  - *ci
+  - 'pipeline/src/maktaba_pipeline/components/**'
+  - 'pipeline/src/maktaba_pipeline/pipeline/shutdown.py'
+  - 'pipeline/src/maktaba_pipeline/pipeline/runner.py'
+  - 'pipeline/src/maktaba_pipeline/engine/sync.py'
+  - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
+  - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
+  - 'shared/db/migrations/0180_component_stage_gate.sql'
+  - 'tests/components/**'
+  - '.github/workflows/_components.yml'
 
 # the machines' copies and switching the home (api, the server, the launcher, streaming
 # are built and run)
@@ -261,6 +350,25 @@ node_packaging:
   - *ci
   - *node_packaging
 
+# Epic 51 story 51.15: the component packs, the signed index and their verifier (the
+# installer, 51.16, joins it), and what the packs are built from (the pipeline's pins)
+components_packs:
+  - *ci
+  - '.github/workflows/_components-packs.yml'
+  - 'tools/release/packs/**'
+  - 'tools/release/componentsindex/**'
+  - 'tools/release/cmd/build-pack/**'
+  - 'tools/release/cmd/gen-components-index/**'
+  - 'tools/release/go.mod'
+  - 'tools/release/go.sum'
+  - 'shared/go/componentpack/**'
+  - 'shared/go/releaseverify/components*'
+  - 'shared/go/releaseverify/releaseverifytest/**'
+  - 'shared/components/catalog.toml'
+  - 'pipeline/pyproject.toml'
+  - 'pipeline/uv.lock'
+  - 'pipeline/.python-version'
+
 # the release venv built by the server's own code (internal/appvenv) from the wheel
 release_venv:
   - *ci
@@ -285,6 +393,11 @@ launcher:
 mac_app:
   - *ci
   - 'tools/release/mac-app/**'
+  - 'tools/release/bundle-size/**'
+  # the Core leg's dry run (story 51.17): its stamp, its feed
+  - 'tools/release/tauri-stamp.mjs'
+  - 'tools/release/updaterfeed/**'
+  - 'tools/release/cmd/updater-feed/**'
   - 'apps/desktop/**'
   - 'cmd/maktaba-launcher/**'
   - 'deploy/packaging/node/build-release.sh'

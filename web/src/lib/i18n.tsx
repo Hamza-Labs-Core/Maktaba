@@ -15,6 +15,7 @@
 //
 // Catalogs are imported statically so a missing key in `ar` is a build
 // /test-time concern, not a runtime fetch.
+import { LabelsProvider } from "@ds/components/internal/labels";
 import {
   createContext,
   useCallback,
@@ -146,7 +147,14 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     [locale, dir, t, n, formatDate]
   );
 
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+  // the design system's own words (a dialog's or drawer's close button) in this language
+  const labels = useMemo(() => ({ close: t("common.close") }), [t]);
+
+  return (
+    <I18nContext.Provider value={value}>
+      <LabelsProvider labels={labels}>{children}</LabelsProvider>
+    </I18nContext.Provider>
+  );
 }
 
 export function useI18n(): I18nState {

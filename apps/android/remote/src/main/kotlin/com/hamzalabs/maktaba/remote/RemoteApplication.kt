@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.remote
 
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.api.capabilitiesGate
 import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
 import com.hamzalabs.maktaba.core.session.AppSession
@@ -19,7 +20,10 @@ class RemoteApplication : Application() {
     }
 
     val session: AppSession by lazy {
-        AppSession(PreferencesStore(this, "session"), MainScope(), { home -> keystoreTokens(this, packageName, home) })
+        AppSession(
+            PreferencesStore(this, "session"), MainScope(), { home -> keystoreTokens(this, packageName, home) },
+            capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE), // story 51.11's build switch
+        )
     }
     val themes: ThemeStore by lazy { ThemeStore(PreferencesStore(this, "settings")) }
 }

@@ -40,6 +40,8 @@ export interface JobRef {
   } | null;
   /** the worker (workers.id) running it; absent on older servers, null while it waits */
   claimed_by?: string | null;
+  /** component_catchup (Epic 51, story 51.14): the components it catches up for (its payload) */
+  components?: string[];
 }
 
 export interface Pool {
@@ -100,6 +102,8 @@ export type WaitingReason =
   | "upstream"
   | "disabled"
   | "not_configured"
+  | "component_off"
+  | "component_held"
   | "awaiting_review"
   | "no_worker"
   | "idle"
@@ -129,11 +133,15 @@ export interface QueueSummary {
   no_worker?: boolean;
   /** External service ("plex", "dizquetv") whose failures put waiting rows into backoff. */
   retrying_service?: string | null;
+  /** Epic 51: the component that owns the stage, while it waits on it (component_off / component_held). */
+  component?: string | null;
   /** Epic 40: the tile's state (red only for a dominant new error) and the Needs-you count. */
   health?: StageHealth | null;
 }
 
-export type StageHealthState = "ok" | "waiting" | "failing";
+/** Epic 51: "off" is a stage its component holds back (turned off or stopped by an admin):
+ *  grey, never counted with the waiting stages. */
+export type StageHealthState = "ok" | "waiting" | "failing" | "off";
 
 export interface StageHealth {
   state: StageHealthState;
@@ -148,6 +156,9 @@ export interface StageHealth {
     healthy: boolean | null;
     message: string | null;
     since: string | null;
+    /** Epic 51: the component the jobs wait on and its phase (off, or stopped while held). */
+    component?: string;
+    phase?: string;
   }[];
   needs_you: number;
   ignored: number;

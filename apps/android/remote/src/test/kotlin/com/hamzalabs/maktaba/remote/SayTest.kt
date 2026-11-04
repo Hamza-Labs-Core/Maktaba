@@ -99,11 +99,20 @@ class SayTest {
         assertEquals("API", en.process("api", null))
         assertEquals("Live TV and streaming", en.process("streaming", ""))
         assertEquals("TV slot · amber", en.process("tv-slot", "amber"))
-        assertEquals("postgres", en.process("postgres", null))
+        // every role the supervisor runs has words; an unknown one reads as it came
+        assertEquals("Database", en.process("postgres", null))
+        assertEquals("Database copy", en.process("copy", null))
+        assertEquals("Language model server", en.process("ollama", null))
+        assertEquals("Remote access relay", en.process("relay", null))
+        assertEquals("مرحّل الوصول عن بُعد", ar.process("relay", null))
+        assertEquals("خادم النموذج اللغوي", ar.process("ollama", null))
+        assertEquals("levitator", en.process("levitator", null))
         assertEquals("Not responding", en.processState("unhealthy"))
         assertEquals("levitating", en.processState("levitating"))
         assertEquals("Standing by", en.processState(ProcessStatus(role = "tv-slot", instance = "amber", wanted = false, state = "stopped")))
         assertEquals("Stopped", en.processState(ProcessStatus(role = "api", state = "stopped")))
+        // its component is off: the home's snapshot says held, never backoff
+        assertEquals("Held: its component is off", en.processState(ProcessStatus(role = "relay", state = "held")))
         assertEquals(
             "Installing the transcription tools (40%).",
             en.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
@@ -137,6 +146,25 @@ class SayTest {
         val waiting = StageHealth(state = "waiting", waiting = listOf(HealthWaiting(on = "dependency:model:tagcheck", count = 2), HealthWaiting(on = "resource:disk", count = 1)))
         assertEquals(listOf("3 waiting for the model, resume by themselves"), en.health(waiting, 0))
         assertEquals(listOf("2 failing"), en.health(null, 2))
+    }
+
+    @Test
+    fun aStageItsComponentHoldsBackSaysWhichAndWhy() {
+        // Epic 51 (stories 51.14, 51.11): the web's words, the component named by its title
+        assertEquals("The Transcription component is off", en.queueWaiting("component_off", null, "Transcribe", "transcription"))
+        assertEquals("The Transcription component is stopped", en.queueWaiting("component_held", null, "Transcribe", "transcription"))
+        assertEquals("المكوّن التفريغ النصي مُطفأ", ar.queueWaiting("component_off", null, "Transcribe", "transcription"))
+        assertEquals("The from.the.future component is off", en.queueWaiting("component_off", null, "x", "from.the.future"))
+        val off = StageHealth(
+            state = "off",
+            waiting = listOf(HealthWaiting(on = "component:transcription", count = 1840, component = "transcription", phase = "off")),
+        )
+        assertEquals(listOf("Waiting: the Transcription component is off · 1840 queued"), en.health(off, 0))
+        assertEquals(listOf("في الانتظار: المكوّن التفريغ النصي متوقف · ١٨٤٠ في الطابور"), ar.health(off, 0))
+        val held = off.copy(waiting = listOf(off.waiting[0].copy(phase = "stopped")))
+        assertEquals(listOf("Waiting: the Transcription component is stopped until you turn it on · 1840 queued"), en.health(held, 0))
+        assertEquals("Transcription", en.waitingOn("component:transcription"))
+        assertEquals("Smart search", en.waitingOn("component:search.semantic"))
     }
 
     @Test
@@ -180,6 +208,7 @@ class SayTest {
         assertEquals("الإبقاء: فشل", ar.code("commit_failed"))
         assertEquals("gremlins", ar.code("gremlins"))
         assertEquals("لا يستجيب", ar.processState("unhealthy"))
+        assertEquals("موقوف: مكوّنه متوقف عن العمل", ar.processState("held"))
         assertEquals("منفذ البث التلفزيوني · blue: يُعاد تشغيله", ar.event(ProcessEvent(role = "tv-slot", instance = "blue", kind = "restarting")))
         assertEquals("بانتظار عامل يخدم Transcribe", ar.queueWaiting("no_worker", null, "Transcribe"))
         assertEquals("توقف برمز الخروج ١", ar.exit("crash", 1, null))
@@ -207,11 +236,11 @@ class SayTest {
         val maps = listOf(
             WebWords.updateState, WebWords.updateStep, WebWords.updateCode, WebWords.updateWaiting, WebWords.blockedReason,
             WebWords.blocker, WebWords.processState, WebWords.processRole, WebWords.queueState, WebWords.jobState, WebWords.machineStatus,
-            WebWords.tvCheck, WebWords.tvResult, WebWords.trigger,
+            WebWords.tvCheck, WebWords.tvResult, WebWords.trigger, WebWords.componentTitle,
         )
         for (lookup in listOf(XmlLookup.english, XmlLookup.arabic)) {
             maps.flatMap { it.values }.forEach { assert(lookup.text(it).isNotBlank()) }
-            (WebWords.planWaiting + WebWords.queueWaiting + WebWords.processDetail + WebWords.tvValue).values.forEach { t ->
+            (WebWords.planWaiting + WebWords.queueWaiting + WebWords.processDetail + WebWords.tvValue).values.plus(WebWords.queueHealthComponent.values).forEach { t ->
                 assert(lookup.text(t.id, *t.args.map { "x" }.toTypedArray()).isNotBlank())
             }
         }

@@ -1,0 +1,24 @@
+schema = 1
+phases = ["not_installed", "installing", "removing", "off", "stopped", "waiting", "starting", "running", "degraded", "draining", "failed"]
+reasons = ["dependency_off", "held"]
+features = ["live_tv"]
+
+[[component]]
+id        = "a"
+kind      = "stages"
+group     = "media"
+title_key = "components.a.title"
+desc_key  = "components.a.desc"
+stages    = ["thumbnail"]
+platforms = ["linux-amd64"]
+since     = "0.3.66"
+
+[[component]]
+id        = "b"
+kind      = "stages"
+group     = "media"
+title_key = "components.b.title"
+desc_key  = "components.b.desc"
+stages    = ["thumbnail"]
+platforms = ["linux-amd64"]
+since     = "0.3.66"

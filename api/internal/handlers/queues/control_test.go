@@ -657,9 +657,21 @@ func TestExtensions(t *testing.T) {
 		{"nothing to change", "plex", `{}`, "", `{}`, 400, nil},
 		{"unknown extension", "kodi", `{}`, "", `{"enabled":true}`, 404, nil},
 	}
+	// the component's desired row (story 51.07: enabled goes through it, same transaction)
+	componentRows := func(ext string) []*queuestest.Rule {
+		return []*queuestest.Rule{
+			// a save of settings alone: the row keeps its enabled, a new one starts as
+			// the component's desired state says
+			{Match: "select want from components", Cols: []string{"want"}, Rows: [][]driver.Value{{"installed"}}},
+			{Match: "select want, generation, hold_by, cast(hold_at as text) from components",
+				Cols: []string{"want", "generation", "hold_by", "hold_at"}, Rows: [][]driver.Value{{"installed", int64(1), nil, nil}}},
+			{Match: "from components where id", Cols: []string{"id", "want", "hold_by", "hold_at", "generation"},
+				Rows: [][]driver.Value{{"ext." + ext, "enabled", nil, nil, int64(2)}}},
+		}
+	}
 	for _, tc := range puts {
 		t.Run("put "+tc.name, func(t *testing.T) {
-			f := newFixture(row(tc.ext, false, tc.existing))
+			f := newFixture(append([]*queuestest.Rule{row(tc.ext, false, tc.existing)}, componentRows(tc.ext)...)...)
 			store := secrets.NewMemory()
 			f.h.Secrets = store
 			if tc.secret != "" {
@@ -679,6 +691,13 @@ func TestExtensions(t *testing.T) {
 				if strings.Contains(rec.Body.String(), leak) {
 					t.Errorf("response leaked a secret: %s", rec.Body.String())
 				}
+			}
+			if strings.Contains(tc.body, `"enabled"`) {
+				if len(f.db.Find("insert into components")) != 1 || len(f.db.Find("insert into audit_log")) != 1 {
+					t.Error("enabled did not go through the component's desired state")
+				}
+			} else if len(f.db.Find("insert into components")) != 0 {
+				t.Error("a settings change wrote the component")
 			}
 			up := f.db.Find("insert into extensions")[0]
 			var saved map[string]any

@@ -2312,14 +2312,17 @@
       ],
       "related": [
         "epic-25-cloud-relay",
-        "plan-25.15-plan-comparison-ui"
+        "plan-25.15-plan-comparison-ui",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/25-cloud-relay/story-25-15-plan-comparison-ui.md",
         "plan": "specs/epics/25-cloud-relay/plan-25-15-plan-comparison-ui.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "plan-comparison-ui"
@@ -2348,7 +2351,8 @@
         "epic-25-cloud-relay",
         "plan-25.16-server-status-dashboard",
         "ep-get-jobs",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/25-cloud-relay/story-25-16-server-status-dashboard.md",
@@ -2357,7 +2361,8 @@
       },
       "api_endpoints": [
         "GET /jobs",
-        "GET /ws"
+        "GET /ws",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {

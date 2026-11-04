@@ -519,6 +519,25 @@ func (s *Store) AuditRows(ctx context.Context, changeID string) ([]AuditRow, err
 // extra column values, recording the event. ErrConflict when it is elsewhere.
 func (s *Store) Move(ctx context.Context, q queryer, c *Change, to, action string, actor *string,
 	detail map[string]any, fields map[string]any) error {
+	// the state and its event in one transaction: a reader never sees a change moved
+	// with no event saying how (update-rehearsal scenario 11 read "verifying" with no
+	// start_verify yet)
+	if db, ok := q.(*sql.DB); ok {
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = tx.Rollback() }()
+		was := *c
+		if err := s.Move(ctx, tx, c, to, action, actor, detail, fields); err != nil {
+			return err
+		}
+		if err := tx.Commit(); err != nil {
+			*c = was
+			return err
+		}
+		return nil
+	}
 	if fields == nil {
 		fields = map[string]any{}
 	}

@@ -67,7 +67,11 @@ struct PlayerApp: App {
     private var signedIn: some View {
         SessionGate(session: session, title: "Maktaba Player") { user, client in
             // the sections (PlayerSection.enabled), Live TV only with a channel to watch (48.21)
-            LiveSectionGate(client: client) { PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing, link: $link, sections: $0) }
+            // a viewer has no Live TV while it is off on the home (51.11)
+            LiveSectionGate(client: client, capabilities: session.capabilities) { sections, liveTVOff in
+                PlayerShell(context: PlayerContext(session: session, user: user, client: client), playing: $playing, link: $link,
+                            sections: sections, liveTVHidden: liveTVOff)
+            }
         }
         // a video's link; a home's connect link stays SessionGate's
         .onOpenURL { url in if let route = VideoLink.route(url) { link = route } }

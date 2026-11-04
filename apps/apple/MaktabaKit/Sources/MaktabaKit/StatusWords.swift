@@ -257,6 +257,7 @@ public enum StatusWords {
         "backoff": "Restarting",
         "exited": "Stopped",
         "failed": "Failed",
+        "held": "Held: its component is off",
         "running": "Running",
         "starting": "Starting",
         "stopped": "Stopped",
@@ -266,7 +267,11 @@ public enum StatusWords {
     /// A process's role (`health.processes.role.*`)
     public static let processRoles: [String: String] = [
         "api": "API",
+        "copy": "Database copy",
+        "ollama": "Language model server",
         "pipeline": "Processing pipeline",
+        "postgres": "Database",
+        "relay": "Remote access relay",
         "streaming": "Live TV and streaming",
         "tv-slot": "TV slot",
     ]
@@ -448,6 +453,7 @@ extension StatusWords {
         ("tvchanges.slots.color.", slotColors), ("tvchanges.check.", checkNames),
         ("tvchanges.result.", checkResults), ("tvchanges.value.", checkValues), ("updates.trigger.", triggers),
         ("setup.starting.detail.", processDetails), ("machines.home.reason.", rolesReasons),
+        ("queue.health.", QueueWords.lines),
     ]
 }
 

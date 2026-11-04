@@ -9,6 +9,11 @@ newer default still reaches every field the user left alone.
 value, group, help), :func:`apply` builds a config from overrides and refuses a
 value of the wrong shape, and :func:`overrides` turns a config back into the
 changed fields only.
+
+A config class may declare ``SCHEMA_VERSION = (major, minor)`` (default ``(1, 0)``,
+Epic 51 story 51.13). A minor bump only adds fields with defaults; a major bump renames
+or reshapes one, and the class's module registers ``migrate_v<N>_to_v<N+1>`` with
+:func:`register_migration` so :func:`migrate` moves a stored value to the new shape.
 """
 
 from __future__ import annotations
@@ -17,18 +22,23 @@ import dataclasses
 import json
 import types
 import typing
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 __all__ = [
+    "DEFAULT_VERSION",
     "Help",
+    "MigrationError",
     "SettingsError",
     "apply",
     "describe",
     "load",
+    "migrate",
     "overrides",
+    "register_migration",
     "save",
+    "schema_version",
     "to_json",
 ]
 
@@ -39,6 +49,66 @@ class SettingsError(ValueError):
     def __init__(self, field: str, message: str) -> None:
         super().__init__(f"{field}: {message}")
         self.field = field
+
+
+class MigrationError(ValueError):
+    """A stored value that could not be moved to its section's current shape: a step of
+    the chain is missing or raised, or its result does not validate."""
+
+
+#: the schema version of a config class that declares none
+DEFAULT_VERSION: tuple[int, int] = (1, 0)
+
+#: (config class, major it moves from) -> the step to the next major
+_MIGRATIONS: dict[tuple[type, int], Callable[[dict[str, Any]], dict[str, Any]]] = {}
+
+
+def schema_version(cls: type) -> tuple[int, int]:
+    """The ``(major, minor)`` a config class declares in ``SCHEMA_VERSION``."""
+    v = getattr(cls, "SCHEMA_VERSION", DEFAULT_VERSION)
+    if (
+        not isinstance(v, tuple)
+        or len(v) != 2
+        or not all(isinstance(x, int) and not isinstance(x, bool) for x in v)
+        or v[0] < 1
+        or v[1] < 0
+    ):
+        raise ValueError(f"{cls.__name__}.SCHEMA_VERSION must be (major >= 1, minor >= 0)")
+    return (v[0], v[1])
+
+
+def register_migration(
+    cls: type, from_major: int, fn: Callable[[dict[str, Any]], dict[str, Any]]
+) -> None:
+    """Register ``fn`` (``migrate_v<from_major>_to_v<from_major + 1>``) for ``cls``."""
+    major = schema_version(cls)[0]
+    if not 1 <= from_major < major:
+        raise ValueError(f"{cls.__name__} is at major {major}: no step from {from_major}")
+    if (cls, from_major) in _MIGRATIONS:
+        raise ValueError(f"{cls.__name__}: a step from major {from_major} is registered")
+    _MIGRATIONS[(cls, from_major)] = fn
+
+
+def migrate(cls: type, value: Mapping[str, Any], from_major: int) -> dict[str, Any]:
+    """``value``, stored at ``from_major``, moved through the chain of steps to the class's
+    major, then checked in full with :func:`apply`. Raises :class:`MigrationError`."""
+    major = schema_version(cls)[0]
+    out = dict(value)
+    for n in range(from_major, major):
+        fn = _MIGRATIONS.get((cls, n))
+        if fn is None:
+            raise MigrationError(f"no migrate_v{n}_to_v{n + 1} for {cls.__name__}")
+        try:
+            out = fn(dict(out))
+        except Exception as e:  # noqa: BLE001 - any failure of a step is the same answer
+            raise MigrationError(f"migrate_v{n}_to_v{n + 1}: {e}") from e
+        if not isinstance(out, dict):
+            raise MigrationError(f"migrate_v{n}_to_v{n + 1} returned {type(out).__name__}")
+    try:
+        apply(cls, out)
+    except SettingsError as e:
+        raise MigrationError(f"the migrated value does not validate: {e}") from e
+    return out
 
 
 @dataclasses.dataclass(frozen=True, slots=True)

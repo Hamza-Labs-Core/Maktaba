@@ -349,7 +349,8 @@ async def enqueue_scan(
 
 def _wrap(job_id: int | None, outcome: str, who: str) -> EnqueueResult:
     if job_id is None:
-        if outcome == "disabled":
+        if outcome in ("disabled", "skipped_component_off"):
+            # a stage its component switched off (Epic 51) is off like a disabled one
             return EnqueueResult(id=0, outcome="disabled")
         raise ValueError(f"{who}: refused ({outcome})")
     return EnqueueResult(id=job_id, outcome=_legacy_outcome(outcome))

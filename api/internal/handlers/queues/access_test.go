@@ -128,3 +128,12 @@ func videoSubjectRule(lib string) *queuestest.Rule {
 	return &queuestest.Rule{Match: "from videos v join libraries l", Cols: []string{"lib", "libname", "dur", "inseries", "isextra"},
 		Rows: [][]driver.Value{{lib, "Theirs", 600.0, false, false}}}
 }
+
+// Story 51.09: the home channel's capabilities_changed reaches every viewer unchanged.
+func TestAccess_HomeChannelIsEveryones(t *testing.T) {
+	e := ws.Event{Type: ws.EventCapabilitiesChanged, Payload: map[string]any{"etag": "c-1-1"}}
+	got, ok := FilterEvent(libViewer(), ws.HomeChannel, e)
+	if !ok || got.Payload["etag"] != "c-1-1" {
+		t.Fatalf("home event filtered: %v %+v", ok, got)
+	}
+}

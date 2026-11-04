@@ -12,13 +12,16 @@ import (
 
 // Enqueue outcomes returned by processing_jobs_enqueue (plan-06-11 §4.2).
 const (
-	OutcomeInserted        = "inserted"
-	OutcomeCoalesced       = "coalesced"
-	OutcomeRerunRequested  = "rerun_requested"
-	OutcomeDisabled        = "disabled"
-	OutcomeUnknownStage    = "unknown_stage"
-	OutcomeInvalidSubject  = "invalid_subject"
-	enqueueFunctionSQLText = `SELECT job_id, outcome FROM processing_jobs_enqueue(
+	OutcomeInserted       = "inserted"
+	OutcomeCoalesced      = "coalesced"
+	OutcomeRerunRequested = "rerun_requested"
+	OutcomeDisabled       = "disabled"
+	// OutcomeSkippedComponentOff: the stage's component is off (Epic 51, slot 0180);
+	// no job is made, and the component's catch-up queues it when it is on again.
+	OutcomeSkippedComponentOff = "skipped_component_off"
+	OutcomeUnknownStage        = "unknown_stage"
+	OutcomeInvalidSubject      = "invalid_subject"
+	enqueueFunctionSQLText     = `SELECT job_id, outcome FROM processing_jobs_enqueue(
 	$1::text, $2::uuid, $3::text, $4::int, $5::boolean, $6::boolean,
 	$7::jsonb, $8::bigint, $9::jsonb, $10::int)`
 )

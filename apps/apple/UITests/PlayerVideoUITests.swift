@@ -116,6 +116,41 @@ final class PlayerVideoUITests: PlayerUITestCase {
         playerOpened("v2", at: 420, "the chapter's time")
     }
 
+    // MARK: Chapters and transcripts off on the home (story 51.11)
+
+    /// A viewer: no chapter list and no transcript lines, and nothing saying why; the rest of
+    /// the page as always.
+    func testChaptersAndTranscriptsOffHideThemFromAViewer() {
+        home.capabilities(off: ["chapters", "transcripts"], admin: false)
+        openPage()
+        XCTAssertTrue(element("video.title").waitForExistence(timeout: 10))
+        waitUntil("the app asked what is on", timeout: 15) { home.seen.contains("GET /api/capabilities") }
+        let next = element("video.next")
+        scrollTo(next)
+        XCTAssertTrue(next.exists, "the next episodes")
+        waitUntil("no chapter list") { !app.buttons["video.chapter.1"].exists }
+        XCTAssertFalse(element("video.segment.1").exists, "no transcript lines")
+        XCTAssertFalse(element("feature.off.chapters").exists, "no note for a viewer")
+        XCTAssertFalse(element("feature.off.transcripts").exists)
+        XCTAssertFalse(app.staticTexts["Chapters"].exists, "no Chapters heading")
+    }
+
+    /// An admin: where each list would be, the sentence that it is off.
+    func testChaptersAndTranscriptsOffExplainThemToAnAdmin() {
+        home.capabilities(off: ["chapters", "transcripts"], admin: true)
+        openPage()
+        let chapters = element("feature.off.chapters")
+        XCTAssertTrue(chapters.waitForExistence(timeout: 15), "the chapters' note; the home saw \(home.seen)")
+        XCTAssertEqual(chapters.label, "Chapters are off on this home.")
+        let transcript = element("feature.off.transcripts")
+        scrollTo(transcript)
+        XCTAssertTrue(transcript.exists, "the transcript's note")
+        XCTAssertEqual(transcript.label, "Transcripts are off on this home.")
+        XCTAssertFalse(app.buttons["video.chapter.1"].exists, "no chapter list")
+        XCTAssertFalse(element("video.segment.1").exists, "no transcript lines")
+        shot("video-chapters-transcripts-off-admin")
+    }
+
     // MARK: Favorite and Mark watched
 
     /// Each toggle is sent to the home; after a reload (away to the player and back reads the

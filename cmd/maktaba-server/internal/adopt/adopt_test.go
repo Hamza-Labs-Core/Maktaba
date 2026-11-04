@@ -1095,6 +1095,8 @@ func TestVerifyFinishUndo(t *testing.T) {
 		{Role: supervisor.RoleAPI, Wanted: true, State: supervisor.StateRunning},
 		{Role: supervisor.RolePipeline, Wanted: true, State: supervisor.StateBackoff},
 		{Role: supervisor.RoleTVSlot, Instance: "b", State: supervisor.StateStopped}, // a standby nobody asked for
+		// one nobody asked for whose component is off (the snapshot says held)
+		{Role: supervisor.RoleTVSlot, Instance: "c", State: supervisor.StateHeld, Blocked: true},
 	}
 	cfg := fakeServer(t, &procs)
 	err := Verify(context.Background(), pc.sys, pc.tgt, cfg, 0)

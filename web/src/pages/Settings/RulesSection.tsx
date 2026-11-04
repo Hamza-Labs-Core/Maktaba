@@ -238,7 +238,10 @@ export function RulesSection() {
   // a link may open one section, found by a field's name (?section=…&q=…: a switch of
   // the home's checklist does)
   const [params] = useSearchParams();
-  const wanted = params.get("section") ?? "";
+  // (or #<section>: the Components page links a component to its form)
+  const wanted =
+    params.get("section") ??
+    (typeof window !== "undefined" ? decodeURIComponent(window.location.hash.slice(1)) : "");
   const [tab, setTab] = useState("");
   const [edits, setEdits] = useState<Edits>({});
   const [errors, setErrors] = useState<Errors>({});
@@ -308,10 +311,22 @@ export function RulesSection() {
   };
 
   // Save the section's edits, or (with `reset`) put those names back to
-  // their defaults. What the request carries is captured now.
+  // their defaults. What the request carries is captured now. A section the
+  // home could not move to this release's format (story 51.13) is saved whole
+  // (`replace`): every setting as shown, with the edits over it.
   async function send(sectionKey: string, reset?: string[]) {
     const pending = edits[sectionKey] ?? {};
-    const set = reset ? {} : { ...pending };
+    const whole = !reset ? sections?.find((x) => x.key === sectionKey && x.failed) : undefined;
+    const set = reset
+      ? {}
+      : whole
+        ? {
+            ...Object.fromEntries(
+              whole.fields.filter((f) => !f.invalid).map((f) => [f.name, f.value])
+            ),
+            ...pending,
+          }
+        : { ...pending };
     const carried: Record<string, unknown> = reset
       ? Object.fromEntries(reset.filter((n) => n in pending).map((n) => [n, pending[n]]))
       : set;
@@ -323,7 +338,9 @@ export function RulesSection() {
       let draft: number | null = null;
       let draftId: string | null = null;
       try {
-        const r = await rulesApi.patch(sectionKey, set, reset ?? []);
+        const r = whole
+          ? await rulesApi.patch(sectionKey, set, [], { replace: true, version: whole.version })
+          : await rulesApi.patch(sectionKey, set, reset ?? []);
         changed = r?.changed?.length ?? 0;
         draft = r?.draft_change?.number ?? null;
         draftId = r?.draft_change?.id ?? null;
@@ -508,9 +525,38 @@ export function RulesSection() {
     };
     const invalid = s.fields.filter((f) => f.invalid).length;
     const unknown = s.unknown ?? [];
+    // story 51.13: the component the section belongs to (core's are always on), and
+    // what the home's move to this release's format said
+    const owner = s.component && !s.component.startsWith("core.") ? s.component : null;
+    const ownerName = owner ? t(`components.${owner}.title`) : "";
+    const ownerState =
+      owner && s.component_state && s.component_state !== "enabled"
+        ? t(`rules.section.state.${s.component_state}`)
+        : "";
     return (
       <div className="mkt-rules__section">
         <p className="mkt-muted">{s.what}</p>
+        {owner && (
+          <p className="mkt-muted" data-testid="rules-part-of">
+            {ownerState
+              ? t("rules.section.partOfState", { component: ownerName, state: ownerState })
+              : t("rules.section.partOf", { component: ownerName })}
+          </p>
+        )}
+        {s.failed && (
+          <p
+            role="alert"
+            className="mkt-rules__banner mkt-rules__banner--bad"
+            data-testid="rules-migrate-failed"
+          >
+            {t("rules.section.migrateFailed")}
+          </p>
+        )}
+        {s.needs_migration && !s.failed && (
+          <p className="mkt-rules__banner mkt-rules__banner--warn" data-testid="rules-migrating">
+            {t("rules.section.migrating")}
+          </p>
+        )}
         <div className="mkt-rules__bar">
           <input
             type="search"
@@ -530,12 +576,12 @@ export function RulesSection() {
                 {t("settings.rules.discard")}
               </Button>
               <Button
-                disabled={!unsaved || nProblems > 0}
+                disabled={(!unsaved && !s.failed) || nProblems > 0 || !!s.needs_migration}
                 loading={busy}
                 aria-describedby={nProblems ? `rules-${s.key}-fix` : undefined}
                 onClick={() => void send(s.key)}
               >
-                {t("settings.rules.save")}
+                {s.failed ? t("rules.section.saveAll") : t("settings.rules.save")}
               </Button>
             </>
           )}

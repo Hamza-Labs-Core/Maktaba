@@ -10,6 +10,8 @@
 #                                               torch's CUDA build, from PyTorch's index
 #                                               (which the file names), for a machine
 #                                               whose NVIDIA GPU runs the second listen
+#   maktaba-pipeline-<ver>-constraints-core.txt the runtime's pins with no extras (Epic 51
+#                                               story 51.17): a Core venv, no torch, no MLX
 #   maktaba-node-<ver>.tar.gz / .zip            the node installer (this directory) with
 #                                               the wheel, both constraints and
 #                                               release.conf, which makes the installer
@@ -109,6 +111,7 @@ cp "$WORK/wheel/$WHEEL" "$OUT/$WHEEL"
 # --- the constraints: uv.lock's pins for the runtime and every extra but dev ------------------
 CONSTRAINTS="maktaba-pipeline-$PEP_VERSION-constraints.txt"
 CONSTRAINTS_CUDA="maktaba-pipeline-$PEP_VERSION-constraints-cuda.txt"
+CONSTRAINTS_CORE="maktaba-pipeline-$PEP_VERSION-constraints-core.txt"
 extras=()
 # (a Windows Python prints CRLF: strip the CR, or uv rejects the extra's name)
 while IFS=$'\r' read -r e; do extras+=(--extra "$e"); done < <(
@@ -173,6 +176,15 @@ done
 grep -qE "^torch==[^ ;]*\+cu[0-9]+ ;.*sys_platform == 'win32'" "$OUT/$CONSTRAINTS_CUDA" \
     || die "$CONSTRAINTS_CUDA pins no CUDA build of torch for Windows (the cuda group)"
 
+# the core set (story 51.17): the runtime with no extras, from PyPI alone; a subshell, so
+# the extras stay for what follows
+(extras=() && export_pins "$CONSTRAINTS_CORE")
+grep -v '^--extra-index-url ' "$OUT/$CONSTRAINTS_CORE" >"$WORK/$CONSTRAINTS_CORE.pypi"
+mv "$WORK/$CONSTRAINTS_CORE.pypi" "$OUT/$CONSTRAINTS_CORE"
+if grep -qE '^(torch|mlx|mlx-whisper|faster-whisper|transformers)==' "$OUT/$CONSTRAINTS_CORE"; then
+    die "$CONSTRAINTS_CORE pins an ML package: the runtime alone must not"
+fi
+
 # --- the installer bundle ------------------------------------------------------------------------
 BUNDLE="maktaba-node-$PEP_VERSION"
 stage="$WORK/$BUNDLE"
@@ -223,4 +235,4 @@ PY
 }
 (cd "$WORK" && rm -f "$OUT/$BUNDLE.zip" && make_zip "$OUT/$BUNDLE.zip" "$BUNDLE")
 
-printf '%s\n' "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$CONSTRAINTS_CUDA" "$OUT/$BUNDLE.tar.gz" "$OUT/$BUNDLE.zip"
+printf '%s\n' "$OUT/$WHEEL" "$OUT/$CONSTRAINTS" "$OUT/$CONSTRAINTS_CUDA" "$OUT/$CONSTRAINTS_CORE" "$OUT/$BUNDLE.tar.gz" "$OUT/$BUNDLE.zip"

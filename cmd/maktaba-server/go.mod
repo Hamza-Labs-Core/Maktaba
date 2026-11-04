@@ -20,7 +20,11 @@ require (
 	modernc.org/sqlite v1.51.0
 )
 
+require github.com/klauspost/compress v1.20.1 // indirect
+
 require (
+	github.com/Hamza-Labs-Core/Maktaba/shared/components v0.0.0
+	github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/layout v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme v0.0.0
 	github.com/Hamza-Labs-Core/Maktaba/shared/go/ports v0.0.0
@@ -116,3 +120,7 @@ replace github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify => ../../shar
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme => ../../shared/go/pagetheme
 
 replace github.com/Hamza-Labs-Core/Maktaba/shared/go/ports => ../../shared/go/ports
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/components => ../../shared/components
+
+replace github.com/Hamza-Labs-Core/Maktaba/shared/go/componentpack => ../../shared/go/componentpack

@@ -5,9 +5,11 @@ import SwiftUI
 /// from the same answers (`HomeShelves`, MaktabaKit): Continue watching, Up next, On now (Live
 /// TV), Favorites, Recently added, Recently watched, each pinned library, For you, From your
 /// libraries. Each is a horizontal shelf of focusable cards with their posters; a row that
-/// could not be read stays, as a tile that reads it again.
+/// could not be read stays, as a tile that reads it again. With Live TV off on the home there
+/// is no On now row, nor its failure (story 51.11, as the Player's Home).
 struct HomeView: View {
     @Environment(\.client) private var client
+    @Environment(\.appSession) private var session
     @State private var shelves: [HomeShelf] = []
     @State private var loading = true
     @State private var live = LiveModel()
@@ -25,13 +27,13 @@ struct HomeView: View {
                     Group {
                         if loading && shelves.isEmpty {
                             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 60)
-                        } else if shelves.isEmpty {
+                        } else if shown.isEmpty {
                             ContentUnavailableView("Nothing to watch yet", systemImage: "books.vertical",
                                                    description: Text("Videos appear here once this home shares a library with you."))
                                 .accessibilityIdentifier("home.empty")
                         } else {
                             VStack(alignment: .leading, spacing: 48) {
-                                ForEach(shelves) { shelf in
+                                ForEach(shown) { shelf in
                                     HomeShelfView(shelf: shelf, retry: { Task { await load() } },
                                                   tune: { tuned = LiveView.Tuned(channel: $0) })
                                 }
@@ -53,6 +55,11 @@ struct HomeView: View {
                     .environment(\.client, client)
             }
         }
+    }
+
+    /// The rows read, less On now while Live TV is off (until the home answers, it is on).
+    private var shown: [HomeShelf] {
+        HomeShelves.shown(shelves, liveTV: session?.capabilities.current.isOn(.liveTV) ?? true)
     }
 
     /// A shelf's title is the app's to say (the home sends rows, not words); a library is

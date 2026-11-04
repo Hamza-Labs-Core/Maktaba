@@ -164,6 +164,10 @@ func buildPlacement() placement.Table {
 		"/api/stream/", "/graphql", "/ws/",
 		// the home's server.toml and its restart (Epic 45 story 45.3)
 		"/api/server/",
+		// Epic 51: the components' desired state, written only on the home (story 51.08)
+		"/api/components",
+		// and the capabilities, from the home's in-memory snapshot (story 51.09)
+		"/api/capabilities",
 	))
 	return t
 }

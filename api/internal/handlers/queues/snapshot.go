@@ -10,6 +10,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // Window used for the "rate" and flow calculations (plan-06-11 §8.2).
@@ -96,7 +97,20 @@ func summarizeStage(in stageInputs) QueueSummary {
 	if in.Live.Running == 0 {
 		s.WaitingReason = waitingReason(in)
 	}
+	if r := s.WaitingReason; r != nil && (*r == WaitComponentOff || *r == WaitComponentHeld) {
+		s.Component = stageComponent(s.Stage)
+	}
 	return s
+}
+
+// stageComponent is the catalog component that owns stage (nil when none does).
+func stageComponent(stage string) *string {
+	c, ok := components.Default().ByStage(stage)
+	if !ok || c == nil {
+		return nil
+	}
+	id := c.ID
+	return &id
 }
 
 // noWorker: work is waiting for an enabled stage that no online worker
@@ -112,6 +126,10 @@ func waitingReason(in stageInputs) *WaitingReason {
 	switch {
 	case !in.Info.Enabled && in.Info.DisabledReason != nil && *in.Info.DisabledReason == "not_configured":
 		return pick(WaitNotConfigured)
+	case !in.Info.Enabled && in.Info.DisabledReason != nil && *in.Info.DisabledReason == string(WaitComponentOff):
+		return pick(WaitComponentOff)
+	case !in.Info.Enabled && in.Info.DisabledReason != nil && *in.Info.DisabledReason == string(WaitComponentHeld):
+		return pick(WaitComponentHeld)
 	case !in.Info.Enabled:
 		return pick(WaitDisabled)
 	case in.PausedAll:
@@ -386,6 +404,7 @@ func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
 		sh := stageHealth(healthInputs{
 			Failures: hd.failures[st], DoneWindow: hd.done[st], Waiting: hd.waiting[st],
 			FailedOpen: open[st], Ignored: hd.ignored[st],
+			Component: componentHoldOf(stages[i], queues[i].Counts.Pending),
 		}, hd.cfg)
 		queues[i].Health = &sh
 		if f := h.StageETA[queues[i].Stage]; f != nil {

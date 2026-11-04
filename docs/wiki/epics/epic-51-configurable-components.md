@@ -5,9 +5,9 @@
 
 ## Goal
 
-Requirement: today every worker and feature starts right away. Each one must instead be driven
-by config or settings, so it can be stopped and started, enabled and disabled, with server
-bundles that ship with or without components, and components that can be added later.
+Every worker and feature runs as soon as it is installed. The goal (2026-11-03): all of them
+are driven by config and settings, so each can be enabled or disabled and started or stopped;
+servers come in bundles, with and without components; and components can be added later.
 
 Every worker, background loop, feature, integration, runtime and model becomes a
 **component** in one catalog. Admins say what they want; every machine reports what is true

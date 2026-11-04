@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/frontdoor/relay"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/hdhr"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
@@ -127,10 +128,10 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 		case <-time.After(2 * time.Second):
 		}
 	}
-	b.bg.Go(slots.Run)
+	b.bg.Loop("slots_frontdoor", slots.Run)
 	// story 33.7/33.9: the swap and rollback operations the change controller
 	// (and the automatic rollback) write for this host
-	b.bg.Go(slots.RunOps)
+	b.bg.Loop("slots_ops", slots.RunOps)
 
 	// Epic 44 story 44.4: who watches, and every channel's viewers (the slots'
 	// engines leave viewer_count to this count: cmd_slot.go)
@@ -139,7 +140,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 		Logger: logger, Slots: slots, CacheRoot: b.cfg.Cache.Root,
 		PublicBase: publicBase, Client: linkClient(b.pool), Viewings: viewings}
 	viewings.Viewers = fd.ChannelViewers
-	b.bg.Go(viewings.Run)
+	b.bg.Loop("viewings", viewings.Run)
 
 	liveStations := func() []uuid.UUID { return slots.LiveStations() }
 	b.loop = &cluster.HostLoop{Store: cluster.PGBeatStore{Pool: b.pool}, HostID: ident.ID, Keyring: keyring, Logger: logger,
@@ -160,8 +161,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 		}}
 	_ = b.loop.BeatOnce(ctx)
 	hosts.Refresh(ctx)
-	b.bg.Go(b.loop.Run)
-	b.bg.Go(func(ctx context.Context) {
+	b.bg.Loop("tv_heartbeat", b.loop.Run)
+	b.bg.Loop("placement_listen", func(ctx context.Context) {
 		placement.Listen(ctx, b.pool, logger, func(ch uuid.UUID) { svc.Invalidate(ch) })
 	})
 	sweeper := &placement.Sweeper{Svc: svc, Demand: tracker.Demand, Cleaner: func(ctx context.Context) {
@@ -169,8 +170,8 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 			logger.Info("tv: cleaned stale on-air rows", "rows", n, "event", "tv_runtime_cleaned")
 		}
 	}}
-	b.bg.Go(sweeper.Run)
-	b.bg.Go(func(ctx context.Context) {
+	b.bg.Loop("channel_sweeper", sweeper.Run)
+	b.bg.Loop("push_relay", func(ctx context.Context) {
 		b.runPushRelay(ctx, fd, func(ctl *relay.Ctl) {
 			relayMu.Lock()
 			relayCtl = ctl
@@ -188,6 +189,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	hdhrHandler := hdhr.New(hdhrRepo, fd)
 	hdhrHandler.PublicBase = publicBase
 	hdhrHandler.Viewings = viewings
+	hdhrHandler.Gate = httpx.RequireComponent(b.bg.On, "livetv.hdhomerun")
 	mounts = append(mounts, hdhrHandler.Mount)
 	guideHandler := b.newGuideHandler(hdhrRepo, publicBase, nil)
 	assets.Guide = guideHandler // the guide's images for the nodes
@@ -195,7 +197,7 @@ func (b *tvBase) buildHomeSlots(ctx context.Context, addrs map[string]string, id
 	// SSDP (udp/1900) and HDHomeRun discovery (udp/65001), absolute URLs only
 	ssdp := &hdhr.SSDPController{Repo: hdhrRepo, Logger: logger, LocationBase: publicBase,
 		HTTPAddr: os.Getenv("MAKTABA_HTTP_ADDR")}
-	b.bg.Go(ssdp.Run)
+	b.bg.Loop("hdhr_ssdp", ssdp.Run)
 	return mounts
 }
 

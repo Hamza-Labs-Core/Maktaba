@@ -22,6 +22,8 @@
 //  9. PerIP rate    — DoS guard, keyed on remote IP.
 //  10. PerUser rate — application rate, keyed on user (falls back to IP
 //     when no user is on ctx).
+//     ComponentOff — 409 component_off on a route whose component is off
+//     (Epic 51 story 51.09; from memory, no query).
 //  11. SingleWriteGuard
 //     — drops second WriteHeader/Write so a buggy handler
 //     that double-writes still produces a coherent
@@ -40,6 +42,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
@@ -94,6 +97,11 @@ type Deps struct {
 	// Usage counts the API's use per app and day (Epic 44 story 44.5);
 	// nil counts nothing (a bare-Deps unit test).
 	Usage *usage.Counter
+
+	// Capabilities is the home's capabilities snapshot (Epic 51 story 51.09): a route
+	// whose component is off answers 409 component_off (ComponentRoutes). MountP51
+	// starts it; nil leaves the check off (bare-Deps unit tests).
+	Capabilities *components.Capabilities
 }
 
 // New builds the API's chi.Mux with the canonical middleware stack and
@@ -140,6 +148,9 @@ func New(d Deps) chi.Router {
 	if d.UserRatePerMin > 0 {
 		r.Use(mw.PerUser(d.UserRatePerMin))
 	}
+
+	// Epic 51 story 51.09: a route whose component is off is 409 component_off
+	r.Use(ComponentOff(d.Capabilities))
 
 	r.Use(mw.SingleWriteGuard)
 	if d.IdempotencyStore != nil {

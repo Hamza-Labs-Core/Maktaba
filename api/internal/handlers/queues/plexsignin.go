@@ -173,7 +173,7 @@ func (h *Handler) plexClientID(ctx context.Context) (string, error) {
 	}
 	cur.settings[plexClientIDKey] = id
 	blob, _ := json.Marshal(cur.settings)
-	if _, err := h.DB.ExecContext(ctx, upsertExtensionSQL, "plex", cur.enabled, string(blob), h.now()); err != nil {
+	if _, err := saveSettings(ctx, h.DB, "plex", cur.enabled, string(blob), h.now()); err != nil {
 		return "", err
 	}
 	h.plexID = id
@@ -308,7 +308,7 @@ func (h *Handler) usePlexServer(ctx context.Context, chosen plexServer, clientID
 	}
 	blob, _ := json.Marshal(cur.settings)
 	now := h.now()
-	if _, err := h.DB.ExecContext(ctx, upsertExtensionSQL, "plex", cur.enabled, string(blob), now); err != nil {
+	if _, err := saveSettings(ctx, h.DB, "plex", cur.enabled, string(blob), now); err != nil {
 		return extRow{}, fmt.Errorf("save extension: %w", err)
 	}
 	ts := now.Format(tsLayout)

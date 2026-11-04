@@ -206,6 +206,44 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+// A machine without the payload's Ollama (a Core Mac) finds the one the runtime.ollama
+// pack installed (its current folder's ollama/ollama); a set MAKTABA_OLLAMA_BIN or [llm]
+// binary is never replaced by it, and Planned is the dormant server without a binary.
+func TestFindBinaryInTheRuntimePack(t *testing.T) {
+	cfg := isolate(t)
+	exe := "/nowhere/bin/maktaba-server"
+	if b := FindBinary(cfg, exe); b != "" {
+		t.Fatalf("nothing installed, yet %q", b)
+	}
+	if s := Planned(cfg, ""); s.Bin != "" || s.Port != DefaultPort || s.URL() != "http://127.0.0.1:11533" {
+		t.Fatalf("planned without a binary: %+v", s)
+	}
+	dir := filepath.Join(PackDir(cfg.StateDir()), "0.40.2_0123456789ab", "ollama")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(dir, "ollama")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if b := FindBinary(cfg, exe); b != "" {
+		t.Fatalf("no current pointer, yet %q", b)
+	}
+	if err := os.WriteFile(filepath.Join(PackDir(cfg.StateDir()), "current"), []byte("0.40.2_0123456789ab\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if b := FindBinary(cfg, exe); b != bin {
+		t.Fatalf("FindBinary = %q, want the pack's %q", b, bin)
+	}
+	if s, ok, _ := Resolve(cfg, exe); !ok || s.Bin != bin {
+		t.Fatalf("Resolve with the pack: %+v %v", s, ok)
+	}
+	t.Setenv("MAKTABA_OLLAMA_BIN", "/missing/ollama")
+	if b := FindBinary(cfg, exe); b != "" {
+		t.Fatalf("a set MAKTABA_OLLAMA_BIN fell back to the pack: %q", b)
+	}
+}
+
 func TestClaim(t *testing.T) {
 	s := Server{Port: DefaultPort}
 	if err := s.Claim(func(string) bool { return true }); err != nil || s.Port != DefaultPort {

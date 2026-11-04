@@ -22,12 +22,15 @@ import {
 } from "../ui";
 import { ChannelTile } from "./Live";
 import { errorText } from "../../lib/errorText";
+import { useFeature } from "../../lib/capabilities";
 
 export function BigHome() {
   const { t } = useI18n();
   const { go } = useBigNav();
   const [home, setHome] = useState<HomeResponse | null>(null);
-  const [live, setLive] = useState<NowEntry[]>([]);
+  const [channels, setLive] = useState<NowEntry[]>([]);
+  // no channel row while Live TV is off on this home (story 51.11)
+  const live = useFeature("live_tv") === "on" ? channels : [];
   const [err, setErr] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 

@@ -27,9 +27,13 @@ type Usage struct {
 	AppPlatforms    []AppPlatform    `json:"app_platforms"`
 	AppsInUse       []AppInUse       `json:"apps_in_use"`
 	Features        []FeatureShare   `json:"features"`
-	FeatureUse      []FeatureUse     `json:"feature_use"`
-	Errors          []ErrorGroup     `json:"errors"`
-	Vitals          []VitalP75       `json:"vitals"`
+	// Bundles and Components (Epic 51 story 51.14): the homes on each bundle and the
+	// share of homes with each component enabled, of the homes that reported them.
+	Bundles    []BundleCount    `json:"bundles"`
+	Components []ComponentShare `json:"components"`
+	FeatureUse []FeatureUse     `json:"feature_use"`
+	Errors     []ErrorGroup     `json:"errors"`
+	Vitals     []VitalP75       `json:"vitals"`
 }
 
 type AppInstalls struct {
@@ -79,6 +83,20 @@ type FeatureShare struct {
 	Feature string  `json:"feature"`
 	Homes   int     `json:"homes"`
 	Share   float64 `json:"share"`
+}
+
+// BundleCount is how many homes' latest report names a bundle.
+type BundleCount struct {
+	Bundle string `json:"bundle"`
+	Homes  int    `json:"homes"`
+}
+
+// ComponentShare is how many homes have a component enabled, and their share of the
+// homes whose report lists components.
+type ComponentShare struct {
+	Component string  `json:"component"`
+	Homes     int     `json:"homes"`
+	Share     float64 `json:"share"`
 }
 
 type FeatureUse struct {
@@ -221,6 +239,29 @@ func QueryUsage(ctx context.Context, db *sql.DB, now time.Time, days int) (*Usag
 		u.Features = append(u.Features, v)
 		return err
 	})
+
+	u.Bundles = []BundleCount{}
+	q.rows(latest+` SELECT bundle, count(*) FROM latest WHERE bundle <> '' GROUP BY bundle ORDER BY 2 DESC, 1`,
+		[]any{since}, func(s scanner) error {
+			var v BundleCount
+			err := s.Scan(&v.Bundle, &v.Homes)
+			u.Bundles = append(u.Bundles, v)
+			return err
+		})
+
+	var reporting int
+	q.row(latest+` SELECT count(*) FROM latest WHERE cardinality(components) > 0`, []any{since}, &reporting)
+	u.Components = []ComponentShare{}
+	q.rows(latest+` SELECT c, count(*) FROM latest l, unnest(l.components) c GROUP BY c ORDER BY 2 DESC, 1 LIMIT 200`,
+		[]any{since}, func(s scanner) error {
+			var v ComponentShare
+			err := s.Scan(&v.Component, &v.Homes)
+			if reporting > 0 {
+				v.Share = float64(v.Homes) / float64(reporting)
+			}
+			u.Components = append(u.Components, v)
+			return err
+		})
 
 	u.FeatureUse = []FeatureUse{}
 	q.rows(`SELECT app, payload->>'feature', COALESCE(sum((payload->>'count')::bigint), 0), count(DISTINCT install_id)
