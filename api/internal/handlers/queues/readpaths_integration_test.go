@@ -432,7 +432,7 @@ func TestReadPaths_LastTwoDoneRowsGoAtOnce(t *testing.T) {
 				_, err := tx2.ExecContext(ctx, tc.take, b)
 				second <- err
 			}()
-			waitForLockWait(t, db)
+			waitForLockWaits(t, db, 1)
 			if err := tx1.Commit(); err != nil {
 				t.Fatal(err)
 			}
@@ -459,21 +459,108 @@ func doneSubjects(t *testing.T, db *sql.DB, lib string) int {
 	return n
 }
 
-// waitForLockWait waits until a backend of this database waits on a lock (the
-// second transaction on the subject's row), or 2 s: without the lock nothing
-// waits, and the test then goes on to find the row kept.
-func waitForLockWait(t *testing.T, db *sql.DB) {
+// waitForLockWaits waits until n backends of this database wait on a lock, or
+// 2 s: when the code under test takes no lock nothing waits, and the test then
+// goes on to find what that breaks.
+func waitForLockWaits(t *testing.T, db *sql.DB, n int) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		var n int
+		var got int
 		if err := db.QueryRow(`SELECT count(*) FROM pg_stat_activity
-			WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&n); err != nil {
+			WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&got); err != nil {
 			t.Fatal(err)
 		}
-		if n > 0 {
+		if got >= n {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+// A statement finishing jobs of several subjects and a retention delete of several
+// subjects' old done rows, at once, never deadlock: both lock the subjects' summary
+// rows in key order. The finishing statement's rows come B, C, A; a third
+// transaction holds C, so the finisher stops between B and A while the delete takes
+// A and then wants B. Locking in the rows' order (row triggers) that is a circle,
+// and Postgres aborts one of the two; in key order the finisher holds A and B, the
+// delete waits for it, and both finish. Job finishing must never be aborted, so no
+// retry stands in for the order.
+func TestReadPaths_FinishAndRetentionNeverDeadlock(t *testing.T) {
+	db := parityDB(t)
+	const lib = "17500000-0000-4000-8000-0000000000d1"
+	mustExec(t, db, `INSERT INTO libraries (id, name, roots) VALUES ($1, 'D', ARRAY['/d'])`, lib)
+	// subject ids in key order: A < B < C
+	vA := "17500000-0000-4000-8003-00000000000a"
+	vB := "17500000-0000-4000-8003-00000000000b"
+	vC := "17500000-0000-4000-8003-00000000000c"
+	for i, v := range []string{vA, vB, vC} {
+		mustExec(t, db, `INSERT INTO videos (id, library_id, content_hash, path, filename, size_bytes, mtime)
+			VALUES ($1, $2, repeat(chr(100 + $3::int), 64), '/d/' || $3::text || '.mp4', $3::text || '.mp4', 1, now())`, v, lib, i)
+		// two older done runs each: the summary row is there, and the delete leaves one
+		mustExec(t, db, `INSERT INTO processing_jobs (video_id, library_id, stage, state, finished_at, outcome)
+			VALUES ($1, $2, 'probe', 'done', now() - interval '2 days', 'changed'),
+			       ($1, $2, 'probe', 'done', now() - interval '1 day', 'changed')`, v, lib)
+	}
+	// the jobs the finisher turns done, in the order B, C, A
+	var running []int64
+	for _, v := range []string{vB, vC, vA} {
+		var id int64
+		if err := db.QueryRow(`INSERT INTO processing_jobs (video_id, library_id, stage, state, started_at)
+			VALUES ($1, $2, 'probe', 'running', now()) RETURNING id`, v, lib).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		running = append(running, id)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	hold, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = hold.Rollback() }()
+	if _, err := hold.ExecContext(ctx, `SELECT 1 FROM processing_done_subjects
+		WHERE library_id = $1 AND stage = 'probe' AND subject_id = $2 FOR UPDATE`, lib, vC); err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(q string, args ...any) <-chan error {
+		out := make(chan error, 1)
+		go func() {
+			tx, err := db.BeginTx(ctx, nil)
+			if err != nil {
+				out <- err
+				return
+			}
+			if _, err := tx.ExecContext(ctx, q, args...); err != nil {
+				_ = tx.Rollback()
+				out <- err
+				return
+			}
+			out <- tx.Commit()
+		}()
+		return out
+	}
+	finish := run(`UPDATE processing_jobs SET state = 'done', finished_at = now(), outcome = 'changed'
+		WHERE id = ANY($1::bigint[])`, "{"+fmt.Sprint(running[0])+","+fmt.Sprint(running[1])+","+fmt.Sprint(running[2])+"}")
+	waitForLockWaits(t, db, 1) // the finisher waits on C
+	retention := run(`DELETE FROM processing_jobs WHERE id IN (
+		SELECT min(id) FROM processing_jobs
+		 WHERE library_id = $1 AND state = 'done' AND subject_id IN ($2::uuid, $3::uuid)
+		 GROUP BY subject_id)`, lib, vA, vB)
+	waitForLockWaits(t, db, 2) // and the delete on the finisher
+	if err := hold.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-finish; err != nil {
+		t.Fatalf("the finishing statement: %v", err)
+	}
+	if err := <-retention; err != nil {
+		t.Fatalf("the retention delete: %v", err)
+	}
+	if n := doneSubjects(t, db, lib); n != 3 {
+		t.Fatalf("subjects = %d, want 3", n)
+	}
+	sameDone(t, db, "finish and retention at once")
 }

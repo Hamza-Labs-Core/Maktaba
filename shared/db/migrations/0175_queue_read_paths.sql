@@ -10,13 +10,16 @@
 -- and the snapshot's counts read the done rows with a sequential scan.
 --
 -- 1. processing_done_subjects: one row per (library, stage, subject) that has a done job,
---    with the latest time one of them finished (last_at). Triggers on processing_jobs keep
---    it: a row inserted done, or turned done, adds its subject (or moves last_at on); a
---    row that leaves done or its library, and a DELETE (the retention, a removed video or
---    library), take the subject away once no done row is left for it. GET
+--    with the latest time one of them finished (last_at). Statement triggers on
+--    processing_jobs keep it: a row inserted done, or turned done, adds its subject (or
+--    moves last_at on); a row that leaves done or its library, and a DELETE (the
+--    retention, a removed video or library), take the subject away once no done row is
+--    left for it. Every path locks a subject's row before it decides, and a statement
+--    takes its subjects in key order, so two writers never both keep or both drop one
+--    and never wait on each other in a circle. GET
 --    /api/queues/libraries counts these rows instead of the jobs: one row per subject
---    however many times it ran (fp_gate: 1.1M done rows, 2.8k subjects). The triggers
---    only touch the subject's own row, so two jobs finishing never wait on each other.
+--    however many times it ran (fp_gate: 1.1M done rows, 2.8k subjects). A job finishing
+--    touches only its own subject's row: jobs of other subjects never wait on it.
 --    The table is backfilled here from the done rows.
 -- 2. processing_jobs_live_idx: the live rows (pending .. paused) by stage and state,
 --    with every column the snapshot's live counts and the library strip read, so both
@@ -26,7 +29,7 @@
 -- 4. processing_jobs_awaiting_review_idx: the done rows waiting for review (a handful;
 --    the snapshot's awaiting-review count was a 12 s sequential scan).
 --
--- Additive: one table, four trigger functions, four triggers, three indexes.
+-- Additive: one table, four functions, three triggers, three indexes.
 --
 CREATE TABLE IF NOT EXISTS processing_done_subjects (
     library_id   UUID        NOT NULL REFERENCES libraries(id) ON DELETE CASCADE,
@@ -44,71 +47,125 @@ COMMENT ON TABLE processing_done_subjects IS
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- a row inserted done, turned done, moved to a library or finished again
-CREATE OR REPLACE FUNCTION processing_done_subjects_add() RETURNS TRIGGER
+-- One subject's summary row, the only place that writes it. add: a done row of the
+-- subject is in the library (insert it, or move last_at on). Not add: a done row left;
+-- the row is locked, then (a new statement, so a new snapshot that sees whatever the
+-- lock waited for) it goes when no done row of the subject is left in the library.
+-- Both branches lock the row (ON CONFLICT DO UPDATE locks it even when its WHERE
+-- does not hold), so whoever comes second for a subject waits for the first to end.
+CREATE OR REPLACE FUNCTION processing_done_subjects_touch(
+    p_library UUID, p_stage TEXT, p_subject UUID, p_kind TEXT, p_last TIMESTAMPTZ, p_add BOOLEAN
+) RETURNS VOID
 LANGUAGE plpgsql AS $$
 BEGIN
-    INSERT INTO processing_done_subjects AS d (library_id, stage, subject_id, subject_kind, last_at)
-    VALUES (NEW.library_id, NEW.stage, NEW.subject_id, NEW.subject_kind,
-            COALESCE(NEW.finished_at, NEW.created_at))
-    ON CONFLICT (library_id, stage, subject_id) DO UPDATE
-        SET last_at = EXCLUDED.last_at
-      WHERE d.last_at < EXCLUDED.last_at;
-    RETURN NULL;
-END;
-$$;
--- +goose StatementEnd
-
--- +goose StatementBegin
--- a done row that left done or its library: its subject goes when no done row is left.
--- The subject's row is locked first: two transactions taking away its last two done rows
--- at once each see the other's row still there, so without the lock both keep the
--- subject. With it the second waits for the first to end, and its check (a new
--- statement, so a new snapshot) sees the first's row gone.
-CREATE OR REPLACE FUNCTION processing_done_subjects_left() RETURNS TRIGGER
-LANGUAGE plpgsql AS $$
-BEGIN
+    IF p_add THEN
+        INSERT INTO processing_done_subjects AS d (library_id, stage, subject_id, subject_kind, last_at)
+        VALUES (p_library, p_stage, p_subject, p_kind, p_last)
+        ON CONFLICT (library_id, stage, subject_id) DO UPDATE
+            SET last_at = EXCLUDED.last_at
+          WHERE d.last_at < EXCLUDED.last_at;
+        RETURN;
+    END IF;
     PERFORM 1 FROM processing_done_subjects d
-      WHERE d.library_id = OLD.library_id AND d.stage = OLD.stage AND d.subject_id = OLD.subject_id
+      WHERE d.library_id = p_library AND d.stage = p_stage AND d.subject_id = p_subject
         FOR UPDATE;
     IF NOT FOUND THEN
-        RETURN NULL;
+        RETURN;
     END IF;
     DELETE FROM processing_done_subjects d
-     WHERE d.library_id = OLD.library_id AND d.stage = OLD.stage AND d.subject_id = OLD.subject_id
-       AND NOT EXISTS (SELECT 1 FROM processing_jobs p
-                        WHERE p.subject_kind = OLD.subject_kind AND p.subject_id = OLD.subject_id
-                          AND p.stage = OLD.stage AND p.state = 'done'
-                          AND p.library_id = OLD.library_id);
+     WHERE d.library_id = p_library AND d.stage = p_stage AND d.subject_id = p_subject
+       AND NOT EXISTS (SELECT 1 FROM processing_jobs j
+                        WHERE j.subject_kind = p_kind AND j.subject_id = p_subject
+                          AND j.stage = p_stage AND j.state = 'done'
+                          AND j.library_id = p_library);
+END;
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- The three triggers are statement triggers over the statement's rows, and each
+-- touches its subjects in the summary's key order (library_id, stage, subject_id):
+-- a retention batch and a statement finishing many subjects lock the same rows in
+-- the same order, so they never wait on each other in a circle (a row trigger runs
+-- in the order the rows came, which two statements do not share). A finished job is
+-- one statement in its own transaction (jobs_state.mark_done, engine/propagate.py).
+--
+-- rows inserted (a bulk import's done rows among them)
+CREATE OR REPLACE FUNCTION processing_done_subjects_added() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        SELECT library_id, stage, subject_id, min(subject_kind) AS kind,
+               max(COALESCE(finished_at, created_at)) AS last
+          FROM added
+         WHERE state = 'done' AND library_id IS NOT NULL AND subject_id IS NOT NULL
+         GROUP BY library_id, stage, subject_id
+         ORDER BY library_id, stage, subject_id
+    LOOP
+        PERFORM processing_done_subjects_touch(r.library_id, r.stage, r.subject_id, r.kind, r.last, TRUE);
+    END LOOP;
     RETURN NULL;
 END;
 $$;
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- deleted rows (one statement: the retention's batches, a removed video's cascade).
--- The subjects' rows are locked first, as in processing_done_subjects_left, in key
--- order so two deleting statements never wait on each other in a circle.
+-- rows updated: turned done, moved, finished again (add); left done or moved away
+-- (gone from the old key). A heartbeat or a progress write touches no subject.
+CREATE OR REPLACE FUNCTION processing_done_subjects_changed() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+DECLARE r RECORD;
+BEGIN
+    FOR r IN
+        WITH c AS (
+            SELECT n.library_id, n.stage, n.subject_id, n.subject_kind,
+                   COALESCE(n.finished_at, n.created_at) AS at, TRUE AS add
+              FROM new_rows n JOIN old_rows o ON o.id = n.id
+             WHERE n.state = 'done' AND n.library_id IS NOT NULL AND n.subject_id IS NOT NULL
+               AND (o.state IS DISTINCT FROM 'done'
+                    OR o.library_id IS DISTINCT FROM n.library_id
+                    OR o.stage IS DISTINCT FROM n.stage
+                    OR o.subject_id IS DISTINCT FROM n.subject_id
+                    OR o.finished_at IS DISTINCT FROM n.finished_at)
+            UNION ALL
+            SELECT o.library_id, o.stage, o.subject_id, o.subject_kind, NULL, FALSE
+              FROM old_rows o JOIN new_rows n ON n.id = o.id
+             WHERE o.state = 'done' AND o.library_id IS NOT NULL AND o.subject_id IS NOT NULL
+               AND (n.state IS DISTINCT FROM 'done'
+                    OR n.library_id IS DISTINCT FROM o.library_id
+                    OR n.stage IS DISTINCT FROM o.stage
+                    OR n.subject_id IS DISTINCT FROM o.subject_id)
+        )
+        -- a key both added and left keeps its subject: a done row of it is there
+        SELECT library_id, stage, subject_id, min(subject_kind) AS kind, max(at) AS last,
+               bool_or(add) AS add
+          FROM c
+         GROUP BY library_id, stage, subject_id
+         ORDER BY library_id, stage, subject_id
+    LOOP
+        PERFORM processing_done_subjects_touch(r.library_id, r.stage, r.subject_id, r.kind, r.last, r.add);
+    END LOOP;
+    RETURN NULL;
+END;
+$$;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+-- rows deleted (the retention's batches, a removed video's cascade)
 CREATE OR REPLACE FUNCTION processing_done_subjects_gone() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
+DECLARE r RECORD;
 BEGIN
-    PERFORM 1 FROM processing_done_subjects d
-      JOIN (SELECT DISTINCT library_id, stage, subject_id
-              FROM gone WHERE state = 'done' AND library_id IS NOT NULL) g
-        ON d.library_id = g.library_id AND d.stage = g.stage AND d.subject_id = g.subject_id
-     ORDER BY d.library_id, d.stage, d.subject_id
-       FOR UPDATE OF d;
-    IF NOT FOUND THEN
-        RETURN NULL;
-    END IF;
-    DELETE FROM processing_done_subjects d
-     USING (SELECT DISTINCT library_id, stage, subject_id, subject_kind
-              FROM gone WHERE state = 'done' AND library_id IS NOT NULL) g
-     WHERE d.library_id = g.library_id AND d.stage = g.stage AND d.subject_id = g.subject_id
-       AND NOT EXISTS (SELECT 1 FROM processing_jobs p
-                        WHERE p.subject_kind = g.subject_kind AND p.subject_id = g.subject_id
-                          AND p.stage = g.stage AND p.state = 'done'
-                          AND p.library_id = g.library_id);
+    FOR r IN
+        SELECT library_id, stage, subject_id, min(subject_kind) AS kind
+          FROM gone
+         WHERE state = 'done' AND library_id IS NOT NULL AND subject_id IS NOT NULL
+         GROUP BY library_id, stage, subject_id
+         ORDER BY library_id, stage, subject_id
+    LOOP
+        PERFORM processing_done_subjects_touch(r.library_id, r.stage, r.subject_id, r.kind, NULL, FALSE);
+    END LOOP;
     RETURN NULL;
 END;
 $$;
@@ -117,30 +174,17 @@ $$;
 -- +goose StatementBegin
 CREATE OR REPLACE TRIGGER processing_done_subjects_ins_trg
     AFTER INSERT ON processing_jobs
-    FOR EACH ROW
-    WHEN (NEW.state = 'done' AND NEW.library_id IS NOT NULL)
-    EXECUTE FUNCTION processing_done_subjects_add();
+    REFERENCING NEW TABLE AS added
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION processing_done_subjects_added();
 -- +goose StatementEnd
 
 -- +goose StatementBegin
--- a heartbeat or a progress write names none of these columns: the trigger does not fire
 CREATE OR REPLACE TRIGGER processing_done_subjects_upd_trg
-    AFTER UPDATE OF state, library_id, finished_at ON processing_jobs
-    FOR EACH ROW
-    WHEN (NEW.state = 'done' AND NEW.library_id IS NOT NULL
-          AND (OLD.state IS DISTINCT FROM 'done'
-               OR OLD.library_id IS DISTINCT FROM NEW.library_id
-               OR OLD.finished_at IS DISTINCT FROM NEW.finished_at))
-    EXECUTE FUNCTION processing_done_subjects_add();
--- +goose StatementEnd
-
--- +goose StatementBegin
-CREATE OR REPLACE TRIGGER processing_done_subjects_left_trg
-    AFTER UPDATE OF state, library_id ON processing_jobs
-    FOR EACH ROW
-    WHEN (OLD.state = 'done' AND OLD.library_id IS NOT NULL
-          AND (NEW.state IS DISTINCT FROM 'done' OR NEW.library_id IS DISTINCT FROM OLD.library_id))
-    EXECUTE FUNCTION processing_done_subjects_left();
+    AFTER UPDATE ON processing_jobs
+    REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION processing_done_subjects_changed();
 -- +goose StatementEnd
 
 -- +goose StatementBegin
@@ -156,8 +200,9 @@ CREATE OR REPLACE TRIGGER processing_done_subjects_gone_trg
 INSERT INTO processing_done_subjects AS d (library_id, stage, subject_id, subject_kind, last_at)
 SELECT library_id, stage, subject_id, min(subject_kind), max(COALESCE(finished_at, created_at))
   FROM processing_jobs
- WHERE state = 'done' AND library_id IS NOT NULL
+ WHERE state = 'done' AND library_id IS NOT NULL AND subject_id IS NOT NULL
  GROUP BY library_id, stage, subject_id
+ ORDER BY library_id, stage, subject_id
 ON CONFLICT (library_id, stage, subject_id) DO UPDATE
     SET last_at = GREATEST(d.last_at, EXCLUDED.last_at);
 -- +goose StatementEnd
@@ -205,11 +250,11 @@ DROP INDEX IF EXISTS processing_jobs_awaiting_review_idx;
 DROP INDEX IF EXISTS processing_jobs_done_finished_idx;
 DROP INDEX IF EXISTS processing_jobs_live_idx;
 DROP TRIGGER IF EXISTS processing_done_subjects_gone_trg ON processing_jobs;
-DROP TRIGGER IF EXISTS processing_done_subjects_left_trg ON processing_jobs;
 DROP TRIGGER IF EXISTS processing_done_subjects_upd_trg ON processing_jobs;
 DROP TRIGGER IF EXISTS processing_done_subjects_ins_trg ON processing_jobs;
 DROP FUNCTION IF EXISTS processing_done_subjects_gone();
-DROP FUNCTION IF EXISTS processing_done_subjects_left();
-DROP FUNCTION IF EXISTS processing_done_subjects_add();
+DROP FUNCTION IF EXISTS processing_done_subjects_changed();
+DROP FUNCTION IF EXISTS processing_done_subjects_added();
+DROP FUNCTION IF EXISTS processing_done_subjects_touch(UUID, TEXT, UUID, TEXT, TIMESTAMPTZ, BOOLEAN);
 DROP TABLE IF EXISTS processing_done_subjects;
 -- +goose StatementEnd
