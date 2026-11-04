@@ -93,16 +93,28 @@ func (s *Service) Preview(ctx context.Context, req Request) (Preview, error) {
 		}
 		return s.previewMachine(ctx, node, req)
 	}
-	rows, rev, err := s.Store.Desired(ctx, store.Home)
+	snap, err := s.snapshot(ctx)
 	if err != nil {
 		return Preview{}, err
 	}
-	p, err := makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, Actor{By: "preview"}, true)
+	p, err := makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), snap.rows, snap.rev, req, Actor{By: "preview"}, true,
+		snap.missingOn(store.Home))
 	if err != nil {
 		return Preview{}, err
 	}
+	s.actualFrom(snap, p.preview.Effects)
 	p.preview.QueuedJobsParked = s.queued(ctx, p.goingOff)
 	return p.preview, nil
+}
+
+// actualFrom sets each effect's From to the phase the component has now, as GET
+// /api/components reports it (view), not the one the desired state alone gives it.
+func (s *Service) actualFrom(snap *snapshot, effects []Effect) {
+	for i := range effects {
+		if c, ok := s.cat().Get(effects[i].ID); ok {
+			effects[i].From = s.view(snap, c, false).Phase
+		}
+	}
 }
 
 // Result is what a write did.
@@ -128,11 +140,16 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 		}
 		return s.applyMachine(ctx, node, req, actor)
 	}
+	// the files on disk and the phases now (the effect's from) are read before the write
+	snap, err := s.snapshot(ctx)
+	if err != nil {
+		return Result{}, err
+	}
 	var p *plan
 	batch := uuid.NewString()
 	changed, err := s.Store.SetDesiredBatch(ctx, func(rows map[string]store.Desired, rev int64) (store.BatchPlan, error) {
 		var err error
-		p, err = makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, actor, false)
+		p, err = makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, actor, false, snap.missingOn(store.Home))
 		if err != nil {
 			return store.BatchPlan{}, err
 		}
@@ -149,6 +166,7 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 		return Result{}, err
 	}
 	res := Result{Changed: changed, Effect: p.preview}
+	s.actualFrom(snap, res.Effect.Effects)
 	if changed == nil {
 		res.Changed = []store.Desired{}
 	}
@@ -324,12 +342,54 @@ func (s *Service) snapshot(ctx context.Context) (*snapshot, error) {
 		st[r.ID] = append(st[r.ID], r)
 		nodes = nodes || r.Machine != store.Home
 	}
-	snap := &snapshot{rows: rows, rev: rev, gates: gatesLicensed(s.cat(), rows, s.licensed), statuses: st, meta: meta,
-		now: s.now()}
+	snap := &snapshot{rows: rows, rev: rev, statuses: st, meta: meta, now: s.now()}
+	snap.gates = gatesOn(s.cat(), rows, s.licensed, snap.missingOn(store.Home))
 	if nodes {
 		snap.heard = s.heardFrom(ctx)
 	}
 	return snap, nil
+}
+
+// missingOn reports the assets machine is known not to have: the asset's status row
+// from that machine (the packs runner's) says Installed false. An asset with no such row
+// is taken as there (a machine before packs).
+func (snap *snapshot) missingOn(machine string) func(string) bool {
+	return func(id string) bool {
+		seen := false
+		for _, r := range snap.statuses[id] {
+			if r.Machine != machine {
+				continue
+			}
+			for _, c := range r.Conditions {
+				if c.Type != components.CondInstalled {
+					continue
+				}
+				if c.Status == "true" {
+					return false
+				}
+				seen = true
+			}
+		}
+		return seen
+	}
+}
+
+// statusOn is machine's status of c from its rows after the gate g gives it there
+// (settle): the rollup, with g's reason when the rows give none and say what g says, and
+// the settled rows. reported is false when machine has no row of c.
+func statusOn(rows []store.Status, g gate, switchable bool) (roll store.Status, reason string, settled []store.Status, reported bool) {
+	if len(rows) == 0 {
+		return store.Status{Phase: g.phase}, g.reason, nil, false
+	}
+	if switchable {
+		rows = settle(rows, g)
+	}
+	roll = store.Rollup(rows)
+	reason = roll.Reason()
+	if switchable && reason == "" && roll.Phase == g.phase {
+		reason = g.reason
+	}
+	return roll, reason, rows, true
 }
 
 // List is every component, in catalog order.
@@ -412,12 +472,20 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		v.InstallSizeMB = int64(c.Resources.DiskMB)
 	}
 	for _, m := range machines {
-		roll := store.Rollup(byMachine[m])
-		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: roll.Reason(), ReasonParams: reasonParams(roll),
+		rows := byMachine[m]
+		roll, reason := store.Rollup(rows), ""
+		if m == store.Home {
+			// the home's status follows the rule the preview reads (gatesOn): a run part
+			// that reports running while a requirement's files are not here waits
+			roll, reason, rows, _ = statusOn(rows, g, c.Switchable)
+		} else {
+			reason = roll.Reason()
+		}
+		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: reason, ReasonParams: reasonParams(roll),
 			ObservedGeneration: roll.ObservedGeneration,
-			Health:             healthOf(c, byMachine[m], roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
+			Health:             healthOf(c, rows, roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
 		if parts {
-			mv.Parts = byMachine[m]
+			mv.Parts = rows
 		}
 		v.Machines = append(v.Machines, mv)
 		if m == store.Home {

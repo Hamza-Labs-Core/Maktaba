@@ -324,3 +324,97 @@ func TestInstalledAssetMeetsRequirements(t *testing.T) {
 		}
 	}
 }
+
+// transcriptionNoFiles is a home where everything is on and every asset installed (the
+// seed's rows), but runtime.ml and every Whisper model are not on disk.
+func transcriptionNoFiles() (map[string]store.Desired, func(string) bool) {
+	rows := allOn()
+	for _, c := range components.Default().Components() {
+		if c.Switchable && c.Kind == components.KindAsset {
+			rows = with(rows, c.ID, components.WantInstalled)
+		}
+	}
+	gone := map[string]bool{"runtime.ml": true, "model.whisper-turbo": true, "model.whisper-large-v3": true,
+		"model.whisper-medium": true}
+	return rows, func(id string) bool { return gone[id] }
+}
+
+// A component whose required runtime and models are not on the machine waits for them
+// (requirement_missing, naming the first), though its rows say installed; one of an
+// "any:" group there is enough. What it only wants, not there, makes it degraded.
+func TestMissingAssetRequirementWaits(t *testing.T) {
+	cat := components.Default()
+	rows, missing := transcriptionNoFiles()
+	g := gatesOn(cat, rows, nil, missing)
+	if tr := g["transcription"]; tr.phase != components.PhaseWaiting || tr.reason != ReasonRequirementMissing+":runtime.ml" || !tr.on {
+		t.Fatalf("transcription: %+v", tr)
+	}
+	// subtitles needs transcription, which is on (its gate is open): it is not told off
+	if sub := g["subtitles"]; sub.phase != components.PhaseRunning {
+		t.Fatalf("subtitles: %+v", sub)
+	}
+	ml := func(id string) bool { return id == "model.whisper-turbo" || id == "model.whisper-large-v3" }
+	if tr := gatesOn(cat, rows, nil, ml)["transcription"]; tr.phase != components.PhaseRunning {
+		t.Fatalf("medium is there: %+v", tr)
+	}
+	cohere := func(id string) bool { return id == "model.cohere-arabic" }
+	if tr := gatesOn(cat, rows, nil, cohere)["transcription"]; tr.phase != components.PhaseDegraded || tr.reason != "want_missing:model.cohere-arabic" {
+		t.Fatalf("cohere missing: %+v", tr)
+	}
+	if tr := gatesOn(cat, rows, nil, nil)["transcription"]; tr.phase != components.PhaseRunning {
+		t.Fatalf("files unknown: %+v", tr)
+	}
+	// the preview reads the same rule: turning transcription on goes to waiting
+	off := with(rows, "transcription", components.WantInstalled)
+	p, err := makePlanTier(cat, nil, "", time.Unix(1700000000, 0), off, 7,
+		Request{Changes: []Change{want("transcription", components.WantEnabled)}}, who, true, missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := effectOf(p, "transcription"); !ok || e.To != components.PhaseWaiting || e.Reason != ReasonRequirementMissing+":runtime.ml" {
+		t.Fatalf("enable transcription: %+v (listed %v)", e, ok)
+	}
+}
+
+// The pipeline worker runs transcription's stages when it has no stt process (workers
+// = 0) and reports running with RequirementsMet true: its row settles to waiting with
+// RequirementsMet false naming the runtime, Ready false. A part with no RequirementsMet
+// (a config part) is kept; a RequirementsMet that says neither yes nor why is named.
+func TestSettleWaitsForMissingFiles(t *testing.T) {
+	rows, missing := transcriptionNoFiles()
+	g := gatesOn(components.Default(), rows, nil, missing)["transcription"]
+	in := []store.Status{
+		{ID: "transcription", Part: "pipeline", Phase: components.PhaseRunning, Conditions: []store.Condition{
+			{Type: components.CondRequirementsMet, Status: "true"}, {Type: components.CondReady, Status: "true"}}},
+		{ID: "transcription", Part: "config", Phase: components.PhaseRunning},
+	}
+	out := settle(in, g)
+	if in[0].Phase != components.PhaseRunning || in[0].Conditions[0].Status != "true" {
+		t.Fatalf("settle changed its input: %+v", in[0])
+	}
+	if out[0].Phase != components.PhaseWaiting {
+		t.Fatalf("pipeline part: %+v", out[0])
+	}
+	req, ready := out[0].Conditions[0], out[0].Conditions[1]
+	if req.Status != "false" || req.Reason != ReasonRequirementMissing+":runtime.ml" || req.Params["component"] != "runtime.ml" || ready.Status != "false" {
+		t.Fatalf("conditions: %+v", out[0].Conditions)
+	}
+	if out[1].Phase != components.PhaseRunning || len(out[1].Conditions) != 0 {
+		t.Fatalf("config part: %+v", out[1])
+	}
+	roll := store.Rollup(out)
+	if roll.Phase != components.PhaseWaiting || roll.Reason() != ReasonRequirementMissing+":runtime.ml" {
+		t.Fatalf("rollup: %s %q", roll.Phase, roll.Reason())
+	}
+	// the supervisor's llm part waits on a model with no reason: it is named
+	llm := []store.Status{{ID: "llm", Part: "supervisor", Phase: components.PhaseWaiting, Conditions: []store.Condition{
+		{Type: components.CondRequirementsMet, Status: "unknown", Params: map[string]any{"component": "model.llm.qwen2_5-7b"}}}}}
+	lg := gate{on: true, phase: components.PhaseWaiting, reason: ReasonRequirementMissing + ":model.llm.qwen2_5-7b"}
+	if c := settle(llm, lg)[0].Conditions[0]; c.Status != "false" || c.Reason != ReasonRequirementMissing+":model.llm.qwen2_5-7b" {
+		t.Fatalf("llm: %+v", c)
+	}
+	// a running gate leaves the rows as they are
+	if out := settle(in, gate{on: true, phase: components.PhaseRunning}); out[0].Phase != components.PhaseRunning {
+		t.Fatalf("running gate: %+v", out[0])
+	}
+}
