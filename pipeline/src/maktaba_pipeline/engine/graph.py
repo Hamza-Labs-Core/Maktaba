@@ -1036,6 +1036,21 @@ GRAPH: tuple[StageDef, ...] = (
         version=ENRICH_VERSION,
         placement="home",
     ),
+    # Epic 51 (story 51.06): a component enabled again gets the jobs its stages missed
+    # while it was off (the edges logged skipped_component_off); its leader enqueues it with
+    # {"components": [{"component", "off_since"}]}. Core: never switched off itself. Hidden
+    # like the other bookkeeping stages; its job shows its progress
+    StageDef(
+        name="component_catchup",
+        label="Catch up",
+        subject_kinds=("catalog",),
+        pool="cpu",
+        lane="media",
+        lane_order=99,
+        version=1,
+        placement="home",
+        hidden=True,
+    ),
 )
 
 #: Stages on which a request cycle (detect -> fingerprint -> detect ...) is allowed,

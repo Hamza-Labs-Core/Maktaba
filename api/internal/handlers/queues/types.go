@@ -57,6 +57,9 @@ type JobRef struct {
 	Progress     *Progress  `json:"progress"`
 	// ClaimedBy is the worker (workers.id) running the job; null while it waits.
 	ClaimedBy *string `json:"claimed_by"`
+	// Components are the component ids a component_catchup job catches up on (its
+	// payload's components, story 51.06); absent on every other stage.
+	Components []string `json:"components,omitempty"`
 }
 
 // Pool is a worker pool row plus live usage.
@@ -116,8 +119,12 @@ type WaitingReason string
 
 // Waiting reasons, in the precedence order of plan-06-11 §8.3.
 const (
-	WaitDisabled       WaitingReason = "disabled"
-	WaitNotConfigured  WaitingReason = "not_configured"
+	WaitDisabled      WaitingReason = "disabled"
+	WaitNotConfigured WaitingReason = "not_configured"
+	// WaitComponentOff / WaitComponentHeld: the stage's component (Epic 51) is off
+	// (no job is made) or held (jobs queue and wait); QueueSummary.Component names it.
+	WaitComponentOff   WaitingReason = "component_off"
+	WaitComponentHeld  WaitingReason = "component_held"
 	WaitPausedAll      WaitingReason = "paused_all"
 	WaitPaused         WaitingReason = "paused"
 	WaitAwaitingReview WaitingReason = "awaiting_review"
@@ -175,6 +182,9 @@ type QueueSummary struct {
 	// whose failures put this stage's waiting rows into backoff; nil when
 	// none did. Set even while other rows run, so the card can say so.
 	RetryingService *string `json:"retrying_service"`
+	// Component is the catalog component that owns the stage (Epic 51), set while the
+	// stage waits because of it (component_off / component_held); nil otherwise.
+	Component *string `json:"component"`
 	// Health is Epic 40's tile state: failing only for a dominant new
 	// signature, waiting while jobs are parked, the Needs-you count.
 	Health *StageHealth `json:"health"`

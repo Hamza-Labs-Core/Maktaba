@@ -176,6 +176,8 @@ data class QueueSummary(
     /** the outside service ("plex", "dizquetv") whose failures put waiting jobs into backoff */
     @SerialName("retrying_service") val retryingService: String? = null,
     val health: StageHealth? = null,
+    /** Epic 51: the catalog component that owns the stage, while it waits on it (component_off / component_held). */
+    val component: String? = null,
 )
 
 @Serializable

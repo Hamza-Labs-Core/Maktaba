@@ -55,14 +55,43 @@ public struct QueueSummary: Decodable, Hashable, Sendable {
     /// Why nothing runs: "paused", "paused_all", "no_worker", "idle", ...
     public let waitingReason: String?
     public let noWorker: Bool
+    /// Epic 51: the catalog component that owns the stage, while it waits on it
+    /// (`component_off` / `component_held`).
+    public let component: String?
+    /// The stage's health (Epic 40; Epic 51 adds the state "off"). Only what the Remote says.
+    public let health: StageHealth?
 
     enum CodingKeys: String, CodingKey {
-        case stage, counts
+        case stage, counts, component, health
         case ratePerMin = "rate_per_min"
         case etaSec = "eta_sec"
         case waitingReason = "waiting_reason"
         case noWorker = "no_worker"
     }
+}
+
+/// `queues[].health`: ok, waiting, failing, or off while the stage's component holds it back
+/// (story 51.14: turned off, or stopped by an admin).
+public struct StageHealth: Decodable, Hashable, Sendable {
+    public struct Waiting: Decodable, Hashable, Sendable {
+        public let on: String
+        public let count: Int
+        /// the component the jobs wait on ("transcription") and its phase (off, stopped)
+        public let component: String?
+        public let phase: String?
+    }
+
+    public let state: String
+    public let waiting: [Waiting]?
+}
+
+/// A stage its component holds back: which component, off or stopped, and how many jobs
+/// are queued behind it.
+public struct ComponentHold: Hashable, Sendable {
+    public let component: String
+    /// true while an admin holds it stopped (jobs queue); false when it is turned off
+    public let stopped: Bool
+    public let queued: Int
 }
 
 public struct QueueCounts: Decodable, Hashable, Sendable {
@@ -105,10 +134,29 @@ public struct QueueRow: Identifiable, Hashable, Sendable {
 
     /// The stage's state, for its colour.
     public enum Status: Sendable {
-        case off, paused, pausedAll, noWorker, notSetUp, awaitingReview, retrying, running, waiting, idle
+        case componentOff, off, paused, pausedAll, noWorker, notSetUp, awaitingReview, retrying, running, waiting, idle
+    }
+
+    /// Epic 51: the component that holds the stage back, from its health (the web's off tile)
+    /// or its waiting reason; nil while none does. A failing stage is said as failing.
+    public var componentHold: ComponentHold? {
+        guard let s = summary, s.health?.state != "failing" else { return nil }
+        if s.health?.state == "off", let w = s.health?.waiting?.first, let c = w.component, !c.isEmpty {
+            return ComponentHold(component: c, stopped: w.phase == "stopped", queued: w.count)
+        }
+        if let c = s.component, !c.isEmpty, s.waitingReason == "component_off" || s.waitingReason == "component_held" {
+            return ComponentHold(component: c, stopped: s.waitingReason == "component_held", queued: waiting)
+        }
+        return nil
+    }
+
+    /// "Waiting: the Transcription component is off · 1,840 queued" (the web's queue card).
+    public func componentLine(_ locale: Locale = AppLanguage.locale) -> String? {
+        componentHold.map { QueueWords.componentLine($0, locale) }
     }
 
     public var status: Status {
+        if componentHold != nil { return .componentOff }
         if !info.enabled { return .off }
         if info.paused { return .paused }
         switch summary?.waitingReason {
@@ -126,6 +174,7 @@ public struct QueueRow: Identifiable, Hashable, Sendable {
     /// What the row says about the stage, in a few words.
     public var state: String {
         switch status {
+        case .componentOff: kit("Off")
         case .off: kit("Off")
         case .paused: kit("Paused")
         case .pausedAll: kit("Paused (all)")

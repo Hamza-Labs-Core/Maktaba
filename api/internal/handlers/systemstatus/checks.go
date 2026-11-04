@@ -34,6 +34,10 @@ func (h *Handler) checks() []check {
 		cs = append(cs, check{Name: "processes",
 			Fallback: base("processes", GroupServices, KindProcess, "Processes"), Run: checkProcesses})
 	}
+	if h.Components != nil {
+		cs = append(cs, check{Name: "components",
+			Fallback: base("components", GroupServices, KindComponents, "Components"), Run: checkComponents})
+	}
 	cs = append(cs,
 		check{Name: "workers", Fallback: crit(base("workers", GroupWorkers, KindWorkers, "Workers")), Run: checkWorkers},
 		check{Name: "streaming_hosts", Fallback: base("streaming_hosts", GroupWorkers, KindStreamingHost, "Streaming machines"),
@@ -728,7 +732,7 @@ func checkQueues(ctx context.Context, e *env) []Item {
 	p := map[string]any{"stages": r.Stages, "failing": len(r.Failing), "waiting": len(r.Waiting),
 		"needs_you": r.NeedsYou, "failing_stages": strings.Join(r.Failing, ", "),
 		"waiting_stages": strings.Join(r.Waiting, ", ")}
-	it.Details = map[string]any{"failing": r.Failing, "waiting": r.Waiting, "needs_you": r.NeedsYou}
+	it.Details = map[string]any{"failing": r.Failing, "waiting": r.Waiting, "off": r.Off, "needs_you": r.NeedsYou}
 	switch {
 	case len(r.Failing) > 0:
 		it.Link = "/queue/failures"

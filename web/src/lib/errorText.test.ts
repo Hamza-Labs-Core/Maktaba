@@ -1,7 +1,8 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { ApiError } from "./api";
-import { errorText, inputDetail, plainDetail, userErrorKind } from "./errorText";
+import { componentOffText, errorText, inputDetail, plainDetail, userErrorKind } from "./errorText";
 import en from "../i18n/en.json";
+import ar from "../i18n/ar.json";
 
 const t = (k: string) => (en as Record<string, string>)[k] ?? k;
 const problem = (status: number, detail?: string, title = "internal error") =>
@@ -73,6 +74,22 @@ describe("errorText", () => {
 });
 
 describe("every error string is in both languages", () => {
+  it("has each feature's off sentences in en and ar, not copies of the English", async () => {
+    const ar = (await import("../i18n/ar.json")).default as Record<string, string>;
+    const e = en as Record<string, string>;
+    const features = Object.keys(e)
+      .filter((k) => k.startsWith("components.feature."))
+      .map((k) => k.slice("components.feature.".length));
+    expect(features.length).toBeGreaterThan(0);
+    for (const f of features) {
+      for (const k of [`capabilities.off.${f}`, `capabilities.unavailable.${f}`]) {
+        expect(e[k], k).toBeTruthy();
+        expect(ar[k], k).toBeTruthy();
+        expect(ar[k], k).not.toBe(e[k]);
+      }
+    }
+  });
+
   it("has the error.kind keys in en and ar", async () => {
     const ar = (await import("../i18n/ar.json")).default as Record<string, string>;
     for (const k of Object.keys(en).filter(
@@ -81,5 +98,93 @@ describe("every error string is in both languages", () => {
       expect(ar[k], k).toBeTruthy();
       expect(ar[k], k).not.toBe((en as Record<string, string>)[k]);
     }
+  });
+});
+
+describe("component_off (Epic 51)", () => {
+  const words =
+    (dict: Record<string, string>) => (k: string, vars?: Record<string, string | number>) =>
+      (dict[k] ?? k).replace(/\{(\w+)\}/g, (_, n: string) => String(vars?.[n] ?? `{${n}}`));
+  const off = (component?: string) =>
+    new ApiError({
+      type: "about:blank",
+      title: "conflict",
+      status: 409,
+      detail: "livetv is turned off on this home",
+      code: "component_off",
+      ...(component ? { component } : {}),
+    });
+
+  it("says it in Arabic with the Arabic title, never the home's English detail", () => {
+    const t = words(ar as Record<string, string>);
+    const text = errorText(off("livetv"), t);
+    expect(text).toBe(
+      (ar as Record<string, string>)["error.componentOff"].replace(
+        "{component}",
+        (ar as Record<string, string>)["components.livetv.title"]
+      )
+    );
+    expect(text).not.toContain("turned off on this home");
+    expect(inputDetail(off("livetv"))).toBeNull();
+  });
+
+  it("says it in English with the English title", () => {
+    expect(errorText(off("livetv"), words(en as Record<string, string>))).toBe(
+      "The Live TV component is off on this home."
+    );
+  });
+
+  it("names an id it has no title for as it is", () => {
+    expect(componentOffText(off("newer.part"), words(en as Record<string, string>))).toBe(
+      "The newer.part component is off on this home."
+    );
+  });
+
+  // story 51.09: the feature's name comes first; an admin is told where to turn it on
+  const offFeature = (feature: string, component = "livetv") =>
+    new ApiError({
+      type: "https://maktaba.tv/problems/component-off",
+      title: "This feature is off",
+      status: 409,
+      code: "component_off",
+      component,
+      feature,
+    });
+
+  it("names the feature, and tells an admin where to turn it on, in both languages", () => {
+    const enT = words(en as Record<string, string>);
+    const arT = words(ar as Record<string, string>);
+    expect(errorText(offFeature("semantic_search", "search.semantic"), enT)).toBe(
+      "Search by meaning is off on this home."
+    );
+    expect(errorText(offFeature("live_tv"), enT, { admin: true })).toBe(
+      "Live TV is off on this home. Turn it on in Components."
+    );
+    expect(errorText(offFeature("live_tv"), arT, { admin: true })).toBe(
+      "البث المباشر متوقف على الجهاز الرئيسي. شغّل من صفحة المكوّنات."
+    );
+    // a plural name agrees with its verb in both languages
+    expect(errorText(offFeature("transcripts", "transcription"), enT)).toBe(
+      "Transcripts are off on this home."
+    );
+    expect(errorText(offFeature("transcripts", "transcription"), arT)).toBe(
+      "نصوص الفيديو متوقفة على الجهاز الرئيسي."
+    );
+    expect(userErrorKind(offFeature("live_tv"))).toBe("off");
+  });
+
+  it("with no name at all is the kind's sentence", () => {
+    expect(componentOffText(off(), words(en as Record<string, string>))).toBe(
+      "This feature is turned off on this home."
+    );
+    expect(componentOffText(off(), words(ar as Record<string, string>))).toBe(
+      "هذه الميزة متوقفة على الجهاز الرئيسي."
+    );
+  });
+
+  it("is nothing for another 409", () => {
+    expect(
+      componentOffText(problem(409, "a playlist with this name already exists"), t)
+    ).toBeNull();
   });
 });

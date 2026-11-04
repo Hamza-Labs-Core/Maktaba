@@ -185,7 +185,8 @@ async def test_seed_matches_graph(db: Database) -> None:
         " enabled, debounce_sec, debounce_max_sec, max_attempts FROM job_stages"
     )
     seeded = {r["stage"]: r for r in rows}
-    assert set(seeded) == {s.name for s in GRAPH}
+    names = {s.name for s in GRAPH}
+    assert set(seeded) == names
     for s in GRAPH:
         r = seeded[s.name]
         assert (r["pool"], r["lane"], r["lane_order"], r["version"]) == (

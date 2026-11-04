@@ -16,7 +16,10 @@ Semantics, in short:
   a stage gave back for later (``JobDeferred``: ``not_before`` ahead), sets ``force``
   and clears ``not_before``; a row parked on a dependency keeps waiting;
 * any other trigger on a claimed / running / resuming / paused row sets
-  ``rerun_requested``: when that run ends the engine inserts one follow-up.
+  ``rerun_requested``: when that run ends the engine inserts one follow-up;
+* a stage switched off by its component (Epic 51, ``disabled_reason =
+  'component_off'``) answers ``skipped_component_off`` and makes no job; one its
+  component holds (``component_held``) queues as usual, and the job waits.
 """
 
 from __future__ import annotations
@@ -49,6 +52,8 @@ EnqueueOutcome = Literal[
     "coalesced",
     "rerun_requested",
     "disabled",
+    # Epic 51: the stage's component is off; no job is made (the catch-up makes it later)
+    "skipped_component_off",
     "unknown_stage",
     "invalid_subject",
 ]
@@ -70,13 +75,23 @@ def prepend_reason(old: list[Any], entry: dict[str, Any]) -> list[Any]:
 
 
 def merge_payload(old: dict[str, Any] | None, new: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Keep the original payload; the only merged key is ``seasons`` (set union)."""
+    """Keep the original payload; the merged keys are ``seasons`` (set union) and
+    ``components`` (the catch-up's entries, a union too: slot 0180)."""
     if old is None:
         return new
-    if not new or "seasons" not in new or not isinstance(old, dict):
+    if not new or not isinstance(old, dict):
         return old
-    seasons = sorted({*map(str, old.get("seasons", [])), *map(str, new["seasons"])})
-    return {**old, "seasons": seasons}
+    out = old
+    if "seasons" in new:
+        seasons = sorted({*map(str, old.get("seasons", [])), *map(str, new["seasons"])})
+        out = {**out, "seasons": seasons}
+    if isinstance(new.get("components"), list):
+        merged = list(old.get("components") or [])
+        for c in new["components"]:
+            if c not in merged:
+                merged.append(c)
+        out = {**out, "components": merged}
+    return out
 
 
 async def enqueue_job(
@@ -176,13 +191,17 @@ async def _enqueue_sqlite(
 ) -> EnqueueResult:
     async with db.transaction():
         s = await db.fetchrow(
-            "SELECT subject_kinds, enabled, debounce_sec, debounce_max_sec, max_attempts"
-            " FROM job_stages WHERE stage = $1",
+            "SELECT subject_kinds, enabled, disabled_reason, debounce_sec, debounce_max_sec,"
+            " max_attempts FROM job_stages WHERE stage = $1",
             stage,
         )
         if s is None:
             return EnqueueResult(None, "unknown_stage")
-        if not s["enabled"]:
+        # Epic 51 (slot 0180): a stage its component switched off makes no job; one its
+        # component holds (stopped until started) queues as usual, and the job waits
+        if not s["enabled"] and s["disabled_reason"] != "component_held":
+            if s["disabled_reason"] == "component_off":
+                return EnqueueResult(None, "skipped_component_off")
             return EnqueueResult(None, "disabled")
         if subject_kind not in json.loads(s["subject_kinds"]):
             return EnqueueResult(None, "invalid_subject")

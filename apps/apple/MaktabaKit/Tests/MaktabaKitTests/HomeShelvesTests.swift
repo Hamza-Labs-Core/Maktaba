@@ -138,6 +138,27 @@ struct HomeShelvesTests {
         #expect(!shelves.contains { $0.key == HomeShelf.liveNow })
     }
 
+    /// Live TV off on the home (story 51.11): no On now row, and no retry tile for the
+    /// channels' 409 either; the other rows, and their own failures, as always.
+    @Test func liveTVOffShowsNoOnNowRowNorItsFailure() throws {
+        let (home, rails, now) = try Self.answers()
+        let off = APIError.status(409, #"{"code":"component_off","feature":"live_tv"}"#)
+        let failed = HomeShelves.build(home: .success(home), rails: .success(rails), now: .failure(off))
+        #expect(failed.first { $0.key == HomeShelf.liveNow }?.failure != nil, "the 409 alone is a retry tile")
+        let shown = HomeShelves.shown(failed, liveTV: false)
+        #expect(!shown.contains { $0.key == HomeShelf.liveNow })
+        #expect(shown.map(\.key) == failed.map(\.key).filter { $0 != HomeShelf.liveNow })
+
+        let channels = HomeShelves.build(home: .success(home), rails: .success(rails), now: .success(now))
+        #expect(!HomeShelves.shown(channels, liveTV: false).contains { $0.key == HomeShelf.liveNow })
+        #expect(HomeShelves.shown(channels, liveTV: true) == channels, "on: every row")
+        #expect(HomeShelves.shown(failed, liveTV: true) == failed, "on: a failure still offers Retry")
+
+        let down = APIError.transport("The network connection was lost.")
+        let noHome = HomeShelves.build(home: .failure(down), rails: .success(rails), now: .failure(off))
+        #expect(HomeShelves.shown(noHome, liveTV: false).first?.key == HomeShelf.home, "another row's failure stays")
+    }
+
     @Test func emptyRowsAreLeftOut() throws {
         let empty = try JSONDecoder.home.decode(HomeRows.self, from: Data("{}".utf8))
         #expect(HomeShelves.build(home: .success(empty), rails: .success([]), now: .success([])).isEmpty)

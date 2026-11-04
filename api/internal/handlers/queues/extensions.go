@@ -8,14 +8,17 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
+	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // Extensions (Plex, dizqueTV, Cloudflare Stream) are optional add-ons,
@@ -160,6 +163,28 @@ type Extension struct {
 	Settings    map[string]any `json:"settings"`
 	SecretsSet  []string       `json:"secrets_set"`
 	UpdatedAt   *string        `json:"updated_at"`
+	// Component is the catalog component a built-in extension is ("ext.plex", Epic 51
+	// story 51.07); its desired state is the switch, Enabled its mirror. Held: an admin
+	// stopped it for now (still enabled).
+	Component string `json:"component,omitempty"`
+	Held      bool   `json:"held"`
+}
+
+// withComponent fills e's component fields from the component's desired state; with no
+// desired row (a home not seeded yet) the extensions row answers, as before.
+func (h *Handler) withComponent(ctx context.Context, e Extension) Extension {
+	id := components.ExtensionComponent(e.Name)
+	if id == "" {
+		return e
+	}
+	e.Component = id
+	d, err := components.New(h.DB).DesiredOf(ctx, id)
+	if err != nil {
+		return e
+	}
+	e.Enabled = d.Want == comps.WantEnabled
+	e.Held = d.Hold != nil
+	return e
 }
 
 const extensionsSQL = `SELECT name, enabled, settings, updated_at FROM extensions`
@@ -235,12 +260,14 @@ func (h *Handler) SaveExtensionSetting(ctx context.Context, name, key, value str
 		cur.settings[key] = value
 	}
 	blob, _ := json.Marshal(cur.settings)
-	_, err = h.DB.ExecContext(ctx, upsertExtensionSQL, name, cur.enabled, string(blob), h.now())
+	_, err = saveSettings(ctx, h.DB, name, cur.enabled, string(blob), h.now())
 	return err
 }
 
 // ClearExtension removes an extension's settings and secrets and turns it
-// off (removing the Cloudflare integration, story 32.6 AC5).
+// off (removing the Cloudflare integration, story 32.6 AC5). A built-in
+// extension's component is turned off with it, in the same transaction
+// (story 51.07), with the caller's audit row.
 func (h *Handler) ClearExtension(ctx context.Context, name string) error {
 	def, ok := findExtension(name)
 	if !ok {
@@ -257,7 +284,7 @@ func (h *Handler) ClearExtension(ctx context.Context, name string) error {
 			}
 		}
 	}
-	_, err := h.DB.ExecContext(ctx, upsertExtensionSQL, name, false, "{}", h.now())
+	_, err := h.saveExtension(ctx, name, false, true, "{}", h.now())
 	return err
 }
 
@@ -344,7 +371,7 @@ func (h *Handler) Extensions(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]Extension, 0, len(extensionCatalog))
 	for _, d := range extensionCatalog {
-		out = append(out, buildExtension(d, rows[d.Name], h.secretSet(r.Context(), d)))
+		out = append(out, h.withComponent(r.Context(), buildExtension(d, rows[d.Name], h.secretSet(r.Context(), d))))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"extensions": out})
@@ -360,6 +387,40 @@ INSERT INTO extensions (name, enabled, settings, updated_at)
 VALUES ($1, $2, $3::jsonb, $4)
 ON CONFLICT (name) DO UPDATE
    SET enabled = EXCLUDED.enabled, settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at`
+
+// upsertExtensionSettingsSQL is a save without enabled: an existing row keeps its
+// enabled, which the components path may have changed since the page loaded (story
+// 51.07: the component's desired state decides, the row mirrors it). $2 is used only for
+// a row that is not there yet.
+const upsertExtensionSettingsSQL = `
+INSERT INTO extensions (name, enabled, settings, updated_at)
+VALUES ($1, $2, $3::jsonb, $4)
+ON CONFLICT (name) DO UPDATE
+   SET settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at`
+
+// execer is a database or a transaction.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// saveSettings writes an extension's settings without its enabled
+// (upsertExtensionSettingsSQL): a row that is there keeps its enabled, and a new row of a
+// built-in extension starts as its component's desired state says (enabled otherwise).
+// It answers the enabled a new row gets.
+func saveSettings(ctx context.Context, q execer, name string, enabled bool, settings string, now time.Time) (bool, error) {
+	if id := components.ExtensionComponent(name); id != "" {
+		var want string
+		err := q.QueryRowContext(ctx, `SELECT want FROM components WHERE id = $1`, id).Scan(&want)
+		if err == nil {
+			enabled = want == comps.WantEnabled
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return false, err
+		}
+	}
+	_, err := q.ExecContext(ctx, upsertExtensionSettingsSQL, name, enabled, settings, now)
+	return enabled, err
+}
 
 // PutExtension implements PUT /api/extensions/{name}. Settings are
 // merged key by key: omitted keys keep their value; the mask string
@@ -513,13 +574,42 @@ func (h *Handler) PutExtension(w http.ResponseWriter, r *http.Request) {
 	}
 	blob, _ := json.Marshal(cur.settings)
 	now := h.now()
-	if _, err := h.DB.ExecContext(r.Context(), upsertExtensionSQL, name, enabled, string(blob), now); err != nil {
+	enabled, err = h.saveExtension(r.Context(), name, enabled, body.Enabled != nil, string(blob), now)
+	if err != nil {
 		writeErr(w, r, "save extension", err)
 		return
 	}
 	ts := now.Format(tsLayout)
-	common.WriteJSON(w, r, http.StatusOK,
-		buildExtension(def, extRow{enabled: enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def)))
+	common.WriteJSON(w, r, http.StatusOK, h.withComponent(r.Context(),
+		buildExtension(def, extRow{enabled: enabled, settings: cur.settings, updated: &ts}, h.secretSet(r.Context(), def))))
+}
+
+// saveExtension writes the extensions row and, when enabled was sent for a built-in
+// extension, its component's desired state (want enabled / installed, its hold kept) and
+// audit row, in one transaction (story 51.07): the two switches never disagree. A save
+// of settings alone leaves enabled to the components path (saveSettings): it never
+// writes back the enabled it read. It answers enabled as saved.
+func (h *Handler) saveExtension(ctx context.Context, name string, enabled, switched bool, settings string, now time.Time) (bool, error) {
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if !switched {
+		if enabled, err = saveSettings(ctx, tx, name, enabled, settings, now); err != nil {
+			return false, err
+		}
+		return enabled, tx.Commit()
+	}
+	if _, err := tx.ExecContext(ctx, upsertExtensionSQL, name, enabled, settings, now); err != nil {
+		return false, err
+	}
+	if id := components.ExtensionComponent(name); id != "" {
+		if _, err := components.Switch(ctx, components.New(h.DB), tx, id, enabled, components.AdminAudit(ctx, tx)); err != nil {
+			return false, err
+		}
+	}
+	return enabled, tx.Commit()
 }
 
 // TestExtension implements POST /api/extensions/{name}/test. An extension

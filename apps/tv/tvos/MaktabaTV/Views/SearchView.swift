@@ -15,8 +15,20 @@ struct SearchView: View {
 
     private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
 
+    @Environment(\.appSession) private var session
+
     var body: some View {
         ScrollView {
+            // the TV searches titles by their words; while search by meaning is off on the
+            // home an admin reads so under the field (51.11)
+            if session?.capabilities.current.wordsOnlyLine == true {
+                Text(verbatim: FeatureWords.wordsOnly)
+                    .font(Theme.body(26))
+                    .foregroundStyle(Theme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 80)
+                    .accessibilityIdentifier("search.wordsOnly")
+            }
             if let problem {
                 ErrorBanner(failure: problem) { attempt += 1 }.padding(.horizontal, 80)
             } else if !searched.isEmpty && results.isEmpty {

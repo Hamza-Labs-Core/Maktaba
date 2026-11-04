@@ -162,7 +162,15 @@ type Handler struct {
 	// Settings holds the runtime fusion weights (search.fts_weight,
 	// search.semantic_weight; nil or unset: 1 each, plain RRF).
 	Settings *runtimecfg.Reader
+
+	// SemanticOn reports whether the search.semantic component is on (Epic 51 story
+	// 51.09). Off: the semantic leg is not asked at all, the answer is the keyword
+	// results with "semantic": "off". nil: on.
+	SemanticOn func() bool
 }
+
+// semanticOff reports whether the semantic component is switched off.
+func (h *Handler) semanticOff() bool { return h.SemanticOn != nil && !h.SemanticOn() }
 
 // semanticBudget returns the effective per-request semantic deadline.
 func (h *Handler) semanticBudget() time.Duration {

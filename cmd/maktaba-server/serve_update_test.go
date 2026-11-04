@@ -163,3 +163,21 @@ func TestNoAppLinkWhenTheAgentAnswersTheOrders(t *testing.T) {
 		t.Fatal("no agent answers the orders, yet the server would not start the app")
 	}
 }
+
+// Epic 51: a process built dormant whose component is off (the LLM's ollama with the LLM
+// off) is held, not a home that failed its update's watch.
+func TestMachineHealthLeavesAProcessWhoseComponentIsOff(t *testing.T) {
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	procs := []supervisor.ChildStatus{
+		{Role: supervisor.RoleStreaming, State: supervisor.StateRunning},
+		{Role: supervisor.RoleOllama, Wanted: true, Blocked: true, State: supervisor.StateHeld},
+	}
+	h := &machineHealth{snap: func() (supervisor.Snapshot, bool) { return supervisor.Snapshot{Processes: procs}, true }}
+	if v := h.Check(context.Background(), "v1.5.0"); !v.Healthy {
+		t.Fatalf("a held process failed the watch: %+v", v)
+	}
+	procs[1].Blocked = false // the same process wanted and not running: unhealthy
+	if v := h.Check(context.Background(), "v1.5.0"); v.Healthy {
+		t.Fatalf("a stopped process the home wants passed the watch: %+v", v)
+	}
+}

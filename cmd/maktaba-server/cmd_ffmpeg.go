@@ -31,7 +31,7 @@ var ffmpegInCheck = runtime.GOOS == "linux"
 // roleFFmpeg checks the ffmpeg and ffprobe the roles of cfg would run.
 func roleFFmpeg(ctx context.Context, cfg config.Config) ffmpeg.Report {
 	exe, _ := os.Executable()
-	return ffmpegCheck(ctx, ffmpeg.Find(cfg.Media, config.AppPayload(exe)))
+	return ffmpegCheck(ctx, ffmpeg.Find(cfg.Media, config.AppPayload(exe), cfg.StateDir()))
 }
 
 // checkFFmpeg adds setup's ffmpeg findings: its problem and the command that

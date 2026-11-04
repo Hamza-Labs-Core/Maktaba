@@ -67,6 +67,8 @@ type ProcState struct {
 	Wanted    bool   `json:"wanted"`
 	State     string `json:"state"`
 	CrashLoop bool   `json:"crash_loop"`
+	// Blocked: its component is off (Epic 51), so it does not run, wanted or not
+	Blocked bool `json:"blocked"`
 }
 
 // ProcEvent is the part of a supervisor event the health blocker reads.
@@ -78,13 +80,15 @@ type ProcEvent struct {
 }
 
 // HomeBlocked is the health rule on a supervisor snapshot: every role that should run
-// is running (an on-demand process nobody asked for is ignored), none is crash
+// is running (an on-demand process nobody asked for, and one whose component is off, are
+// ignored), none is crash
 // looping, and no crash or hang in the last CrashQuiet. The TV slots are not judged:
 // TV never blocks an update (its own staging holds a TV that fails), and a slot that
 // cannot start is what an update may be the fix for.
 func HomeBlocked(procs []ProcState, events []ProcEvent, now time.Time) string {
 	for _, p := range procs {
-		if p.Role == roleTVSlot || (p.Instance != "" && !p.Wanted && p.State != "running") {
+		if p.Role == roleTVSlot || (p.Instance != "" && !p.Wanted && p.State != "running") ||
+			(p.Blocked && p.State != "running") {
 			continue
 		}
 		if p.CrashLoop || p.State != "running" {

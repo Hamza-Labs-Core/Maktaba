@@ -77,12 +77,14 @@ func newRootCmd() *cobra.Command {
 		newAddUserCmd(),
 		newKeysCmd(),
 		newLicenseCmd(),
+		newComponentsCmd(),
 		newMigrateFromDevCmd(),
 		newAdoptCmd(),
 		newServiceCmd(),
 		newRuntimeCmd(),
 		newFFmpegCmd(),
 		newContainerCmd(),
+		newReleaseOfflineCmd(),
 	)
 	return root
 }
@@ -101,6 +103,7 @@ const rootLong = `maktaba-server runs all of Maktaba from a single binary.
   maktaba-server adduser   Seed the first admin user
   maktaba-server keys      Generate or rotate JWT signing keys
   maktaba-server license   Apply or show the home's license (apply <file>, status)
+  maktaba-server components  List, turn on, off, stop or start the components (list, show, enable, disable, stop, start, bundle)
   maktaba-server migrate-from-dev  Move the developer stack into Maktaba.app
   maktaba-server adopt     The Maktaba this PC runs outside the app (its move, undo)
   maktaba-server service   The systemd user service of the Linux app

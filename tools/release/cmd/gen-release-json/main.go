@@ -2,7 +2,10 @@
 // §3.1) and checks one against the repository (story 35.1 AC2).
 //
 //	gen-release-json --tag v1.5.0 --commit <sha> --dist dist --repo . [--previous prev.json] > dist/release.json
-//	gen-release-json --check dist/release.json --repo . [--previous prev.json]
+//	gen-release-json --check dist/release.json --repo . [--previous prev.json] [--dist dist]
+//
+// With --check and --dist, every pack and part the component index lists must be in dist
+// with its size and digest (story 51.15).
 //
 // It fails when the highest migration slot, SCHEMA_REV and SchemaRev disagree,
 // or (with --check) when release.json's schema_rev, min_node_schema,
@@ -41,6 +44,11 @@ func run() error {
 		check     = flag.String("check", "", "check this release.json against the repository instead of writing one")
 	)
 	flag.Parse()
+	distSet := func() bool {
+		set := false
+		flag.Visit(func(f *flag.Flag) { set = set || f.Name == "dist" })
+		return set
+	}
 
 	var prev *rv.Manifest
 	if *previous != "" {
@@ -68,6 +76,11 @@ func run() error {
 		}
 		if err := genrelease.Check(m, *repo, prevRev); err != nil {
 			return err
+		}
+		if distSet() {
+			if err := genrelease.CheckComponents(m, *dist); err != nil {
+				return err
+			}
 		}
 		fmt.Fprintf(os.Stderr, "release.json %s: schema_rev %d, min_node_schema %d, breaks_previous_home %v: consistent with the repository\n",
 			m.Tag, m.SchemaRev, m.MinNodeSchema, m.BreaksPreviousHome)

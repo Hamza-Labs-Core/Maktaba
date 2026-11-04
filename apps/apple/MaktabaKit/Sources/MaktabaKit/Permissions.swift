@@ -302,15 +302,21 @@ public final class PermissionsModel {
 
     /// The launch arguments' reset, applied once per process at app start (the apps' own
     /// `init`): debug builds take `-maktaba-permissions-reset` (forget the "seen" and "asked"
-    /// flags, a first run for the UI tests). Never from a view: a view's `@State` initializer
-    /// runs again each time its parent's body does, and a reset there forgot a "seen" the
-    /// person had just given, so the next check showed the walkthrough again (or kept it up).
+    /// flags, a first run for the UI tests) and `-maktaba-permissions-seen` (after the reset:
+    /// the walkthrough was closed before, so a test of another screen starts past it with no
+    /// tap; the walkthrough's own tests tap Continue). Never from a view: a view's `@State`
+    /// initializer runs again each time its parent's body does, and a reset there forgot a
+    /// "seen" the person had just given, so the next check showed the walkthrough again (or
+    /// kept it up).
     public static func applyLaunchArguments(_ arguments: [String] = CommandLine.arguments,
                                             defaults: UserDefaults = .standard) {
         #if DEBUG
         if arguments.contains("-maktaba-permissions-reset") {
             defaults.removeObject(forKey: seenKey)
             defaults.removeObject(forKey: askedKey)
+        }
+        if arguments.contains("-maktaba-permissions-seen") {
+            defaults.set(true, forKey: seenKey)
         }
         #endif
     }
@@ -396,6 +402,7 @@ public final class PermissionsModel {
     public func dismiss() {
         defaults.set(true, forKey: Self.seenKey)
         if requiredMissing { dismissedWhileDenied = true }
+        if isPresented { Log.ui.info("permissions: walkthrough closed") }
         isPresented = false
     }
 
@@ -475,6 +482,7 @@ public final class PermissionsModel {
             return
         }
         if !seen || (requiredMissing && !dismissedWhileDenied) {
+            if !isPresented { Log.ui.info("permissions: walkthrough shown") }
             isPresented = true
         }
     }

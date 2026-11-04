@@ -87,6 +87,7 @@ jobs:
       lint_go: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.lint_go == 'true' }}
       lint_pipeline: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.lint_pipeline == 'true' }}
       lint_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.lint_web == 'true' }}
+      catalog: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.catalog == 'true' }}
       unit_go: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_go == 'true' }}
       unit_pipeline: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_pipeline == 'true' }}
       unit_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_web == 'true' }}
@@ -96,11 +97,14 @@ jobs:
       integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
       compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
       replica: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.replica == 'true' }}
+      components: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components == 'true' }}
+      components_chaos: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_chaos == 'true' }}
       e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.e2e == 'true' }}
       media_e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.media_e2e == 'true' }}
       perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
       node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
+      components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
       release_venv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.release_venv == 'true' }}
       launcher: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.launcher == 'true' }}
       mac_app: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mac_app == 'true' }}
@@ -191,6 +195,7 @@ jobs:
       go: ${{ needs.changes.outputs.lint_go == 'true' }}
       pipeline: ${{ needs.changes.outputs.lint_pipeline == 'true' }}
       web: ${{ needs.changes.outputs.lint_web == 'true' }}
+      catalog: ${{ needs.changes.outputs.catalog == 'true' }}
 
   unit:
     needs: [changes]
@@ -224,6 +229,16 @@ jobs:
     needs: [changes]
     if: needs.changes.outputs.replica == 'true'
     uses: ./.github/workflows/_replica.yml
+
+  components:
+    # Epic 51: components-live (N1-N5) and, on runner changes, components-chaos (N6),
+    # real sleepy workers on Postgres (see _components.yml)
+    needs: [changes]
+    if: needs.changes.outputs.components == 'true' || needs.changes.outputs.components_chaos == 'true'
+    uses: ./.github/workflows/_components.yml
+    with:
+      live: ${{ needs.changes.outputs.components == 'true' }}
+      chaos: ${{ needs.changes.outputs.components_chaos == 'true' }}
 
   e2e:
     needs: [changes, integration]
@@ -265,6 +280,14 @@ jobs:
     with:
       packaging: ${{ needs.changes.outputs.node_packaging == 'true' }}
       release_venv: ${{ needs.changes.outputs.release_venv == 'true' }}
+
+  components-packs:
+    # Epic 51 story 51.15: this commit's packs built, signed by a fake Sigstore and
+    # verified with the e2e trust root; bad signature, sha256, path traversal and expiry
+    # refused (see _components-packs.yml)
+    needs: [changes]
+    if: needs.changes.outputs.components_packs == 'true'
+    uses: ./.github/workflows/_components-packs.yml
 
   launcher:
     needs: [changes]
@@ -491,11 +514,13 @@ jobs:
       - unit
       - integration
       - replica
+      - components
       - e2e
       - media-e2e
       - perf-ci
       - build-artifacts
       - node-packaging
+      - components-packs
       - launcher
       - mac-app
       - win-app

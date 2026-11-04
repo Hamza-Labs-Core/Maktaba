@@ -33,6 +33,10 @@ export interface Problem {
   requestId?: string;
   /** a node's machine-readable reason (`paused`, `home_unreachable`, ...) */
   code?: string;
+  /** with code `component_off`: the catalog id of the part that is off (Epic 51) */
+  component?: string;
+  /** with code `component_off`: the feature that part serves (`live_tv`; story 51.09) */
+  feature?: string;
 }
 
 export class ApiError extends Error {
@@ -408,21 +412,24 @@ export const api = {
 };
 
 /**
- * uploadWithProgress POSTs a multipart form and reports the upload's
- * progress (0..1). fetch cannot report upload progress, so this one call
- * uses XMLHttpRequest — with the same cookie, CSRF header and problem+json
- * error decoding as `request`.
+ * uploadWithProgress POSTs a multipart form (or a file as the whole body, sent
+ * as `contentType`) and reports the upload's progress (0..1). fetch cannot
+ * report upload progress, so this one call uses XMLHttpRequest — with the same
+ * cookie, CSRF header and problem+json error decoding as `request`.
  */
 export function uploadWithProgress<T>(
   path: string,
-  form: FormData,
-  onProgress?: (fraction: number) => void
+  form: FormData | Blob,
+  onProgress?: (fraction: number) => void,
+  contentType?: string
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE}${path}`);
     xhr.withCredentials = true;
     xhr.setRequestHeader("Accept", "application/json");
+    if (contentType && !(form instanceof FormData))
+      xhr.setRequestHeader("Content-Type", contentType);
     xhr.setRequestHeader(CLIENT_HEADER, clientHeaderValue());
     const tok = csrfToken();
     if (tok) xhr.setRequestHeader(CSRF_HEADER, tok);

@@ -81,6 +81,7 @@ NOT_IN_CI: dict[str, str] = {
     ".github/workflows/packages.yml": "runs after a release",
     ".github/workflows/relay.yml": "its own workflow (cloud relay)",
     ".github/workflows/trusted-root.yml": "its own scheduled workflow",
+    ".github/workflows/components-nightly.yml": "its own scheduled workflow (components-chaos)",
     ".github/workflows/update-rehearsal.yml": "its own workflow and path filter",
     ".github/workflows/_tag-guard.yml": "the tag workflows' first job",
     ".github/workflows/_pr-body-check.yml": "pr-body-check runs on every pull request",

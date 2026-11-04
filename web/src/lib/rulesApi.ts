@@ -1,6 +1,6 @@
 // Client for the rules API (detection, grouping and channel planning):
 //   GET   /api/rules            → { sections: RuleSection[] }
-//   PATCH /api/rules/{section}  { set: {name: value}, reset: [names] }
+//   PATCH /api/rules/{section}  { set: {name: value}, reset: [names], replace?, version? }
 //         → 200 { section, changed, draft_change? } | 400 { error: "<field>: <message>", field }
 // With TV staging on, a save of "tv" / "tv_output" goes into a TV change draft
 // (draft_change: {id, number}) instead of the air (Epic 33, story 33.12).
@@ -34,6 +34,18 @@ export interface RuleSection {
   what: string;
   unknown?: string[];
   fields: RuleField[];
+  /** the section's schema version [major, minor] (Epic 51, story 51.13) */
+  version?: number[];
+  /** the component that owns the section (null: core, always on) */
+  component?: string | null;
+  /** that component's state: enabled, off, absent or held */
+  component_state?: string;
+  /** the version the stored value was written at */
+  stored_version?: number[];
+  /** the home could not move the stored value to this release's format: save the whole section */
+  failed?: string;
+  /** the stored value waits for the home to move it to this release's format */
+  needs_migration?: boolean;
 }
 
 export interface RulesResponse {
@@ -49,8 +61,20 @@ export interface RulesPatchResult {
 
 export const rulesApi = {
   list: () => api.get<RulesResponse>("/api/rules"),
-  patch: (section: string, set: Record<string, unknown>, reset: string[]) =>
-    api.patch<RulesPatchResult>(`/api/rules/${encodeURIComponent(section)}`, { set, reset }),
+  /** `replace` stores `set` as the whole section; `version` is the form's schema version
+   * (a save from another major's form is refused) */
+  patch: (
+    section: string,
+    set: Record<string, unknown>,
+    reset: string[],
+    opts: { replace?: boolean; version?: number[] } = {}
+  ) =>
+    api.patch<RulesPatchResult>(`/api/rules/${encodeURIComponent(section)}`, {
+      set,
+      reset,
+      ...(opts.replace ? { replace: true } : {}),
+      ...(opts.version ? { version: opts.version } : {}),
+    }),
 };
 
 /** The message and the setting a failed PATCH names (400 {error, field}). */

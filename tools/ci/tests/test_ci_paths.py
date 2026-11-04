@@ -112,7 +112,52 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "server only": (
         ["cmd/maktaba-server/internal/supervisor/supervisor.go"],
         {"unit", "integration", "replica", "launcher", "node-packaging"},
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration"}, "node-packaging": {"release_venv"}},
+        {
+            "lint": {"go", "catalog"},
+            "unit": {"go"},
+            "integration": {"integration"},
+            "node-packaging": {"release_venv"},
+        },
+    ),
+    # Epic 51 (story 51.01): a change to the graph runs the catalog job beside the pipeline's
+    "the stage graph runs the catalog check": (
+        ["pipeline/src/maktaba_pipeline/engine/graph.py"],
+        {"unit", "integration", "e2e", "node-packaging"},
+        {
+            "lint": {"pipeline", "catalog"},
+            "unit": {"pipeline"},
+            "node-packaging": {"packaging", "release_venv"},
+        },
+    ),
+    "the catalog runs its check, the Go and the pipeline parts": (
+        ["shared/components/catalog.toml"],
+        GO_SERVER | {"components-packs", "components"},
+        {
+            "lint": {"go", "pipeline", "catalog"},
+            "unit": {"go", "pipeline"},
+            "components": {"live"},
+        },
+    ),
+    "the component runner runs components-live and components-chaos": (
+        ["pipeline/src/maktaba_pipeline/components/runner.py"],
+        {"unit", "integration", "e2e", "node-packaging", "components"},
+        {
+            "lint": {"pipeline", "catalog"},
+            "unit": {"pipeline"},
+            "integration": {"integration"},
+            "node-packaging": {"packaging", "release_venv"},
+            "components": {"live", "chaos"},
+        },
+    ),
+    "a pack recipe builds and verifies the packs": (
+        ["tools/release/packs/recipes/runtime.ml.sh"],
+        {"unit", "integration", "node-packaging", "components-packs"},
+        {"lint": {"go"}, "unit": {"go"}},
+    ),
+    "the language files run the catalog's words check": (
+        ["web/src/i18n/ar.json"],
+        {"unit", "e2e", "build-artifacts"},
+        {"lint": {"web", "catalog"}, "unit": {"web"}},
     ),
     "web only": (
         ["web/src/pages/Home.tsx"],
@@ -442,6 +487,24 @@ def test_coverage_map_skips_a_cancelled_ci_run_in_a_group_of_its_own() -> None:
         cond = wf["jobs"][job]["if"]
         assert ci_paths.evaluate(cond, ctx("success")) is True, job
         assert ci_paths.evaluate(cond, ctx("cancelled")) is False, job
+
+
+def test_loop_start_files_run_the_catalog_check() -> None:
+    # Epic 51 (story 51.05): where the API and streaming declare their loops, and the
+    # runner itself, run the catalog job's loop check
+    filters = ci_paths.job_filters(ci_paths.load_filters())
+    for f in [
+        "api/main.go",
+        "api/cluster_bootstrap.go",
+        "api/internal/router/p33.go",
+        "api/internal/components/loops.go",
+        "streaming/main.go",
+        "streaming/tvcluster_wire.go",
+        "streaming/sharemap.go",
+        "streaming/components.go",
+        "shared/components/runner/runner.go",
+    ]:
+        assert "catalog" in ci_paths.matched(filters, [f]), f
 
 
 # ---- a branch head: CI on a conflicting pull request's own commits (ci-branch.yml) ------

@@ -61,6 +61,8 @@ class StageContext:
     #: digests of the change sets this run parked for review (``apply_or_review``); the
     #: job's ``output_summary.review_digests``, which an operator's Apply approves
     review_digests: list[str] = field(default_factory=list)
+    #: the worker's whole stage graph (a stage that walks edges: component_catchup)
+    graph: Mapping[str, StageDef] = field(default_factory=dict)
     _last_progress: float = field(default=float("-inf"), repr=False)
     _rules: dict[str, Any] = field(default_factory=dict, repr=False)
 

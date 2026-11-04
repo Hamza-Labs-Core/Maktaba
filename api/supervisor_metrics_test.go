@@ -22,6 +22,9 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 			"maktaba_update_migration_duration_seconds_bucket{le=\"+Inf\"} 1\n"+
 			"maktaba_update_migration_duration_seconds_sum 12\n"+
 			"maktaba_update_migration_duration_seconds_count 1\n"+
+			// story 51.14: the machine's components
+			"# TYPE maktaba_component_up gauge\n"+
+			"maktaba_component_up{id=\"youtube\",machine=\"home\",phase=\"off\"} 0\n"+
 			// a family the API has of its own too (taken, it would repeat the
 			// API's) and one only the supervisor has: neither is taken
 			"# TYPE go_goroutines gauge\ngo_goroutines 7\n"+
@@ -40,6 +43,9 @@ func TestMetricsCarryTheSupervisors(t *testing.T) {
 	body := scrape(sup.URL)
 	if !strings.Contains(body, "maktaba_update_migration_duration_seconds_count 1") {
 		t.Fatalf("the supervisor's migrations are missing:\n%s", body)
+	}
+	if !strings.Contains(body, `maktaba_component_up{id="youtube",machine="home",phase="off"} 0`) {
+		t.Fatalf("the supervisor's components are missing:\n%s", body)
 	}
 	// go_goroutines is the API's own family too (its value may well be 7):
 	// the check is that the family appears once, and the supervisor-only one not at all

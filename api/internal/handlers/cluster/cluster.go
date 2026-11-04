@@ -123,11 +123,36 @@ type Handler struct {
 	JoinTLS func(ctx context.Context, nodeID, csrPEM string) (*cluster.PayloadTLS, error)
 	// Link is the cluster link's state for the Machines page; nil: none.
 	Link func(ctx context.Context) any
+	// Components is the components' side of a machine (Epic 51 story 51.12): the
+	// components chosen as it is approved, and its component switches kept in step with
+	// its stage switches. Nil: none (an approve with components is refused).
+	Components MachineComponents
 
 	// csrs are the pending join requests' CSRs (kept until approved or expired; a home
 	// restarted meanwhile approves without one, and the machine asks on its channel)
 	csrMu sync.Mutex
 	csrs  map[string]pendingCSR
+}
+
+// MachineComponents is what the Machines routes ask of the components (story 51.12). A
+// refusal is an *httperror.Error, written as it is.
+type MachineComponents interface {
+	// Approve makes every component offered to a worker machine and left out of keep off
+	// on nodeID, before it is approved.
+	Approve(r *http.Request, nodeID string, keep []string) error
+	// StagesSwitched follows an admin's stage switches of nodeID: a stage turned back on
+	// whose component the machine's override keeps off makes it follow the home again.
+	StagesSwitched(r *http.Request, nodeID string, stages map[string]*bool) error
+}
+
+// writeHookErr writes what a MachineComponents call answered.
+func writeHookErr(w http.ResponseWriter, r *http.Request, what string, err error) {
+	var he *httperror.Error
+	if errors.As(err, &he) {
+		httperror.Write(w, r, he)
+		return
+	}
+	errInternal(w, r, what, err)
 }
 
 type pendingCSR struct {
@@ -253,7 +278,8 @@ func (h *Handler) Bootstrap(ctx context.Context, name string) (cluster.Identity,
 
 // Run does the housekeeping every interval until ctx ends: the
 // accept-joins switch turns itself off after its hour (and the
-// announcement follows), and sealed credentials are dropped once used.
+// announcement follows), sealed credentials are dropped once used, and a
+// deleted machine's component status rows are pruned.
 func (h *Handler) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -267,6 +293,11 @@ func (h *Handler) Run(ctx context.Context, interval time.Duration) {
 			}
 			if err := h.Store.ClearSealed(ctx, h.now().Add(-SealedTTL)); err != nil {
 				h.log().Warn("cluster: clearing sealed credentials failed", "err", err, "event", "cluster_tick_failed")
+			}
+			if n, err := h.Store.PruneComponentStatus(ctx); err != nil {
+				h.log().Warn("cluster: pruning deleted machines' component status failed", "err", err, "event", "cluster_tick_failed")
+			} else if n > 0 {
+				h.log().Info("cluster: pruned deleted machines' component status", "rows", n, "event", "components_status_pruned")
 			}
 		}
 	}
@@ -740,6 +771,11 @@ type ApproveRequest struct {
 	// Full: the admin allows the machine a copy of this database (a full machine) once it
 	// reports it can be one; off by default. Never the machine's own choice (slot 0151).
 	Full bool `json:"full"`
+	// Components (Epic 51 story 51.12) are the worker machine's components the admin
+	// keeps ticked: every one the approve form offers and this leaves out is off on the
+	// machine (an override, want installed). Absent: the machine follows the home.
+	// The choice is the admin's, never the machine's.
+	Components *[]string `json:"components,omitempty"`
 }
 
 // Approve implements POST /api/cluster/nodes/{id}/approve.
@@ -802,6 +838,19 @@ func (h *Handler) Approve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Components != nil {
+		// the machine's overrides are in place before it can log in, so it never claims
+		// what the admin left out
+		if h.Components == nil {
+			httperror.Write(w, r, problem(http.StatusConflict, "components_unavailable", "components unavailable",
+				"this home cannot choose a machine's components"))
+			return
+		}
+		if err := h.Components.Approve(r, n.ID, *req.Components); err != nil {
+			writeHookErr(w, r, "choose the machine's components", err)
+			return
+		}
+	}
 	sealed, role, err := h.provision(ctx, r, n, shared, nodePub, homePub)
 	if err != nil {
 		errInternal(w, r, "provision machine", err)
@@ -1041,6 +1090,12 @@ func (h *Handler) UpdateNode(w http.ResponseWriter, r *http.Request) {
 			}
 			errInternal(w, r, "switch stages", err)
 			return
+		}
+		if h.Components != nil {
+			if err := h.Components.StagesSwitched(r, n.ID, req.Stages); err != nil {
+				writeHookErr(w, r, "follow the stage switches", err)
+				return
+			}
 		}
 	}
 	if err := h.Store.UpdateNode(ctx, n.ID, patch, h.now()); err != nil {

@@ -56,6 +56,8 @@ type Handler struct {
 	Queues    QueueHealth
 	TVCluster TVCluster
 	TV        TVInfo
+	// Components reads component_status for the Components line (nil: no line).
+	Components ComponentStatuses
 
 	// HTTP probes the streaming service and the supervisor; nil: a default
 	// client (each request carries the check's deadline).

@@ -22,6 +22,17 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(PlayerSection.shown([.libraries], hasChannels: true), [.libraries])
     }
 
+    /// Live TV off on the home (story 51.11): a viewer has no section even with channels; an
+    /// admin keeps it (its screen says it is off), whatever the channels say.
+    func testLiveTVOffHidesItFromAViewerOnly() {
+        let all = PlayerSection.allCases
+        let viewer = PlayerSection.shown(all, hasChannels: true, liveTVOff: true, admin: false)
+        XCTAssertEqual(viewer, [.home, .libraries, .search, .profile])
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: nil, liveTVOff: true, admin: true), all)
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: false, liveTVOff: true, admin: true), all)
+        XCTAssertEqual(PlayerSection.shown(all, hasChannels: true, liveTVOff: false, admin: false), all)
+    }
+
     /// The Dynamic Type sizes a UI test asks the running app for (`setTextSize`, answered by
     /// the app's `TextSizeHook`): each one the hook knows, at the size it names; the default
     /// is the system's own setting (no override).

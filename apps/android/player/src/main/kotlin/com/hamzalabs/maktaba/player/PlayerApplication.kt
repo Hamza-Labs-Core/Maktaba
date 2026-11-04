@@ -2,6 +2,7 @@ package com.hamzalabs.maktaba.player
 
 import android.app.Application
 import com.hamzalabs.maktaba.core.api.ClientHeader
+import com.hamzalabs.maktaba.core.api.capabilitiesGate
 import com.hamzalabs.maktaba.core.api.init
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
 import com.hamzalabs.maktaba.core.diagnostics.CrashLog
@@ -23,7 +24,10 @@ class PlayerApplication : Application() {
     }
 
     val session: AppSession by lazy {
-        AppSession(PreferencesStore(this, "session"), MainScope(), { home -> keystoreTokens(this, packageName, home) })
+        AppSession(
+            PreferencesStore(this, "session"), MainScope(), { home -> keystoreTokens(this, packageName, home) },
+            capabilitiesGate = capabilitiesGate(BuildConfig.CAPABILITIES_GATE), // story 51.11's build switch
+        )
     }
     /** Work that outlives a screen (closing a stream session). */
     val background = CoroutineScope(SupervisorJob() + Dispatchers.Default + AppLog.handler("player background"))

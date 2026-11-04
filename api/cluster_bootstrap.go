@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -24,10 +25,10 @@ import (
 	clusterh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
@@ -46,7 +47,7 @@ const clusterTick = 30 * time.Second
 // It also returns the verifier of the full nodes' signed requests (Epic 35 story 35.9:
 // their delegation keys are issued on the channel and sealed in store).
 func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secrets.Store, hubRef *router.HubRef,
-	updatesRef *router.UpdatesRef, notifier notify.Notifier, homeDir *homeDirectory,
+	updatesRef *router.UpdatesRef, notifier notify.Notifier, homeDir *homeDirectory, loops *runner.Runner,
 	logger *slog.Logger) (func(), *delegation.Verifier, *homeLink) {
 	driver := "postgres"
 	if isSQLiteDSN(dsn) {
@@ -108,7 +109,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		// GET /api/discovery/home says the identity the announcement says (story 42.2)
 		homeDir.setStore(h.Store)
 	}
-	safego.Go(logger, "cluster_housekeeping", func() { h.Run(ctx, clusterTick) })
+	loops.Declare("cluster_housekeeping", runner.Bound(ctx, runner.Func(func(ctx context.Context) { h.Run(ctx, clusterTick) })))
 
 	// Epic 31 phase 2 — the cluster channel: every process's sealed
 	// WebSocket, the browsers' hub, the cluster files, the LLM router.
@@ -130,7 +131,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 			certs = hl
 			h.JoinTLS, h.Link = hl.JoinTLS, hl.info
 			hl.mount(r)
-			safego.Go(logger, "home_link", func() { hl.run(ctx) })
+			loops.Declare("home_link", runner.Bound(ctx, runner.Func(hl.run)))
 		}
 	}
 	hub := mountClusterHub(r, h, db, driver, store, keys, certs, logger)
@@ -161,20 +162,22 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 	// machine channel (and sealed in a join's credentials); another database is said to
 	// have no TLS when it has none
 	if h.PGBundled {
-		safego.Go(logger, "cluster_push_database", func() { hub.PushDatabase(ctx, h.PGCA, 30*time.Second, logger) })
+		loops.Declare("cluster_push_database", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
+			hub.PushDatabase(ctx, h.PGCA, 30*time.Second, logger)
+		})))
 	} else if driver == "postgres" {
-		safego.Go(logger, "cluster_push_database", func() {
+		loops.Declare("cluster_push_database", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
 			if plainDatabase(ctx, db, 30*time.Second) {
 				h.PGPlain.Store(true)
 				hub.PushDatabase(ctx, "", 30*time.Second, logger)
 			}
-		})
+		})))
 	}
 	// the home owns its machines' database access: a machine that cannot log in to it
 	// (its role missing or refused, the database moved to another cluster or port) gets
 	// its access made again and pushed over the machine channel
 	if driver == "postgres" {
-		safego.Go(logger, "cluster_ensure_access", func() {
+		loops.Declare("cluster_ensure_access", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
 			h.MendAtStart(ctx) // a home that may not give roles mends that before any machine asks
 			if os.Getenv("MAKTABA_E2E_NO_ACCESS_PUSH") == "1" {
 				// the end-to-end tests' home that never pushes: its machines ask
@@ -182,7 +185,7 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 				return
 			}
 			hub.EnsureAccess(ctx, h, 10*time.Second, logger)
-		})
+		})))
 	}
 	// every revocation on the home reaches the full nodes within the second (story
 	// 35.9 AC4): the session store reports it, the hub pushes auth.revoked
@@ -193,11 +196,14 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		n, err := h.Store.Node(ctx, nodeID)
 		return err == nil && n.State == cluster.StateApproved
 	}}
-	hubDone := make(chan struct{})
-	safego.Go(logger, "cluster_hub", func() {
-		defer close(hubDone)
+	// the hub may run more than once (its component turned off and on): close waits for
+	// the run in progress
+	var hubRun sync.Mutex
+	loops.Declare("cluster_hub", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
+		hubRun.Lock()
+		defer hubRun.Unlock()
 		hub.Run(ctx)
-	})
+	})))
 	// switching the home to another machine (Epic 37): run here, finished on the new home
 	if driver == "postgres" {
 		sw := &switchover.Orchestrator{DB: db, Hub: hub, Logger: logger, HomeName: cluster.StableHostName(),
@@ -207,16 +213,22 @@ func mountCluster(r chi.Router, db *sql.DB, dsn, publicAddr string, store secret
 		}
 		sw.Mount(r)
 		// a switch this home was running when it stopped, taken up (Epic 37)
-		safego.Go(logger, "switchover_resume", func() { sw.Resume(ctx) })
+		loops.Declare("switchover_resume", runner.Bound(ctx, runner.Func(sw.Resume)))
 		// the standby homes' kits of this home's secrets, kept current (Epic 37)
-		safego.Go(logger, "switchover_keep_standbys", func() { sw.KeepStandbys(ctx) })
+		loops.Declare("switchover_keep_standbys", runner.Bound(ctx, runner.Func(sw.KeepStandbys)))
 		stream := os.Getenv("MAKTABA_PUBLIC_BASE_URL")
 		integrations := switchover.HomeIntegrations(db, store,
 			switchover.HFTokenPath(os.Getenv("MAKTABA_DATA_DIR")), func() string { return stream })
-		safego.Go(logger, "switchover_finish", func() { sw.Finish(ctx, integrations) })
+		loops.Declare("switchover_finish", runner.Bound(ctx, runner.Func(func(ctx context.Context) { sw.Finish(ctx, integrations) })))
 	}
 	return func() {
 		cancel()
+		hubDone := make(chan struct{})
+		go func() {
+			hubRun.Lock() // held while a run is in progress
+			defer hubRun.Unlock()
+			close(hubDone)
+		}()
 		select {
 		case <-hubDone:
 		case <-time.After(5 * time.Second):

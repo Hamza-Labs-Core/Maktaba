@@ -138,6 +138,9 @@ typealias PlayerScreens = @Composable (route: Route, nav: PlayerNavigator) -> Un
  * The navigation hides while a video plays full screen ([immersive]) and when only one section
  * is reachable (a bar of one is no choice).
  *
+ * A section that leaves [sections] while it is shown (a feature turned off on the home, story
+ * 51.11) stays until another one is chosen: an open screen is not torn down.
+ *
  * [link] is a screen a deep link asked for (`maktaba://video/{id}`, FR-9): it is pushed on the
  * shown section's stack, then [onLinkOpened] says it was, so it opens once.
  */
@@ -153,23 +156,28 @@ fun PlayerShell(
 ) {
     require(sections.isNotEmpty()) { "the shell needs a section" }
     var currentName by rememberSaveable { mutableStateOf(sections.first().name) }
-    val current = sections.firstOrNull { it.name == currentName } ?: sections.first()
+    // every section offered here so far: one that goes while shown stays until another is chosen
+    val offeredBefore = remember { mutableSetOf<PlayerSection>() }
+    offeredBefore += sections
+    val staying = PlayerSection.entries.firstOrNull { it.name == currentName }?.takeIf { it !in sections && it in offeredBefore }
+    val shown = if (staying != null) (sections + staying).sortedBy { it.ordinal } else sections
+    val current = shown.firstOrNull { it.name == currentName } ?: shown.first()
     // asks the shown section to return to its root (re-selected); counts, so each tap is one ask
     var toRoot by remember { mutableStateOf(0) }
     val stacks = rememberSaveableStateHolder()
 
-    val navigation = if (immersive || sections.size < 2) ShellNavigation.None else navigationFor(adaptiveInfo)
+    val navigation = if (immersive || shown.size < 2) ShellNavigation.None else navigationFor(adaptiveInfo)
     val choose: (PlayerSection) -> Unit = { section -> if (section == current) toRoot++ else currentName = section.name }
     val body: @Composable () -> Unit = {
         stacks.SaveableStateProvider(current.name) {
             val controller = rememberNavController()
-            val navigator = remember(controller) { PlayerNavigator(controller) { s -> if (s in sections) currentName = s.name } }
+            val navigator = remember(controller) { PlayerNavigator(controller) { s -> if (s in shown) currentName = s.name } }
             // At another section's root, Back returns to the first section (Material's guidance).
             // Registered before the screens (the NavHost below): the handler registered last is
             // asked first, so a screen's own Back (a page it keeps, as Profile's Settings) wins.
             val entry by controller.currentBackStackEntryAsState()
             val atRoot = entry != null && controller.previousBackStackEntry == null
-            BackHandler(enabled = atRoot && current != sections.first()) { currentName = sections.first().name }
+            BackHandler(enabled = atRoot && current != shown.first()) { currentName = shown.first().name }
             NavHost(controller, startDestination = current.root) { playerGraph(screens, navigator) }
 
             // a deep link: its screen on this section's stack, once
@@ -195,7 +203,7 @@ fun PlayerShell(
     // One tree whatever the navigation, so the screens are never composed anew when it changes
     // (a video going full screen hides it): the suite draws the bar and the rail, the frame
     // inside it the collapsible rail.
-    val labels = sections.map { stringResource(it.label) }
+    val labels = shown.map { stringResource(it.label) }
     // a cover screen at a large text size: the selected label only (see navigationLabelsFit)
     val allLabels = navigation != ShellNavigation.Bar || navigationLabelsFit(labels, LocalConfiguration.current.screenWidthDp)
     val labelSizes = rememberNavigationLabelSizes(labels)
@@ -204,7 +212,7 @@ fun PlayerShell(
             modifier = modifier.semantics { shellNavigation = navigation },
             layoutType = navigation.suiteType,
             navigationSuiteItems = {
-                sections.forEachIndexed { i, section ->
+                shown.forEachIndexed { i, section ->
                     val selected = section == current
                     item(
                         selected = selected,
@@ -219,7 +227,7 @@ fun PlayerShell(
         ) {
             CollapsibleRailFrame(
                 show = navigation == ShellNavigation.CollapsibleRail,
-                sections = sections,
+                sections = shown,
                 current = current,
                 onChoose = choose,
                 hinge = bookHinge(adaptiveInfo),

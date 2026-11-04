@@ -2078,6 +2078,7 @@
         "ep-post-sessions",
         "ep-get-sessions-id",
         "ep-delete-sessions-id",
+        "ep-get-capabilities",
         "story-8.8",
         "story-10.8"
       ],
@@ -2089,7 +2090,8 @@
       "api_endpoints": [
         "POST /sessions",
         "GET /sessions/{id}",
-        "DELETE /sessions/{id}"
+        "DELETE /sessions/{id}",
+        "GET /capabilities"
       ],
       "db_tables": [
         "streaming_sessions"
@@ -2812,6 +2814,7 @@
       "related": [
         "epic-08-streaming",
         "plan-08.07-hwaccel-detect",
+        "ep-get-capabilities",
         "story-8.5"
       ],
       "files": {
@@ -2819,7 +2822,9 @@
         "plan": "specs/epics/08-streaming/plan-08-07-hwaccel-detect.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "hwaccel-detect"

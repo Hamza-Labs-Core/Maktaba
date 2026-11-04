@@ -16,6 +16,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -64,6 +65,11 @@ type Supervisor struct {
 	// slots' first start under heldMu; read under mu.
 	held   heldStreaming
 	heldMu sync.Mutex
+	// catalog is the component catalog the processes belong to (WithCatalog; default the
+	// embedded one): their Component and the grace Allow(false) gives them.
+	catalog *components.Catalog
+	// hangGrace is HangGrace as New read it (a probe never reads the var a test changes)
+	hangGrace time.Duration
 }
 
 // child is one supervised role. Everything but proc is guarded by s.mu.
@@ -73,10 +79,13 @@ type child struct {
 	cmd        *exec.Cmd    // the running process, nil between runs
 	tree       *procTree    // its process group / job, nil between runs
 	exits      []time.Time  // exits that led to a restart, for the crash-loop window
+	restartAt  []time.Time  // its restarts of the last 24 h (the health's restarts_24h)
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
 	wanted     bool         // run it (an on-demand process is not until asked for)
+	allowed    bool         // its component's gate is open (Allow, story 51.04); it runs only when allowed and wanted
+	draining   bool         // asked to stop by Allow(false), not exited yet
 	binding    *SlotBinding // tv-slot: the TV release it runs (nil: the current binary)
 	ranWith    *SlotBinding // tv-slot: the binding its running process started with
 	basePath   string       // the binary the process was built with
@@ -118,6 +127,8 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 		log:    os.Stderr,
 		now:    time.Now,
 		fatal:  make(chan error, 1),
+		// HangGrace read once: a probe goroutine of this supervisor never reads the var
+		hangGrace: HangGrace,
 	}
 	s.host, _ = os.Hostname()
 	for _, o := range opts {
@@ -126,23 +137,33 @@ func New(procs []Process, policy Policy, opts ...Option) *Supervisor {
 	// each check bounds itself (checkChild): a child may take longer than the policy's
 	s.client = &http.Client{}
 	s.started = s.now()
+	if s.catalog == nil {
+		s.catalog = components.Default()
+	}
 	for _, p := range procs {
 		st := StateStarting
-		if p.OnDemand {
+		if p.OnDemand || p.Dormant {
 			st = StateStopped
 		}
+		if p.Component == "" {
+			if comp, ok := s.catalog.ByProcess(string(p.Role), p.Instance); ok {
+				p.Component = comp.ID
+			}
+		}
 		s.children = append(s.children, &child{
-			proc:   p,
-			wanted: !p.OnDemand,
+			proc:    p,
+			wanted:  !p.OnDemand,
+			allowed: !p.Dormant,
 			basePath: func() string {
 				if p.Cmd != nil {
 					return p.Cmd.Path
 				}
 				return ""
 			}(),
-			wake:   make(chan struct{}, 1),
-			done:   make(chan struct{}),
-			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand},
+			wake: make(chan struct{}, 1),
+			done: make(chan struct{}),
+			status: ChildStatus{Role: p.Role, Instance: p.Instance, State: st, ProbeURL: p.Probe, Wanted: !p.OnDemand,
+				Component: p.Component, Blocked: p.Dormant},
 		})
 	}
 	if s.sink != nil {
@@ -424,6 +445,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.Args != nil {
 			cmd.Args = append([]string{cmd.Args[0]}, c.proc.Args()...)
 		}
+		base := c.basePath
+		if c.proc.Path != nil {
+			if p := c.proc.Path(); p != "" {
+				cmd.Path, cmd.Args[0], cmd.Err, base = p, p, nil, p
+			}
+		}
 		if c.proc.BeforeStart != nil {
 			c.proc.BeforeStart()
 		}
@@ -448,8 +475,9 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 			s.mu.Unlock()
 			return
 		}
-		if !c.wanted {
-			// an on-demand process (or one stopped on request): wait to be asked
+		if !c.wanted || !c.allowed {
+			// an on-demand process (or one stopped on request, or its component's gate
+			// closed: Allow): wait to be asked
 			c.status.State = StateStopped
 			clearPortTaken(c)
 			s.mu.Unlock()
@@ -467,7 +495,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		ranWith := c.binding
-		startErr := applyBindingKept(cmd, ranWith, c.basePath, s.keptStreaming)
+		startErr := applyBindingKept(cmd, ranWith, base, s.keptStreaming)
 		switch {
 		case startErr != nil || held.path == "":
 		case c.binding == nil || c.binding.ReleaseID == "":
@@ -590,6 +618,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	c.cmd = nil
 	c.tree = nil
 	c.ident = 0
+	c.draining = false
 	s.mu.Unlock()
 	if c.proc.Survives {
 		s.saveRecord(false)
@@ -699,6 +728,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	s.mu.Lock()
 	c.status.Restarts++
 	c.status.LastRestartAt = &at
+	c.restartAt = append(recentRestarts(c.restartAt, at), at)
 	n := c.status.Restarts
 	s.mu.Unlock()
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
@@ -821,7 +851,7 @@ func (s *Supervisor) probe(ctx context.Context, c *child, cmd *exec.Cmd, started
 			// native call holding its GIL) finishes it and exits, where a kill mid-write
 			// can leave its store broken (the Chroma index). Killed after HangGrace.
 			if c.proc.askStop(cmd.Process, tree) == nil {
-				hang := c.proc.graceFor(HangGrace)
+				hang := c.proc.graceFor(s.hangGrace)
 				select {
 				case <-ctx.Done():
 					return // it stopped
@@ -1016,6 +1046,28 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		s.killRun(c, cmd, grace)
 	}()
 	return nil
+}
+
+// RestartComponent restarts every running process of catalog component id (an admin's
+// restart, story 51.08: POST /components/{id}/restart on the loopback admin). It answers
+// how many it restarted: 0 when none of its processes runs now (the reconciler starts
+// what the component's gate allows).
+func (s *Supervisor) RestartComponent(id string) int {
+	s.mu.Lock()
+	var procs []Process
+	for _, ch := range s.children {
+		if ch.proc.Component == id && ch.cmd != nil && ch.cmd.Process != nil {
+			procs = append(procs, ch.proc)
+		}
+	}
+	s.mu.Unlock()
+	n := 0
+	for _, p := range procs {
+		if err := s.Restart(p.Role, p.Instance); err == nil {
+			n++
+		}
+	}
+	return n
 }
 
 // Want starts (on) or stops an instance of a role (Epic 33: the TV front door

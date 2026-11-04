@@ -21,12 +21,13 @@ use tauri::{
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 use tauri_plugin_notification::{Action as NoticeAction, ActionType, NotificationExt};
-use tauri_plugin_updater::{Updater, UpdaterExt};
+use tauri_plugin_updater::{Update, UpdaterBuilder, UpdaterExt};
 
 use crate::agent::{self, Action, BundlePaths, LoginItem};
 use crate::applog::{self, Locked};
 use crate::attempts::{self, Failure};
 use crate::autoinstall;
+use crate::flavour;
 use crate::lang::{self, Lang};
 use crate::mode::{self, AppMode, Target};
 use crate::setup::{self, Progress, StepError};
@@ -83,6 +84,9 @@ pub struct Shell {
     mode: Mutex<Option<AppMode>>,
     /// The bundled maktaba-server, when this build carries the server.
     server_bin: Option<PathBuf>,
+    /// The feed key this app asks for first: darwin-aarch64-core when its payload is the
+    /// core flavour (story 51.17), else None (the updater's own keys, the Full app's).
+    core_feed_key: Option<String>,
     paused: AtomicBool,
     started_at: Mutex<Instant>,
     /// Since when the server has not answered (status::Quiet).
@@ -145,10 +149,23 @@ impl Shell {
                 let paths = BundlePaths::from_exe(&exe)?;
                 paths.payload_present().then(|| paths.server_bin())
             });
+        let core_feed_key = std::env::current_exe()
+            .ok()
+            .and_then(|exe| BundlePaths::from_exe(&exe))
+            .and_then(|p| {
+                let (os, arch) = flavour::here();
+                flavour::core_key(flavour::of_payload(&p.server_dir).as_deref(), os, arch)
+            });
+        if let Some(k) = &core_feed_key {
+            attempts::log(&format!(
+                "a Core app: its updates come from the feed's {k}, else the Full key"
+            ));
+        }
         Self {
             mode: Mutex::new(mode::load(&mode_path)),
             mode_path,
             server_bin,
+            core_feed_key,
             // a pause from before this window started (an update relaunched it)
             paused: AtomicBool::new(agent::paused_flag()),
             started_at: Mutex::new(Instant::now()),
@@ -459,6 +476,20 @@ fn see_logs(app: &AppHandle) -> Result<(), String> {
     navigate_main(app, &url)
 }
 
+/// The local home's Components page (story 51.10): `<web_url>/settings/components`.
+pub fn components_url(web_url: &str) -> String {
+    format!("{}/settings/components", web_url.trim_end_matches('/'))
+}
+
+/// "Open Components": the local home's Components page in the browser, the way the
+/// update log links open the logs page. Only a machine that runs the server offers it.
+fn open_components(app: &AppHandle) -> Result<(), String> {
+    let Some(web_url) = local_web_url(app) else {
+        return Err("this app does not run a server here".into());
+    };
+    agent::open_path(std::ffi::OsStr::new(&components_url(&web_url)))
+}
+
 /// What the local server shows (attempts::wait_for_server): the release its api answers
 /// on, its supervisor answering while its api does not yet (starting), or nothing.
 fn server_seen(web_url: &str, supervisor_url: &str) -> attempts::Seen {
@@ -686,18 +717,69 @@ fn notify_ready(app: &AppHandle, req: &autoinstall::Request) {
 /// An updater that takes exactly `version` from `feed` (the release's own), whatever
 /// this app's own version is: the same one (an app rolled back that holds it already) or
 /// a newer one; any other version the feed offers is no update (autoinstall::exactly).
-fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<Updater, String> {
+fn exact_updater(app: &AppHandle, feed: &str, version: &str) -> Result<UpdaterBuilder, String> {
     let url: tauri::Url = feed.parse().map_err(|e| format!("{e}"))?;
     let wanted = version.to_string();
-    app.updater_builder()
+    Ok(app
+        .updater_builder()
         .endpoints(vec![url])
         .map_err(|e| e.to_string())?
         .timeout(DOWNLOAD_TIMEOUT)
         .version_comparator(move |_, release| {
             autoinstall::exactly(&wanted, &release.version.to_string())
-        })
-        .build()
-        .map_err(|e| e.to_string())
+        }))
+}
+
+/// What a check of a feed failed at: making the updater (a bad feed URL), or the updater.
+enum CheckErr {
+    Text(String),
+    Updater(tauri_plugin_updater::Error),
+}
+
+impl CheckErr {
+    fn failure(self, ctx: &attempts::Ctx) -> Failure {
+        match self {
+            CheckErr::Text(s) => attempts::of_text(attempts::STEP_CHECK, s, ctx),
+            CheckErr::Updater(e) => attempts::of_updater(attempts::STEP_CHECK, &e, ctx),
+        }
+    }
+}
+
+/// The update a feed offers this app: `exact` (feed, version) a release's own feed for
+/// exactly that version, None the app's own endpoints. A Core app asks for its own key
+/// first and takes the Full key when the feed has none of its own (flavour::check).
+async fn check_feed(
+    app: &AppHandle,
+    exact: Option<(&str, &str)>,
+) -> Result<Option<Update>, CheckErr> {
+    let core = shell(app).core_feed_key.clone();
+    flavour::check(
+        core.as_deref(),
+        |target: Option<String>| async move {
+            let b = match exact {
+                Some((feed, version)) => {
+                    exact_updater(app, feed, version).map_err(CheckErr::Text)?
+                }
+                None => app.updater_builder().timeout(DOWNLOAD_TIMEOUT),
+            };
+            let b = match target {
+                Some(t) => b.target(t),
+                None => b,
+            };
+            b.build()
+                .map_err(CheckErr::Updater)?
+                .check()
+                .await
+                .map_err(CheckErr::Updater)
+        },
+        |e: &CheckErr| {
+            matches!(
+                e,
+                CheckErr::Updater(tauri_plugin_updater::Error::TargetNotFound(_))
+            )
+        },
+    )
+    .await
 }
 
 /// stage_order downloads the ordered release's app update from its own feed (checked
@@ -714,11 +796,9 @@ fn stage_order(app: AppHandle, path: PathBuf, req: autoinstall::Request, staged:
             if let Some(f) = swap_blocker() {
                 return Err(f);
             }
-            let update = exact_updater(&app, &req.feed, &req.version)
-                .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx))?
-                .check()
+            let update = check_feed(&app, Some((&req.feed, &req.version)))
                 .await
-                .map_err(|e| attempts::of_updater(attempts::STEP_CHECK, &e, &ctx))?
+                .map_err(|e| e.failure(&ctx))?
                 .ok_or_else(|| {
                     Failure::new(
                         attempts::STEP_CHECK,
@@ -1106,6 +1186,7 @@ fn handle_tray_event(app: &AppHandle, id: &str) {
             }
         }
         "open-logs" | "update-log-folder" => agent::open_logs(),
+        "open-components" => open_components(app),
         "update-logs" => see_logs(app),
         "change-server" => sh.clear_mode().and_then(|()| {
             focus_main(app);
@@ -1212,22 +1293,14 @@ fn install_update_from(app: AppHandle, source: Source) {
                     &own_version(&app),
                 )));
             }
-            let updater = match &source {
-                Source::Own => app
-                    .updater_builder()
-                    .timeout(DOWNLOAD_TIMEOUT)
-                    .build()
-                    .map_err(|e| attempts::of_updater(attempts::STEP_CHECK, &e, &ctx)),
-                Source::Release { version, feed } => exact_updater(&app, feed, version)
-                    .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx)),
-                Source::Ordered(o) => exact_updater(&app, &o.feed, &o.version)
-                    .map_err(|e| attempts::of_text(attempts::STEP_CHECK, e, &ctx)),
-            }
-            .map_err(failed)?;
-            let update = updater
-                .check()
+            let exact = match &source {
+                Source::Own => None,
+                Source::Release { version, feed } => Some((feed.as_str(), version.as_str())),
+                Source::Ordered(o) => Some((o.feed.as_str(), o.version.as_str())),
+            };
+            let update = check_feed(&app, exact)
                 .await
-                .map_err(|e| failed(attempts::of_updater(attempts::STEP_CHECK, &e, &ctx)))?;
+                .map_err(|e| failed(e.failure(&ctx)))?;
             let Some(update) = update else {
                 return match source.version() {
                     Some(v) => Err(failed(Failure::new(
@@ -1965,17 +2038,13 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 /// failed is logged (with the updater's error chain), and the next check is in
 /// UPDATE_CHECK_EVERY.
 fn check_own_feed(app: &AppHandle) {
-    let updater = match app.updater_builder().timeout(DOWNLOAD_TIMEOUT).build() {
-        Ok(u) => u,
-        Err(e) => {
-            applog::warn("the app's update check", attempts::error_chain(&e));
-            return;
-        }
-    };
-    match tauri::async_runtime::block_on(updater.check()) {
+    match tauri::async_runtime::block_on(check_feed(app, None)) {
         Ok(Some(u)) => client_update_found(app, &u.version),
         Ok(None) => {}
-        Err(e) => applog::warn("the app's update check", attempts::error_chain(&e)),
+        Err(CheckErr::Updater(e)) => {
+            applog::warn("the app's update check", attempts::error_chain(&e))
+        }
+        Err(CheckErr::Text(e)) => applog::warn("the app's update check", e),
     }
 }
 
@@ -2204,5 +2273,17 @@ mod tests {
         assert!(!allowed_external("https://plex.tv.evil.com/"));
         assert!(!allowed_external("http://plex.tv/link"));
         assert!(!allowed_external("file:///Applications"));
+    }
+
+    #[test]
+    fn open_components_opens_the_components_settings_page() {
+        assert_eq!(
+            components_url("http://127.0.0.1:8088"),
+            "http://127.0.0.1:8088/settings/components"
+        );
+        assert_eq!(
+            components_url("http://127.0.0.1:8088/"),
+            "http://127.0.0.1:8088/settings/components"
+        );
     }
 }

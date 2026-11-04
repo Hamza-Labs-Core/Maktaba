@@ -21,6 +21,8 @@ pub const STEPS: &[&str] = &[
     "storage",
     "admin",
     "libraries",
+    // "Choose what to run" (Epic 51 story 51.17): Full, Core, Worker machine or Custom
+    "bundle",
     "models",
     "plex",
     "venv",
@@ -448,6 +450,14 @@ exit /b 1"#,
                 .code,
             "no_result"
         );
+    }
+
+    /// T07 (story 51.17): the bundle step comes after the libraries and before the models.
+    #[test]
+    fn bundle_step_after_libraries() {
+        let at = |s: &str| STEPS.iter().position(|x| *x == s).unwrap();
+        assert_eq!(at("bundle"), at("libraries") + 1);
+        assert!(at("bundle") < at("models"));
     }
 
     #[test]

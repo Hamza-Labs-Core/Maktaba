@@ -233,6 +233,14 @@ public enum HomeShelves {
         return out
     }
 
+    /// The shelves a Home shows: with Live TV off on the home (story 51.11) there is no On now
+    /// shelf, its channels or its failure (the channels' call answers 409 `component_off`
+    /// then), as the Player's Home. Read at each draw, so the row goes or comes back with the
+    /// capabilities' answer.
+    public static func shown(_ shelves: [HomeShelf], liveTV: Bool) -> [HomeShelf] {
+        liveTV ? shelves : shelves.filter { $0.key != HomeShelf.liveNow }
+    }
+
     /// Not interested: `videoID` leaves the recommendation shelves at once (a shelf it
     /// empties goes too); the other shelves keep it.
     public static func dropping(_ videoID: String, from shelves: [HomeShelf]) -> [HomeShelf] {

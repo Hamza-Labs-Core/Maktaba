@@ -63,5 +63,21 @@ if [ "$DRY" = 1 ]; then
 fi
 
 cd "$REPO_ROOT/apps/desktop"
-# CI=true: tauri's dmg script skips the Finder window layout (AppleScript), which hangs without a GUI session
-CI="${CI:-true}" pnpm exec tauri build "$@"
+# CI=true: tauri's dmg script skips the Finder window layout (AppleScript), which hangs without a GUI session.
+# `hdiutil create` in tauri's dmg script can fail with "Resource busy" while macOS still holds
+# the files it reads (the scan of a just-built app): a race of the machine, not of the build
+# (the bundle-size job's .dmg, 2026-11-04). Only that failure is built again, after a pause,
+# at most HDIUTIL_TRIES times in all; any other failure fails at once.
+tries="${HDIUTIL_TRIES:-3}"
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
+for ((n = 1; ; n++)); do
+    if CI="${CI:-true}" pnpm exec tauri build "$@" 2>&1 | tee "$log"; then
+        exit 0
+    fi
+    if ! grep -q 'hdiutil: create failed - Resource busy' "$log" || [ "$n" -ge "$tries" ]; then
+        exit 1
+    fi
+    echo "tauri-build: hdiutil was busy making the .dmg (try $n of $tries): building it again"
+    sleep "${HDIUTIL_PAUSE:-10}"
+done
