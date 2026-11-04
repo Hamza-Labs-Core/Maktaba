@@ -1698,8 +1698,8 @@
       "ar": "عرض المكوّنات"
     },
     "/paths/~1components/get/description": {
-      "en": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, and the home's bundle.",
-      "ar": "كل مكوّنات الكتالوج بترتيبها: ما ينبغي أن يعمل (`want` والإيقاف المؤقت)، وما يعمل فعلًا على كل جهاز (`phase` و`reason`)، وما يحتاجه كل مكوّن وما يحتاج إليه، وحزمة الجهاز الرئيسي."
+      "en": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home's bundle.",
+      "ar": "كل مكوّنات الكتالوج بترتيبها: ما ينبغي أن يعمل (`want` والإيقاف المؤقت)، وما يعمل فعلًا على كل جهاز (`phase` و`reason`)، وما يحتاجه كل مكوّن وما يحتاج إليه، والإعدادات التي يملكها (`settings` كما يسردها الكتالوج: `rules.<section>` و`toml:<key>` و`ext:<name>`)، وحزمة الجهاز الرئيسي."
     },
     "/paths/~1components/get/responses/200/description": {
       "en": "The components.",

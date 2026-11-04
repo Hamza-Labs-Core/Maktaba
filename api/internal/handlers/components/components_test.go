@@ -479,6 +479,39 @@ func TestList(t *testing.T) {
 	}
 }
 
+// Each component carries settings: the catalog's list, verbatim (the page's Settings
+// link reads it); a component that owns none answers [], never null.
+func TestListAndShowCarrySettings(t *testing.T) {
+	f := newFixture(t)
+	want := []any{"rules.transcription", "toml:transcription.workers"}
+	var l struct {
+		Components []map[string]any `json:"components"`
+	}
+	decode(t, f.do("GET", "/api/components", "", admin()), 200, &l)
+	seen := 0
+	for _, c := range l.Components {
+		got, ok := c["settings"].([]any)
+		if !ok {
+			t.Fatalf("%v: settings %#v", c["id"], c["settings"])
+		}
+		cat, _ := components.Default().Get(c["id"].(string))
+		if len(got) != len(cat.Settings) {
+			t.Fatalf("%v: settings %v, catalog %v", c["id"], got, cat.Settings)
+		}
+		if c["id"] == "transcription" {
+			seen++
+			if !slices.Equal(got, want) {
+				t.Fatalf("transcription settings %v", got)
+			}
+		}
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	if got, _ := one["settings"].([]any); seen != 1 || !slices.Equal(got, want) {
+		t.Fatalf("show: settings %v (listed %d)", one["settings"], seen)
+	}
+}
+
 func itoa(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)

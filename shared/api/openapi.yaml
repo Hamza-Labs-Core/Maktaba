@@ -3980,7 +3980,7 @@ paths:
       tags:
       - Components
       summary: List the components
-      description: 'Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, and the home''s bundle.'
+      description: 'Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home''s bundle.'
       responses:
         '200':
           description: The components.

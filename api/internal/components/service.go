@@ -217,6 +217,9 @@ type View struct {
 	Dependents []string   `json:"dependents"`
 	Bundles    []string   `json:"bundles"`
 	Features   []string   `json:"features"`
+	// Settings are the settings the component owns, as the catalog lists them
+	// (rules.<section>, toml:<key>, ext:<name>): the page links to where each is set.
+	Settings []string `json:"settings"`
 	// Want, Hold and Generation are the desired row (no row: enabled, generation 0, and
 	// HasRow false: the catalog default).
 	Want       string      `json:"want"`
@@ -359,7 +362,8 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		Licensed: c.Licence == "" || s.licensed(c.Licence),
 		Requires: [][]string{}, Wants: nonNil(c.Wants), Conflicts: conflictsOf(cat, c.ID),
 		Dependents: nonNil(cat.Dependents(c.ID)), Bundles: nonNil(c.Bundles), Features: nonNil(c.Features),
-		Want: components.WantEnabled, Machines: []MachineView{}}
+		Settings: nonNil(c.Settings),
+		Want:     components.WantEnabled, Machines: []MachineView{}}
 	if v.Conflicts == nil {
 		v.Conflicts = []string{}
 	}
