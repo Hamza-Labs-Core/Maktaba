@@ -1040,6 +1040,28 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 	return nil
 }
 
+// RestartComponent restarts every running process of catalog component id (an admin's
+// restart, story 51.08: POST /components/{id}/restart on the loopback admin). It answers
+// how many it restarted: 0 when none of its processes runs now (the reconciler starts
+// what the component's gate allows).
+func (s *Supervisor) RestartComponent(id string) int {
+	s.mu.Lock()
+	var procs []Process
+	for _, ch := range s.children {
+		if ch.proc.Component == id && ch.cmd != nil && ch.cmd.Process != nil {
+			procs = append(procs, ch.proc)
+		}
+	}
+	s.mu.Unlock()
+	n := 0
+	for _, p := range procs {
+		if err := s.Restart(p.Role, p.Instance); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
 // Want starts (on) or stops an instance of a role (Epic 33: the TV front door
 // asks for the hot standby and the staging slot). A stopped process is not
 // restarted until it is wanted again.

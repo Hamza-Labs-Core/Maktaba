@@ -137,6 +137,31 @@ func (p *Packs) Progress(ctx context.Context, id string) (*svc.InstallProgress, 
 	return d.Progress, nil
 }
 
+// Restart asks the supervisor to restart id's running processes and answers how many
+// it restarted (0: none runs now).
+func (p *Packs) Restart(ctx context.Context, id string) (int, error) {
+	resp, err := p.Sup.Do(ctx, http.MethodPost, "/components/"+url.PathEscape(id)+"/restart", nil, "")
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return 0, err
+	}
+	if resp.StatusCode >= 300 {
+		_, err := read(&http.Response{StatusCode: resp.StatusCode, Body: io.NopCloser(bytes.NewReader(raw))})
+		return 0, err
+	}
+	var d struct {
+		Restarted int `json:"restarted"`
+	}
+	if err := json.Unmarshal(raw, &d); err != nil {
+		return 0, fmt.Errorf("the supervisor's answer: %w", err)
+	}
+	return d.Restarted, nil
+}
+
 // ProgressOf is the progress of each of ids (left out: none, or no answer), asked at
 // once, all within 3 s.
 func (p *Packs) ProgressOf(ctx context.Context, ids []string) map[string]*svc.InstallProgress {

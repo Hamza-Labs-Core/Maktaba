@@ -3,7 +3,10 @@ package components
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -14,7 +17,26 @@ const (
 	ActionOfflineMake     = "component.offline_make"
 	ActionOfflineDownload = "component.offline_download"
 	ActionImport          = "component.import"
+	// ActionRestart is an admin's restart (story 51.08 §5): no desired row changes.
+	ActionRestart = "component.restart"
 )
+
+// Restarted records an admin's restart of id: one audit row, component.restart, with
+// 51.08 §5's payload (the desired row as before and after, the same; a batch id).
+func (s *Service) Restarted(ctx context.Context, id string, actor Actor) error {
+	var row any
+	if d, err := s.Store.DesiredOf(ctx, id); err == nil {
+		row = d
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	return s.Record(ctx, actor, ActionRestart, id, map[string]any{"before": row, "after": row, "batch_id": uuid.NewString()})
+}
+
+// Component is the catalog's id (false: the catalog does not have it).
+func (s *Service) Component(id string) (*components.Component, bool) {
+	return s.cat().Get(id)
+}
 
 // Imported records what an offline file brought onto this machine: each id gets an
 // audit row (component.import), and what the home wants absent becomes installed (off,

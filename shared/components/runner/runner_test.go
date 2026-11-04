@@ -188,6 +188,33 @@ func TestStopAndStartAreLogged(t *testing.T) {
 	}
 }
 
+// An admin's restart (story 51.08) cancels the running loop and starts it again once it
+// returns; it does nothing for a component that is off or has no loop here.
+func TestRestart(t *testing.T) {
+	clk := newClock()
+	r := newRunner(t, clk)
+	var p polite
+	r.Declare("tvchange_controller", p.fn)
+	eventually(t, "the loop to start", func() bool { return p.starts.Load() == 1 })
+	if n := r.Restart("livetv"); n != 1 {
+		t.Fatalf("restarted %d loops", n)
+	}
+	eventually(t, "the loop to start again", func() bool { return p.stops.Load() == 1 && p.starts.Load() == 2 })
+	eventually(t, "Running", func() bool { return statusOf(r, "livetv").Phase == components.PhaseRunning })
+	if n := r.Restart("youtube"); n != 0 {
+		t.Fatalf("a component with no loop here: %d", n)
+	}
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv")})
+	eventually(t, "the loop to return", func() bool { return p.stops.Load() == 2 })
+	if n := r.Restart("livetv"); n != 0 || p.starts.Load() != 2 {
+		t.Fatalf("a component that is off restarted %d loops", n)
+	}
+	hd, _ := components.Default().Get("livetv.hdhomerun")
+	if h := Hosts(hd); len(h) != 1 || h[0] != "streaming" || r.Host() != "api" {
+		t.Fatalf("hosts %v, runner %q", h, r.Host())
+	}
+}
+
 // T01: disabling cancels the loop's context; it returns; the component is Off.
 func TestDisableStopsTheLoop(t *testing.T) {
 	clk := newClock()

@@ -97,6 +97,10 @@ const (
 	CodeConflicts     = "component_conflicts"
 	CodeRequiredBy    = "component_required_by"
 	CodeNoUntil       = "hold_has_no_until"
+	// a restart (story 51.08 §2): a kind with nothing to restart (an asset, a stage
+	// group, an extension), or a component that is off, held or waiting
+	CodeNotRestartable = "not_restartable"
+	CodeNotRunning     = "not_running"
 )
 
 // gate is what the desired state alone makes of one component, the way the runners

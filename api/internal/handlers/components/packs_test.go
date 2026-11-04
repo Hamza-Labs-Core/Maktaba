@@ -18,6 +18,7 @@ import (
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/serversettings"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
@@ -56,6 +57,10 @@ func (s *fakeSupervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/components/model.refine/progress":
 		j(200, map[string]any{"id": "model.refine", "installed": false, "progress": map[string]any{
 			"phase": "installing", "percent": 10, "reason": "disk_space", "params": map[string]any{"need": "4 GB"}, "busy": false}})
+	case p == "/components/transcription/restart" && r.Method == http.MethodPost:
+		j(200, map[string]any{"id": "transcription", "restarted": 2})
+	case strings.HasSuffix(p, "/restart") && r.Method == http.MethodPost:
+		j(200, map[string]any{"restarted": 0}) // none of its processes runs now
 	case strings.HasSuffix(p, "/progress"):
 		j(200, map[string]any{"installed": true, "progress": nil})
 	case p == "/components/offline" && r.Method == http.MethodPost:
@@ -113,6 +118,12 @@ func packsFixture(t *testing.T) (*fixture, *fakeSupervisor) {
 // withSupervisor routes f through a Handler whose Packs is a fake supervisor.
 func withSupervisor(t *testing.T, f *fixture) *fakeSupervisor {
 	t.Helper()
+	return withSupervisorAndLoops(t, f, nil)
+}
+
+// withSupervisorAndLoops is withSupervisor with loops as the API's Go-loop runner.
+func withSupervisorAndLoops(t *testing.T, f *fixture, loops *runner.Runner) *fakeSupervisor {
+	t.Helper()
 	sup := &fakeSupervisor{}
 	srv := httptest.NewServer(sup)
 	t.Cleanup(srv.Close)
@@ -122,7 +133,7 @@ func withSupervisor(t *testing.T, f *fixture) *fakeSupervisor {
 	}
 	s := &svc.Service{Store: f.st, Catalog: components.Default(), Licensed: func(string) bool { return true }}
 	r := chi.NewRouter()
-	(&Handler{Service: s, DB: f.db, Packs: &Packs{Sup: &serversettings.Supervisor{URL: srv.URL, TokenFile: tf}}}).Mount(r)
+	(&Handler{Service: s, DB: f.db, Packs: &Packs{Sup: &serversettings.Supervisor{URL: srv.URL, TokenFile: tf}}, Loops: loops}).Mount(r)
 	f.r = r
 	return sup
 }

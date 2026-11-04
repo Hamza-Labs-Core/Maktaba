@@ -157,11 +157,13 @@ type loop struct {
 	stuck    bool // still running past its grace
 	waiting  bool // a restart is scheduled
 	exited   bool // returned nil while wanted
-	state    string
-	reason   string
-	restarts int
-	crashes  []time.Time
-	epoch    int // moves on every start and every reset: an older timer does nothing
+	// restarting: an admin's restart stopped it, so it starts again once it returns
+	restarting bool
+	state      string
+	reason     string
+	restarts   int
+	crashes    []time.Time
+	epoch      int // moves on every start and every reset: an older timer does nothing
 }
 
 // Runner runs one process's declared loops.
@@ -268,6 +270,66 @@ func (r *Runner) On(id string) bool {
 	}
 	g, ok := (*r.gates.Load())[id]
 	return ok && g.on
+}
+
+// Restart cancels each running loop of component id and starts it again once it
+// returns (an admin's restart, story 51.08); a loop of id that does not run while its
+// gate is open (a crash's backoff, a one-shot that ended) starts at once. It answers how
+// many loops it restarted or started: 0 when id has no loop here, or it is off (not
+// wanted, held, a requirement off).
+func (r *Runner) Restart(id string) int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed || !(*r.gates.Load())[id].on {
+		return 0
+	}
+	n := 0
+	for _, l := range r.loops {
+		if l.comp != id {
+			continue
+		}
+		switch {
+		case l.alive && !l.stopping:
+			l.restarting = true
+			r.log.Info("components: a loop stops", "host", r.host, "loop", l.name, "component", l.comp,
+				"reason", "restart", "event", "components_loop_stopped")
+			r.stop(l)
+			n++
+		case !l.alive:
+			l.epoch++ // a pending backoff timer does nothing now
+			l.waiting, l.exited, l.crashes = false, false, nil
+			r.log.Info("components: a loop starts", "host", r.host, "loop", l.name, "component", l.comp,
+				"reason", "restart", "event", "components_loop_started")
+			r.start(l)
+			n++
+		}
+	}
+	r.notify()
+	return n
+}
+
+// Hosts are the hosts that run c's loops, as the catalog names them (api, streaming,
+// pipeline, supervisor), in its order.
+func Hosts(c *components.Component) []string {
+	var out []string
+	for _, l := range c.Loops {
+		host, _, _ := strings.Cut(l, ":")
+		if !slices.Contains(out, host) {
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+// Host is the host this runner runs loops for (api, streaming, ...).
+func (r *Runner) Host() string {
+	if r == nil {
+		return ""
+	}
+	return r.host
 }
 
 // Declared are the loop names declared so far, sorted.
@@ -510,9 +572,14 @@ func (r *Runner) apply() {
 		case want && !l.alive && !l.waiting && !l.exited:
 			// a start from off is logged once; a restart after a crash is logged by ended
 			if l.state == stateOff {
+				reason := "enabled"
+				if l.restarting {
+					reason = "restart"
+				}
 				r.log.Info("components: a loop starts", "host", r.host, "loop", l.name, "component", l.comp,
-					"reason", "enabled", "event", "components_loop_started")
+					"reason", reason, "event", "components_loop_started")
 			}
+			l.restarting = false
 			r.start(l)
 		case !want && l.alive && !l.stopping:
 			reason := stopReason(g)

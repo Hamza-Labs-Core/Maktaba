@@ -75,7 +75,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 				go l.Run(ctx)
 			}
 		}
-		return &packsAdmin{ctx: ctx}
+		return &packsAdmin{ctx: ctx, sup: sup}
 	}
 	rec := supervisor.NewReconciler(sup)
 	rec.Machine = machine
@@ -111,7 +111,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	go rec.Run(ctx)
 	// story 51.17: the Linux maktaba-full package's packs, at the first start of its version
 	go importSystemPacks(ctx, m, cfg.StateDir(), rec.Off, log)
-	pa := &packsAdmin{ctx: ctx, m: m, r: run}
+	pa := &packsAdmin{ctx: ctx, m: m, r: run, sup: sup}
 	if st, ok := rec.Source.(*store.Store); ok {
 		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}
 	}

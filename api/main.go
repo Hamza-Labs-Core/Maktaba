@@ -710,7 +710,7 @@ func runServe() error {
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
 			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
-				Bus: eventBus, Hub: eventHub, RunCapabilities: true})
+				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),
