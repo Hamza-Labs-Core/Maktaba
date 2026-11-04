@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -66,6 +67,9 @@ __all__ = [
 ]
 
 _log = get_logger()
+
+#: phases a change passes through, not one it ends in (no transition is timed to them)
+_PASSING = frozenset({"starting", "draining", "installing", "removing", ""})
 
 #: every loop the pipeline runs, by its catalog name (``pipeline:<name>``), and the
 #: component it belongs to. ``core.pipeline``'s are declared and never stopped; the others
@@ -194,6 +198,10 @@ class ComponentRunner:
         #: acts (story 51.07: an enabled extension without its settings is Waiting)
         self.ext_states: Mapping[str, Any] = {}
         self._reported: list[Status] | None = None
+        #: component -> [generation acted on, when (monotonic), pending, last_transition]:
+        #: the time from a generation to the phase it reached (story 51.14), as the
+        #: supervisor reports it
+        self._transitions: dict[str, list[Any]] = {}
         self._wake = asyncio.Event()
         self._listener: Any = None
         self._graph_names = {s.name for s in self.graph}
@@ -641,6 +649,8 @@ class ComponentRunner:
             else:
                 phase = "off"
                 conds.append(Condition("Ready", "false"))
+            if (lt := self._transition(cid, g.generation, phase)) is not None:
+                detail["last_transition"] = lt
             out.append(
                 Status(
                     id=cid,
@@ -651,6 +661,19 @@ class ComponentRunner:
                 )
             )
         return out
+
+    def _transition(self, cid: str, generation: int, phase: str) -> dict[str, Any] | None:
+        """{to, seconds}: from the generation of cid this runner acted on to the settled
+        phase it reached (the supervisor's maktaba_component_transition_seconds reads it);
+        None before the first one settled."""
+        t = self._transitions.get(cid)
+        if t is None or t[0] != generation:
+            t = [generation, time.monotonic(), True, t[3] if t else None]
+            self._transitions[cid] = t
+        if t[2] and phase not in _PASSING:
+            t[2] = False
+            t[3] = {"to": phase, "seconds": round(time.monotonic() - t[1], 3)}
+        return t[3]  # type: ignore[no-any-return]
 
     def _unavailable_model(self, cid: str) -> str | None:
         """The model component cid needs when every one of its stages this worker serves

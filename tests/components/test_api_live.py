@@ -239,11 +239,6 @@ async def _zero(coro: Any) -> bool:
 # -- the transition's histogram (51.14 T13) ---------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the pipeline's components runner writes no detail.last_transition, the number "
-    "the supervisor's maktaba_component_transition_seconds reads (51.14)",
-)
 def test_t13_the_runner_reports_its_transition() -> None:
     asyncio.run(_transition())
 

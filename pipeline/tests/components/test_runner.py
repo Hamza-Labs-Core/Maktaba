@@ -314,6 +314,26 @@ async def test_a_component_whose_stages_lack_their_model_here_waits_on_it(
 
 
 @pytest.mark.asyncio
+async def test_the_rows_carry_the_last_transition(db: Database) -> None:
+    """Story 51.14: each row's detail.last_transition is the time from the generation the
+    runner acted on to the settled phase it reached (the supervisor's histogram reads it)."""
+    await sync_graph(db, GRAPH, gates={})
+    r, _ = _runner(db)
+    await r.prime()
+    await _pass(r)
+    await set_want(db, "transcription", "installed")
+    await _pass(r)
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    lt = rows["transcription"].detail["last_transition"]
+    assert lt["to"] == "off" and isinstance(lt["seconds"], float) and lt["seconds"] >= 0
+    await set_want(db, "transcription", "enabled")
+    await _pass(r)
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    assert rows["transcription"].detail["last_transition"]["to"] == "running"
+    await r.close()
+
+
+@pytest.mark.asyncio
 async def test_once_nothing_failed_an_idle_poll_is_one_query_again(db: Database) -> None:
     await sync_graph(db, GRAPH, gates={})
     await _mark_failed(db, "transcription", "bad")
