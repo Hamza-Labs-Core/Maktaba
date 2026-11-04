@@ -36,6 +36,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from ..cluster.stages import REASON_UNAVAILABLE
 from ..engine.graph import CATALOG_ID, StageDef
 from ..engine.sql import is_pg, now, parse_ts
 from ..engine.sync import COMPONENT_OFF, apply_gates
@@ -611,6 +612,12 @@ class ComponentRunner:
             elif g.open and ext is not None and not ext.configured:
                 phase = "waiting"
                 conds.append(Condition("Ready", "false", "not_configured"))
+            elif g.open and (model := self._unavailable_model(cid)) is not None:
+                # on, but none of its stages can run here for want of a model this machine
+                # does not have (stage_unavailable_here): it waits on that model
+                phase = "waiting"
+                conds.append(Condition("RequirementsMet", "unknown", "", {"component": model}))
+                conds.append(Condition("Ready", "false"))
             elif g.open:
                 phase = "running"
                 conds.append(Condition("RequirementsMet", "true"))
@@ -644,6 +651,28 @@ class ComponentRunner:
                 )
             )
         return out
+
+    def _unavailable_model(self, cid: str) -> str | None:
+        """The model component cid needs when every one of its stages this worker serves
+        is unavailable here (the selector's ``unavailable`` reasons: a model the engine
+        cannot load); None when one can run, none is served here, or it needs no model."""
+        sel = self.selector
+        c = self.catalog.get(cid)
+        if sel is None or c is None or not c.stages:
+            return None
+        requested = getattr(sel, "requested", None)
+        mine = [
+            s for s in c.stages if s in self._graph_names and (requested is None or s in requested)
+        ]
+        off = getattr(sel, "stages_off", {}) or {}
+        if not mine or not all(str(off.get(s, "")).startswith(REASON_UNAVAILABLE) for s in mine):
+            return None
+        for group in self.catalog.requires(cid):
+            for alt in group:
+                a = self.catalog.get(alt)
+                if a is not None and a.kind == "asset" and alt.startswith("model."):
+                    return alt
+        return None
 
     def _extension_of(self, cid: str) -> Any:
         """The ExtensionState of a built-in extension component (None: not one, or no

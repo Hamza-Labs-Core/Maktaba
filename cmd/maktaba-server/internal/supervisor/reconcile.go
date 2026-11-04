@@ -88,6 +88,12 @@ type AssetState interface {
 	Installed(id string) bool
 }
 
+// AssetFailures is an AssetState that also says why an asset's last install failed (ok
+// false: it did not, or none ran this boot).
+type AssetFailures interface {
+	Failed(id string) (reason string, params map[string]any, ok bool)
+}
+
 // gateTable is what the reconciler reads and drives: *Supervisor (tests give a fake).
 type gateTable interface {
 	procViews() []procView
@@ -625,6 +631,59 @@ func (r *Reconciler) requirements(id string, procs map[string][]procView, desire
 	return met, unknown, off
 }
 
+// modelWait is the condition of a component that needs a model this machine does not
+// have (Assets): RequirementsMet unknown naming the model while it is not there, false
+// with the install's reason when that failed. ok is false when every model group it
+// requires has one installed (or Assets is nil). A model does not close the gate (the
+// pipeline may fetch one itself): only the status says what it waits on.
+func (r *Reconciler) modelWait(id string) (store.Condition, bool) {
+	if r.Assets == nil {
+		return store.Condition{}, false
+	}
+	for _, req := range r.Catalog.Requires(id) {
+		var models []string
+		have := false
+		for _, alt := range req.AnyOf {
+			comp, ok := r.Catalog.Get(alt)
+			if !ok || comp.Kind != components.KindAsset || !components.IsModelSource(comp.SourceFor(r.Platform)) {
+				continue
+			}
+			models = append(models, alt)
+			if r.Assets.Installed(alt) {
+				have = true
+				break
+			}
+		}
+		if have || len(models) == 0 {
+			continue
+		}
+		if f, ok := r.Assets.(AssetFailures); ok {
+			for _, m := range models {
+				if why, params, failed := f.Failed(m); failed {
+					p := map[string]any{"component": m}
+					for k, v := range params {
+						p[k] = v
+					}
+					return cond(components.CondRequirementsMet, condFalse, why, p), true
+				}
+			}
+		}
+		return cond(components.CondRequirementsMet, condUnknown, "", map[string]any{"component": models[0]}), true
+	}
+	return store.Condition{}, false
+}
+
+// replaceCond is cs with c in place of the condition of its type (appended when none).
+func replaceCond(cs []store.Condition, c store.Condition) []store.Condition {
+	out := make([]store.Condition, 0, len(cs)+1)
+	for _, x := range cs {
+		if x.Type != c.Type {
+			out = append(out, x)
+		}
+	}
+	return append(out, c)
+}
+
 func gateOpen(ps []procView) bool {
 	for _, p := range ps {
 		if p.Allowed {
@@ -848,6 +907,15 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		}
 		if !dec.open && phase != components.PhaseDraining && comp.Switchable && !r.Off {
 			phase = dec.phase
+		}
+		// open and running, but a model it needs is not on this machine (or its install
+		// failed): it can do nothing yet, and says what it waits on
+		if dec.open && (phase == components.PhaseRunning || phase == components.PhaseDegraded ||
+			phase == components.PhaseStarting) && comp.Switchable && !r.Off {
+			if c, ok := r.modelWait(comp.ID); ok {
+				phase, reason = components.PhaseWaiting, c.Reason
+				dec.conds = replaceCond(dec.conds, c)
+			}
 		}
 		row.Phase = phase
 		row.Conditions = append(row.Conditions, dec.conds...)

@@ -279,6 +279,41 @@ async def test_a_failed_settings_section_keeps_its_component_off_until_saved(
 
 
 @pytest.mark.asyncio
+async def test_a_component_whose_stages_lack_their_model_here_waits_on_it(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Enabled, but none of its stages can run here (the engine cannot load the model:
+    stage_unavailable_here): the row says it waits on the model, never running."""
+    await sync_graph(db, GRAPH, gates={})
+    comp = runner_mod.default().get("transcription")
+    assert comp is not None
+    mine = set(comp.stages)
+    monkeypatch.setattr(
+        cluster_stages,
+        "_cannot_run",
+        lambda st, _h: "no Whisper model on this machine" if st.name in mine else None,
+    )
+    r, sel = _runner(db)
+    await r.prime()
+    sel.compute()
+    await _pass(r)
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    tr = rows["transcription"]
+    req = next(c for c in tr.conditions if c.type == "RequirementsMet")
+    assert tr.phase == "waiting"
+    assert (req.status, req.params["component"]) == ("unknown", "model.whisper-turbo")
+    assert rows["livetv"].phase == "running"
+
+    # the model in: its stages run, and so does it
+    monkeypatch.setattr(cluster_stages, "_cannot_run", lambda _st, _h: None)
+    sel.compute()
+    await r._report()
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    assert rows["transcription"].phase == "running"
+    await r.close()
+
+
+@pytest.mark.asyncio
 async def test_once_nothing_failed_an_idle_poll_is_one_query_again(db: Database) -> None:
     await sync_graph(db, GRAPH, gates={})
     await _mark_failed(db, "transcription", "bad")

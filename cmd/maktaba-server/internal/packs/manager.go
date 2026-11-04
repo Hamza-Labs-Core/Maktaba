@@ -111,6 +111,16 @@ func (m *Manager) Progress(id string) (Progress, bool) {
 	return out, true
 }
 
+// Failed is why id's last install or removal this boot failed (ok false: it did not, or
+// none ran, or id is installed now).
+func (m *Manager) Failed(id string) (reason string, params map[string]any, ok bool) {
+	p, ran := m.Progress(id)
+	if !ran || p.Busy || p.Phase != components.PhaseFailed || m.Installed(id) {
+		return "", nil, false
+	}
+	return p.Reason, p.Params, true
+}
+
 // Busy reports an install or a removal of id running in this process.
 func (m *Manager) Busy(id string) bool {
 	p, ok := m.Progress(id)

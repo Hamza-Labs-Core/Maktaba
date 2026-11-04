@@ -294,6 +294,17 @@ type fakeAssets map[string]bool
 
 func (f fakeAssets) Installed(id string) bool { return f[id] }
 
+// failingAssets are assets whose install failed (AssetFailures).
+type failingAssets struct {
+	fakeAssets
+	failed map[string]string
+}
+
+func (f failingAssets) Failed(id string) (string, map[string]any, bool) {
+	why, ok := f.failed[id]
+	return why, map[string]any{"name": "m.bin"}, ok && !f.fakeAssets[id]
+}
+
 // Story 51.16: a pack asset a component requires keeps it waiting until it is installed;
 // a model never does; with no desired row for the asset (before the seed) nothing waits.
 func TestReconcileWaitsForAPackAsset(t *testing.T) {
@@ -344,6 +355,33 @@ since = "0.4.0"
 	passWith(r, d)
 	if got := tab.takeCalls(); !slices.Equal(got, []string{"stt=true"}) {
 		t.Fatalf("calls %v: stt opens once the pack is in (the model never blocks)", got)
+	}
+	// open, but its model is not here: it says it waits on it, never running
+	reqOf := func() (string, store.Condition) {
+		row, _ := st.row("stt")
+		for _, c := range row.Conditions {
+			if c.Type == components.CondRequirementsMet {
+				return row.Phase, c
+			}
+		}
+		return row.Phase, store.Condition{}
+	}
+	if ph, c := reqOf(); ph != components.PhaseWaiting || c.Status != "unknown" || c.Params["component"] != "model.x" {
+		t.Fatalf("stt %s %+v, want waiting on model.x", ph, c)
+	}
+	// its install failed: that reason, naming the model
+	failing := failingAssets{fakeAssets: assets, failed: map[string]string{"model.x": "download_failed"}}
+	r.Assets = failing
+	passWith(r, d)
+	if ph, c := reqOf(); ph != components.PhaseWaiting || c.Status != "false" || c.Reason != "download_failed" ||
+		c.Params["component"] != "model.x" {
+		t.Fatalf("stt %s %+v, want waiting on model.x's failed install", ph, c)
+	}
+	// the model in: running
+	assets["model.x"] = true
+	passWith(r, d)
+	if ph, c := reqOf(); ph != components.PhaseRunning || c.Status != "true" {
+		t.Fatalf("stt %s %+v, want running", ph, c)
 	}
 	// no desired row for the pack: today's behaviour
 	tab2 := &fakeTable{}
