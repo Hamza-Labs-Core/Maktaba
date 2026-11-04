@@ -475,9 +475,8 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	}
 	// its own last lines too: a server that exits while starting says why (a port in
 	// use, too little shared memory) in the error, whatever log is (a test's io.Discard)
-	tail := &tailWriter{max: startTailBytes}
-	out := io.MultiWriter(childLog(log), tail)
-	srv.Stdout, srv.Stderr = out, out
+	tail := &tailWriter{max: startTailBytes, next: childLog(log)}
+	srv.Stdout, srv.Stderr = tail, tail
 	srv.WaitDelay = 5 * time.Second // its output pipe, should a child outlive it
 	if err := srv.Start(); err != nil {
 		return err
