@@ -10,6 +10,7 @@ package main
 //	POST /components/{id}/install    202 {"id","progress"}: starts it now (200 when installed)
 //	POST /components/{id}/remove     202; 409 component_required_by {"components":[...]}
 //	GET  /components/{id}/progress   {"id","installed","progress":{...}|null}
+//	GET  /components/packs           {"packs":"on"|"off"}: [components] packs (off: offline mode)
 //	POST /components/offline         202 {"name"}: builds maktaba-offline-<v>-<platform>-<bundle>.tar
 //	GET  /components/offline/{name}  the file once built (202 while it is, 404 after 24 h)
 //	POST /components/import          a tar body (streamed) or {"path": "..."}: 200 {"installed":[...]}
@@ -339,6 +340,14 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 			return
 		}
 		switch {
+		case rest == "packs" && r.Method == http.MethodGet:
+			// whether this machine installs packs ([components] packs): the API's install
+			// route refuses an asset not on disk when they are off (offline mode)
+			on := "on"
+			if a.m.Disabled {
+				on = "off"
+			}
+			writeConfigJSON(w, http.StatusOK, map[string]string{"packs": on})
 		case rest == "offline" && r.Method == http.MethodPost:
 			a.postOffline(w, r)
 		case strings.HasPrefix(rest, "offline/") && r.Method == http.MethodGet:

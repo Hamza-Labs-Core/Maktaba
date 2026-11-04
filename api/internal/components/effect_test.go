@@ -452,6 +452,53 @@ func TestInstallAgain(t *testing.T) {
 	}
 }
 
+// With packs off (offline mode) an install of an asset not on the home's disk is refused
+// 409 packs_disabled, its want absent or wanted, failed or busy; an asset on disk (its
+// Installed condition, or the supervisor's progress), another kind, and packs on are not.
+func TestInstallRefusedWithPacksOff(t *testing.T) {
+	asset := func(want string) Detail {
+		return Detail{View: View{ID: "runtime.ml", Kind: components.KindAsset, Switchable: true, Want: want}}
+	}
+	onDisk := asset(components.WantEnabled)
+	onDisk.Machines = []MachineView{{Machine: store.Home, Parts: []store.Status{{ID: "runtime.ml", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	progressOnDisk := asset(components.WantAbsent)
+	progressOnDisk.Progress = &InstallProgress{Installed: true}
+	elsewhere := asset(components.WantEnabled) // on a worker only: not the home's disk
+	elsewhere.Machines = []MachineView{{Machine: "7f1c9e1e-0000-4000-8000-000000000001", Parts: []store.Status{{ID: "runtime.ml",
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	failed := asset(components.WantEnabled)
+	failed.Progress = &InstallProgress{Phase: components.PhaseFailed, Reason: "download_failed"}
+	notAsset := asset(components.WantAbsent)
+	notAsset.Kind = "stages"
+	for name, c := range map[string]struct {
+		d       Detail
+		off     bool
+		refused bool
+	}{
+		"absent":           {asset(components.WantAbsent), true, true},
+		"wanted":           {asset(components.WantEnabled), true, true},
+		"failed":           {failed, true, true},
+		"on a worker only": {elsewhere, true, true},
+		"on disk":          {onDisk, true, false},
+		"progress on disk": {progressOnDisk, true, false},
+		"not an asset":     {notAsset, true, false},
+		"packs on":         {asset(components.WantAbsent), false, false},
+	} {
+		err := InstallRefused(c.d, c.off)
+		if !c.refused {
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			continue
+		}
+		r, ok := AsRefusal(err)
+		if !ok || r.Code != CodePacksDisabled || r.Status != http.StatusConflict || r.ID != "runtime.ml" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
 // Again writes a row whose want does not change (a new generation), audited
 // component.install; without it nothing is written.
 func TestAgainWritesTheRow(t *testing.T) {

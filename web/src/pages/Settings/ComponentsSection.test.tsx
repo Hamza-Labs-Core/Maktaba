@@ -902,6 +902,28 @@ describe("Components page: a wanted asset not on this home", () => {
     expect(home()).not.toHaveTextContent(EN["components.phase.failed"]!);
   });
 
+  it("says installing is off on this machine when the install route refuses it", async () => {
+    setRow("model.embedder", { phase: "not_installed", has_row: false });
+    post.mockImplementationOnce(() =>
+      Promise.reject(
+        new ApiError({
+          type: "https://maktaba.tv/problems/packs-disabled",
+          title: "packs disabled",
+          status: 409,
+          code: "packs_disabled",
+        })
+      )
+    );
+    const { user, drawer } = await drawerOf("model.embedder", "Search model");
+    await user.click(within(drawer).getByRole("button", { name: EN["components.row.install"]! }));
+    expect(
+      await screen.findByText(
+        EN["components.refused.packs_disabled"]!.replace("{name}", "Search model")
+      )
+    ).toBeInTheDocument();
+    expect(AR["components.refused.packs_disabled"]).toContain("{name}");
+  });
+
   it("offers neither when it is on disk, installing, or packs are off here", async () => {
     for (const over of [
       { phase: "off" },

@@ -111,6 +111,22 @@ func TestPacksInstallAndProgressRoutes(t *testing.T) {
 	}
 }
 
+// GET /components/packs says whether this machine installs packs (the API's install
+// route refuses with packs_disabled when it does not), behind the token.
+func TestPacksStateRoute(t *testing.T) {
+	a, _, h := packsTestAdmin(t)
+	if code, _ := packsCall(t, h, http.MethodGet, "/components/packs", ""); code != http.StatusForbidden {
+		t.Fatalf("no token: %d", code)
+	}
+	if code, out := packsCall(t, h, http.MethodGet, "/components/packs", "tok"); code != http.StatusOK || out["packs"] != "on" {
+		t.Fatalf("packs on: %d %v", code, out)
+	}
+	a.m.Disabled = true
+	if code, out := packsCall(t, h, http.MethodGet, "/components/packs", "tok"); code != http.StatusOK || out["packs"] != "off" {
+		t.Fatalf("packs off: %d %v", code, out)
+	}
+}
+
 // A file for another version is refused by the import route with its reason.
 func TestPacksImportRouteRefusesAnotherVersion(t *testing.T) {
 	a, _, h := packsTestAdmin(t)

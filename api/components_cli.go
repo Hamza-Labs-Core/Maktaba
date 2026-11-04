@@ -64,6 +64,8 @@ type componentsService interface {
 // componentsPacks is this machine's pack installer (its supervisor): *componentsh.Packs is one.
 type componentsPacks interface {
 	ProgressOf(ctx context.Context, ids []string) map[string]*components.InstallProgress
+	// PacksOff is whether this machine has [components] packs = "off" (offline mode).
+	PacksOff(ctx context.Context) (bool, error)
 	ImportPath(ctx context.Context, path string) ([]string, error)
 	MakeOffline(ctx context.Context, req componentsh.OfflineRequest) (string, error)
 	FetchOffline(ctx context.Context, name string, header http.Header) (*http.Response, *components.InstallProgress, error)
@@ -277,6 +279,9 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 			if err != nil {
 				return c.fail(err)
 			}
+			if err := c.installRefused(ctx, d); err != nil {
+				return c.fail(err)
+			}
 			switch {
 			case d.Want == catalog.WantAbsent:
 				ch.Want = catalog.WantInstalled
@@ -331,6 +336,21 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 func (c *componentsCLI) usage(msg string) int {
 	fmt.Fprintf(c.errOut, "components: %s\n\n%s\n", msg, componentsUsage)
 	return exitComponentsFailed
+}
+
+// installRefused is the install route's refusal of d with packs off on this machine
+// (offline mode, its supervisor's answer): an asset not on disk cannot be installed. No
+// supervisor, or no answer: nil, as before.
+func (c *componentsCLI) installRefused(ctx context.Context, d components.Detail) error {
+	if c.packs == nil || d.Kind != catalog.KindAsset {
+		return nil
+	}
+	off, err := c.packs.PacksOff(ctx)
+	if err != nil || !off {
+		return nil
+	}
+	d.Progress = c.packs.ProgressOf(ctx, []string{d.ID})[d.ID]
+	return components.InstallRefused(d, true)
 }
 
 func (c *componentsCLI) fail(err error) int {

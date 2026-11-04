@@ -6361,6 +6361,7 @@
   "components.refused.other": "This change cannot be made right now.",
   "components.refused.not_restartable": "{name} has nothing that runs on its own, so it cannot be restarted.",
   "components.refused.not_running": "{name} is not running, so it cannot be restarted. Turn it on or start it first.",
+  "components.refused.packs_disabled": "Installing components is turned off on this machine, so {name} cannot be installed here. Bring it in with Import a file, or turn installing back on.",
   "components.stale": "Someone else changed this. Here is what it is now.",
   "components.undo": "Undo",
   "components.done.on": "{name} is turned on.",

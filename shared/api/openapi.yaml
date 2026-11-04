@@ -4540,7 +4540,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...), or installing is turned off on this machine and the asset is not on its disk (`packs_disabled`: offline mode). Nothing was written.'
           content:
             application/problem+json:
               schema:

@@ -293,7 +293,9 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}})
 }
 
-// install puts a component that is absent on disk, off (installed). An asset that is
+// install puts a component that is absent on disk, off (installed). With packs off on
+// this machine (offline mode) an asset not on disk is refused, 409 packs_disabled: nothing
+// could install it (svc.InstallRefused). An asset that is
 // wanted (its row, or the catalog default with no row) but not on this home, or whose
 // install failed, gets its row written again as it is (component.install, a new
 // generation): the supervisor's packs runner hears the change and installs it, or tries
@@ -309,6 +311,10 @@ func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WithProgress(r.Context(), h.Packs, &d.View)
+	if err := svc.InstallRefused(d, h.packsOff(r.Context(), d)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	gen := d.Generation
 	switch {
 	case d.Want == components.WantAbsent:
@@ -318,6 +324,20 @@ func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 	default:
 		common.WriteJSON(w, r, http.StatusOK, d)
 	}
+}
+
+// packsOff is whether this home's supervisor has packs off, asked only for an asset (no
+// supervisor, or no answer: false, and the install is written as before).
+func (h *Handler) packsOff(ctx context.Context, d svc.Detail) bool {
+	if h.Packs == nil || d.Kind != components.KindAsset {
+		return false
+	}
+	off, err := h.Packs.PacksOff(ctx)
+	if err != nil {
+		h.log().WarnContext(ctx, "components: whether packs are off is not known", "err", err, "event", "components_packs_unknown")
+		return false
+	}
+	return off
 }
 
 // stop holds a component until start. A hold has no end time: a body that asks for one
