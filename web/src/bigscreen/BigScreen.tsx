@@ -25,6 +25,8 @@ import { BigSearch } from "./screens/Search";
 import { BigLive, BigLivePlayer } from "./screens/Live";
 import { BigSettings } from "./screens/Settings";
 import { BigWatch } from "./screens/Watch";
+import { useFeatureGate } from "../lib/capabilities";
+import { BigFeatureRoute } from "./screens/FeatureOff";
 import "./bigscreen.css";
 
 /** How long the pointer may rest before it hides. */
@@ -207,8 +209,22 @@ function Frame() {
           <Route path="video/:id" element={<BigVideo />} />
           <Route path="watch/:videoId" element={<BigWatch />} />
           <Route path="search" element={<BigSearch />} />
-          <Route path="live" element={<BigLive />} />
-          <Route path="live/:number" element={<BigLivePlayer />} />
+          <Route
+            path="live"
+            element={
+              <BigFeatureRoute id="live_tv">
+                <BigLive />
+              </BigFeatureRoute>
+            }
+          />
+          <Route
+            path="live/:number"
+            element={
+              <BigFeatureRoute id="live_tv">
+                <BigLivePlayer />
+              </BigFeatureRoute>
+            }
+          />
           <Route path="settings" element={<BigSettings onExit={() => setAsking(true)} />} />
           <Route path="*" element={<BigHome />} />
         </Routes>
@@ -292,6 +308,9 @@ function Tabs() {
     const id = setInterval(() => setNow(new Date()), 15_000);
     return () => clearInterval(id);
   }, []);
+  // story 51.11: a viewer has no Live tab while Live TV is off; an admin keeps it
+  const liveGate = useFeatureGate("live_tv");
+  const tabs = TABS.filter((tab) => tab.to !== bigPath.live || liveGate !== "hide");
   const current = (to: string) =>
     to === bigPath.home ? pathname === to || pathname === `${to}/` : pathname.startsWith(to);
   return (
@@ -300,7 +319,7 @@ function Tabs() {
         ۞ {t("app.title")}
       </span>
       <nav className="bs-tabs" aria-label={t("big.tabs")} data-bs-group="tabs">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.to}
             type="button"

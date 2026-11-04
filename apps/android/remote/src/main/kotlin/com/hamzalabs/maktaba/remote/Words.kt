@@ -212,12 +212,15 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
     // ---------- the queue ----------
 
     /** Why a stage's jobs wait (waiting_reason), or null when it runs. */
-    fun queueWaiting(reason: String?, service: String?, stage: String): String? {
+    fun queueWaiting(reason: String?, service: String?, stage: String, component: String? = null): String? {
         val r = reason?.takeIf { it.isNotEmpty() } ?: return null
         val template = WebWords.queueWaiting[r] ?: return spaced(r)
         val who = service?.takeIf { it.isNotEmpty() }?.let(::serviceName) ?: w.text(R.string.say_a_service)
-        return fill(template, mapOf("service" to who, "stage" to stage))
+        return fill(template, mapOf("service" to who, "stage" to stage, "component" to componentTitle(component.orEmpty())))
     }
+
+    /** A catalog component's title as the web names it ("transcription": "Transcription"); its id when this app has none. */
+    fun componentTitle(id: String): String = WebWords.componentTitle[id]?.let { w.text(it) } ?: id
 
     private fun serviceName(s: String): String = when (s) {
         "plex" -> "Plex"
@@ -236,6 +239,8 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
             head == "dependency" && kind == "share" -> w.text(R.string.say_on_share, name)
             head == "resource" && kind == "disk" -> w.text(R.string.say_on_disk)
             head == "resource" && kind == "shm" -> w.text(R.string.say_on_shm)
+            // Epic 51: jobs parked on a component ("component:transcription")
+            head == "component" && kind.isNotEmpty() -> componentTitle(parts.drop(1).joinToString(":"))
             kind.isNotEmpty() -> if (name.isNotEmpty()) "$kind $name" else kind
             else -> on
         }
@@ -252,6 +257,11 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
         val first: HealthWaiting? = h.waiting.firstOrNull()
         if (h.state == "waiting" && first != null) {
             add(w.text(R.string.say_health_waiting, h.waiting.sumOf { it.count }, waitingOn(first.on)))
+        }
+        // Epic 51: its component holds the stage back, a choice and not a problem
+        if (h.state == "off" && first != null && first.component.isNotEmpty()) {
+            val template = WebWords.queueHealthComponent[first.phase] ?: WebWords.queueHealthComponent.getValue("off")
+            add(fill(template, mapOf("component" to componentTitle(first.component), "n" to number(first.count))))
         }
         if (failedOpen > 0) add(w.text(R.string.say_health_failed, failedOpen))
         if (h.needsYou > 0) add(w.text(R.string.say_health_needs_you, h.needsYou))

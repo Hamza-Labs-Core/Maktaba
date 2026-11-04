@@ -17,6 +17,8 @@ struct ComponentGallery: View {
 
     let piece: Piece
     var home: URL?
+    /// `-maktaba-gallery-still`: the shimmer's light held still (`shimmerStill`)
+    var still = false
 
     init(piece: Piece, home: URL? = nil) {
         self.piece = piece
@@ -28,6 +30,7 @@ struct ComponentGallery: View {
         guard let name = ShellLaunch.value(of: "-maktaba-gallery", in: arguments), let piece = Piece(rawValue: name) else { return nil }
         self.piece = piece
         home = ShellLaunch.value(of: "-maktaba-gallery-home", in: arguments).flatMap(URL.init(string:))
+        still = arguments.contains("-maktaba-gallery-still")
     }
 
     private var arabic: Bool { Bundle.main.preferredLocalizations.first == "ar" }
@@ -53,6 +56,7 @@ struct ComponentGallery: View {
             #endif
         }
         .accessibilityIdentifier("gallery.\(piece.rawValue)")
+        .environment(\.shimmerStill, still)
     }
 
     @ViewBuilder private var content: some View {

@@ -123,7 +123,7 @@ func (s *Supervisor) portTaken(c *child) *Detail {
 func (s *Supervisor) wantedNow(c *child) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return c.wanted && !s.stopping
+	return c.wanted && c.allowed && !s.stopping
 }
 
 // notStarted records a start not made because a port is held (d) as a failed start:

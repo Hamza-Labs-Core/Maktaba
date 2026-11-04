@@ -13,6 +13,8 @@ import androidx.window.core.layout.computeWindowSizeClass
 import com.hamzalabs.maktaba.core.MapStore
 import com.hamzalabs.maktaba.core.MemoryTokens
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.Capabilities
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.jwt
 import com.hamzalabs.maktaba.core.session.AppSession
@@ -50,6 +52,9 @@ class FakeRemoteHome : ExternalResource() {
         private set
     val themes = ThemeStore(MapStore())
 
+    /** What the home has on (story 51.11): every feature on until a test says otherwise. */
+    val features = MutableStateFlow(Capabilities.AllOn)
+
     /** The paths asked so far, in order. */
     val paths: List<String> get() = synchronized(recorded) { recorded.map { it.url.encodedPath } }
 
@@ -77,7 +82,7 @@ class FakeRemoteHome : ExternalResource() {
         val tokens = MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh")
         val client = ApiClient(server.url("/"), tokens, ApiClient.defaultHttp.newBuilder().dispatcher(calls).connectionPool(ConnectionPool()).build())
         session = AppSession(MapStore(), scope, { MemoryTokens() })
-        remote = Remote(client, session)
+        remote = Remote(client, session, features)
     }
 
     override fun after() {

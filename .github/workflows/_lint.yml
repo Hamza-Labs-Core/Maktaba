@@ -24,6 +24,10 @@ on:
         description: eslint, tsc, prettier, pnpm-lock drift
         type: boolean
         default: true
+      catalog:
+        description: the component catalog covers every stage, role and loop, with en + ar words
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -185,6 +189,13 @@ jobs:
         working-directory: pipeline
         run: uv sync --frozen --all-extras
 
+      # Epic 51 (story 51.13): a rules section that removes a field or changes its kind
+      # bumps its major version (compared with schema.json at the last release tag; the
+      # checkout's fetch-depth 0 brings the tags)
+      - name: Rules schema versions
+        if: inputs.pipeline
+        run: python3 tools/ci/rules_schema_versions.py
+
       - name: golangci-lint (api)
         if: inputs.go
         uses: golangci/golangci-lint-action@v9.2.1
@@ -285,3 +296,38 @@ jobs:
         with:
           path: ${{ steps.pnpm-cache.outputs.path }}
           key: ${{ steps.pnpm-cache.outputs.key }}
+
+  # Epic 51 (story 51.01): every stage of the graph and the built-in extensions, every
+  # supervisor process and every listed loop is in exactly one catalog component; the
+  # pipeline's copy and the loaders' shared dump are current; every title, phase and reason
+  # has English and Arabic words. `make catalog-check` runs the same steps.
+  catalog:
+    if: inputs.catalog
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: |
+            shared/components/go.sum
+            cmd/maktaba-server/go.sum
+            api/go.sum
+            streaming/go.sum
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+
+      - name: Set up Node
+        uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+
+      - name: The catalog (make catalog-check)
+        run: make catalog-check

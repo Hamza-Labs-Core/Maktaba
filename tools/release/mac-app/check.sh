@@ -55,7 +55,9 @@ trap 'rm -rf "$SCRATCH"' EXIT
 touch "$SCRATCH/before"
 sleep 1   # mtime granularity: anything the checks write into the payload is newer
 
-echo "payload: $PAYLOAD"
+# the flavour (story 51.17): core leaves out ollama
+FLAVOUR="$(/usr/bin/python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("flavour","full"))' "$PAYLOAD/payload.json" 2>/dev/null || echo full)"
+echo "payload: $PAYLOAD ($FLAVOUR)"
 echo "binaries"
 for b in maktaba-server maktaba-api maktaba-streaming maktaba-launcher; do
     run "$b" "$PAYLOAD/bin/$b" --version
@@ -66,9 +68,15 @@ for b in postgres initdb pg_ctl pg_dump pg_restore psql; do
 done
 run ffmpeg "$PAYLOAD/ffmpeg/ffmpeg" -hide_banner -version
 run ffprobe "$PAYLOAD/ffmpeg/ffprobe" -hide_banner -version
-# HOME in the scratch folder: ollama keeps its key in ~/.ollama
-run ollama env HOME="$SCRATCH" "$PAYLOAD/ollama/ollama" --version
-run llama-server "$PAYLOAD/ollama/llama-server" --version
+if [ "$FLAVOUR" = full ]; then
+    # HOME in the scratch folder: ollama keeps its key in ~/.ollama
+    run ollama env HOME="$SCRATCH" "$PAYLOAD/ollama/ollama" --version
+    run llama-server "$PAYLOAD/ollama/llama-server" --version
+elif [ -e "$PAYLOAD/ollama" ]; then
+    fail "the core payload holds ollama/"
+else
+    ok "core: no ollama/"
+fi
 run python3 "$PAYLOAD/python/bin/python3" -I -c 'import sys, ssl, sqlite3, venv, ensurepip; print(sys.version.split()[0], ssl.OPENSSL_VERSION)'
 
 echo "Mach-O files"
@@ -134,6 +142,7 @@ else
     fail "initdb/start: $(tail -3 "$SCRATCH/initdb.log" "$SCRATCH/pg.log" 2>/dev/null)"
 fi
 
+if [ "$FLAVOUR" = full ]; then
 echo "Ollama"
 # the way the supervisor runs it (llmserver): loopback, its own port, the models folder
 # outside the payload; it answers its API
@@ -151,6 +160,7 @@ if [ -n "$up" ]; then ok "ollama serve answers: $up"; else fail "ollama serve di
 if [ -n "$up" ] && curl -fsS "http://127.0.0.1:$oport/api/tags" | grep -q '"models"'; then ok "ollama /api/tags"; else fail "ollama /api/tags"; fi
 kill "$opid" 2>/dev/null || true
 wait "$opid" 2>/dev/null || true
+fi
 
 echo "Python"
 run "venv (offline, with pip)" "$PAYLOAD/python/bin/python3" -I -m venv "$SCRATCH/venv"
@@ -159,6 +169,13 @@ if [ -x "$SCRATCH/venv/bin/pip" ]; then ok "venv has pip"; else fail "venv has n
 echo "pipeline"
 whl=("$PAYLOAD"/pipeline/maktaba_pipeline-*-py3-none-any.whl)
 if [ -f "${whl[0]}" ]; then ok "wheel ${whl[0]##*/}"; else fail "no pipeline wheel"; fi
+# the core venv's pins (story 51.17): hashed, and no ML package among them
+if [ -s "$PAYLOAD/pipeline/constraints-core.txt" ] && grep -q -- '--hash=sha256:' "$PAYLOAD/pipeline/constraints-core.txt" &&
+    ! grep -qE '^(torch|mlx|mlx-whisper|faster-whisper|transformers)==' "$PAYLOAD/pipeline/constraints-core.txt"; then
+    ok "constraints-core.txt (hashed, no ML packages)"
+else
+    fail "constraints-core.txt missing, without hashes or with an ML package"
+fi
 if [ -s "$PAYLOAD/pipeline/constraints.txt" ] && grep -q -- '--hash=sha256:' "$PAYLOAD/pipeline/constraints.txt"; then
     ok "constraints.txt (hashed)"
 else

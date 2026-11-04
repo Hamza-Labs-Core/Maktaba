@@ -363,7 +363,7 @@
       "id": "51",
       "slug": "configurable-components",
       "title": "Every part of Maktaba can be turned on, off, added later or left out",
-      "description": "Every part of Maktaba can be turned on, off, added later or left out.\n\nRequirement: today every worker and feature starts right away. Each one must instead be driven by config or settings, so it can be stopped and started, enabled and disabled, with server bundles that ship with or without components, and components that can be added later.",
+      "description": "Every part of Maktaba can be turned on, off, added later or left out.\n\nEvery worker and feature runs as soon as it is installed. The requirement (2026-11-03): all of them are driven by config and settings, so each can be enabled or disabled and started or stopped; servers come in bundles, with and without components; and components can be added later.",
       "readme": "specs/epics/51-configurable-components/README.md"
     },
     {

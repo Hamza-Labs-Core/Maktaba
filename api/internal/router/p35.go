@@ -25,9 +25,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/rules"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // HubRef is the cluster channel as the update driver reaches it: the hub is mounted
@@ -134,7 +134,10 @@ func (u *UpdatesRef) Get() *updates.Handler {
 
 // P35Deps bundles the dependencies of the Epic 35 update handlers.
 type P35Deps struct {
-	DB     *sql.DB
+	DB *sql.DB
+	// Loops is the API's component runner (Epic 51): the loops below start and stop
+	// with their component. nil: they just run (tests).
+	Loops  *runner.Runner
 	Logger *slog.Logger
 	// Current is the running version, BaseChannel the build's channel.
 	Current     string
@@ -266,15 +269,17 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 			}
 		}
 		if svc.Discoverer != nil && interval > 0 {
-			safego.Go(d.Logger, "updates_discoverer", func() { svc.Discoverer.Run(ctx, interval) })
+			d.Loops.Declare("updates_discoverer", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
+				svc.Discoverer.Run(ctx, interval)
+			})))
 		}
-		safego.Go(d.Logger, "updates_scheduler", func() { svc.RunScheduler(ctx) })
-		safego.Go(d.Logger, "updates_driver", func() { drv.Run(ctx) })
+		d.Loops.Declare("updates_scheduler", runner.Bound(ctx, runner.Func(svc.RunScheduler)))
+		d.Loops.Declare("updates_driver", runner.Bound(ctx, runner.Func(drv.Run)))
 		sampler := &updates.HealthSampler{Metrics: upMetrics, Logger: d.Logger, Behind: func(ctx context.Context) bool {
 			pl, _, _, err := svc.Plan(ctx)
 			return err == nil && pl.Target != nil
 		}}
-		safego.Go(d.Logger, "updates_health_sampler", func() { sampler.Run(ctx) })
+		d.Loops.Declare("updates_health_sampler", runner.Bound(ctx, runner.Func(sampler.Run)))
 	}
 	return h
 }

@@ -34,6 +34,7 @@ mod applog;
 mod attempts;
 mod autoinstall;
 mod bigscreen;
+mod flavour;
 mod lang;
 mod mode;
 mod permissions;

@@ -117,6 +117,36 @@ jobs:
           bash tools/release/linux-app/test_package_remove.sh
           bash tools/release/linux-app/test_bundle.sh
 
+      # maktaba-full (story 51.17): the packages release.yml's package-linux-full builds,
+      # with the nfpm _launcher.yml caches (keep the version in step with it)
+      - name: nfpm from the cache
+        id: nfpm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/nfpm
+          key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install nfpm
+        if: steps.nfpm-cache.outputs.cache-hit != 'true'
+        env:
+          GOTOOLCHAIN: auto
+          CGO_ENABLED: "0"
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      # the packages' names, versions, dependencies and folder; on x86_64 also installed with
+      # dpkg beside a stand-in maktaba (the test's packages are amd64): an existing install's
+      # own update goes in with maktaba-full there, and maktaba cannot be removed from under it
+      - name: maktaba-full's packages
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          export PATH="$HOME/go/bin:$PATH"
+          if [ "$ARCH" = x86_64 ]; then
+            bash tools/release/linux-app/test_full_package.sh --install
+          else
+            bash tools/release/linux-app/test_full_package.sh
+          fi
+
       # On failure the last lines go into an annotation: readable on the run's
       # page without signing in (the job log is not).
       - name: Build the app with the payload, and check its bundles

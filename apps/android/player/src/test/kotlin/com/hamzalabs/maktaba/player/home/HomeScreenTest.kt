@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
@@ -254,6 +255,42 @@ class HomeScreenTest {
         waitForTag("home-switch")
         compose.onNodeWithTag("home-switch").performClick()
         compose.settledUntil(2_000) { home.home.session.phase.value == AppSession.Phase.ChoosingHome }
+    }
+
+    // ---------- Live TV off on the home (story 51.11) ----------
+
+    private fun gone(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty()
+
+    @Test
+    fun aViewerHasNoChannelRowWhileLiveTvIsOff() {
+        home.viewerWithOff(Feature.LIVE_TV)
+        showFull()
+        assertTrue("no channel row", gone("row-$KEY_LIVE"))
+        assertTrue(gone("channel-${HomeFixtures.CHANNEL}"))
+        assertFalse("nothing asks for channels: ${home.paths}", "/api/channels/now" in home.paths)
+        compose.onNodeWithTag("row-$KEY_CONTINUE").assertExists()
+    }
+
+    /** As the Apple Player's Home: an admin has no channel row either (Live TV's own tab says why). */
+    @Test
+    fun anAdminHasNoChannelRowWhileLiveTvIsOff() {
+        home.adminWithOff(Feature.LIVE_TV)
+        showFull()
+        assertTrue("no channel row", gone("row-$KEY_LIVE"))
+    }
+
+    /**
+     * The home's first answer comes after Home read its channels (both are asked at sign-in):
+     * the channel row goes when the answer says Live TV is off, the other rows stay.
+     */
+    @Test
+    fun liveTvOffInTheFirstAnswerTakesTheChannelRowAway() {
+        showFull()
+        compose.onNodeWithTag("row-$KEY_LIVE").assertExists()
+        home.viewerWithOff(Feature.LIVE_TV)
+        compose.settledUntil(5_000) { gone("row-$KEY_LIVE") }
+        compose.onNodeWithTag("row-$KEY_CONTINUE").assertExists()
+        compose.onNodeWithTag("row-$KEY_FROM_LIBRARY").assertExists()
     }
 
     @Test

@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.player.MainActivity
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
@@ -116,6 +117,35 @@ class VideoScreenTest {
         compose.onNode(hasContentDescription("The Migration", substring = true)).assertExists()
         assertTrue(compose.onAllNodes(hasContentDescription("The Call", substring = true)).fetchSemanticsNodes().isEmpty())
         assertTrue(fake.paths.toString(), "/api/series/s1/episodes" in fake.paths)
+    }
+
+    // ---------- story 51.11: transcripts and chapters off on the home ----------
+
+    @Test
+    fun transcriptsOffAViewerHasNoTranscript() {
+        fake.viewerWithOff(Feature.TRANSCRIPTS)
+        open("v1")
+        waitForTag("chapter-2")
+        assertTrue(compose.onAllNodes(hasText("It was a night like no other.")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(hasText("From the transcript")).fetchSemanticsNodes().isEmpty())
+        assertTrue(compose.onAllNodes(hasTestTag("feature-off-transcripts")).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun transcriptsOffAnAdminReadsWhyWhereTheTranscriptWouldBe() {
+        fake.adminWithOff(Feature.TRANSCRIPTS)
+        open("v1")
+        waitForTag("feature-off-transcripts")
+        compose.onNodeWithText("Transcripts are off on this home.").performScrollTo().assertIsDisplayed()
+        assertTrue(compose.onAllNodes(hasText("It was a night like no other.")).fetchSemanticsNodes().isEmpty())
+    }
+
+    @Test
+    fun chaptersOffAViewerHasNoChapterList() {
+        fake.viewerWithOff(Feature.CHAPTERS)
+        open("v1")
+        waitForText("It was a night like no other.")
+        assertTrue(compose.onAllNodes(hasTestTag("chapter-2")).fetchSemanticsNodes().isEmpty())
     }
 
     @Test

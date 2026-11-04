@@ -457,6 +457,8 @@ data class SearchResults(
     val mode: String = "",
     /** the semantic half did not answer: these are text matches only */
     val degraded: Boolean = false,
+    /** "off": search by meaning is off on the home (story 51.09), so these are keyword results */
+    val semantic: String = "",
     @SerialName("page_size") val pageSize: Int = 0,
     @SerialName("passages_page_size") val passagesPageSize: Int = 0,
     @Serializable(with = LenientList::class) val videos: List<TitleHit> = emptyList(),

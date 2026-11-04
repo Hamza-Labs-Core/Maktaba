@@ -4254,3 +4254,22 @@ button.mkt-video__hero {
   color: var(--color-warning-fg, var(--color-fg));
   font-size: var(--font-size-sm);
 }
+
+/* Story 51.11: an admin's note for a feature that is off on this home */
+.mkt-feature-off {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-block: var(--space-4);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-subtle);
+}
+.mkt-feature-off p {
+  margin: 0;
+}
+.mkt-search__words-only {
+  margin-block: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+}

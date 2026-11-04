@@ -72,6 +72,7 @@ struct WatchScreen: View {
         do {
             let video = try await context.client.video(videoID)
             let p = playback ?? Playback(client: context.client)
+            Log.ui.info("watch: \(playback == nil ? "opens" : "loads again", privacy: .public) \(videoID, privacy: .public)")
             playback = p
             p.play(video, from: at)
         } catch is CancellationError {

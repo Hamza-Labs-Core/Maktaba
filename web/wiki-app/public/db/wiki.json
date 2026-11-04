@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 123,
+    "endpoint": 143,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -2648,7 +2648,7 @@
       "epic": "51-configurable-components",
       "phase": 5,
       "engine": null,
-      "content": "Every part of Maktaba can be turned on, off, added later or left out.\n\nRequirement: today every worker and feature starts right away. Each one must instead be driven by config or settings, so it can be stopped and started, enabled and disabled, with server bundles that ship with or without components, and components that can be added later.",
+      "content": "Every part of Maktaba can be turned on, off, added later or left out.\n\nEvery worker and feature runs as soon as it is installed. The requirement (2026-11-03): all of them are driven by config and settings, so each can be enabled or disabled and started or stopped; servers come in bundles, with and without components; and components can be added later.",
       "tags": [
         "epic",
         "51-configurable-components",
@@ -7606,6 +7606,519 @@
         "path": "/ws/queues",
         "tag": "WebSocket",
         "operationId": "streamQueues"
+      }
+    },
+    {
+      "id": "ep-get-capabilities",
+      "type": "endpoint",
+      "title": "GET /capabilities",
+      "content": "What this home has on",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-7.10",
+        "story-8.7",
+        "story-51.9",
+        "story-51.11",
+        "story-54.1",
+        "story-54.21"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/capabilities",
+        "tag": "Components",
+        "operationId": "getCapabilities"
+      }
+    },
+    {
+      "id": "ep-get-components",
+      "type": "endpoint",
+      "title": "GET /components",
+      "content": "List the components",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-25.15",
+        "story-25.16",
+        "story-28.5",
+        "story-28.6",
+        "story-29.3",
+        "story-48.16",
+        "story-48.35",
+        "story-51.1",
+        "story-51.2",
+        "story-51.3",
+        "story-51.4",
+        "story-51.5",
+        "story-51.6",
+        "story-51.7",
+        "story-51.8",
+        "story-51.9",
+        "story-51.10",
+        "story-51.11",
+        "story-51.12",
+        "story-51.13",
+        "story-51.14",
+        "story-51.15",
+        "story-51.16",
+        "story-51.17",
+        "story-51.18",
+        "story-51.19",
+        "story-52.12",
+        "story-52.14",
+        "story-53.6",
+        "story-53.7",
+        "story-53.11",
+        "story-53.12",
+        "story-53.15",
+        "story-54.7",
+        "story-54.8",
+        "story-54.10",
+        "story-54.17",
+        "story-54.20",
+        "story-54.23",
+        "story-54.27",
+        "story-54.36"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components",
+        "tag": "Components",
+        "operationId": "listComponents"
+      }
+    },
+    {
+      "id": "ep-post-components-preview",
+      "type": "endpoint",
+      "title": "POST /components/preview",
+      "content": "Preview a change",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.10",
+        "story-51.12"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/preview",
+        "tag": "Components",
+        "operationId": "previewComponents"
+      }
+    },
+    {
+      "id": "ep-post-components-apply",
+      "type": "endpoint",
+      "title": "POST /components/apply",
+      "content": "Apply a change",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/apply",
+        "tag": "Components",
+        "operationId": "applyComponents"
+      }
+    },
+    {
+      "id": "ep-get-components-bundles",
+      "type": "endpoint",
+      "title": "GET /components/bundles",
+      "content": "List the bundles",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-51.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components/bundles",
+        "tag": "Components",
+        "operationId": "listBundles"
+      }
+    },
+    {
+      "id": "ep-post-components-bundle",
+      "type": "endpoint",
+      "title": "POST /components/bundle",
+      "content": "Switch to a bundle",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.17"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/bundle",
+        "tag": "Components",
+        "operationId": "applyBundle"
+      }
+    },
+    {
+      "id": "ep-post-components-offline",
+      "type": "endpoint",
+      "title": "POST /components/offline",
+      "content": "Make an offline pack file",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/offline",
+        "tag": "Components",
+        "operationId": "makeOfflinePacks"
+      }
+    },
+    {
+      "id": "ep-get-components-offline-name",
+      "type": "endpoint",
+      "title": "GET /components/offline/{name}",
+      "content": "Download an offline pack file",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components/offline/{name}",
+        "tag": "Components",
+        "operationId": "getOfflinePacks"
+      }
+    },
+    {
+      "id": "ep-post-components-import",
+      "type": "endpoint",
+      "title": "POST /components/import",
+      "content": "Import an offline pack file",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/import",
+        "tag": "Components",
+        "operationId": "importOfflinePacks"
+      }
+    },
+    {
+      "id": "ep-get-components-id",
+      "type": "endpoint",
+      "title": "GET /components/{id}",
+      "content": "Read one component",
+      "tags": [
+        "api",
+        "Components",
+        "get"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.12",
+        "story-51.13",
+        "story-51.16",
+        "story-51.19"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/components/{id}",
+        "tag": "Components",
+        "operationId": "getComponent"
+      }
+    },
+    {
+      "id": "ep-put-components-id",
+      "type": "endpoint",
+      "title": "PUT /components/{id}",
+      "content": "Set what should run",
+      "tags": [
+        "api",
+        "Components",
+        "put"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.12",
+        "story-51.13",
+        "story-51.16",
+        "story-51.19"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/components/{id}",
+        "tag": "Components",
+        "operationId": "setComponent"
+      }
+    },
+    {
+      "id": "ep-delete-components-id",
+      "type": "endpoint",
+      "title": "DELETE /components/{id}",
+      "content": "Remove a component",
+      "tags": [
+        "api",
+        "Components",
+        "delete"
+      ],
+      "related": [
+        "story-51.8",
+        "story-51.12",
+        "story-51.13",
+        "story-51.16",
+        "story-51.19"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "DELETE",
+        "path": "/components/{id}",
+        "tag": "Components",
+        "operationId": "removeComponent"
+      }
+    },
+    {
+      "id": "ep-post-components-id-install",
+      "type": "endpoint",
+      "title": "POST /components/{id}/install",
+      "content": "Install a component",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.16"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/install",
+        "tag": "Components",
+        "operationId": "installComponent"
+      }
+    },
+    {
+      "id": "ep-post-components-id-stop",
+      "type": "endpoint",
+      "title": "POST /components/{id}/stop",
+      "content": "Stop a component",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/stop",
+        "tag": "Components",
+        "operationId": "stopComponent"
+      }
+    },
+    {
+      "id": "ep-post-components-id-start",
+      "type": "endpoint",
+      "title": "POST /components/{id}/start",
+      "content": "Start a component",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/start",
+        "tag": "Components",
+        "operationId": "startComponent"
+      }
+    },
+    {
+      "id": "ep-post-components-id-restart",
+      "type": "endpoint",
+      "title": "POST /components/{id}/restart",
+      "content": "Restart a component",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.8"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/restart",
+        "tag": "Components",
+        "operationId": "restartComponent"
+      }
+    },
+    {
+      "id": "ep-post-components-id-settings-reset",
+      "type": "endpoint",
+      "title": "POST /components/{id}/settings/reset",
+      "content": "Reset a component's settings",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [
+        "story-51.13"
+      ],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/settings/reset",
+        "tag": "Components",
+        "operationId": "resetComponentSettings"
+      }
+    },
+    {
+      "id": "ep-put-components-id-machines-node",
+      "type": "endpoint",
+      "title": "PUT /components/{id}/machines/{node}",
+      "content": "Set what should run on one machine",
+      "tags": [
+        "api",
+        "Components",
+        "put"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "PUT",
+        "path": "/components/{id}/machines/{node}",
+        "tag": "Components",
+        "operationId": "setComponentOnMachine"
+      }
+    },
+    {
+      "id": "ep-post-components-id-machines-node-stop",
+      "type": "endpoint",
+      "title": "POST /components/{id}/machines/{node}/stop",
+      "content": "Stop a component on one machine",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/machines/{node}/stop",
+        "tag": "Components",
+        "operationId": "stopComponentOnMachine"
+      }
+    },
+    {
+      "id": "ep-post-components-id-machines-node-start",
+      "type": "endpoint",
+      "title": "POST /components/{id}/machines/{node}/start",
+      "content": "Start a component on one machine",
+      "tags": [
+        "api",
+        "Components",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/components/{id}/machines/{node}/start",
+        "tag": "Components",
+        "operationId": "startComponentOnMachine"
       }
     },
     {

@@ -30,12 +30,15 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.hamzalabs.maktaba.core.api.Failure
+import com.hamzalabs.maktaba.core.api.Feature
+import com.hamzalabs.maktaba.core.ui.FeatureOffNote
 import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.Message
 import com.hamzalabs.maktaba.player.R
 import com.hamzalabs.maktaba.player.shell.LocalPlayerHome
 import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 import com.hamzalabs.maktaba.player.shell.Route
+import com.hamzalabs.maktaba.player.shell.features
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -51,7 +54,21 @@ internal val WideFrom = 600.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LiveTvScreen(nav: PlayerNavigator) {
-    val live = LocalPlayerHome.current.liveTv()
+    val home = LocalPlayerHome.current
+    // Live TV off on the home (story 51.11): an admin reads why and how to turn it on; a viewer
+    // never has the section (one open when it went off keeps its screen, whose next call says so)
+    if (home.features().explains(Feature.LIVE_TV)) {
+        Scaffold(
+            modifier = Modifier.testTag("live-tv"),
+            topBar = { TopAppBar(title = { Text(stringResource(R.string.section_live_tv)) }) },
+        ) { padding ->
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.Center) {
+                FeatureOffNote(Feature.LIVE_TV, home.webUrl, centered = true)
+            }
+        }
+        return
+    }
+    val live = home.liveTv()
     val env = LocalLiveEnv.current
     var tab by rememberSaveable { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()

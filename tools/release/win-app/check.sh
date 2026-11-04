@@ -512,6 +512,9 @@ sha = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
 assert sha(root / "pipeline" / d["pipeline"]["wheel"]) == d["pipeline"]["sha256"], "the wheel's sha256"
 assert sha(root / "pipeline" / "constraints.txt") == d["pipeline"]["constraints_sha256"], "constraints.txt's sha256"
 assert sha(root / "pipeline" / "constraints-cuda.txt") == d["pipeline"]["constraints_cuda_sha256"], "constraints-cuda.txt's sha256"
+assert sha(root / "pipeline" / "constraints-core.txt") == d["pipeline"]["constraints_core_sha256"], "constraints-core.txt's sha256"
+assert not any(l.split("==")[0].strip().lower() in ("torch", "mlx", "mlx-whisper", "faster-whisper", "transformers")
+               for l in (root / "pipeline" / "constraints-core.txt").read_text().splitlines()), "an ML package in constraints-core.txt"
 for lib in d["postgres"]["libraries"]:
     assert (root / "postgres" / "bin" / lib).is_file(), f"postgres/bin/{lib}"
 assert d["msvc_runtime"]["version"], "msvc_runtime"

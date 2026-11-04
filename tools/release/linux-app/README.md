@@ -159,6 +159,45 @@ package, then delete `~/.local/share/maktaba`, `~/.config/maktaba`, `~/.local/st
 desktop ignores it once the app is gone. An AppImage has no removal step: deleting it leaves the
 server running until `service uninstall`.
 
+## maktaba and maktaba-full (Epic 51 story 51.17)
+
+Two packages, as the Mac has a Core and a Full app:
+
+| Package | What it holds | Depends |
+|---|---|---|
+| `maktaba` | the app and its server payload (this page), as before | the libraries above, ffmpeg |
+| `maktaba-full` | this release's `runtime.ml` and `tool.yt-dlp` packs for its architecture | `maktaba (>= <version>)`, each `maktaba-full-dataN (= <version>)` |
+| `maktaba-full-dataN` | the rest of those packs' files (each package under 1.9 GiB) | nothing |
+
+`sudo apt install ./maktaba-full_*.deb ./maktaba-full-data*.deb ./maktaba_*.deb` installs Full;
+`maktaba` by itself is the app whose setup offers Core or Full and downloads what it needs.
+The packs land in `/usr/share/maktaba/packs/maktaba-offline-<version>-<platform>-full/` (the
+release's offline file, unpacked), and the server imports them at its first start of that
+version (`cmd/maktaba-server/serve_systempacks.go`) through the offline import, with the
+verification of a download: the release's Sigstore signature, the component index, every pack.
+A home whose setup chose Core imports nothing; each folder is imported once.
+
+**The decision: the app's package keeps its name.** An existing install is Full by what it has
+(its database, its venv with the ML wheels, no `bundle.json`), not by its package, so upgrading
+`maktaba` takes nothing away: no existing user loses ML. Weighed and rejected: renaming the app's
+package to `maktaba-core` with `maktaba` as a metapackage pulling in the packs. The app updates
+itself by installing the one new `maktaba` file with dpkg or rpm, which pulls in no new
+dependency, so the metapackage's upgrade would fail there; and it would put several GB of packs
+on every existing install that never asked for them.
+
+**Why `>=`, not `=`.** The app's own update installs a newer `maktaba` alone. An exact pin
+would make that install fail beside `maktaba-full`; with `>=` it goes in, the older packs'
+folder is left alone (the import takes only its own version's), and the new version's packs
+come from the network as for any Full home (story 51.18), until `maktaba-full` is upgraded too.
+`maktaba` cannot be removed from under `maktaba-full`.
+
+**Why several packages.** GitHub takes no release file of 2 GiB or more, and runtime.ml's Linux
+wheels (torch) are bigger. `full-package.sh` fills `maktaba-full` with the small files first,
+then the packs' files (`.partN` pieces already under 1.9 GiB) into `maktaba-full-dataN`.
+The AppImage has no Full form: it downloads the packs. `release.yml`'s `package-linux-full`
+builds the packages from the published release's files after it is signed; CI's Linux app gate
+runs `test_full_package.sh` (on x86_64 also installing them with dpkg).
+
 Bumping a piece: change `pins.env` (version, URL, SHA-256 from the publisher), then run
 `make linux-app-payload`. CI's Linux app gate builds the payload on both architectures and runs
 `check.sh` on the runner and in `ubuntu:22.04`, `debian:12-slim` and `fedora:40`, each with its

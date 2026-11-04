@@ -104,8 +104,12 @@ struct HomeScreen: View {
                 ForEach(model.sections) { section in
                     switch section {
                     case let .cards(row): cardsRow(row)
-                    case let .live(channels): liveRow(channels)
-                    case let .failed(key, kind, failure): retryRow(key, kind, failure)
+                    case let .live(channels):
+                        // no channel row while Live TV is off on the home (51.11)
+                        if liveTVOn { liveRow(channels) }
+                    case let .failed(key, kind, failure):
+                        // nor its failure: with Live TV off the channels' call answers 409
+                        if key != HomeShelf.liveNow || liveTVOn { retryRow(key, kind, failure) }
                     }
                 }
             }
@@ -113,6 +117,8 @@ struct HomeScreen: View {
         }
         .refreshable { await model.load() }
     }
+
+    private var liveTVOn: Bool { context.session.capabilities.current.isOn(.liveTV) }
 
     // MARK: the hero
 

@@ -30,9 +30,18 @@ export function ringDash(done: number, total: number, radius: number): [number, 
 // running colour even with a few failures (the failure count is shown as
 // a separate flag), so a healthy queue is not painted red.
 export function queueVisualState(info: StageInfo | undefined, q: QueueSummary): QueueVisualState {
+  // Epic 51: a stage can fail and be off by its component; failing wins
+  if (q.health?.state === "failing" && q.component) return "failing";
+  if (q.health?.state === "off") return "off";
   if (info && !info.enabled) return "off";
   // A switched-off or not-yet-configured queue is "off", never "failing".
-  if (q.waiting_reason === "not_configured" || q.waiting_reason === "disabled") return "off";
+  if (
+    q.waiting_reason === "not_configured" ||
+    q.waiting_reason === "disabled" ||
+    q.waiting_reason === "component_off" ||
+    q.waiting_reason === "component_held"
+  )
+    return "off";
   // Epic 40: red only when the API says one new error dominates; a few failed items
   // (or jobs parked on the model, a share, disk space) never paint a queue red
   if (q.health) {

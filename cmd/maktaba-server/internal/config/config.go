@@ -44,6 +44,7 @@ type Config struct {
 	LLM           LLMSection           `toml:"llm"`
 	Telemetry     TelemetrySection     `toml:"telemetry"`
 	Backups       BackupsSection       `toml:"backups"`
+	Components    ComponentsSection    `toml:"components,omitempty"`
 
 	// DatabaseURLSet: server.toml sets [database] url (Load), or a caller chose
 	// one to keep (setup); Save writes the url only then. Unset, a Mac with the
@@ -194,6 +195,51 @@ type TelemetrySection struct {
 // On reports whether usage data may leave the server (anything but off/false/no/0).
 func (t TelemetrySection) On() bool {
 	switch strings.ToLower(strings.TrimSpace(t.Enabled)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
+}
+
+// ComponentsSection is the [components] table (Epic 51 story 51.04).
+type ComponentsSection struct {
+	// Reconcile: "on" (default) lets the supervisor and the roles' runners start and
+	// stop components as their desired state says; "off" is the kill switch: every
+	// runner reports, none acts (the processes are the ones server.toml builds).
+	Reconcile string `toml:"reconcile,omitempty"`
+	// Packs: "on" (default) lets this machine install asset components from packs and
+	// offline files (story 51.16); "off" installs nothing new (packs_disabled), and what
+	// is on disk keeps working and is reported.
+	Packs string `toml:"packs,omitempty"`
+	// CapabilitiesGate: "on" (default) answers 409 component_off on a route whose
+	// component is off and GET /api/capabilities as the desired state says; "off" turns
+	// the check into a no-op and answers every feature on (story 51.09).
+	CapabilitiesGate string `toml:"capabilities_gate,omitempty"`
+}
+
+// PacksOn reports whether packs may be installed (anything but off/false/no/0).
+func (c ComponentsSection) PacksOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.Packs)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
+}
+
+// CapabilitiesGateOn reports whether the component_off check is on (anything but
+// off/false/no/0).
+func (c ComponentsSection) CapabilitiesGateOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.CapabilitiesGate)) {
+	case "off", "false", "no", "0":
+		return false
+	}
+	return true
+}
+
+// ReconcileOn reports whether the runners act on desired state (anything but
+// off/false/no/0).
+func (c ComponentsSection) ReconcileOn() bool {
+	switch strings.ToLower(strings.TrimSpace(c.Reconcile)) {
 	case "off", "false", "no", "0":
 		return false
 	}

@@ -62,31 +62,53 @@ func SupervisorFromEnv() *Supervisor {
 	return &Supervisor{URL: u, TokenFile: tf}
 }
 
-// call sends one request to <url>/config/<path> and returns its status and body.
-func (s *Supervisor) call(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
+// Do sends one request to <url><path> (path starts with "/") with the per-boot token
+// and answers the response: the caller closes its body. contentType "" sends none. The
+// client is s.HTTP, or one with a 10 s timeout.
+func (s *Supervisor) Do(ctx context.Context, method, path string, body io.Reader, contentType string) (*http.Response, error) {
+	req, err := s.NewRequest(ctx, method, path, body)
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	return s.Send(req)
+}
+
+// NewRequest is a request to <url><path>; Send adds the token.
+func (s *Supervisor) NewRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	return http.NewRequestWithContext(ctx, method, s.URL+path, body)
+}
+
+// Send sends req with the per-boot token, on s.HTTP or a client with a 10 s timeout.
+func (s *Supervisor) Send(req *http.Request) (*http.Response, error) {
 	tok, err := os.ReadFile(s.TokenFile)
 	if err != nil {
-		return 0, nil, fmt.Errorf("the supervisor's token: %w", err)
-	}
-	var rd io.Reader
-	if body != nil {
-		rd = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, s.URL+"/config/"+path, rd)
-	if err != nil {
-		return 0, nil, err
+		return nil, fmt.Errorf("the supervisor's token: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(tok)))
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
 	c := s.HTTP
 	if c == nil {
 		c = &http.Client{Timeout: 10 * time.Second}
 	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return 0, nil, fmt.Errorf("supervisor unreachable: %w", err)
+		return nil, fmt.Errorf("supervisor unreachable: %w", err)
+	}
+	return resp, nil
+}
+
+// call sends one request to <url>/config/<path> and returns its status and body.
+func (s *Supervisor) call(ctx context.Context, method, path string, body []byte) (int, []byte, error) {
+	var rd io.Reader
+	ct := ""
+	if body != nil {
+		rd, ct = bytes.NewReader(body), "application/json"
+	}
+	resp, err := s.Do(ctx, method, "/config/"+path, rd, ct)
+	if err != nil {
+		return 0, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))

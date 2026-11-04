@@ -213,6 +213,10 @@ For videos whose **Length** step failed, reads the file again; a file that is re
 
 The main machine converts the stored paths of your media to share paths every machine understands. It runs by itself when needed or from the [Machines](/admin/machines) page, and is tried once. Rules: [Canonical share paths](/help/rules#storage).
 
+### Catch up {#component-catchup}
+
+When an admin turns a component (for example Transcription) on again, the main machine queues the work its steps missed while it was off: one job, at a low priority, that shows its progress. Work already done or already queued is not queued twice.
+
 ### Access check {#access-check}
 
 Tests whether a worker can read a video's file: it opens the file and reads its first 64 KiB, within **Check waits (seconds)**. If the file reads, every step that failed for that video is queued again. It runs only when an admin asks for it, is tried once, and never fails: what it found is its result. See [No permission to read the file](/help/failures#permission-denied).

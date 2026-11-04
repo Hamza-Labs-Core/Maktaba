@@ -32,7 +32,7 @@ and proves in the update rehearsal that nothing changed.
 ### 2. The rules, component by component
 
 `want` is `enabled` unless the table says otherwise. No component is seeded `absent` except
-an asset that is not on disk. All `updated_by = 'seed'`.
+an asset that is not on disk and that nothing enabled needs. All `updated_by = 'seed'`.
 
 | Component | Seeded `enabled` when | Else |
 |---|---|---|
@@ -49,7 +49,7 @@ an asset that is not on disk. All `updated_by = 'seed'`.
 | `backups` | `[backups] nightly` is not `off` | `installed` |
 | `telemetry` | `[telemetry] enabled` is on (the admin's consent `telemetry.share_server_data` keeps deciding what is sent, unchanged) | `installed` |
 | `cluster`, `queue_health`, `analytics`, `updates.auto` | always (their loops always run today) | — |
-| assets (`runtime.ml`, `runtime.ollama`, `tool.yt-dlp`, `model.*`) | on disk now (`installed`), never `enabled` (assets have no run) | `absent` |
+| assets (`runtime.ml`, `runtime.ollama`, `tool.yt-dlp`, `model.*`) | on disk now (`installed`), never `enabled` (assets have no run); **no row** when an enabled component needs it and none of that requirement is on disk yet (today the stage fetches it on first use: a fresh home, one that never transcribed), the first of an `any:` group that runs on the platform: the seed records only what is on disk, so nothing is downloaded at the first boot and no worker waits for it | `absent` |
 
 Stage groups and the Queues page: a component seeded `enabled` leaves every `job_stages` row
 as it is, including stages an operator turned off. 51.06 never overwrites
@@ -168,7 +168,7 @@ Scenarios 13–14 (packs) belong to 51.18.
 | `cmd/maktaba-server/internal/componentseed/toml.go` (new) | The imported keys, line lookup, `toml_key_superseded`. |
 | `cmd/maktaba-server/internal/componentseed/seed_test.go`, `seed_pg_test.go` (new) | T01–T08. |
 | `cmd/maktaba-server/cmd_serve.go` | Call `Seed` after the database is up, before `Build*`; nodes call the override seed. |
-| `shared/db/migrations/0173_components.sql` / `.sqlite.sql` | `component_override_seed` is added to 51.02's slot (coordinate in the same integration branch; no new slot). |
+| `shared/db/migrations/0178_components.sql` / `.sqlite.sql` | `component_override_seed` is added to 51.02's slot (coordinate in the same integration branch; no new slot). |
 | `shared/components/catalog.toml` (+ synced copy) | Reason `toml_superseded`. |
 | `web/src/i18n/en.json`, `web/src/i18n/ar.json` | `components.reason.toml_superseded`, English and Arabic. |
 | `api/rehearsal_components_e2e_test.go` (new) | Scenario 12. |

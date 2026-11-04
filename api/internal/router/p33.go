@@ -16,10 +16,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	tvchangeapi "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tvchange"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/notify"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // P33Deps bundles the dependencies of the Epic 33 handlers.
@@ -34,6 +36,9 @@ type P33Deps struct {
 	// Notifier is where the controller's notices go (nil: a hub over DB whose first
 	// subscriber is the notifications table; e-mail / push subscribe to it later).
 	Notifier *notify.Hub
+	// Loops is the API's component runner (Epic 51): the loops below start and stop
+	// with their component. nil: they just run (tests).
+	Loops *runner.Runner
 }
 
 // MountP33 attaches the TV change routes and starts the controller.
@@ -52,14 +57,21 @@ func MountP33(r chi.Router, d P33Deps) *tvchange.Controller {
 		// door without slots, or staging not built, keeps the database checks)
 		ctl.Staging = tvchange.NewHTTPStaging(d.DB)
 	}
-	tvchangeapi.New(d.DB, ctl).Mount(r)
+	h := tvchangeapi.New(d.DB, ctl)
+	// Epic 51: /api/tv/* answers 409 component_off while Live TV is off, after the
+	// role check (nobody learns more than their role allows)
+	r.Group(func(g chi.Router) {
+		g.Use(authmw.RequireAdmin, middleware.RequireComponent(d.Loops, "livetv"))
+		h.MountTV(g)
+	})
+	h.MountInternal(r)
 	(&notify.Handler{Store: &notify.Store{DB: d.DB}}).Mount(r)
 	if d.RunController {
 		ctx := d.Ctx
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		safego.Go(d.Logger, "tvchange_controller", func() { ctl.Run(ctx) })
+		d.Loops.Declare("tvchange_controller", runner.Bound(ctx, runner.Func(ctl.Run)))
 	}
 	return ctl
 }

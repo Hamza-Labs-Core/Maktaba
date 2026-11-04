@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/graphql"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
@@ -44,18 +45,22 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/transcription"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/libpaths"
 	perfpkg "github.com/Hamza-Labs-Core/Maktaba/api/internal/perf"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/runtimecfg"
-	"github.com/Hamza-Labs-Core/Maktaba/api/internal/safego"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/tvchange"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // P6Deps bundles the dependencies for Phase 6 handlers. DB is the only
 // required field; gRPC clients are optional (a nil client is a no-op).
 type P6Deps struct {
 	DB *sql.DB
+	// Loops is the API's component runner (Epic 51): the loops below start and stop
+	// with their component. nil: they just run (tests).
+	Loops *runner.Runner
 	// Settings is the runtime settings reader (PATCH /api/settings drops its
 	// cache). Nil ⇒ one of its own; main.go shares one with the auth surface,
 	// so a renamed home reads at once in GET /api/auth/me.
@@ -111,6 +116,12 @@ type P6Deps struct {
 	// OnQueues, when set, is called with the queue/extensions handler
 	// before it is mounted (story 32.6 hangs the Cloudflare test on it).
 	OnQueues func(*queues.Handler)
+	// OnBus, when set, is called with the cross-replica event bus once it is wired
+	// (nil when it is not): Epic 51 story 51.09 publishes /ws/home on it.
+	OnBus func(*eventbus.Bus)
+	// Capabilities is the home's capabilities snapshot (Epic 51 story 51.09): search
+	// skips its semantic leg while search.semantic is off. nil: always asked.
+	Capabilities *components.Capabilities
 }
 
 // modelPipelineClient adapts the gRPC pipeline.Client to the models
@@ -180,9 +191,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	browseHandler := &browse.Handler{DB: d.DB}
 	if d.BusCtx != nil && d.BusDSN != "" {
 		browseHandler.Rows = browse.NewRowCache(d.BusCtx)
-		safego.Go(nil, "browse_rowcache_listen", func() {
-			browseHandler.Rows.Listen(d.BusCtx, d.BusDSN, d.BusResettle, slog.Default())
-		})
+		d.Loops.Declare("browse_rowcache_listen", runner.Bound(d.BusCtx, runner.Func(func(ctx context.Context) {
+			browseHandler.Rows.Listen(ctx, d.BusDSN, d.BusResettle, slog.Default())
+		})))
 	}
 	browseHandler.Mount(r)
 
@@ -222,6 +233,12 @@ func MountP6(r chi.Router, d P6Deps) {
 		// the binary the TV live slots use. Without yt-dlp the Search page
 		// hides the section.
 		YouTube: ytdlp,
+	}
+	if caps := d.Capabilities; caps != nil {
+		searchHandler.SemanticOn = func() bool {
+			_, off := caps.Snapshot().ComponentOff("search.semantic")
+			return !off
+		}
 	}
 	searchHandler.Mount(r)
 
@@ -298,9 +315,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	}
 	enrichHandler.Mount(r)
 	if d.EnrichAutoAcceptCtx != nil && d.DB != nil {
-		safego.Go(nil, "enrichment_auto_accept", func() {
-			enrichHandler.RunAutoAccept(d.EnrichAutoAcceptCtx, enrichment.DefaultAutoAcceptInterval, nil)
-		})
+		d.Loops.Declare("enrichment_auto_accept", runner.Bound(d.EnrichAutoAcceptCtx, runner.Func(func(ctx context.Context) {
+			enrichHandler.RunAutoAccept(ctx, enrichment.DefaultAutoAcceptInterval, nil)
+		})))
 	}
 
 	contextHandler := &contextcard.Handler{DB: d.DB}
@@ -334,6 +351,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	// receives an event published on *any* replica. The handler also
 	// replays missed events on reconnect.
 	bus := wireEventBus(d, hub, wsHandler)
+	if d.OnBus != nil {
+		d.OnBus(bus)
+	}
 
 	// Plan 06-11 queue control centre. The bus (when wired) carries the
 	// durable queue.control / pool.updated events; snapshots go straight
@@ -357,7 +377,9 @@ func MountP6(r chi.Router, d P6Deps) {
 	queuesHandler.Mount(r)
 	wsHandler.Initial = queuesHandler.InitialFrame
 	if d.BusCtx != nil {
-		safego.Go(nil, "queues_snapshots", func() { queuesHandler.PublishSnapshots(d.BusCtx, queues.DefaultSnapshotInterval) })
+		d.Loops.Declare("queues_snapshots", runner.Bound(d.BusCtx, runner.Func(func(ctx context.Context) {
+			queuesHandler.PublishSnapshots(ctx, queues.DefaultSnapshotInterval)
+		})))
 	}
 	wsHandler.Mount(r)
 

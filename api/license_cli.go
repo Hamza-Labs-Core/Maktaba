@@ -12,6 +12,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/router"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
@@ -80,7 +81,15 @@ Flags:`)
 	if err != nil {
 		return err
 	}
-	return applyLicense(ctx, store, v, router.LicenseAudit(db), raw, stdout)
+	if err := applyLicense(ctx, store, v, router.LicenseAudit(db), raw, stdout); err != nil {
+		return err
+	}
+	// Epic 51 story 51.19: the components' desired rows say what it allows now, so a
+	// component waiting on the licence starts without waiting for the server's take-up
+	if _, err := components.NewService(db).PublishLicences(ctx, store); err != nil {
+		fmt.Fprintf(os.Stderr, "license: the components take it up with the server (%v)\n", err)
+	}
+	return nil
 }
 
 // applyLicense checks and records one license: what the Settings page does, from the

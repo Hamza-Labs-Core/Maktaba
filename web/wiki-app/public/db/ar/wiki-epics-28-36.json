@@ -156,14 +156,17 @@
       ],
       "related": [
         "epic-28-auto-update",
-        "plan-28.05-mobile-update-notification"
+        "plan-28.05-mobile-update-notification",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/28-auto-update/story-28-05-mobile-update-notification.md",
         "plan": "specs/epics/28-auto-update/plan-28-05-mobile-update-notification.md",
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "mobile-update-notification"
@@ -191,7 +194,8 @@
       "related": [
         "epic-28-auto-update",
         "plan-28.06-update-ui",
-        "ep-get-system-version"
+        "ep-get-system-version",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/28-auto-update/story-28-06-update-ui.md",
@@ -199,7 +203,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /system/version"
+        "GET /system/version",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -304,7 +309,8 @@
         "entity-users",
         "entity-video_tags",
         "entity-videos",
-        "ep-get-activity"
+        "ep-get-activity",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/29-analytics/story-29-03-analytics-dashboard.md",
@@ -312,7 +318,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /activity"
+        "GET /activity",
+        "GET /components"
       ],
       "db_tables": [
         "libraries",

@@ -184,4 +184,41 @@ final class PlayerSearchUITests: PlayerUITestCase {
         XCTAssertTrue(element("search.none").waitForExistence(timeout: 10))
         XCTAssertTrue(app.staticTexts["Nothing matches “zzzz”."].exists)
     }
+
+    // MARK: Search by meaning off on the home (story 51.11)
+
+    /// An admin: the line under the field says the search is by words only, and it is.
+    func testSearchByMeaningOffShowsAnAdminTheWordsOnlyLine() {
+        home.capabilities(off: ["semantic_search"], admin: true)
+        openSearch()
+        let line = element("search.wordsOnly")
+        XCTAssertTrue(line.waitForExistence(timeout: 15), "the words-only line; the home saw \(home.seen)")
+        XCTAssertEqual(line.label, "Searching by words only. Search by meaning is off.")
+        type("seerah\n")
+        XCTAssertTrue(element("search.titles").waitForExistence(timeout: 10), "the words' results")
+        XCTAssertEqual(searches.last?["mode"] as? String, "fts", "words only")
+        shot("search-words-only-admin")
+    }
+
+    /// The same line in Arabic.
+    func testSearchByMeaningOffShowsAnAdminTheWordsOnlyLineInArabic() {
+        home.capabilities(off: ["semantic_search"], admin: true)
+        openSearch("ar")
+        let line = element("search.wordsOnly")
+        XCTAssertTrue(line.waitForExistence(timeout: 15), "the words-only line; the home saw \(home.seen)")
+        XCTAssertEqual(line.label, "البحث بالكلمات فقط. البحث بالمعنى متوقف.")
+    }
+
+    /// A viewer: words-only results, and no line about it.
+    func testSearchByMeaningOffShowsAViewerNoLine() {
+        home.capabilities(off: ["semantic_search"], admin: false)
+        openSearch()
+        eventually("the app asked what is on", timeout: 15) { home.seen.contains("GET /api/capabilities") }
+        // the answer is read on the app's side a moment after the mock saw the ask
+        RunLoop.current.run(until: Date().addingTimeInterval(1))
+        type("seerah\n")
+        XCTAssertTrue(element("search.titles").waitForExistence(timeout: 10), "the words' results")
+        XCTAssertEqual(searches.last?["mode"] as? String, "fts", "words only")
+        XCTAssertFalse(element("search.wordsOnly").exists, "no line for a viewer")
+    }
 }

@@ -18,6 +18,8 @@ export { Link } from "./Link/Link";
 export type { LinkProps } from "./Link/Link";
 
 export { ThemeProvider, useTheme } from "./ThemeProvider/ThemeProvider";
+export { LabelsProvider, useLabels } from "./internal/labels";
+export type { Labels } from "./internal/labels";
 export type { Theme } from "./ThemeProvider/ThemeProvider";
 
 // --- Form primitives ---

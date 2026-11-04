@@ -1,0 +1,15 @@
+schema = 1
+phases = ["not_installed", "installing", "removing", "off", "stopped", "waiting", "starting", "running", "degraded", "draining", "failed"]
+reasons = ["dependency_off", "held"]
+features = ["live_tv"]
+
+[[component]]
+id         = "core.api"
+kind       = "loop"
+switchable = true
+group      = "core"
+title_key  = "components.core.api.title"
+desc_key   = "components.core.api.desc"
+loops      = ["api:x"]
+platforms  = ["linux-amd64"]
+since      = "0.3.66"

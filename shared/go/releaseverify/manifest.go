@@ -52,6 +52,9 @@ type Manifest struct {
 	// 35.7, shared/go/layout.HandoverProtocol): it adopts the TV processes a supervisor
 	// hands over across its restart. Absent (0) before: a handover is never made onto it.
 	HandoverProtocol int `json:"handover_protocol,omitempty"`
+	// Components is the release's signed component index (Epic 51 story 51.15; absent
+	// before): its name and digest, so the updater finds it without guessing.
+	Components *ComponentsRef `json:"components,omitempty"`
 }
 
 // PostgresMajor is the PostgreSQL major an app payload bundles (0: the release does
@@ -223,6 +226,14 @@ func (m *Manifest) Validate(tag string, sums Checksums) error {
 		}
 		if got, ok := sums[mg.Archive]; !ok || got != mg.SHA256 {
 			return bad("migrations: %s digest differs from checksums.txt", mg.Archive)
+		}
+	}
+	if c := m.Components; c != nil {
+		if c.Index != ComponentsIndexName(m.Version) || !hexRe.MatchString(c.SHA256) {
+			return bad("components: bad index name or digest")
+		}
+		if got, ok := sums[c.Index]; !ok || got != c.SHA256 {
+			return bad("components: %s digest differs from checksums.txt", c.Index)
 		}
 	}
 	if p := m.Pipeline; p != nil {

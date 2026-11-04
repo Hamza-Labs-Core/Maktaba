@@ -76,13 +76,32 @@ trap cleanup EXIT
 git -C "$ROOT" worktree add --detach --quiet "$WORK/prev" "$PREV"
 PREV_DIR="$WORK/prev"
 
-# The previous release's tests as they were fixed since (tools/compat-prev/testfixes/<tag>/
-# *.patch): a race a test of that release had, fixed on main after the tag, would fail this
-# check at random until the next release is tagged (2026-10-29: v0.3.42's
-# TestRowCacheInvalidationPostgres, fixed by 271f3962). Only tests: a patch that touches
-# anything but a _test.go file is refused, so the release's own code runs as it shipped.
-if [ -d "$ROOT/tools/compat-prev/testfixes/$PREV" ]; then
-  for p in "$ROOT/tools/compat-prev/testfixes/$PREV"/*.patch; do
+newest_slot() { # the newest Postgres migration slot of directory $1
+  local s
+  s=$(ls "$1" | grep -E '^[0-9]{4}_.*\.sql$' | grep -v '\.sqlite\.sql$' | cut -c1-4 | sort | tail -1)
+  echo $((10#${s:-0}))
+}
+PREV_TOP=$(newest_slot "$PREV_DIR/shared/db/migrations")
+HEAD_TOP=$(newest_slot "$ROOT/shared/db/migrations")
+# The previous release's tests as they were fixed since: a race a test of that release had,
+# fixed on main after the tag, would fail this check at random until the next release is
+# tagged (2026-10-29: v0.3.42's TestRowCacheInvalidationPostgres, fixed by 271f3962).
+#   testfixes/<tag>/*.patch               that release alone
+#   testfixes/below-schema-<NNNN>/*.patch  every release whose newest migration is older than
+#                                          slot NNNN (a test that cannot know the tables a
+#                                          newer slot adds: each release tagged before they
+#                                          ship needs it, so it is not kept per tag)
+# Only tests: a patch that touches anything but a _test.go file is refused, so the
+# release's own code runs as it shipped.
+fixes=()
+[ -d "$ROOT/tools/compat-prev/testfixes/$PREV" ] && fixes+=("$ROOT/tools/compat-prev/testfixes/$PREV")
+for d in "$ROOT"/tools/compat-prev/testfixes/below-schema-*; do
+  [ -d "$d" ] || continue
+  below=${d##*below-schema-}
+  [ "$PREV_TOP" -lt $((10#$below)) ] && fixes+=("$d")
+done
+for dir in ${fixes[@]+"${fixes[@]}"}; do
+  for p in "$dir"/*.patch; do
     [ -e "$p" ] || continue
     if git -C "$PREV_DIR" apply --numstat "$p" | awk '{print $3}' | grep -vq '_test\.go$'; then
       echo "compat-prev: $p touches more than tests: refused (the release's code runs as it shipped)" >&2
@@ -92,17 +111,10 @@ if [ -d "$ROOT/tools/compat-prev/testfixes/$PREV" ]; then
       echo "compat-prev: $p does not apply to $PREV" >&2
       exit 2
     fi
-    echo "compat-prev: $PREV's tests with the later fix $(basename "$p")"
+    echo "compat-prev: $PREV's tests with the later fix $(basename "$dir")/$(basename "$p")"
   done
-fi
+done
 
-newest_slot() { # the newest Postgres migration slot of directory $1
-  local s
-  s=$(ls "$1" | grep -E '^[0-9]{4}_.*\.sql$' | grep -v '\.sqlite\.sql$' | cut -c1-4 | sort | tail -1)
-  echo $((10#${s:-0}))
-}
-PREV_TOP=$(newest_slot "$PREV_DIR/shared/db/migrations")
-HEAD_TOP=$(newest_slot "$ROOT/shared/db/migrations")
 echo "compat-prev: $PREV (schema $PREV_TOP) against this build (schema $HEAD_TOP)"
 
 # migrations newer than the previous release that say they break it

@@ -1,0 +1,217 @@
+/* Settings → Components (Epic 51, story 51.10). Tokens only (tokens.css), so light and
+   dark follow data-theme; logical properties only, so the rows mirror under dir="rtl". */
+.mkt-comp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+.mkt-comp h2,
+.mkt-comp h3 {
+  margin: 0;
+}
+.mkt-comp__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-comp__bundle {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-comp__intro {
+  margin: 0;
+}
+/* Change bundle, Download for offline, Import a file (51.16, 51.17) */
+.mkt-comp__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-comp-import {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-comp-import__error {
+  color: var(--color-warn);
+}
+.mkt-comp__offline,
+.mkt-comp__error {
+  margin: 0;
+  color: var(--color-warn);
+}
+/* the API does not answer: the last answer stays, greyed */
+.mkt-comp.is-offline .mkt-comp__group {
+  opacity: 0.6;
+}
+
+.mkt-comp__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.mkt-comp__group > h3 {
+  font-size: var(--font-size-base);
+  padding-block-end: var(--space-1);
+  border-block-end: 1px solid var(--color-border);
+}
+.mkt-comp__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mkt-comp__fold summary {
+  cursor: pointer;
+  padding-block: var(--space-2);
+}
+
+.mkt-comp-row {
+  display: grid;
+  grid-template-columns: minmax(10rem, 1.2fr) minmax(10rem, 1.5fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding-block: var(--space-2);
+  padding-inline: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.mkt-comp-row.is-flash {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.mkt-comp-row__name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mkt-comp-row__title {
+  font-weight: 600;
+}
+.mkt-comp-row__desc {
+  color: var(--color-muted);
+  font-size: var(--font-size-sm);
+}
+.mkt-comp-row__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+/* the chip wraps rather than cut its words off (long Arabic reasons) */
+.mkt-comp-row__state .mk-badge {
+  white-space: normal;
+  text-align: start;
+  max-width: 100%;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-comp-row__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+.mkt-comp-row__settings,
+.mkt-comp-row__plan,
+.mkt-comp-row__machines {
+  font-size: var(--font-size-sm);
+}
+
+/* a switch the home's plan does not include (51.19), and what pressing it says */
+.mkt-comp-row__locked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-comp-row__note {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--font-size-sm);
+}
+
+.mkt-comp-spin {
+  inline-size: 0.8em;
+  block-size: 0.8em;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  display: inline-block;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .mkt-comp-spin {
+    animation: mkt-comp-spin 0.9s linear infinite;
+  }
+}
+@keyframes mkt-comp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.mkt-comp-toast {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.mkt-comp-confirm__links .mk-btn--link {
+  padding: 0;
+}
+
+.mkt-comp-drawer__desc {
+  margin-block-start: 0;
+  color: var(--color-muted);
+}
+.mkt-comp-drawer__facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+}
+.mkt-comp-drawer__facts dt {
+  font-weight: 600;
+}
+.mkt-comp-drawer__facts dd {
+  margin: 0;
+}
+.mkt-comp-drawer__actions {
+  margin-block: var(--space-3);
+}
+.mkt-comp-drawer__machines,
+.mkt-comp-drawer__audit {
+  padding-inline-start: var(--space-4);
+}
+.mkt-comp-drawer__health {
+  font-size: var(--font-size-sm);
+  margin-block-start: var(--space-1);
+}
+.mkt-comp-drawer__stale {
+  margin: 0;
+  color: var(--color-warn);
+}
+.mkt-comp-drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.mkt-comp-drawer__part {
+  font-size: var(--font-size-sm);
+  margin-block-start: var(--space-1);
+}
+
+@media (max-width: 720px) {
+  .mkt-comp-row {
+    grid-template-columns: 1fr;
+  }
+  .mkt-comp-row__actions {
+    justify-content: flex-start;
+  }
+}

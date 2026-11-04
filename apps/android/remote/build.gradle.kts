@@ -16,6 +16,10 @@ android {
         targetSdk = 37
         versionCode = providers.gradleProperty("maktaba.versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("maktaba.versionName").orNull ?: "0.1.0"
+        // story 51.11's build switch, read by capabilitiesGate(): on unless -Pmaktaba.capabilitiesGate=off
+        val capabilitiesGate = providers.gradleProperty("maktaba.capabilitiesGate").orNull.orEmpty()
+        require(capabilitiesGate.all { it.isLetterOrDigit() }) { "maktaba.capabilitiesGate is on or off" }
+        buildConfigField("String", "CAPABILITIES_GATE", "\"$capabilitiesGate\"")
         // One app for phones, foldables and tablets (one Google Play listing): the layout follows
         // the window, and the device the API is told comes from the screen (ClientHeader.deviceFor).
         // Its name is res/values*/strings.xml's app_name ("Maktaba Remote", «ريموت مكتبة»).
@@ -56,6 +60,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
         resValues = true
     }
 

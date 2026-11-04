@@ -45,6 +45,10 @@ export interface ProcessStatus {
   last_restart_at?: string;
   next_restart_at?: string;
   last_probe?: { at: string; ok: boolean; error?: string; consecutive_failures: number };
+  /** The catalog component it belongs to (Epic 51). */
+  component?: string;
+  /** Its component is off: it does not run (state "held" while it does not). */
+  blocked?: boolean;
 }
 
 export interface ProcessEvent {

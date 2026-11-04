@@ -20,6 +20,10 @@ export interface UsageData {
   app_platforms: { app: string; platform: string; form_factor: string; installs: number }[];
   apps_in_use: { app: string; platform: string; homes: number; installs: number }[];
   features: { feature: string; homes: number; share: number }[];
+  /** Epic 51: the homes on each bundle and the share of homes with each component on
+   *  (absent from an older cloud's answer). */
+  bundles?: { bundle: string; homes: number }[];
+  components?: { component: string; homes: number; share: number }[];
   feature_use: { app: string; feature: string; total: number; installs: number }[];
   errors: {
     fingerprint: string;
@@ -197,6 +201,18 @@ export function AdminUsage() {
         cols={[t("admin.usage.feature"), t("admin.usage.homes"), t("admin.usage.share")]}
         rows={u.features}
         row={(r) => [r.feature, n(r.homes), pct(r.share)]}
+      />
+      <Section
+        title={t("admin.usage.bundles")}
+        cols={[t("admin.usage.bundle"), t("admin.usage.homes")]}
+        rows={u.bundles ?? []}
+        row={(r) => [r.bundle, n(r.homes)]}
+      />
+      <Section
+        title={t("admin.usage.components")}
+        cols={[t("admin.usage.component"), t("admin.usage.homes"), t("admin.usage.share")]}
+        rows={u.components ?? []}
+        row={(r) => [r.component, n(r.homes), pct(r.share)]}
       />
       <Section
         title={t("admin.usage.featureUse")}

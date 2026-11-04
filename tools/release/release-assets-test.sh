@@ -29,6 +29,7 @@ case "$1" in
         esac
         ;;
     release)
+        if [ "$2" = edit ]; then echo "edited $*" >>"${EDITS}"; exit 0; fi
         [ "$2" = download ] || { echo "gh stub: $*" >&2; exit 1; }
         name="" dir=""
         while [ $# -gt 0 ]; do
@@ -116,6 +117,25 @@ if adopt false Maktaba.dmg && [ "$(content Maktaba.dmg)" = "published Maktaba.dm
     ok "a file with no signature is taken alone, as before"
 else
     fail "unsigned file: $(cat "${work}/log")"
+fi
+
+# publish: a draft stays one until release.yml's signed set is there, the component index
+# among it (story 51.15)
+publish() { # publish ASSETS: runs publish on the draft v0.3.2-rc.1; its log in ${work}/log
+    : >"${work}/edits"
+    PATH="${work}/stubs:${PATH}" GITHUB_REPOSITORY=o/r DRAFT=true ASSETS="$1" EDITS="${work}/edits" \
+        bash "${here}/release-assets.sh" publish v0.3.2-rc.1 >"${work}/log" 2>&1
+}
+signed=$'release.json\nchecksums.txt\nchecksums.txt.sigstore.json'
+if publish "${signed}" && grep -q "components-0.3.2-rc.1.json (release.yml)" "${work}/log" && [ ! -s "${work}/edits" ]; then
+    ok "a draft without its component index stays a draft"
+else
+    fail "published without the index: $(cat "${work}/log" "${work}/edits")"
+fi
+if publish "${signed}"$'\ncomponents-0.3.2-rc.1.json' && grep -q -- "--draft=false" "${work}/edits"; then
+    ok "a draft with its signed set and index is published"
+else
+    fail "not published with the index: $(cat "${work}/log" "${work}/edits")"
 fi
 
 if [ "${fails}" -gt 0 ]; then
