@@ -32,6 +32,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/videos"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/swr"
 )
 
 // Stages are the transcription programme's stages, in pipeline order.
@@ -51,6 +52,9 @@ type Handler struct {
 	mu    sync.Mutex
 	at    time.Time
 	cache *Summary
+	// eta serves ETASeconds: stale while one rebuild runs
+	eta     swr.Cache[*Summary]
+	etaOnce sync.Once
 }
 
 // Mount wires the route.
@@ -341,7 +345,10 @@ func visibleTo(s *Summary, p *principal.Principal) *Summary {
 }
 
 // ETATTL is how old a summary the Processing card's time left may come from:
-// the queue snapshot is rebuilt every 2 s, the summary's queries take ~0.1 s.
+// the queue snapshot is rebuilt every 2 s. Past it the last summary's time
+// left is still served at once while one rebuild runs, and before the first
+// summary there is none (the card keeps its rate estimate) (swr.Peek): on the
+// home's 3M jobs the summary's queries take seconds; the snapshot never waits.
 const ETATTL = time.Minute
 
 // ETASeconds is the transcription's time left for the Processing page's
@@ -349,9 +356,12 @@ const ETATTL = time.Minute
 // the workers decode at, rather than the card's finished files per minute,
 // which lag (a worker decodes ~30 files side by side and restarts drop them).
 func (h *Handler) ETASeconds(ctx context.Context, now time.Time) (*float64, error) {
-	s, err := h.cached(ctx, now.UTC(), ETATTL)
-	if err != nil {
-		return nil, err
+	now = now.UTC()
+	h.etaOnce.Do(func() { h.eta.TTL = ETATTL })
+	s, ok := h.eta.Peek(ctx, now, func(bctx context.Context) (*Summary, error) { return h.Build(bctx, now) })
+	if !ok || s == nil {
+		// the first summary is still being built: the card keeps its own estimate
+		return nil, nil
 	}
 	return s.ETA.Seconds, nil
 }

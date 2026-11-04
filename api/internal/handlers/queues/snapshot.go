@@ -184,26 +184,33 @@ SELECT stage,
  WHERE state IN ('pending','claimed','running','resuming','paused')
  GROUP BY stage`
 
+// doneCountsSQL reads one range of processing_jobs_done_finished_idx
+// (stage, finished_at) per stage: Postgres 16 cannot skip-scan the index
+// for a plain GROUP BY stage, so the stages drive it.
 const doneCountsSQL = `
-SELECT stage,
-       count(*) FILTER (WHERE outcome IS DISTINCT FROM 'skipped_unchanged'),
-       count(*) FILTER (WHERE outcome = 'skipped_unchanged'),
-       count(*) FILTER (WHERE outcome IS DISTINCT FROM 'skipped_unchanged' AND finished_at > $2)
-  FROM processing_jobs
- WHERE state = 'done' AND finished_at > $1
- GROUP BY stage`
+SELECT s.stage, c.done, c.skipped, c.recent
+  FROM job_stages s
+  CROSS JOIN LATERAL (
+       SELECT count(*) FILTER (WHERE j.outcome IS DISTINCT FROM 'skipped_unchanged') AS done,
+              count(*) FILTER (WHERE j.outcome = 'skipped_unchanged') AS skipped,
+              count(*) FILTER (WHERE j.outcome IS DISTINCT FROM 'skipped_unchanged' AND j.finished_at > $2) AS recent
+         FROM processing_jobs j
+        WHERE j.stage = s.stage AND j.state = 'done' AND j.finished_at > $1) c
+ WHERE c.done + c.skipped > 0`
 
 // waveDoneSQL counts done rows (skipped included) since the oldest live
 // row of each stage, so a re-queued library fills its ring quickly when
 // nothing changed.
 const waveDoneSQL = `
-SELECT w.stage, count(*)
+SELECT w.stage, c.n
   FROM (SELECT stage, min(created_at) AS since
           FROM processing_jobs
          WHERE state IN ('pending','claimed','running','resuming','paused')
          GROUP BY stage) w
-  JOIN processing_jobs j ON j.stage = w.stage AND j.state = 'done' AND j.finished_at >= w.since
- GROUP BY w.stage`
+  CROSS JOIN LATERAL (
+       SELECT count(*) AS n FROM processing_jobs j
+        WHERE j.stage = w.stage AND j.state = 'done' AND j.finished_at >= w.since) c
+ WHERE c.n > 0`
 
 const runningJobsSQLTail = ` WHERE j.state IN ('claimed','running','resuming')`
 
@@ -325,10 +332,19 @@ func (h *Handler) loadFlows(ctx context.Context, now time.Time) ([]Flow, error) 
 	return out, nil
 }
 
-// BuildSnapshot computes the full Snapshot (GET /api/queues and
-// the queues.snapshot event). Every count query filters on live states
-// or a time window so the cost does not grow with history.
+// BuildSnapshot returns the full Snapshot (GET /api/queues, the
+// queues.snapshot event, the cluster hub's queues topic) from the shared
+// read cache (readcache.go): at most snapshotTTL old, or the last one while
+// one rebuild runs. Only the first read of a process waits for a build.
 func (h *Handler) BuildSnapshot(ctx context.Context) (Snapshot, error) {
+	return h.reads().snapshot.Get(ctx, h.now(), h.buildSnapshot)
+}
+
+// buildSnapshot computes the Snapshot. Every count query reads a partial
+// index of the live rows (processing_jobs_live_idx) or a time window of the
+// done rows (processing_jobs_done_finished_idx, one range per stage), so the
+// cost follows the backlog and the window, not the table's history.
+func (h *Handler) buildSnapshot(ctx context.Context) (Snapshot, error) {
 	now := h.now()
 	stages, err := h.loadStages(ctx)
 	if err != nil {

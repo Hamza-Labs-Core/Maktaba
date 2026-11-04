@@ -271,7 +271,15 @@ func TestLive_LostAudioIsNotTheSpeed(t *testing.T) {
 func TestETASeconds_ForTheProcessingCard(t *testing.T) {
 	rules := append([]*queuestest.Rule{liveRule(90000, 3600, 2)}, fullRules()...)
 	f := newFixture(rules...)
+	// the first call never waits for the summary: none yet, the card keeps its own
 	sec, err := f.h.ETASeconds(context.Background(), t0)
+	if err != nil || sec != nil {
+		t.Fatalf("eta before the first summary = %v, %v; want none", sec, err)
+	}
+	if err := f.h.eta.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	sec, err = f.h.ETASeconds(context.Background(), t0)
 	if err != nil || sec == nil || *sec != 2640 {
 		t.Fatalf("eta = %v, %v; want 2640 s (110 h at 150x)", sec, err)
 	}
@@ -282,6 +290,18 @@ func TestETASeconds_ForTheProcessingCard(t *testing.T) {
 	}
 	if len(f.db.Find("stt.audio_sec:")) != n {
 		t.Error("ETASeconds rebuilt the summary inside its minute")
+	}
+	// past the minute: the last time left at once, one rebuild behind it (the
+	// summary's queries take seconds on the home; the snapshot must not wait)
+	sec, err = f.h.ETASeconds(context.Background(), t0.Add(2*time.Minute))
+	if err != nil || sec == nil || *sec != 2640 {
+		t.Fatalf("stale eta = %v, %v", sec, err)
+	}
+	if err := f.h.eta.Wait(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.db.Find("stt.audio_sec:")) == n {
+		t.Error("ETASeconds did not rebuild the summary after its minute")
 	}
 }
 

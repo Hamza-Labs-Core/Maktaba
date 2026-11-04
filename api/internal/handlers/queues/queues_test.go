@@ -531,7 +531,7 @@ func snapshotRules() []*queuestest.Rule {
 				{"probe", int64(10), int64(8), int64(0), int64(2), int64(0), t0.Add(-time.Hour), t0.Add(-2 * time.Minute), nil},
 				{"transcribe", int64(3), int64(3), int64(0), int64(0), int64(0), t0.Add(-time.Hour), t0.Add(-time.Minute), nil},
 			}},
-		{Match: "and finished_at > $1 group by stage", Cols: []string{"stage", "done", "skipped", "recent"},
+		{Match: "as recent from processing_jobs j", Cols: []string{"stage", "done", "skipped", "recent"},
 			Rows: [][]driver.Value{{"probe", int64(100), int64(20), int64(30)}}},
 		{Match: "select w.stage", Cols: []string{"stage", "n"}, Rows: [][]driver.Value{{"probe", int64(50)}}},
 		{Match: "order by j.started_at", Cols: jobRefCols(), Rows: [][]driver.Value{jobRefRow(11, "probe", "running")}},
