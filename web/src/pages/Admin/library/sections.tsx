@@ -176,8 +176,47 @@ export function OverviewSection({
   );
 }
 
+/**
+ * The queue section before its numbers: loading, slow (with Try again), failed
+ * (with Try again), or read without a row for this library. Never a spinner
+ * that waits forever.
+ */
+function QueueWait({ status, onRetry }: { status: QueueReadState; onRetry?: () => void }) {
+  const { t } = useI18n();
+  const retry = onRetry && (
+    <Button size="sm" variant="secondary" onClick={onRetry}>
+      {t("common.retry")}
+    </Button>
+  );
+  if (status === "error") {
+    return (
+      <p className="mkt-muted" role="alert">
+        {t("libpage.queues.loadError")} {retry}
+      </p>
+    );
+  }
+  if (status === "ready") {
+    return <p className="mkt-muted">{t("libpage.queues.missing")}</p>;
+  }
+  return (
+    <div role="status">
+      <p className="mkt-muted">{t("libdash.loading")}</p>
+      {status === "slow" && (
+        <p className="mkt-muted">
+          {t("libdash.slow")} {retry}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Where the read of the library rows behind QueueSection stands. */
+export type QueueReadState = "loading" | "slow" | "error" | "ready";
+
 export function QueueSection({
   h,
+  status = "ready",
+  onRetry,
   stages,
   activity,
   failures,
@@ -185,6 +224,9 @@ export function QueueSection({
   onRequeue,
 }: {
   h: LibraryHealth | null;
+  /** the read of the library rows (h is null until it answers) */
+  status?: QueueReadState;
+  onRetry?: () => void;
   stages: StageInfo[];
   activity: Activity | undefined;
   failures: { items: FailureItem[]; total: number } | null;
@@ -214,7 +256,7 @@ export function QueueSection({
       }
     >
       {h === null ? (
-        <p className="mkt-muted">{t("libdash.loading")}</p>
+        <QueueWait status={status} onRetry={onRetry} />
       ) : (
         <>
           <div className="mkt-lp-gauge">

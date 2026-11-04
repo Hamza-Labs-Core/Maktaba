@@ -3,8 +3,11 @@ package queues
 import (
 	"context"
 	"database/sql/driver"
+	"errors"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -486,8 +489,12 @@ func TestLibraries(t *testing.T) {
 		&queuestest.Rule{Match: "select id::text, name from libraries", Cols: []string{"id", "name"}, Rows: [][]driver.Value{{uidA, "Kids"}, {uidB, "Empty"}}},
 		&queuestest.Rule{Match: "from videos group by library_id", Cols: []string{"id", "n"}, Rows: [][]driver.Value{{uidA, int64(40)}}},
 		&queuestest.Rule{Match: "from series_seasons", Cols: []string{"id", "n"}, Rows: [][]driver.Value{{uidA, int64(4)}}},
-		&queuestest.Rule{Match: "count(distinct subject_id)", Cols: []string{"lib", "stage", "done", "running", "pending", "last"},
-			Rows: [][]driver.Value{{uidA, "probe", int64(30), int64(2), int64(8), t0}, {uidA, "detect", int64(1), int64(0), int64(0), t0.Add(-time.Hour)}}},
+		&queuestest.Rule{Match: "from processing_done_subjects", Cols: []string{"lib", "stage", "done", "last"},
+			Rows: [][]driver.Value{{uidA, "probe", int64(30), t0.Add(-time.Minute)}, {uidA, "detect", int64(1), t0.Add(-time.Hour)}}},
+		&queuestest.Rule{Match: "count(*) filter (where state in ('pending','paused'))", Cols: []string{"lib", "stage", "running", "pending", "last"},
+			Rows: [][]driver.Value{{uidA, "probe", int64(2), int64(8), t0}}},
+		&queuestest.Rule{Match: "state in ('failed','cancelled')", Cols: []string{"lib", "stage", "last"},
+			Rows: [][]driver.Value{{uidA, "probe", t0.Add(-2 * time.Hour)}, {uidA, "tag", nil}}},
 		&queuestest.Rule{Match: "select library_id::text, stage, count(*) from latest", Cols: []string{"lib", "stage", "n"},
 			Rows: [][]driver.Value{{uidA, "probe", int64(3)}}},
 	)
@@ -521,13 +528,85 @@ func TestLibraries(t *testing.T) {
 	if len(f.db.Calls()) != n {
 		t.Errorf("second call within 5s must be served from cache")
 	}
+	// then served stale at once while one rebuild runs in the background
 	now := t0.Add(6 * time.Second)
 	f.h.NowFunc = func() time.Time { return now }
-	f.do("GET", "/api/queues/libraries", "", admin())
+	if rec := f.do("GET", "/api/queues/libraries", "", admin()); rec.Code != 200 {
+		t.Fatalf("stale read: %d", rec.Code)
+	}
+	if err := f.h.waitReads(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	if len(f.db.Calls()) == n {
-		t.Errorf("cache must expire after 5s")
+		t.Errorf("cache must be rebuilt after 5s")
 	}
 }
+
+// The library rows are built once for any number of readers at the same
+// time, and a failing rebuild keeps serving the last rows (the live home's
+// dashboard never loaded: every poll ran the full scans and a cancelled
+// statement answered 500).
+func TestLibraries_SharedAndStaleOnFailure(t *testing.T) {
+	gate := make(chan struct{})
+	var fail atomic.Bool
+	rules := []*queuestest.Rule{
+		stagesRule(stageRow("probe", "episodes", 1, "nas_read")),
+		{Match: "select id::text, name from libraries", Cols: []string{"id", "name"}, Rows: [][]driver.Value{{uidA, "Kids"}}},
+		{Match: "from videos group by library_id", Cols: []string{"id", "n"}, Rows: [][]driver.Value{{uidA, int64(40)}}},
+		{Match: "from series_seasons", Cols: []string{"id", "n"}},
+		{Match: "from processing_done_subjects", Cols: []string{"lib", "stage", "done", "last"},
+			Rows: [][]driver.Value{{uidA, "probe", int64(30), t0}},
+			Hook: func() error {
+				<-gate
+				if fail.Load() {
+					return errors.New("pq: canceling statement due to user request")
+				}
+				return nil
+			}},
+		{Match: "state in ('failed','cancelled')", Cols: []string{"lib", "stage", "last"}},
+		{Match: "count(*) filter (where state in ('pending','paused'))", Cols: []string{"lib", "stage", "running", "pending", "last"}},
+		{Match: "from latest", Cols: []string{"lib", "stage", "n"}},
+	}
+	f := newFixture(rules...)
+	var wg sync.WaitGroup
+	codes := make([]int, 8)
+	for i := range codes {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			codes[i] = f.do("GET", "/api/queues/libraries", "", admin()).Code
+		}(i)
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(gate)
+	wg.Wait()
+	for i, c := range codes {
+		if c != 200 {
+			t.Fatalf("reader %d: %d", i, c)
+		}
+	}
+	if n := countCalls(f, "from processing_done_subjects"); n != 1 {
+		t.Fatalf("8 concurrent readers ran the counts %d times, want 1", n)
+	}
+
+	// the rebuild fails: the last rows are served, never a 500
+	fail.Store(true)
+	now := t0.Add(time.Minute)
+	f.h.NowFunc = func() time.Time { return now }
+	for i := 0; i < 3; i++ {
+		rec := f.do("GET", "/api/queues/libraries", "", admin())
+		var out struct{ Items []LibraryQueueRow }
+		decode(t, rec, &out)
+		if rec.Code != 200 || len(out.Items) != 1 || out.Items[0].Strip[0].Done != 30 {
+			t.Fatalf("read %d during failing rebuilds: %d %s", i, rec.Code, rec.Body.String())
+		}
+		if err := f.h.waitReads(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func countCalls(f *fixture, match string) int { return len(f.db.Find(match)) }
 
 func TestHealthSeries(t *testing.T) {
 	tests := []struct {
