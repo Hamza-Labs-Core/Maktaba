@@ -31,6 +31,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming
+
       - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version

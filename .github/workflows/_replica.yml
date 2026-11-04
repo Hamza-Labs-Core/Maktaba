@@ -36,6 +36,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server
+
       - name: Postgres 16 servers for the tests
         # two clusters with logical replication: one no test has touched (the tests that
         # make the cluster-wide roles themselves), one for the rest and the two-machine run
@@ -176,6 +182,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher
 
       - name: Postgres 16 programs, and a Python with venv (the releases' pipeline environments)
         run: |

@@ -237,6 +237,14 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        if: matrix.payload || matrix.linux_payload
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud tools/release
+          offline: "false"
+
       - uses: astral-sh/setup-uv@v8.1.0
         if: matrix.payload || matrix.linux_payload
         with:
@@ -774,19 +782,100 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+          offline: "false"
+
       - name: Download the checked bundles
+        id: artifact-desktop
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: desktop-*
           path: staged
           merge-multiple: true
+      - name: Wait 15s to retry the download of desktop-*
+        if: steps.artifact-desktop.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the checked bundles (attempt 2)
+        id: artifact-desktop-2
+        if: steps.artifact-desktop.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: desktop-*
+          path: staged
+          merge-multiple: true
+      - name: Wait 45s to retry the download of desktop-*
+        if: steps.artifact-desktop-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the checked bundles (attempt 3)
+        id: artifact-desktop-3
+        if: steps.artifact-desktop-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: desktop-*
+          path: staged
+          merge-multiple: true
+      - name: Check desktop-* downloaded
+        id: artifact-desktop-check
+        if: steps.artifact-desktop-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: desktop-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download the checked players
+        id: artifact-player
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: player-*
           path: staged-player
           merge-multiple: true
+      - name: Wait 15s to retry the download of player-*
+        if: steps.artifact-player.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the checked players (attempt 2)
+        id: artifact-player-2
+        if: steps.artifact-player.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: player-*
+          path: staged-player
+          merge-multiple: true
+      - name: Wait 45s to retry the download of player-*
+        if: steps.artifact-player-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the checked players (attempt 3)
+        id: artifact-player-3
+        if: steps.artifact-player-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: player-*
+          path: staged-player
+          merge-multiple: true
+      - name: Check player-* downloaded
+        id: artifact-player-check
+        if: steps.artifact-player-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: player-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Attach them to the release, then write latest.json
         env:

@@ -51,10 +51,16 @@ def test_sign_and_release_needs_every_pack_leg_to_pass() -> None:
 
 
 def test_the_packs_download_cannot_fail_quietly() -> None:
-    step = _step(_jobs()["sign-and-release"], "Download the component packs")
-    assert "continue-on-error" not in step
+    job = _jobs()["sign-and-release"]
+    step = _step(job, "Download the component packs")
     assert "if" not in step
     assert step["with"]["pattern"] == "release-packs-*"
+    # a failed attempt retries (test_artifact_download.py); when the last one fails
+    # too, the check fails the release, never a warning that lets it go on
+    check = _step(job, "Check release-packs-* downloaded")
+    assert check["if"] == f"steps.{step['id']}-3.outcome == 'failure'"
+    assert "continue-on-error" not in check
+    assert "::error::" in check["run"] and "exit 1" in check["run"]
 
 
 def test_every_catalog_platform_has_a_leg_that_must_upload() -> None:

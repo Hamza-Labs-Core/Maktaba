@@ -407,6 +407,13 @@ jobs:
         with:
           go-version-file: api/go.mod
           cache: false
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/affected-tests
+
       - name: The hook and scripts
         run: shellcheck -x .githooks/pre-push tools/affected-tests/*.sh
       - name: Changed code has its tests changed

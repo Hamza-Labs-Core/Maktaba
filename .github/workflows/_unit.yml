@@ -41,6 +41,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        if: inputs.go
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
+
       - uses: actions/setup-python@v6.2.0
         if: inputs.pipeline
         with:
@@ -185,6 +192,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api cmd/maktaba-server
+
       - name: Test the announcement (api)
         working-directory: api
         run: go test -count=1 -v ./internal/discovery/
@@ -229,6 +242,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api cmd/maktaba-server
 
       - name: Turn on resolved's mDNS, build the tests
         run: tools/ci/mdns-linux.sh setup

@@ -34,6 +34,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud
+
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
@@ -185,6 +191,12 @@ jobs:
             cmd/maktaba-server/go.sum
             cmd/maktaba-launcher/go.sum
             tools/release/go.sum
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud tools/release
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:

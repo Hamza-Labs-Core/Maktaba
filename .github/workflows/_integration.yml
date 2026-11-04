@@ -65,6 +65,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
+
       - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
@@ -236,6 +242,13 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+          offline: "false"
 
       - name: Wait for Postgres
         run: |
