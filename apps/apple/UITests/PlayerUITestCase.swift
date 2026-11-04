@@ -176,20 +176,13 @@ class PlayerUITestCase: XCTestCase {
         if fresh {
             let walkthrough = element("permissions.walkthrough")
             if walkthrough.waitForExistence(timeout: 10 * patience) {
-                // the sheet is in the tree as it starts to slide up, and UIKit takes no touch
-                // while a presentation runs: a tap 0.5 s after it appeared was dropped and the
-                // walkthrough stayed (an iPhone run on #618). Continue is tapped once it stands
-                // still, the presentation over.
-                // Still, its tap was dropped all the same once (an iPad run of #608: the sheet
-                // stood still, the tap went at 10 s and the sheet stayed 5 s on). Continue only
-                // closes the sheet, so a tap that did nothing is made again, up to three.
+                // drawn over the app in its own view (`PermissionsCover`), not a UIKit sheet:
+                // a sheet took no touch while it slid up (an iPhone run on #618), and once
+                // dropped its dismissal after Continue, standing still (an iPad run of #608).
+                // Continue closes it at once, so one tap once it can be tapped.
                 let go = app.buttons["permissions.continue"]
-                for _ in 0 ..< 3 where walkthrough.exists {
-                    waitUntilStill(go, timeout: 5 * patience)
-                    guard go.exists else { break }
-                    go.tap()
-                    if walkthrough.waitForNonExistence(timeout: 2 * patience) { break }
-                }
+                waitUntilStill(go, timeout: 5 * patience)
+                go.tap()
                 XCTAssertTrue(walkthrough.waitForNonExistence(timeout: 5 * patience), "the permissions walkthrough closes")
             }
         }

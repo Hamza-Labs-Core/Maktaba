@@ -396,6 +396,7 @@ public final class PermissionsModel {
     public func dismiss() {
         defaults.set(true, forKey: Self.seenKey)
         if requiredMissing { dismissedWhileDenied = true }
+        if isPresented { Log.ui.info("permissions: walkthrough closed") }
         isPresented = false
     }
 
@@ -475,6 +476,7 @@ public final class PermissionsModel {
             return
         }
         if !seen || (requiredMissing && !dismissedWhileDenied) {
+            if !isPresented { Log.ui.info("permissions: walkthrough shown") }
             isPresented = true
         }
     }
