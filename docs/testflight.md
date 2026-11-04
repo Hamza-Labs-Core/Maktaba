@@ -11,7 +11,8 @@ also be run by hand from the Actions tab (*TestFlight* → *Run workflow*).
 | Maktaba Player (iPhone) | `Maktaba Player` | `com.hamzalabs.maktaba.player` |
 | Maktaba Player for iPad | `Maktaba Player iPad` | `com.hamzalabs.maktaba.player.tablet` |
 | Maktaba Player for Mac (Mac App Store) | `Maktaba Player Mac` | `com.hamzalabs.maktaba.player.mac` |
-| Maktaba Remote | `Maktaba Remote` | `com.hamzalabs.maktaba.remote` |
+| Maktaba Remote (iPhone) | `Maktaba Remote` | `com.hamzalabs.maktaba.remote` |
+| Maktaba Remote iPad | `Maktaba Remote iPad` | `com.hamzalabs.maktaba.remote.tablet` |
 | Maktaba TV (Apple TV) | `Maktaba TV` | `com.hamzalabs.maktaba.tv` |
 
 Each app is its own job (`fail-fast: false`): if one upload fails, for example because its
@@ -53,7 +54,7 @@ App records can't be created through the API, so the first upload fails until th
 (`Error Downloading App Information`, `missingApp(bundleId: …)` in the log).
 
 1. In [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → **+** → **New App**,
-   create the five apps:
+   create the six apps:
 
    | Platform | Name | Primary language | Bundle ID | SKU |
    |---|---|---|---|---|
@@ -61,11 +62,13 @@ App records can't be created through the API, so the first upload fails until th
    | iOS | Maktaba Player for iPad | English | `com.hamzalabs.maktaba.player.tablet` | `maktaba-player-ipad` |
    | macOS | Maktaba Player for Mac | English | `com.hamzalabs.maktaba.player.mac` | `maktaba-player-mac` |
    | iOS | Maktaba Remote | English | `com.hamzalabs.maktaba.remote` | `maktaba-remote-ios` |
+   | iOS | Maktaba Remote iPad | English (U.S.) | `com.hamzalabs.maktaba.remote.tablet` | `com.hamzalabs.maktaba.remote.tablet` |
    | tvOS | Maktaba TV | English | `com.hamzalabs.maktaba.tv` | `maktaba-tv-tvos` |
 
    For the Mac app pick the **macOS** platform, and for the Apple TV app **tvOS**, in the
    New App form. The iPad, Mac and Apple TV apps each have their own bundle ID, so each needs
-   its own record. If the name "Maktaba TV" is taken, pick another that
+   its own record. The Maktaba Remote iPad record already exists (made on 2026-11-03, with its
+   first build, 0.3.73, uploaded from Xcode): its SKU is its bundle ID. If the name "Maktaba TV" is taken, pick another that
    starts with Maktaba.
 
    If a bundle ID isn't in the list, register it first: Certificates, Identifiers & Profiles →
@@ -86,7 +89,8 @@ Then run the workflow by hand, or push the next tag.
 
 1. Install **TestFlight** from the App Store.
 2. Open it with the Apple ID that is an internal tester. Maktaba Player and Maktaba Remote
-   show up there (the iPad app in TestFlight on the iPad, the Mac app in TestFlight for Mac,
+   show up there (the iPad apps, Maktaba Player for iPad and Maktaba Remote iPad, in
+   TestFlight on the iPad, the Mac app in TestFlight for Mac,
    Maktaba TV in the TestFlight app on the Apple TV) once App Store Connect has processed a
    build (usually 5–30 minutes after the upload). The apps declare that they use only standard encryption
    (`ITSAppUsesNonExemptEncryption` is `NO`), so App Store Connect doesn't ask the
