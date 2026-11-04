@@ -69,6 +69,40 @@ enum CapabilityFixtures {
         #expect(!Capabilities.allOn.isAdmin)
     }
 
+    /// A video's chapters and transcript (the Player's video page): off, a viewer gets no list
+    /// and no note, an admin the note; on, the lines when there are some.
+    @Test func chaptersAndTranscriptsOnAVideosPage() {
+        let viewer = Capabilities(off: [.chapters, .transcripts])
+        let admin = Capabilities(off: [.chapters, .transcripts], admin: .init())
+        for f in [Capabilities.Feature.chapters, .transcripts] {
+            #expect(viewer.place(f, lines: true) == .nothing, "\(f) off: a viewer has no list")
+            #expect(viewer.place(f, lines: false) == .nothing)
+            #expect(admin.place(f, lines: true) == .note, "\(f) off: an admin reads why")
+            #expect(admin.place(f, lines: false) == .note)
+            #expect(Capabilities.allOn.place(f, lines: true) == .lines)
+            #expect(Capabilities.allOn.place(f, lines: false) == .nothing, "on with no lines: no heading")
+        }
+        // one off, the other on: each place on its own
+        let chaptersOff = Capabilities(off: [.chapters])
+        #expect(chaptersOff.place(.chapters, lines: true) == .nothing)
+        #expect(chaptersOff.place(.transcripts, lines: true) == .lines)
+        // the words for the admin's notes, in both languages
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar")
+        #expect(FeatureWords.offOnThisHome(.chapters, en) == "Chapters are off on this home.")
+        #expect(FeatureWords.offOnThisHome(.transcripts, en) == "Transcripts are off on this home.")
+        #expect(FeatureWords.offOnThisHome(.chapters, ar) == "الفصول متوقفة على الجهاز الرئيسي.")
+        #expect(FeatureWords.offOnThisHome(.transcripts, ar) == "نصوص الفيديو متوقفة على الجهاز الرئيسي.")
+    }
+
+    /// Search by meaning off: only an admin gets the words-only line; on, nobody.
+    @Test func theWordsOnlyLine() {
+        #expect(Capabilities(off: [.semanticSearch], admin: .init()).wordsOnlyLine)
+        #expect(!Capabilities(off: [.semanticSearch]).wordsOnlyLine, "a viewer just gets the words' results")
+        #expect(!Capabilities(admin: .init()).wordsOnlyLine, "on: no line")
+        #expect(!Capabilities(off: [.liveTV], admin: .init()).wordsOnlyLine, "another feature off: no line")
+        #expect(!Capabilities.allOn.wordsOnlyLine)
+    }
+
     @Test func theComponentsPage() {
         #expect(Capabilities.componentsPage(URL(string: "http://192.168.1.5:8088")!).absoluteString
             == "http://192.168.1.5:8088/settings/components")

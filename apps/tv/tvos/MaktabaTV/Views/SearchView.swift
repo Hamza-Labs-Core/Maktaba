@@ -21,7 +21,7 @@ struct SearchView: View {
         ScrollView {
             // the TV searches titles by their words; while search by meaning is off on the
             // home an admin reads so under the field (51.11)
-            if session?.capabilities.current.shown(.semanticSearch) == .explain {
+            if session?.capabilities.current.wordsOnlyLine == true {
                 Text(verbatim: FeatureWords.wordsOnly)
                     .font(Theme.body(26))
                     .foregroundStyle(Theme.muted)

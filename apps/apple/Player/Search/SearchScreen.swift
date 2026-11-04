@@ -26,7 +26,7 @@ struct SearchScreen: View {
         content
             // search by meaning off: words only, and an admin reads so under the field (51.11)
             .safeAreaInset(edge: .top, spacing: 0) {
-                if caps.shown(.semanticSearch) == .explain {
+                if caps.wordsOnlyLine {
                     Text(verbatim: FeatureWords.wordsOnly)
                         .font(.maktabaBody(13, relativeTo: .footnote))
                         .foregroundStyle(Color.mktMuted)
