@@ -19,7 +19,42 @@ const (
 	ActionImport          = "component.import"
 	// ActionRestart is an admin's restart (story 51.08 §5): no desired row changes.
 	ActionRestart = "component.restart"
+	// ActionInstall is the install route's ask for a wanted asset that is not on disk (or
+	// whose install failed): its row written again as it is, a new generation the
+	// supervisor's packs runner acts on.
+	ActionInstall = "component.install"
 )
+
+// InstallAgain reports whether an install of d (the install route, the CLI's install)
+// asks again for an asset the home wants: switchable, its want not absent, and the home
+// neither has it on disk (the supervisor's progress, or a part's Installed condition
+// true) nor is installing it now. A failed install is asked again (Retry).
+func InstallAgain(d Detail) bool {
+	if !d.Switchable || d.Kind != components.KindAsset || d.Want == components.WantAbsent {
+		return false
+	}
+	if p := d.Progress; p != nil {
+		switch {
+		case p.Busy || p.Installed:
+			return false
+		case p.Phase == components.PhaseFailed:
+			return true
+		}
+	}
+	for _, m := range d.Machines {
+		if m.Machine != store.Home {
+			continue
+		}
+		for _, p := range m.Parts {
+			for _, c := range p.Conditions {
+				if c.Type == components.CondInstalled && c.Status == "true" {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
 
 // Restarted records an admin's restart of id: one audit row, component.restart, with
 // 51.08 §5's payload (the desired row as before and after, the same; a batch id).

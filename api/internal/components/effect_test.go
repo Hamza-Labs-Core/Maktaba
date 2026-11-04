@@ -324,3 +324,52 @@ func TestInstalledAssetMeetsRequirements(t *testing.T) {
 		}
 	}
 }
+
+// The install route's rule: a switchable asset the home wants is asked again unless the
+// home has it on disk or is installing it; a failed install is asked again (Retry).
+func TestInstallAgain(t *testing.T) {
+	asset := func(want string) Detail {
+		return Detail{View: View{ID: "runtime.ml", Kind: components.KindAsset, Switchable: true, Want: want}}
+	}
+	onDisk := asset(components.WantEnabled)
+	onDisk.Machines = []MachineView{{Machine: store.Home, Parts: []store.Status{{ID: "runtime.ml", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	failed := asset(components.WantEnabled)
+	failed.Progress = &InstallProgress{Phase: components.PhaseFailed}
+	busy := asset(components.WantEnabled)
+	busy.Progress = &InstallProgress{Phase: components.PhaseInstalling, Busy: true}
+	notAsset := asset(components.WantEnabled)
+	notAsset.Kind = "stages"
+	for name, c := range map[string]struct {
+		d    Detail
+		want bool
+	}{
+		"no status":    {asset(components.WantEnabled), true},
+		"installed":    {asset(components.WantInstalled), true},
+		"absent":       {asset(components.WantAbsent), false},
+		"on disk":      {onDisk, false},
+		"failed":       {failed, true},
+		"busy":         {busy, false},
+		"not an asset": {notAsset, false},
+	} {
+		if got := InstallAgain(c.d); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// Again writes a row whose want does not change (a new generation), audited
+// component.install; without it nothing is written.
+func TestAgainWritesTheRow(t *testing.T) {
+	rows := allOn()
+	p, err := makePlan(components.Default(), nil, time.Now(), rows, 1,
+		Request{Changes: []Change{{ID: "model.embedder", Want: components.WantEnabled}}}, who, false)
+	if err != nil || len(p.writes) != 0 {
+		t.Fatalf("a change to the same want wrote: %v %+v", err, p.writes)
+	}
+	p, err = makePlan(components.Default(), nil, time.Now(), rows, 1,
+		Request{Changes: []Change{{ID: "model.embedder", Want: components.WantEnabled, Again: true}}}, who, false)
+	if err != nil || len(p.writes) != 1 || p.writes[0].Audit.Action != ActionInstall {
+		t.Fatalf("again: %v %+v", err, p.writes)
+	}
+}

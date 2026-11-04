@@ -26,6 +26,10 @@ type Change struct {
 	// Generation the override row's (0: none). Every change of a request names the same
 	// machine, or none.
 	Machine string `json:"machine,omitempty"`
+	// Again writes the row even when nothing in it changes (a new generation, audited
+	// component.install): the install route's ask to install a wanted asset that is not
+	// on disk, or to try a failed install again. Not settable from JSON.
+	Again bool `json:"-"`
 }
 
 // Request is one batch of changes. Generation, when given, is the revision the caller
@@ -466,11 +470,13 @@ func makePlanTier(cat *components.Catalog, licensed func(string) bool, tier stri
 			write(x, store.Desired{ID: x, Want: components.WantInstalled, Hold: o.Hold, Generation: o.Generation}, "component.disable")
 			p.preview.Conflicts = appendNew(p.preview.Conflicts, x)
 		}
-		if has && next.Want == cur.Want && (next.Hold == nil) == (cur.Hold == nil) {
+		if has && next.Want == cur.Want && (next.Hold == nil) == (cur.Hold == nil) && !ch.Again {
 			continue // nothing changes
 		}
 		verb := ""
 		switch {
+		case ch.Again && next.Want == was && (next.Hold == nil) == (cur.Hold == nil):
+			verb = ActionInstall
 		case next.Want != was && next.Want == components.WantEnabled:
 			verb = "component.enable"
 		case next.Want != was && next.Want == components.WantInstalled:

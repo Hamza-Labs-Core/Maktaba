@@ -712,6 +712,118 @@ describe("Components page (story 51.10)", () => {
   });
 });
 
+describe("Components page: a wanted asset not on this home", () => {
+  const drawerOf = async (id: string, name: string) => {
+    const user = userEvent.setup();
+    const { unmount } = open();
+    await loaded();
+    await user.click(within(row(id)).getByRole("button", { name: `Details of ${name}` }));
+    return { user, unmount, drawer: await screen.findByRole("dialog", { name }) };
+  };
+  const installs = (id: string) =>
+    post.mock.calls.filter(([url]) => url === `/api/components/${id}/install`);
+  const previews = () => post.mock.calls.filter(([url]) => url === "/api/components/preview");
+
+  it("offers Install for a fresh home's search model (no desired row), with no preview", async () => {
+    setRow("model.embedder", { phase: "not_installed", has_row: false });
+    const { user, drawer } = await drawerOf("model.embedder", "Search model");
+    expect(within(drawer).getByRole("button", { name: "Remove" })).toBeInTheDocument();
+    await user.click(within(drawer).getByRole("button", { name: EN["components.row.install"]! }));
+    await waitFor(() => expect(installs("model.embedder")).toHaveLength(1));
+    expect(previews()).toHaveLength(0);
+    expect(
+      await screen.findByText(EN["components.done.install"]!.replace("{name}", "Search model"))
+    ).toBeInTheDocument();
+  });
+
+  it("offers Retry after a failed install, and it asks the install route again", async () => {
+    setRow("runtime.ml", {
+      phase: "failed",
+      reason: "download_failed",
+      progress: {
+        phase: "failed",
+        percent: 0,
+        done: 0,
+        total: 0,
+        busy: false,
+        reason: "download_failed",
+      },
+    });
+    const { user, drawer } = await drawerOf("runtime.ml", "Machine learning runtime");
+    expect(
+      within(drawer).queryByRole("button", { name: EN["components.row.install"]! })
+    ).toBeNull();
+    await user.click(within(drawer).getByRole("button", { name: EN["components.row.retry"]! }));
+    await waitFor(() => expect(installs("runtime.ml")).toHaveLength(1));
+    expect(previews()).toHaveLength(0);
+    expect(
+      await screen.findByText(
+        EN["components.done.retry"]!.replace("{name}", "Machine learning runtime")
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("offers neither when it is on disk, installing, or packs are off here", async () => {
+    for (const over of [
+      { phase: "off" },
+      {
+        phase: "installing",
+        progress: { phase: "installing", percent: 5, done: 0, total: 0, busy: true },
+      },
+      { phase: "not_installed", reason: "packs_disabled" },
+    ] satisfies Partial<ComponentView>[]) {
+      setRow("runtime.ml", over);
+      const { drawer, unmount } = await drawerOf("runtime.ml", "Machine learning runtime");
+      expect(
+        within(drawer).queryByRole("button", { name: EN["components.row.install"]! })
+      ).toBeNull();
+      expect(
+        within(drawer).queryByRole("button", { name: EN["components.row.retry"]! })
+      ).toBeNull();
+      unmount();
+    }
+  });
+
+  it("says Installed, not Turned off, for an asset moved to installed", async () => {
+    get.mockImplementation((url: string) => {
+      if (url === "/api/components") return Promise.resolve(structuredClone(list));
+      if (url === "/api/components/runtime.ml")
+        return Promise.resolve({
+          ...detailOf("runtime.ml"),
+          audit: [
+            {
+              id: 9,
+              at: "2026-11-03T08:00:00Z",
+              action: "component.disable",
+              actor_source: "web",
+              payload: { by: "maya" },
+            },
+          ],
+        } satisfies ComponentDetail);
+      return Promise.reject(new Error(`unmocked GET ${url}`));
+    });
+    const { drawer } = await drawerOf("runtime.ml", "Machine learning runtime");
+    expect(await within(drawer).findByText(/Installed · maya/)).toBeInTheDocument();
+    expect(drawer).not.toHaveTextContent(EN["components.audit.disable"]!);
+  });
+
+  it("has the new words in Arabic", () => {
+    for (const k of [
+      "components.row.retry",
+      "components.done.retry",
+      "components.audit.install",
+      "components.audit.asset.installed",
+      "components.reason.offline_verify_failed",
+    ]) {
+      expect(EN[k], k).toBeTruthy();
+      expect(AR[k], k).toBeTruthy();
+      expect(AR[k], k).not.toBe(EN[k]);
+    }
+    // an import's mismatch names the file, not a download
+    expect(EN["components.reason.offline_verify_failed"]).toMatch(/^The file /);
+  });
+});
+
 async function axeBoth(render: () => Promise<{ container: HTMLElement; unmount: () => void }>) {
   for (const locale of ["en", "ar"]) {
     localStorage.setItem("mkt:locale", locale);

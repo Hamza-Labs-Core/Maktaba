@@ -8,7 +8,8 @@ import type { ComponentView, Preview, Refusal } from "../../lib/componentsApi";
 import { useI18n } from "../../lib/i18n";
 import { joinNames, listParts } from "./componentWords";
 
-export type Action = "on" | "off" | "stop" | "start" | "remove" | "install";
+/** retry: an asset's failed install asked again (no preview: nothing else changes) */
+export type Action = "on" | "off" | "stop" | "start" | "remove" | "install" | "retry";
 
 export interface Plan {
   action: Action;

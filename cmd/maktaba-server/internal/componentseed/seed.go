@@ -127,11 +127,12 @@ func Plan(cat *components.Catalog, f Facts) map[string]string {
 }
 
 // unsetNeededAssets leaves with no desired row the asset an enabled component needs when
-// none of its requirement is on disk yet: today the stage runs and fetches its runtime or
-// model on first use (a fresh home, one that never transcribed), so seeding it absent would
-// turn the stage off, and seeding it installed would say it is there when it is not (the
-// packs runner would download it at the first boot and the workers wait for it). With no
-// row it follows today's behaviour. The first of an "any:" group that runs here is taken.
+// none of its requirement is on disk yet (a fresh home, one that never transcribed):
+// seeding it absent would turn the stage off, and seeding it installed would say it is
+// there when it is not. With no row it reads as the catalog default (wanted): the packs
+// runner installs a missing pack (runtime.ml) and a model is fetched on first use, or when
+// an admin asks for it on the Components page. The first of an "any:" group that runs
+// here is taken.
 func unsetNeededAssets(cat *components.Catalog, out map[string]string) {
 	platform := Platform()
 	for _, c := range cat.Components() {

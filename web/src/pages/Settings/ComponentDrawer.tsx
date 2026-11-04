@@ -1,7 +1,8 @@
 // Epic 51 (story 51.10): the ⋯ drawer of a component. It reads GET /api/components/{id}:
 // each machine's phase and the conditions every part reports, what it requires and what
 // needs it, its version and how long it has been in its phase, the install size and the
-// last 20 changes from the audit log. Remove and Install live here; they go through the
+// last 20 changes from the audit log. Remove and Install live here (and Retry, for an
+// asset whose install failed); they go through the
 // same preview and dialog as the row's switch.
 //
 // Each machine's health (story 51.14) shows under it: how long it has been running, its
@@ -78,6 +79,7 @@ export function ComponentDrawer({
     reasonText(t, locale, r, titleOf, params);
   const tomlKeys = view.settings.filter((k) => k.startsWith("toml:")).map((k) => k.slice(5));
   const ownsRules = view.settings.some((k) => k.startsWith("rules."));
+  const ask = assetAsk(view);
   const machineName = (m: string) => (m === "home" ? t("components.drawer.home") : m);
   const requires = view.requires.map((group) =>
     group.length > 1
@@ -160,13 +162,20 @@ export function ComponentDrawer({
               {t("components.row.install")}
             </Button>
           ) : (
-            <Button
-              variant="destructive"
-              disabled={disabled}
-              onClick={() => onAction(view, "remove")}
-            >
-              {t("components.row.remove")}
-            </Button>
+            <>
+              {ask && (
+                <Button variant="secondary" disabled={disabled} onClick={() => onAction(view, ask)}>
+                  {t(`components.row.${ask}`)}
+                </Button>
+              )}
+              <Button
+                variant="destructive"
+                disabled={disabled}
+                onClick={() => onAction(view, "remove")}
+              >
+                {t("components.row.remove")}
+              </Button>
+            </>
           )}
         </div>
       )}
@@ -231,7 +240,7 @@ export function ComponentDrawer({
             <li key={a.id}>
               <time dateTime={a.at}>{formatDate(a.at)}</time>
               {" · "}
-              {auditWord(t, a.action)}
+              {auditWord(t, a.action, view.kind)}
               {a.payload?.by && ` · ${a.payload.by}`}
             </li>
           ))}
@@ -242,6 +251,20 @@ export function ComponentDrawer({
 }
 
 type T = (key: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * What a wanted asset's drawer offers besides Remove: Install when it is not on this home
+ * (a fresh home's runtime or model), Retry when its last install failed; nothing while
+ * it installs or removes, when it is there, or when packs are off on this machine.
+ */
+function assetAsk(v: ComponentView): "install" | "retry" | null {
+  if (v.kind !== "asset" || !v.switchable || v.want === "absent") return null;
+  const p = v.progress;
+  if (p?.busy || p?.installed || v.phase === "installing" || v.phase === "removing") return null;
+  if (v.reason === "packs_disabled") return null;
+  if (v.phase === "failed" || p?.phase === "failed") return "retry";
+  return v.phase === "not_installed" ? "install" : null;
+}
 
 /** One machine's uptime, restarts (24 h), memory, disk and last error (story 51.14). */
 function HealthFacts({
@@ -323,7 +346,12 @@ function conditionWord(t: T, type: string): string {
   return hit === key ? type : hit;
 }
 
-function auditWord(t: T, action: string): string {
+function auditWord(t: T, action: string, kind: string): string {
+  // an asset has no run: enabled and installed both mean its files are on disk, so a move
+  // between them (or from absent) is not turning it on or off
+  if (kind === "asset" && (action === "component.enable" || action === "component.disable")) {
+    return t("components.audit.asset.installed");
+  }
   const key = `components.audit.${action.replace(/^component\./, "")}`;
   const hit = t(key);
   return hit === key ? t("components.audit.other") : hit;

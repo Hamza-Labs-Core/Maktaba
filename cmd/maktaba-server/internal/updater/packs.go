@@ -117,7 +117,7 @@ func packsFailure(err error) error {
 	}
 	code := "packs_failed"
 	switch packs.ReasonOf(err) {
-	case packs.ReasonVerifyFailed, packs.ReasonUnpackRefused:
+	case packs.ReasonVerifyFailed, packs.ReasonOfflineVerifyFailed, packs.ReasonUnpackRefused:
 		code = "pack_verify_failed"
 	case packs.ReasonDownloadFailed, packs.ReasonPackNotPublished:
 		code = "pack_download_failed"
