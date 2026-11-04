@@ -40,6 +40,8 @@ export interface JobRef {
   } | null;
   /** the worker (workers.id) running it; absent on older servers, null while it waits */
   claimed_by?: string | null;
+  /** component_catchup (Epic 51, story 51.14): the components it catches up for (its payload) */
+  components?: string[];
 }
 
 export interface Pool {

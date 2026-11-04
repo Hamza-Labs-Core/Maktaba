@@ -23,6 +23,22 @@
 .mkt-comp__intro {
   margin: 0;
 }
+/* Change bundle, Download for offline, Import a file (51.16, 51.17) */
+.mkt-comp__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-comp-import {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mkt-comp-import__error {
+  color: var(--color-warn);
+}
 .mkt-comp__offline,
 .mkt-comp__error {
   margin: 0;
@@ -105,7 +121,20 @@
   gap: var(--space-2);
 }
 .mkt-comp-row__settings,
+.mkt-comp-row__plan,
 .mkt-comp-row__machines {
+  font-size: var(--font-size-sm);
+}
+
+/* a switch the home's plan does not include (51.19), and what pressing it says */
+.mkt-comp-row__locked {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.mkt-comp-row__note {
+  grid-column: 1 / -1;
+  margin: 0;
   font-size: var(--font-size-sm);
 }
 
@@ -159,6 +188,19 @@
 .mkt-comp-drawer__machines,
 .mkt-comp-drawer__audit {
   padding-inline-start: var(--space-4);
+}
+.mkt-comp-drawer__health {
+  font-size: var(--font-size-sm);
+  margin-block-start: var(--space-1);
+}
+.mkt-comp-drawer__stale {
+  margin: 0;
+  color: var(--color-warn);
+}
+.mkt-comp-drawer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 .mkt-comp-drawer__part {
   font-size: var(--font-size-sm);

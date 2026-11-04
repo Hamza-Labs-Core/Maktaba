@@ -1,16 +1,20 @@
 // Epic 51 (story 51.10): Settings → Components (admins). Every part of the home in its
 // catalog group, with its phase and why in words, an On/Off switch (want enabled or
-// installed), one Stop button that holds it until an admin starts it again, the ⋯ drawer,
-// and a Machines link when a machine of the home differs.
+// installed), one Stop button that holds it until an admin starts it again, a Restart
+// button for the parts that run (process and loop kinds), the ⋯ drawer, and a Machines link
+// when a machine of the home differs. A part the home's plan does not include (story 51.19)
+// shows its switch locked with "Needs a plan"; one that waits for the plan links to
+// Settings → Subscription. The head makes and imports offline files (51.16, ComponentOffline),
+// and the drawer's Reset settings asks first (51.13, ComponentResetSettings).
 //
 // Every change asks POST /api/components/preview first. A change that touches only its own
 // row and parks nothing applies at once with a 5 s undo toast; anything else waits in the
 // confirm dialog (ComponentConfirm). Writes send the generation the page read; a 409
 // stale_generation reloads the list and says someone else changed it.
 //
-// Live: the list is read every POLL_MS while the tab is visible, and at once after a write.
-// When /ws/home (story 51.09) sends the components change signal, call `reload` from it and
-// keep the poll as the fallback.
+// Live: the list is read every POLL_MS while the tab is visible, at once after a write, and
+// at once when /ws/home says the capabilities changed (story 51.09: a component changed);
+// the poll stays as the fallback.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
@@ -20,6 +24,7 @@ import { IconButton } from "@ds/components/IconButton/IconButton";
 import { Toggle } from "@ds/components/Choice/Toggle";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useAuth } from "../../lib/auth";
+import { subscribe as subscribeServer } from "../../lib/ws";
 import {
   componentsApi,
   refusalOf,
@@ -36,6 +41,8 @@ import { ComponentConfirm, isSimple, type Action, type Plan } from "./ComponentC
 import { ComponentDrawer } from "./ComponentDrawer";
 import { BundleDialog } from "./BundleDialog";
 import { ComponentSettingsLink } from "./ComponentSettingsLink";
+import { ComponentResetSettings } from "./ComponentResetSettings";
+import { OfflineDownload, OfflineImport } from "./ComponentOffline";
 import {
   BUSY_PHASES,
   LOCKED_PHASES,
@@ -43,6 +50,7 @@ import {
   joinNames,
   machinesApart,
   phaseTone,
+  detailText,
   phaseWord,
   reasonText,
   titleFinder,
@@ -114,9 +122,13 @@ function useComponentList(pollMs: number) {
     void reload();
     if (document.visibilityState === "visible") start();
     document.addEventListener("visibilitychange", onVisibility);
+    const off = subscribeServer("home", (ev) => {
+      if (ev.type === "capabilities_changed") void reload();
+    });
     return () => {
       alive.current = false;
       stop();
+      off();
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [reload, pollMs]);
@@ -133,6 +145,8 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
   const [drawerId, setDrawerId] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const [bundleOpen, setBundleOpen] = useState(false);
+  const [offlineOpen, setOfflineOpen] = useState(false);
+  const [resetId, setResetId] = useState<string | null>(null);
 
   const views = useMemo(() => list?.components ?? [], [list]);
   const titleOf = useMemo(() => titleFinder(t, views), [t, views]);
@@ -287,6 +301,28 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
     [busy, commit, fail, reload, toast, t]
   );
 
+  /** A restart changes no desired state: no preview, no generation, no undo. */
+  const restart = useCallback(
+    async (v: ComponentView) => {
+      if (busy) return;
+      setFlash(null);
+      setBusy(v.id);
+      try {
+        await componentsApi.restart(v.id);
+        toast.show({
+          tone: "success",
+          message: t("components.done.restart", { name: titleOf(v.id) }),
+        });
+        await reload();
+      } catch (e) {
+        await fail(e, v.id);
+      } finally {
+        setBusy(null);
+      }
+    },
+    [busy, fail, reload, t, titleOf, toast]
+  );
+
   const show = useCallback((id: string) => {
     setPlan(null);
     setDrawerId(null);
@@ -318,7 +354,12 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
         list={list}
         titleOf={titleOf}
         onChangeBundle={offline ? undefined : () => setBundleOpen(true)}
+        onOffline={offline ? undefined : () => setOfflineOpen(true)}
+        onImported={() => void reload()}
       />
+      {offlineOpen && (
+        <OfflineDownload basedOn={list.bundle?.base ?? ""} onClose={() => setOfflineOpen(false)} />
+      )}
       {bundleOpen && (
         <BundleDialog
           basedOn={list.bundle?.base ?? ""}
@@ -349,6 +390,7 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
           busy={busy}
           flash={flash}
           onAction={(v, a) => void act(v, a)}
+          onRestart={(v) => void restart(v)}
           onMore={setDrawerId}
         />
       ))}
@@ -369,7 +411,18 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
         disabled={offline || busy !== null}
         onClose={() => setDrawerId(null)}
         onAction={(v, a) => void act(v, a)}
+        onResetSettings={(v) => {
+          setDrawerId(null);
+          setResetId(v.id);
+        }}
       />
+      {resetId && (
+        <ComponentResetSettings
+          id={resetId}
+          name={titleOf(resetId)}
+          onClose={() => setResetId(null)}
+        />
+      )}
     </div>
   );
 }
@@ -378,11 +431,17 @@ function Head({
   list,
   titleOf,
   onChangeBundle,
+  onOffline,
+  onImported,
 }: {
   list?: ListView;
   titleOf?: (id: string) => string;
   /** opens the Change bundle dialog (story 51.17) */
   onChangeBundle?: () => void;
+  /** opens the Download for offline dialog (story 51.16) */
+  onOffline?: () => void;
+  /** after an offline file was imported */
+  onImported?: () => void;
 }) {
   const { t, locale } = useI18n();
   const b = list?.bundle;
@@ -406,10 +465,22 @@ function Head({
           {parts.join(t("components.bundle.sep"))}
         </p>
       )}
-      {onChangeBundle && (
-        <Button variant="secondary" onClick={onChangeBundle} data-testid="comp-change-bundle">
-          {t("components.bundle.change")}
-        </Button>
+      {(onChangeBundle || onOffline) && (
+        <div className="mkt-comp__tools">
+          {onChangeBundle && (
+            <Button variant="secondary" onClick={onChangeBundle} data-testid="comp-change-bundle">
+              {t("components.bundle.change")}
+            </Button>
+          )}
+          {onOffline && (
+            <>
+              <Button variant="secondary" onClick={onOffline}>
+                {t("components.offline.download")}
+              </Button>
+              <OfflineImport titleOf={titleOf} onImported={onImported} />
+            </>
+          )}
+        </div>
       )}
       <p className="mkt-comp__intro">
         {t("components.page.intro")} <HelpLink to={{ topic: "components" }} />
@@ -426,6 +497,7 @@ function Group({
   busy,
   flash,
   onAction,
+  onRestart,
   onMore,
 }: {
   group: string;
@@ -435,6 +507,7 @@ function Group({
   busy: string | null;
   flash: string | null;
   onAction: (v: ComponentView, a: Action) => void;
+  onRestart: (v: ComponentView) => void;
   onMore: (id: string) => void;
 }) {
   const { t, n } = useI18n();
@@ -451,6 +524,7 @@ function Group({
       busy={busy === v.id}
       flash={flash === v.id}
       onAction={onAction}
+      onRestart={onRestart}
       onMore={onMore}
     />
   );
@@ -475,6 +549,22 @@ function Group({
 
 const rowId = (id: string) => `component-${id.replace(/[^a-z0-9_-]/gi, "-")}`;
 
+/**
+ * The params of the row's reason: the status's own, else those of this machine's install
+ * when its failure is the reason the row shows (download_failed {name}, disk_space {need}).
+ */
+function reasonParams(v: ComponentView): Record<string, unknown> | undefined {
+  if (v.reason_params) return v.reason_params;
+  const p = v.progress;
+  if (p?.reason && p.params && v.reason?.split(":", 1)[0] === p.reason) return p.params;
+  return undefined;
+}
+
+/** Whether a kind ("process", "stages+process+loop", ...) has a part that runs and restarts. */
+export function restartable(kind: string): boolean {
+  return kind.split("+").some((k) => k === "process" || k === "loop");
+}
+
 function Row({
   v,
   titleOf,
@@ -482,6 +572,7 @@ function Row({
   busy,
   flash,
   onAction,
+  onRestart,
   onMore,
 }: {
   v: ComponentView;
@@ -490,10 +581,12 @@ function Row({
   busy: boolean;
   flash: boolean;
   onAction: (v: ComponentView, a: Action) => void;
+  onRestart: (v: ComponentView) => void;
   onMore: (id: string) => void;
 }) {
   const { t, n, locale } = useI18n();
   const bytes = useBytes();
+  const [lockSaid, setLockSaid] = useState(false);
   const name = titleOf(v.id);
   const asset = v.kind === "asset";
   const held = v.hold !== null;
@@ -501,10 +594,23 @@ function Row({
   const off = disabled || locked || busy;
   const apart = machinesApart(v);
   const total = v.machines.length;
+  // story 51.19: not in the home's plan. Off, its switch is locked; on, it waits for the plan
+  // (the wish is kept) and links to Subscription.
+  const unlicensed = !!v.licence && !v.licensed;
+  const locks = unlicensed && v.want !== "enabled";
+  const planWait =
+    (unlicensed && v.want === "enabled") || !!v.reason?.startsWith("licence_missing");
   // the phase word says "Stopped until you turn it on" already; "an admin stopped it" adds nothing
-  const why = v.reason === "held" ? "" : reasonText(t, locale, v.reason, titleOf);
+  const why =
+    v.reason === "held"
+      ? ""
+      : planWait
+        ? t("components.licence.waiting")
+        : reasonText(t, locale, v.reason, titleOf, reasonParams(v));
+  const step = v.progress?.busy ? detailText(t, locale, v.progress, bytes) : "";
   const chip = [
     phaseWord(t, v.phase, v.kind),
+    step,
     why,
     total > 1
       ? apart.length
@@ -531,6 +637,11 @@ function Row({
           {BUSY_PHASES.has(v.phase) && <span className="mkt-comp-spin" aria-hidden="true" />}
           {chip.join(" · ")}
         </Badge>
+        {planWait && (
+          <Link className="mkt-comp-row__plan" to="/settings/subscription">
+            {t("components.licence.openSubscription")}
+          </Link>
+        )}
         {apart.length > 0 && (
           <Link
             className="mkt-comp-row__machines"
@@ -542,7 +653,19 @@ function Row({
         )}
       </div>
       <div className="mkt-comp-row__actions">
-        {v.switchable && !asset && (
+        {v.switchable && !asset && locks && (
+          <span className="mkt-comp-row__locked">
+            <span aria-hidden="true">🔒</span>
+            <Toggle
+              checked={false}
+              disabled={off}
+              aria-label={name}
+              label={t("components.licence.locked")}
+              onChange={() => setLockSaid(true)}
+            />
+          </span>
+        )}
+        {v.switchable && !asset && !locks && (
           <Toggle
             checked={v.want === "enabled"}
             disabled={off}
@@ -574,6 +697,17 @@ function Row({
             {t("components.page.start")}
           </Button>
         )}
+        {v.switchable && restartable(v.kind) && v.want === "enabled" && !held && !planWait && (
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={off}
+            aria-label={t("components.page.restartOf", { name })}
+            onClick={() => onRestart(v)}
+          >
+            {t("components.page.restart")}
+          </Button>
+        )}
         <ComponentSettingsLink view={v} name={name} />
         <IconButton
           size="sm"
@@ -583,6 +717,12 @@ function Row({
           onClick={() => onMore(v.id)}
         />
       </div>
+      {lockSaid && (
+        <p role="alert" className="mkt-comp-row__note" data-testid="comp-licence">
+          {t("components.licence.refused")}{" "}
+          <Link to="/settings/subscription">{t("components.licence.openSubscription")}</Link>
+        </p>
+      )}
     </li>
   );
 }
