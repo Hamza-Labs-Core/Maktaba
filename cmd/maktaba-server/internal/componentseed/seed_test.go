@@ -42,7 +42,8 @@ func TestPlanRules(t *testing.T) {
 			f.OperatorOff = map[string]bool{"youtube_sync": true, "youtube_fetch": true, "youtube_backfill": true}
 		}, "youtube", "enabled"},
 		{"stage group: every stage off by an operator", func(f *Facts) {
-			f.OperatorOff = map[string]bool{"youtube_sync": true, "youtube_fetch": true, "youtube_backfill": true, "exact_dates": true}
+			f.OperatorOff = map[string]bool{"youtube_sync": true, "youtube_fetch": true, "youtube_backfill": true,
+				"youtube_tartube": true, "exact_dates": true}
 		}, "youtube", "installed"},
 		{"thumbnails off on the Queues page", func(f *Facts) {
 			f.OperatorOff = map[string]bool{"thumbnail": true, "thumb_small": true, "chapter_thumbs": true}
@@ -291,7 +292,8 @@ func TestHomeSeedsOnce(t *testing.T) {
 		`INSERT INTO extensions (name, enabled) VALUES ('plex', 1), ('dizquetv', 0)`,
 		`INSERT INTO hdhr_device (id, enabled) VALUES (1, 0)`,
 		`INSERT INTO job_stages (stage, enabled, disabled_reason) VALUES ('youtube_sync', 0, 'operator'),
-			('youtube_fetch', 0, 'operator'), ('youtube_backfill', 0, 'operator'), ('exact_dates', 0, 'operator'),
+			('youtube_fetch', 0, 'operator'), ('youtube_backfill', 0, 'operator'), ('youtube_tartube', 0, 'operator'),
+			('exact_dates', 0, 'operator'),
 			('thumbnail', 0, 'not_configured')`,
 	} {
 		if _, err := db.Exec(q); err != nil {
