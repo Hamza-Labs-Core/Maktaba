@@ -452,6 +452,17 @@ class PlayerUITestCase: XCTestCase {
     /// words repeat (below).
     nonisolated fileprivate static let barEdge: CGFloat = 44
 
+    /// A contrast issue on an element with a shimmer inside its frame (a card whose poster is
+    /// still loading): the audit measures the element's whole frame and names it by its label,
+    /// and there the light passing over the placeholder is two close surface colours by
+    /// design, not text. An iPad run of #608 failed a card's Arabic title, drawn light on the
+    /// dark page, for its shimmering poster above it. The shimmer itself has no text.
+    func contrastOverShimmer(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
+        guard issue.auditType == .contrast, let f = issue.element?.frame, !f.isEmpty else { return false }
+        return app.descendants(matching: .any).matching(identifier: "shimmer").allElementsBoundByIndex
+            .contains { f.contains($0.frame) }
+    }
+
     func contrastOutOfView(_ issue: XCUIAccessibilityAuditIssue) -> Bool {
         guard issue.auditType == .contrast else { return false }
         let page = shown ?? (try? Shown(app.snapshot())) ?? Shown()

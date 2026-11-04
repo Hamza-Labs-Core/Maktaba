@@ -139,6 +139,9 @@ final class PlayerLibrariesUITests: PlayerUITestCase {
         XCTAssertTrue(season.waitForExistence(timeout: 20))
         XCTAssertEqual(element("episode.mark.v1").label, "Mark not watched", "v1 is watched already")
         XCTAssertEqual(element("episode.mark.v2").label, "Mark watched")
+        // tapped once the button stands still: a tap while the page still laid its episodes
+        // out was dropped on an iPad run of #608 (no call, nothing in the app's log)
+        waitUntilStill(season, timeout: 5)
         season.tap()
         let post = waitForRequest { $0.method == "POST" && $0.path == "/api/me/watched" }
         XCTAssertNotNil(post, "POST /api/me/watched")

@@ -2,6 +2,7 @@ package componentsindex
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,16 +18,67 @@ const commit = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
 
 var published = time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 
-// buildPacks writes every pack the catalog asks for into dist, each a small tree.
-func buildPacks(t *testing.T, dist string, partSize int64) {
-	t.Helper()
+// built holds every pack the catalog asks for, each a small tree, once per part size
+// (TestMain): each pack is compressed at zstd's best level, and building them in each test
+// took 1.4 s of a 400 ms budget on CI's runners (with -race).
+var built = map[int64]string{}
+
+func TestMain(m *testing.M) {
+	code := func() int {
+		root, err := os.MkdirTemp("", "componentsindex-test-")
+		if err != nil {
+			panic(err)
+		}
+		defer func() { _ = os.RemoveAll(root) }()
+		for _, partSize := range []int64{0, 64} {
+			dist := filepath.Join(root, fmt.Sprintf("parts-%d", partSize))
+			if err := writePacks(dist, partSize); err != nil {
+				panic(err)
+			}
+			built[partSize] = dist
+		}
+		return m.Run()
+	}()
+	os.Exit(code)
+}
+
+func writePacks(dist string, partSize int64) error {
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		return err
+	}
 	for _, p := range Packs(components.Default(), "") {
-		stage := t.TempDir()
+		stage, err := os.MkdirTemp(filepath.Dir(dist), "stage-")
+		if err != nil {
+			return err
+		}
 		if err := os.WriteFile(filepath.Join(stage, "constraints.txt"), []byte(p.ID+" "+p.Platform+"\n"+strings.Repeat("x", 300)), 0o644); err != nil {
-			t.Fatal(err)
+			return err
 		}
 		if _, err := componentpack.Build(componentpack.Options{Dir: stage, ID: p.ID, Version: "0.4.2", Platform: p.Platform,
 			ModTime: published, Out: dist, PartSize: partSize}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// buildPacks copies every pack the catalog asks for (built once, TestMain) into dist.
+func buildPacks(t *testing.T, dist string, partSize int64) {
+	t.Helper()
+	from, ok := built[partSize]
+	if !ok {
+		t.Fatalf("no packs built with part size %d", partSize)
+	}
+	entries, err := os.ReadDir(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(from, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dist, e.Name()), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}

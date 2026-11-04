@@ -29,6 +29,8 @@ final class PlayerComponentsUITests: PlayerUITestCase {
                         // a rail's last card half off the screen's edge: the audit samples
                         // pixels beyond it (the cards fully on screen are still checked)
                         if self.contrastOutOfView(issue) { return true }
+                        // a card's frame over its poster still loading: the moving light
+                        if piece == "shimmer", self.contrastOverShimmer(issue) { return true }
                         return false
                     }
                 } catch {

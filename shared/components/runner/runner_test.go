@@ -375,7 +375,15 @@ func TestIdleCost(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { r.Run(ctx, Source{Store: st}); close(done) }()
-	eventually(t, "the first report", func() bool { _, d, rep := st.counts(); return d == 1 && rep >= 1 })
+	// the idle count starts once the load is reported: a first report can go out before it
+	// is applied (the catalog's default, generation 0), and the one after it is a real
+	// change (an integration run counted it as an idle report)
+	eventually(t, "the load reported", func() bool {
+		_, d, _ := st.counts()
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		return d == 1 && len(st.last) > 0 && st.last[0].ID == "analytics" && st.last[0].ObservedGeneration == 1
+	})
 	eventually(t, "the poll timer", func() bool { return clk.pending() == 1 })
 	rev0, _, rep0 := st.counts()
 	for i := 0; i < 10; i++ {
