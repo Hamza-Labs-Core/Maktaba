@@ -741,7 +741,10 @@ export const APPS = [
               ],
               rows: [
                 [
-                  t("Mac with Apple silicon (macOS 15 or later)", "ماك بمعالج آبل (macOS 15 أو أحدث)"),
+                  t(
+                    "Mac with Apple silicon (macOS 15 or later)",
+                    "ماك بمعالج آبل (macOS 15 أو أحدث)"
+                  ),
                   t(
                     "one `.dmg`, with the whole server inside; there is no Intel build",
                     "ملف `.dmg` واحد، ومعه الخادم كاملًا؛ ولا توجد نسخة لمعالجات إنتل"
