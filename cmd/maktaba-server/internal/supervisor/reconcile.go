@@ -55,6 +55,7 @@ const (
 	reasonLicence        = "licence_missing"
 	reasonPlatform       = "platform_unsupported"
 	reasonMemory         = "not_enough_memory"
+	reasonNotInPayload   = "not_in_payload"
 	reasonReconcileOff   = "reconcile_off"
 	ReasonBootFlag       = "boot_flag"
 	ReasonEnvOverride    = "env_override"
@@ -521,6 +522,12 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 		return dec
 	}
 	dec.conds = append(dec.conds, cond(components.CondRequirementsMet, condTrue, "", nil))
+	// its program is not on this machine (a dormant ollama before its pack is installed):
+	// it waits, the want kept, and starts once the program is there
+	if !wasOpen && len(own) > 0 && allMissing(own) {
+		dec.conds = append(dec.conds, cond(components.CondInstalled, condFalse, reasonNotInPayload, nil))
+		return dec
+	}
 	// a process today's server.toml leaves out is checked for memory before it first
 	// starts, never to stop one that runs
 	if !wasOpen && r.FreeMB != nil && comp.Resources.RAMMB > 0 && len(own) > 0 && allDormant(own) {
@@ -532,6 +539,15 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 	}
 	dec.open = true
 	return dec
+}
+
+func allMissing(ps []procView) bool {
+	for _, p := range ps {
+		if !p.Missing || p.Running {
+			return false
+		}
+	}
+	return true
 }
 
 func allDormant(ps []procView) bool {

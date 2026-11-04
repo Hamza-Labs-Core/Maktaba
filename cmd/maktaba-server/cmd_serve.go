@@ -240,7 +240,10 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 
 	// The language model server (Maktaba.app's bundled Ollama, or [llm] url):
 	// its URL goes to every child through cfg.
-	llmProc, llmOpt, err := serveLLM(ctx, &cfg, wholeMachine)
+	// With the reconciler (story 51.04) a server server.toml leaves out is built dormant.
+	_, _, reconciled := componentsTarget(cfg)
+	reconciled = reconciled && cfg.Components.ReconcileOn()
+	llmProc, llmOpt, err := serveLLM(ctx, &cfg, wholeMachine, reconciled)
 	if err != nil {
 		return err
 	}
@@ -300,6 +303,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 				p.OnDemand = true
 				fmt.Fprintln(os.Stderr, "[serve] this home is frozen for a switch: the cloud relay agent waits")
 			}
+			procs = append(procs, p)
+		}
+	} else if wholeMachine && reconciled && !(pg != nil && pg.Frozen()) {
+		// with its credentials here and cloud.link off, built dormant: enabling the
+		// component starts it without a restart (story 51.04)
+		if p, ok := supervisor.BuildHeldRelay(sopts); ok {
 			procs = append(procs, p)
 		}
 	}

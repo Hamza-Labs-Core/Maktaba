@@ -121,6 +121,8 @@ type procView struct {
 	Running   bool // a process runs (pid)
 	Restarts  int
 	CrashLoop bool
+	// Missing: its program is not on this machine (Process.Present)
+	Missing bool
 }
 
 // procViews is every process, for the reconciler.
@@ -129,10 +131,11 @@ func (s *Supervisor) procViews() []procView {
 	defer s.mu.Unlock()
 	out := make([]procView, 0, len(s.children))
 	for _, c := range s.children {
+		missing := c.proc.Present != nil && !c.proc.Present()
 		out = append(out, procView{Role: c.proc.Role, Instance: c.proc.Instance, Component: c.proc.Component,
 			Dormant: c.proc.Dormant, Allowed: c.allowed, Wanted: c.wanted, Draining: c.draining, Once: c.proc.Once,
 			State: c.status.State, Running: c.cmd != nil && c.cmd.Process != nil, Restarts: c.status.Restarts,
-			CrashLoop: c.failed})
+			CrashLoop: c.failed, Missing: missing})
 	}
 	return out
 }

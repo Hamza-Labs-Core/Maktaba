@@ -35,7 +35,9 @@ var componentSeedPause = 2 * time.Second
 // background. procs is returned with the step set.
 func componentsAtBoot(ctx context.Context, cfg config.Config, opts serveOptions, releaseDir string,
 	llmProc *supervisor.Process, node *nodeServices, procs []supervisor.Process, log io.Writer) []supervisor.Process {
-	llm := llmProc != nil || strings.TrimSpace(cfg.LLM.URL) != ""
+	// a dormant server (built for the reconciler, story 51.04) is not one server.toml runs
+	llmOn := llmProc != nil && !llmProc.Dormant
+	llm := llmOn || strings.TrimSpace(cfg.LLM.URL) != ""
 	if node != nil {
 		go nodeComponentsSeed(ctx, cfg, node.node, llm, log)
 		return procs
@@ -52,7 +54,7 @@ func componentsAtBoot(ctx context.Context, cfg config.Config, opts serveOptions,
 	cat := components.Default()
 	home := componentseed.Home{
 		Catalog: cat,
-		Facts: componentseed.Facts{Config: cfg, Slots: supervisor.SlotsEnabled(cfg), LLMProcess: llmProc != nil,
+		Facts: componentseed.Facts{Config: cfg, Slots: supervisor.SlotsEnabled(cfg), LLMProcess: llmOn,
 			Relay: supervisor.RelayWanted(cfg),
 			Assets: componentseed.Assets(cat, componentseed.Disk{Config: cfg, ReleaseDir: releaseDir, Ollama: ollama,
 				Python: supervisor.PipelinePython(supervisor.Options{Config: cfg, ReleaseDir: releaseDir})})},

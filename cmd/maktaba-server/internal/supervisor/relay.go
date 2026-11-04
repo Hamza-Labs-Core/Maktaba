@@ -135,6 +135,25 @@ func relayEnv(cfg config.Config, key string) []string {
 	return env
 }
 
+// BuildHeldRelay is the relay agent built dormant (story 51.04): on a home whose
+// [cloud] is off but which has the credentials, or the claim, to link, so enabling the
+// cloud.link component starts it without a restart. ok is false when the agent would
+// not run even with [cloud] on (RelayWanted then), or cannot be built.
+func BuildHeldRelay(opts Options) (Process, bool) {
+	on := opts.Config
+	on.Cloud.Enabled = true
+	if RelayWanted(opts.Config) || !RelayWanted(on) {
+		return Process{}, false
+	}
+	opts.Config = on
+	p, err := BuildRelay(opts)
+	if err != nil {
+		return Process{}, false
+	}
+	p.Dormant = true
+	return p, true
+}
+
 // BuildRelay constructs the relay agent's process (RelayWanted). Its check is that its
 // status address answers at all: a tunnel that is down (503) is the cloud's state, not
 // a hang of the agent, which reconnects on its own.

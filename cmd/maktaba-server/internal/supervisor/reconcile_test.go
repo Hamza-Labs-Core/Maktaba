@@ -427,6 +427,32 @@ func TestReconcileMemoryAtStartOnly(t *testing.T) {
 	}
 }
 
+// A dormant process whose program is not on this machine (ollama before its pack) waits,
+// enabled, with not_in_payload, and starts once the program is there.
+func TestReconcileProgramNotHereWaits(t *testing.T) {
+	cat := testCatalog(t, procComp("a", "fake/a", "", ""))
+	tab := &fakeTable{}
+	tab.add("a", "a", true)
+	tab.procs[0].Missing = true
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	d := map[string]store.Desired{"a": want("a", "enabled", 1)}
+	passWith(r, d)
+	if got := tab.takeCalls(); len(got) != 0 {
+		t.Fatalf("calls %v: a's program is not here, it stays closed", got)
+	}
+	if row, _ := st.row("a"); row.Phase != components.PhaseWaiting || row.Reason() != "not_in_payload" {
+		t.Fatalf("a %+v", row)
+	}
+	tab.mu.Lock()
+	tab.procs[0].Missing = false
+	tab.mu.Unlock()
+	passWith(r, d)
+	if got := tab.takeCalls(); !slices.Equal(got, []string{"a=true"}) {
+		t.Fatalf("calls %v: a's program came, it starts", got)
+	}
+}
+
 // T06 (fake table): the cache says held: Prime closes the gate before anything starts.
 func TestReconcilePrimeFromCache(t *testing.T) {
 	path := filepath.Join(t.TempDir(), CompCacheFile)

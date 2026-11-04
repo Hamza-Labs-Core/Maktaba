@@ -444,6 +444,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.Args != nil {
 			cmd.Args = append([]string{cmd.Args[0]}, c.proc.Args()...)
 		}
+		base := c.basePath
+		if c.proc.Path != nil {
+			if p := c.proc.Path(); p != "" {
+				cmd.Path, cmd.Args[0], cmd.Err, base = p, p, nil, p
+			}
+		}
 		if c.proc.BeforeStart != nil {
 			c.proc.BeforeStart()
 		}
@@ -488,7 +494,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		ranWith := c.binding
-		startErr := applyBindingKept(cmd, ranWith, c.basePath, s.keptStreaming)
+		startErr := applyBindingKept(cmd, ranWith, base, s.keptStreaming)
 		switch {
 		case startErr != nil || held.path == "":
 		case c.binding == nil || c.binding.ReleaseID == "":
