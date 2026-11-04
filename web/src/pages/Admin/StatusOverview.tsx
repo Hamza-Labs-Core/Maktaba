@@ -29,6 +29,7 @@ const TONE: Record<HealthStatus, "success" | "warn" | "error"> = {
 /** The singletons named by the catalog; per-machine items keep their own name. */
 const NAMED = new Set([
   "api",
+  "components",
   "postgres",
   "streaming",
   "pipeline",
@@ -45,10 +46,22 @@ const NAMED = new Set([
   "host_access",
 ]);
 
+/**
+ * A model dependency by the rules section that names its server: the stages' default
+ * ("model") is the language model alone, a known section adds its words ("tag check"), and
+ * a section with no words keeps its id.
+ */
+function modelName(section: string, t: T): string {
+  if (section === "" || section === "model") return t("health.dep.modelDefault");
+  const key = `health.dep.modelSection.${section}`;
+  const words = t(key);
+  return t("health.dep.model", { section: words === key ? section : words });
+}
+
 function dependencyName(name: string, t: T): string {
   const [kind, what, ...rest] = name.split(":");
   const tail = rest.join(":");
-  if (kind === "dependency" && what === "model") return t("health.dep.model", { section: tail });
+  if (kind === "dependency" && what === "model") return modelName(tail, t);
   if (kind === "dependency" && what === "share") return t("health.dep.share", { root: tail });
   if (kind === "resource" && what === "disk") return t("health.dep.disk");
   if (kind === "resource" && what === "shm") return t("health.dep.shm");

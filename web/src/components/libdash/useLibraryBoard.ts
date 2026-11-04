@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { queueApi } from "../../lib/queueApi";
 import { useReadOrder } from "../../lib/readOrder";
+import { useTitledStages } from "../../lib/stageWords";
 import type {
   LibraryActivityResponse,
   LibraryQueueRow,
@@ -109,8 +110,10 @@ export function useLibraryBoard(days = 14): LibraryBoard {
     };
   }, [reload]);
 
+  // the stages' labels in the reader's language (lib/stageWords)
+  const titled = useTitledStages(stages);
   return useMemo(
-    () => ({ rows, offline, activity, stages, error, reload, reloadAfterChange }),
-    [rows, offline, activity, stages, error, reload, reloadAfterChange]
+    () => ({ rows, offline, activity, stages: titled, error, reload, reloadAfterChange }),
+    [rows, offline, activity, titled, error, reload, reloadAfterChange]
   );
 }
