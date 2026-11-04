@@ -15,7 +15,7 @@ from maktaba_pipeline.components import runner as runner_mod
 from maktaba_pipeline.components import store
 from maktaba_pipeline.components.runner import ComponentRunner, gate_open, instance_part
 from maktaba_pipeline.engine.graph import GRAPH
-from maktaba_pipeline.engine.sql import loads
+from maktaba_pipeline.engine.sql import dumps, is_pg, loads
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.runtime import Database
 from tests.components._helpers import set_want, stage_row
@@ -228,4 +228,69 @@ async def test_t12_reconcile_off_changes_nothing_and_says_so(
     rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
     assert rows["transcription"].reason == "reconcile_off"
     assert rows["livetv"].reason == "reconcile_off"
+    await r.close()
+
+
+# -- story 51.13: a component whose settings failed to move stays off ----------------
+
+
+async def _mark_failed(db: Database, section: str, error: str) -> None:
+    """What the home's settings pass writes when a section's migration raises."""
+    cast = "::jsonb" if is_pg(db) else ""
+    await db.execute(
+        f"INSERT INTO app_settings (key, value) VALUES ($1, $2{cast})",
+        f"rules_version.{section}",
+        dumps({"major": 1, "minor": 0, "failed": error}),
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_failed_settings_section_keeps_its_component_off_until_saved(
+    db: Database,
+) -> None:
+    await sync_graph(db, GRAPH, gates={})
+    r, sel = _runner(db)
+    await _mark_failed(db, "transcription", "cannot read relisten_tries")
+    await r.prime()
+    await _pass(r)
+    # never on the defaults: its stages are not claimed, the home's rows turn them off
+    assert sel.stages_off["transcribe"] == "component_off:transcription"
+    assert await stage_row(db, "transcribe") == (False, "component_off")
+    assert not gate_open("transcription")
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    assert (rows["transcription"].phase, rows["transcription"].reason) == (
+        "failed",
+        "settings_invalid",
+    )
+    assert rows["transcription"].conditions[0].params["section"] == "transcription"
+    # what requires it waits; a component that does not own the section runs
+    assert rows["subtitles"].reason == "dependency_off"
+    assert rows["livetv"].phase == "running"
+
+    # a full save clears the mark without moving the revision: the next idle poll sees it
+    await db.execute("DELETE FROM app_settings WHERE key = 'rules_version.transcription'")
+    await r._pass(force=False)
+    await r.wait_drains()
+    assert "transcribe" in sel.served
+    assert await stage_row(db, "transcribe") == (True, None)
+    rows = {s.id: s for s in await store.statuses(db) if s.part == "pipeline"}
+    assert rows["transcription"].phase == "running"
+    await r.close()
+
+
+@pytest.mark.asyncio
+async def test_once_nothing_failed_an_idle_poll_is_one_query_again(db: Database) -> None:
+    await sync_graph(db, GRAPH, gates={})
+    await _mark_failed(db, "transcription", "bad")
+    counting = _Counting(db)
+    r, _ = _runner(counting)
+    await r._pass(force=True)
+    assert set(r.settings_blocked) == {"transcription"}
+    await db.execute("DELETE FROM app_settings WHERE key = 'rules_version.transcription'")
+    await r._pass(force=False)  # the poll sees the save
+    assert r.settings_blocked == {}
+    counting.n = 0
+    for _ in range(5):
+        await r._pass(force=False)
+    assert counting.n == 5
     await r.close()

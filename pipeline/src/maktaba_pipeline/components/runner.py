@@ -6,7 +6,9 @@ started by ``runtime.py``. It reads desired state with the 51.02 store (``LISTEN
 components_changed`` on Postgres, and a revision poll every :data:`~.store.POLL_S`
 seconds: when nothing changes that poll is its only query), and on every change:
 
-1. computes each component's gate (:mod:`.stages`);
+1. computes each component's gate (:mod:`.stages`), a component whose settings section
+   could not be moved to this release's shape kept off with ``settings_invalid``
+   (``settings_migrate.blocked``, story 51.13: it never runs on the defaults);
 2. gives the closed stage groups' stages to this worker's ``StageSelector`` at once
    (``component_off:<id>`` / ``component_held:<id>``), so it stops claiming them;
 3. drains this worker's jobs of the stages that just stopped (``drain_stages``: ask them
@@ -43,6 +45,7 @@ from . import store
 from .catalog import DEFAULT_STOP_GRACE_S, Catalog, default
 from .stages import (
     HELD,
+    SETTINGS_INVALID,
     Gate,
     extension_name,
     gates,
@@ -155,6 +158,7 @@ class ComponentRunner:
         extension_states: Callable[[], Awaitable[Mapping[str, Any]]] | None = None,
         paused: Callable[[], bool] | None = None,
         drain_poll_s: float = 1.0,
+        settings_failed: Callable[[], Awaitable[Mapping[str, str]]] | None = None,
     ) -> None:
         self.db = db
         self.machine = machine or HOME
@@ -171,6 +175,10 @@ class ComponentRunner:
         self._extension_states = extension_states
         self._paused = paused
         self.drain_poll_s = drain_poll_s
+        self._settings_failed = settings_failed
+        #: component -> [(section, error)]: the components whose settings failed to move
+        #: (story 51.13), read at each pass that acts
+        self.settings_blocked: dict[str, list[tuple[str, str]]] = {}
         self.claims: Any = None
         self.gates: dict[str, Gate] = {}
         self.home_gates: dict[str, Gate] = {}
@@ -207,6 +215,30 @@ class ComponentRunner:
     async def _desired(self) -> tuple[dict[str, Desired], int]:
         return await store.desired(self.db, self.machine)
 
+    async def _read_settings(self) -> bool:
+        """Read which components' settings failed to move (story 51.13); True when that
+        changed. A read that fails keeps the last answer."""
+        from . import settings_migrate
+
+        try:
+            if self._settings_failed is not None:
+                failed = await self._settings_failed()
+            else:
+                failed = await settings_migrate.failed_sections(self.db)
+        except Exception as exc:  # noqa: BLE001 - the last answer stands
+            _log.warning("components_settings_unreadable", error=f"{type(exc).__name__}: {exc}")
+            return False
+        blocked = settings_migrate.blocked(failed, self.catalog)
+        if blocked == self.settings_blocked:
+            return False
+        self.settings_blocked = blocked
+        if blocked:
+            _log.warning(
+                "components_settings_invalid",
+                components={cid: [s for s, _ in items] for cid, items in blocked.items()},
+            )
+        return True
+
     async def prime(self) -> dict[str, str] | None:
         """Before the worker's first selection and graph sync: read desired state, set
         this machine's stage gates on the selector, and answer the home's stage gates for
@@ -220,7 +252,8 @@ class ComponentRunner:
             _log.warning("components_desired_unreadable", error=f"{type(exc).__name__}: {exc}")
             return None
         self.revision = rev
-        self.gates = gates(desired, self.catalog)
+        await self._read_settings()
+        self.gates = gates(desired, self.catalog, self.settings_blocked)
         self.home_gates = self.gates if self.machine == HOME else {}
         if not self.reconcile:
             return None
@@ -293,22 +326,33 @@ class ComponentRunner:
         if self._paused is not None and self._paused():
             return
         try:
+            settings_read = False
             if not force:
                 rev = await store.revision(self.db)
                 if rev == self.revision:
-                    return
+                    # a component kept off by its settings is looked at again on every
+                    # poll (a full save clears it without moving the revision); otherwise
+                    # the poll stays one query (T10)
+                    if not self.settings_blocked or not await self._read_settings():
+                        return
+                    settings_read = True
             desired, rev = await self._desired()
-            await self.apply(desired, rev)
+            await self.apply(desired, rev, settings_read=settings_read)
         except Exception:  # noqa: BLE001 - the next pass tries again
             self.revision = -1
             _log.exception("components_pass_failed", part=self.part)
 
     # -- one pass ----------------------------------------------------------------
 
-    async def apply(self, desired: Mapping[str, Desired], rev: int) -> None:
-        """Act on ``desired`` (this machine's merged desired state, read at ``rev``)."""
+    async def apply(
+        self, desired: Mapping[str, Desired], rev: int, *, settings_read: bool = False
+    ) -> None:
+        """Act on ``desired`` (this machine's merged desired state, read at ``rev``), with
+        the failed settings sections read again unless ``settings_read``."""
         self.revision = rev
-        self.gates = gates(desired, self.catalog)
+        if not settings_read:
+            await self._read_settings()
+        self.gates = gates(desired, self.catalog, self.settings_blocked)
         if self.machine == HOME:
             self.home_gates = self.gates
         await self._read_extensions()
@@ -571,6 +615,11 @@ class ComponentRunner:
                 phase = "running"
                 conds.append(Condition("RequirementsMet", "true"))
                 conds.append(Condition("Ready", "true"))
+            elif g.reason == SETTINGS_INVALID:
+                # its settings could not be moved to this release's shape: failed, not on
+                # the defaults (story 51.13), until an admin saves the section in full
+                phase = "failed"
+                conds.append(Condition("Ready", "false", SETTINGS_INVALID, dict(g.params)))
             elif g.reason == "dependency_off":
                 phase = "waiting" if g.state != HELD else "stopped"
                 conds.append(
