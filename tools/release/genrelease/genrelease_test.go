@@ -275,8 +275,8 @@ func TestBuildNamesTheComponentIndexAndChecksItsPacks(t *testing.T) {
 		t.Fatal(err)
 	}
 	commit := strings.Repeat("ab", 20)
-	idx, _, err := componentsindex.Generate(componentsindex.Options{Catalog: components.Default(), Version: "1.5.0",
-		Commit: commit, Published: pub, Dist: dist})
+	idx, err := componentsindex.Generate(componentsindex.Options{Catalog: components.Default(), Version: "1.5.0",
+		Commit: commit, Published: pub, Dist: dist, Platform: "linux-amd64", Only: []string{"runtime.ml"}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -3,6 +3,9 @@
 #
 # - components-live: a component switched off, held and on again; N1-N5 of the epic's
 #   README section 11 measured (components-live.json), on PRs touching the components.
+#   With the API built from the commit, a loop and a stages component switched through
+#   the Components page's calls: the phase, the health, the Queues tile and System health
+#   (components-api-live.json; 51.10 T14, 51.14 T13).
 # - components-chaos: 100 random flips of four stage groups while 2,000 jobs run (N6);
 #   on PRs touching the runners, and nightly (components-nightly.yml).
 #
@@ -42,8 +45,25 @@ jobs:
     env:
       MAKTABA_TEST_PG_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
       MAKTABA_COMPONENTS_LOGS: ${{ github.workspace }}/components-logs
+      # the API of the commit, for the scenarios through the Components page's calls
+      # (test_api_live.py: 51.10 T14, 51.14 T13)
+      MAKTABA_COMPONENTS_API_BIN: ${{ github.workspace }}/components-bin/maktaba-api
     steps:
       - uses: actions/checkout@v6.0.2
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum') }}
+      - name: Build the API
+        working-directory: api
+        env:
+          CGO_ENABLED: '0'
+        run: go build -o "$MAKTABA_COMPONENTS_API_BIN" .
       - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
@@ -56,7 +76,9 @@ jobs:
         run: uv sync --frozen --extra dev
       - name: components-live
         working-directory: pipeline
-        run: uv run --extra dev pytest ../tests/components/test_live.py -q -p no:cacheprovider -rs
+        run: >-
+          uv run --extra dev pytest ../tests/components/test_live.py
+          ../tests/components/test_api_live.py -q -p no:cacheprovider -rsx
       - name: Keep the logs
         if: always()
         uses: actions/upload-artifact@v7.0.1
