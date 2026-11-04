@@ -852,6 +852,55 @@ describe("Components page: a wanted asset not on this home", () => {
     ).toBeInTheDocument();
   });
 
+  it("an open drawer follows the row when an install finishes (the revision stays)", async () => {
+    // an install's end changes the status, not the desired state: the list's revision stays
+    const quiet = (over: Partial<ComponentView>) => {
+      list = {
+        ...list,
+        components: list.components.map((c) => (c.id === "runtime.ml" ? { ...c, ...over } : c)),
+      };
+    };
+    quiet({
+      phase: "failed",
+      reason: "download_failed",
+      machines: [
+        { machine: "home", phase: "failed", reason: "download_failed", observed_generation: 3 },
+      ],
+    });
+    const user = userEvent.setup();
+    renderPage(<ComponentsSection pollMs={40} />, {
+      path: "/settings/components",
+      user: adminUser,
+    });
+    await loaded();
+    await user.click(
+      within(row("runtime.ml")).getByRole("button", { name: "Details of Machine learning runtime" })
+    );
+    const drawer = await screen.findByRole("dialog", { name: "Machine learning runtime" });
+    const home = () =>
+      within(drawer)
+        .getByText(/This home/)
+        .closest("li");
+    await within(drawer).findByText(/This home/);
+    expect(home()).toHaveTextContent(EN["components.phase.failed"]!);
+    quiet({
+      phase: "off",
+      reason: "",
+      machines: [{ machine: "home", phase: "off", observed_generation: 3 }],
+    });
+    await waitFor(() =>
+      expect(within(row("runtime.ml")).getByTestId("comp-chip")).toHaveTextContent(
+        EN["components.page.installed"]!
+      )
+    );
+    await waitFor(() =>
+      expect(home()).toHaveTextContent(
+        `${EN["components.drawer.home"]}: ${EN["components.page.installed"]}`
+      )
+    );
+    expect(home()).not.toHaveTextContent(EN["components.phase.failed"]!);
+  });
+
   it("offers neither when it is on disk, installing, or packs are off here", async () => {
     for (const over of [
       { phase: "off" },
