@@ -212,6 +212,10 @@ export function ComponentDrawer({
                           {c.status !== "true" &&
                             reason(c.reason, c.params) &&
                             ` · ${typeof c.params?.key === "string" ? `${c.params.key}: ` : ""}${reason(c.reason, c.params)}`}
+                          {c.status !== "true" &&
+                            !reason(c.reason, c.params) &&
+                            typeof c.params?.component === "string" &&
+                            ` · ${t("components.condition.waitingOn", { component: titleOf(c.params.component) })}`}
                         </li>
                       ))}
                     </ul>
