@@ -25,11 +25,13 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
 import { STRINGS } from "./strings.mjs";
+import { APPS, appShots } from "./apps.mjs";
 import { scanDir } from "./scan.mjs";
 import { ORIGIN, isSafeUrl } from "./urls.mjs";
 import {
   applyOverlay,
   arabicOf,
+  checkApps,
   checkArabicMarkdown,
   checkChangelog,
   checkGuides,
@@ -230,6 +232,7 @@ const v = (sitePath) => {
 
 const NAV = [
   ["nav.home", "/"],
+  ["nav.apps", "/apps/"],
   ["nav.wiki", "/wiki/"],
   ["nav.plugins", "/plugins/"],
   ["nav.contributing", "/contributing/"],
@@ -325,6 +328,7 @@ function landing(lang) {
     </section>
     ${s("home.cards", "h2")}
     <ul class="cards">
+${card("apps", "/apps/")}
 ${card("wiki", "/wiki/")}
 ${card("plugins", "/plugins/")}
 ${card("contributing", "/contributing/")}
@@ -397,6 +401,132 @@ function apiPage(lang) {
     ${s("api.lang", "p", ' class="note"')}
     <p><a href="${spec}">${esc(t("api.download"))}</a></p>
     <div id="redoc" data-spec="${spec}" dir="ltr" lang="${lang}">${s("api.loading", "p")}</div>`,
+  });
+}
+
+// ---- the Apps pages (scripts/apps.mjs) --------------------------------------------------
+
+// The screenshots: static/assets/apps/<name>-<lang>.webp, or <name>.webp when the app was shot
+// in one language only (the name then ends in -en or -ar).
+export const APP_IMAGES = path.join(PKG, "static/assets/apps");
+
+/** The site path of a screenshot in a language, or null when there is no such image. */
+export function appImage(file, lang) {
+  for (const name of [`${file}-${lang}.webp`, `${file}.webp`]) {
+    if (fs.existsSync(path.join(APP_IMAGES, name))) return `/assets/apps/${name}`;
+  }
+  return null;
+}
+
+/** A WebP's width and height (from its VP8, VP8L or VP8X header), or null. */
+export function webpSize(buf) {
+  if (buf.length < 30) return null;
+  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP")
+    return null;
+  const kind = buf.toString("ascii", 12, 16);
+  if (kind === "VP8X") return { w: 1 + buf.readUIntLE(24, 3), h: 1 + buf.readUIntLE(27, 3) };
+  if (kind === "VP8 ")
+    return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+  if (kind === "VP8L") {
+    const b = buf.readUInt32LE(21);
+    return { w: 1 + (b & 0x3fff), h: 1 + ((b >> 14) & 0x3fff) };
+  }
+  return null;
+}
+
+/** An Apps page's inline markup, after escaping: **bold**, `code` and [text](href). */
+export function inline(text, lang) {
+  return esc(text)
+    .replace(/`([^`]+)`/g, '<code dir="ltr">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
+      const raw = href.replace(/&amp;/g, "&");
+      if (!isSafeUrl(raw)) return label;
+      return `<a href="${raw.startsWith("/") ? localPath(lang, raw) : href}">${label}</a>`;
+    });
+}
+const plain = (text) => text.replace(/\*\*|`/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+
+function appShotsHtml(shots, lang) {
+  // consecutive shots of one kind share a grid: phones side by side, wide ones a row each
+  const groups = [];
+  for (const sh of shots) {
+    if (groups.length && groups.at(-1).kind === sh.kind) groups.at(-1).items.push(sh);
+    else groups.push({ kind: sh.kind, items: [sh] });
+  }
+  return groups
+    .map(({ kind, items }) => {
+      const figs = items.map((sh) => {
+        const src = appImage(sh.file, lang);
+        if (!src)
+          throw new Error(`build: the Apps pages show ${sh.file}, with no image in ${lang}`);
+        const size = webpSize(fs.readFileSync(path.join(PKG, "static", src)));
+        if (!size) throw new Error(`build: ${src} is not a WebP image`);
+        const alt = esc(sh.alt[lang]);
+        return (
+          `        <figure><img src="${src}" alt="${alt}" width="${size.w}" height="${size.h}"` +
+          ` loading="lazy" decoding="async"><figcaption>${alt}</figcaption></figure>`
+        );
+      });
+      return `      <div class="shots ${kind}">\n${figs.join("\n")}\n      </div>`;
+    })
+    .join("\n");
+}
+
+// a table whose rows become cards on a phone (portal.css, table.stack): each cell carries its
+// column's name for that
+function appTable({ head, rows }, lang) {
+  const th = head.map((c) => `<th scope="col">${inline(c[lang], lang)}</th>`).join("");
+  const td = (c, i) =>
+    `<td data-label="${esc(plain(head[i][lang]))}">${inline(c[lang], lang)}</td>`;
+  const trs = rows.map((r) => `<tr>${r.map(td).join("")}</tr>`).join("\n        ");
+  return `      <table class="stack">\n        <thead><tr>${th}</tr></thead>\n        <tbody>\n        ${trs}\n        </tbody>\n      </table>`;
+}
+
+/** The site path of an Apps page: "" -> /apps/, "player" -> /apps/player/. */
+export const appPath = (slugName) => (slugName ? `/apps/${slugName}/` : "/apps/");
+
+function appPage(lang, pg) {
+  const { t } = inLang(lang);
+  const block = (b) => {
+    if (b.p) return `      <p>${inline(b.p[lang], lang)}</p>`;
+    if (b.ul)
+      return `      <ul>\n${b.ul.map((li) => `        <li>${inline(li[lang], lang)}</li>`).join("\n")}\n      </ul>`;
+    if (b.table) return appTable(b.table, lang);
+    if (b.shots) return appShotsHtml(b.shots, lang);
+    throw new Error(`build: an Apps block of no known kind on ${appPath(pg.slug)}`);
+  };
+  const sections = pg.sections
+    .map(
+      (s) =>
+        `    <section>\n      <h2 id="${slug(s.h.en)}">${inline(s.h[lang], lang)}</h2>\n` +
+        `${s.blocks.map(block).join("\n")}\n    </section>`
+    )
+    .join("\n");
+  const href = (p) => localPath(lang, appPath(p.slug));
+  const cards = pg.slug
+    ? ""
+    : `\n    <h2>${esc(t("apps.pages"))}</h2>\n    <ul class="cards">\n` +
+      APPS.filter((p) => p.slug)
+        .map(
+          (p) =>
+            `      <li><a href="${href(p)}"><strong>${esc(plain(p.title[lang]))}</strong>` +
+            `<span>${esc(p.card[lang])}</span></a></li>`
+        )
+        .join("\n") +
+      "\n    </ul>";
+  const toc = APPS.map(
+    (p) =>
+      `<li><a href="${href(p)}"${p === pg ? ' aria-current="page"' : ""}>${esc(plain(p.title[lang]))}</a></li>`
+  ).join("\n");
+  const article =
+    `<article class="apps">\n    <h1>${esc(plain(pg.title[lang]))}</h1>\n` +
+    `    <p class="lead">${inline(pg.lead[lang], lang)}</p>${cards}\n${sections}\n</article>`;
+  return page({
+    lang,
+    path: appPath(pg.slug),
+    title: plain(pg.title[lang]),
+    body: `<div class="layout">\n<nav class="toc" aria-label="${esc(t("apps.toc"))}"><ul>\n${toc}\n</ul></nav>\n<div>\n${article}\n</div>\n</div>`,
   });
 }
 
@@ -610,6 +740,7 @@ export function checkSources() {
     if (fs.existsSync(path.join(REPO, d.ar)))
       findings.push(...checkArabicMarkdown(d.ar, read(d.ar)));
   }
+  findings.push(...checkApps(APPS, appShots(), appImage));
   findings.push(...checkChangelog(read("CHANGELOG.md"), read("CHANGELOG.ar.md")));
   findings.push(
     ...checkOverlay(
@@ -683,6 +814,10 @@ export function build() {
         localPath(lang, p)
       )
     );
+    for (const pg of APPS) {
+      write(`${pre}${appPath(pg.slug).slice(1)}index.html`, appPage(lang, pg));
+      pages.push(localPath(lang, appPath(pg.slug)));
+    }
     for (const doc of DOCS) {
       write(`${pre}${doc.out}index.html`, renderDoc(doc, lang, published, groups));
       pages.push(siteUrl(doc.out, lang));

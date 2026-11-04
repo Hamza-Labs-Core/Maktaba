@@ -14,6 +14,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { appTexts } from "./apps.mjs";
 
 // ---- the share of Latin-script prose ----------------------------------------------------
 
@@ -327,6 +328,40 @@ export function checkPages(files, read) {
       if (share > MAX_LATIN_SHARE)
         findings.push(`${f}: ${Math.round(share * 100)}% of its prose is Latin script`);
     } else if (!set.has(`ar/${f}`)) findings.push(`${f}: no Arabic page (ar/${f})`);
+  }
+  return findings;
+}
+
+// ---- the Apps pages ---------------------------------------------------------------------
+
+const RLM = /‏/g;
+const HAS_ARABIC = /[؀-ۿ]/;
+
+/**
+ * The Apps pages (scripts/apps.mjs) in both languages: every text has its English and its
+ * Arabic, the English carries no Arabic script and the Arabic is Arabic (a cell that is the
+ * same text in both, a product name or a key, may stay as it is), and every screenshot has an
+ * image in each language (its own, or the one language it was taken in). `imageOf(file, lang)`
+ * is the image's site path, or null.
+ */
+export function checkApps(pages, shots, imageOf) {
+  const findings = [];
+  for (const { where, en, ar } of appTexts(pages)) {
+    if (typeof en !== "string" || !en.trim()) findings.push(`${where}: no English`);
+    if (typeof ar !== "string" || !ar.trim()) {
+      findings.push(`${where}: no Arabic`);
+      continue;
+    }
+    if (typeof en === "string" && HAS_ARABIC.test(en))
+      findings.push(`${where}: Arabic script in the English`);
+    if (!HAS_ARABIC.test(ar) && ar.replace(RLM, "") !== en)
+      findings.push(`${where}: the Arabic is not Arabic`);
+  }
+  for (const sh of shots) {
+    for (const lang of ["en", "ar"]) {
+      if (!imageOf(sh.file, lang))
+        findings.push(`apps/${sh.page || "index"}: ${sh.file} has no image for ${lang}`);
+    }
   }
   return findings;
 }
