@@ -257,6 +257,7 @@
     <string name="w_health_processes_state_failed">Failed</string>
     <string name="w_health_processes_state_exited">Stopped</string>
     <string name="w_health_processes_state_stopped">Stopped</string>
+    <string name="w_health_processes_state_held">Held: its component is off</string>
     <string name="w_health_processes_role_api">API</string>
     <string name="w_health_processes_role_streaming">Live TV and streaming</string>
     <string name="w_health_processes_role_pipeline">Processing pipeline</string>

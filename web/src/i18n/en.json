@@ -686,6 +686,7 @@
   "health.processes.state.failed": "Failed",
   "health.processes.state.exited": "Stopped",
   "health.processes.state.stopped": "Stopped",
+  "health.processes.state.held": "Held: its component is off",
   "health.processes.reason.crash": "exited with code {code}",
   "health.processes.reason.signal": "killed by {signal}",
   "health.processes.reason.hang": "stopped responding and was restarted",

@@ -252,6 +252,7 @@
     <string name="w_health_processes_state_failed">متعطّل</string>
     <string name="w_health_processes_state_exited">متوقف</string>
     <string name="w_health_processes_state_stopped">متوقف</string>
+    <string name="w_health_processes_state_held">موقوف: مكوّنه متوقف عن العمل</string>
     <string name="w_health_processes_role_api">الواجهة البرمجية</string>
     <string name="w_health_processes_role_streaming">البث والتلفاز المباشر</string>
     <string name="w_health_processes_role_pipeline">خط المعالجة</string>

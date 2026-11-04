@@ -686,6 +686,7 @@
   "health.processes.state.failed": "متعطّل",
   "health.processes.state.exited": "متوقف",
   "health.processes.state.stopped": "متوقف",
+  "health.processes.state.held": "موقوف: مكوّنه متوقف عن العمل",
   "health.processes.reason.crash": "توقف برمز الخروج {code}",
   "health.processes.reason.signal": "أُنهي بالإشارة {signal}",
   "health.processes.reason.hang": "توقف عن الاستجابة فأُعيد تشغيله",

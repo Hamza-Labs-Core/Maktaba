@@ -114,7 +114,8 @@ export function listParts(
  * A reason code in words. Codes may carry an id after a colon (the API's
  * `dependency_off:llm`, `want_missing:model.cohere-arabic`); it becomes the
  * {component} placeholder. An unknown code gives "" rather than the code. A condition's
- * params (`toml_superseded` {key, value}) fill the placeholders they name.
+ * params (`toml_superseded` {key, value}) fill the placeholders they name; a param that
+ * is a component's id reads as its title, never the raw id.
  */
 export function reasonText(
   t: T,
@@ -132,8 +133,28 @@ export function reasonText(
   if (!arg && /\{components?\}/.test(template)) return "";
   const name = arg ? titleOf(arg) : "";
   return filled(
-    t(key, { value: arg ?? "", ...paramVars(params), component: name, components: name })
+    t(key, {
+      value: arg ?? "",
+      ...namedParams(params, titleOf),
+      component: name,
+      components: name,
+    })
   );
+}
+
+/**
+ * A reason's params with each value that is a component's id (pack_not_published's
+ * {name}: `runtime.ml`) replaced by that component's title in the page's language.
+ */
+function namedParams(
+  params: Record<string, unknown> | undefined,
+  titleOf: (id: string) => string
+): Record<string, string | number> {
+  const vars = paramVars(params);
+  for (const [k, v] of Object.entries(vars)) {
+    if (typeof v === "string" && v) vars[k] = titleOf(v);
+  }
+  return vars;
 }
 
 /** The string and number params of a status or progress, as a message's variables. */

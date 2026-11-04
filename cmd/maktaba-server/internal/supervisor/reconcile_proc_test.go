@@ -49,7 +49,7 @@ func TestAllowStopsWithCatalogGraceAndNoRestart(t *testing.T) {
 	}
 	time.Sleep(1500 * time.Millisecond) // 30 backoffs of the test policy
 	st = proc(s.Snapshot(), RolePipeline)
-	if st.PID != 0 || st.Restarts != 0 || st.State != StateStopped {
+	if st.PID != 0 || st.Restarts != 0 || st.State != StateHeld {
 		t.Fatalf("restarted after Allow(false): %+v", st)
 	}
 	if err := s.Allow(RolePipeline, "stt-1", true); err != nil {

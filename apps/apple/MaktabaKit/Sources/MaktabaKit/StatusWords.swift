@@ -257,6 +257,7 @@ public enum StatusWords {
         "backoff": "Restarting",
         "exited": "Stopped",
         "failed": "Failed",
+        "held": "Held: its component is off",
         "running": "Running",
         "starting": "Starting",
         "stopped": "Stopped",

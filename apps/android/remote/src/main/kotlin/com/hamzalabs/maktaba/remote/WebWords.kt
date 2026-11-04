@@ -299,6 +299,7 @@ internal object WebWords {
         "failed" to R.string.w_health_processes_state_failed,
         "exited" to R.string.w_health_processes_state_exited,
         "stopped" to R.string.w_health_processes_state_stopped,
+        "held" to R.string.w_health_processes_state_held,
     )
 
     /** `health.processes.role.*` */

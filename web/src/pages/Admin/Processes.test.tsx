@@ -4,6 +4,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { I18nProvider } from "../../lib/i18n";
+import enJson from "../../i18n/en.json";
+import arJson from "../../i18n/ar.json";
+
+const en = enJson as Record<string, string>;
+const ar = arJson as Record<string, string>;
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -96,6 +101,29 @@ describe("ProcessesCard", () => {
     expect(
       within(screen.getByTestId("process-tv-slot-amber")).getByText(/Port 9113 .* is in use/)
     ).toBeInTheDocument();
+  });
+
+  it("a process whose component is off reads held, in English and Arabic", async () => {
+    get.mockResolvedValue({
+      available: true,
+      processes: [
+        { role: "relay", state: "held", restarts: 4, component: "cloud.link", blocked: true },
+      ],
+      events: [],
+    } satisfies ProcessesDoc);
+    const { unmount } = renderCard();
+    const card = await screen.findByTestId("process-relay");
+    expect(within(card).getByText(en["health.processes.state.held"]!)).toBeInTheDocument();
+    expect(card.textContent).not.toContain("held");
+    unmount();
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      renderCard();
+      const ar_ = await screen.findByTestId("process-relay");
+      expect(within(ar_).getByText(ar["health.processes.state.held"]!)).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem("mkt:locale");
+    }
   });
 
   it("shows each process with its state, restarts and last crash", async () => {
