@@ -7,8 +7,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { scanDir, scanText } from "../scripts/scan.mjs";
+import zlib from "node:zlib";
+import { imageMetadata, scanDir, scanText } from "../scripts/scan.mjs";
+import { APPS, appShots } from "../scripts/apps.mjs";
 import {
+  APP_IMAGES,
+  appImage,
+  appPath,
+  webpSize,
   DOCS,
   MAX_EXPIRY_MONTHS,
   REPO,
@@ -29,6 +35,7 @@ import {
   MAX_LATIN_SHARE,
   applyOverlay,
   changelogOutline,
+  checkApps,
   checkChangelog,
   checkGuides,
   checkOverlay,
@@ -706,5 +713,268 @@ describe("security.txt, robots.txt, sitemap", () => {
   it("there is a 404 page in each language", () => {
     expect(read("404.html")).toContain(`<h1>${STRINGS.en["404.title"]}</h1>`);
     expect(read("ar/404.html")).toContain(`<h1>${STRINGS.ar["404.title"]}</h1>`);
+  });
+});
+
+// ---- the Apps pages ---------------------------------------------------------------------
+
+type Text = { en: string; ar: string };
+type Shot = { file: string; kind: string; alt: Text; page?: string };
+type AppPage = {
+  slug: string;
+  title: Text;
+  sections: { h: Text; blocks: { shots?: Shot[] }[] }[];
+};
+const PAGES = APPS as AppPage[];
+const ARABIC_SCRIPT = /[؀-ۿ]/;
+
+/** The screenshots of a built Apps page: each <img> in its article, with its attributes. */
+function appImages(rel: string) {
+  const doc = parse(read(rel));
+  const article = elements(doc).find((e) => e.tagName === "article" && attr(e, "class") === "apps");
+  expect(article, `${rel}: the Apps article`).toBeTruthy();
+  return elements(article!)
+    .filter((e) => e.tagName === "img")
+    .map((e) => ({
+      src: attr(e, "src") ?? "",
+      alt: attr(e, "alt") ?? "",
+      width: Number(attr(e, "width")),
+      height: Number(attr(e, "height")),
+    }));
+}
+const appRel = (lang: "en" | "ar", slugName: string) =>
+  `${lang === "ar" ? "ar/" : ""}${appPath(slugName).slice(1)}index.html`;
+
+describe("the Apps pages", () => {
+  it("lists every app: the overview, then Player, Remote, TV, the server and the web app", () => {
+    expect(PAGES.map((p) => p.slug)).toEqual(["", "player", "remote", "tv", "server", "web"]);
+  });
+
+  it("each page is built in English and in Arabic, with its lang, dir and title", () => {
+    for (const pg of PAGES) {
+      const en = read(appRel("en", pg.slug));
+      const ar = read(appRel("ar", pg.slug));
+      expect(en, pg.slug).toContain('<html lang="en" dir="ltr">');
+      expect(ar, pg.slug).toContain('<html lang="ar" dir="rtl">');
+      expect(en).toContain(`<h1>${pg.title.en.replace(/'/g, "&#39;")}</h1>`);
+      expect(ar).toContain(`<h1>${pg.title.ar}</h1>`);
+      // each links the other, and the Arabic page's links stay in Arabic
+      expect(en).toMatch(new RegExp(`id="lang-switch"[^>]*href="/ar${appPath(pg.slug)}"`));
+      expect(ar).toMatch(new RegExp(`id="lang-switch"[^>]*href="${appPath(pg.slug)}"`));
+      for (const other of PAGES) expect(ar).toContain(`href="/ar${appPath(other.slug)}"`);
+    }
+  });
+
+  it("the Arabic pages are Arabic, not only their headings", () => {
+    for (const pg of PAGES) {
+      const prose = htmlProse(read(appRel("ar", pg.slug)));
+      expect(latinShare(prose), pg.slug).toBeLessThan(MAX_LATIN_SHARE);
+      // whole paragraphs: far more Arabic than the headings and the navigation alone
+      expect((prose.match(/[؀-ۿ]/g) ?? []).length, pg.slug).toBeGreaterThan(800);
+    }
+  });
+
+  it("every image a page shows exists, as a WebP of the size the page says", () => {
+    let count = 0;
+    for (const pg of PAGES) {
+      for (const lang of ["en", "ar"] as const) {
+        const imgs = appImages(appRel(lang, pg.slug));
+        const shots = pg.sections.flatMap((s) => s.blocks.flatMap((b) => b.shots ?? []));
+        expect(imgs.length, `${lang} ${pg.slug}`).toBe(shots.length);
+        for (const img of imgs) {
+          expect(img.src).toMatch(/^\/assets\/apps\/[a-z0-9-]+-(?:en|ar)\.webp$/);
+          const file = path.join(DIST, img.src);
+          expect(fs.existsSync(file), img.src).toBe(true);
+          expect(webpSize(fs.readFileSync(file)), img.src).toEqual({ w: img.width, h: img.height });
+          count++;
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(40);
+  });
+
+  it("a page shows its own language's screenshot where there is one", () => {
+    for (const sh of appShots() as Shot[]) {
+      for (const lang of ["en", "ar"] as const) {
+        if (fs.existsSync(path.join(APP_IMAGES, `${sh.file}-${lang}.webp`)))
+          expect(appImage(sh.file, lang)).toBe(`/assets/apps/${sh.file}-${lang}.webp`);
+      }
+    }
+  });
+
+  it("the alt text is in each page's language", () => {
+    for (const pg of PAGES) {
+      for (const img of appImages(appRel("en", pg.slug))) {
+        expect(img.alt.length, img.src).toBeGreaterThan(15);
+        expect(ARABIC_SCRIPT.test(img.alt), `${img.src}: ${img.alt}`).toBe(false);
+      }
+      for (const img of appImages(appRel("ar", pg.slug))) {
+        expect(img.alt.length, img.src).toBeGreaterThan(15);
+        expect(latinShare(img.alt), `${img.src}: ${img.alt}`).toBeLessThan(0.5);
+      }
+    }
+  });
+
+  it("the screenshots are light: WebP only, none over 100 KB, each built and shown", () => {
+    const shots = fs.readdirSync(APP_IMAGES);
+    expect(shots.length).toBeGreaterThan(0);
+    for (const f of shots) {
+      expect(f).toMatch(/^[a-z0-9-]+-(?:en|ar)\.webp$/);
+      expect(fs.statSync(path.join(APP_IMAGES, f)).size, f).toBeLessThan(100 * 1024);
+      expect(fs.existsSync(path.join(DIST, "assets/apps", f)), f).toBe(true);
+    }
+    // no stray image is published: each one is on some page
+    const shown = new Set(
+      PAGES.flatMap((pg) =>
+        (["en", "ar"] as const).flatMap((l) =>
+          appImages(appRel(l, pg.slug)).map((i) => path.basename(i.src))
+        )
+      )
+    );
+    expect([...shots].sort()).toEqual([...shown].sort());
+  });
+
+  it("is in the navigation, on the landing page and in the sitemap, in both languages", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const pre = lang === "ar" ? "/ar" : "";
+      const home = read(lang === "ar" ? "ar/index.html" : "index.html");
+      expect(home).toContain(`href="${pre}/apps/">${STRINGS[lang]["nav.apps"]}</a>`);
+      expect(home).toContain(`<strong>${STRINGS[lang]["card.apps.title"]}</strong>`);
+    }
+    const xml = read("sitemap.xml");
+    for (const pg of PAGES)
+      for (const pre of ["", "/ar"])
+        expect(xml).toContain(`<loc>https://maktaba.dev${pre}${appPath(pg.slug)}</loc>`);
+  });
+
+  it("keeps words whole, and its tables fit a phone", () => {
+    const css = read("assets/portal.css");
+    const cells = css.match(/\.apps th,\s*\.apps td\s*\{([^}]*)\}/);
+    expect(cells, "the .apps th, .apps td rule").not.toBeNull();
+    expect(cells![1]).toMatch(/overflow-wrap:\s*break-word/);
+    expect(css).toMatch(/\.apps\s*\{[^}]*overflow-wrap:\s*break-word/);
+    // under 600 px a table's rows become cards, each cell under its column's name
+    expect(css).toMatch(
+      /@media \(max-width: 600px\)\s*\{[^@]*table\.stack td::before\s*\{[^}]*attr\(data-label\)/
+    );
+    for (const pg of PAGES) {
+      const doc = parse(read(appRel("ar", pg.slug)));
+      for (const td of elements(doc).filter((e) => e.tagName === "td"))
+        expect(attr(td, "data-label"), pg.slug).toBeTruthy();
+    }
+  });
+
+  it("the parity check fails a missing or English Arabic, Arabic in the English, a missing image", () => {
+    const page = (title: Text, file = "player-iphone-home") => [
+      {
+        slug: "x",
+        title,
+        card: { en: "Card", ar: "بطاقة" },
+        lead: { en: "Lead", ar: "مقدمة" },
+        sections: [
+          {
+            h: { en: "H", ar: "عنوان" },
+            blocks: [{ shots: [{ file, kind: "phone", alt: { en: "Alt", ar: "نص بديل" } }] }],
+          },
+        ],
+      },
+    ];
+    const run = (pages: unknown[]) =>
+      (checkApps(pages, appShots(pages), appImage) as string[]).join("\n");
+    expect(run(page({ en: "Player", ar: "المشغّل" }))).toBe("");
+    expect(run(page({ en: "Player", ar: "" }))).toMatch(/no Arabic/);
+    expect(run(page({ en: "Player", ar: "The Player" }))).toMatch(/the Arabic is not Arabic/);
+    expect(run(page({ en: "المشغّل", ar: "المشغّل" }))).toMatch(/Arabic script in the English/);
+    // the same key or product name in both may stay as it is (a right-to-left mark aside)
+    expect(run(page({ en: "TestFlight", ar: "‏TestFlight" }))).toBe("");
+    const missing = run(page({ en: "Player", ar: "المشغّل" }, "no-such-shot"));
+    expect(missing).toMatch(/no-such-shot has no image for en/);
+    expect(missing).toMatch(/no-such-shot has no image for ar/);
+    // and the real pages pass
+    expect(checkApps(APPS, appShots(), appImage)).toEqual([]);
+  });
+});
+
+describe("the public-safety scan: images and file names", () => {
+  const riff = (chunks: [string, Buffer][]) => {
+    const body = Buffer.concat(
+      chunks.map(([id, data]) => {
+        const head = Buffer.alloc(8);
+        head.write(id, 0, "ascii");
+        head.writeUInt32LE(data.length, 4);
+        return Buffer.concat([head, data, Buffer.alloc(data.length % 2)]);
+      })
+    );
+    const head = Buffer.alloc(12);
+    head.write("RIFF", 0, "ascii");
+    head.writeUInt32LE(body.length + 4, 4);
+    head.write("WEBP", 8, "ascii");
+    return Buffer.concat([head, body]);
+  };
+  const png = (chunks: [string, Buffer][]) =>
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      ...[...chunks, ["IEND", Buffer.alloc(0)] as [string, Buffer]].map(([id, data]) => {
+        const head = Buffer.alloc(8);
+        head.writeUInt32BE(data.length, 0);
+        head.write(id, 4, "ascii");
+        return Buffer.concat([head, data, Buffer.alloc(4)]);
+      }),
+    ]);
+  const rules = (text: string) => scanText(text).map((f: { rule: string }) => f.rule);
+
+  it("a WebP's EXIF or XMP is metadata, and its text is scanned", () => {
+    expect(imageMetadata(riff([["VP8 ", Buffer.alloc(20)]]))).toEqual({ blocks: [], text: "" });
+    const exif = imageMetadata(
+      riff([
+        ["VP8 ", Buffer.alloc(20)],
+        ["EXIF", Buffer.from("Owner /Users/someone")],
+      ])
+    );
+    expect(exif.blocks).toEqual(["EXIF"]);
+    expect(rules(exif.text)).toContain("home-path");
+    expect(imageMetadata(riff([["XMP ", Buffer.from("<x/>")]])).blocks).toEqual(["XMP"]);
+  });
+
+  it("a PNG's text chunks are scanned, its EXIF refused", () => {
+    const text = imageMetadata(png([["tEXt", Buffer.from("Comment\0taken on 192.168.1.20")]]));
+    expect(text.blocks).toEqual([]);
+    expect(rules(text.text)).toContain("private-ip");
+    const z = imageMetadata(
+      png([
+        ["zTXt", Buffer.concat([Buffer.from("Comment\0\0"), zlib.deflateSync("/Users/someone")])],
+      ])
+    );
+    expect(rules(z.text)).toContain("home-path");
+    expect(imageMetadata(png([["eXIf", Buffer.from("MM")]])).blocks).toEqual(["eXIf"]);
+  });
+
+  it("flags an image's metadata, and a file name that is not plain, in a built folder", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devportal-scan-"));
+    try {
+      fs.writeFileSync(
+        path.join(dir, "shot.webp"),
+        riff([
+          ["VP8 ", Buffer.alloc(20)],
+          ["EXIF", Buffer.from("x")],
+        ])
+      );
+      fs.writeFileSync(path.join(dir, "Screen Shot 1.webp"), riff([["VP8 ", Buffer.alloc(20)]]));
+      fs.writeFileSync(path.join(dir, "notes-192.168.1.20.txt"), "nothing");
+      const found = scanDir(dir).map((f: { file: string; rule: string }) => `${f.file}: ${f.rule}`);
+      expect(found).toContain("shot.webp: image-metadata");
+      expect(found).toContain("Screen Shot 1.webp: file-name");
+      expect(found).toContain("notes-192.168.1.20.txt: file-name:private-ip");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("no image on the site carries metadata, and the app screenshots no text at all", () => {
+    for (const f of files(DIST).filter((f) => /\.(png|webp|jpe?g)$/i.test(f))) {
+      const meta = imageMetadata(fs.readFileSync(path.join(DIST, f)));
+      expect(meta.blocks, f).toEqual([]);
+      if (f.startsWith("assets/apps/")) expect(meta.text, f).toBe("");
+    }
   });
 });

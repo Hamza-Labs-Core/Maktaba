@@ -7,6 +7,7 @@ export const STRINGS = {
   en: {
     "site.name": "Maktaba for developers",
     "nav.home": "Home",
+    "nav.apps": "Apps",
     "nav.wiki": "Wiki",
     "nav.api": "API",
     "nav.plugins": "Plugins",
@@ -50,6 +51,11 @@ export const STRINGS = {
     "card.api.body": "The Maktaba API from its OpenAPI description: every endpoint and type.",
     "card.changelog.title": "Changelog",
     "card.changelog.body": "Every release and what is waiting for the next one.",
+    "card.apps.title": "The apps",
+    "card.apps.body":
+      "Maktaba Player, Maktaba Remote, Maktaba TV, the server app and the web app: who each is for, its platforms and how to get it.",
+    "apps.pages": "Each app",
+    "apps.toc": "The apps",
     "card.security.title": "Security",
     "card.security.body": "How to report a vulnerability, and our disclosure policy.",
     "home.lang.note":
@@ -94,6 +100,7 @@ export const STRINGS = {
   ar: {
     "site.name": "مكتبة للمطوّرين",
     "nav.home": "الرئيسية",
+    "nav.apps": "التطبيقات",
     "nav.wiki": "الويكي",
     "nav.api": "الواجهة البرمجية",
     "nav.plugins": "الإضافات",
@@ -137,6 +144,11 @@ export const STRINGS = {
     "card.api.body": "واجهة مكتبة البرمجية من وصف OpenAPI: كل نقطة وصول وكل نوع.",
     "card.changelog.title": "سجل التغييرات",
     "card.changelog.body": "كل إصدار، وما ينتظر الإصدار التالي.",
+    "card.apps.title": "التطبيقات",
+    "card.apps.body":
+      "المشغّل والإدارة عن بُعد وتطبيق التلفاز وتطبيق الخادم وتطبيق الويب: لمن كل منها، ومنصاته، وطريقة الحصول عليه.",
+    "apps.pages": "كل تطبيق",
+    "apps.toc": "التطبيقات",
     "card.security.title": "الأمان",
     "card.security.body": "كيف تبلّغ عن ثغرة، وسياستنا في الإفصاح.",
     "home.lang.note":

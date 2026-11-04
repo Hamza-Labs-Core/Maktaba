@@ -307,3 +307,108 @@ footer .wrap {
   direction: ltr;
   unicode-bidi: isolate;
 }
+
+/* the Apps pages (/apps/): prose that keeps its words whole, tables that become cards on a
+   phone, and screenshot grids that never widen the page */
+.apps {
+  max-width: 900px;
+  overflow-wrap: break-word;
+}
+.apps .lead {
+  font-size: 1.08rem;
+  color: var(--muted);
+  max-width: 68ch;
+}
+.apps section {
+  margin-top: 36px;
+}
+.apps code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--code-bg);
+  border-radius: 4px;
+  padding: 0 4px;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+.apps table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 16px;
+}
+.apps th,
+.apps td {
+  border: 1px solid var(--line);
+  padding: 8px 10px;
+  vertical-align: top;
+  text-align: start;
+  overflow-wrap: break-word;
+}
+.apps th {
+  background: var(--card);
+}
+/* a phone: each row is a card, each cell under its column's name */
+@media (max-width: 600px) {
+  .apps table.stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .apps table.stack,
+  .apps table.stack tbody,
+  .apps table.stack tr,
+  .apps table.stack td {
+    display: block;
+    width: auto;
+  }
+  .apps table.stack tr {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--card);
+    margin-bottom: 10px;
+    padding: 6px 12px;
+  }
+  .apps table.stack td {
+    border: 0;
+    padding: 4px 0;
+  }
+  .apps table.stack td::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+}
+.shots {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+}
+.shots.phone {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr));
+}
+.shots.wide {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr));
+}
+.shots figure {
+  margin: 0;
+  min-width: 0;
+}
+.shots img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #0b111c;
+}
+.shots.phone img {
+  max-width: 260px;
+}
+.shots figcaption {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 6px;
+}
