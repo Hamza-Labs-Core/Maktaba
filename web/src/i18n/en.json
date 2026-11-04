@@ -4822,6 +4822,7 @@
   "health.reason.pipeline_ok": "Answers at {addr}.",
   "health.reason.process_crash_loop": "Keeps exiting soon after it starts.",
   "health.reason.process_running": "Running.",
+  "health.reason.process_held": "Not running: its component is off, held or waiting for what it needs.",
   "health.reason.process_failed": "Could not be kept running.",
   "health.reason.process_starting": "Starting.",
   "health.reason.process_unhealthy": "Running but not responding.",
