@@ -527,3 +527,38 @@ async def test_the_machines_path_map_wins_over_its_shares(
         assert paths.to_local("/Volumes/Originals/a/b.mp4") == "/Users/me/nas-nfs/a/b.mp4"
     finally:
         paths.set_active_path_map(before)
+
+
+@pytest.mark.asyncio
+async def test_a_shared_channel_and_a_folder_without_one_are_recorded(db: Database) -> None:
+    """youtube_channels keeps one library per channel: a second library of the same
+    channel used to get nothing, silently. It gets its own source now (off), and both it
+    and a folder that names no channel are in the report."""
+    from maktaba_pipeline.tools.import_mediaintel import ImportReport, _youtube
+
+    first, second, third = [await make_library(db, n) for n in ("First", "Second", "Third")]
+    cache = sqlite3.connect(":memory:")
+    cache.row_factory = sqlite3.Row
+    cache.execute(
+        "CREATE TABLE folders (folder TEXT, channel_id TEXT, channel_url TEXT, channel TEXT)"
+    )
+    cache.executemany(
+        "INSERT INTO folders VALUES (?,?,?,?)",
+        [("Y:/a", "UCshared", None, "Shared"), ("Y:/b", "UCshared", None, "Shared"),
+         ("Y:/c", None, None, None)],
+    )  # fmt: skip
+    files = {f"Y:/{x}/v.mp4": {"folder": f"Y:/{x}", "youtube_id": None} for x in "abc"}
+    match = {"Y:/a/v.mp4": (None, first), "Y:/b/v.mp4": (None, second), "Y:/c/v.mp4": (None, third)}
+    rep = ImportReport(applied=True)
+    await _youtube(db, cache, files, match, rep)
+    await _youtube(db, cache, files, match, ImportReport(applied=True))  # again: no duplicate
+    holder = await db.fetchval(
+        "SELECT library_id FROM youtube_channels WHERE channel_id = 'UCshared'"
+    )
+    assert str(holder) == str(first)
+    rows = await db.fetch(
+        "SELECT library_id, mode FROM youtube_sources WHERE external_id = 'UCshared'"
+    )
+    assert [(str(r["library_id"]), r["mode"]) for r in rows] == [(str(second), "off")]
+    assert rep.youtube_shared == ["Y:/b (UCshared)"] and rep.youtube_no_channel == ["Y:/c"]
+    assert "1 folders name no channel" in rep.render()

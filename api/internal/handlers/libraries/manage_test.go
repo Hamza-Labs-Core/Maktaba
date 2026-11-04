@@ -60,6 +60,11 @@ func manageDB(t *testing.T) *sql.DB {
 		`CREATE TABLE library_acl (user_id TEXT, library_id TEXT, PRIMARY KEY (user_id, library_id))`,
 		`CREATE TABLE user_library_pins (user_id TEXT NOT NULL, library_id TEXT NOT NULL, position INTEGER NOT NULL,
 			created_at TEXT NOT NULL, PRIMARY KEY (user_id, library_id))`,
+		`CREATE TABLE youtube_sources (id TEXT PRIMARY KEY, library_id TEXT NOT NULL, kind TEXT NOT NULL,
+			url TEXT NOT NULL, external_id TEXT NOT NULL, mode TEXT NOT NULL, last_on_mode TEXT, added_at TIMESTAMP)`,
+		`CREATE TABLE youtube_source_guesses (library_id TEXT PRIMARY KEY, kind TEXT, external_id TEXT, url TEXT,
+			title TEXT, evidence TEXT, sample_youtube_id TEXT, ids_found INTEGER NOT NULL DEFAULT 0,
+			ids_matched INTEGER NOT NULL DEFAULT 0, looked_at TIMESTAMP NOT NULL)`,
 		`CREATE TABLE audit_log (id INTEGER PRIMARY KEY, category TEXT, action TEXT, actor_user_id TEXT,
 			target_id TEXT, payload TEXT, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
 	} {
@@ -607,5 +612,55 @@ func TestMergeKeepsTheDuplicatePathsAsCopies(t *testing.T) {
 	}
 	if n := count(t, db, `SELECT COUNT(*) FROM videos WHERE id = 's1'`); n != 0 {
 		t.Errorf("the duplicate row is still there")
+	}
+}
+
+// Slot 0175: each card's YouTube state in the one answer (no request per card): the
+// sources and how many are on, the one source for the switch, and for a library with
+// none the channel its files look like, with the libraries that already follow it.
+func TestManageCarriesEachLibrarysYouTube(t *testing.T) {
+	db := manageDB(t)
+	addLibrary(t, db, libBig, "Big", t0, "/m/a")
+	addLibrary(t, db, libSmall, "Small", t0, "/m/s")
+	addLibrary(t, db, libNested, "Nested", t0, "/m/n")
+	addLibrary(t, db, libOther, "Other", t0, "/m/o")
+	mustExec(t, db, `INSERT INTO youtube_sources (id, library_id, kind, url, external_id, mode, last_on_mode, added_at) VALUES
+		('s1', $1, 'channel', 'https://www.youtube.com/channel/UCone', 'UCone', 'off', 'new_only', $3),
+		('s2', $2, 'channel', 'https://www.youtube.com/channel/UCtwo', 'UCtwo', 'new_and_backfill', 'new_and_backfill', $3),
+		('s3', $2, 'playlist', 'https://www.youtube.com/playlist?list=PLx', 'PLx', 'off', NULL, $3)`,
+		libBig, libSmall, t0)
+	mustExec(t, db, `INSERT INTO youtube_source_guesses (library_id, kind, external_id, url, title, evidence,
+		sample_youtube_id, ids_found, ids_matched, looked_at) VALUES
+		($1, 'channel', 'UCone', 'https://www.youtube.com/channel/UCone', 'One', 'filename', 'aaaaaaaaaaa', 8, 8, $3),
+		($2, NULL, NULL, NULL, NULL, NULL, NULL, 0, 0, $3),
+		($4, 'channel', 'UCold', 'https://www.youtube.com/channel/UCold', 'Old', 'filename', 'bbbbbbbbbbb', 1, 1, $3)`,
+		libNested, libOther, t0, libBig)
+	rec := call(t, &Handler{DB: db, PathChecker: fakeChecker{}}, "GET", "/api/libraries/manage", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp ManageResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]LibraryYouTube{}
+	for _, l := range resp.Items {
+		by[l.Name] = l.YouTube
+	}
+	big := by["Big"]
+	if big.Sources != 1 || big.On != 0 || big.Source == nil || big.Source.ID != "s1" || big.Source.LastOnMode == nil ||
+		*big.Source.LastOnMode != "new_only" || big.Guess != nil {
+		t.Errorf("Big = %+v (a guess for a library with a source is moot)", big)
+	}
+	if s := by["Small"]; s.Sources != 2 || s.On != 1 || s.Source != nil {
+		t.Errorf("Small = %+v", s)
+	}
+	n := by["Nested"]
+	if n.Sources != 0 || n.Guess == nil || n.Guess.ExternalID == nil || *n.Guess.ExternalID != "UCone" ||
+		len(n.Guess.FollowedBy) != 1 || n.Guess.FollowedBy[0].Name != "Big" {
+		t.Errorf("Nested = %+v", n)
+	}
+	if o := by["Other"]; o.Guess == nil || o.Guess.ExternalID != nil || len(o.Guess.FollowedBy) != 0 {
+		t.Errorf("Other (looked, nothing found) = %+v", o)
 	}
 }

@@ -103,8 +103,11 @@ Nothing is lost on the way. The new MP4 is made in a work folder on the main mac
 A library's YouTube channels and playlists are its **sources**. When this version was installed, every YouTube channel a library already had became a source set to **Off**, so **nothing downloads until you turn a source on**. To turn one on:
 
 1. On this page, open the menu of the library's row in **Libraries** and choose **YouTube sources…** (the same dialog opens from **YouTube sources…** on [Manage libraries](/help/library-management#youtube-sources)).
-1. In **Mode** next to the source, choose **New uploads and back catalogue** (new uploads download first, then the older videos, a few at a time when YouTube is free) or **New uploads only** (only what is uploaded from now on). **Off** stops it: nothing more downloads, and what was downloaded stays.
+1. Turn on the **Downloads** switch of the source. It comes back in the mode it had when it was last on, or **New uploads and back catalogue** the first time. Turning the switch off stops it: nothing more downloads, and what was downloaded stays.
+1. While a source is on, **Mode** next to the switch chooses **New uploads and back catalogue** (new uploads download first, then the older videos, a few at a time when YouTube is free) or **New uploads only** (only what is uploaded from now on).
 1. Turning a source on queues the library's refresh at once.
+
+A library with one source also has its switch on its card in [Manage libraries](/help/library-management#youtube-sources).
 
 To follow a new channel or playlist, paste its link in **Channel or playlist URL** under **Add a source**, choose its **Mode** (a new source starts as **New uploads and back catalogue**) and its **Folder** inside the library (empty: a folder named after its title), then press **Add**.
 
@@ -117,7 +120,7 @@ To follow a new channel or playlist, paste its link in **Channel or playlist URL
 - **Cookies from browser**: the browser whose YouTube sign-in to use, for videos that need one.
 - **Limit rate**: a download speed limit, such as `2M`.
 
-Each source also has **Turn off**, **Retry gone/skipped** and **Remove** (it stops following the source; what was downloaded stays). Under **Library actions**, **Resume back catalogue** carries on a paused back catalogue, **Retry gone/skipped/failed** wants those downloads again, and **Import from Tartube…** marks every video an existing Tartube database downloaded as already downloaded, so it is never fetched twice.
+Each source also has **Retry gone/skipped** and **Remove** (it stops following the source; what was downloaded stays). Under **Library actions**, **Resume back catalogue** carries on a paused back catalogue, **Retry gone/skipped/failed** wants those downloads again, and **Import from Tartube…** marks every video an existing Tartube database downloaded as already downloaded, so it is never fetched twice. To make the sources themselves from Tartube, for every library at once, use **Import from Tartube…** on [Manage libraries](/help/library-management#tartube).
 
 ### Duplicates {#duplicates}
 

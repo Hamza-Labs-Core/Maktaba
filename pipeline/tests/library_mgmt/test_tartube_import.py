@@ -20,10 +20,15 @@ import pytest
 from maktaba_pipeline.library_mgmt.tartube_import import (
     StubUnpickler,
     TartubeRefused,
+    TartubeSource,
+    downloaded_by_parent,
     downloaded_ids,
+    folder_key,
     load_pickle,
     read_export,
+    read_tartube,
     records_from_pickle,
+    sources_from_pickle,
 )
 
 A, B, C, D = "AAAAAAAAAAA", "BBBBBBBBBBB", "CCCCCCCCCCC", "DDDDDDDDDDD"
@@ -156,6 +161,37 @@ def test_the_export_first_and_the_database_for_what_it_lacks(
     assert sorted(ids) == [A, D] and rep.used_pickle
     only, rep2 = downloaded_ids(str(export), channels=["Chan"])
     assert only == [A] and rep2.filtered == 1
+
+
+def test_the_channels_and_playlists_tartube_follows(
+    tmp_path: Path, media_module: types.ModuleType, library: Path
+) -> None:
+    # slot 0175: the database names its channels (a folder is not one)
+    db = make_db(tmp_path / "tartube.db", media_module, library)
+    assert sorted(sources_from_pickle(load_pickle(str(db))), key=lambda x: x.name) == [
+        TartubeSource("channel", "Chan", "https://www.youtube.com/@chan"),
+        TartubeSource("channel", "Other", "https://www.youtube.com/@other"),
+    ]
+    # the export's, and the newer database's added since the export
+    root = pickle.loads(db.read_bytes())
+    root["media_reg_dict"][8] = _obj(
+        media_module.Channel, dbid=8, name="Newer", source="https://www.youtube.com/@newer"
+    )
+    db.write_bytes(pickle.dumps(root, protocol=4))
+    export = make_export(tmp_path / "tartube_db_export.json")
+    srcs, recs = read_tartube(str(export))
+    assert [x.name for x in srcs] == ["Chan", "Other", "Newer"]
+    assert {r.vid for r in recs} == {A, B, C, D}
+
+
+def test_downloaded_by_parent_is_keyed_by_the_folder_name(
+    tmp_path: Path, media_module: types.ModuleType, library: Path
+) -> None:
+    db = make_db(tmp_path / "tartube.db", media_module, library)
+    _, recs = read_tartube(str(db))
+    by, rep = downloaded_by_parent(recs)
+    assert by == {"chan": [A], "other": [D]} and rep.downloaded == 2
+    assert folder_key("\u200fChan ") == folder_key("CHAN") == "chan"
 
 
 def test_an_export_alone_says_unknown_without_the_database(tmp_path: Path) -> None:

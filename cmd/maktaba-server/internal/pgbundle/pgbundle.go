@@ -473,7 +473,11 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	if err != nil {
 		return err
 	}
-	srv.Stdout, srv.Stderr = childLog(log), childLog(log)
+	// its own last lines too: a server that exits while starting says why (a port in
+	// use, too little shared memory) in the error, whatever log is (a test's io.Discard)
+	tail := &tailWriter{max: startTailBytes, next: childLog(log)}
+	srv.Stdout, srv.Stderr = tail, tail
+	srv.WaitDelay = 5 * time.Second // its output pipe, should a child outlive it
 	if err := srv.Start(); err != nil {
 		return err
 	}
@@ -499,7 +503,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 		select {
 		case werr := <-exited:
 			exited <- werr // for the deferred stop
-			return fmt.Errorf("postgres exited while starting: %v", werr)
+			return fmt.Errorf("postgres exited while starting: %v%s", werr, tail.said())
 		case <-rctx.Done():
 			return fmt.Errorf("postgres did not get ready: %w", err)
 		case <-time.After(200 * time.Millisecond):

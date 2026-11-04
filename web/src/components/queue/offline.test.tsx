@@ -117,7 +117,7 @@ describe("YouTubeSourcesDialog", () => {
   const lib = { id: LIB, name: "Islamic lectures" };
   const sourcesUrl = `/api/libraries/${LIB}/youtube/sources`;
 
-  it("lists, adds, sets the mode, turns off and removes", async () => {
+  it("lists, adds, sets the mode, switches off and removes", async () => {
     routeGet(get, { [sourcesUrl]: { items: [source()] } });
     post.mockResolvedValue({ source: source({ id: "new" }), refresh: { outcome: "inserted" } });
     patch.mockResolvedValue({ source: source(), refresh: null });
@@ -153,9 +153,9 @@ describe("YouTubeSourcesDialog", () => {
     expect(patch).toHaveBeenCalledWith(`${sourcesUrl}/${source().id}`, { mode: "new_only" });
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Turn off UCaaaaaaaaaaaaaaaaaaaaaa" })
+      screen.getByRole("switch", { name: "Downloads UCaaaaaaaaaaaaaaaaaaaaaa" })
     );
-    expect(patch).toHaveBeenLastCalledWith(`${sourcesUrl}/${source().id}`, { mode: "off" });
+    expect(patch).toHaveBeenLastCalledWith(`${sourcesUrl}/${source().id}`, { on: false });
 
     await userEvent.click(screen.getByRole("button", { name: "Remove UCaaaaaaaaaaaaaaaaaaaaaa" }));
     expect(del).toHaveBeenCalledWith(`${sourcesUrl}/${source().id}`);
@@ -191,6 +191,34 @@ describe("YouTubeSourcesDialog", () => {
       await older.promise;
     });
     expect(screen.queryByRole("link", { name })).toBeNull();
+  });
+
+  it("every source has its switch, off or on; on sends {on: true} and the mode shows only while on", async () => {
+    const off = source({ id: "s-off", external_id: "UCoffoffoffoffoffoffoffo", mode: "off" });
+    const on = source({ id: "s-on", external_id: "UCononononononononononon", mode: "new_only" });
+    routeGet(get, { [sourcesUrl]: { items: [off, on] } });
+    patch.mockResolvedValue({
+      source: { ...off, mode: "new_only", last_on_mode: "new_only" },
+      refresh: { outcome: "inserted" },
+    });
+    renderAt(<YouTubeSourcesDialog library={lib} onClose={() => {}} />, "/queue");
+    const offSwitch = await screen.findByRole("switch", {
+      name: "Downloads UCoffoffoffoffoffoffoffo",
+    });
+    const onSwitch = screen.getByRole("switch", { name: "Downloads UCononononononononononon" });
+    expect(offSwitch).not.toBeChecked();
+    expect(offSwitch).toHaveAttribute("aria-checked", "false");
+    expect(onSwitch).toBeChecked();
+    expect(onSwitch).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByLabelText("Mode of UCoffoffoffoffoffoffoffo")).toBeNull();
+    const mode = screen.getByLabelText("Mode of UCononononononononononon");
+    expect(within(mode).queryByRole("option", { name: "Off" })).toBeNull();
+
+    await userEvent.click(offSwitch);
+    expect(patch).toHaveBeenCalledWith(`${sourcesUrl}/s-off`, { on: true });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Turned on; its refresh is queued."
+    );
   });
 
   it("saves the options as the pipeline reads them", async () => {

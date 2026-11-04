@@ -13,7 +13,7 @@
   ],
   "counts": {
     "diagram": 14,
-    "endpoint": 120,
+    "endpoint": 123,
     "entity": 42,
     "epic": 54,
     "feature": 3,
@@ -8585,7 +8585,7 @@
       "id": "ep-patch-libraries-id-youtube-sources-sid",
       "type": "endpoint",
       "title": "PATCH /libraries/{id}/youtube/sources/{sid}",
-      "content": "تغيير وضع المصدر أو مجلده أو خياراته؛ وتفعيله يُدرج تحديثًا في الطابور",
+      "content": "تشغيل مصدر أو إيقافه، أو تغيير وضعه أو مجلده أو خياراته؛ وتشغيله يُدرج تحديثًا في الطابور",
       "tags": [
         "api",
         "Queue",
@@ -8604,7 +8604,7 @@
       "i18n": {
         "lang": "ar",
         "source": {
-          "content": "b7fb8793da33c231"
+          "content": "cfcebd130579657b"
         }
       }
     },
@@ -8632,6 +8632,87 @@
         "lang": "ar",
         "source": {
           "content": "d05574617c1f52c5"
+        }
+      }
+    },
+    {
+      "id": "ep-post-libraries-id-youtube-guess",
+      "type": "endpoint",
+      "title": "POST /libraries/{id}/youtube/guess",
+      "content": "البحث عن القناة التي جاءت منها ملفات المكتبة (معرّفات أسماء الملفات و.info.json؛ دون شبكة)",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/libraries/{id}/youtube/guess",
+        "tag": "Queue",
+        "operationId": "guessYouTubeSource"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "101c05a54d630460"
+        }
+      }
+    },
+    {
+      "id": "ep-get-queues-youtube-tartube",
+      "type": "endpoint",
+      "title": "GET /queues/youtube-tartube",
+      "content": "آخر استيراد من Tartube لمصادر كل المكتبات، والملف المقترح",
+      "tags": [
+        "api",
+        "Queue",
+        "get"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "GET",
+        "path": "/queues/youtube-tartube",
+        "tag": "Queue",
+        "operationId": "getYouTubeTartubeImport"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e55462c37d9af010"
+        }
+      }
+    },
+    {
+      "id": "ep-post-queues-youtube-tartube",
+      "type": "endpoint",
+      "title": "POST /queues/youtube-tartube",
+      "content": "إنشاء مصادر يوتيوب لكل المكتبات من سجلات Tartube، متوقفة (youtube_tartube)",
+      "tags": [
+        "api",
+        "Queue",
+        "post"
+      ],
+      "related": [],
+      "files": {
+        "openapi": "shared/api/openapi.yaml"
+      },
+      "metadata": {
+        "method": "POST",
+        "path": "/queues/youtube-tartube",
+        "tag": "Queue",
+        "operationId": "importYouTubeTartubeSources"
+      },
+      "i18n": {
+        "lang": "ar",
+        "source": {
+          "content": "e4b5adfec8e382c9"
         }
       }
     },

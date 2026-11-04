@@ -1,11 +1,13 @@
 // Epic 47: a library's YouTube sources (channels and playlists it follows): a
 // dialog on the library dashboard and on Manage libraries, inline in the
 // library page's YouTube section. List, add by URL (the API resolves it with
-// yt-dlp), set the mode and download options, turn a source off, remove it, retry what was gone
+// yt-dlp), switch a source on or off (on restores its last mode), set the mode while it is
+// on and the download options, remove it, retry what was gone
 // or skipped, resume the back catalogue and import a Tartube database. Every
 // change only queues work; the API enforces admin.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
+import { Toggle } from "@ds/components/Choice/Toggle";
 import { Modal } from "@ds/components/Modal/Modal";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { queueApi, SOURCE_MODES } from "../../lib/queueApi";
@@ -23,6 +25,53 @@ export interface YouTubeSourcesDialogProps {
 }
 
 const HEIGHTS = [360, 480, 720, 1080, 1440, 2160];
+
+/** The modes a source that is on can have (the switch is its off). */
+export const ON_MODES: SourceMode[] = SOURCE_MODES.filter((m) => m !== "off");
+
+/**
+ * A source's on/off switch (PATCH {on}): turning it on restores the last mode it had
+ * on, else new uploads and the back catalogue; the API decides and enforces admin.
+ */
+export function SourceSwitch({
+  source,
+  busy,
+  onToggle,
+}: {
+  source: Pick<YouTubeSource, "id" | "external_id" | "mode">;
+  busy: boolean;
+  onToggle: (on: boolean) => void;
+}) {
+  const { t } = useI18n();
+  const on = source.mode !== "off";
+  return (
+    <Toggle
+      className="mkt-q-ytsrc__switch"
+      checked={on}
+      aria-checked={on}
+      disabled={busy}
+      onChange={(e) => onToggle(e.target.checked)}
+      label={
+        <>
+          {t("queue.yt.switch")}
+          <span className="mkt-visually-hidden"> {source.external_id}</span>
+        </>
+      }
+    />
+  );
+}
+
+/** PATCH {on} and the notice to show for it. */
+export async function switchSource(
+  libraryId: string,
+  sourceId: string,
+  on: boolean,
+  t: (key: string) => string
+): Promise<string> {
+  const r = await queueApi.patchSource(libraryId, sourceId, { on });
+  if (!on) return t("queue.yt.modeSet.off");
+  return r.refresh ? t("queue.yt.onRefresh") : t(`queue.yt.modeSet.${r.source.mode}`);
+}
 
 function OptionsEditor({
   source,
@@ -209,6 +258,11 @@ export function YouTubeSourcesPanel({
     if (r) after(r.refresh ? t("queue.yt.onRefresh") : t(`queue.yt.modeSet.${m}`));
   };
 
+  const toggle = async (s: YouTubeSource, on: boolean) => {
+    const msg = await run(`mode:${s.id}`, () => switchSource(library.id, s.id, on, t));
+    if (msg) after(msg);
+  };
+
   const saveOptions = async (s: YouTubeSource, o: Record<string, unknown>) => {
     const r = await run(`opts:${s.id}`, () =>
       queueApi.patchSource(library.id, s.id, { options: o })
@@ -364,32 +418,28 @@ export function YouTubeSourcesPanel({
                 )}
               </div>
               <div className="mkt-q-ytsrc__actions">
-                <label>
-                  <span className="mkt-visually-hidden">
-                    {t("queue.yt.modeOf", { source: s.external_id })}
-                  </span>
-                  <select
-                    value={s.mode}
-                    disabled={busy === `mode:${s.id}`}
-                    onChange={(e) => void setSourceMode(s, e.target.value as SourceMode)}
-                  >
-                    {SOURCE_MODES.map((m) => (
-                      <option key={m} value={m}>
-                        {t(`queue.yt.modes.${m}`)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <SourceSwitch
+                  source={s}
+                  busy={busy === `mode:${s.id}`}
+                  onToggle={(on) => void toggle(s, on)}
+                />
                 {s.mode !== "off" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy != null}
-                    onClick={() => void setSourceMode(s, "off")}
-                  >
-                    {t("queue.yt.turnOff")}
-                    <span className="mkt-visually-hidden"> {s.external_id}</span>
-                  </Button>
+                  <label>
+                    <span className="mkt-visually-hidden">
+                      {t("queue.yt.modeOf", { source: s.external_id })}
+                    </span>
+                    <select
+                      value={s.mode}
+                      disabled={busy === `mode:${s.id}`}
+                      onChange={(e) => void setSourceMode(s, e.target.value as SourceMode)}
+                    >
+                      {ON_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {t(`queue.yt.modes.${m}`)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 )}
                 <Button
                   size="sm"
