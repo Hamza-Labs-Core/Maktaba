@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 )
 
 // Source is where the ffmpeg was found.
@@ -26,6 +27,8 @@ const (
 	FromEnv Source = "env"
 	// FromApp: the desktop app payload's ffmpeg/ (Mac, Windows).
 	FromApp Source = "app"
+	// FromPack: the installed tool.ffmpeg pack's ffmpeg/ (Epic 51: Linux).
+	FromPack Source = "pack"
 	// FromPath: the PATH (on Linux, the distribution's).
 	FromPath Source = "path"
 )
@@ -53,11 +56,12 @@ var (
 // Find resolves the tools the roles run. ffmpeg: [media] ffmpeg, else
 // $MAKTABA_FFMPEG / $MAKTABA_FFMPEG_BIN, else the payload's ffmpeg/ (payload:
 // the desktop app's server payload this server runs from, "" outside one),
-// else the PATH. ffprobe: [media] ffprobe, else $MAKTABA_FFPROBE /
+// else the installed tool.ffmpeg pack's ffmpeg/ (state: the state root, ""
+// for none), else the PATH. ffprobe: [media] ffprobe, else $MAKTABA_FFPROBE /
 // $MAKTABA_FFPROBE_BIN, else the one beside that ffmpeg, else the PATH. A
 // setting naming a program that is not there is not passed over: the check
 // says so.
-func Find(media config.MediaSection, payload string) Tools {
+func Find(media config.MediaSection, payload, state string) Tools {
 	var t Tools
 	switch {
 	case strings.TrimSpace(media.FFmpeg) != "":
@@ -70,6 +74,9 @@ func Find(media config.MediaSection, payload string) Tools {
 	case payload != "" && isExecutable(filepath.Join(payload, "ffmpeg", programFile("ffmpeg"))):
 		t.Source = FromApp
 		t.FFmpeg = filepath.Join(payload, "ffmpeg", programFile("ffmpeg"))
+	case state != "" && isExecutable(packProgram(state, "ffmpeg")):
+		t.Source = FromPack
+		t.FFmpeg = packProgram(state, "ffmpeg")
 	default:
 		t.Source = FromPath
 		if p, err := lookPath("ffmpeg"); err == nil {
@@ -89,6 +96,12 @@ func Find(media config.MediaSection, payload string) Tools {
 		}
 	}
 	return t
+}
+
+// packProgram is name in the installed tool.ffmpeg pack (<state>/components/tool.ffmpeg/
+// <current>/ffmpeg/, the payload's layout), "" when the pack is not installed.
+func packProgram(state, name string) string {
+	return packs.StateLayout(state).CurrentPath("tool.ffmpeg", "ffmpeg", programFile(name))
 }
 
 // resolve is the program a setting names: a path (it must be there and run), or

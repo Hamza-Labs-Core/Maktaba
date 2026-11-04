@@ -431,7 +431,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	// health page shows the verdict (Epic 39: on Linux the distribution's)
 	exe, _ := os.Executable()
 	supOpts = append(supOpts, supervisor.WithFFmpeg(ffmpeg.Watch(ctx,
-		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe)) }, ffmpeg.WatchInterval, os.Stderr)))
+		func() ffmpeg.Tools { return ffmpeg.Find(cfg.Media, config.AppPayload(exe), cfg.StateDir()) }, ffmpeg.WatchInterval, os.Stderr)))
 	sup := supervisor.New(procs, policy, supOpts...)
 	// Epic 51 story 51.04: the gates of the processes set before any starts (the last
 	// desired state seen, cached), then reconciled while serve runs

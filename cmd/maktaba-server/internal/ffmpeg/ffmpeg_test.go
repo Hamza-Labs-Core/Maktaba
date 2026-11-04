@@ -410,10 +410,49 @@ func TestFind(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			fakeEnv(t, c.env, c.path)
-			if got := Find(c.media, c.payload); got != c.want {
+			if got := Find(c.media, c.payload, ""); got != c.want {
 				t.Errorf("\n got %+v\nwant %+v", got, c.want)
 			}
 		})
+	}
+}
+
+// Epic 51: an installed tool.ffmpeg pack (its current pointer's ffmpeg/) is found before
+// the PATH and after the settings; a pointer naming no folder, or none, falls back.
+func TestFindInTheFFmpegPack(t *testing.T) {
+	state := t.TempDir()
+	sys := filepath.Join(state, "usr", "bin")
+	sysFF, sysFP := exe(t, sys, "ffmpeg"), exe(t, sys, "ffprobe")
+	onPath := map[string]string{"ffmpeg": sysFF, "ffprobe": sysFP}
+	fakeEnv(t, nil, onPath)
+	if got := Find(config.MediaSection{}, "", state); got.Source != FromPath || got.FFmpeg != sysFF {
+		t.Fatalf("no pack: got %+v, want the PATH's", got)
+	}
+
+	dir := filepath.Join(state, "components", "tool.ffmpeg")
+	pkFF := exe(t, filepath.Join(dir, "1.2.0_abc", "ffmpeg"), "ffmpeg")
+	pkFP := exe(t, filepath.Join(dir, "1.2.0_abc", "ffmpeg"), "ffprobe")
+	if got := Find(config.MediaSection{}, "", state); got.Source != FromPath {
+		t.Fatalf("a pack folder without a current pointer: got %+v, want the PATH's", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "current"), []byte("1.2.0_abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	want := Tools{FFmpeg: pkFF, FFprobe: pkFP, Source: FromPack}
+	if got := Find(config.MediaSection{}, "", state); got != want {
+		t.Fatalf("\n got %+v\nwant %+v", got, want)
+	}
+	if env := strings.Join(want.Env(), "\n"); !strings.Contains(env, "PATH="+filepath.Dir(pkFF)) {
+		t.Errorf("the pack's folder goes first on the roles' PATH: %s", env)
+	}
+	if got := Find(config.MediaSection{FFmpeg: sysFF}, "", state); got.Source != FromConfig || got.FFmpeg != sysFF {
+		t.Errorf("[media] ffmpeg wins over the pack: got %+v", got)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "current"), []byte("0.9.0_gone\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Find(config.MediaSection{}, "", state); got.Source != FromPath || got.FFmpeg != sysFF {
+		t.Errorf("a pointer naming no folder: got %+v, want the PATH's", got)
 	}
 }
 

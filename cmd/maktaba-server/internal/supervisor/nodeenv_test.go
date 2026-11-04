@@ -227,6 +227,42 @@ func TestChildEnvStateDirs(t *testing.T) {
 	}
 }
 
+// Epic 51: the pipeline's refine stage reads CAMeL Tools' database from the installed
+// model.refine pack (CAMELTOOLS_DATA at its camel_tools/); without the pack nothing is
+// set (the pipeline keeps <model cache>/camel_tools), and an operator's own is kept.
+func TestPipelineEnvPointsCamelToolsAtTheRefinePack(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	t.Setenv("CAMELTOOLS_DATA", "")
+	var cfg config.Config
+	cfg.Server.DataDir = filepath.Join(t.TempDir(), "data")
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["CAMELTOOLS_DATA"]; ok {
+		t.Fatalf("no pack: CAMELTOOLS_DATA = %q", v)
+	}
+	dir := filepath.Join(cfg.StateDir(), "components", "model.refine")
+	data := filepath.Join(dir, "1.2.0_abc", "camel_tools")
+	if err := os.MkdirAll(filepath.Join(data, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "current"), []byte("1.2.0_abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := envMap(childEnvOK(RolePipeline, cfg))["CAMELTOOLS_DATA"]; got != data {
+		t.Fatalf("CAMELTOOLS_DATA = %q, want the pack's %s", got, data)
+	}
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_COMPONENTS_DIR"]; got != filepath.Join(cfg.StateDir(), "components") {
+		t.Fatalf("MAKTABA_COMPONENTS_DIR = %q (the pipeline finds tool.ffmpeg there)", got)
+	}
+	if v, ok := envMap(childEnvOK(RoleAPI, cfg))["CAMELTOOLS_DATA"]; ok {
+		t.Fatalf("the api gets CAMELTOOLS_DATA = %q", v)
+	}
+	t.Setenv("CAMELTOOLS_DATA", "/own/camel")
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["CAMELTOOLS_DATA"]; ok {
+		t.Fatalf("overrode the operator's CAMELTOOLS_DATA with %q", v)
+	}
+}
+
 // TestFullNodeStateDir: a full node's api and streaming roles keep their playback
 // catalog under the install's data directory (PR #145), so it outlives a restart in a
 // home outage; a machine that joined no home gets none.
