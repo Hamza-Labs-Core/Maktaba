@@ -968,6 +968,7 @@
         "youtube_sync",
         "youtube_fetch",
         "youtube_backfill",
+        "youtube_tartube",
         "exact_dates"
       ],
       "stop_grace_s": 0,
