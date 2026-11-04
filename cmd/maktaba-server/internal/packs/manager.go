@@ -84,6 +84,8 @@ type Manager struct {
 
 	mu   sync.Mutex
 	prog map[string]*Progress
+	// logMu: installs of different assets run at once and share Log
+	logMu sync.Mutex
 }
 
 func (m *Manager) now() time.Time {
@@ -95,6 +97,8 @@ func (m *Manager) now() time.Time {
 
 func (m *Manager) logf(format string, a ...any) {
 	if m.Log != nil {
+		m.logMu.Lock()
+		defer m.logMu.Unlock()
 		fmt.Fprintf(m.Log, "[packs] "+format+"\n", a...)
 	}
 }

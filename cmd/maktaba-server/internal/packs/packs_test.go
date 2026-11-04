@@ -438,11 +438,16 @@ func TestRunnerFinishesARemoval(t *testing.T) {
 	}
 	r := &Runner{M: f.m, Machine: store.Home}
 	r.ctx = context.Background()
-	r.Desired(map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantAbsent, Generation: 3}})
-	waitIdle(t, f.m, "runtime.ml")
-	if f.m.Layout.Removing("runtime.ml") || f.m.Layout.Current("runtime.ml") != "" {
-		t.Fatalf("the removal was not finished\n%s", f.log.String())
+	// the other packs absent: one with no row is wanted and would install alongside
+	r.Desired(packsAbsent(f.m, "", map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantAbsent, Generation: 3}}))
+	deadline := time.Now().Add(10 * time.Second)
+	for f.m.Layout.Removing("runtime.ml") || f.m.Layout.Current("runtime.ml") != "" {
+		if time.Now().After(deadline) {
+			t.Fatalf("the removal was not finished\n%s", f.logString())
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
+	waitIdle(t, f.m, "runtime.ml")
 }
 
 func waitIdle(t *testing.T, m *Manager, id string) {

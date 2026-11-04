@@ -242,3 +242,10 @@ func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
 }
+
+// logString is the manager's log so far, read under the lock its writes take.
+func (f *fixture) logString() string {
+	f.m.logMu.Lock()
+	defer f.m.logMu.Unlock()
+	return f.log.String()
+}

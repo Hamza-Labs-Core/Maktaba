@@ -241,9 +241,33 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	}
 	rows.Close()
 	cat := components.Default()
+	// an asset an enabled component needs and that is not on disk has no row (the seed
+	// records only what is there; with no row it reads as wanted and the packs runner
+	// installs it): this install's pipeline is the e2e's stand-in wheel, with no ML
+	// runtime, so runtime.ml is one
+	neededMissing := map[string]bool{}
+	for _, c := range cat.Components() {
+		if wants[c.ID] != "enabled" {
+			continue
+		}
+		for _, r := range cat.Requires(c.ID) {
+			for _, id := range r.AnyOf {
+				if d, ok := cat.Get(id); ok && d.Kind == components.KindAsset {
+					if _, has := wants[id]; !has {
+						neededMissing[id] = true
+					}
+				}
+			}
+		}
+	}
+	if _, has := wants["runtime.ml"]; has {
+		t.Errorf("runtime.ml seeded %s: this install has no ML runtime on disk", wants["runtime.ml"])
+	}
 	for _, c := range cat.Components() {
 		w, ok := wants[c.ID]
 		switch {
+		case !ok && neededMissing[c.ID]:
+			// left to the catalog default on purpose
 		case !ok:
 			t.Errorf("%s has no desired row", c.ID)
 		case !c.Switchable && w != "enabled":
