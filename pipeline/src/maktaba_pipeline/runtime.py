@@ -136,6 +136,13 @@ class RuntimeConfig:
 _TX_CONN: contextvars.ContextVar[Any] = contextvars.ContextVar("maktaba_tx_conn", default=None)
 
 
+#: each worker's pool on the home's Postgres: every program's pools share its
+#: max_connections (``MaxConnections`` in cmd/maktaba-server/internal/pgbundle)
+PG_POOL_MAX = 10
+#: an unused pooled connection closes after this long (asyncpg keeps one for 300 s)
+PG_POOL_IDLE_SEC = 60.0
+
+
 class Database:
     """Minimal :class:`DBConn`-compatible facade over asyncpg / aiosqlite.
 
@@ -181,10 +188,16 @@ class Database:
             # TLS as the DSN asks it, never a plain retry when it asks for TLS
             dsn, tls = connect_args(url)
             # min_size=1 keeps a warm connection so the first reaper
-            # tick doesn't pay the TCP+TLS+auth round-trip; max_size=10
+            # tick doesn't pay the TCP+TLS+auth round-trip; PG_POOL_MAX
             # is generous for a single pipeline daemon (reaper + claim
             # loop + per-job dispatch peaks at single-digit concurrency).
-            pool = await asyncpg.create_pool(dsn, min_size=1, max_size=10, ssl=tls)
+            pool = await asyncpg.create_pool(
+                dsn,
+                min_size=1,
+                max_size=PG_POOL_MAX,
+                max_inactive_connection_lifetime=PG_POOL_IDLE_SEC,
+                ssl=tls,
+            )
             return cls(dialect="postgres", pool=pool, dsn=dsn, tls=tls)
 
         aiosqlite = _import_aiosqlite()
@@ -334,6 +347,7 @@ class Database:
         # tied to a `with` block; the listener wants the connection
         # past that scope. Open a fresh connection outside the pool
         # so the listener's LISTEN state never blocks pool acquires.
+        # The caller closes it (one of the home's connection slots).
         if self.dialect != "postgres":
             raise RuntimeError("acquire_listener is Postgres-only")
         asyncpg = _import_asyncpg()

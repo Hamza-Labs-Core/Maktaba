@@ -71,6 +71,13 @@ type nodeDBs struct {
 	copyDB *sql.DB
 }
 
+// The node's own pools beside its handlers' pair (MAKTABA_DB_MAX_OPEN, 16).
+const (
+	nodeHomeMaxOpen = 4
+	nodeCopyMaxOpen = 4
+	nodeIdleTime    = time.Minute
+)
+
 // openNodeDBs opens them from the home's DSN (the node role's) and the copy's ("": none).
 func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) {
 	// the node's dsn says sslmode=prefer, which lib/pq does not take: pgdsn settles it;
@@ -81,6 +88,11 @@ func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) 
 	}
 	d := nodeDBs{pair: &nodedb.Pair{Home: &nodedb.Source{Name: "home", Conn: homeConn}, Logger: logger},
 		home: sql.OpenDB(homeConn)}
+	// the home's alone answers the role check, the beat's report and a switch's notices: a
+	// few connections, let go once idle (every machine's pools share the home's Postgres)
+	d.home.SetMaxOpenConns(nodeHomeMaxOpen)
+	d.home.SetMaxIdleConns(1)
+	d.home.SetConnMaxIdleTime(nodeIdleTime)
 	if copyDSN != "" {
 		copyConn, err := pgdsn.Connector(copyDSN)
 		if err != nil {
@@ -89,7 +101,8 @@ func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) 
 		}
 		d.pair.Copy = &nodedb.Source{Name: "copy", Conn: copyConn}
 		d.copyDB = sql.OpenDB(copyConn)
-		d.copyDB.SetMaxOpenConns(4)
+		d.copyDB.SetMaxOpenConns(nodeCopyMaxOpen)
+		d.copyDB.SetConnMaxIdleTime(nodeIdleTime)
 	}
 	d.app = d.pair.Open(time.Minute)
 	return d, nil

@@ -1,9 +1,15 @@
 package main
 
 import (
+	"context"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 )
 
 func named(name string) http.Handler {
@@ -45,5 +51,19 @@ func TestSplitFullNodeOfflineStation(t *testing.T) {
 		if rec.Code != http.StatusServiceUnavailable {
 			t.Fatalf("no copy: %d", rec.Code)
 		}
+	}
+}
+
+// This machine's copy of the home's database gets a small pool of its own.
+func TestOpenCopyCapsThePool(t *testing.T) {
+	t.Setenv(copyEnv, "postgres://maktaba@127.0.0.1:1/maktaba?sslmode=disable")
+	bg := newBackground(context.Background())
+	defer bg.Stop(time.Second)
+	pool := openCopy(bg, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if pool == nil {
+		t.Fatal("no pool on the copy")
+	}
+	if got := pool.Config().MaxConns; got != pgpool.Copy {
+		t.Fatalf("MaxConns = %d, want %d", got, pgpool.Copy)
 	}
 }

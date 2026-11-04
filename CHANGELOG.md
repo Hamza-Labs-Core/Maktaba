@@ -36,6 +36,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The home's database no longer runs out of connections.** The API's background jobs (the
+  update check, the health samples, housekeeping) failed now and then with Postgres error
+  53300 ("remaining connection slots are reserved"): the bundled Postgres allowed its default
+  100 connections, while the streaming service and each TV slot opened one connection per
+  CPU (28 on a 28-core Mac) and a full node's pool on the home's database had no cap. The
+  bundled Postgres now allows 300 connections, the streaming service's pools have a cap (10,
+  6 for a TV slot, 4 on a machine's copy) and let an idle connection go after a minute, a full
+  node opens at most 4 connections of its own on the home's database, and a pipeline worker
+  lets an idle connection go after a minute and closes its LISTEN connections when it stops.
+  The new limit applies from the next update, which restarts the database.
+
 - **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
   logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
   data, or its stall notice) did not change the playback phase, so the channel banner did not

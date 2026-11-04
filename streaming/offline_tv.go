@@ -25,6 +25,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/channel"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 )
 
 // offlinePrefix is the offline station's routes on the streaming port.
@@ -39,7 +40,7 @@ func openCopy(bg *background, logger *slog.Logger) *pgxpool.Pool {
 			"event", "stream_no_copy")
 		return nil
 	}
-	pool, err := pgxpool.New(context.Background(), dsn)
+	pool, err := pgpool.New(context.Background(), dsn, pgpool.Copy)
 	if err != nil {
 		logger.Warn("streaming: this machine's copy of the home's database is not usable", "err", err.Error(),
 			"event", "stream_copy_unusable")
