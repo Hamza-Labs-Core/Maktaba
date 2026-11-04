@@ -327,6 +327,11 @@ func runServe() error {
 	// Epic 51 story 51.05: the background loops start and stop with their catalog
 	// component. Until the home's database is read every component is on, as before.
 	loops := components.NewRunner(logger)
+	// the Cloudflare Stream integration is the home API's alone (no stage, no loop): its
+	// component's status row is the API's
+	if !nodeCfg.Enabled {
+		loops.Serve("ext.cloudflare_stream")
+	}
 
 	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger, nodeCfg.Enabled)
 	loops.Declare("idempotency_sweep", runner.Func(func(context.Context) { idemSweep() }))

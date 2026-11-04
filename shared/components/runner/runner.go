@@ -195,6 +195,8 @@ type Runner struct {
 	// release wrote them before a rollback), each logged once: they are ignored, and the
 	// desired state is read again on every change and every poll.
 	unknown map[string]bool
+	// served are components this process serves with no loop (Serve): each has a row.
+	served []string
 }
 
 // New is a runner for o.Host. Its gates start on (the database is not read yet): a loop
@@ -334,6 +336,22 @@ func (r *Runner) Host() string {
 		return ""
 	}
 	return r.host
+}
+
+// Serve has this runner report a status row for component id, which this process serves
+// in its request handlers with no loop of its own (the API's ext.cloudflare_stream: every
+// Cloudflare call is the API's). Its phase follows its gate: running while it is on,
+// else off, stopped or waiting as its desired state says.
+func (r *Runner) Serve(id string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !slices.Contains(r.served, id) {
+		r.served = append(r.served, id)
+	}
+	r.notify()
 }
 
 // Declared are the loop names declared so far, sorted.
@@ -758,7 +776,7 @@ func rank(state string) int {
 }
 
 // Statuses are the status rows this runner reports now: one per component with a
-// declared loop, in catalog order.
+// declared loop or served (Serve), in catalog order.
 func (r *Runner) Statuses() []store.Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -775,11 +793,22 @@ func (r *Runner) statuses() []store.Status {
 	var out []store.Status
 	for _, id := range r.cat.Order() {
 		ls := byComp[id]
-		if len(ls) == 0 {
+		served := len(ls) == 0 && slices.Contains(r.served, id)
+		if len(ls) == 0 && !served {
 			continue
 		}
 		g := gates[id]
-		worst, exited := ls[0], true
+		var worst *loop
+		exited := !served
+		if served {
+			// no loop: it runs while its gate is open
+			worst = &loop{state: stateOff}
+			if g.on {
+				worst.state = stateRunning
+			}
+		} else {
+			worst = ls[0]
+		}
 		detail := map[string]any{}
 		for _, l := range ls {
 			if rank(l.state) > rank(worst.state) {
@@ -839,7 +868,10 @@ func (r *Runner) statuses() []store.Status {
 			conds = append(conds, lic)
 		}
 		conds = append(conds, req, ready)
-		det := map[string]any{"loops": detail}
+		det := map[string]any{}
+		if !served {
+			det["loops"] = detail
+		}
 		if exited && phase == components.PhaseOff && g.on {
 			det["exited"] = true
 		}

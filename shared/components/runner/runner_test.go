@@ -548,3 +548,43 @@ func TestUnknownComponentLoggedOnce(t *testing.T) {
 		t.Fatalf("log:\n%s", out)
 	}
 }
+
+// A component the process serves with no loop (Serve: the API's ext.cloudflare_stream)
+// has a status row like a loop's: running while its gate is open, off, stopped or
+// waiting as its desired state says, with no loops in its detail.
+func TestServedComponentHasARow(t *testing.T) {
+	r := newRunner(t, newClock())
+	r.Serve("ext.cloudflare_stream")
+	r.Serve("ext.cloudflare_stream") // twice: one row
+	n := 0
+	for _, s := range r.Statuses() {
+		if s.ID == "ext.cloudflare_stream" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d rows", n)
+	}
+	s := statusOf(r, "ext.cloudflare_stream")
+	if s.Phase != components.PhaseRunning || s.Detail["loops"] != nil {
+		t.Fatalf("before the desired state is read: %+v", s)
+	}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv"), "ext.cloudflare_stream": installed("ext.cloudflare_stream")})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseOff || s.ObservedGeneration != 2 {
+		t.Fatalf("installed: %+v", s)
+	}
+	held := enabled("ext.cloudflare_stream")
+	held.Hold = &store.Hold{By: "maya"}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv"), "ext.cloudflare_stream": held})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseStopped {
+		t.Fatalf("held: %+v", s)
+	}
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv"), "ext.cloudflare_stream": enabled("ext.cloudflare_stream")})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseWaiting || s.Reason() != "dependency_off" {
+		t.Fatalf("livetv off: %+v", s)
+	}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv"), "ext.cloudflare_stream": enabled("ext.cloudflare_stream")})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseRunning {
+		t.Fatalf("enabled: %+v", s)
+	}
+}
