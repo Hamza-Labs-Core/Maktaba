@@ -19,7 +19,7 @@
 | المجلد | ما يحويه |
 |---|---|
 | `web/` | تطبيق الويب بلغة React (`web/src/`، ودليل المستخدم في `web/src/help/` والنصوص في `web/src/i18n/`)، ونظام التصميم ورموزه (`web/design-system/`)، وتطبيق ويب السحابة، وتطبيق الويكي، والحزم في `web/packages/` (ومنها `devportal` التي تبني maktaba.dev). يُدار عبر `pnpm`. |
-| `apps/apple/` | تطبيقات SwiftUI: Maktaba Player وMaktaba Remote لأجهزة iPhone وiPad وMac، وحزمة Swift المشتركة `MaktabaKit`. |
+| `apps/apple/` | تطبيقات SwiftUI: Maktaba Player لأجهزة iPhone وiPad وMac، وMaktaba Remote لجهازي iPhone وiPad، وحزمة Swift المشتركة `MaktabaKit`. |
 | `apps/android/` | تطبيقات Jetpack Compose: المشغّل وجهاز التحكم، مبنية على وحدة `client` قابلة للنقل ووحدة `core` مشتركة. |
 | `apps/tv/` | Maktaba TV لنظام tvOS (Swift) ولنظام Android TV (Kotlin). |
 | `apps/desktop-player/` | مشغّل مبني بـ Compose for Desktop لنظامي Windows وLinux. |
