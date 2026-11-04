@@ -261,6 +261,12 @@
     <string name="w_health_processes_role_ollama">خادم النموذج اللغوي</string>
     <string name="w_health_processes_role_postgres">قاعدة البيانات</string>
     <string name="w_health_processes_role_relay">مرحّل الوصول عن بُعد</string>
+    <string name="w_health_processes_instance_index">فهرس البحث</string>
+    <string name="w_health_processes_instance_chroma_copy">نقل فهرس البحث</string>
+    <string name="w_health_processes_instance_stt">النسخ النصي %1$s</string>
+    <string name="w_tvchanges_slots_color_blue">أزرق</string>
+    <string name="w_tvchanges_slots_color_green">أخضر</string>
+    <string name="w_tvchanges_slots_color_amber">كهرماني</string>
     <string name="w_setup_starting_detail_db_waiting">بانتظار قاعدة بيانات المكتبة.</string>
     <string name="w_setup_starting_detail_db_checking">جارٍ فحص قاعدة بيانات المكتبة.</string>
     <string name="w_setup_starting_detail_db_dumping">جارٍ حفظ قاعدة بيانات المكتبة قبل التحديث إلى %1$s.</string>
@@ -363,7 +369,7 @@
     <string name="place_updates">التحديثات</string>
     <string name="place_libraries">المكتبات</string>
     <string name="place_machines">الأجهزة</string>
-    <string name="place_attention_short">تنبيهات</string>
+    <string name="place_attention_short">انتباه</string>
     <string name="cannot_retry">لا تُصلحه إعادة المحاولة: %1$s.</string>
     <string name="cannot_retry_open_settings">غيّر إعدادات الجهاز الرئيسي من الويب</string>
     <string name="cannot_retry_apply">راجع التغييرات من الويب</string>
@@ -407,6 +413,14 @@
     <string name="cause">السبب</string>
     <string name="fixed_on_web">يُصلَح هذا من صفحة الجهاز الرئيسي على الويب (%1$s).</string>
     <string name="nothing_needs_attention">لا شيء يحتاج إلى انتباه</string>
+    <plurals name="clips_no_answer">
+        <item quantity="zero">لم يُجب النموذج عن %1$d من %2$d مقطع</item>
+        <item quantity="one">لم يُجب النموذج عن %1$d من مقطع واحد</item>
+        <item quantity="two">لم يُجب النموذج عن %1$d من مقطعين</item>
+        <item quantity="few">لم يُجب النموذج عن %1$d من %2$d مقاطع</item>
+        <item quantity="many">لم يُجب النموذج عن %1$d من %2$d مقطعًا</item>
+        <item quantity="other">لم يُجب النموذج عن %1$d من %2$d مقطع</item>
+    </plurals>
     <plurals name="jobs">
         <item quantity="zero">لا مهام</item>
         <item quantity="one">مهمة واحدة</item>

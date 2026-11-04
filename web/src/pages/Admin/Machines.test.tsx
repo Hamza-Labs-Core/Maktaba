@@ -344,7 +344,7 @@ describe("Machines admin page", () => {
                 {
                   id: "s1",
                   name: "home-nas",
-                  addresses: ["192.168.50.94"],
+                  addresses: ["203.0.113.94"],
                   char_map: "none",
                   exports: {},
                 },
@@ -358,10 +358,10 @@ describe("Machines admin page", () => {
     await userEvent.click(screen.getByRole("button", { name: "Edit home-nas" }));
     const addrs = screen.getByLabelText("Addresses (IPs, host names, .local name)");
     await userEvent.clear(addrs);
-    await userEvent.type(addrs, "192.168.50.10, home-nas.local");
+    await userEvent.type(addrs, "203.0.113.10, home-nas.local");
     await userEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(put).toHaveBeenCalledWith("/api/cluster/storage-servers/home-nas", {
-      addresses: ["192.168.50.10", "home-nas.local"],
+      addresses: ["203.0.113.10", "home-nas.local"],
       char_map: "none",
     });
     const edits = screen.getAllByRole("button", { name: "Edit mounts" });
@@ -711,7 +711,7 @@ describe("Machines admin page: the home's database", () => {
       home_db: {
         ok: false,
         code: "no_hba",
-        detail: 'pq: no pg_hba.conf entry for host "192.168.1.20", user "maktaba_node_n1"',
+        detail: 'pq: no pg_hba.conf entry for host "192.0.2.20", user "maktaba_node_n1"',
         at,
         healing: true,
       },

@@ -65,6 +65,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
+
       - uses: actions/setup-python@v6.2.0
         with:
           python-version-file: pipeline/.python-version
@@ -134,7 +140,7 @@ jobs:
           APT_CACHE_DIR: /home/runner/apt-cache
         run: |
           tools/ci/apt-install.sh ffmpeg >/dev/null
-          ffmpeg -hide_banner -version | head -1
+          ffmpeg -hide_banner -version | sed -n 1p
 
       - name: Pipeline file tests, real ffmpeg
         working-directory: pipeline
@@ -236,6 +242,13 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+          offline: "false"
 
       - name: Wait for Postgres
         run: |

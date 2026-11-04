@@ -71,7 +71,7 @@ run() {
     local name="$1" out rc=0; shift
     out="$(timeout 60 "$@" 2>&1)" || rc=$?
     out="${out//$'\r'/}"
-    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | head -1)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
+    if [ "$rc" -eq 0 ]; then ok "$name: $(printf '%s\n' "$out" | sed -n 1p)"; else fail "$name (exit $rc): $(printf '%s\n' "$out" | tail -3)"; fi
 }
 # win PATH...: the Windows form (long names) of each path, for the native programs
 win() { cygpath -w -l "$@"; }
@@ -82,7 +82,7 @@ reg_value() {
     local out
     if [ $# -ge 2 ]; then out="$(wincmd reg.exe query "$1" /v "$2" 2>/dev/null)" || return 0
     else out="$(wincmd reg.exe query "$1" /ve 2>/dev/null)" || return 0; fi
-    printf '%s\n' "$out" | tr -d '\r' | sed -n 's/.*REG_[A-Z_]*[[:space:]]*//p' | head -1
+    printf '%s\n' "$out" | tr -d '\r' | sed -n 's/.*REG_[A-Z_]*[[:space:]]*//p' | sed -n 1p
 }
 reg_exists() { wincmd reg.exe query "$1" >/dev/null 2>&1; }
 
@@ -144,9 +144,9 @@ if [ -n "$SETUP" ]; then
     # The installer remembers the install folder for the next one in HKCU\Software\<publisher>\
     # Maktaba (tauri: the publisher, else the identifier's second part); put back afterwards.
     conf="$REPO_ROOT/apps/desktop/src-tauri/tauri.conf.json"
-    manufacturer="$(sed -n 's/^ *"publisher": *"\([^"]*\)".*/\1/p' "$conf" | head -1)"
+    manufacturer="$(sed -n 's/^ *"publisher": *"\([^"]*\)".*/\1/p' "$conf" | sed -n 1p)"
     [ -n "$manufacturer" ] ||
-        manufacturer="$(sed -n 's/^ *"identifier": *"\([^"]*\)".*/\1/p' "$conf" | head -1 | cut -d. -f2)"
+        manufacturer="$(sed -n 's/^ *"identifier": *"\([^"]*\)".*/\1/p' "$conf" | sed -n 1p | cut -d. -f2)"
     [ -n "$manufacturer" ] || { echo "check: no publisher or identifier in $conf" >&2; exit 2; }
     MANU_KEY="HKCU\\Software\\$manufacturer"
     PRODUCT_KEY="$MANU_KEY\\Maktaba"
@@ -158,7 +158,7 @@ if [ -n "$SETUP" ]; then
     fi
     # A shell that opens its window for a hook (before 38.3) makes its app data folders,
     # empty (WebView2's data goes to the scratch folder, below): removed when it did.
-    bundle_id="$(sed -n 's/^ *"identifier": *"\([^"]*\)".*/\1/p' "$conf" | head -1)"
+    bundle_id="$(sed -n 's/^ *"identifier": *"\([^"]*\)".*/\1/p' "$conf" | sed -n 1p)"
     app_dirs=()
     for d in "$(cygpath -u "${LOCALAPPDATA:-}")/$bundle_id" "$(cygpath -u "${APPDATA:-}")/$bundle_id"; do
         [ -e "$d" ] || app_dirs+=("$d")
@@ -360,7 +360,7 @@ pe_out="${pe_out//$'\r'/}"
 if [ "$pe_rc" -eq 0 ]; then
     ok "$(printf '%s\n' "$pe_out" | tail -1), all x86_64, nothing loaded from outside the payload but Windows"
 else
-    while IFS= read -r line; do fail "$line"; done < <(printf '%s\n' "$pe_out" | sed '$d' | head -20)
+    while IFS= read -r line; do fail "$line"; done < <(printf '%s\n' "$pe_out" | sed '$d' | sed -n 1,20p)
 fi
 
 echo "ffmpeg"
@@ -615,7 +615,7 @@ if [ -n "$SETUP" ]; then
     # NSIS's uninstall.exe runs the uninstall from a copy of itself in %TEMP% (Un.exe) and
     # exits at once: the checks below mean something only once that copy has finished, and
     # its exit code is the uninstall's
-    copy="$(printf '%s' "$WATCHED_CHILDREN" | grep -E '^(Un|Un_A|Au_) exit ' | head -1 || true)"
+    copy="$(printf '%s' "$WATCHED_CHILDREN" | grep -E '^(Un|Un_A|Au_) exit ' | sed -n 1p || true)"
     if [ "$WATCHED_EXIT" != 0 ]; then
         fail "uninstall.exe /S exited $WATCHED_EXIT"
     elif [ -z "$copy" ]; then

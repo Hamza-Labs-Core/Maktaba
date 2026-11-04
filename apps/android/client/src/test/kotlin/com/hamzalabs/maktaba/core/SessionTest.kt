@@ -26,9 +26,9 @@ class FakeBox : SecretBox {
 class SessionTest {
     @Test
     fun normalizesAHomesAddress() {
-        assertEquals("http://192.168.50.177:8088", Home.normalize(" 192.168.50.177:8088/library?x=1 "))
+        assertEquals("http://192.168.0.10:8088", Home.normalize(" 192.168.0.10:8088/library?x=1 "))
         assertEquals("http://maktaba.local:8088", Home.normalize("maktaba.local:8088"))
-        assertEquals("http://10.0.0.2", Home.normalize("10.0.0.2/"))
+        assertEquals("http://10.1.2.3", Home.normalize("10.1.2.3/"))
         assertEquals("http://172.20.1.1:8088", Home.normalize("172.20.1.1:8088"))
         assertEquals("https://home.example.com", Home.normalize("home.example.com"))
         assertEquals("https://172.40.1.1", Home.normalize("172.40.1.1"))
@@ -63,21 +63,21 @@ class SessionTest {
 
         val s = session()
         assertEquals(AppSession.Phase.ChoosingHome, s.phase.value)
-        s.use(Home("http://192.168.50.177:8088", "192.168.50.177:8088"))
+        s.use(Home("http://203.0.113.177:8088", "203.0.113.177:8088"))
         assertEquals(AppSession.Phase.SigningIn, s.phase.value)
-        s.named("Darwish home")
-        assertEquals("Darwish home", s.current.value?.name)
+        s.named("Maktaba Home")
+        assertEquals("Maktaba Home", s.current.value?.name)
 
         val again = session()
-        assertEquals("the last home is used again", "Darwish home", again.current.value?.name)
+        assertEquals("the last home is used again", "Maktaba Home", again.current.value?.name)
         assertEquals(1, again.homes.value.size)
         again.named(null)
-        assertEquals("a home that does not say its name keeps it", "Darwish home", again.current.value?.name)
+        assertEquals("a home that does not say its name keeps it", "Maktaba Home", again.current.value?.name)
 
-        tokens.getValue("http://192.168.50.177:8088").save(AuthTokens("a", "r"))
+        tokens.getValue("http://203.0.113.177:8088").save(AuthTokens("a", "r"))
         again.forget(again.current.value!!)
         assertTrue(again.homes.value.isEmpty())
-        assertNull("forgetting a home drops its tokens", tokens.getValue("http://192.168.50.177:8088").access)
+        assertNull("forgetting a home drops its tokens", tokens.getValue("http://203.0.113.177:8088").access)
         assertEquals(AppSession.Phase.ChoosingHome, again.phase.value)
     }
 }

@@ -46,6 +46,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('shared/go/releaseverify/go.sum') }}
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: shared/go/releaseverify
+          offline: "false"
+
       - name: How old is the embedded root
         id: age
         run: |

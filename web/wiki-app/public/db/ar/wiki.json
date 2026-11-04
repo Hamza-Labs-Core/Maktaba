@@ -8639,7 +8639,7 @@
       "id": "ep-post-libraries-id-youtube-guess",
       "type": "endpoint",
       "title": "POST /libraries/{id}/youtube/guess",
-      "content": "البحث عن القناة التي جاءت منها ملفات المكتبة (معرّفات أسماء الملفات و.info.json؛ دون شبكة)",
+      "content": "البحث عن القناة التي جاءت منها ملفات المكتبة (مقاطعها المرتبطة أولًا، ثم معرّفات أسماء الملفات و.info.json؛ دون شبكة)",
       "tags": [
         "api",
         "Queue",
@@ -8658,7 +8658,7 @@
       "i18n": {
         "lang": "ar",
         "source": {
-          "content": "101c05a54d630460"
+          "content": "0b49cba6773930eb"
         }
       }
     },

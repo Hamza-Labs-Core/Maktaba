@@ -275,7 +275,12 @@ describe("QueueDetail (test-cases/queue-detail.md)", () => {
       get,
       table("fingerprint", {
         "/api/queues": snapshotWithout("fingerprint"),
-        "/api/queues/fingerprint": { ...bad, info: { ...bad.info, label: { not: "text" } } },
+        // a stage with words is titled from them (lib/stageWords): the broken label shows
+        // only for a stage the catalog has no words for
+        "/api/queues/fingerprint": {
+          ...bad,
+          info: { ...bad.info, stage: "not_in_the_catalog", label: { not: "text" } },
+        },
       })
     );
     renderPage(<QueueDetail />, { path: "/queue/fingerprint", route: "/queue/:stage" });

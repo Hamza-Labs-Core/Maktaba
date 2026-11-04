@@ -78,8 +78,7 @@ type Handler struct {
 	// (libpaths.ToLocal, which this package cannot import); nil: as it is.
 	LocalPath func(string) string
 
-	libMu    sync.Mutex
-	libCache libraryCache
+	libMu sync.Mutex
 	// actCache keeps GET /api/queues/libraries/activity (one scan of the finished
 	// jobs) for a minute per window; guarded by libMu.
 	actCache map[int]activityCache
@@ -251,8 +250,11 @@ func actor(r *http.Request) string {
 }
 
 // publish emits an event on channel "jobs": durable through the bus
-// when wired, otherwise straight to the local hub.
+// when wired, otherwise straight to the local hub. Every caller has just
+// changed the queues (a pause, a pool size), so the cached snapshot is
+// marked stale first: the next read shows the change.
 func (h *Handler) publish(ctx context.Context, typ string, payload map[string]any) {
+	h.InvalidateReads()
 	if h.Events != nil {
 		_ = h.Events.Publish(ctx, "jobs", typ, payload)
 		return

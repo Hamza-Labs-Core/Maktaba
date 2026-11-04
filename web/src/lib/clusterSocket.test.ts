@@ -65,7 +65,7 @@ describe("clusterSocket", () => {
     const logs = vi.fn();
     clusterSocket.subscribe("queues", queues);
     clusterSocket.subscribe("jobs", jobs);
-    clusterSocket.subscribe(logsTopic("10.0.0.5", "info"), logs);
+    clusterSocket.subscribe(logsTopic("198.51.100.5", "info"), logs);
     const ws = FakeSocket.last;
     ws.open();
     ws.recv({ type: "snapshot", topic: "jobs", data: { jobs: [] } });

@@ -14,6 +14,9 @@ A YouTube title edited after download that matches none of these stays unlinked 
 grouped from local evidence. The result goes into ``media_metadata_enrichment``
 (``provider='youtube'``); the row is auto-accepted only when the user never edited that
 video's metadata (slot 0078: never overwrite a user edit).
+
+A link that names a channel or real playlist the library's YouTube sources were not
+decided with derives them again (slot 0182, :mod:`...library_mgmt.youtube_derive`).
 """
 
 from __future__ import annotations
@@ -28,6 +31,8 @@ from uuid import UUID
 
 from ...db.jobs import Job
 from ...discovery.ytdlp_sidecars import VideoInfo, is_real_playlist, parse_info_json
+from ...library_mgmt import youtube_derive
+from ...log import get_logger
 from ...text.arabic import fold, ytdlp_filename
 from ..context import StageContext
 from ..graph import LINK_VERSION, StageResult, Subject
@@ -37,6 +42,8 @@ from ._common import load_video, require_video
 from .registry import StageImpl
 
 __all__ = ["IMPL", "Candidate", "LinkMatch", "match_candidates"]
+
+_log = get_logger()
 
 CONFIDENCE = {
     "info_json": 1.0,
@@ -119,11 +126,17 @@ def build_index(
 # library; keep the last few so a 10k-video link wave does not rebuild it 10k times.
 _INDEX_CACHE: dict[tuple[str, str], tuple[list[Candidate], Any]] = {}
 
+#: the library's channels: the one youtube_channels gives it (its listing), and every
+#: channel its linked videos are in (slot 0182: a channel several libraries share)
+_MINE = (
+    "yv.channel_id IN (SELECT channel_id FROM youtube_channels WHERE library_id = $1"
+    " UNION SELECT channel_id FROM youtube_channel_libraries WHERE library_id = $1)"
+)
+
 
 async def _candidates(db: Any, library_id: UUID) -> tuple[list[Candidate], Any]:
     sig = await db.fetchrow(
-        "SELECT count(*) AS n, max(yv.fetched_at) AS m FROM youtube_videos yv"
-        " JOIN youtube_channels yc ON yc.channel_id = yv.channel_id WHERE yc.library_id = $1",
+        f"SELECT count(*) AS n, max(yv.fetched_at) AS m FROM youtube_videos yv WHERE {_MINE}",
         uid(library_id),
     )
     key = (str(library_id), f"{sig['n']}|{sig['m']}")
@@ -131,8 +144,7 @@ async def _candidates(db: Any, library_id: UUID) -> tuple[list[Candidate], Any]:
     if hit is not None:
         return hit
     rows = await db.fetch(
-        "SELECT yv.youtube_id, yv.title, yv.duration_s FROM youtube_videos yv"
-        " JOIN youtube_channels yc ON yc.channel_id = yv.channel_id WHERE yc.library_id = $1"
+        f"SELECT yv.youtube_id, yv.title, yv.duration_s FROM youtube_videos yv WHERE {_MINE}"
         " ORDER BY yv.youtube_id",
         uid(library_id),
     )
@@ -252,6 +264,21 @@ async def _write_link(db: Any, video_id: UUID, match: LinkMatch, mapped: dict[st
     )
 
 
+async def _derive_sources(db: Any, library_id: UUID, youtube_id: str) -> None:
+    """The library's YouTube sources from its links (slot 0182), when this link names a
+    channel or playlist its last decision did not see. A failure here leaves the link
+    made: the reconciler's pass decides every library again."""
+    try:
+        await youtube_derive.after_link(db, library_id, youtube_id)
+    except Exception as exc:  # noqa: BLE001 - the link is made; the next pass derives
+        _log.warning(
+            "youtube_derive_after_link_failed",
+            library=str(library_id),
+            youtube_id=youtube_id,
+            error=f"{type(exc).__name__}: {exc}",
+        )
+
+
 async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     v = await require_video(db, job.subject.id)
     local = ctx.local_path(v.path)
@@ -295,6 +322,7 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             summary={"linked": False},
         )
     await _write_link(db, v.id, match, {"link_method": match.method, **mapped})
+    await _derive_sources(db, v.library_id, match.youtube_id)
     return StageResult(
         output_hash=canonical_hash({"youtube_id": match.youtube_id, "method": match.method}),
         summary={"linked": True, "youtube_id": match.youtube_id, "method": match.method},

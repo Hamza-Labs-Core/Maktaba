@@ -315,9 +315,13 @@ func TestCrashBackoffAndCrashLoop(t *testing.T) {
 	}
 	clk.Advance(time.Second)
 	eventually(t, "the retry after 5 minutes", func() bool { return runs.Load() == 6 })
-	if got := statusOf(r, "analytics").Detail["loops"].(map[string]any)["usage_counter"].(map[string]any)["restarts"]; got != 6 {
-		t.Fatalf("restarts %v, want 6", got)
+	// the sixth run panics too; the runner counts a restart once the run has ended
+	// (Runner.ended), which is after the loop's function was entered: wait for it
+	// instead of reading it once (a race that failed CI)
+	restarts := func() any {
+		return statusOf(r, "analytics").Detail["loops"].(map[string]any)["usage_counter"].(map[string]any)["restarts"]
 	}
+	eventually(t, "six restarts", func() bool { return restarts() == 6 })
 }
 
 // T04: a loop that returns nil while wanted is a one-shot: Off, exited, not restarted.

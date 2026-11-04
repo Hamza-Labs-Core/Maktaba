@@ -181,12 +181,10 @@ final class Playback {
     func setQuality(_ kbps: Int?) {
         guard kbps != maxBitrateKbps, let p = player else { return }
         maxBitrateKbps = kbps
-        let at = p.currentTime().seconds
-        let wasPlaying = p.rate > 0
+        let again = reopening(p, fallback: position)
         running?.cancel()
         running = Task {
-            await open(from: at.isFinite ? at : position)
-            if !wasPlaying { player?.pause() }
+            await open(from: again.at, playing: again.playing)
             guard player != nil else { return }
             await watch()
         }
@@ -308,8 +306,10 @@ final class Playback {
 
     /// Opens (or reopens) the stream at `start` seconds, through the app's stream proxy: the
     /// home's web port wants the user's token on every `/stream/` request, and AVPlayer
-    /// cannot renew one mid-video.
-    private func open(from start: Double) async {
+    /// cannot renew one mid-video. A reopen of a paused video stays paused (`playing` false):
+    /// it never plays, and `isPlaying` says so (a paused player's time observer does not tick,
+    /// so a pause after the open left it saying playing).
+    private func open(from start: Double, playing: Bool = true) async {
         guard let video else { return }
         do {
             let s = try await client.openStream(video: video.id, startSec: Int(start), maxBitrateKbps: maxBitrateKbps)
@@ -336,28 +336,42 @@ final class Playback {
             renewAt = (s.expires ?? .distantFuture).addingTimeInterval(-60)
             signedURL = url
             proxiedURL = local
-            let item = AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route))
-            let p = player ?? Self.newPlayer()
-            observe(item, of: p)
-            p.replaceCurrentItem(with: item)
-            if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
-            position = start
-            if player == nil {
-                player = p
-                observeTime(of: p)
-                startRoutes(of: p)
-                startNowPlaying()
-            }
-            ended = false
-            Log.ui.info("playback: opened at \(start, privacy: .public) s, playing")
-            p.play()
-            isPlaying = true
+            await load(AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route)),
+                       at: start, playing: playing)
         } catch is CancellationError {
             return
         } catch {
             player = nil
             failure = HomeFailure(error)
         }
+    }
+
+    /// Where a reopen of what `p` plays starts, and whether it plays: where it is (else
+    /// `fallback`), playing only if it was (`setQuality`'s promise, and the renew's).
+    func reopening(_ p: AVPlayer, fallback: Double) -> (at: Double, playing: Bool) {
+        let at = p.currentTime().seconds
+        return (at.isFinite ? at : fallback, p.rate > 0)
+    }
+
+    /// Puts `item` in the player at `start`, playing or not (`playing`): a paused reopen
+    /// never plays, and `isPlaying` says so from the start (a paused player's time observer
+    /// does not tick, so a pause after a play left it saying playing).
+    func load(_ item: AVPlayerItem, at start: Double, playing: Bool) async {
+        let p = player ?? Self.newPlayer()
+        observe(item, of: p)
+        p.replaceCurrentItem(with: item)
+        if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
+        position = start
+        if player == nil {
+            player = p
+            observeTime(of: p)
+            startRoutes(of: p)
+            startNowPlaying()
+        }
+        ended = false
+        Log.ui.info("playback: opened at \(start, privacy: .public) s, playing \(playing, privacy: .public)")
+        if playing { p.play() }
+        isPlaying = playing
     }
 
     /// Every 10 s while playing: the position, so "continue watching" resumes here; a reopen
@@ -382,10 +396,8 @@ final class Playback {
                 return
             }
             if failed || Date.now >= renewAt {
-                let at = p.currentTime().seconds
-                let wasPlaying = p.rate > 0
-                await open(from: at.isFinite ? at : 0)
-                if !wasPlaying { player?.pause() }
+                let again = reopening(p, fallback: 0)
+                await open(from: again.at, playing: again.playing)
             }
         }
     }

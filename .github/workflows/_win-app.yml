@@ -28,7 +28,7 @@ jobs:
 
       - name: shellcheck
         run: |
-          shellcheck --version | head -2
+          shellcheck --version | sed -n 1,2p
           shellcheck -x tools/release/win-app/payload.sh tools/release/win-app/check.sh \
             tools/release/win-app/build-app.sh tools/release/win-app/test-hooks.sh \
             deploy/packaging/node/build-release.sh
@@ -64,6 +64,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:

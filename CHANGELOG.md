@@ -36,8 +36,57 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The library dashboard and the queue page load at once on a large home.** On a home with
+  3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
+  failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
+  every 10 seconds: each read counted the jobs' whole history, and every request ran it
+  again. A new table keeps the items each stage has finished per library, kept up to date by
+  the database as jobs finish (slot 0183, filled from the existing jobs when it is added);
+  three new indexes cover the waiting, finished and awaiting-review jobs, and the failed
+  items' latest runs are read one step each. On 3.1 million jobs the library numbers are
+  built in about 0.14 s and the queue snapshot in about 0.11 s. Every reader shares one
+  build, a slow or failed rebuild serves the last numbers instead of an error, and a pause
+  or a pool change shows at once. The dashboard and a library's page no longer wait forever:
+  after 8 seconds they say the read is slow, after 30 seconds that it failed, each with Try
+  again, and a refresh that fails keeps the tiles with a notice (English and Arabic).
+
+- **Processes no longer show a raw `{percent}`, and the Remote's Needs attention reads right in
+  Arabic.** A process whose detail code came without its values (an older home, a test
+  fixture) showed its words' placeholder, as in "Installing the transcription tools
+  ({percent}%)". The iPhone Remote, the Android Remote and the web's Processes card now fill the
+  values when they are sent and say the home's own sentence when they are not. On the Android
+  Remote, the check-clips count ("4 of 4 clips got no answer from the model") is said in the
+  app's language with its plural, so the Arabic no longer puts the number at the wrong end, and
+  each sample message keeps its own direction. The Arabic bar label for Needs attention is
+  «انتباه», the same word as the screen's title «ما يحتاج إلى انتباه».
+- **Apple Player: a quality change while paused stays paused.** Choosing a quality reopened
+  the video and played it for a moment before pausing it again, and the controls then said
+  it was playing. A paused video now reopens at the new quality paused, and the controls say
+  so.
+- **Test data is neutral.** The Android, Android TV, Apple and web tests and their screenshot
+  references use an invented home ("Maktaba Home"), addresses from the documentation ranges
+  (192.0.2.x, 198.51.100.x, 203.0.113.x) or `.local` names, and an invented media path.
+- **Every library's YouTube sources come from its linked videos.** The sources were seeded
+  once from the channels list, which keeps one library per channel, so 10 libraries had none:
+  seven that share one channel through a playlist each, and others whose channel was never
+  listed. Maktaba now works them out itself from what the link stage learned of each video
+  (its `.info.json` file or its title): the real playlists most of a library's linked videos
+  sit in, when no other library's videos make up those playlists, else the channel most of
+  them come from. A source found this way is added off and says so on the library's card; no
+  source already there changes, and none is turned on. A channel or playlist is never the
+  source of two libraries: the card shows the library that already follows it, with Merge.
+  It runs after each new link and in the reconciler's pass every 6 hours
+  (`MAKTABA_YT_DERIVE_HOURS`), whose first pass after the update covers the links made before
+  it; each decision and its reason is kept (`youtube_source_decisions`, slot 0182), and
+  `python -m maktaba_pipeline.tools.youtube_derive` prints them (a dry run unless `--apply`).
+  Every channel a linked video names is now known, with all the libraries its videos are in
+  (`youtube_channel_libraries`), so the title match also finds a shared channel's videos.
+  **Look for its channel** reads the linked videos first and gives the same answer, and the
+  MediaIntel import no longer gives a second library a source of a channel another library
+  holds.
+
 - **The MediaIntel import says what it does not seed.** A folder whose YouTube channel another
-  library already holds now gets that channel as a source of its own (off) and is listed, and a
+  library already holds is now listed (its sources come from its linked videos), and a
   folder with no channel id is listed and logged, instead of both being passed over in silence.
 
 - **The home's database no longer runs out of connections.** The API's background jobs (the

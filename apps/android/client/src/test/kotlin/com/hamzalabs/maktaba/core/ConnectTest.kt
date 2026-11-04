@@ -29,19 +29,19 @@ import org.junit.Test
 import java.net.InetAddress
 
 class ConnectTest {
-    private val mac = InetAddress.getByName("192.168.50.177")
+    private val mac = InetAddress.getByName("203.0.113.177")
 
     // ---------- mDNS TXT ----------
 
     @Test
     fun theTxtRecordGivesTheSchemeAndBasePath() {
-        val txt = mapOf("role" to "home", "id" to "28e21b45", "name" to "Darwish", "web" to "8443", "tls" to "1", "path" to "/maktaba/")
+        val txt = mapOf("role" to "home", "id" to "28e21b45", "name" to "Maktaba Home", "web" to "8443", "tls" to "1", "path" to "/maktaba/")
         assertEquals(
-            FoundHome("Darwish", "https://192.168.50.177:8443/maktaba", "28e21b45", null),
+            FoundHome("Maktaba Home", "https://203.0.113.177:8443/maktaba", "28e21b45", null),
             foundHome("Maktaba (studio)", mac, 8080, txt),
         )
-        assertEquals("tls=0 and path=/: http at the root", "http://192.168.50.177:8443", foundHome("x", mac, 8080, txt + ("tls" to "0") + ("path" to "/"))!!.url)
-        assertEquals("a path with a space is not a path", "http://192.168.50.177:8443", foundHome("x", mac, 8080, txt - "tls" + ("path" to "/a b"))!!.url)
+        assertEquals("tls=0 and path=/: http at the root", "http://203.0.113.177:8443", foundHome("x", mac, 8080, txt + ("tls" to "0") + ("path" to "/"))!!.url)
+        assertEquals("a path with a space is not a path", "http://203.0.113.177:8443", foundHome("x", mac, 8080, txt - "tls" + ("path" to "/a b"))!!.url)
     }
 
     @Test
@@ -53,12 +53,12 @@ class ConnectTest {
 
     @Test
     fun aHomeAnnouncedTwiceIsOneRowByIdElseByHostAndPort() {
-        val a = FoundHome("Studio", "http://192.168.1.5:8088", "28e21b45", null)
+        val a = FoundHome("Studio", "http://192.0.2.5:8088", "28e21b45", null)
         val sameIdOtherAddress = FoundHome("Studio", "http://[fe80:0:0:0:0:0:0:1]:8088", "28E21B45", null)
-        val fullId = FoundHome("Studio", "http://10.0.0.5:8088", "28e21b45-1111-2222-3333-444455556666", null)
-        val noId = FoundHome("Attic", "http://192.168.1.9:8080", null, null)
-        val noIdAgain = FoundHome("Attic (renamed)", "http://192.168.1.9:8080/maktaba", null, null)
-        val other = FoundHome("Other", "http://192.168.1.9:9090", null, null)
+        val fullId = FoundHome("Studio", "http://198.51.100.5:8088", "28e21b45-1111-2222-3333-444455556666", null)
+        val noId = FoundHome("Attic", "http://192.0.2.9:8080", null, null)
+        val noIdAgain = FoundHome("Attic (renamed)", "http://192.0.2.9:8080/maktaba", null, null)
+        val other = FoundHome("Other", "http://192.0.2.9:9090", null, null)
         assertEquals(listOf(a, noId, other), dedupeHomes(listOf(a, sameIdOtherAddress, noId, fullId, noIdAgain, other)))
     }
 
@@ -69,15 +69,15 @@ class ConnectTest {
         val announced = listOfNotNull(
             foundHome("Maktaba (studio)", mac, 8080, txt + ("role" to "home") + ("id" to home)),
             // a full node of the same home, and a machine of a kind this app does not know
-            foundHome("Maktaba (gpu-box)", InetAddress.getByName("192.168.50.20"), 8780, txt + ("role" to "node") + ("id" to "9f9f9f9f-0000")),
-            foundHome("Maktaba (later)", InetAddress.getByName("192.168.50.21"), 8780, txt + ("role" to "relay") + ("id" to "abababab-0000")),
+            foundHome("Maktaba (gpu-box)", InetAddress.getByName("203.0.113.20"), 8780, txt + ("role" to "node") + ("id" to "9f9f9f9f-0000")),
+            foundHome("Maktaba (later)", InetAddress.getByName("203.0.113.21"), 8780, txt + ("role" to "relay") + ("id" to "abababab-0000")),
             // the same home again on another interface
             foundHome("Maktaba (studio)", InetAddress.getByName("fe80::1"), 8080, txt + ("role" to "home") + ("id" to home)),
             // an older home: no role, and no home= (its id= stands in)
-            foundHome("Maktaba (attic)", InetAddress.getByName("192.168.50.9"), 8080, mapOf("id" to "77777777", "version" to "v0.2.0")),
+            foundHome("Maktaba (attic)", InetAddress.getByName("203.0.113.9"), 8080, mapOf("id" to "77777777", "version" to "v0.2.0")),
         )
         val homes = dedupeHomes(announced)
-        assertEquals(listOf("http://192.168.50.177:8088", "http://192.168.50.9:8080"), homes.map { it.url })
+        assertEquals(listOf("http://203.0.113.177:8088", "http://203.0.113.9:8080"), homes.map { it.url })
         assertEquals("the home's id from home=, not the machine's", home, homes.first().id)
     }
 
@@ -95,11 +95,11 @@ class ConnectTest {
     @Test
     fun aConnectLinkKeepsItsAddressesInOrder() {
         val link = ConnectLink.parse(
-            "maktaba://connect?id=28e21b45&n=Darwish%20home&u=http%3A%2F%2F192.168.1.5%3A8088&u=https%3A%2F%2Fdarwish.maktaba.tv%2F&u=http%3A%2F%2F192.168.1.5%3A8088",
+            "maktaba://connect?id=28e21b45&n=Maktaba%20Home&u=http%3A%2F%2F192.0.2.5%3A8088&u=https%3A%2F%2Fmyhome.maktaba.tv%2F&u=http%3A%2F%2F192.0.2.5%3A8088",
         )!!
         assertEquals("28e21b45", link.id)
-        assertEquals("Darwish home", link.name)
-        assertEquals("local first, then the others, once each", listOf("http://192.168.1.5:8088", "https://darwish.maktaba.tv"), link.urls)
+        assertEquals("Maktaba Home", link.name)
+        assertEquals("local first, then the others, once each", listOf("http://192.0.2.5:8088", "https://myhome.maktaba.tv"), link.urls)
     }
 
     @Test
@@ -108,7 +108,7 @@ class ConnectTest {
         assertEquals(listOf("https://example.com/maktaba"), link.urls)
         assertNull(link.id)
         assertEquals("Shared", link.name)
-        assertEquals("a scanner's maktaba:connect form", listOf("http://10.0.0.2:8088"), ConnectLink.parse("maktaba:connect?u=10.0.0.2:8088")!!.urls)
+        assertEquals("a scanner's maktaba:connect form", listOf("http://maktaba.local:8088"), ConnectLink.parse("maktaba:connect?u=maktaba.local:8088")!!.urls)
     }
 
     @Test
@@ -122,8 +122,8 @@ class ConnectTest {
 
     @Test
     fun aWebAddressScannedIsTriedWithItsPathThenAtItsRoot() {
-        assertEquals(listOf("http://192.168.1.5:8088/library", "http://192.168.1.5:8088"), ConnectLink.parse("http://192.168.1.5:8088/library?x=1")!!.urls)
-        assertEquals(listOf("http://192.168.1.5:8088"), addressCandidates("192.168.1.5:8088"))
+        assertEquals(listOf("http://maktaba.local:8088/library", "http://maktaba.local:8088"), ConnectLink.parse("http://maktaba.local:8088/library?x=1")!!.urls)
+        assertEquals(listOf("http://maktaba.local:8088"), addressCandidates("maktaba.local:8088"))
         assertEquals(listOf("https://example.com/maktaba", "https://example.com"), addressCandidates("example.com/maktaba/"))
         assertEquals(emptyList<String>(), addressCandidates("  "))
         assertEquals("http://maktaba.local:8088/m", Home.normalizeWithPath("maktaba.local:8088/m/#x"))
@@ -142,21 +142,21 @@ class ConnectTest {
         }
     }
 
-    private val discovery = """{"id":"28e21b45-1111","name":"Darwish home","version":"v0.4.0","urls":["http://192.168.1.5:8088"],"sign_in":{"password":true,"code":true}}"""
+    private val discovery = """{"id":"28e21b45-1111","name":"Maktaba Home","version":"v0.4.0","urls":["http://192.0.2.5:8088"],"sign_in":{"password":true,"code":true}}"""
 
     @Test
     fun aHomeSaysWhoItIs() = runBlocking {
         val homes = FakeHomes(mapOf("http://h:8088/api/discovery/home" to (200 to discovery)))
         val info = HomeProbe(homes::get).probe("http://h:8088")
         assertEquals("28e21b45-1111", info.id)
-        assertEquals("Darwish home", info.name)
+        assertEquals("Maktaba Home", info.name)
         assertEquals(true, info.signIn?.code)
     }
 
     @Test
     fun aHomeUnderABasePathIsAskedThere() = runBlocking {
         val homes = FakeHomes(mapOf("https://example.com/maktaba/api/discovery/home" to (200 to discovery)))
-        assertEquals("Darwish home", HomeProbe(homes::get).probe("https://example.com/maktaba").name)
+        assertEquals("Maktaba Home", HomeProbe(homes::get).probe("https://example.com/maktaba").name)
     }
 
     @Test
@@ -217,17 +217,17 @@ class ConnectTest {
     fun anAddressWhereAnotherHomeAnswersIsPassedOver() = runBlocking {
         val homes = FakeHomes(
             mapOf(
-                "http://192.168.1.5:8088/api/discovery/home" to (200 to """{"id":"ffff0000","name":"Neighbour"}"""),
+                "http://192.0.2.5:8088/api/discovery/home" to (200 to """{"id":"ffff0000","name":"Neighbour"}"""),
                 "https://relay.example/api/discovery/home" to (200 to discovery),
             ),
         )
-        val r = HomeProbe(homes::get).first(listOf("http://192.168.1.5:8088", "https://relay.example"), expectId = "28e21b45")
+        val r = HomeProbe(homes::get).first(listOf("http://192.0.2.5:8088", "https://relay.example"), expectId = "28e21b45")
         assertEquals("https://relay.example", r.url)
         try {
-            HomeProbe(homes::get).first(listOf("http://192.168.1.5:8088"), expectId = "28e21b45")
+            HomeProbe(homes::get).first(listOf("http://192.0.2.5:8088"), expectId = "28e21b45")
             fail("only another home answered")
         } catch (e: NotAHome) {
-            assertEquals(listOf("http://192.168.1.5:8088"), e.tried)
+            assertEquals(listOf("http://192.0.2.5:8088"), e.tried)
         }
     }
 
@@ -264,7 +264,7 @@ class ConnectTest {
         s.offer(link)
         val home = s.connect(link, HomeProbe(homes::get))
         // its other addresses as the home said them; the link's that did not answer are not kept
-        assertEquals(Home("https://relay.example", "Darwish home", "28e21b45-1111", addresses = listOf("http://192.168.1.5:8088")), home)
+        assertEquals(Home("https://relay.example", "Maktaba Home", "28e21b45-1111", addresses = listOf("http://192.0.2.5:8088")), home)
         assertEquals(AppSession.Phase.SigningIn, s.phase.value)
         assertNull("the link was answered", s.link.value)
     }
@@ -280,28 +280,28 @@ class ConnectTest {
     fun theSameIdAtANewAddressGetsNoTokens() {
         val tokens = mutableMapOf<String, MemoryTokens>()
         val s = session(tokens = tokens)
-        s.use(Home("http://192.168.1.5:8088", "Studio", "28e21b45"))
+        s.use(Home("http://192.0.2.5:8088", "Studio", "28e21b45"))
         s.rename(s.current.value!!, "Living room")
-        tokens.getValue("http://192.168.1.5:8088").save(AuthTokens("a1", "r1"))
+        tokens.getValue("http://192.0.2.5:8088").save(AuthTokens("a1", "r1"))
         s.switchHome()
 
         // an id is what a home says of itself: anyone on the network can claim it
-        s.use(Home("http://192.168.1.77:8088", "Studio", "28E21B45-1111"))
+        s.use(Home("http://192.0.2.77:8088", "Studio", "28E21B45-1111"))
         assertEquals("another entry, not the known home moved", 2, s.homes.value.size)
         val claimed = s.current.value!!
-        assertEquals("http://192.168.1.77:8088", claimed.url)
+        assertEquals("http://192.0.2.77:8088", claimed.url)
         assertEquals("nothing of the known home carries over", "Studio", claimed.label)
-        assertNull("no tokens at the new address: a fresh sign-in", tokens.getValue("http://192.168.1.77:8088").access)
+        assertNull("no tokens at the new address: a fresh sign-in", tokens.getValue("http://192.0.2.77:8088").access)
         assertEquals(AppSession.Phase.SigningIn, s.phase.value)
-        assertEquals("the known home keeps its own", "a1", tokens.getValue("http://192.168.1.5:8088").access)
+        assertEquals("the known home keeps its own", "a1", tokens.getValue("http://192.0.2.5:8088").access)
     }
 
     @Test
     fun aLinkNamingAKnownHomeAtAnotherAddressStillSignsInAfresh() = runBlocking {
         val tokens = mutableMapOf<String, MemoryTokens>()
         val s = session(tokens = tokens)
-        s.use(Home("http://192.168.1.5:8088", "Studio", "28e21b45"))
-        tokens.getValue("http://192.168.1.5:8088").save(AuthTokens("a1", "r1"))
+        s.use(Home("http://192.0.2.5:8088", "Studio", "28e21b45"))
+        tokens.getValue("http://192.0.2.5:8088").save(AuthTokens("a1", "r1"))
         val homes = FakeHomes(mapOf("https://evil.example/api/discovery/home" to (200 to """{"id":"28e21b45","name":"Studio"}""")))
         s.connect(ConnectLink("28e21b45", "Studio", listOf("https://evil.example")), HomeProbe(homes::get))
         assertEquals("https://evil.example", s.current.value?.url)
@@ -334,10 +334,10 @@ class ConnectTest {
     @Test
     fun aLinkTheAppOpensWithIsOfferedNotUsed() {
         val s = session()
-        s.use(Home("http://10.0.0.2:8088", "Current"))
-        assertTrue(s.openLink("maktaba://connect?u=http://192.168.1.5:8088&n=Studio"))
+        s.use(Home("http://198.51.100.2:8088", "Current"))
+        assertTrue(s.openLink("maktaba://connect?u=http://192.0.2.5:8088&n=Studio"))
         assertEquals("Studio", s.link.value?.name)
-        assertEquals("nothing switches until the person confirms", "http://10.0.0.2:8088", s.current.value?.url)
+        assertEquals("nothing switches until the person confirms", "http://198.51.100.2:8088", s.current.value?.url)
         assertEquals("nothing is added either", 1, s.homes.value.size)
         assertFalse(s.openLink(null))
         assertFalse(s.openLink("https://maktaba.tv/help"))

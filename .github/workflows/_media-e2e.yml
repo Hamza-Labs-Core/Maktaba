@@ -60,6 +60,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming
+
       - name: Apt package cache
         id: apt-cache
         # the runner's Ubuntu mirror has stalled installs at 50 KB/s: packages are kept
@@ -77,9 +83,9 @@ jobs:
           APT_CACHE_DIR: /home/runner/apt-cache
         run: |
           tools/ci/apt-install.sh ffmpeg fonts-noto-core >/dev/null
-          v=$(ffmpeg -hide_banner -version | head -1)
+          v=$(ffmpeg -hide_banner -version | sed -n 1p)
           echo "$v"
-          ffprobe -hide_banner -version | head -1
+          ffprobe -hide_banner -version | sed -n 1p
           case "$v" in
             "ffmpeg version ${FFMPEG_SERIES}"*) ;;
             *) echo "::error::expected ffmpeg ${FFMPEG_SERIES}.x, got: $v"; exit 1 ;;

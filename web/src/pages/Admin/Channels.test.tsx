@@ -69,13 +69,11 @@ describe("Channels admin", () => {
   it("shows the XMLTV guide address with a copy button in the header", async () => {
     get.mockImplementation((url: string) =>
       Promise.resolve(
-        url === "/api/tv/info" ? { xmltv_url: "http://192.168.1.20:8782/xmltv.xml" } : channels
+        url === "/api/tv/info" ? { xmltv_url: "http://192.0.2.20:8782/xmltv.xml" } : channels
       )
     );
     renderChannels();
-    expect(
-      await screen.findByDisplayValue("http://192.168.1.20:8782/xmltv.xml")
-    ).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("http://192.0.2.20:8782/xmltv.xml")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /copy xmltv guide/i })).toBeInTheDocument();
   });
 

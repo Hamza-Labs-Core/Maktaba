@@ -6,7 +6,7 @@
 // library dashboard and the Queues page; a #section in the address opens at
 // that section. The viewer's page of the library (/library/:id) is separate.
 // The API refuses every read and write here to anyone but an admin.
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { ErrorState } from "@ds/components/ErrorState/ErrorState";
@@ -15,11 +15,19 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { libraryAdminApi, problemMessage, type ManageResponse } from "../../lib/libraryAdminApi";
 import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { queueApi } from "../../lib/queueApi";
+import { useTitledStages } from "../../lib/stageWords";
 import type { FailureItem, LibraryQueueRow, OfflineSummary, StageInfo } from "../../lib/queueApi";
 import { AdminGate } from "../../components/AdminGate";
 import { ScanNow } from "../LibraryBrowser";
 import { libraryHealth } from "../../components/libdash/health";
-import { activityById, activityOf, type Activity } from "../../components/libdash/useLibraryBoard";
+import {
+  activityById,
+  activityOf,
+  LIBRARIES_SLOW_MS,
+  LIBRARIES_TIMEOUT_MS,
+  withTimeout,
+  type Activity,
+} from "../../components/libdash/useLibraryBoard";
 import { YouTubeSourcesPanel } from "../../components/queue/YouTubeSourcesDialog";
 import {
   OfflineActionDialog,
@@ -36,6 +44,7 @@ import {
   DuplicatesSection,
   OverviewSection,
   QueueSection,
+  type QueueReadState,
   Section,
   SettingsSection,
   TrashSection,
@@ -75,7 +84,11 @@ function LibraryAdminInner() {
   const [manageErr, setManageErr] = useState<string | null>(null);
   const [row, setRow] = useState<LibraryQueueRow | null>(null);
   const [rows, setRows] = useState<LibraryQueueRow[]>([]);
-  const [stages, setStages] = useState<StageInfo[]>([]);
+  const [queuesState, setQueuesState] = useState<QueueReadState>("loading");
+  const queuesSeq = useRef(0);
+  const [rawStages, setStages] = useState<StageInfo[]>([]);
+  // the stages' labels in the reader's language (lib/stageWords)
+  const stages = useTitledStages(rawStages);
   const [summary, setSummary] = useState<OfflineSummary | null>(null);
   const [activity, setActivity] = useState<Activity | undefined>(undefined);
   const [failures, setFailures] = useState<{ items: FailureItem[]; total: number } | null>(null);
@@ -96,14 +109,23 @@ function LibraryAdminInner() {
 
   const loadQueues = useCallback(() => {
     const q = encodeURIComponent(id);
-    queueApi
-      .libraries()
+    const mine = ++queuesSeq.current;
+    const current = () => queuesSeq.current === mine;
+    setQueuesState((s) => (s === "ready" ? s : "loading"));
+    const slow = setTimeout(
+      () => current() && setQueuesState((s) => (s === "loading" ? "slow" : s)),
+      LIBRARIES_SLOW_MS
+    );
+    withTimeout(queueApi.libraries(), LIBRARIES_TIMEOUT_MS)
       .then((r) => {
+        if (!current()) return;
         const all = safeLibraries(r?.items);
         setRows(all);
         setRow(all.find((x) => x.library_id === id) ?? null);
+        setQueuesState("ready");
       })
-      .catch(() => {});
+      .catch(() => current() && setQueuesState("error"))
+      .finally(() => clearTimeout(slow));
     queueApi
       .offlineSummary(id)
       .then((s) => setSummary(s ?? null))
@@ -245,6 +267,8 @@ function LibraryAdminInner() {
       />
       <QueueSection
         h={h}
+        status={queuesState}
+        onRetry={loadQueues}
         stages={stages}
         activity={activity}
         failures={failures}

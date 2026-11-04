@@ -32,6 +32,8 @@ type fakeSupervisor struct {
 	importBody   []byte
 	importType   string
 	importRefuse bool
+	// packsOff: [components] packs = "off" on this machine (offline mode)
+	packsOff bool
 }
 
 const supToken = "boot-token"
@@ -50,6 +52,11 @@ func (s *fakeSupervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(v)
 	}
 	switch p := r.URL.Path; {
+	case p == "/components/packs" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		on := map[bool]string{true: "off", false: "on"}[s.packsOff]
+		s.mu.Unlock()
+		j(200, map[string]any{"packs": on})
 	case p == "/components/runtime.ml/progress":
 		j(200, map[string]any{"id": "runtime.ml", "installed": false, "progress": map[string]any{
 			"phase": "installing", "percent": 42, "detail": "pack_downloading", "name": "runtime.ml.tar.zst",
@@ -347,5 +354,71 @@ func TestImportRefused(t *testing.T) {
 	}
 	if f.actions(t, svc.ActionImport) != 1 {
 		t.Fatal("what went in before the refusal is not recorded")
+	}
+}
+
+func (s *fakeSupervisor) packsAsked() int {
+	n := 0
+	for _, c := range s.called() {
+		if c == "GET /components/packs" {
+			n++
+		}
+	}
+	return n
+}
+
+// Offline mode ([components] packs = "off" on this machine, the supervisor's answer):
+// an install of an asset not on disk is 409 packs_disabled, nothing written or recorded,
+// whether its want is absent or wanted (Retry); an asset on disk and a component that is
+// no asset are answered as before. The role comes first: a viewer is 403 and the
+// supervisor is not asked.
+func TestInstallRefusedWithPacksOff(t *testing.T) {
+	f, sup := packsFixture(t)
+	sup.packsOff = true
+	if rec := f.do("POST", "/api/components/runtime.ml/install", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer: %d", rec.Code)
+	}
+	if got := sup.called(); len(got) != 0 {
+		t.Fatalf("the supervisor was asked for a viewer: %v", got)
+	}
+	if _, err := f.db.Exec(`UPDATE components SET want = 'absent' WHERE id = ?`, "model.refine"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"runtime.ml", "model.refine"} {
+		before := f.want(t, id)
+		body := code(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), http.StatusConflict, svc.CodePacksDisabled)
+		if d, _ := body["detail"].(string); !strings.Contains(d, "packs") {
+			t.Fatalf("%s: %v", id, body)
+		}
+		if after := f.want(t, id); after.Want != before.Want || after.Generation != before.Generation {
+			t.Fatalf("%s: written with packs off: %+v -> %+v", id, before, after)
+		}
+	}
+	if n := f.audits(t); n != 0 {
+		t.Fatalf("%d audit rows with packs off", n)
+	}
+	// on disk (the home's packs row says Installed): answered as it is
+	if err := f.st.ReportStatus(context.Background(), store.Home, "packs", []store.Status{{ID: "tool.yt-dlp", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	gen := f.want(t, "tool.yt-dlp").Generation
+	decode(t, f.do("POST", "/api/components/tool.yt-dlp/install", "", admin()), 200, nil)
+	if f.want(t, "tool.yt-dlp").Generation != gen {
+		t.Fatal("an asset on disk was written")
+	}
+	// not an asset: packs are not asked about
+	n := sup.packsAsked()
+	decode(t, f.do("POST", "/api/components/youtube/install", "", admin()), 200, nil)
+	if sup.packsAsked() != n {
+		t.Fatal("packs were asked about for a component that is no asset")
+	}
+	// packs on: the install is written as before (model.refine: absent to installed)
+	sup.mu.Lock()
+	sup.packsOff = false
+	sup.mu.Unlock()
+	decode(t, f.do("POST", "/api/components/model.refine/install", "", admin()), 200, nil)
+	if w := f.want(t, "model.refine"); w.Want != components.WantInstalled {
+		t.Fatalf("packs on: %+v", w)
 	}
 }

@@ -78,6 +78,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
 
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+          offline: "false"
+
       - name: Which release
         id: which
         env:
@@ -315,6 +322,14 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        if: steps.config.outputs.ready == 'true'
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+          offline: "false"
 
       - uses: sigstore/cosign-installer@v3.10.0
         if: steps.config.outputs.ready == 'true'

@@ -105,6 +105,51 @@ func TestOffline_GuessSource(t *testing.T) {
 	e.audited("queue.youtube_source.guess", gamma)
 }
 
+// Slot 0182: the linked videos come first, so the look agrees with the pipeline's
+// derivation: its decision (the playlist it chose), else the channel most links are from;
+// a sidecar that names another channel does not win over them.
+func TestOffline_GuessSourceFromLinks(t *testing.T) {
+	e := newOfflineEnv(t)
+	dir := t.TempDir()
+	delta := "4700000a-0000-4000-8000-0000000000d1"
+	e.exec(`INSERT INTO libraries (id, name, roots) VALUES ($1, 'Delta', ARRAY[$2])`, delta, dir)
+	for i, yid := range []string{"ddddddddd01", "ddddddddd02", "ddddddddd03"} {
+		name := yid + ".mp4"
+		e.exec(`INSERT INTO videos (library_id, content_hash, path, filename, size_bytes, mtime, title)
+			VALUES ($1, repeat($2, 64), $3, $4, 1, now(), $4)`, delta, string(rune('d'+i)), filepath.Join(dir, name), name)
+		e.exec(`INSERT INTO youtube_videos (youtube_id, channel_id, title) VALUES ($1, 'UCdddddddddddddddddddddd', $1)`, yid)
+		e.exec(`INSERT INTO media_metadata_enrichment (video_id, provider, external_id, mapped)
+			SELECT id, 'youtube', $2, '{"link_method":"info_json"}' FROM videos WHERE library_id = $1 AND filename = $3`,
+			delta, yid, name)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "ddddddddd01.info.json"),
+		[]byte(`{"id":"ddddddddd01","channel_id":"UCssssssssssssssssssssss","channel":"Side"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var g SourceGuess
+	e.want(200, "POST", "/api/libraries/"+delta+"/youtube/guess", "", &g)
+	if g.Kind == nil || *g.Kind != "channel" || g.ExternalID == nil || *g.ExternalID != "UCdddddddddddddddddddddd" ||
+		g.IDsFound != 3 || g.IDsMatched != 3 || *g.Evidence != "info_json" || g.SampleYouTubeID == nil {
+		t.Fatalf("guess from the links = %+v", g)
+	}
+	// the derivation's decision: its playlist
+	e.exec(`INSERT INTO youtube_playlists (playlist_id, channel_id, title, is_real) VALUES
+		('PLdeltainvented01', 'UCdddddddddddddddddddddd', 'Delta list', true)`)
+	e.exec(`INSERT INTO youtube_playlist_items (playlist_id, youtube_id) VALUES
+		('PLdeltainvented01', 'ddddddddd01'), ('PLdeltainvented01', 'ddddddddd02')`)
+	e.exec(`INSERT INTO youtube_source_decisions (library_id, outcome, kind, external_ids, linked_videos,
+		matched_videos, reason) VALUES ($1, 'playlist', 'playlist', '["PLdeltainvented01"]', 3, 2, 'invented')`, delta)
+	e.want(200, "POST", "/api/libraries/"+delta+"/youtube/guess", "", &g)
+	if g.Kind == nil || *g.Kind != "playlist" || *g.ExternalID != "PLdeltainvented01" || g.IDsMatched != 2 ||
+		g.Title == nil || *g.Title != "Delta list" || g.URL == nil ||
+		*g.URL != "https://www.youtube.com/playlist?list=PLdeltainvented01" {
+		t.Fatalf("guess from the decision = %+v", g)
+	}
+	if n := e.count(`SELECT count(*) FROM youtube_sources WHERE library_id = $1`, delta); n != 0 {
+		t.Fatalf("a guess added %d sources", n)
+	}
+}
+
 // The Tartube import is one catalog job; its report and the path to offer come back.
 func TestOffline_TartubeImport(t *testing.T) {
 	e := newOfflineEnv(t)

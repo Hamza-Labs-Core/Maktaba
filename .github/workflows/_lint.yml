@@ -139,6 +139,13 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        if: inputs.go || inputs.pipeline
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
+
       # Python for the pipeline's linters, and for its coverage (the Go part's coverage
       # floor measures both: a dropped lane must never pass)
       - name: Set up Python
@@ -317,6 +324,12 @@ jobs:
             cmd/maktaba-server/go.sum
             api/go.sum
             streaming/go.sum
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server shared/components
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0

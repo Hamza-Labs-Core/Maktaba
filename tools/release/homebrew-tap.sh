@@ -56,7 +56,7 @@ cask() {
 # version_in FILE: the version a filled formula or cask names (nothing when none)
 version_in() {
     [ -f "$1" ] || return 0
-    sed -n 's/^[[:space:]]*version "\([^"]*\)".*/\1/p' "$1" | head -1
+    sed -n 's/^[[:space:]]*version "\([^"]*\)".*/\1/p' "$1" | sed -n 1p
 }
 
 push() {

@@ -33,7 +33,7 @@ const home: ClusterProcess = {
   kind: "home",
   node_id: null,
   node_name: null,
-  ip: "10.0.0.2",
+  ip: "198.51.100.2",
   host: "nas",
   worker_id: "home-1",
   pid: 100,
@@ -68,7 +68,7 @@ const node: ClusterProcess = {
   kind: "node",
   node_id: "n1",
   node_name: "Studio Mac",
-  ip: "10.0.0.5",
+  ip: "198.51.100.5",
   host: "studio",
   worker_id: "node-n1-1",
   pid: 4242,
@@ -118,7 +118,7 @@ const files = {
   files: { dir: "/share/maktaba/cluster", on_share: true, reason: null },
   nodes: [
     {
-      ip: "10.0.0.5",
+      ip: "198.51.100.5",
       processes: [
         {
           worker_id: "node-n1-1",
@@ -194,9 +194,9 @@ function setup(v: unknown = view) {
   routeGet(get, {
     "/api/cluster": v,
     "/api/cluster/files": files,
-    "/api/cluster/files/10.0.0.5/logs": logsRoute,
-    "/api/cluster/files/10.0.0.5/queues": { samples: [] },
-    "/api/cluster/files/10.0.0.5/library": { samples: [] },
+    "/api/cluster/files/198.51.100.5/logs": logsRoute,
+    "/api/cluster/files/198.51.100.5/queues": { samples: [] },
+    "/api/cluster/files/198.51.100.5/library": { samples: [] },
     "/api/cluster/relay": {
       available: true,
       enabled: true,
@@ -406,7 +406,7 @@ describe("Cluster views", () => {
       type: "log",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         record: {
           ts: Date.now() / 1000,
           level: "info",
@@ -420,7 +420,7 @@ describe("Cluster views", () => {
       type: "log",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         record: {
           ts: Date.now() / 1000,
           level: "warning",
@@ -449,7 +449,7 @@ describe("Cluster views", () => {
       type: "log",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         record: { ts: Date.now() / 1000, level: "info", event: "chatty", logger: "w" },
       },
     });
@@ -457,7 +457,7 @@ describe("Cluster views", () => {
       type: "log",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         record: { ts: Date.now() / 1000, level: "error", event: "boom", logger: "w" },
       },
     });
@@ -470,7 +470,7 @@ describe("Cluster views", () => {
       type: "log",
       data: {
         session: "s1",
-        ip: "10.0.0.5",
+        ip: "198.51.100.5",
         record: { ts: Date.now() / 1000, level: "error", event: "later", logger: "w" },
       },
     });
@@ -491,13 +491,13 @@ describe("Cluster views", () => {
     expect(await within(box).findByText("claimed job")).toBeInTheDocument();
     expect(within(box).getByText("probe failed")).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(
-      "/api/cluster/files/10.0.0.5/logs?date=2026-10-17&level=info&limit=500"
+      "/api/cluster/files/198.51.100.5/logs?date=2026-10-17&level=info&limit=500"
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Load older" }));
     expect(await within(box).findByText("older line")).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(
-      "/api/cluster/files/10.0.0.5/logs?date=2026-10-17&level=info&limit=500&before=cursor1"
+      "/api/cluster/files/198.51.100.5/logs?date=2026-10-17&level=info&limit=500&before=cursor1"
     );
     const rows = within(box).getAllByRole("listitem");
     expect(rows[0]).toHaveTextContent("older line");
@@ -510,7 +510,7 @@ describe("Cluster views", () => {
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Level" }), "error");
     await waitFor(() =>
       expect(get).toHaveBeenCalledWith(
-        "/api/cluster/files/10.0.0.5/logs?date=2026-10-17&level=error&limit=500"
+        "/api/cluster/files/198.51.100.5/logs?date=2026-10-17&level=error&limit=500"
       )
     );
   });
@@ -529,7 +529,7 @@ describe("Cluster views", () => {
     const box = screen.getByRole("log", { name: "Log lines" });
     expect(await within(box).findByText("claimed job")).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith(
-      "/api/cluster/files/10.0.0.5/logs?date=2026-09-01&level=info&limit=500"
+      "/api/cluster/files/198.51.100.5/logs?date=2026-09-01&level=info&limit=500"
     );
   });
 
@@ -615,7 +615,7 @@ describe("Cluster views", () => {
         type: "job",
         data: {
           session: "s1",
-          ip: "10.0.0.5",
+          ip: "198.51.100.5",
           job: {
             event,
             job_id: id,

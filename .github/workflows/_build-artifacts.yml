@@ -40,6 +40,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cloud
+
       # Web bundle is platform-neutral; only build it once on linux/amd64
       # to keep the matrix focused on the Go cross-compile signal.
       - name: Set up pnpm

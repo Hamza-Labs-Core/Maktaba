@@ -36,7 +36,7 @@ export function ComponentDrawer({
   onResetSettings,
 }: {
   view: ComponentView | null;
-  /** the list's revision: the drawer reloads when anything changed */
+  /** the list's revision: the drawer reloads when it, or the row's status, changes */
   revision: number;
   titleOf: (id: string) => string;
   disabled: boolean;
@@ -50,6 +50,9 @@ export function ComponentDrawer({
   const [detail, setDetail] = useState<ComponentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const id = view?.id ?? null;
+  // the row's status as the list read it: an install's end or a phase a machine reports
+  // changes it but not the desired state's revision, and the drawer follows it as the row does
+  const live = view ? JSON.stringify(view) : "";
 
   useEffect(() => {
     if (!id) {
@@ -70,7 +73,7 @@ export function ComponentDrawer({
     return () => {
       alive = false;
     };
-  }, [id, revision, t]);
+  }, [id, revision, live, t]);
 
   if (!view) return null;
   const name = titleOf(view.id);

@@ -406,6 +406,18 @@ export const APPS = [
                 "A library in the Player on an Android phone",
                 "مكتبة في المشغّل على هاتف أندرويد"
               ),
+              shot(
+                "android-player-picker-phone",
+                "phone",
+                "Choosing a home in the Player on an Android phone",
+                "اختيار الجهاز الرئيسي في المشغّل على هاتف أندرويد"
+              ),
+              shot(
+                "android-player-code-phone",
+                "phone",
+                "Signing in with a code in the Player on an Android phone: the code and its QR code",
+                "تسجيل الدخول برمز في المشغّل على هاتف أندرويد: الرمز ورمز QR الخاص به"
+              ),
             ],
           },
           {
@@ -668,12 +680,18 @@ export const APPS = [
                 "The Live TV guide on an Apple TV: three channels and what is on each",
                 "دليل البث المباشر على آبل تي في: ثلاث قنوات وما يُعرض على كل منها"
               ),
+              shot(
+                "androidtv-code",
+                "wide",
+                "Signing in on an Android TV: the code, its QR code, and a phone that found the TV",
+                "تسجيل الدخول على أندرويد تي في: الرمز ورمز QR الخاص به، وهاتف وجد التلفاز"
+              ),
             ],
           },
           {
             p: t(
-              "The screenshots are from the Apple TV app. The Android TV app has the same sections, laid out for the Android TV remote.",
-              "هذه اللقطات من تطبيق آبل تي في. ولتطبيق أندرويد تي في الأقسام نفسها، مرتبةً لجهاز تحكم أندرويد تي في."
+              "The first two screenshots are from the Apple TV app, the sign-in from the Android TV app. The Android TV app has the same sections as the Apple TV app, laid out for the Android TV remote.",
+              "أول لقطتين من تطبيق آبل تي في، ولقطة تسجيل الدخول من تطبيق أندرويد تي في. ولتطبيق أندرويد تي في أقسام تطبيق آبل تي في نفسها، مرتبةً لجهاز تحكم أندرويد تي في."
             ),
           },
           { p: SHOTS_NOTE },

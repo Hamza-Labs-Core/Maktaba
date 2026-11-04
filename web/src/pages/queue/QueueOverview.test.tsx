@@ -26,7 +26,10 @@ vi.mock("../../lib/api", async () => {
 });
 vi.mock("../../lib/ws", () => ({ subscribe: hub.subscribe }));
 
+import arJson from "../../i18n/ar.json";
 import { QueueOverview } from "./QueueOverview";
+
+const ar = arJson as Record<string, string>;
 import { routeGet, renderAt } from "../../test/queueHarness";
 import {
   events,
@@ -334,6 +337,39 @@ describe("QueueOverview", () => {
     ).toBeInTheDocument();
     expect(document.documentElement.dir).toBe("rtl");
     document.documentElement.dir = "ltr";
+  });
+
+  it("titles each stage in Arabic, keeping the API's label for a stage with no words", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      setup({
+        stages: snapshotFixture.stages.map((s) =>
+          s.stage === "thumb_hash" ? { ...s, stage: "from_the_future", label: "Future step" } : s
+        ),
+        queues: snapshotFixture.queues.map((q) =>
+          q.stage === "thumb_hash" ? { ...q, stage: "from_the_future" } : q
+        ),
+      });
+      const card = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>('[data-stage="probe"]');
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(
+        within(card).getByRole("link", { name: ar["queue.stage.probe.title"]! })
+      ).toBeInTheDocument();
+      expect(card).not.toHaveTextContent("Length");
+      const tag = document.querySelector<HTMLElement>('[data-stage="tag"]')!;
+      expect(tag).toHaveTextContent(ar["queue.stage.tag.title"]!);
+      expect(
+        within(document.querySelector<HTMLElement>('[data-stage="from_the_future"]')!).getByText(
+          "Future step"
+        )
+      ).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem("mkt:locale");
+      document.documentElement.dir = "ltr";
+    }
   });
 
   it("falls back to polling /api/queues only after 10 s of stream silence", async () => {

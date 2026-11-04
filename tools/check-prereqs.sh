@@ -132,7 +132,7 @@ check() {
   fi
 
   local ver
-  ver=$(eval "$version_extract" 2>/dev/null | head -n1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -n1)
+  ver=$(eval "$version_extract" 2>/dev/null | sed -n 1p | grep -oE '[0-9]+(\.[0-9]+)+' | sed -n 1p)
   if [ -z "$ver" ]; then
     ver="(unknown version)"
   fi

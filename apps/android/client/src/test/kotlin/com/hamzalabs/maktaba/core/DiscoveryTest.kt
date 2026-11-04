@@ -8,7 +8,7 @@ import org.junit.Test
 import java.net.InetAddress
 
 class DiscoveryTest {
-    private val mac = InetAddress.getByName("192.168.50.177")
+    private val mac = InetAddress.getByName("203.0.113.177")
 
     /** As the live home announces itself (`dns-sd -L`, v0.3.20). */
     private val homeTxt = mapOf(
@@ -19,7 +19,7 @@ class DiscoveryTest {
     @Test
     fun aHomeIsReachedAtItsWebPort() {
         assertEquals(
-            FoundHome("Mahmouds-Mac-Studio", "http://192.168.50.177:8088", "28e21b45", "v0.3.20"),
+            FoundHome("Mahmouds-Mac-Studio", "http://203.0.113.177:8088", "28e21b45", "v0.3.20"),
             foundHome("Maktaba (Mahmouds-Mac-Studio)", mac, 8080, homeTxt),
         )
     }
@@ -33,7 +33,7 @@ class DiscoveryTest {
     fun anOlderHomeSaysLess() {
         val h = foundHome("Maktaba (attic)", mac, 8080, mapOf("version" to "v0.2.0", "api" to "/api"))!!
         assertEquals("attic", h.name)
-        assertEquals("the service's port when it names no web port", "http://192.168.50.177:8080", h.url)
+        assertEquals("the service's port when it names no web port", "http://203.0.113.177:8080", h.url)
         assertNull(h.id)
     }
 

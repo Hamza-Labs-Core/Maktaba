@@ -7,14 +7,14 @@ import Testing
 /// login keychain by a newly signed app asks the person), and tokens move once to the
 /// data-protection keychain.
 @Suite struct Tokens {
-    let home = URL(string: "http://192.168.50.177:8088")!
+    let home = URL(string: "http://203.0.113.177:8088")!
 
     func store(_ primary: FakeSecrets, _ legacy: FakeSecrets? = nil) -> TokenStore {
         TokenStore(service: "test.\(UUID().uuidString)", home: home, primary: primary, legacy: legacy)
     }
 
     @Test func readsTheKeychainOnceForManyRequests() {
-        let primary = FakeSecrets(["http://192.168.50.177:8088#access": "a1"])
+        let primary = FakeSecrets(["http://203.0.113.177:8088#access": "a1"])
         let tokens = store(primary)
         for _ in 0..<50 { #expect(tokens.access == "a1") }
         #expect(tokens.refresh == nil)
@@ -37,10 +37,10 @@ import Testing
 
     @Test func movesATokenOnceFromTheLoginKeychain() {
         let primary = FakeSecrets()
-        let legacy = FakeSecrets(["http://192.168.50.177:8088#refresh": "r-old"])
+        let legacy = FakeSecrets(["http://203.0.113.177:8088#refresh": "r-old"])
         let tokens = store(primary, legacy)
         #expect(tokens.refresh == "r-old")
-        #expect(primary.values["http://192.168.50.177:8088#refresh"] == "r-old")
+        #expect(primary.values["http://203.0.113.177:8088#refresh"] == "r-old")
         #expect(legacy.values.isEmpty)
         #expect(tokens.refresh == "r-old")
         #expect(legacy.reads == 1)
@@ -49,12 +49,12 @@ import Testing
     /// An ad-hoc build may not use the data-protection keychain: the login keychain still works.
     @Test func aBuildWithoutTheEntitlementKeepsTheLoginKeychain() {
         let primary = FakeSecrets(failing: errSecMissingEntitlement)
-        let legacy = FakeSecrets(["http://192.168.50.177:8088#access": "a-old"])
+        let legacy = FakeSecrets(["http://203.0.113.177:8088#access": "a-old"])
         let tokens = store(primary, legacy)
         #expect(tokens.access == "a-old")
-        #expect(legacy.values["http://192.168.50.177:8088#access"] == "a-old")
+        #expect(legacy.values["http://203.0.113.177:8088#access"] == "a-old")
         tokens.save(AuthTokens(accessToken: "a3", refreshToken: "r3", user: nil))
-        #expect(legacy.values["http://192.168.50.177:8088#access"] == "a3")
+        #expect(legacy.values["http://203.0.113.177:8088#access"] == "a3")
         #expect(tokens.access == "a3")
     }
 

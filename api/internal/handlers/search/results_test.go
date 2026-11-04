@@ -68,6 +68,10 @@ func searchDB(t *testing.T) *sql.DB {
 		`CREATE TABLE transcripts (id TEXT PRIMARY KEY, video_id TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)`,
 		`CREATE TABLE transcript_segments (id INTEGER PRIMARY KEY AUTOINCREMENT, transcript_id TEXT NOT NULL,
 			seq INTEGER NOT NULL, start_sec REAL NOT NULL, end_sec REAL NOT NULL, text TEXT NOT NULL)`,
+		// the real schema's indexes on the join (0012): without them each passage query
+		// scanned every segment once per transcript
+		`CREATE INDEX transcript_segments_time_idx ON transcript_segments (transcript_id, start_sec)`,
+		`CREATE INDEX transcripts_video_idx ON transcripts (video_id)`,
 	} {
 		if _, err := db.Exec(st); err != nil {
 			t.Fatal(err)
@@ -86,12 +90,36 @@ type fixture struct {
 	t   *testing.T
 	db  *sql.DB
 	seq int
+	// tx, inside batch: the writes go in one transaction
+	tx *sql.Tx
 }
 
 func (f *fixture) exec(q string, args ...any) {
 	f.t.Helper()
-	if _, err := f.db.Exec(q, args...); err != nil {
+	var err error
+	if f.tx != nil {
+		_, err = f.tx.Exec(q, args...)
+	} else {
+		_, err = f.db.Exec(q, args...)
+	}
+	if err != nil {
 		f.t.Fatalf("%s: %v", q, err)
+	}
+}
+
+// batch runs fill's writes in one transaction: a commit per row (each a locked write
+// of the file) was most of a paging test's time under -race.
+func (f *fixture) batch(fill func()) {
+	f.t.Helper()
+	tx, err := f.db.Begin()
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	f.tx = tx
+	fill()
+	f.tx = nil
+	if err := tx.Commit(); err != nil {
+		f.t.Fatal(err)
 	}
 }
 
@@ -389,12 +417,16 @@ func TestSearch_RespectsLibraryACL(t *testing.T) {
 func TestResults_StablePaging(t *testing.T) {
 	db := searchDB(t)
 	f := &fixture{t: t, db: db}
-	f.library(libA, "L")
-	for i := 0; i < 30; i++ {
-		id := fmt.Sprintf("v%02d", i)
-		f.video(id, libA, "Tafsir "+id, 60)
-		f.transcript("t"+id, id, true, repeat("tafsir", i+1)...)
-	}
+	f.batch(func() {
+		f.library(libA, "L")
+		for i := 0; i < 30; i++ {
+			id := fmt.Sprintf("v%02d", i)
+			f.video(id, libA, "Tafsir "+id, 60)
+			// one passage naming the word i+1 times: the best passage ranks the videos
+			// (as i+1 passages of one would, by count), with a thirtieth of the rows
+			f.transcript("t"+id, id, true, strings.TrimSpace(strings.Repeat("tafsir ", i+1)))
+		}
+	})
 	h := router(&Handler{DB: db})
 	resp := decode[Response](t, call(t, h, admin, http.MethodPost, "/api/search", `{"q":"tafsir","mode":"fts","view":"grid"}`), 200)
 	if resp.PageSize != 24 || len(resp.TranscriptVideos) != 24 || resp.TranscriptTotal != 30 ||
@@ -407,7 +439,7 @@ func TestResults_StablePaging(t *testing.T) {
 		t.Fatalf("order %v", first)
 	}
 	// more matches for the last video: the saved order must not move
-	f.transcript("tnew", "v00", true, repeat("tafsir", 100)...)
+	f.transcript("tnew", "v00", true, strings.TrimSpace(strings.Repeat("tafsir ", 100)))
 	f.exec(`UPDATE transcripts SET is_active = 0 WHERE id = 'tv00'`)
 	var all []string
 	for off := 0; off < 30; off += 20 {

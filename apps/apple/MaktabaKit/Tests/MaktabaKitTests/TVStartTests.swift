@@ -16,7 +16,7 @@ import Testing
 
     @Test func listsANearbyHomeOnceByItsExactAddress() throws {
         let kitchen = try #require(URL(string: "http://kitchen.local:8088"))
-        let moved = try #require(URL(string: "http://192.168.1.9:8088"))
+        let moved = try #require(URL(string: "http://192.0.2.9:8088"))
         let known = [Home(url: kitchen, name: "Kitchen", homeID: "0a1b")]
         let found = [
             HomeBrowser.Found(name: "Kitchen", url: kitchen, homeID: "0a1b"),
@@ -30,17 +30,17 @@ import Testing
     @Test func readsWhatWasTyped() throws {
         #expect(TVStart.typed("  ") == .invalid)
         #expect(TVStart.typed("not an address at all") == .invalid)
-        guard case let .addresses(urls) = TVStart.typed("192.168.1.20:8088") else {
+        guard case let .addresses(urls) = TVStart.typed("maktaba.local:8088") else {
             Issue.record("an address")
             return
         }
-        #expect(urls.first?.absoluteString == "http://192.168.1.20:8088")
-        guard case let .link(link) = TVStart.typed("maktaba://connect?id=h&n=Den&u=http%3A%2F%2F10.0.0.2%3A8088") else {
+        #expect(urls.first?.absoluteString == "http://maktaba.local:8088")
+        guard case let .link(link) = TVStart.typed("maktaba://connect?id=h&n=Den&u=http%3A%2F%2F198.51.100.2%3A8088") else {
             Issue.record("a link")
             return
         }
         #expect(link.name == "Den")
-        #expect(link.urls.map(\.absoluteString) == ["http://10.0.0.2:8088"])
+        #expect(link.urls.map(\.absoluteString) == ["http://198.51.100.2:8088"])
     }
 
     @Test func everyWordInBothLanguages() {

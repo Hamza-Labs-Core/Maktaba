@@ -36,6 +36,12 @@ jobs:
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum') }}
 
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server
+
       - name: Postgres 16 servers for the tests
         # two clusters with logical replication: one no test has touched (the tests that
         # make the cluster-wide roles themselves), one for the rest and the two-machine run
@@ -103,7 +109,7 @@ jobs:
         run: |
           sudo apt-get -o Acquire::Retries=3 update -qq
           sudo apt-get -o Acquire::Retries=3 install -y -qq --no-install-recommends ffmpeg >/dev/null
-          ffmpeg -hide_banner -version | head -1
+          ffmpeg -hide_banner -version | sed -n 1p
 
       - name: Machine roles sign in with their passwords (the two-machine runs)
         # the clusters run with trust auth; a machine's role must prove the password the home
@@ -176,6 +182,12 @@ jobs:
         uses: ./.github/actions/go-cache
         with:
           go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher
 
       - name: Postgres 16 programs, and a Python with venv (the releases' pipeline environments)
         run: |

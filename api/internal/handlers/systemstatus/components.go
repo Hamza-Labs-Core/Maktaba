@@ -15,11 +15,15 @@ import (
 // failed, or stayed degraded longer than componentDegradedAfter, needs a look. Off,
 // stopped and waiting are what an admin chose (or follow from it) and never count; a
 // component waiting on a requirement that failed is not counted either: the
-// requirement's own failure is the item.
+// requirement's own failure is the item. A component its desired state turns off or
+// holds never counts either, whatever its rows still say: a part that was stopped before
+// it reported the change (a process the supervisor ends at once) keeps its last word.
 
-// ComponentStatuses reads every machine's component_status rows (*store.Store).
+// ComponentStatuses reads every machine's component_status rows and desired state
+// (*store.Store).
 type ComponentStatuses interface {
 	Statuses(ctx context.Context) ([]store.Status, error)
+	Desired(ctx context.Context, machine string) (map[string]store.Desired, int64, error)
 }
 
 // componentDegradedAfter is how long a component may stay degraded before it counts.
@@ -35,9 +39,13 @@ type ComponentIssue struct {
 }
 
 // componentIssues are the failed components, then the ones degraded too long: home
-// first, then by machine and id.
-func componentIssues(rows []store.Status, now time.Time) (failed, degraded []ComponentIssue) {
+// first, then by machine and id. off (nil: none) reports a component a machine's desired
+// state turns off or holds: it is left out.
+func componentIssues(rows []store.Status, now time.Time, off func(machine, id string) bool) (failed, degraded []ComponentIssue) {
 	for k, s := range store.RollupAll(rows) {
+		if off != nil && off(k.Machine, k.ID) {
+			continue
+		}
 		is := ComponentIssue{Machine: k.Machine, ID: k.ID, Phase: s.Phase, Reason: s.Reason(), Since: s.Since}
 		switch s.Phase {
 		case components.PhaseFailed:
@@ -77,7 +85,7 @@ func checkComponents(ctx context.Context, e *env) []Item {
 			"The components' health cannot be read: "+errText(err))
 		return one(it)
 	}
-	failed, degraded := componentIssues(rows, e.h.now())
+	failed, degraded := componentIssues(rows, e.h.now(), offOnPurpose(ctx, e.h.Components, rows))
 	it.Details = map[string]any{"failed": nonNilIssues(failed), "degraded": nonNilIssues(degraded)}
 	words := func(is ComponentIssue) string {
 		if is.Reason == "" {
@@ -102,6 +110,33 @@ func checkComponents(ctx context.Context, e *env) []Item {
 		it.set(StatusOK, "components_ok", nil, "All parts running.")
 	}
 	return one(it)
+}
+
+// offOnPurpose reports a component that each machine's desired state (read once per
+// machine in rows) turns off, leaves uninstalled or holds: a switchable component that
+// runs (not an asset: a file has no run, and a failed install of one is its own item).
+// A machine whose desired state cannot be read has none left out.
+func offOnPurpose(ctx context.Context, src ComponentStatuses, rows []store.Status) func(machine, id string) bool {
+	cat := components.Default()
+	desired := map[string]map[string]store.Desired{}
+	for _, r := range rows {
+		if _, seen := desired[r.Machine]; seen {
+			continue
+		}
+		d, _, err := src.Desired(ctx, r.Machine)
+		if err != nil {
+			d = nil
+		}
+		desired[r.Machine] = d
+	}
+	return func(machine, id string) bool {
+		c, ok := cat.Get(id)
+		if !ok || !c.Switchable || c.Kind == components.KindAsset {
+			return false
+		}
+		d, has := desired[machine][id]
+		return has && (d.Hold != nil || d.Want != components.WantEnabled)
+	}
 }
 
 func nonNilIssues(s []ComponentIssue) []ComponentIssue {

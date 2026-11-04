@@ -118,13 +118,16 @@ WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage FROM processing_jobs
      WHERE state = 'failed' OR (state = 'pending' AND (parked_on IS NOT NULL OR error IS NOT NULL))
 ), latest AS (
-    SELECT DISTINCT ON (j.subject_kind, j.subject_id, j.stage)
-           j.id, j.stage, j.subject_kind, j.subject_id, j.state, j.library_id, j.attempts,
-           j.max_attempts, j.error, j.error_cause, j.failure_class, j.parked_on,
-           j.finished_at, j.created_at
-      FROM processing_jobs j
-      JOIN f ON f.subject_kind = j.subject_kind AND f.subject_id = j.subject_id AND f.stage = j.stage
-     ORDER BY j.subject_kind, j.subject_id, j.stage, j.id DESC
+    -- each subject's newest row: one backward step of the subject history index
+    SELECT l.*
+      FROM f
+      CROSS JOIN LATERAL (
+           SELECT j.id, j.stage, j.subject_kind, j.subject_id, j.state, j.library_id, j.attempts,
+                  j.max_attempts, j.error, j.error_cause, j.failure_class, j.parked_on,
+                  j.finished_at, j.created_at
+             FROM processing_jobs j
+            WHERE j.subject_kind = f.subject_kind AND j.subject_id = f.subject_id AND j.stage = f.stage
+            ORDER BY j.id DESC LIMIT 1) l
 ), items AS (
     SELECT l.*, v.path AS path, v.missing_confirmed_at AS missing_confirmed_at,
            COALESCE(l.library_id, v.library_id) AS lib_id,

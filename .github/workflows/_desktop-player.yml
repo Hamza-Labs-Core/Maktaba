@@ -93,7 +93,7 @@ jobs:
               files=$(dpkg-deb -c "${deb[0]}")
               info=$(rpm -qip "${rpm[0]}")
               for want in '/bin/maktaba-player$' '/lib/app/.*javafx-media' '/lib/runtime/'; do
-                grep -qE "${want}" <<<"${files}" || { echo "::error::the .deb has nothing matching ${want}"; grep -E 'bin/|lib/app/' <<<"${files}" | head -40; exit 1; }
+                grep -qE "${want}" <<<"${files}" || { echo "::error::the .deb has nothing matching ${want}"; grep -E 'bin/|lib/app/' <<<"${files}" | sed -n 1,40p; exit 1; }
               done
               grep -q '^Name *: maktaba-player' <<<"${info}" || { echo "::error::the .rpm is not maktaba-player"; echo "${info}"; exit 1; }
               ;;

@@ -21,6 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -42,6 +43,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.ClusterOverview
@@ -172,7 +174,7 @@ internal fun AttentionContent(
                     Fact(stringResource(R.string.stage), g.stage)
                     Fact(stringResource(R.string.cause), causeKind(g.cause))
                     g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
-                        Text(readableMessage(it), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(say.sampleMessage(it), style = MaterialTheme.typography.bodyMedium.copy(textDirection = TextDirection.Content), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     val cannot = say.cannotRetry(g)
                     if (cannot == null) {
@@ -203,7 +205,8 @@ internal fun AttentionContent(
                         Column {
                             Text(g.stage)
                             g.sampleMessage?.takeIf { it.isNotEmpty() }?.let {
-                                Text(readableMessage(it), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                // the home's English reads left to right in an Arabic list, the app's words in their own
+                                Text(say.sampleMessage(it), maxLines = 2, overflow = TextOverflow.Ellipsis, style = LocalTextStyle.current.copy(textDirection = TextDirection.Content))
                             }
                             // no Retry: the row says why, and what fixes it
                             if (cannot != null) Text(cannot, Modifier.testTag("cannot-retry"), color = MaterialTheme.colorScheme.tertiary)

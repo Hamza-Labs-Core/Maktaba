@@ -106,7 +106,7 @@ function proc(session: string, nodeId: string | null, jobs = 0): ClusterProcess 
     kind: nodeId ? "node" : "home",
     node_id: nodeId,
     node_name: nodeId ? "Alpha" : null,
-    ip: nodeId ? "10.0.0.5" : "10.0.0.2",
+    ip: nodeId ? "198.51.100.5" : "198.51.100.2",
     host: nodeId ? "alpha" : "nas",
     worker_id: `${session}-worker`,
     pid: 1,

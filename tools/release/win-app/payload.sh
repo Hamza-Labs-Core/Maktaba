@@ -233,7 +233,7 @@ pgvector_build() {
     vswhere="$(cygpath -u -F 42)/Microsoft Visual Studio/Installer/vswhere.exe"   # 42: Program Files (x86)
     [ -f "$vswhere" ] || { log "pgvector: no Visual Studio (vswhere.exe)"; return 1; }
     vs="$("$vswhere" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
-        -property installationPath | tr -d '\r' | head -1)"
+        -property installationPath | tr -d '\r' | sed -n 1p)"
     if [ -z "$vs" ] || [ ! -f "$vs/VC/Auxiliary/Build/vcvars64.bat" ]; then
         log "pgvector: no Visual Studio with the C++ build tools (vcvars64.bat)"
         return 1
@@ -319,7 +319,7 @@ cp "${ff[0]}/bin/ffmpeg.exe" "${ff[0]}/bin/ffprobe.exe" "$OUT/ffmpeg/"
 cp "${ff[0]}/LICENSE" "$OUT/licenses/ffmpeg-gpl-3.0.txt"
 # the build's configuration and the version of every library linked in
 cp "${ff[0]}/README.txt" "$OUT/licenses/ffmpeg-build.txt"
-source_commit="$(sed -n 's/^Source Code: *//p' "${ff[0]}/README.txt" | tr -d '\r' | head -1)"
+source_commit="$(sed -n 's/^Source Code: *//p' "${ff[0]}/README.txt" | tr -d '\r' | sed -n 1p)"
 cat >"$OUT/licenses/ffmpeg.txt" <<EOF
 ffmpeg and ffprobe $FFMPEG_VERSION, built by Gyan Doshi (https://www.gyan.dev/ffmpeg/builds/),
 configured with --enable-gpl --enable-version3: licensed under the GNU General Public

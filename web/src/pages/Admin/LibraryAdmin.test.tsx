@@ -4,7 +4,7 @@
 // (other settings kept), the library's access saved as grants, an unknown
 // library, a load error, the admins-only gate, Arabic and axe.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Route } from "react-router-dom";
 
@@ -22,6 +22,7 @@ vi.mock("../../lib/api", async () => {
 
 import { ApiError } from "../../lib/api";
 import { LibraryAdmin, LIBRARY_SECTIONS } from "./LibraryAdmin";
+import { LIBRARIES_SLOW_MS, LIBRARIES_TIMEOUT_MS } from "../../components/libdash/useLibraryBoard";
 import { convertSettings } from "./library/sections";
 import { renderPage, memberUser } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
@@ -306,7 +307,42 @@ describe("LibraryAdmin", () => {
     fail = false;
     await userEvent.click(await screen.findByRole("button", { name: "Try again" }));
     await ready();
-    expect(within(section("Queue status")).getAllByText("Loading…").length).toBeGreaterThan(0);
+    // the queue numbers failed: said so, with Try again, never an endless Loading
+    const queues = section("Queue status");
+    expect(within(queues).getByText("The queue numbers could not be read.")).toBeInTheDocument();
+    expect(within(queues).getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("queue numbers that never answer end in Try again, not an endless Loading", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let answer = false;
+      open({
+        "/api/queues/libraries": () =>
+          answer ? { items: librariesFixture } : new Promise(() => {}), // never settles
+      });
+      await ready();
+      const queues = () => section("Queue status");
+      expect(within(queues()).getByText("Loading…")).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LIBRARIES_SLOW_MS + 100);
+      });
+      expect(within(queues()).getByText(/This is taking longer than usual\./)).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LIBRARIES_TIMEOUT_MS);
+      });
+      expect(
+        within(queues()).getByText(/The queue numbers could not be read\./)
+      ).toBeInTheDocument();
+      answer = true;
+      await act(async () => {
+        within(queues()).getByRole("button", { name: "Try again" }).click();
+      });
+      await waitFor(() => expect(within(queues()).queryByText(/could not be read/)).toBeNull());
+      expect(within(queues()).queryByText("Loading…")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("is the admins' page: a member sees the admins-only message and nothing is read", async () => {
@@ -325,6 +361,9 @@ describe("LibraryAdmin", () => {
       expect(document.documentElement.getAttribute("dir")).toBe("rtl");
       expect(screen.getByRole("navigation", { name: "أقسام هذه المكتبة" })).toBeInTheDocument();
       expect(screen.getByRole("region", { name: "نظرة عامة" })).toBeInTheDocument();
+      // the queues' stage titles in Arabic, never the API's English label
+      await waitFor(() => expect(screen.getAllByText("الربط").length).toBeGreaterThan(0));
+      expect(screen.queryByText("Link")).toBeNull();
     } finally {
       localStorage.removeItem("mkt:locale");
     }

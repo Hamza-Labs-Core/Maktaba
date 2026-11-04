@@ -254,6 +254,43 @@ func TestProcesses(t *testing.T) {
 	want(t, got[1], StatusDegraded, "process_restarting")
 	want(t, got[2], StatusDown, "process_crash_loop")
 
+	// a process its component keeps from running (the language model server of an llm
+	// that is off, the relay of a held cloud link) is ok; one that should run and has
+	// stopped is not
+	sup2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"processes":[{"role":"ollama","state":"held","blocked":true,"component":"llm"},
+			{"role":"relay","state":"held","component":"cloud.link"},
+			{"role":"pipeline","instance":"index","state":"exited","blocked":true,"component":"search.semantic"},
+			{"role":"streaming","state":"exited","component":"livetv"}]}`))
+	}))
+	defer sup2.Close()
+	held := checkProcesses(context.Background(), newEnv(&Handler{SupervisorURL: sup2.URL}))
+	if len(held) != 4 {
+		t.Fatalf("processes: %+v", held)
+	}
+	want(t, held[0], StatusOK, "process_held")
+	if held[0].Details["component"] != "llm" {
+		t.Fatalf("details: %+v", held[0].Details)
+	}
+	want(t, held[1], StatusOK, "process_held")
+	want(t, held[2], StatusOK, "process_held")
+	// one of a role's several processes is its own item: its id and details name the
+	// instance, so two pipeline processes never share an id or a name
+	if held[2].ID != "process:pipeline-index" || held[2].Details["instance"] != "index" ||
+		held[2].Details["role"] != "pipeline" {
+		t.Fatalf("instance: %s %+v", held[2].ID, held[2].Details)
+	}
+	if got[2].ID != "process:pipeline" || got[2].Details["instance"] != nil {
+		t.Fatalf("a role with one process: %s %+v", got[2].ID, got[2].Details)
+	}
+	want(t, held[3], StatusDegraded, "process_stopped")
+	if st, _, _, _ := rollup(held); st != StatusDegraded {
+		t.Fatalf("a stopped process that should run: overall %s", st)
+	}
+	if st, code, _, _ := rollup(held[:3]); st != StatusOK || code != "overall_ok" {
+		t.Fatalf("only held processes: overall %s %s", st, code)
+	}
+
 	gone := checkProcesses(context.Background(), newEnv(&Handler{SupervisorURL: "http://127.0.0.1:1"}))
 	want(t, only(t, gone), StatusDegraded, "process_supervisor_unreachable")
 }
@@ -391,12 +428,15 @@ func TestDependencies(t *testing.T) {
 		Cols: []string{"name", "healthy", "message", "checked_at", "since"},
 		Rows: [][]driver.Value{
 			{"dependency:model:tagcheck", false, "http://ollama:11434 does not answer", t0.Add(-30 * time.Second), t0.Add(-time.Hour)},
+			{"dependency:model:display", false, "llm_off", t0.Add(-30 * time.Second), t0.Add(-time.Hour)},
 			{"dependency:share:/mnt/nas", true, "answers", t0.Add(-time.Minute), t0.Add(-time.Hour)},
 			{"resource:disk", true, "enough free space", t0.Add(-time.Hour), t0.Add(-48 * time.Hour)},
 			{"resource:shm", true, "", "2026-10-22T11:59:00.000Z", "2026-10-21T11:59:00.000Z"},
 		}})
 	got := byID(checkDependencies(context.Background(), newEnv(&Handler{DB: db.DB})))
 	want(t, got["dependency:dependency:model:tagcheck"], StatusDown, "dependency_down")
+	// the bundled model server while the language model is off: off on purpose, not down
+	want(t, got["dependency:dependency:model:display"], StatusOK, "dependency_llm_off")
 	want(t, got["dependency:dependency:share:/mnt/nas"], StatusOK, "dependency_ok")
 	want(t, got["dependency:resource:disk"], StatusDegraded, "dependency_stale")
 	shm := got["dependency:resource:shm"]

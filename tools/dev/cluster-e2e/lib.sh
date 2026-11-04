@@ -111,7 +111,7 @@ e2e_run_roles() {
   local run=$1 f id
   for f in "$run"/machine-*/node.json; do
     [[ -f $f ]] || continue
-    id=$(sed -n 's/.*"node_id": *"\([0-9a-f-]*\)".*/\1/p' "$f" | head -1 | tr -d '-')
+    id=$(sed -n 's/.*"node_id": *"\([0-9a-f-]*\)".*/\1/p' "$f" | sed -n 1p | tr -d '-')
     [[ ${#id} == 32 ]] && printf 'maktaba_node_%s\n' "$id"
   done
   if [[ -f $run/state.env ]]; then

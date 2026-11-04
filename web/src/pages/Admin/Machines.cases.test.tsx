@@ -570,7 +570,7 @@ describe("Machines (test-cases/admin-machines.md)", () => {
     ["files and nodes null", { files: null, nodes: null }, "No machine has saved files yet."],
     [
       "node lists null",
-      { nodes: [{ ip: "10.0.0.5", processes: null, dates: null, archived_dates: null }] },
+      { nodes: [{ ip: "198.51.100.5", processes: null, dates: null, archived_dates: null }] },
       null,
     ],
     [
@@ -620,7 +620,7 @@ describe("Machines (test-cases/admin-machines.md)", () => {
     route({
       "/api/cluster": { home: storedHome, nodes: [] },
       "/api/cluster/storage-servers": {
-        servers: [{ name: "home-nas", addresses: ["10.0.0.2"], char_map: "none" }],
+        servers: [{ name: "home-nas", addresses: ["198.51.100.2"], char_map: "none" }],
       },
     });
     del.mockResolvedValue(undefined);
@@ -634,12 +634,12 @@ describe("Machines (test-cases/admin-machines.md)", () => {
     await user.type(within(sect).getByLabelText("Name used in paths"), " nas2 ");
     await user.type(
       within(sect).getByLabelText("Addresses (IPs, host names, .local name)"),
-      "10.0.0.3, nas2.local 10.0.0.4,,"
+      "198.51.100.3, nas2.local 198.51.100.4,,"
     );
     await user.selectOptions(within(sect).getByLabelText(/Names with/), "sfm");
     await user.click(within(sect).getByRole("button", { name: "Save" }));
     expect(put).toHaveBeenCalledWith("/api/cluster/storage-servers/nas2", {
-      addresses: ["10.0.0.3", "nas2.local", "10.0.0.4"],
+      addresses: ["198.51.100.3", "nas2.local", "198.51.100.4"],
       char_map: "sfm",
     });
     await waitFor(() => expect(within(sect).queryByLabelText("Name used in paths")).toBeNull());

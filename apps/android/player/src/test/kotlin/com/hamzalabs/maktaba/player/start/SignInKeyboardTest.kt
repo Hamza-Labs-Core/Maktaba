@@ -99,7 +99,7 @@ class SignInKeyboardTest {
 
     @Test
     fun homeSignInNextThenGo() {
-        session.use(Home(url = "http://192.168.1.20:8088", name = "Darwish home"))
+        session.use(Home(url = "http://192.0.2.20:8088", name = "Maktaba Home"))
         compose.setContent { MaktabaTheme(ThemeMode.Dark) { Surface { SignIn(session, MaktabaApp.Player) } } }
         shows("signin-username")
 
@@ -199,7 +199,7 @@ class SignInKeyboardTest {
     }
 
     private fun homeSignIn() {
-        session.use(Home(url = "http://192.168.1.20:8088", name = "Darwish home"))
+        session.use(Home(url = "http://192.0.2.20:8088", name = "Maktaba Home"))
         compose.setContent { MaktabaTheme(ThemeMode.Dark) { Surface { SignIn(session, MaktabaApp.Player) } } }
         shows("signin-username")
         compose.onNodeWithTag("signin-username").performClick()

@@ -54,6 +54,8 @@ export interface YouTubeSourceBrief {
   url: string;
   mode: "off" | "new_and_backfill" | "new_only";
   last_on_mode: "new_and_backfill" | "new_only" | null;
+  /** slot 0182: made from the library's linked videos (off) */
+  derived?: boolean;
 }
 
 /** The channel a library with no source looks like (POST …/youtube/guess). */
@@ -62,12 +64,15 @@ export interface YouTubeGuess {
   external_id: string | null;
   url: string | null;
   title: string | null;
-  evidence: "info_json" | "filename" | null;
+  /** linked: the derivation's (slot 0182), from the library's linked videos */
+  evidence: "info_json" | "filename" | "linked" | null;
   sample_youtube_id: string | null;
   ids_found: number;
   ids_matched: number;
   looked_at: string;
   followed_by: { id: string; name: string }[];
+  /** slot 0182: its linked videos' channel or playlist is another library's source */
+  derived?: boolean;
 }
 
 /** A library's YouTube on its card. */
