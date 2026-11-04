@@ -98,21 +98,21 @@ func generate(t *testing.T, dist string) ([]byte, *rv.ComponentsIndex, []string)
 }
 
 // The catalog's packs: an asset not in the payload whose source is its own pack, on each
-// of its platforms; deferred ones and payload assets left out.
+// of its platforms; deferred ones (runtime.ollama off the Mac) and payload assets left out.
 func TestPacks(t *testing.T) {
 	got := map[string]bool{}
 	for _, p := range Packs(components.Default(), "") {
 		got[p.ID+" "+p.Platform] = true
 	}
 	for _, want := range []string{"runtime.ml darwin-arm64", "runtime.ml windows-amd64", "runtime.ml linux-amd64",
-		"runtime.ml linux-arm64", "tool.yt-dlp linux-amd64"} {
+		"runtime.ml linux-arm64", "tool.yt-dlp linux-amd64", "runtime.ollama darwin-arm64"} {
 		if !got[want] {
 			t.Errorf("no pack %s", want)
 		}
 	}
 	for k := range got {
-		id, _, _ := strings.Cut(k, " ")
-		if id == "runtime.ollama" || id == "model.refine" || strings.HasPrefix(id, "model.whisper") {
+		id, platform, _ := strings.Cut(k, " ")
+		if (id == "runtime.ollama" && platform != "darwin-arm64") || id == "model.refine" || strings.HasPrefix(id, "model.whisper") {
 			t.Errorf("unexpected pack %s", k)
 		}
 	}

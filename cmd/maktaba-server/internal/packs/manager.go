@@ -65,6 +65,9 @@ type Manager struct {
 	Watermark string
 	// HFHub is the Hugging Face cache's hub folder (<HF_HOME>/hub) models go into.
 	HFHub string
+	// OllamaModels is the bundled model server's store (<state>/models/ollama) the
+	// language models go into.
+	OllamaModels string
 	// FreeDisk is the free bytes of the disk a path is on (0: unknown, not checked).
 	FreeDisk func(path string) uint64
 	// OnDisk answers for an asset installed before packs (a Full home's venv, a model the
@@ -199,6 +202,9 @@ func (m *Manager) Installed(id string) bool {
 			}
 		}
 	}
+	if src := comp.SourceFor(m.Platform); strings.HasPrefix(src, "ollama:") && m.ollamaInstalled(src) {
+		return true
+	}
 	return m.OnDisk != nil && m.OnDisk(id)
 }
 
@@ -275,6 +281,8 @@ func (m *Manager) install(ctx context.Context, id string, s *session, seen map[s
 		return m.installPack(ctx, s, comp)
 	case strings.HasPrefix(src, "hf:"):
 		return m.installModel(ctx, s, comp, src)
+	case strings.HasPrefix(src, "ollama:"):
+		return m.installOllama(ctx, s, comp, src)
 	}
 	return fail(ReasonInstallFailed, map[string]any{"source": src}, "%s from %s cannot be installed here yet", id, src)
 }
@@ -514,7 +522,7 @@ func (m *Manager) Remove(ctx context.Context, id string) (err error) {
 	}
 	defer unlock()
 	src := comp.SourceFor(m.Platform)
-	if !strings.HasPrefix(src, "pack:") && !strings.HasPrefix(src, "hf:") {
+	if !strings.HasPrefix(src, "pack:") && !strings.HasPrefix(src, "hf:") && !strings.HasPrefix(src, "ollama:") {
 		return fail(ReasonInstallFailed, map[string]any{"source": src}, "%s from %s cannot be removed here yet", id, src)
 	}
 	if err := m.Layout.markRemoving(id); err != nil {
@@ -557,6 +565,10 @@ func (m *Manager) Remove(ctx context.Context, id string) (err error) {
 			_ = os.RemoveAll(filepath.Join(dir, f))
 		}
 		_ = os.Remove(filepath.Join(dir, CurrentFile))
+	case strings.HasPrefix(src, "ollama:"):
+		if err := m.removeOllama(comp, src); err != nil {
+			return err
+		}
 	}
 	m.percent(id, DetailRemoving, 90)
 	_ = layout.WriteFileAtomic(filepath.Join(dir, removedFile), []byte(m.now().UTC().Format(time.RFC3339)+"\n"), 0o644)

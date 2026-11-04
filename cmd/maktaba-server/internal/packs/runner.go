@@ -76,7 +76,7 @@ func (r *Runner) Desired(desired map[string]store.Desired) {
 		pd, phas := prev[id]
 		changed := !first && has && (!phas || pd.Want != d.Want)
 		src := comp.SourceFor(r.M.Platform)
-		isPack, isModel := strings.HasPrefix(src, "pack:"), strings.HasPrefix(src, "hf:")
+		isPack, isModel := strings.HasPrefix(src, "pack:"), components.IsModelSource(src)
 		if !isPack && !isModel || r.M.Busy(id) {
 			continue
 		}

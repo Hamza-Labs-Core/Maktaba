@@ -28,6 +28,9 @@ type ModelFile struct {
 	Repo string // org/name on Hugging Face
 	Rev  string // the 40-hex commit
 	Path string // the file's path in the repo
+	// Ollama: a language model's file (Repo its name, library/qwen2.5; Rev the pinned
+	// manifest digest; Path blobs/sha256-<hex>), from Ollama's registry
+	Ollama bool
 }
 
 // Source is where packs and models come from: the network (the release's files on
@@ -59,6 +62,8 @@ type Net struct {
 	Releases string
 	// HF is Hugging Face's base (default https://huggingface.co).
 	HF string
+	// OllamaRegistry is Ollama's model registry (default https://registry.ollama.ai).
+	OllamaRegistry string
 	// Token is the Hugging Face token for a gated model ("" none).
 	Token func() string
 	// URLs, when set, are the release's files by name (an update's job: the asset URLs
@@ -119,6 +124,11 @@ func (n *Net) small(ctx context.Context, u string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return n.fetchSmall(req)
+}
+
+// fetchSmall does req and reads its body, at most smallLimit bytes.
+func (n *Net) fetchSmall(req *http.Request) ([]byte, error) {
 	resp, err := n.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -145,6 +155,9 @@ func (n *Net) Pack(ctx context.Context, version, name, dst string, size int64, p
 }
 
 func (n *Net) Model(ctx context.Context, f ModelFile, dst string, size int64, progress func(int64)) error {
+	if f.Ollama {
+		return n.resume(ctx, n.ollamaURL(f), "", dst, size, progress)
+	}
 	var segs []string
 	for _, s := range strings.Split(f.Path, "/") {
 		segs = append(segs, url.PathEscape(s))

@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -166,6 +167,25 @@ func TestPacksRoutesRefuseOtherPaths(t *testing.T) {
 
 // The venv a pack brings: the extras of what is installed, the packs' wheels alone when
 // each has its pack; a removal keeps the others' and builds with none when nothing is left.
+// Story 51.16: the Manager puts the runtime.ollama pack and the language models where the
+// model server looks for them (llmserver's pack folder, the bundled server's store).
+func TestPacksManagerPutsOllamaWhereTheServerLooks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(home, "server.toml"))
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	t.Setenv("MAKTABA_OLLAMA_BIN", "")
+	cfg := config.Defaults()
+	m := newPacksManager(cfg, "", io.Discard)
+	if got, want := m.Layout.Dir("runtime.ollama"), llmserver.PackDir(cfg.StateDir()); got != want {
+		t.Fatalf("runtime.ollama's folder %s, the server looks in %s", got, want)
+	}
+	if got, want := m.OllamaModels, llmserver.Planned(cfg, "").Models; got != want || got == "" {
+		t.Fatalf("the models go to %q, the server's store is %q", got, want)
+	}
+}
+
 func TestPackVenvSpec(t *testing.T) {
 	payload := t.TempDir()
 	t.Setenv("MAKTABA_APP_BUNDLE", payload)

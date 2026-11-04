@@ -162,10 +162,12 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 		Identity:  id,
 		Watermark: rv.IndexWatermarkPath(cfg.StateDir()),
 		HFHub:     filepath.Join(home, "hub"),
-		FreeDisk:  hostinfo.FreeDisk,
-		OnDisk:    disk.onDisk,
-		Disabled:  !cfg.Components.PacksOn(),
-		Log:       log,
+		// the language models go where the bundled server keeps them
+		OllamaModels: llmserver.Planned(cfg, "").Models,
+		FreeDisk:     hostinfo.FreeDisk,
+		OnDisk:       disk.onDisk,
+		Disabled:     !cfg.Components.PacksOn(),
+		Log:          log,
 	}
 	v := &packVenv{cfg: cfg, m: m, log: log}
 	m.Prepare = map[string]packs.PrepareFunc{"runtime.ml": v.prepare, "tool.yt-dlp": v.prepare}
