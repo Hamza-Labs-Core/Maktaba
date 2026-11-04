@@ -9,8 +9,17 @@
 # push to main or release/* every job runs, which is what the tag guard waits for. A job
 # skipped by its filter counts as passed in ci-success; a failed or cancelled one fails it.
 # Every job is gated by a filter or marked with a `# ci-paths:` comment (always-run,
-# push-only, pr-only, not-a-gate): tools/ci/ci_paths.py checks that in the lint job, and
-# `tools/ci/ci_paths.py which <files>` says which jobs a change runs.
+# push-only, pr-only, pr-event, not-a-gate): tools/ci/ci_paths.py checks that in the lint
+# job, and `tools/ci/ci_paths.py which <files>` says which jobs a change runs.
+#
+# A branch head (decided 2026-11-03): a pull request that conflicts with its base gets no
+# pull_request run (GitHub cannot build its merge ref), so ci-branch.yml calls this workflow
+# on the branch's own head, with `base`, the merge-base of the head and the pull request's
+# base. That run picks its jobs as a pull request does, the filters comparing the head
+# against the merge-base (not the base's tip), and runs every job a pull request would but
+# the `pr-event` ones (they read the pull request event). Its checks are `ci / <job>`, so the
+# required `ci-success` only ever comes from this workflow's own runs. A mergeable pull
+# request's branch push runs nothing here (ci-branch.yml's guard): no double run.
 #
 # A pull request that changes only the Claude trail (docs/claude-trail.md) runs nothing but
 # `changes` and `ci-success`: a trail update goes in its own pull request, with no CI and
@@ -39,6 +48,13 @@ on:
     branches: [main, 'release/**']
     # a trail-only commit starts no run, so it never replaces the code commit's (see above)
     paths-ignore: ['docs/claude-trail.md']
+  # a branch head: ci-branch.yml, for a pull request that conflicts with its base (see above)
+  workflow_call:
+    inputs:
+      base:
+        description: the merge-base of the branch head and its pull request's base (a commit SHA)
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -55,85 +71,118 @@ concurrency:
   # goes on the newest main commit whose own run finished green. A re-run (run_attempt > 1)
   # of a main commit gets its commit's own group, so it never displaces main's pending run.
   # A release/** push: one group per commit, never cancelled (as before).
+  # A branch head (called by ci-branch.yml, whose own group is per branch): its commit's group.
   # tools/ci/tests/test_ci_paths.py checks these groups.
   group: ci-${{ github.event_name == 'pull_request' && github.event.pull_request.number || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_attempt == '1') && 'main' || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
-    # The path filters: one output per filter of .github/ci-paths.yml, true on a push.
+    # The path filters: one output per filter of .github/ci-paths.yml, true on a push to main
+    # or release/**; on a pull request or a branch head, each filter's own result.
     runs-on: ubuntu-22.04
     outputs:
       # a file other than the Claude trail changed: the always-run jobs run
-      repo: ${{ github.event_name != 'pull_request' || steps.repo.outputs.repo == 'true' }}
-      lint_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_go == 'true' }}
-      lint_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_pipeline == 'true' }}
-      lint_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.lint_web == 'true' }}
-      catalog: ${{ github.event_name != 'pull_request' || steps.filter.outputs.catalog == 'true' }}
-      unit_go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_go == 'true' }}
-      unit_pipeline: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_pipeline == 'true' }}
-      unit_web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_web == 'true' }}
-      unit_tokens: ${{ github.event_name != 'pull_request' || steps.filter.outputs.unit_tokens == 'true' }}
-      desktop_shell: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_shell == 'true' }}
-      mdns: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mdns == 'true' }}
-      integration: ${{ github.event_name != 'pull_request' || steps.filter.outputs.integration == 'true' }}
-      compat_prev: ${{ github.event_name != 'pull_request' || steps.filter.outputs.compat_prev == 'true' }}
-      replica: ${{ github.event_name != 'pull_request' || steps.filter.outputs.replica == 'true' }}
-      components: ${{ github.event_name != 'pull_request' || steps.filter.outputs.components == 'true' }}
-      components_chaos: ${{ github.event_name != 'pull_request' || steps.filter.outputs.components_chaos == 'true' }}
-      e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.e2e == 'true' }}
-      media_e2e: ${{ github.event_name != 'pull_request' || steps.filter.outputs.media_e2e == 'true' }}
-      perf_ci: ${{ github.event_name != 'pull_request' || steps.filter.outputs.perf_ci == 'true' }}
-      build_artifacts: ${{ github.event_name != 'pull_request' || steps.filter.outputs.build_artifacts == 'true' }}
-      node_packaging: ${{ github.event_name != 'pull_request' || steps.filter.outputs.node_packaging == 'true' }}
-      components_packs: ${{ github.event_name != 'pull_request' || steps.filter.outputs.components_packs == 'true' }}
-      release_venv: ${{ github.event_name != 'pull_request' || steps.filter.outputs.release_venv == 'true' }}
-      launcher: ${{ github.event_name != 'pull_request' || steps.filter.outputs.launcher == 'true' }}
-      mac_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.mac_app == 'true' }}
-      win_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.win_app == 'true' }}
-      linux_app: ${{ github.event_name != 'pull_request' || steps.filter.outputs.linux_app == 'true' }}
-      android_apps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android_apps == 'true' }}
-      android_tv: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android_tv == 'true' }}
-      desktop_player: ${{ github.event_name != 'pull_request' || steps.filter.outputs.desktop_player == 'true' }}
-      apple_apps: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple_apps == 'true' }}
-      devportal: ${{ github.event_name != 'pull_request' || steps.filter.outputs.devportal == 'true' }}
-      wiki: ${{ github.event_name != 'pull_request' || steps.filter.outputs.wiki == 'true' }}
+      repo: ${{ steps.scope.outputs.full == 'true' || steps.repo.outputs.repo == 'true' }}
+      lint_go: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.lint_go == 'true' }}
+      lint_pipeline: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.lint_pipeline == 'true' }}
+      lint_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.lint_web == 'true' }}
+      catalog: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.catalog == 'true' }}
+      unit_go: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_go == 'true' }}
+      unit_pipeline: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_pipeline == 'true' }}
+      unit_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_web == 'true' }}
+      unit_tokens: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.unit_tokens == 'true' }}
+      desktop_shell: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_shell == 'true' }}
+      mdns: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mdns == 'true' }}
+      integration: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.integration == 'true' }}
+      compat_prev: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.compat_prev == 'true' }}
+      replica: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.replica == 'true' }}
+      components: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components == 'true' }}
+      components_chaos: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_chaos == 'true' }}
+      e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.e2e == 'true' }}
+      media_e2e: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.media_e2e == 'true' }}
+      perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
+      build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
+      node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
+      components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
+      release_venv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.release_venv == 'true' }}
+      launcher: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.launcher == 'true' }}
+      mac_app: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.mac_app == 'true' }}
+      win_app: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.win_app == 'true' }}
+      linux_app: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.linux_app == 'true' }}
+      android_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_apps == 'true' }}
+      android_tv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_tv == 'true' }}
+      desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
+      apple_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_apps == 'true' }}
+      devportal: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.devportal == 'true' }}
+      wiki: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.wiki == 'true' }}
       # the Player's own files, or a Player object among the project file's changes
-      apple_player_ui: ${{ github.event_name != 'pull_request' || steps.filter.outputs.apple_player_ui == 'true' || steps.apple.outputs.player_ui == 'true' }}
+      apple_player_ui: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.apple_player_ui == 'true' || steps.apple.outputs.player_ui == 'true' }}
     steps:
       # a pull request's merge commit and its first parent (the base): the project file
       # at both
       - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 2
+      # `full`: a push to main or release/**, where every filter is true. A branch head
+      # (called by ci-branch.yml) fetches its merge-base, which the filters compare against.
+      - name: Which run is this?
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          BASE: ${{ inputs.base }}
+        run: |
+          case "$EVENT:$REF" in
+            push:refs/heads/main|push:refs/heads/release/*) echo "full=true" >>"$GITHUB_OUTPUT" ;;
+            pull_request:*) echo "full=false" >>"$GITHUB_OUTPUT" ;;
+            push:*)
+              if ! [[ "$BASE" =~ ^[0-9a-f]{40}$ ]]; then
+                echo "::error::a branch-head run needs its merge-base commit (ci-branch.yml's base), got '$BASE'"
+                exit 1
+              fi
+              git fetch --no-tags --depth=1 origin "$BASE"
+              echo "branch head ${GITHUB_SHA}, its changes since the merge-base ${BASE}"
+              echo "full=false" >>"$GITHUB_OUTPUT" ;;
+            *) echo "::error::CI does not run on $EVENT ($REF)"; exit 1 ;;
+          esac
       # A filter is true when a changed file matches any one of its globs (paths-filter's
       # default predicate-quantifier 'some', so the file has no `!` globs: under 'some' a
-      # `!x` matches nearly every file). On a push it does not run: every output is true.
+      # `!x` matches nearly every file). On a push to main or release/** it does not run:
+      # every output is true. A pull request's changes come from GitHub's list of its files
+      # (base and ref are ignored there); a branch head's are its diff from the merge-base.
       - uses: dorny/paths-filter@v4.0.1
         id: filter
-        if: github.event_name == 'pull_request'
+        if: steps.scope.outputs.full != 'true'
         with:
           filters: .github/ci-paths.yml
+          base: ${{ inputs.base }}
+          ref: ${{ github.event_name == 'push' && github.sha || '' }}
       # `repo`: a changed file other than docs/claude-trail.md. Here every glob must match
       # (predicate-quantifier every), so the one negated glob matches any other file.
       - uses: dorny/paths-filter@v4.0.1
         id: repo
-        if: github.event_name == 'pull_request'
+        if: steps.scope.outputs.full != 'true'
         with:
+          base: ${{ inputs.base }}
+          ref: ${{ github.event_name == 'push' && github.sha || '' }}
           predicate-quantifier: every
           filters: |
             repo:
               - '!docs/claude-trail.md'
       # Every app shares apps/apple/Maktaba.xcodeproj/project.pbxproj: the Player's UI tests
       # run when one of the objects that changed in it is the Player's (renaming the Remote
-      # changes only the Remote's).
+      # changes only the Remote's). A pull request compares its merge commit with the base
+      # (HEAD^1), a branch head with the merge-base.
       - name: Does the project file change touch the Player?
         id: apple
         if: >-
-          github.event_name == 'pull_request'
+          steps.scope.outputs.full != 'true'
           && steps.filter.outputs.apple_apps == 'true'
           && steps.filter.outputs.apple_player_ui != 'true'
-        run: python3 tools/ci/apple_player_scope.py --base HEAD^1 --head HEAD
+        env:
+          BASE: ${{ inputs.base }}
+        run: python3 tools/ci/apple_player_scope.py --base "${BASE:-HEAD^1}" --head HEAD
 
   lint:
     # ci-paths: always-run
@@ -293,7 +342,7 @@ jobs:
   # Only a push to main saves it; when it is there already this is one lookup.
   linux-app-downloads:
     # ci-paths: push-only, not-a-gate
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/'))
     name: Linux app downloads (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
@@ -380,7 +429,8 @@ jobs:
           key: ${{ steps.npm-cache.outputs.key }}
 
   pr-body-check:
-    # ci-paths: always-run, pr-only
+    # the body is the pull request's, not the branch's: not on a branch head
+    # ci-paths: always-run, pr-only, pr-event
     needs: [changes]
     if: github.event_name == 'pull_request' && needs.changes.outputs.repo == 'true'
     uses: ./.github/workflows/_pr-body-check.yml
@@ -389,11 +439,14 @@ jobs:
   # same gate as the pre-push hook (.githooks/pre-push), so a push that skipped the hook
   # cannot get past it. A commit in the pull request with a `No-Test-Change: <reason>`
   # trailer lets it through. The coverage map comes from coverage-map.yml (main); without
-  # one the gate works from its searches. Seconds: it reads git, it runs no test.
+  # one the gate works from its searches. Seconds: it reads git, it runs no test. A branch
+  # head checks its commits since the merge-base.
   affected-tests:
     # ci-paths: always-run, pr-only
     needs: [changes]
-    if: github.event_name == 'pull_request' && needs.changes.outputs.repo == 'true'
+    if: >-
+      needs.changes.outputs.repo == 'true'
+      && (github.event_name == 'pull_request' || inputs.base != '')
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:
@@ -420,14 +473,14 @@ jobs:
         working-directory: tools/affected-tests
         env:
           GH_TOKEN: ${{ github.token }}
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || inputs.base }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: go run . gate -C ../.. --range "$BASE...$HEAD"
 
   fork-rerun-comment:
     # EC2: bot comment on fork PRs telling maintainers how to rerun
     # the gated jobs once they've reviewed the diff (when the change selects them).
-    # ci-paths: pr-only, not-a-gate
+    # ci-paths: pr-only, pr-event, not-a-gate
     needs: [changes]
     if: >-
       github.event_name == 'pull_request'
