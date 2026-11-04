@@ -257,6 +257,10 @@
     <string name="w_health_processes_role_streaming">البث والتلفاز المباشر</string>
     <string name="w_health_processes_role_pipeline">خط المعالجة</string>
     <string name="w_health_processes_role_tv_slot">منفذ البث التلفزيوني</string>
+    <string name="w_health_processes_role_copy">نسخة قاعدة البيانات</string>
+    <string name="w_health_processes_role_ollama">خادم النموذج اللغوي</string>
+    <string name="w_health_processes_role_postgres">قاعدة البيانات</string>
+    <string name="w_health_processes_role_relay">مرحّل الوصول عن بُعد</string>
     <string name="w_setup_starting_detail_db_waiting">بانتظار قاعدة بيانات المكتبة.</string>
     <string name="w_setup_starting_detail_db_checking">جارٍ فحص قاعدة بيانات المكتبة.</string>
     <string name="w_setup_starting_detail_db_dumping">جارٍ حفظ قاعدة بيانات المكتبة قبل التحديث إلى %1$s.</string>

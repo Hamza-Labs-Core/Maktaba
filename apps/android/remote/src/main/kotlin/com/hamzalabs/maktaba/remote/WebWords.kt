@@ -308,6 +308,10 @@ internal object WebWords {
         "streaming" to R.string.w_health_processes_role_streaming,
         "pipeline" to R.string.w_health_processes_role_pipeline,
         "tv-slot" to R.string.w_health_processes_role_tv_slot,
+        "copy" to R.string.w_health_processes_role_copy,
+        "ollama" to R.string.w_health_processes_role_ollama,
+        "postgres" to R.string.w_health_processes_role_postgres,
+        "relay" to R.string.w_health_processes_role_relay,
     )
 
     /** `setup.starting.detail.*` */

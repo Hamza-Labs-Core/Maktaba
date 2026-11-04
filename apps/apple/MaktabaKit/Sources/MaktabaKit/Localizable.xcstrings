@@ -1728,6 +1728,74 @@
         }
       }
     },
+    "health.processes.role.copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database copy"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نسخة قاعدة البيانات"
+          }
+        }
+      }
+    },
+    "health.processes.role.ollama" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Language model server"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "خادم النموذج اللغوي"
+          }
+        }
+      }
+    },
+    "health.processes.role.postgres" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Database"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قاعدة البيانات"
+          }
+        }
+      }
+    },
+    "health.processes.role.relay" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remote access relay"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مرحّل الوصول عن بُعد"
+          }
+        }
+      }
+    },
     "health.processes.state.backoff" : {
       "extractionState" : "manual",
       "localizations" : {

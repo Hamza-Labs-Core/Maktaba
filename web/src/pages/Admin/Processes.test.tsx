@@ -115,14 +115,24 @@ describe("ProcessesCard", () => {
     const card = await screen.findByTestId("process-relay");
     expect(within(card).getByText(en["health.processes.state.held"]!)).toBeInTheDocument();
     expect(card.textContent).not.toContain("held");
+    // its role has words too, never the raw id
+    expect(within(card).getByText(en["health.processes.role.relay"]!)).toBeInTheDocument();
     unmount();
     localStorage.setItem("mkt:locale", "ar");
     try {
       renderCard();
       const ar_ = await screen.findByTestId("process-relay");
       expect(within(ar_).getByText(ar["health.processes.state.held"]!)).toBeInTheDocument();
+      expect(within(ar_).getByText(ar["health.processes.role.relay"]!)).toBeInTheDocument();
     } finally {
       localStorage.removeItem("mkt:locale");
+    }
+  });
+
+  it("names every role the supervisor runs, in English and Arabic", async () => {
+    for (const role of ["postgres", "copy", "ollama", "relay"]) {
+      expect(en[`health.processes.role.${role}`], role).toBeTruthy();
+      expect(ar[`health.processes.role.${role}`], role).toBeTruthy();
     }
   });
 

@@ -264,7 +264,7 @@ import Testing
         let d = try JSONDecoder.home.decode(ProcessesDoc.self, from: Data(Self.doc.utf8))
         #expect(d.available && d.host == "mac-mini")
         #expect(d.processes.map(\.id) == ["api", "tv-slot/blue", "tv-slot/amber", "pipeline", "ollama"])
-        #expect(d.processes.map(\.name) == ["API", "TV slot blue", "TV slot amber", "Processing pipeline", "ollama"])
+        #expect(d.processes.map(\.name) == ["API", "TV slot blue", "TV slot amber", "Processing pipeline", "Language model server"])
         let amber = d.processes[2]
         #expect(amber.wanted && amber.crashLoop && amber.restarts == 4 && amber.stateText == "Restarting")
         // its code's words with its values (the web's setup.starting.detail.port_taken), not the English
@@ -284,6 +284,16 @@ import Testing
             == "Held: its component is off")
         #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "ar"))
             == "موقوف: مكوّنه متوقف عن العمل")
+    }
+
+    @Test func everyRoleTheSupervisorRunsHasWords() {
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar")
+        #expect(StatusWords.processName(role: "postgres", instance: nil, locale: en) == "Database")
+        #expect(StatusWords.processName(role: "copy", instance: nil, locale: en) == "Database copy")
+        #expect(StatusWords.processName(role: "ollama", instance: nil, locale: en) == "Language model server")
+        #expect(StatusWords.processName(role: "relay", instance: nil, locale: en) == "Remote access relay")
+        #expect(StatusWords.processName(role: "relay", instance: nil, locale: ar) == "مرحّل الوصول عن بُعد")
+        #expect(StatusWords.processName(role: "ollama", instance: nil, locale: ar) == "خادم النموذج اللغوي")
     }
 
     @Test func listsTheRecentEventsNewestFirst() throws {

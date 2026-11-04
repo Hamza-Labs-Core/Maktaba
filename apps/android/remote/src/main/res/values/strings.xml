@@ -262,6 +262,10 @@
     <string name="w_health_processes_role_streaming">Live TV and streaming</string>
     <string name="w_health_processes_role_pipeline">Processing pipeline</string>
     <string name="w_health_processes_role_tv_slot">TV slot</string>
+    <string name="w_health_processes_role_copy">Database copy</string>
+    <string name="w_health_processes_role_ollama">Language model server</string>
+    <string name="w_health_processes_role_postgres">Database</string>
+    <string name="w_health_processes_role_relay">Remote access relay</string>
     <string name="w_setup_starting_detail_db_waiting">Waiting for the library database.</string>
     <string name="w_setup_starting_detail_db_checking">Checking the library database.</string>
     <string name="w_setup_starting_detail_db_dumping">Saving the library database before the update to %1$s.</string>
