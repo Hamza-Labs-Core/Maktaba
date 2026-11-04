@@ -619,6 +619,38 @@ describe("a library's YouTube on its card", () => {
     expect(within(dialog).getByLabelText("Merge into")).toHaveValue("l5");
   });
 
+  // slot 0182: the sources Maktaba derives from the linked videos
+  it("a derived source says so, off; a derived clash is the duplicate hint, with no Add", async () => {
+    const derived = lib("l9", "Reciter one", {
+      ...ONE_OFF,
+      source: { ...ONE_OFF.source, kind: "playlist", derived: true },
+    });
+    const holder = lib("l10", "Reciters", ONE_OFF);
+    const clash = lib("l11", "Reciters again", {
+      ...NONE,
+      guess: {
+        ...GUESS,
+        title: "Reciters",
+        evidence: "linked",
+        ids_found: 1,
+        ids_matched: 1,
+        derived: true,
+        followed_by: [{ id: "l10", name: "Reciters" }],
+      },
+    });
+    open(manage(derived, holder, clash));
+    await screen.findByRole("heading", { level: 2, name: "Reciter one" });
+    const d = card("Reciter one");
+    expect(within(d).getByText("Found from its linked videos")).toBeInTheDocument();
+    expect(within(d).getByRole("switch", { name: `Downloads ${CHAN}` })).not.toBeChecked();
+    expect(within(card("Reciters")).queryByText("Found from its linked videos")).toBeNull();
+    const c = card("Reciters again");
+    expect(within(c).getByText("(1 of 1 videos, from their links to YouTube)")).toBeInTheDocument();
+    expect(within(c).queryByRole("button", { name: "Add as source" })).toBeNull();
+    expect(within(c).getByText(/already follows this channel/)).toBeInTheDocument();
+    expect(within(c).getByRole("button", { name: /Merge into .*Reciters/ })).toBeInTheDocument();
+  });
+
   it("a guess that found nothing says so and offers to look again", async () => {
     open(
       manage(

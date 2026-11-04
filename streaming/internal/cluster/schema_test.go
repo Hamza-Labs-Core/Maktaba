@@ -118,7 +118,7 @@ func TestSchemaGuardSharedTable(t *testing.T) {
 }
 
 // Every service ships the same SchemaRev: the API's, the streaming node's and the
-// pipeline's are raised together with each migration (slot 0175: a YouTube source's last mode on).
+// pipeline's are raised together with each migration (slot 0182: YouTube sources from the linked videos).
 func TestSchemaRevIsTheSameInEveryService(t *testing.T) {
 	root := filepath.Join("..", "..", "..")
 	for file, pattern := range map[string]string{
