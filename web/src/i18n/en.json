@@ -4913,6 +4913,7 @@
   "health.reason.streaming_host_down": "No heartbeat: {detail}",
   "health.reason.streaming_hosts_unreadable": "The streaming machines cannot be read: {detail}",
   "health.reason.dependency_down": "Not available: {detail}",
+  "health.reason.dependency_llm_off": "Off: the language model is turned off.",
   "health.reason.dependency_stale": "Not checked for {age}: the workers that check it may be stopped.",
   "health.reason.dependency_ok": "Available.",
   "health.reason.host_access_ok": "Can be read.",

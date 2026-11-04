@@ -373,3 +373,53 @@ async def test_an_unreadable_file_is_recorded(db: Database, tmp_path: Path) -> N
     chk = await db.fetchrow("SELECT ok, error FROM item_checks")
     assert not bool(chk["ok"]) and "FileNotFoundError" in chk["error"]
     assert (await rows(db, "access_check"))[0]["state"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_a_bundled_model_with_the_language_model_off_reads_off_not_down(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model section on the bundled server while ``llm`` is off reports ``llm_off`` (the
+    health page's off on purpose) without asking the server; an outside server is probed."""
+    from types import SimpleNamespace
+
+    from maktaba_pipeline import rules
+    from maktaba_pipeline.components import runner as runner_mod
+    from maktaba_pipeline.components.runner import ComponentRunner
+    from maktaba_pipeline.components.stages import gates
+    from maktaba_pipeline.components.store import Desired
+    from maktaba_pipeline.engine.failure_classes import QueueHealthConfig
+    from maktaba_pipeline.engine.watchers import LLM_OFF, _model_probes
+
+    urls = {"tagcheck": "http://127.0.0.1:11434/", "other": "http://nas:11434"}
+
+    async def read(_db: Any, section: str) -> Any:
+        return SimpleNamespace(enabled=True, url=urls[section], model="qwen2.5:7b"), None, None
+
+    asked: list[str] = []
+
+    def fetch(url: str, timeout: float) -> bytes:
+        asked.append(url)
+        return json.dumps({"models": [{"name": "qwen2.5:7b"}]}).encode()
+
+    graph: Any = {
+        "check_tags": SimpleNamespace(model_rules="tagcheck"),
+        "x": SimpleNamespace(model_rules="other"),
+    }
+    monkeypatch.setattr(rules, "read", read)
+    monkeypatch.setenv("MAKTABA_OLLAMA_URL", "http://127.0.0.1:11434")
+    r = ComponentRunner(None, reconcile=True)
+    r.gates = gates({"llm": Desired(id="llm", want="off", generation=1)})
+    monkeypatch.setattr(runner_mod, "_ACTIVE", r)
+    try:
+        set_model_fetcher(fetch)
+        got = await _model_probes(None, graph, QueueHealthConfig())
+        assert got["dependency:model:tagcheck"] == (False, LLM_OFF)
+        assert got["dependency:model:other"][0] is True
+        assert all("127.0.0.1" not in u for u in asked)  # the bundled server is not asked
+
+        r.gates = {}  # no gate for llm: on
+        got = await _model_probes(None, graph, QueueHealthConfig())
+        assert got["dependency:model:tagcheck"][0] is True  # on: probed as before
+    finally:
+        set_model_fetcher(None)

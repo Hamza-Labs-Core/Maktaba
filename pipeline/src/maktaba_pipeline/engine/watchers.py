@@ -6,7 +6,10 @@ engine/leader.py; on SQLite there is one process), every
 
 * ``dependency:model:<section>`` - every rules section a stage names in ``model_rules``:
   ``GET <url>/api/tags`` (Ollama) answers, and lists the model when it lists any. A section
-  that is switched off is healthy: its stages do not ask the model;
+  that is switched off is healthy: its stages do not ask the model. A section on the
+  bundled model server (``MAKTABA_OLLAMA_URL``) while the language model component is off
+  is unhealthy with the message :data:`LLM_OFF`: its jobs wait parked until it is on, and
+  the health page says it is off on purpose;
 * ``dependency:share:<root>`` - every library root lists on this machine;
 * ``resource:disk`` - the temporary and data folders have ``min_free_disk_gb`` free;
 * ``resource:shm`` - Postgres' shared memory cannot be seen from here: healthy again
@@ -127,10 +130,27 @@ async def _model_probes(
         if not getattr(mcfg, "enabled", True) or not url:
             out[name] = (True, "switched off: its stages do not ask the model")
             continue
+        if _bundled_and_off(url):
+            out[name] = (False, LLM_OFF)
+            continue
         out[name] = await model_probe(
             url, str(getattr(mcfg, "model", "")), cfg.probe_timeout_seconds
         )
     return out
+
+
+#: a model section's message while its server is the bundled one and the language model
+#: component is off (the API's health check reads it as off on purpose)
+LLM_OFF = "llm_off"
+
+
+def _bundled_and_off(url: str) -> bool:
+    """``url`` is the bundled model server's (the address serve hands every role) and this
+    process's component runner has the language model off."""
+    from ..components.runner import gate_open
+
+    bundled = os.environ.get("MAKTABA_OLLAMA_URL", "").rstrip("/")
+    return bool(bundled) and url.rstrip("/") == bundled and not gate_open("llm")
 
 
 async def _share_probes(db: Any, cfg: QueueHealthConfig) -> dict[str, Probe]:

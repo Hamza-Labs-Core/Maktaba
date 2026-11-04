@@ -419,12 +419,15 @@ func TestDependencies(t *testing.T) {
 		Cols: []string{"name", "healthy", "message", "checked_at", "since"},
 		Rows: [][]driver.Value{
 			{"dependency:model:tagcheck", false, "http://ollama:11434 does not answer", t0.Add(-30 * time.Second), t0.Add(-time.Hour)},
+			{"dependency:model:display", false, "llm_off", t0.Add(-30 * time.Second), t0.Add(-time.Hour)},
 			{"dependency:share:/mnt/nas", true, "answers", t0.Add(-time.Minute), t0.Add(-time.Hour)},
 			{"resource:disk", true, "enough free space", t0.Add(-time.Hour), t0.Add(-48 * time.Hour)},
 			{"resource:shm", true, "", "2026-10-22T11:59:00.000Z", "2026-10-21T11:59:00.000Z"},
 		}})
 	got := byID(checkDependencies(context.Background(), newEnv(&Handler{DB: db.DB})))
 	want(t, got["dependency:dependency:model:tagcheck"], StatusDown, "dependency_down")
+	// the bundled model server while the language model is off: off on purpose, not down
+	want(t, got["dependency:dependency:model:display"], StatusOK, "dependency_llm_off")
 	want(t, got["dependency:dependency:share:/mnt/nas"], StatusOK, "dependency_ok")
 	want(t, got["dependency:resource:disk"], StatusDegraded, "dependency_stale")
 	shm := got["dependency:resource:shm"]

@@ -551,6 +551,10 @@ func checkStreamingHosts(ctx context.Context, e *env) []Item {
 
 // ---------- dependencies ----------
 
+// llmOff is the pipeline's message for a model section on the bundled server while the
+// language model component is off (engine/watchers.py LLM_OFF).
+const llmOff = "llm_off"
+
 const dependenciesSQL = `SELECT name, healthy, message, checked_at, since FROM dependency_health ORDER BY name`
 
 func checkDependencies(ctx context.Context, e *env) []Item {
@@ -582,6 +586,10 @@ func checkDependencies(ctx context.Context, e *env) []Item {
 		p := map[string]any{"detail": msg.String}
 		age := e.now.Sub(checked.t)
 		switch {
+		case !healthy && strings.HasPrefix(name, "dependency:model:") && msg.String == llmOff:
+			// the bundled model server while the language model is off: off on purpose
+			// (its jobs wait parked until it is on)
+			it.set(StatusOK, "dependency_llm_off", p, "Off: the language model is turned off.")
 		case !healthy:
 			if since.ok {
 				p["since_seconds"] = secs(e.now.Sub(since.t))

@@ -4926,6 +4926,7 @@
   "health.reason.streaming_host_down": "بلا نبضات: {detail}",
   "health.reason.streaming_hosts_unreadable": "تعذّرت قراءة أجهزة البث: {detail}",
   "health.reason.dependency_down": "غير متاحة: {detail}",
+  "health.reason.dependency_llm_off": "متوقفة: النموذج اللغوي متوقف عن العمل.",
   "health.reason.dependency_stale": "لم تُفحص منذ {age}: قد يكون العمّال الذين يفحصونها متوقفين.",
   "health.reason.dependency_ok": "متاحة.",
   "health.reason.host_access_ok": "يمكن قراءته.",
