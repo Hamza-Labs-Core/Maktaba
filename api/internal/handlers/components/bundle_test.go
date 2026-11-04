@@ -46,10 +46,11 @@ func TestBundleDiffAndApply(t *testing.T) {
 	f := newFixture(t)
 	var core svc.BundleDiff
 	decode(t, f.do("POST", "/api/components/bundle", `{"bundle":"core"}`, admin()), http.StatusOK, &core)
-	if len(core.Remove) != 0 || !slices.Contains(core.Disable, "transcription") || !slices.Contains(core.Disable, "runtime.ml") {
+	// an asset left out keeps its files and is not turned off (it has no run)
+	if len(core.Remove) != 0 || !slices.Contains(core.Disable, "transcription") || slices.Contains(core.Disable, "runtime.ml") {
 		t.Fatalf("full -> core: %+v", core)
 	}
-	if f.want(t, "transcription").Want != "installed" || f.want(t, "runtime.ml").Want != "installed" {
+	if f.want(t, "transcription").Want != "installed" || f.want(t, "runtime.ml").Want != "enabled" {
 		t.Fatal("core was not applied")
 	}
 	// the core home's assets are gone (as a Core setup leaves them)

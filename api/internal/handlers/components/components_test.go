@@ -273,13 +273,13 @@ func TestPreviewChangesNothing(t *testing.T) {
 	f := newFixture(t)
 	rev := f.revision(t)
 	var p svc.Preview
-	decode(t, f.do("POST", "/api/components/preview", `{"changes":[{"id":"runtime.ollama","want":"installed"}]}`, admin()), 200, &p)
+	decode(t, f.do("POST", "/api/components/preview", `{"changes":[{"id":"llm","want":"installed"}]}`, admin()), 200, &p)
 	found := map[string]svc.Effect{}
 	for _, e := range p.Effects {
 		found[e.ID] = e
 	}
-	if found["llm"].To != components.PhaseWaiting || found["llm"].Reason != "dependency_off:runtime.ollama" ||
-		found["classify"].To != components.PhaseDegraded {
+	if found["llm"].From != components.PhaseRunning || found["llm"].To != components.PhaseOff ||
+		found["classify"].To != components.PhaseDegraded || found["classify"].Reason != "want_missing:llm" {
 		t.Fatalf("effects %+v", p.Effects)
 	}
 	if f.revision(t) != rev || f.audits(t) != 0 {

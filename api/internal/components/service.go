@@ -438,7 +438,7 @@ func (s *Service) bundleLine(snap *snapshot) BundleLine {
 			if !c.Switchable {
 				continue
 			}
-			on := wantOf(snap.rows, id) == components.WantEnabled
+			on := present(cat, snap.rows, id)
 			switch {
 			case on && !in[id]:
 				plus = append(plus, id)

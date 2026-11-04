@@ -114,7 +114,9 @@ func gates(cat *components.Catalog, rows map[string]store.Desired) map[string]ga
 }
 
 // gatesLicensed is gates with the home's licence (nil: every flag): an enabled component
-// whose flag it lacks waits, licence_missing (story 51.19).
+// whose flag it lacks waits, licence_missing (story 51.19). An asset has no run, so on
+// disk (installed or enabled) it is on and meets what requires it, as the runners read
+// it (runner.GatesAt); only absent is off.
 func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licensed func(string) bool) map[string]gate {
 	out := map[string]gate{}
 	for _, id := range cat.Order() {
@@ -125,6 +127,8 @@ func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licen
 		case !c.Switchable || !has:
 		case d.Want == components.WantAbsent:
 			g = gate{phase: components.PhaseNotInstalled}
+		case c.Kind == components.KindAsset:
+			// on disk: met (no hold, licence or requirement applies to a file)
 		case d.Want != components.WantEnabled:
 			g = gate{phase: components.PhaseOff}
 		case d.Hold != nil:
@@ -157,6 +161,16 @@ func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licen
 		}
 	}
 	return out
+}
+
+// present reports whether id is on as rows give it: enabled, or for an asset (which has
+// no run) on disk, installed or enabled.
+func present(cat *components.Catalog, rows map[string]store.Desired, id string) bool {
+	w := wantOf(rows, id)
+	if c, ok := cat.Get(id); ok && c.Kind == components.KindAsset {
+		return w != components.WantAbsent
+	}
+	return w == components.WantEnabled
 }
 
 // wantOf is the want rows give id: no row is the catalog default, on.
@@ -195,7 +209,7 @@ func requiredBy(cat *components.Catalog, rows map[string]store.Desired, id strin
 				continue
 			}
 			if slices.ContainsFunc(req.AnyOf, func(a string) bool {
-				return !gone[a] && wantOf(rows, a) == components.WantEnabled
+				return !gone[a] && present(cat, rows, a)
 			}) {
 				continue
 			}
@@ -253,7 +267,9 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 		if removeUnused && c.Kind == components.KindAsset {
 			continue // removed below
 		}
-		if c.Switchable && !in[id] && wantOf(rows, id) == components.WantEnabled {
+		// an asset left out keeps its files unless removeUnused (installed and enabled are
+		// the same for a file)
+		if c.Switchable && c.Kind != components.KindAsset && !in[id] && wantOf(rows, id) == components.WantEnabled {
 			out = append(out, Change{ID: id, Want: components.WantInstalled})
 		}
 	}
@@ -269,7 +285,7 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 	}
 	for _, id := range order {
 		c, _ := cat.Get(id)
-		if !c.Switchable || !in[id] || wantOf(rows, id) == components.WantEnabled {
+		if !c.Switchable || !in[id] || present(cat, rows, id) {
 			continue
 		}
 		out = append(out, Change{ID: id, Want: components.WantEnabled})
