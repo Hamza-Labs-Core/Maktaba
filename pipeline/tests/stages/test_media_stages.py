@@ -172,6 +172,21 @@ async def test_link_reads_the_ytdlp_info_json_sidecar_through_the_path_map(
         await db.fetchval("SELECT position FROM youtube_playlist_items WHERE youtube_id = 'ytSide'")
         == 3
     )
+    # slot 0182: the link derives the library's source from it (its playlist, off), and
+    # the decision says why
+    src = await db.fetchrow("SELECT library_id, kind, external_id, mode FROM youtube_sources")
+    assert (str(src["library_id"]), src["kind"], src["external_id"], src["mode"]) == (
+        str(lib),
+        "playlist",
+        "PLabc",
+        "off",
+    )
+    assert (
+        await db.fetchval(
+            "SELECT outcome FROM youtube_source_decisions WHERE library_id = $1", str(lib)
+        )
+        == "playlist"
+    )
 
 
 @pytest.mark.asyncio

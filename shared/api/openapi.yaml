@@ -3212,9 +3212,10 @@ paths:
     post:
       tags:
       - Queue
-      summary: "Look for the channel a library's files come from (file-name ids and .info.json; no network)"
-      description: Admin only (403 otherwise); audited. The answer is kept for the library's card; nothing
-        is added or turned on. Slot 0175.
+      summary: "Look for the channel a library's files come from (its linked videos first, then file-name ids and .info.json; no network)"
+      description: Admin only (403 otherwise); audited. The library's linked videos come first, so the answer
+        agrees with the sources the pipeline derives from them (slot 0182); only a library with no link has
+        its files read. The answer is kept for the library's card; nothing is added or turned on. Slot 0175.
       parameters:
       - name: id
         in: path

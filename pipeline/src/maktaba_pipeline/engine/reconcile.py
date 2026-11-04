@@ -22,7 +22,11 @@ is always the leader). It repairs and schedules:
 7. the file trash (Epic 47): a ``trash_purge`` once a day for each library whose trash
    holds an entry past its ``purge_after``;
 8. thumbnails in a folder's ``.thumbs/`` (2026-11): a ``thumb_hash`` once for each video
-   whose latest one found no thumbnail of its own, so one found there now is used.
+   whose latest one found no thumbnail of its own, so one found there now is used;
+9. YouTube sources from the links (slot 0182): every library's sources are derived from
+   its linked videos (:mod:`..library_mgmt.youtube_derive`, new ones off) when no library
+   was decided yet or the last decision is ``MAKTABA_YT_DERIVE_HOURS`` old (default 6;
+   0: never). The first pass after the update covers the links made before it.
 """
 
 from __future__ import annotations
@@ -41,7 +45,7 @@ from .enqueue import enqueue_job
 from .graph import CATALOG_ID, EPIC47_PRIORITIES, StageDef
 from .leader import leader
 from .propagate import after_legacy_done
-from .sql import is_pg, loads, now, to_ts, uid
+from .sql import is_pg, loads, now, parse_ts, to_ts, uid
 
 __all__ = ["LEADER_KEY", "ReconcileReport", "reconcile_once", "run_reconciler"]
 
@@ -72,6 +76,8 @@ class ReconcileReport:
     semantic_missing: int = 0
     trash_purge: int = 0
     thumbs_dir: int = 0
+    #: libraries the YouTube source derivation made a source for (slot 0182)
+    yt_derive: int = 0
 
 
 async def reconcile_once(
@@ -125,9 +131,41 @@ async def _pass(
     missing = await _semantic_sweep(db, graph)
     purges = await _trash_purges(db, graph, t)
     thumbs = await _thumbs_dir_sweep(db, graph)
+    derived = await _youtube_derive(db, t)
     return ReconcileReport(
-        True, propagated, refresh, sweep, scans, periodic, missing, purges, thumbs
+        True, propagated, refresh, sweep, scans, periodic, missing, purges, thumbs, derived
     )
+
+
+#: slot 0182: how often every library's YouTube sources are derived again
+DEFAULT_YT_DERIVE_HOURS = 6.0
+
+
+async def _youtube_derive(db: Any, t: datetime) -> int:
+    """Every library's YouTube sources from its linked videos, once the last decision is
+    old enough (or none was made yet while links exist); the libraries given a source."""
+    from ..library_mgmt import youtube_derive
+
+    hours = float(os.environ.get("MAKTABA_YT_DERIVE_HOURS", DEFAULT_YT_DERIVE_HOURS))
+    if hours <= 0:
+        return 0
+    last = parse_ts(await db.fetchval("SELECT max(decided_at) FROM youtube_source_decisions"))
+    if last is not None and last > t - timedelta(hours=hours):
+        return 0
+    linked = await db.fetchval(
+        "SELECT 1 FROM media_metadata_enrichment WHERE provider = 'youtube' LIMIT 1"
+    )
+    if linked is None:
+        return 0
+    decisions = await youtube_derive.derive(db)
+    made = [d for d in decisions if d.created]
+    _log.info(
+        "youtube_sources_derive_pass",
+        libraries=len(decisions),
+        created=sum(len(d.created) for d in made),
+        clashes=sum(1 for d in decisions if d.outcome == "clash"),
+    )
+    return len(made)
 
 
 async def _repair_unpropagated(db: Any, graph: Mapping[str, StageDef], t: datetime) -> int:
@@ -472,7 +510,7 @@ async def run_reconciler(
             if report.leader and (
                 report.propagated or report.yt_refresh or report.version_sweep
                 or report.library_sweep or report.periodic or report.semantic_missing
-                or report.thumbs_dir
+                or report.thumbs_dir or report.yt_derive
             ):  # fmt: skip
                 _log.info(
                     "reconciled",
@@ -483,6 +521,7 @@ async def run_reconciler(
                     periodic=report.periodic,
                     semantic_missing=report.semantic_missing,
                     thumbs_dir=report.thumbs_dir,
+                    yt_derive=report.yt_derive,
                 )
         except Exception:  # noqa: BLE001 - the reconciler must never take the worker down
             _log.exception("reconcile_failed")

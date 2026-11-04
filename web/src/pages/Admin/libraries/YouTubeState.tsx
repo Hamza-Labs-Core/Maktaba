@@ -1,12 +1,15 @@
 // A library's YouTube on its Manage libraries card (slot 0175), from the one manage read
 // (ManagedLibrary.youtube, no request per card):
 //
-//   one source       "YouTube: 1 source · off" with its switch, and Sources…
+//   one source       "YouTube: 1 source · off" with its switch, and Sources…; a source
+//                    Maktaba derived from the linked videos (slot 0182) says so
 //   several          "YouTube: 3 sources · 1 on" and Sources…
 //   none             "Add YouTube source" (the same dialog); the channel its files look
 //                    like when the API looked (POST …/youtube/guess, an admin's click),
 //                    with "Add as source" (off); and a library of a like name that has a
-//                    source (Merge into it…, the page's merge dialog)
+//                    source (Merge into it…, the page's merge dialog). A clash the
+//                    derivation found (its channel or playlist is another library's
+//                    source) shows the same way, with no Add: one library per source
 //
 // Every change is the API's to allow (admin only); nothing here turns a source on but
 // the switch.
@@ -109,6 +112,9 @@ export function YouTubeState({
         {one && (
           <SourceSwitch source={one} busy={busy === "switch"} onToggle={(on) => void toggle(on)} />
         )}
+        {one?.derived && (
+          <span className="mkt-muted mkt-libadmin__small">{t("libraryAdmin.yt.derived")}</span>
+        )}
         {yt.sources > 0 ? (
           <Button type="button" size="sm" variant="secondary" onClick={onSources}>
             {t("queue.offline.sources")}
@@ -134,15 +140,17 @@ export function YouTubeState({
               })}
             </span>
           </span>
-          <Button
-            type="button"
-            size="sm"
-            loading={busy === "add"}
-            disabled={busy != null && busy !== "add"}
-            onClick={() => void addGuess()}
-          >
-            {t("libraryAdmin.yt.addAsSource")}
-          </Button>
+          {!(guess.derived && follower) && (
+            <Button
+              type="button"
+              size="sm"
+              loading={busy === "add"}
+              disabled={busy != null && busy !== "add"}
+              onClick={() => void addGuess()}
+            >
+              {t("libraryAdmin.yt.addAsSource")}
+            </Button>
+          )}
         </div>
       )}
       {yt.sources === 0 && guess && !guess.url && (
@@ -167,7 +175,12 @@ export function YouTubeState({
         <div className="mkt-libadmin__youtube-row mkt-libadmin__problem">
           <span>
             {follower
-              ? t("libraryAdmin.yt.followedBy", { name: bidiIsolate(follower.name) })
+              ? t(
+                  guess?.kind === "playlist"
+                    ? "libraryAdmin.yt.followedByPlaylist"
+                    : "libraryAdmin.yt.followedBy",
+                  { name: bidiIsolate(follower.name) }
+                )
               : t("libraryAdmin.yt.sameAs", { name: bidiIsolate(mergeTarget.name) })}
           </span>
           <Button type="button" size="sm" variant="ghost" onClick={() => onMerge(mergeTarget.id)}>
