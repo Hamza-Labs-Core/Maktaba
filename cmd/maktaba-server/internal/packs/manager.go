@@ -112,10 +112,11 @@ func (m *Manager) Progress(id string) (Progress, bool) {
 }
 
 // Failed is why id's last install or removal this boot failed (ok false: it did not, or
-// none ran, or id is installed now).
+// none ran, or id is installed now, or it was only busy: another install or removal held
+// it, and it is tried again).
 func (m *Manager) Failed(id string) (reason string, params map[string]any, ok bool) {
 	p, ran := m.Progress(id)
-	if !ran || p.Busy || p.Phase != components.PhaseFailed || m.Installed(id) {
+	if !ran || p.Busy || p.Phase != components.PhaseFailed || p.Reason == ReasonBusy || m.Installed(id) {
 		return "", nil, false
 	}
 	return p.Reason, p.Params, true
@@ -272,6 +273,14 @@ func (m *Manager) install(ctx context.Context, id string, s *session, seen map[s
 		if c, ok := m.Catalog.Get(alt); !ok || c.Kind != components.KindAsset {
 			continue
 		}
+		// the requirement installs (or is removed) in this process already: wait for it,
+		// never a busy failure of this one
+		if err := m.waitIdle(ctx, alt); err != nil {
+			return err
+		}
+		if m.Installed(alt) {
+			continue
+		}
 		// the requirement's own progress shows while it installs; this one waits at 0 %
 		if err := m.install(ctx, alt, s, seen); err != nil {
 			return wrap(ReasonInstallFailed, map[string]any{"component": alt}, err)
@@ -298,6 +307,22 @@ func (m *Manager) install(ctx context.Context, id string, s *session, seen map[s
 		return m.installOllama(ctx, s, comp, src)
 	}
 	return fail(ReasonInstallFailed, map[string]any{"source": src}, "%s from %s cannot be installed here yet", id, src)
+}
+
+// idlePoll is how often waitIdle looks again.
+const idlePoll = 100 * time.Millisecond
+
+// waitIdle returns once no install or removal of id runs in this process (ctx's error if
+// it ends first).
+func (m *Manager) waitIdle(ctx context.Context, id string) error {
+	for m.Busy(id) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(idlePoll):
+		}
+	}
+	return nil
 }
 
 func (m *Manager) anyInstalled(ids []string) bool {

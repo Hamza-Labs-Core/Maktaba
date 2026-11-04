@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -864,5 +865,159 @@ func TestFolderSourceReadsOnlyItsFiles(t *testing.T) {
 		if _, err := f.Signed(context.Background(), v); err == nil || !strings.Contains(err.Error(), "not a file of the release's folder") {
 			t.Errorf("Signed(%q) = %v, want refused", v, err)
 		}
+	}
+}
+
+// A fresh home's first read comes before the seed: no rows at all. Nothing acts on it
+// (an asset the seed then leaves absent, model.refine, is never installed in between),
+// and the seeded state that follows is the first one seen.
+func TestRunnerWaitsForTheSeed(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home}
+	r.ctx = context.Background()
+	r.Desired(map[string]store.Desired{})
+	time.Sleep(50 * time.Millisecond)
+	if n := len(f.reqs("")); n != 0 || f.m.Busy("runtime.ml") || f.m.Busy("model.refine") {
+		t.Fatalf("a desired state not seeded acted: %d requests\n%s", n, f.log.String())
+	}
+	seeded := packsAbsent(f.m, "runtime.ml", map[string]store.Desired{
+		"model.refine":        {ID: "model.refine", Want: components.WantAbsent, Generation: 1},
+		"model.whisper-turbo": {ID: "model.whisper-turbo", Want: components.WantInstalled, Generation: 1},
+	})
+	r.Desired(seeded)
+	waitIdle(t, f.m, "runtime.ml")
+	if !f.m.Installed("runtime.ml") {
+		t.Fatalf("the seeded state's wanted pack was not installed\n%s", f.log.String())
+	}
+	if _, ran := f.m.Progress("model.refine"); ran {
+		t.Fatalf("model.refine (absent) was acted on\n%s", f.log.String())
+	}
+	if f.m.Busy("model.whisper-turbo") || f.m.Installed("model.whisper-turbo") {
+		t.Fatal("a model was installed from the first seeded state (it is left to the pipeline)")
+	}
+	if row := rowOf(t, r, "model.refine"); row.Phase != components.PhaseNotInstalled {
+		t.Fatalf("model.refine: %+v", row)
+	}
+}
+
+// An asset whose want is absent reads not installed when it is not on this machine,
+// even after an earlier want's install of it failed this boot.
+func TestAbsentAssetIsNeverFailed(t *testing.T) {
+	f := newFixture(t, fixtureOpts{noIndex: true})
+	r := &Runner{M: f.m, Machine: store.Home}
+	r.ctx = context.Background()
+	r.Desired(packsAbsent(f.m, "runtime.ml", map[string]store.Desired{}))
+	waitIdle(t, f.m, "runtime.ml")
+	if row := rowOf(t, r, "runtime.ml"); row.Phase != components.PhaseFailed {
+		t.Fatalf("the wanted install's failure is not reported: %+v", row)
+	}
+	r.Desired(packsAbsent(f.m, "", map[string]store.Desired{}))
+	if row := rowOf(t, r, "runtime.ml"); row.Phase != components.PhaseNotInstalled || row.Conditions[0].Reason != "" {
+		t.Fatalf("an absent asset not on disk: %+v", row)
+	}
+	if _, _, failed := f.m.Failed("runtime.ml"); !failed {
+		t.Fatal("the failure itself is still the manager's to say")
+	}
+}
+
+// An install whose requirement installs in this process already waits for it: never
+// a busy failure (model.refine and runtime.ml at a fresh home's first pass).
+func TestInstallWaitsForARequirementInstalling(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	block := make(chan struct{})
+	f.m.Prepare = map[string]PrepareFunc{"runtime.ml": func(context.Context, string, string, func(int)) error {
+		<-block
+		return nil
+	}}
+	first := make(chan error, 1)
+	go func() { first <- f.m.Install(context.Background(), "runtime.ml", nil) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if p, _ := f.m.Progress("runtime.ml"); p.Detail == DetailPreparing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("never prepared")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	second := make(chan error, 1)
+	go func() { second <- f.m.Install(context.Background(), "model.whisper-turbo", nil) }()
+	time.Sleep(3 * idlePoll)
+	if p, _ := f.m.Progress("model.whisper-turbo"); !p.Busy {
+		t.Fatalf("the model did not wait for its requirement: %+v\n%s", p, f.log.String())
+	}
+	close(block)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatalf("the model's install: %v\n%s", err, f.log.String())
+	}
+	if !f.m.Installed("model.whisper-turbo") {
+		t.Fatal("the model is not installed")
+	}
+}
+
+// A busy outcome is no failure: the runner tries the action again once the asset is
+// free, while the want still asks for it; the row never reads failed for it.
+func TestRunnerRetriesABusyAction(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home, BusyRetry: 10 * time.Millisecond}
+	r.ctx = context.Background()
+	r.tried = map[string]int64{}
+	r.desired = map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantEnabled, Generation: 4}}
+	calls := make(chan int, 10)
+	n := 0
+	r.act("runtime.ml", 4, true, func(context.Context) error {
+		n++
+		calls <- n
+		if n == 1 {
+			// what Install leaves when another one held the asset
+			if err := f.m.begin("runtime.ml", components.PhaseInstalling); err != nil {
+				t.Error(err)
+			}
+			err := fail(ReasonBusy, map[string]any{"component": "runtime.ml"}, "runtime.ml is installing already")
+			f.m.end("runtime.ml", err)
+			if row := rowOf(t, r, "runtime.ml"); row.Phase == components.PhaseFailed {
+				t.Errorf("busy reads failed: %+v", row)
+			}
+			if _, _, failed := f.m.Failed("runtime.ml"); failed {
+				t.Error("busy is a failure to the manager")
+			}
+			return err
+		}
+		return nil
+	})
+	for want := 1; want <= 2; want++ {
+		select {
+		case got := <-calls:
+			if got != want {
+				t.Fatalf("call %d, want %d", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("a busy action was not tried again (%d calls)", want-1)
+		}
+	}
+
+	// the want changed meanwhile: not tried again
+	var m atomic.Int32
+	r.mu.Lock()
+	r.desired = map[string]store.Desired{"tool.yt-dlp": {ID: "tool.yt-dlp", Want: components.WantEnabled, Generation: 2}}
+	r.mu.Unlock()
+	done := make(chan struct{})
+	r.act("tool.yt-dlp", 2, true, func(context.Context) error {
+		if m.Add(1) == 1 {
+			r.mu.Lock()
+			r.desired = map[string]store.Desired{"tool.yt-dlp": {ID: "tool.yt-dlp", Want: components.WantAbsent, Generation: 3}}
+			r.mu.Unlock()
+			close(done)
+		}
+		return fail(ReasonBusy, nil, "busy")
+	})
+	<-done
+	time.Sleep(100 * time.Millisecond)
+	if got := m.Load(); got != 1 {
+		t.Fatalf("an install no longer wanted was tried again: %d calls", got)
 	}
 }
