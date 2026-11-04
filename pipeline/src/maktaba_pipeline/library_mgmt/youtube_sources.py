@@ -120,12 +120,13 @@ async def load_sources(db: Any, library_id: UUID, *, enabled_only: bool = False)
 
 async def ensure_channel_sources(db: Any, library_id: UUID) -> int:
     """A ``channel`` source (``off``) for each of the library's ``youtube_channels`` that
-    has none: the migration did this once; channels found later get theirs here."""
+    has none: the migration did this once; channels found later get theirs here. A
+    channel that is already another library's source is left to it (slot 0182: one
+    library per channel or playlist source)."""
     rows = await db.fetch(
         "SELECT c.channel_id AS cid, c.url AS url, c.title AS title FROM youtube_channels c"
         " WHERE c.library_id = $1 AND NOT EXISTS (SELECT 1 FROM youtube_sources s"
-        "  WHERE s.library_id = c.library_id AND s.kind = 'channel'"
-        "  AND s.external_id = c.channel_id)",
+        "  WHERE s.kind = 'channel' AND s.external_id = c.channel_id)",
         uid(library_id),
     )
     for r in rows:

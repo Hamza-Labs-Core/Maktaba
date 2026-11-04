@@ -5,6 +5,12 @@ package queues
 //
 //	POST /api/libraries/{id}/youtube/guess   look now; the answer is kept (youtube_source_guesses)
 //
+// Slot 0182: the library's linked videos come first, so the answer agrees with what the
+// pipeline derives (library_mgmt/youtube_derive.py): its decision (youtube_source_decisions:
+// the playlist or channel it chose, or the one another library holds), else the channel
+// most of its linked videos are from. The evidence is info_json when most links came from
+// sidecars, filename when from titles. Only a library with no link reads its files:
+//
 // The YouTube ids are read from the library's file names as yt-dlp writes them
 // (`… #<id>.mp4`, `… [<id>].mp4`) and from its `.info.json` sidecars (channel_id,
 // playlist_id), and resolved through what Maktaba already knows of YouTube
@@ -126,8 +132,83 @@ type vote struct {
 	n                       int
 }
 
-// guessFor looks at library lib's files.
+// linkedGuess is what library lib's linked videos say (slot 0182); ok false when it has
+// no link that names a channel.
+func (h *Handler) linkedGuess(ctx context.Context, lib string) (g SourceGuess, ok bool, err error) {
+	g = SourceGuess{LibraryID: lib, FollowedBy: []LibraryName{}}
+	var linked, fromSidecar int
+	err = h.DB.QueryRowContext(ctx, `SELECT count(*), count(*) FILTER (WHERE m.mapped->>'link_method' = 'info_json')
+		  FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id
+		 WHERE m.provider = 'youtube' AND v.library_id = $1 AND v.deleted_at IS NULL`, lib).Scan(&linked, &fromSidecar)
+	if err != nil || linked == 0 {
+		return g, false, err
+	}
+	var kind, ext string
+	matched := 0
+	var outcome, dKind, clash sql.NullString
+	var ids []byte
+	var dMatched int
+	err = h.DB.QueryRowContext(ctx, `SELECT outcome, kind, external_ids, clash_external_id, matched_videos
+		  FROM youtube_source_decisions WHERE library_id = $1`, lib).Scan(&outcome, &dKind, &ids, &clash, &dMatched)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return g, false, err
+	}
+	if err == nil && dKind.Valid {
+		var chosen []string
+		_ = json.Unmarshal(ids, &chosen)
+		switch {
+		case outcome.String == "clash" && clash.Valid:
+			kind, ext, matched = dKind.String, clash.String, dMatched
+		case (outcome.String == "playlist" || outcome.String == "channel") && len(chosen) > 0:
+			kind, ext, matched = dKind.String, chosen[0], dMatched
+		}
+	}
+	if ext == "" {
+		err = h.DB.QueryRowContext(ctx, `SELECT y.channel_id, count(*) FROM media_metadata_enrichment m
+			  JOIN videos v ON v.id = m.video_id JOIN youtube_videos y ON y.youtube_id = m.external_id
+			 WHERE m.provider = 'youtube' AND v.library_id = $1 AND v.deleted_at IS NULL AND y.channel_id IS NOT NULL
+			 GROUP BY y.channel_id ORDER BY count(*) DESC, y.channel_id LIMIT 1`, lib).Scan(&ext, &matched)
+		if errors.Is(err, sql.ErrNoRows) {
+			return g, false, nil
+		}
+		if err != nil {
+			return g, false, err
+		}
+		kind = "channel"
+	}
+	var sample, title sql.NullString
+	if kind == "playlist" {
+		_ = h.DB.QueryRowContext(ctx, `SELECT p.title, (SELECT m.external_id FROM media_metadata_enrichment m
+			  JOIN videos v ON v.id = m.video_id JOIN youtube_playlist_items i ON i.youtube_id = m.external_id
+			 WHERE m.provider = 'youtube' AND v.library_id = $2 AND i.playlist_id = p.playlist_id
+			 ORDER BY m.external_id LIMIT 1)
+			  FROM youtube_playlists p WHERE p.playlist_id = $1`, ext, lib).Scan(&title, &sample)
+	} else {
+		_ = h.DB.QueryRowContext(ctx, `SELECT (SELECT title FROM youtube_channels WHERE channel_id = $1),
+			(SELECT m.external_id FROM media_metadata_enrichment m JOIN videos v ON v.id = m.video_id
+			   JOIN youtube_videos y ON y.youtube_id = m.external_id
+			  WHERE m.provider = 'youtube' AND v.library_id = $2 AND y.channel_id = $1
+			  ORDER BY m.external_id LIMIT 1)`, ext, lib).Scan(&title, &sample)
+	}
+	url := "https://www.youtube.com/channel/" + ext
+	if kind == "playlist" {
+		url = "https://www.youtube.com/playlist?list=" + ext
+	}
+	evidence := "filename"
+	if 2*fromSidecar > linked {
+		evidence = "info_json"
+	}
+	g.Kind, g.ExternalID, g.URL, g.Evidence = &kind, &ext, &url, &evidence
+	g.Title, g.SampleYouTubeID = nonEmpty(title.String), nonEmpty(sample.String)
+	g.IDsFound, g.IDsMatched = linked, matched
+	return g, true, nil
+}
+
+// guessFor looks at library lib's linked videos, else its files.
 func (h *Handler) guessFor(ctx context.Context, lib string) (SourceGuess, error) {
+	if g, ok, err := h.linkedGuess(ctx, lib); err != nil || ok {
+		return g, err
+	}
 	g := SourceGuess{LibraryID: lib, FollowedBy: []LibraryName{}}
 	rows, err := h.DB.QueryContext(ctx, `SELECT path FROM videos WHERE library_id = $1 AND deleted_at IS NULL
 		ORDER BY path LIMIT 20000`, lib)

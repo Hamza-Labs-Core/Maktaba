@@ -112,6 +112,44 @@ async def test_reconciler_schedules_youtube_refresh(db: Database) -> None:
 
 
 @pytest.mark.asyncio
+async def test_reconciler_derives_youtube_sources_from_the_links(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Slot 0182: the pass derives every library's sources from its linked videos (off),
+    once, then again only when the last decision is MAKTABA_YT_DERIVE_HOURS old."""
+    graph = {s.name: s for s in GRAPH}
+    lib = await make_library(db)
+    assert (await reconcile_once(db, graph)).yt_derive == 0  # no link yet: nothing to decide
+    v = await make_video(db, lib)
+    await db.execute(
+        "INSERT INTO youtube_videos (youtube_id, channel_id, title, source, fetched_at)"
+        " VALUES ('yyyyyyyyyy1', 'UCinventedchannel000001', 't', 'info_json', $1)",
+        to_ts(db, now()),
+    )
+    await db.execute(
+        "INSERT INTO media_metadata_enrichment (id, video_id, provider, external_id, mapped,"
+        " confidence, is_accepted, fetched_at) VALUES ($1, $2, 'youtube', 'yyyyyyyyyy1', '{}',"
+        " 1.0, $3, $4)",
+        "6b000000-0000-4000-8000-000000000001",
+        str(v),
+        True,
+        to_ts(db, now()),
+    )
+    assert (await reconcile_once(db, graph)).yt_derive == 1
+    row = await db.fetchrow(
+        "SELECT kind, external_id, mode FROM youtube_sources WHERE library_id = $1", str(lib)
+    )
+    assert (row["kind"], row["external_id"], row["mode"]) == (
+        "channel",
+        "UCinventedchannel000001",
+        "off",
+    )
+    assert (await reconcile_once(db, graph)).yt_derive == 0  # decided just now
+    monkeypatch.setenv("MAKTABA_YT_DERIVE_HOURS", "0")  # 0: never
+    assert (await reconcile_once(db, graph, at=now() + timedelta(days=1))).yt_derive == 0
+
+
+@pytest.mark.asyncio
 async def test_reconciler_sweeps_a_library_at_its_sweep_interval(db: Database) -> None:
     from maktaba_pipeline.engine.sql import dumps, is_pg
 
