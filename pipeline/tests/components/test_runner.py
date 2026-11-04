@@ -350,3 +350,24 @@ async def test_once_nothing_failed_an_idle_poll_is_one_query_again(db: Database)
         await r._pass(force=False)
     assert counting.n == 5
     await r.close()
+
+
+@pytest.mark.asyncio
+async def test_the_listener_is_up_before_the_first_pass(db: Database) -> None:
+    # the first pass reports the phases; a change written just after it must be notified,
+    # not left to the next poll (components-live T13 waited 10 s for "off")
+    r, _ = _runner(db)
+    order: list[str] = []
+
+    async def listen() -> None:
+        order.append("listen")
+
+    async def a_pass(*, force: bool) -> None:
+        order.append("pass")
+        stop.set()
+
+    stop = asyncio.Event()
+    r._listen = listen  # type: ignore[method-assign]
+    r._pass = a_pass  # type: ignore[method-assign]
+    await r.run(stop)
+    assert order[:2] == ["listen", "pass"], order

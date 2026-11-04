@@ -287,6 +287,9 @@ class ComponentRunner:
         global _ACTIVE
         _ACTIVE = self
         try:
+            # LISTEN first: a change written after the first pass read desired state, but
+            # before the listener was up, would otherwise wait for the next poll
+            await self._listen()
             await self._pass(force=True)
             while not stop.is_set():
                 await self._listen()
