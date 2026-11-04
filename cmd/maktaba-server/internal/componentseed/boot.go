@@ -61,7 +61,7 @@ func (h Home) Run(ctx context.Context) error {
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
-		found = Superseded(raw, h.Facts.Config, desired)
+		found = Superseded(raw, h.Facts, desired)
 		LogSuperseded(log, h.TomlPath, found)
 	}
 	notes := append(EnvNotes(getenv), BootNotes(h.NoMDNS)...)

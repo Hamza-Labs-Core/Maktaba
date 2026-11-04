@@ -213,6 +213,21 @@ func (b Bundle) Addr() string { return "127.0.0.1:" + strconv.Itoa(b.Port) }
 // every role connects over loopback TCP anyway).
 func (b Bundle) ServerArgs() []string { return b.serverArgs(b.listensOut()) }
 
+// MaxConnections is the cluster's max_connections. Every program of the home and of each
+// of its machines has its own pools on it, each with a cap:
+//
+//   - the home's API: 32 for its handlers, 4 idempotency, 2 health, 1 readiness, its
+//     LISTEN connections: about 42
+//   - the home's streaming service 10, each TV slot 6 (two or three slots): about 28
+//   - each pipeline worker 10 and its 2 LISTEN connections (four or five workers): about 60
+//   - each other machine: its API 16 + 4, its streaming service and slots, its pipeline
+//     workers: 50 to 70
+//
+// Postgres's default of 100 did not fit them: the home alone came to 130 and every query
+// past the 97th failed with 53300 ("remaining connection slots are reserved"). 300 fits the
+// home and three machines. A machine's copy runs with the same arguments.
+const MaxConnections = 300
+
 // serverArgs: lan false for the short-lived servers of Prepare (never on the LAN).
 func (b Bundle) serverArgs(lan bool) []string {
 	sock := b.Data
@@ -227,9 +242,10 @@ func (b Bundle) serverArgs(lan bool) []string {
 	// machine's copy may become the home (specs/epics/37-node-replica). Room for every
 	// machine's slot and sender, the first copy's tables in parallel on each side. Its log
 	// lines' times are UTC (log_timezone), as every other line of server.log: the logs page
-	// puts them in one window.
+	// puts them in one window. Connections: see MaxConnections.
 	args := []string{"-D", b.Data, "-p", strconv.Itoa(b.Port),
 		"-c", "listen_addresses=" + listen, "-c", "unix_socket_directories=" + sock, "-c", "wal_level=logical",
+		"-c", "max_connections=" + strconv.Itoa(MaxConnections),
 		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
 		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
 		"-c", "log_timezone=UTC"}
@@ -457,7 +473,11 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	if err != nil {
 		return err
 	}
-	srv.Stdout, srv.Stderr = childLog(log), childLog(log)
+	// its own last lines too: a server that exits while starting says why (a port in
+	// use, too little shared memory) in the error, whatever log is (a test's io.Discard)
+	tail := &tailWriter{max: startTailBytes, next: childLog(log)}
+	srv.Stdout, srv.Stderr = tail, tail
+	srv.WaitDelay = 5 * time.Second // its output pipe, should a child outlive it
 	if err := srv.Start(); err != nil {
 		return err
 	}
@@ -483,7 +503,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 		select {
 		case werr := <-exited:
 			exited <- werr // for the deferred stop
-			return fmt.Errorf("postgres exited while starting: %v", werr)
+			return fmt.Errorf("postgres exited while starting: %v%s", werr, tail.said())
 		case <-rctx.Done():
 			return fmt.Errorf("postgres did not get ready: %w", err)
 		case <-time.After(200 * time.Millisecond):

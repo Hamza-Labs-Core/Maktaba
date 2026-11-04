@@ -34,7 +34,7 @@ import Testing
        {"id":"home","name":"Mac mini","role":"home","version":"0.3.40","state":"up_to_date","platform":"darwin/arm64",
         "last_update":{"id":"a1","at":"2026-10-30T03:00:00Z","ended_at":"2026-10-30T03:10:00Z","source":"run","to":"0.3.40","outcome":"installed"}},
        {"id":"n1","name":"Basement PC","role":"node","version":"0.3.39","state":"needs_a_reboot","target":"0.3.40",
-        "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf rejects 192.168.1.20","fails":4}},
+        "home_db":{"ok":false,"code":"no_hba","detail":"pg_hba.conf rejects 192.0.2.20","fails":4}},
        {"id":"n2","name":"Attic","role":"node","version":"0.3.40","state":"up_to_date","home_db":{"ok":true}}],
      "stuck":{"version":"0.3.43","code":"tv_busy","windows":3,"since":"2026-10-27T03:00:00Z"},
      "tv_held":{"run_id":"r9","version":"0.3.40","outcome":"held","number":12,"held_on":"0.3.39","failed":["slot.health"],
@@ -264,7 +264,7 @@ import Testing
         let d = try JSONDecoder.home.decode(ProcessesDoc.self, from: Data(Self.doc.utf8))
         #expect(d.available && d.host == "mac-mini")
         #expect(d.processes.map(\.id) == ["api", "tv-slot/blue", "tv-slot/amber", "pipeline", "ollama"])
-        #expect(d.processes.map(\.name) == ["API", "TV slot blue", "TV slot amber", "Processing pipeline", "ollama"])
+        #expect(d.processes.map(\.name) == ["API", "TV slot blue", "TV slot amber", "Processing pipeline", "Language model server"])
         let amber = d.processes[2]
         #expect(amber.wanted && amber.crashLoop && amber.restarts == 4 && amber.stateText == "Restarting")
         // its code's words with its values (the web's setup.starting.detail.port_taken), not the English
@@ -276,6 +276,62 @@ import Testing
         // a state the app does not know shows raw; a field of the wrong shape reads as absent
         #expect(d.processes[3].stateText == "levitating" && d.processes[3].lastProbe?.failures == 3)
         #expect(d.processes[4].restarts == 0 && d.processes[4].stateText == "Stopped")
+    }
+
+    @Test func fillsTheVenvBuildsPercentInBothLanguages() throws {
+        let json = #"""
+        {"available":true,"processes":[
+          {"role":"pipeline","state":"starting","restarts":0,"detail":"Installing the transcription tools: torch (40%)",
+           "detail_code":"venv_building","detail_params":{"step":"torch","done":4,"total":9,"percent":40,"message":"torch"}},
+          {"role":"pipeline","instance":"old","state":"starting","restarts":0,
+           "detail":"building the pipeline's Python environment (4 of 9)","detail_code":"venv_building"}],"events":[]}
+        """#
+        let d = try JSONDecoder.home.decode(ProcessesDoc.self, from: Data(json.utf8))
+        let venv = d.processes[0]
+        #expect(venv.detailText(locale: Locale(identifier: "en")) == "Installing the transcription tools (40%).")
+        #expect(venv.detailText(locale: Locale(identifier: "ar")) == "جارٍ تثبيت أدوات التفريغ (40%).")
+        // a home that sends the code without its values: its English, never a raw {percent}
+        let bare = d.processes[1]
+        for lang in ["en", "ar"] {
+            let text = try #require(bare.detailText(locale: Locale(identifier: lang)))
+            #expect(!text.contains("{"), "\(lang): \(text)")
+            #expect(text == "building the pipeline's Python environment (4 of 9)")
+        }
+    }
+
+    /// A process whose component is off reads held (the home's snapshot says "held"), never raw.
+    @Test func aProcessWhoseComponentIsOffReadsHeld() {
+        #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "en"))
+            == "Held: its component is off")
+        #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "ar"))
+            == "موقوف: مكوّنه متوقف عن العمل")
+    }
+
+    @Test func everyRoleTheSupervisorRunsHasWords() {
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar")
+        #expect(StatusWords.processName(role: "postgres", instance: nil, locale: en) == "Database")
+        #expect(StatusWords.processName(role: "copy", instance: nil, locale: en) == "Database copy")
+        #expect(StatusWords.processName(role: "ollama", instance: nil, locale: en) == "Language model server")
+        #expect(StatusWords.processName(role: "relay", instance: nil, locale: en) == "Remote access relay")
+        #expect(StatusWords.processName(role: "relay", instance: nil, locale: ar) == "مرحّل الوصول عن بُعد")
+        #expect(StatusWords.processName(role: "ollama", instance: nil, locale: ar) == "خادم النموذج اللغوي")
+    }
+
+    /// The supervisor's pipeline instances read in words, never their ids, in both languages.
+    @Test func everyInstanceTheSupervisorRunsHasWords() {
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar")
+        #expect(StatusWords.processName(role: "pipeline", instance: "index", locale: en) == "Processing pipeline search index")
+        #expect(StatusWords.processName(role: "pipeline", instance: "chroma-copy", locale: en) == "Processing pipeline search index copy")
+        #expect(StatusWords.processName(role: "pipeline", instance: "stt-2", locale: en) == "Processing pipeline transcription 2")
+        #expect(StatusWords.processName(role: "pipeline", instance: "index", locale: ar) == "خط المعالجة فهرس البحث")
+        #expect(StatusWords.processName(role: "pipeline", instance: "stt-2", locale: ar) == "خط المعالجة النسخ النصي 2")
+        for i in ["index", "chroma-copy", "stt-1", "stt-3"] {
+            let name = StatusWords.processName(role: "pipeline", instance: i, locale: ar)
+            #expect(!name.unicodeScalars.contains { CharacterSet.letters.contains($0) && $0.isASCII }, "\(i): \(name)")
+        }
+        // a slot keeps its colour; an instance with no words shows as sent
+        #expect(StatusWords.processName(role: "tv-slot", instance: "blue", locale: ar) == "منفذ البث التلفزيوني أزرق")
+        #expect(StatusWords.processName(role: "pipeline", instance: "levitator", locale: en) == "Processing pipeline levitator")
     }
 
     @Test func listsTheRecentEventsNewestFirst() throws {

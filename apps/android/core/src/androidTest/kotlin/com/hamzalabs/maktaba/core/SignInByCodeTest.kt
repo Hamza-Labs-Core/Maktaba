@@ -39,7 +39,7 @@ class SignInByCodeTest {
         rule.setContent {
             CompositionLocalProvider(LocalLayoutDirection provides if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr) {
                 MaktabaTheme(ThemeMode.Dark) {
-                    ApproveCard("ABCD1234", request, "amina", "Darwish home", busy = false, onApprove = onApprove, onCancel = onCancel, now = { now })
+                    ApproveCard("ABCD1234", request, "amina", "Maktaba Home", busy = false, onApprove = onApprove, onCancel = onCancel, now = { now })
                 }
             }
         }
@@ -77,7 +77,7 @@ class SignInByCodeTest {
 
     @Test
     fun theSignInCodesQrIsDrawn() {
-        rule.setContent { MaktabaTheme(ThemeMode.Light) { QrCode("http://192.168.1.5:8088/pair?code=ABCD-1234", "QR") } }
+        rule.setContent { MaktabaTheme(ThemeMode.Light) { QrCode("http://192.0.2.5:8088/pair?code=ABCD-1234", "QR") } }
         rule.onNodeWithTag("qr-code").assertIsDisplayed()
     }
 }

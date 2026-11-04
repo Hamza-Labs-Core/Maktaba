@@ -46,7 +46,7 @@ prerelease() { case "${tag}" in *-*) return 0 ;; esac; return 1; }
 # draft whose tag the API has not resolved, so the list is read.
 release_id() {
     gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --paginate \
-        --jq ".[] | select(.tag_name == \"${tag}\") | .id" | head -1
+        --jq ".[] | select(.tag_name == \"${tag}\") | .id" | sed -n 1p
 }
 
 is_draft() {

@@ -345,7 +345,7 @@ extension AgainstAStubHome {
     var every: [ConnectProgress] {
         [
             ConnectProgress(.finding),
-            ConnectProgress(.trying(address: "http://192.168.1.20:8088", index: 1, count: 3)),
+            ConnectProgress(.trying(address: "http://192.0.2.20:8088", index: 1, count: 3)),
             ConnectProgress(.found(name: "Living room")),
             ConnectProgress(.signingIn(home: "Living room")),
             ConnectProgress(.awaitingApproval(code: "ABCD-1234", expiresAt: at)),
@@ -353,14 +353,14 @@ extension AgainstAStubHome {
             ConnectProgress(.homeBusy(retryAt: at)),
             ConnectProgress(.lookingNearby),
         ] + [ConnectProgress.Failure.unreachable, .notAHome, .otherHome, .wrongPassword, .approvalExpired, .busy, .server]
-            .map { ConnectProgress(.failed(reason: $0, tried: ["http://192.168.1.20:8088"]), attempt: 2) }
+            .map { ConnectProgress(.failed(reason: $0, tried: ["http://192.0.2.20:8088"]), attempt: 2) }
     }
 
     @Test func eachStepSaysWhatIsHappening() {
         #expect(ConnectProgress(.finding).headline(en) == "Looking for your home…")
         #expect(ConnectProgress(.lookingNearby).headline(en) == "Looking for your home on this network…")
-        #expect(ConnectProgress(.trying(address: "http://192.168.1.20:8088", index: 1, count: 3)).headline(en)
-            == "Trying \u{2068}http://192.168.1.20:8088\u{2069} — 1 of 3")
+        #expect(ConnectProgress(.trying(address: "http://192.0.2.20:8088", index: 1, count: 3)).headline(en)
+            == "Trying \u{2068}http://192.0.2.20:8088\u{2069} — 1 of 3")
         #expect(ConnectProgress(.found(name: "Living room")).headline(en) == "Found \u{2068}Living room\u{2069}")
         #expect(ConnectProgress(.reconnecting(name: "Living room")).headline(en) == "Reconnecting to \u{2068}Living room\u{2069}…")
         #expect(ConnectProgress(.homeBusy(retryAt: at)).detail(now: at.addingTimeInterval(-75), en) == "Next try in 1:15")

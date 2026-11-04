@@ -3,7 +3,9 @@ package components
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -91,16 +93,28 @@ func (s *Service) Preview(ctx context.Context, req Request) (Preview, error) {
 		}
 		return s.previewMachine(ctx, node, req)
 	}
-	rows, rev, err := s.Store.Desired(ctx, store.Home)
+	snap, err := s.snapshot(ctx)
 	if err != nil {
 		return Preview{}, err
 	}
-	p, err := makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, Actor{By: "preview"}, true)
+	p, err := makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), snap.rows, snap.rev, req, Actor{By: "preview"}, true,
+		snap.missingOn(store.Home))
 	if err != nil {
 		return Preview{}, err
 	}
+	s.actualFrom(snap, p.preview.Effects)
 	p.preview.QueuedJobsParked = s.queued(ctx, p.goingOff)
 	return p.preview, nil
+}
+
+// actualFrom sets each effect's From to the phase the component has now, as GET
+// /api/components reports it (view), not the one the desired state alone gives it.
+func (s *Service) actualFrom(snap *snapshot, effects []Effect) {
+	for i := range effects {
+		if c, ok := s.cat().Get(effects[i].ID); ok {
+			effects[i].From = s.view(snap, c, false).Phase
+		}
+	}
 }
 
 // Result is what a write did.
@@ -126,11 +140,16 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 		}
 		return s.applyMachine(ctx, node, req, actor)
 	}
+	// the files on disk and the phases now (the effect's from) are read before the write
+	snap, err := s.snapshot(ctx)
+	if err != nil {
+		return Result{}, err
+	}
 	var p *plan
 	batch := uuid.NewString()
 	changed, err := s.Store.SetDesiredBatch(ctx, func(rows map[string]store.Desired, rev int64) (store.BatchPlan, error) {
 		var err error
-		p, err = makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, actor, false)
+		p, err = makePlanTier(s.cat(), s.licensed, s.tier(), s.now(), rows, rev, req, actor, false, snap.missingOn(store.Home))
 		if err != nil {
 			return store.BatchPlan{}, err
 		}
@@ -139,12 +158,15 @@ func (s *Service) Apply(ctx context.Context, req Request, actor Actor) (Result, 
 				p.writes[i].Audit.BatchID = batch
 			}
 		}
-		return store.BatchPlan{Writes: p.writes, Bundle: p.bundle}, nil
+		// the mirrors (extensions.enabled, hdhr_device.enabled) commit with the rows, so
+		// the pipeline and older clients see the change at once (story 51.07)
+		return store.BatchPlan{Writes: p.writes, Bundle: p.bundle, AfterWrite: writeMirror}, nil
 	})
 	if err != nil {
 		return Result{}, err
 	}
 	res := Result{Changed: changed, Effect: p.preview}
+	s.actualFrom(snap, res.Effect.Effects)
 	if changed == nil {
 		res.Changed = []store.Desired{}
 	}
@@ -188,10 +210,13 @@ func (s *Service) queued(ctx context.Context, ids []string) int {
 
 // MachineView is one machine's status of a component: the worst of its parts.
 type MachineView struct {
-	Machine            string `json:"machine"`
-	Phase              string `json:"phase"`
-	Reason             string `json:"reason,omitempty"`
-	ObservedGeneration int64  `json:"observed_generation"`
+	Machine string `json:"machine"`
+	Phase   string `json:"phase"`
+	Reason  string `json:"reason,omitempty"`
+	// ReasonParams fill the reason's words (components.reason.<reason>): the params of
+	// the status condition that gave the reason, as text ({"name":"release"}).
+	ReasonParams       map[string]string `json:"reason_params,omitempty"`
+	ObservedGeneration int64             `json:"observed_generation"`
 	// Health is the machine's uptime, restarts, last error, version, memory and disk
 	// (story 51.14, health.go).
 	Health *Health        `json:"health,omitempty"`
@@ -215,6 +240,9 @@ type View struct {
 	Dependents []string   `json:"dependents"`
 	Bundles    []string   `json:"bundles"`
 	Features   []string   `json:"features"`
+	// Settings are the settings the component owns, as the catalog lists them
+	// (rules.<section>, toml:<key>, ext:<name>): the page links to where each is set.
+	Settings []string `json:"settings"`
 	// Want, Hold and Generation are the desired row (no row: enabled, generation 0, and
 	// HasRow false: the catalog default).
 	Want       string      `json:"want"`
@@ -223,12 +251,14 @@ type View struct {
 	HasRow     bool        `json:"has_row"`
 	// Phase and Reason are the home's status (the worst of its parts); with no status
 	// row yet, what the desired state makes of it (Expected).
-	Phase         string        `json:"phase"`
-	Reason        string        `json:"reason,omitempty"`
-	Expected      Effect        `json:"expected"`
-	Machines      []MachineView `json:"machines"`
-	RequiredBy    []string      `json:"required_by"`
-	InstallSizeMB int64         `json:"install_size_mb"`
+	Phase  string `json:"phase"`
+	Reason string `json:"reason,omitempty"`
+	// ReasonParams are the home's reason's params (MachineView.ReasonParams).
+	ReasonParams  map[string]string `json:"reason_params,omitempty"`
+	Expected      Effect            `json:"expected"`
+	Machines      []MachineView     `json:"machines"`
+	RequiredBy    []string          `json:"required_by"`
+	InstallSizeMB int64             `json:"install_size_mb"`
 	// Health is the home's (machines[0] when it is the home); nil with no status row
 	// from the home yet.
 	Health *Health `json:"health,omitempty"`
@@ -312,12 +342,54 @@ func (s *Service) snapshot(ctx context.Context) (*snapshot, error) {
 		st[r.ID] = append(st[r.ID], r)
 		nodes = nodes || r.Machine != store.Home
 	}
-	snap := &snapshot{rows: rows, rev: rev, gates: gatesLicensed(s.cat(), rows, s.licensed), statuses: st, meta: meta,
-		now: s.now()}
+	snap := &snapshot{rows: rows, rev: rev, statuses: st, meta: meta, now: s.now()}
+	snap.gates = gatesOn(s.cat(), rows, s.licensed, snap.missingOn(store.Home))
 	if nodes {
 		snap.heard = s.heardFrom(ctx)
 	}
 	return snap, nil
+}
+
+// missingOn reports the assets machine is known not to have: the asset's status row
+// from that machine (the packs runner's) says Installed false. An asset with no such row
+// is taken as there (a machine before packs).
+func (snap *snapshot) missingOn(machine string) func(string) bool {
+	return func(id string) bool {
+		seen := false
+		for _, r := range snap.statuses[id] {
+			if r.Machine != machine {
+				continue
+			}
+			for _, c := range r.Conditions {
+				if c.Type != components.CondInstalled {
+					continue
+				}
+				if c.Status == "true" {
+					return false
+				}
+				seen = true
+			}
+		}
+		return seen
+	}
+}
+
+// statusOn is machine's status of c from its rows after the gate g gives it there
+// (settle): the rollup, with g's reason when the rows give none and say what g says, and
+// the settled rows. reported is false when machine has no row of c.
+func statusOn(rows []store.Status, g gate, switchable bool) (roll store.Status, reason string, settled []store.Status, reported bool) {
+	if len(rows) == 0 {
+		return store.Status{Phase: g.phase}, g.reason, nil, false
+	}
+	if switchable {
+		rows = settle(rows, g)
+	}
+	roll = store.Rollup(rows)
+	reason = roll.Reason()
+	if switchable && reason == "" && roll.Phase == g.phase {
+		reason = g.reason
+	}
+	return roll, reason, rows, true
 }
 
 // List is every component, in catalog order.
@@ -357,7 +429,8 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		Licensed: c.Licence == "" || s.licensed(c.Licence),
 		Requires: [][]string{}, Wants: nonNil(c.Wants), Conflicts: conflictsOf(cat, c.ID),
 		Dependents: nonNil(cat.Dependents(c.ID)), Bundles: nonNil(c.Bundles), Features: nonNil(c.Features),
-		Want: components.WantEnabled, Machines: []MachineView{}}
+		Settings: nonNil(c.Settings),
+		Want:     components.WantEnabled, Machines: []MachineView{}}
 	if v.Conflicts == nil {
 		v.Conflicts = []string{}
 	}
@@ -399,15 +472,24 @@ func (s *Service) view(snap *snapshot, c *components.Component, parts bool) View
 		v.InstallSizeMB = int64(c.Resources.DiskMB)
 	}
 	for _, m := range machines {
-		roll := store.Rollup(byMachine[m])
-		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: roll.Reason(), ObservedGeneration: roll.ObservedGeneration,
-			Health: healthOf(c, byMachine[m], roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
+		rows := byMachine[m]
+		roll, reason := store.Rollup(rows), ""
+		if m == store.Home {
+			// the home's status follows the rule the preview reads (gatesOn): a run part
+			// that reports running while a requirement's files are not here waits
+			roll, reason, rows, _ = statusOn(rows, g, c.Switchable)
+		} else {
+			reason = roll.Reason()
+		}
+		mv := MachineView{Machine: m, Phase: roll.Phase, Reason: reason, ReasonParams: reasonParams(roll),
+			ObservedGeneration: roll.ObservedGeneration,
+			Health:             healthOf(c, rows, roll.Phase, v.InstallSizeMB, snap.stale(m, snap.now))}
 		if parts {
-			mv.Parts = byMachine[m]
+			mv.Parts = rows
 		}
 		v.Machines = append(v.Machines, mv)
 		if m == store.Home {
-			v.Phase, v.Reason, v.Health = mv.Phase, mv.Reason, mv.Health
+			v.Phase, v.Reason, v.ReasonParams, v.Health = mv.Phase, mv.Reason, mv.ReasonParams, mv.Health
 		}
 	}
 	v.RequiredBy = requiredBy(cat, snap.rows, c.ID)
@@ -432,7 +514,7 @@ func (s *Service) bundleLine(snap *snapshot) BundleLine {
 			if !c.Switchable {
 				continue
 			}
-			on := wantOf(snap.rows, id) == components.WantEnabled
+			on := present(cat, snap.rows, id)
 			switch {
 			case on && !in[id]:
 				plus = append(plus, id)
@@ -456,6 +538,36 @@ func (s *Service) bundleLine(snap *snapshot) BundleLine {
 	line.Base = base
 	line.Plus, line.Minus = diff(base)
 	return line
+}
+
+// reasonParams are the params of the condition that gives s its reason (the first false
+// one with a reason, as Status.Reason), each as text; nil when it has none.
+func reasonParams(s store.Status) map[string]string {
+	for _, c := range s.Conditions {
+		if c.Status != "false" || c.Reason == "" {
+			continue
+		}
+		if len(c.Params) == 0 {
+			return nil
+		}
+		out := make(map[string]string, len(c.Params))
+		for k, v := range c.Params {
+			switch x := v.(type) {
+			case string:
+				out[k] = x
+			case nil:
+				out[k] = ""
+			default:
+				b, err := json.Marshal(x)
+				if err != nil {
+					b = []byte(fmt.Sprint(x))
+				}
+				out[k] = string(b)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func nonNil(s []string) []string {

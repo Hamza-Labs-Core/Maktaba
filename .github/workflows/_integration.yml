@@ -56,10 +56,20 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cloud/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
 
       - uses: actions/setup-python@v6.2.0
         with:
@@ -69,6 +79,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install pipeline deps
         working-directory: pipeline
@@ -114,10 +126,11 @@ jobs:
       # installed only after the integration tier: on PATH earlier, it would
       # also switch on the Go real-ffmpeg suites that belong to media-e2e.
       - name: Apt package cache
-        uses: actions/cache@v4
+        id: apt-cache
+        uses: actions/cache/restore@v4
         with:
           path: ~/apt-cache
-          key: apt-integration-${{ hashFiles('tools/ci/apt-install.sh') }}-${{ github.run_id }}
+          key: apt-integration-${{ hashFiles('tools/ci/apt-install.sh', '.github/workflows/_integration.yml') }}
           restore-keys: apt-integration-
 
       - name: Install ffmpeg
@@ -127,7 +140,7 @@ jobs:
           APT_CACHE_DIR: /home/runner/apt-cache
         run: |
           tools/ci/apt-install.sh ffmpeg >/dev/null
-          ffmpeg -hide_banner -version | head -1
+          ffmpeg -hide_banner -version | sed -n 1p
 
       - name: Pipeline file tests, real ffmpeg
         working-directory: pipeline
@@ -166,6 +179,21 @@ jobs:
         env:
           MAKTABA_CLOUD_DB_URL: postgres://maktaba:maktaba@localhost:5432/maktaba?sslmode=disable
         run: go test -tags=integration -count=1 ./...
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
+      - name: Save the apt package cache
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/apt-cache
+          key: apt-integration-${{ hashFiles('tools/ci/apt-install.sh', '.github/workflows/_integration.yml') }}
 
   # Epic 35 story 35.5 AC6: the previous stable release against this build's database. Its
   # repository tests run on this build's migrations (a rollback runs it there), and the
@@ -206,7 +234,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: api/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+          offline: "false"
 
       - name: Wait for Postgres
         run: |
@@ -219,3 +261,11 @@ jobs:
 
       - name: The previous release on this build's database
         run: make compat-prev
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}

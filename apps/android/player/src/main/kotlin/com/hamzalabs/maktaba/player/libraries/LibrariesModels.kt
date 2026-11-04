@@ -29,6 +29,7 @@ import com.hamzalabs.maktaba.core.api.setPinnedLibraries
 import com.hamzalabs.maktaba.core.api.videoFacets
 import com.hamzalabs.maktaba.core.api.videoPage
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.player.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 // What the Libraries section's screens hold (FR-14 to FR-17): plain state over the browse client
@@ -115,12 +116,19 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
         this.tab = tab
     }
 
-    suspend fun loadLibraries() = loading(signedOut, "player libraries", { problem = it }) {
-        val all = client.librarySummaries()
-        order = all.map { it.id }
-        libraries = pinnedFirst(all, order)
-        problem = null
-        librariesLoaded = true
+    /** The order of the libraries' reads and the pins: a read older than a pin is dropped. */
+    private val pinOrder = ReadOrder()
+
+    suspend fun loadLibraries() {
+        val ticket = pinOrder.begin()
+        loading(signedOut, "player libraries", { if (pinOrder.fresh(ticket)) problem = it }) {
+            val all = client.librarySummaries()
+            if (!pinOrder.fresh(ticket)) return@loading
+            order = all.map { it.id }
+            libraries = pinnedFirst(all, order)
+            problem = null
+            librariesLoaded = true
+        }
     }
 
     /** The Series tab's next page, null once the home sent a short one. */
@@ -170,7 +178,7 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
         val pins = togglePins(before, id)
         libraries = pinnedFirst(withPins(before, pins), order)
         loading(signedOut, "player pin", { libraries = before; problem = it }) {
-            val saved = client.setPinnedLibraries(pins)
+            val saved = pinOrder.saving { client.setPinnedLibraries(pins) }
             libraries = pinnedFirst(withPins(libraries, saved.libraryIds), order)
         }
     }
@@ -311,10 +319,19 @@ class SeriesState(private val client: ApiClient, val id: String, private val sig
     /** The chosen season's episodes. */
     val episodes: List<Episode> get() = seasons.firstOrNull { it.season == season }?.episodes ?: seasons.firstOrNull()?.episodes.orEmpty()
 
+    /**
+     * The watched marks saved since the read under way began: that read was answered before
+     * them, so they go on its answer (else the old marks come back on screen while the home
+     * has the new ones). As the video page's (VideoPage).
+     */
+    private val marksSinceRead = mutableMapOf<String, Boolean>()
+
     suspend fun load() = loading(signedOut, "player series page", { problem = it; loaded = true }) {
-        series = client.series(id)
+        marksSinceRead.clear()
+        val s = client.series(id)
         val doc = client.seriesEpisodes(id)
-        seasons = doc.seasons
+        seasons = doc.seasons.marked(marksSinceRead)
+        series = if (marksSinceRead.isEmpty()) s else s.copy(watchedCount = seasons.sumOf { se -> se.episodes.count { it.watched } })
         next = doc.nextEpisode
         // the season of Continue's episode, else the first
         if (season == null || doc.seasons.none { it.season == season }) {
@@ -330,9 +347,9 @@ class SeriesState(private val client: ApiClient, val id: String, private val sig
         if (ids.isEmpty()) return
         loading(signedOut, "player mark watched", { problem = it }) {
             client.markWatched(ids, watched)
-            seasons = seasons.map { s ->
-                s.copy(episodes = s.episodes.map { e -> if (e.videoId in ids) e.copy(watched = watched, progressPct = if (watched) 100.0 else 0.0) else e })
-            }
+            val marks = ids.associateWith { watched }
+            marksSinceRead += marks
+            seasons = seasons.marked(marks)
             series = series?.let { s ->
                 s.copy(watchedCount = seasons.sumOf { se -> se.episodes.count { it.watched } })
             }
@@ -345,3 +362,9 @@ class SeriesState(private val client: ApiClient, val id: String, private val sig
         mark(eps.map { it.videoId }, watched = !eps.all { it.watched })
     }
 }
+
+/** The seasons with [marks] (video id to watched) on their episodes. */
+private fun List<Season>.marked(marks: Map<String, Boolean>): List<Season> =
+    if (marks.isEmpty()) this else map { s ->
+        s.copy(episodes = s.episodes.map { e -> marks[e.videoId]?.let { w -> e.copy(watched = w, progressPct = if (w) 100.0 else 0.0) } ?: e })
+    }

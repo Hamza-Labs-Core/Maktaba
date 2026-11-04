@@ -1,0 +1,135 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 28 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-28-auto-update": {
+      "title": {
+        "hash": "ff9640ec5eaa4c4c",
+        "ar": "التحديث التلقائي (إصدارات GitHub)"
+      },
+      "content": {
+        "hash": "d4ee9742dd29b02a",
+        "ar": "التحديث التلقائي (إصدارات GitHub).\n\nتُشحن مكتبة في صورة مجموعة من الملفات التنفيذية المستضافة ذاتيًا والتطبيقات الموزّعة عبر المتاجر: `maktaba-server` (الملف التنفيذي الموحّد للخادم المنزلي)، وخدمات `maktaba-api` / `maktaba-streaming` / `maktaba-pipeline`، والمُرحِّل `maktaba-cloud`، وتطبيق **سطح المكتب** المبني على Tauri، وتطبيقات **الجوّال** المبنية على Capacitor. ومن يستضيف النظام بنفسه فيثبّته مرة ثم ينساه، سيجد نفسه بعد ستة أشهر يشغّل ملفًا تنفيذيًا فيه أخطاء معروفة وتنقصه ميزات، ما لم يكن التحديث *سهلًا وآمنًا*."
+      }
+    },
+    "story-28.1": {
+      "title": {
+        "hash": "368a61184c0484dd",
+        "ar": "ترقيم الإصدارات وختم البناء"
+      },
+      "content": {
+        "hash": "a53043003be00662",
+        "ar": "# القصة 28.1 — ترقيم الإصدارات وختم البناء\n\n> الملحمة 28 · التحديث التلقائي · المرحلة 1 (الأساس)\n\n## الوصف\n\nيجب أن يستطيع كل منتَج من منتجات مكتبة الإجابة عن سؤال «ما إصداري؟»\nبالطريقة نفسها، وأن تأتي هذه الإجابة من مصدر وحيد للحقيقة: وسم git\nالذي دفعه المشرف على المشروع. تجعل هذه القصة الإصدار والإيداع وتاريخ البناء\nحقيقةً تُثبَّت وقت الترجمة في كل ملف تنفيذي، وتعرضها عبر واجهة برمجية\nموحّدة، كي تجد القصص 28.2–28.6 ما تقارن به.\n\nالنطاق:\n\n- **الختم وقت الترجمة.** كل وحدة Go\n  (`api` و`streaming` و`cmd/maktaba-server` و`cloud`) تحمل أصلًا\n  حزمة `internal/version` "
+      }
+    },
+    "story-28.2": {
+      "title": {
+        "hash": "eb597b356ae04a0a",
+        "ar": "خدمة التحقق من التحديثات"
+      },
+      "content": {
+        "hash": "22aaf045f7a16a5e",
+        "ar": "# القصة 28.2 — خدمة التحقق من التحديثات\n\n> الملحمة 28 · التحديث التلقائي · المرحلة 2 (الاكتشاف)\n\n## الوصف\n\nخدمة على جانب الخادم تسأل GitHub دوريًا عمّا إذا كان ثمة إصدار أحدث\nمن مكتبة على القناة التي اختارها المشغّل، وتخزّن\nالإجابة مؤقتًا كي يقرأها بقية النظام (والواجهة) بتكلفة زهيدة.\n\nالسلوك:\n\n- **المصدر.** `GET https://api.github.com/repos/Hamza-Labs-Core/Maktaba/releases`\n  (مقسّم إلى صفحات؛ والصفحة الأولى تكفي لمعرفة «هل يوجد ما هو أحدث»).\n  الطلبات غير الموثّقة مقبولة للمستودعات العامة (60 طلبًا/ساعة/عنوان IP)؛ و\n  `MAKTABA_GITHUB_TOKEN` الاختياري يرفع الحد و"
+      }
+    },
+    "story-28.3": {
+      "title": {
+        "hash": "c9c5682932b26b81",
+        "ar": "التحديث الذاتي للخادم (maktaba-server)"
+      },
+      "content": {
+        "hash": "0c73507524c7fcbc",
+        "ar": "# القصة 28.3 — التحديث الذاتي للخادم (maktaba-server)\n\n> الملحمة 28 · التحديث التلقائي · المرحلة 3 (التطبيق)\n\n## الوصف\n\nتحديث بنقرة واحدة يطلقه المسؤول للملف التنفيذي `maktaba-server` قيد التشغيل،\nمصدره أحد إصدارات GitHub، ويُتحقَّق منه، ويجري بصورة ذرّية، ويمكن التراجع عنه.\n\n`POST /api/admin/system/update` مع الجسم `{\"version\": \"v1.4.2\"}` (أو\nفارغًا بمعنى «الأحدث على قناتي»):\n\n1. **التحديد.** اختيار الإصدار المستهدف (الإصدار الصريح، وإلا فأحدث إصدار\n   من 28.2). يُعاد 409 إن كان الإصدار الحالي هو الأحدث.\n2. **اختيار الملف.** مطابقة `runtime.GOOS`/`runtime.GOARCH` مع\n   نمط تسمية ملفات الإصدار\n   (`maktaba-server-<ver>-<"
+      }
+    },
+    "story-28.4": {
+      "title": {
+        "hash": "9d296b2413d2efd1",
+        "ar": "التحديث التلقائي لتطبيق سطح المكتب (Tauri)"
+      },
+      "content": {
+        "hash": "5ea524d6f76bb5e7",
+        "ar": "# القصة 28.4 — التحديث التلقائي لتطبيق سطح المكتب (Tauri)\n\n> الملحمة 28 · التحديث التلقائي · المرحلة 4 (سطح المكتب)\n\n## الوصف\n\nيستخدم تطبيق سطح المكتب المبني على Tauri **إضافة التحديث المدمجة** في Tauri 2 موجّهةً\nإلى إصدارات GitHub. لا شيفرة تحديث مخصصة في التطبيق — إعدادات فقط\nإضافةً إلى التوقيع في CI.\n\n- **نقطة الوصول.** يشير `tauri.conf.json → plugins.updater.endpoints` إلى\n  ملف `latest.json` في إصدار GitHub (التغذية «الديناميكية» لأداة التحديث):\n  `https://github.com/Hamza-Labs-Core/Maktaba/releases/latest/download/latest.json`.\n  يقارن Tauri إصدار التطبيق نفسه (28.1، من `tauri.conf.json`)\n  بقيمة `version` في `latest.json`.\n- "
+      }
+    },
+    "story-28.5": {
+      "title": {
+        "hash": "9d56f511ce0c431f",
+        "ar": "إشعار التحديث على الجوّال"
+      },
+      "content": {
+        "hash": "366f490e8efa8bbe",
+        "ar": "# القصة 28.5 — إشعار التحديث على الجوّال\n\n> الملحمة 28 · التحديث التلقائي · المرحلة 5 (الجوّال)\n\n## الوصف\n\nلا تستطيع التطبيقات الموزّعة عبر المتاجر أن تحدّث نفسها — فهذا بيد Apple وGoogle.\nلذلك **تكتشف** تطبيقات الجوّال وجود إصدار أحدث و**توجّه المستخدم إلى\nالمكان الصحيح للحصول عليه**، دون أن تنزّل أي ملف تنفيذي بنفسها قط.\n\n- **الاكتشاف.** عند التشغيل (بحد أقصى مرة واحدة كل `check\n  frequency`، والافتراضي 24 ساعة) يقارن التطبيق إصداره (28.1) بأحدث\n  إصدار ينطبق عليه. ومصدران، بالترتيب:\n  1. نقطة `GET /api/system/updates` في خادم مكتبة المتصل (رخيصة،\n     ومخزّنة "
+      }
+    },
+    "story-28.6": {
+      "title": {
+        "hash": "c7fabf7316a29af7",
+        "ar": "واجهة التحديث"
+      },
+      "content": {
+        "hash": "c159c14c1416c6a3",
+        "ar": "# القصة 28.6 — واجهة التحديث\n\n> الملحمة 28 · التحديث التلقائي · المرحلة 6 (تجربة المستخدم)\n\n## الوصف\n\nتجربة تحديث واحدة متّسقة عبر الويب وسطح المكتب والجوّال، مبنية على\nتطبيق الصفحة الواحدة نفسه (`web/dist`)، كي يعرض كل عميل الإصدار وحالة التحقق\nوتوفّر التحديث وملاحظات الإصدار، و— حيث تسمح المنصة — إجراءً.\n\n- **قسم الإعدادات ← حول/التحديثات.**\n  - الإصدار الحالي، والإيداع (مختصرًا)، وتاريخ البناء (من\n    `GET /api/system/version` / `version.json`).\n  - محدد قناة التحديث (مستقرة / تجريبية) — يعدّله المسؤول؛ ويُحفظ في\n    إعدادات الخادم.\n  - وقت آخر تحقق + زر **«تحقق الآن»** (يستدعي\n    `GE"
+      }
+    },
+    "plan-28.01-versioning-build-stamping": {
+      "title": {
+        "hash": "a550c4ad817f03de",
+        "ar": "خطة التنفيذ — القصة 28.1 ترقيم الإصدارات وختم البناء"
+      },
+      "content": {
+        "hash": "32b5fcad997bb8e9",
+        "ar": "# خطة التنفيذ — القصة 28.1 ترقيم الإصدارات وختم البناء\n\n> مرافقة لـ [story-28-01-versioning-build-stamping.md](story-28-01-versioning-build-stamping.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| ختم Go | موجود أصلًا في `Makefile` (`api_ldflags`/`streaming_ldflags`/`server_ldflags`) و`release.yml`. يُتحقَّق من توحّده؛ دون إعادة عمل. |\n| الحقل `channel` | يُشتق في `api/internal/version` (`Channel()`)، ويعرضه `system.VersionHandler`. |\n| ملف `version.json` للويب | يكتبه بناء `web` (`scripts/write-version.mjs`، ويُشغَّل ضمن `package.json build`)؛ و`VITE_APP_VERSION` يُ"
+      }
+    },
+    "plan-28.02-update-check-service": {
+      "title": {
+        "hash": "b608c2e3b8e3a2a3",
+        "ar": "خطة التنفيذ — القصة 28.2 خدمة التحقق من التحديثات"
+      },
+      "content": {
+        "hash": "6b54b3e8c05428dc",
+        "ar": "# خطة التنفيذ — القصة 28.2 خدمة التحقق من التحديثات\n\n> مرافقة لـ [story-28-02-update-check-service.md](story-28-02-update-check-service.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| الحزمة | `api/internal/system/updater.go` (تقيم بجوار `version.go`/`aggregator.go`). |\n| المصدر | الواجهة البرمجية لإصدارات GitHub؛ و`owner/repo` من `MAKTABA_UPDATE_REPO` (الافتراضي `Hamza-Labs-Core/Maktaba`). |\n| المصادقة | `MAKTABA_GITHUB_TOKEN` اختياري (يرفع حد المعدل). |\n| التخزين المؤقت | `sync.RWMutex` في الذاكرة + مدة صلاحية، مفهرسًا حسب القناة. |\n| الخلفية | goroutine واحد يبدؤه `main.go` مع مؤقّت"
+      }
+    },
+    "plan-28.03-server-self-update": {
+      "title": {
+        "hash": "07cdf7c0c32802cc",
+        "ar": "خطة التنفيذ — القصة 28.3 التحديث الذاتي للخادم"
+      },
+      "content": {
+        "hash": "de0ec03cc2a020ef",
+        "ar": "# خطة التنفيذ — القصة 28.3 التحديث الذاتي للخادم\n\n> مرافقة لـ [story-28-03-server-self-update.md](story-28-03-server-self-update.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| الحزمة | `api/internal/system/selfupdate.go`. |\n| المسار | `POST /api/admin/system/update`، مقصور على المسؤول داخل المعالج. |\n| مطابقة الملف | `maktaba-server-<ver>-<goos>-<goarch>.(tar.gz|zip)`. |\n| السلامة | SHA-256 مقابل `checksums.txt` في الإصدار. |\n| الاستبدال | ملف مؤقت ← إعادة تسمية الملف الحالي إلى `.bak` ← إعادة تسمية الجديد مكانه؛ ثم إعادة التنفيذ. |\n| نوع التثبيت | docker ← 409؛ deb/rpm ← مدير الحزم؛ وإلا فاستبدال الملف التنفيذي"
+      }
+    },
+    "plan-28.04-desktop-auto-update": {
+      "title": {
+        "hash": "f46efa16a6974b4f",
+        "ar": "خطة التنفيذ — القصة 28.4 التحديث التلقائي لتطبيق سطح المكتب (Tauri)"
+      },
+      "content": {
+        "hash": "ddcc1d307e0b87cf",
+        "ar": "# خطة التنفيذ — القصة 28.4 التحديث التلقائي لتطبيق سطح المكتب (Tauri)\n\n> مرافقة لـ [story-28-04-desktop-auto-update.md](story-28-04-desktop-auto-update.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| أداة التحديث | إضافة التحديث المدمجة في Tauri 2 (دون شيفرة في التطبيق). |\n| التغذية | ملف `latest.json` في إصدار GitHub (نقطة وصول ديناميكية). |\n| التوقيع | زوج مفاتيح من `tauri signer generate`؛ المفتاح العام في الإعدادات، والخاص في أسرار CI. |\n| `latest.json` | يُصدره `tauri-action` متى كان التوقيع مُعدًّا. |\n| ملفات الإعداد | `tauri.conf.json` و`desktop-release.yml` و`docs/auto-update.md`. |\n\n## 1. `tauri.conf"
+      }
+    },
+    "plan-28.05-mobile-update-notification": {
+      "title": {
+        "hash": "36e2c5c82038a1f8",
+        "ar": "خطة التنفيذ — القصة 28.5 إشعار التحديث على الجوّال"
+      },
+      "content": {
+        "hash": "da40ef7dba4f4972",
+        "ar": "# خطة التنفيذ — القصة 28.5 إشعار التحديث على الجوّال\n\n> مرافقة لـ [story-28-05-mobile-update-notification.md](story-28-05-mobile-update-notification.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| موطن الشيفرة | تطبيق الصفحة الواحدة في `web/` (يغلّف الجوّال `web/dist`)؛ ومحمي بكشف البيئة الأصلية. |\n| المصادر | أولًا `GET /api/system/updates` في الخادم المقترن؛ والرجوع إلى إصدارات GitHub احتياطًا. |\n| التقنين/الإخفاء | `localStorage` (`mkt:update:lastCheck` و`mkt:update:dismissed`). |\n| الشريط | `web/src/components/UpdateBanner.tsx`؛ لا يُعرض إلا في البيئة الأصلية. |\n| الروابط | `web/src/lib/native.ts` (المن"
+      }
+    },
+    "plan-28.06-update-ui": {
+      "title": {
+        "hash": "0ee2ae3b32b22364",
+        "ar": "خطة التنفيذ — القصة 28.6 واجهة التحديث"
+      },
+      "content": {
+        "hash": "eebe793a101babc4",
+        "ar": "# خطة التنفيذ — القصة 28.6 واجهة التحديث\n\n> مرافقة لـ [story-28-06-update-ui.md](story-28-06-update-ui.md).\n\n## 0. النطاق والموضع\n\n| الجانب | القرار |\n|---|---|\n| قسم الإعدادات | استبدال `AboutTab` المؤقت في `web/src/pages/Settings.tsx`. |\n| البيانات | `GET /api/system/version` و`GET /api/system/updates[?refresh=true]` و`POST /api/admin/system/update`. |\n| حاجز المسؤول | يتحكم `useAuth().user.is_admin` في زر «حدّث الآن». |\n| الشارة | أيقونة الإعدادات في التنقل + رابط «حول» متى كانت القيمة `available`. |\n| الترجمة | مفاتيح `update.*` بالإنجليزية والعربية. |\n\n## 1. قسم حول/التحديثات\n\n```tsx\nfunction Abou"
+      }
+    }
+  }
+}

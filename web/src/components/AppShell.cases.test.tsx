@@ -122,6 +122,7 @@ const PAGES = [
   "/search",
   "/guide",
   "/queue",
+  "/queue/libraries",
   "/transcription",
   "/settings/*",
   "/account",
@@ -300,6 +301,7 @@ const SERVER_LINKS = [
 const ADMIN_LINKS = [
   ...SERVER_LINKS,
   ["nav.admin.libraries", "/admin/libraries"],
+  ["nav.libraryDashboard", "/queue/libraries"],
   ["nav.admin.users", "/admin/users"],
   ["nav.admin.libraryAcl", "/admin/library-acl"],
   ["nav.admin.channels", "/admin/channels"],
@@ -838,6 +840,22 @@ describe("AppShell (test-cases/app-shell.md)", () => {
     );
     expect(within(tabbar()).getByRole("link", { name: en["nav.home"] })).not.toHaveAttribute(
       "aria-current"
+    );
+  });
+
+  it("SHL-35b: on the library dashboard only its entry is current; Processing is on a queue", async () => {
+    signedIn(root);
+    renderShell(["/queue/libraries"]);
+    await screen.findByRole("heading", { name: "page /queue/libraries" });
+    const board = within(sidebar()).getByRole("link", { name: en["nav.libraryDashboard"] });
+    const processing = within(sidebar()).getByRole("link", { name: en["nav.queue"] });
+    expect(board).toHaveAttribute("aria-current", "page");
+    expect(processing).not.toHaveAttribute("aria-current");
+    await userEvent.click(processing);
+    await screen.findByRole("heading", { name: "page /queue" });
+    expect(within(sidebar()).getByRole("link", { name: en["nav.queue"] })).toHaveAttribute(
+      "aria-current",
+      "page"
     );
   });
 

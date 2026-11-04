@@ -13,6 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
@@ -99,7 +100,7 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 	// ([media] ffmpeg, the operator's MAKTABA_FFMPEG, the desktop app's own on a
 	// Mac or Windows, else the PATH's: on Linux the distribution's, Epic 39).
 	exe, _ := os.Executable()
-	env = append(env, ffmpeg.Find(cfg.Media, config.AppPayload(exe)).Env()...)
+	env = append(env, ffmpeg.Find(cfg.Media, config.AppPayload(exe), cfg.StateDir()).Env()...)
 
 	// The language model server every LLM stage uses (the bundled Ollama at the
 	// port serve claimed, or [llm] url): the pipeline takes it as the model server of its
@@ -322,6 +323,18 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		if os.Getenv("MAKTABA_WORKER_PATH_MAP") == "" {
 			add("MAKTABA_WORKER_PATH_MAP", strings.TrimSpace(cfg.Media.PathMap))
 		}
+		// Epic 51: the refine stage reads CAMeL Tools' MSA database from the installed
+		// model.refine pack (its camel_tools/ is a CAMELTOOLS_DATA folder); without the
+		// pack the pipeline keeps its own <model cache>/camel_tools. An operator's own
+		// CAMELTOOLS_DATA is kept.
+		if os.Getenv("CAMELTOOLS_DATA") == "" {
+			add("CAMELTOOLS_DATA", packs.StateLayout(cfg.StateDir()).CurrentPath("model.refine", "camel_tools"))
+		}
+		// the components folder: the pipeline finds a tool.ffmpeg pack installed after it
+		// started there (binaries.py; the MAKTABA_FFMPEG above names one there already)
+		if os.Getenv("MAKTABA_COMPONENTS_DIR") == "" {
+			add("MAKTABA_COMPONENTS_DIR", packs.StateLayout(cfg.StateDir()).Root)
+		}
 		// Windows (Epic 38 story 38.1): Python writes its pipes in the ANSI code
 		// page unless told otherwise, which cannot hold an Arabic title (a log line
 		// with one raised UnicodeEncodeError); unbuffered, so the server's log has
@@ -339,6 +352,13 @@ func ChildEnv(role Role, cfg config.Config) ([]string, error) {
 		// machine's node (node.json: its database role, node id). The pipeline only
 		// reads node.json without a database URL, so [database].url above would
 		// make it a home worker against this machine's own database.
+		//
+		// A home's cluster agent reaches this machine's api where [server] listen puts
+		// it (cluster/agent/service.py's MAKTABA_API_URL, whose default :8080 is wrong
+		// for any other port); a node's reaches the home through node.json instead.
+		if !NodeMode(cfg, n) && os.Getenv("MAKTABA_API_URL") == "" {
+			add("MAKTABA_API_URL", "http://"+LocalAddr(cfg.Server.Listen, ports.APIPublic.PortString()))
+		}
 		if NodeMode(cfg, n) {
 			env = setEnv(env, "DATABASE_URL", HomeDSN(n))
 			env = setEnv(env, "MAKTABA_DATABASE_URL", HomeDSN(n))

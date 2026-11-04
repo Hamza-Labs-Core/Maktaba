@@ -1,9 +1,10 @@
-// Epic 47 on the Queues page: the libraries' menu and columns, the action
-// dialog, the YouTube sources dialog and the per-item panel, per state and
+// Epic 47 on the Queues page: the action dialog, the YouTube sources dialog and the per-item panel, per state and
 // action, admin-only rendering, and axe.
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { useState } from "react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 
 const { get, post, patch, del } = vi.hoisted(() => ({
   get: vi.fn(),
@@ -16,93 +17,18 @@ vi.mock("../../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post, patch, delete: del } };
 });
 
-import { LibrariesTable } from "./LibrariesTable";
 import { OfflineActionDialog } from "./OfflineActionDialog";
 import { YouTubeSourcesDialog } from "./YouTubeSourcesDialog";
 import { OfflineItemsPanel } from "./OfflineItemsPanel";
 import { renderAt, routeGet } from "../../test/queueHarness";
 import { axeViolations } from "../../test/axe";
-import { librariesFixture, snapshotFixture } from "../../test/fixtures/queues";
-import { LIB, offlineItem, source, summary } from "../../test/fixtures/offline";
-
-const row = { ...librariesFixture[0], library_id: LIB, name: "Islamic lectures" };
+import { LIB, offlineItem, source } from "../../test/fixtures/offline";
 
 beforeEach(() => {
   get.mockReset();
   post.mockReset();
   patch.mockReset();
   del.mockReset();
-});
-
-describe("LibrariesTable (Epic 47)", () => {
-  it("shows the YouTube, Not MP4 and Duplicates columns and a menu in pipeline order", async () => {
-    const onOffline = vi.fn();
-    const onSources = vi.fn();
-    const { container } = renderAt(
-      <LibrariesTable
-        rows={[row]}
-        stages={snapshotFixture.stages}
-        onRequeue={() => {}}
-        offline={{ [LIB]: summary() }}
-        onOffline={onOffline}
-        onSources={onSources}
-      />,
-      "/queue"
-    );
-    for (const h of ["YouTube", "Not MP4", "Duplicates"]) {
-      expect(screen.getByRole("columnheader", { name: h })).toBeInTheDocument();
-    }
-    expect(screen.getByText(/2 of 3 sources on/)).toBeInTheDocument();
-    expect(screen.getByText(/120 in the back catalogue/)).toBeInTheDocument();
-    expect(screen.getByText("37")).toBeInTheDocument();
-    expect(screen.getByText("3 converting")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "2 duplicate groups in Islamic lectures" })
-    ).toHaveAttribute("href", `/queue/duplicates?library=${LIB}`);
-    await userEvent.click(screen.getByRole("button", { name: "Actions for Islamic lectures" }));
-    const items = screen.getAllByRole("menuitem").map((m) => m.textContent);
-    expect(items).toEqual([
-      "Refresh from YouTube",
-      "Convert to MP4",
-      "Find duplicates",
-      "YouTube sources…",
-    ]);
-    await userEvent.click(screen.getByRole("menuitem", { name: "Convert to MP4" }));
-    expect(onOffline).toHaveBeenCalledWith("convert", [row]);
-    await userEvent.click(screen.getByRole("button", { name: "Actions for Islamic lectures" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "YouTube sources…" }));
-    expect(onSources).toHaveBeenCalledWith(row);
-    expect(await axeViolations(container)).toEqual([]);
-  });
-
-  it("offers the bulk actions for the selected rows", async () => {
-    const onOffline = vi.fn();
-    const other = { ...row, library_id: "lib-2", name: "Kids" };
-    renderAt(
-      <LibrariesTable
-        rows={[row, other]}
-        stages={snapshotFixture.stages}
-        onRequeue={() => {}}
-        offline={{}}
-        onOffline={onOffline}
-      />,
-      "/queue"
-    );
-    expect(screen.queryByRole("button", { name: /With selected/ })).toBeNull();
-    await userEvent.click(screen.getByRole("checkbox", { name: "Select all libraries" }));
-    await userEvent.click(screen.getByRole("button", { name: "With selected (2)" }));
-    await userEvent.click(screen.getByRole("menuitem", { name: "Refresh from YouTube" }));
-    expect(onOffline).toHaveBeenCalledWith("youtube_refresh", [row, other]);
-  });
-
-  it("without the admin props shows neither the columns nor the menus", () => {
-    renderAt(
-      <LibrariesTable rows={[row]} stages={snapshotFixture.stages} onRequeue={() => {}} />,
-      "/queue"
-    );
-    expect(screen.queryByRole("columnheader", { name: "YouTube" })).toBeNull();
-    expect(screen.queryByRole("button", { name: /Actions for/ })).toBeNull();
-  });
 });
 
 describe("OfflineActionDialog", () => {
@@ -191,7 +117,7 @@ describe("YouTubeSourcesDialog", () => {
   const lib = { id: LIB, name: "Islamic lectures" };
   const sourcesUrl = `/api/libraries/${LIB}/youtube/sources`;
 
-  it("lists, adds, sets the mode, turns off and removes", async () => {
+  it("lists, adds, sets the mode, switches off and removes", async () => {
     routeGet(get, { [sourcesUrl]: { items: [source()] } });
     post.mockResolvedValue({ source: source({ id: "new" }), refresh: { outcome: "inserted" } });
     patch.mockResolvedValue({ source: source(), refresh: null });
@@ -227,13 +153,72 @@ describe("YouTubeSourcesDialog", () => {
     expect(patch).toHaveBeenCalledWith(`${sourcesUrl}/${source().id}`, { mode: "new_only" });
 
     await userEvent.click(
-      screen.getByRole("button", { name: "Turn off UCaaaaaaaaaaaaaaaaaaaaaa" })
+      screen.getByRole("switch", { name: "Downloads UCaaaaaaaaaaaaaaaaaaaaaa" })
     );
-    expect(patch).toHaveBeenLastCalledWith(`${sourcesUrl}/${source().id}`, { mode: "off" });
+    expect(patch).toHaveBeenLastCalledWith(`${sourcesUrl}/${source().id}`, { on: false });
 
     await userEvent.click(screen.getByRole("button", { name: "Remove UCaaaaaaaaaaaaaaaaaaaaaa" }));
     expect(del).toHaveBeenCalledWith(`${sourcesUrl}/${source().id}`);
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("a list read before a removal does not bring the removed source back", async () => {
+    const older = deferred<unknown>();
+    const answers: Promise<unknown>[] = [
+      Promise.resolve({ items: [source()] }),
+      // the read after the mode change: held
+      older.promise,
+      // the read after the removal
+      Promise.resolve({ items: [] }),
+    ];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [] }));
+    patch.mockResolvedValue({ source: source(), refresh: null });
+    del.mockResolvedValue(undefined);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    renderAt(<YouTubeSourcesDialog library={lib} onClose={() => {}} />, "/queue");
+    const name = "UCaaaaaaaaaaaaaaaaaaaaaa";
+    expect(await screen.findByRole("link", { name })).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText(`Mode of ${name}`), "new_only");
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await userEvent.click(screen.getByRole("button", { name: `Remove ${name}` }));
+    expect(del).toHaveBeenCalledWith(`${sourcesUrl}/${source().id}`);
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByRole("link", { name })).toBeNull());
+
+    older.resolve({ items: [source()] });
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.queryByRole("link", { name })).toBeNull();
+  });
+
+  it("every source has its switch, off or on; on sends {on: true} and the mode shows only while on", async () => {
+    const off = source({ id: "s-off", external_id: "UCoffoffoffoffoffoffoffo", mode: "off" });
+    const on = source({ id: "s-on", external_id: "UCononononononononononon", mode: "new_only" });
+    routeGet(get, { [sourcesUrl]: { items: [off, on] } });
+    patch.mockResolvedValue({
+      source: { ...off, mode: "new_only", last_on_mode: "new_only" },
+      refresh: { outcome: "inserted" },
+    });
+    renderAt(<YouTubeSourcesDialog library={lib} onClose={() => {}} />, "/queue");
+    const offSwitch = await screen.findByRole("switch", {
+      name: "Downloads UCoffoffoffoffoffoffoffo",
+    });
+    const onSwitch = screen.getByRole("switch", { name: "Downloads UCononononononononononon" });
+    expect(offSwitch).not.toBeChecked();
+    expect(offSwitch).toHaveAttribute("aria-checked", "false");
+    expect(onSwitch).toBeChecked();
+    expect(onSwitch).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByLabelText("Mode of UCoffoffoffoffoffoffoffo")).toBeNull();
+    const mode = screen.getByLabelText("Mode of UCononononononononononon");
+    expect(within(mode).queryByRole("option", { name: "Off" })).toBeNull();
+
+    await userEvent.click(offSwitch);
+    expect(patch).toHaveBeenCalledWith(`${sourcesUrl}/s-off`, { on: true });
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Turned on; its refresh is queued."
+    );
   });
 
   it("saves the options as the pipeline reads them", async () => {
@@ -378,5 +363,67 @@ describe("OfflineItemsPanel", () => {
     await waitFor(() =>
       expect(get.mock.calls.some((c) => String(c[0]).includes("step=dedup"))).toBe(true)
     );
+  });
+
+  // every finished job reloads the list: one still on its way when a job is
+  // cancelled has the job as running, and must not bring it back
+  it("a reload that began before a Cancel does not bring the cancelled job back", async () => {
+    const older = deferred<unknown>();
+    const answers: Promise<unknown>[] = [
+      Promise.resolve({ items: [offlineItem()], next: null }),
+      older.promise,
+      Promise.resolve({ items: [], next: null }),
+    ];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [], next: null }));
+    post.mockResolvedValue({});
+    function Ticking() {
+      const [tick, setTick] = useState(0);
+      return (
+        <>
+          <button onClick={() => setTick((n) => n + 1)}>job finished</button>
+          <OfflineItemsPanel tick={tick} />
+        </>
+      );
+    }
+    renderAt(<Ticking />, "/queue");
+    expect(await screen.findByRole("link", { name: /Lecture 05/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "job finished" }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel Lecture 05" }));
+    expect(post).toHaveBeenCalledWith("/api/jobs/501/cancel");
+    expect(await screen.findByText(/Nothing is waiting/)).toBeInTheDocument();
+
+    older.resolve({ items: [offlineItem()], next: null });
+    await act(async () => {
+      await older.promise;
+    });
+    expect(screen.queryByRole("link", { name: /Lecture 05/ })).toBeNull();
+    expect(screen.getByText(/Nothing is waiting/)).toBeInTheDocument();
+  });
+
+  it("Show more read before a Cancel does not append its older page", async () => {
+    const page2 = deferred<unknown>();
+    const answers: Promise<unknown>[] = [
+      Promise.resolve({ items: [offlineItem()], next: "c1" }),
+      page2.promise,
+      Promise.resolve({ items: [], next: null }),
+    ];
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve({ items: [], next: null }));
+    post.mockResolvedValue({});
+    renderAt(<OfflineItemsPanel />, "/queue");
+    expect(await screen.findByRole("link", { name: /Lecture 05/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Show more" }));
+    expect(get).toHaveBeenLastCalledWith(expect.stringContaining("before=c1"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel Lecture 05" }));
+    expect(await screen.findByText(/Nothing is waiting/)).toBeInTheDocument();
+
+    page2.resolve({ items: [offlineItem({ id: 502, subject_label: "Lecture 06" })], next: null });
+    await act(async () => {
+      await page2.promise;
+    });
+    expect(screen.queryByRole("link", { name: /Lecture 06/ })).toBeNull();
+    expect(screen.getByText(/Nothing is waiting/)).toBeInTheDocument();
   });
 });

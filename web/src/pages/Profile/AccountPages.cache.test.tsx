@@ -23,11 +23,11 @@ const S1 = {
   created_at: "2026-10-01T09:00:00Z",
   last_seen_at: "2026-10-19T07:00:00Z",
   expires_at: "2026-11-01T09:00:00Z",
-  ip: "192.168.1.20",
+  ip: "192.0.2.20",
   user_agent: "Firefox on the Mac",
   current: true,
 };
-const S2 = { ...S1, id: "s2", ip: "10.0.0.5", user_agent: "Maktaba-iOS", current: false };
+const S2 = { ...S1, id: "s2", ip: "198.51.100.5", user_agent: "Maktaba-iOS", current: false };
 const T1 = {
   id: "t1",
   name: "CLI laptop",

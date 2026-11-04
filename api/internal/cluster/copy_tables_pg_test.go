@@ -19,7 +19,7 @@ var copyReviewed = []string{
 	"channel_programs", "channel_runtime", "channel_schedule_state", "channels", "chapters",
 	"clip_checks", "clip_group_items", "clip_groups", "cluster_replica_beat", "cluster_switchovers",
 	"cluster_terms", "collection_items",
-	// slot 0175 (Epic 51): what should run is no secret, and a promoted copy needs it;
+	// slot 0178 (Epic 51): what should run is no secret, and a promoted copy needs it;
 	// the status rows are every machine's health, rewritten by each runner's next report
 	"component_meta", "component_overrides", "component_status", "components",
 	"collection_suggestions", "collections", "dependency_health", "display_title_llm",
@@ -57,6 +57,13 @@ var copyReviewed = []string{
 	"youtube_downloads", "youtube_sources",
 	// slot 0172: each stage's and pool's place in the fair share of claims (numbers only)
 	"claim_shares",
+	// slot 0182: the libraries a channel's linked videos are in, and what the derivation
+	// decided for each library's sources (ids and counts, no secret)
+	"youtube_channel_libraries", "youtube_source_decisions",
+	// slot 0183: the subjects with a done job per library and stage, derived from the
+	// copied processing_jobs (ids and times only); copied so a replica's library rows
+	// read the same as the home's
+	"processing_done_subjects",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.

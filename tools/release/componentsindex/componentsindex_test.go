@@ -2,6 +2,8 @@ package componentsindex
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,24 +19,75 @@ const commit = "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
 
 var published = time.Date(2026, 11, 20, 10, 0, 0, 0, time.UTC)
 
-// buildPacks writes every pack the catalog asks for into dist, each a small tree.
-func buildPacks(t *testing.T, dist string, partSize int64) {
-	t.Helper()
+// built holds every pack the catalog asks for, each a small tree, once per part size
+// (TestMain): each pack is compressed at zstd's best level, and building them in each test
+// took 1.4 s of a 400 ms budget on CI's runners (with -race).
+var built = map[int64]string{}
+
+func TestMain(m *testing.M) {
+	code := func() int {
+		root, err := os.MkdirTemp("", "componentsindex-test-")
+		if err != nil {
+			panic(err)
+		}
+		defer func() { _ = os.RemoveAll(root) }()
+		for _, partSize := range []int64{0, 64} {
+			dist := filepath.Join(root, fmt.Sprintf("parts-%d", partSize))
+			if err := writePacks(dist, partSize); err != nil {
+				panic(err)
+			}
+			built[partSize] = dist
+		}
+		return m.Run()
+	}()
+	os.Exit(code)
+}
+
+func writePacks(dist string, partSize int64) error {
+	if err := os.MkdirAll(dist, 0o755); err != nil {
+		return err
+	}
 	for _, p := range Packs(components.Default(), "") {
-		stage := t.TempDir()
+		stage, err := os.MkdirTemp(filepath.Dir(dist), "stage-")
+		if err != nil {
+			return err
+		}
 		if err := os.WriteFile(filepath.Join(stage, "constraints.txt"), []byte(p.ID+" "+p.Platform+"\n"+strings.Repeat("x", 300)), 0o644); err != nil {
-			t.Fatal(err)
+			return err
 		}
 		if _, err := componentpack.Build(componentpack.Options{Dir: stage, ID: p.ID, Version: "0.4.2", Platform: p.Platform,
 			ModTime: published, Out: dist, PartSize: partSize}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// buildPacks copies every pack the catalog asks for (built once, TestMain) into dist.
+func buildPacks(t *testing.T, dist string, partSize int64) {
+	t.Helper()
+	from, ok := built[partSize]
+	if !ok {
+		t.Fatalf("no packs built with part size %d", partSize)
+	}
+	entries, err := os.ReadDir(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(from, e.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dist, e.Name()), b, 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
 }
 
-func generate(t *testing.T, dist string) ([]byte, *rv.ComponentsIndex, []string) {
+func generate(t *testing.T, dist string) ([]byte, *rv.ComponentsIndex) {
 	t.Helper()
-	idx, missing, err := Generate(Options{Catalog: components.Default(), Version: "0.4.2", Commit: commit, Published: published, Dist: dist})
+	idx, err := Generate(Options{Catalog: components.Default(), Version: "0.4.2", Commit: commit, Published: published, Dist: dist})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,26 +95,42 @@ func generate(t *testing.T, dist string) ([]byte, *rv.ComponentsIndex, []string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return b, idx, missing
+	return b, idx
 }
 
 // The catalog's packs: an asset not in the payload whose source is its own pack, on each
-// of its platforms; deferred ones and payload assets left out.
+// of its platforms; payload assets, models and runtime.ollama off the Mac (DeferredOn) left out.
 func TestPacks(t *testing.T) {
 	got := map[string]bool{}
 	for _, p := range Packs(components.Default(), "") {
 		got[p.ID+" "+p.Platform] = true
 	}
 	for _, want := range []string{"runtime.ml darwin-arm64", "runtime.ml windows-amd64", "runtime.ml linux-amd64",
-		"runtime.ml linux-arm64", "tool.yt-dlp linux-amd64"} {
+		"runtime.ml linux-arm64", "tool.yt-dlp linux-amd64", "model.refine darwin-arm64", "model.refine windows-amd64",
+		"tool.ffmpeg linux-amd64", "tool.ffmpeg linux-arm64", "runtime.ollama darwin-arm64"} {
 		if !got[want] {
 			t.Errorf("no pack %s", want)
 		}
 	}
 	for k := range got {
-		id, _, _ := strings.Cut(k, " ")
-		if id == "runtime.ollama" || id == "model.refine" || strings.HasPrefix(id, "model.whisper") {
+		id, plat, _ := strings.Cut(k, " ")
+		if (id == "runtime.ollama" && plat != "darwin-arm64") || strings.HasPrefix(id, "model.whisper") || (id == "tool.ffmpeg" && !strings.HasPrefix(plat, "linux-")) {
 			t.Errorf("unexpected pack %s", k)
+		}
+	}
+}
+
+// Every pack the catalog asks of a release has a recipe (tools/release/packs/recipes): a
+// pack with none fails every release's build leg, and with it the release.
+func TestEveryPackHasARecipe(t *testing.T) {
+	seen := map[string]bool{}
+	for _, p := range Packs(components.Default(), "") {
+		if seen[p.ID] {
+			continue
+		}
+		seen[p.ID] = true
+		if _, err := os.Stat(filepath.Join("..", "packs", "recipes", p.ID+".sh")); err != nil {
+			t.Errorf("%s: no recipe: %v", p.ID, err)
 		}
 	}
 }
@@ -71,13 +140,10 @@ func TestPacks(t *testing.T) {
 func TestGenerateIsReproducible(t *testing.T) {
 	dist := t.TempDir()
 	buildPacks(t, dist, 0)
-	b1, idx, missing := generate(t, dist)
-	b2, _, _ := generate(t, dist)
+	b1, idx := generate(t, dist)
+	b2, _ := generate(t, dist)
 	if !bytes.Equal(b1, b2) {
 		t.Fatal("two runs wrote different indexes")
-	}
-	if len(missing) != 0 {
-		t.Fatalf("missing %v", missing)
 	}
 	if idx.Server != "=0.4.2" || !idx.Expires.Equal(published.Add(365*24*time.Hour)) {
 		t.Fatalf("server %q, expires %s", idx.Server, idx.Expires)
@@ -105,23 +171,125 @@ func TestGenerateIsReproducible(t *testing.T) {
 	}
 }
 
-// A failed leg's pack is missing (not an error); a stray pack is.
-func TestGenerateMissingAndStray(t *testing.T) {
+func opts(dist string) Options {
+	return Options{Catalog: components.Default(), Version: "0.4.2", Commit: commit, Published: published, Dist: dist}
+}
+
+// A failed leg's pack is missing: the index is refused, naming it, for any catalog
+// platform, so a release never ships without some platform's packs.
+func TestGenerateRefusesAMissingPack(t *testing.T) {
+	for _, p := range Packs(components.Default(), "") {
+		t.Run(p.ID+"/"+p.Platform, func(t *testing.T) {
+			dist := t.TempDir()
+			buildPacks(t, dist, 0)
+			gone := p.Name("0.4.2")
+			if err := os.Remove(filepath.Join(dist, gone)); err != nil {
+				t.Fatal(err)
+			}
+			idx, err := Generate(opts(dist))
+			if !errors.Is(err, ErrMissing) || idx != nil {
+				t.Fatalf("Generate = %v, %v; want ErrMissing", idx, err)
+			}
+			if !strings.Contains(err.Error(), gone) {
+				t.Fatalf("%v does not name %s", err, gone)
+			}
+		})
+	}
+}
+
+// Every platform's leg failed: one error names all of their packs.
+func TestGenerateNamesEveryMissingPack(t *testing.T) {
+	dist := t.TempDir()
+	_, err := Generate(opts(dist))
+	if !errors.Is(err, ErrMissing) {
+		t.Fatalf("an empty dist: %v", err)
+	}
+	for _, p := range Packs(components.Default(), "") {
+		if !strings.Contains(err.Error(), p.Name("0.4.2")) {
+			t.Errorf("%v does not name %s", err, p.Name("0.4.2"))
+		}
+	}
+}
+
+// Every catalog platform has packs: a missing platform cannot pass for one with none.
+func TestEveryCatalogPlatformHasPacks(t *testing.T) {
+	cat := components.Default()
+	plats := map[string]bool{}
+	for _, c := range cat.Components() {
+		if c.Kind == components.KindAsset && !c.InPayload {
+			for _, p := range c.Platforms {
+				plats[p] = true
+			}
+		}
+	}
+	if len(plats) < 4 {
+		t.Fatalf("catalog platforms %v", plats)
+	}
+	for p := range plats {
+		if len(Packs(cat, p)) == 0 {
+			t.Errorf("%s: no packs", p)
+		}
+	}
+}
+
+// A stray pack is an error.
+func TestGenerateRefusesAStrayPack(t *testing.T) {
 	dist := t.TempDir()
 	buildPacks(t, dist, 0)
-	gone := componentpack.FileName("tool.yt-dlp", "0.4.2", "windows-amd64")
-	if err := os.Remove(filepath.Join(dist, gone)); err != nil {
-		t.Fatal(err)
-	}
-	_, idx, missing := generate(t, dist)
-	if len(missing) != 1 || missing[0] != gone || len(idx.Packs) != len(Packs(components.Default(), ""))-1 {
-		t.Fatalf("missing %v", missing)
-	}
 	if err := os.WriteFile(filepath.Join(dist, "evil-0.4.2-linux-amd64.tar.zst"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Generate(Options{Catalog: components.Default(), Version: "0.4.2", Commit: commit, Published: published, Dist: dist}); err == nil {
-		t.Fatal("a stray pack was indexed")
+	if _, err := Generate(opts(dist)); err == nil || errors.Is(err, ErrMissing) {
+		t.Fatalf("a stray pack: %v", err)
+	}
+}
+
+// Part of a release (--platform, --only): the packs of that platform or that one pack,
+// each of which must be there; an Only id that is no pack of the platform is an error.
+func TestGeneratePartOfARelease(t *testing.T) {
+	cat := components.Default()
+	dist := t.TempDir()
+	for _, p := range Packs(cat, "linux-arm64") {
+		b, err := os.ReadFile(filepath.Join(built[0], p.Name("0.4.2")))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dist, p.Name("0.4.2")), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	o := opts(dist)
+	o.Platform = "linux-arm64"
+	idx, err := Generate(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(idx.Packs) != len(Packs(cat, "linux-arm64")) {
+		t.Fatalf("%d packs", len(idx.Packs))
+	}
+	o.Only = []string{"tool.yt-dlp"}
+	if idx, err = Generate(o); err == nil {
+		// runtime.ml of linux-arm64 is in dist too, and not asked for: a stray
+		t.Fatalf("an unasked pack in dist passed: %d packs", len(idx.Packs))
+	}
+	for _, p := range Packs(cat, "linux-arm64") {
+		if p.ID == "tool.yt-dlp" {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dist, p.Name("0.4.2"))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if idx, err = Generate(o); err != nil || len(idx.Packs) != 1 || idx.Packs[0].ID != "tool.yt-dlp" {
+		t.Fatalf("--only tool.yt-dlp: %v %v", idx, err)
+	}
+	o.Platform = "linux-amd64"
+	if _, err := Generate(o); !errors.Is(err, ErrMissing) {
+		t.Fatalf("another platform's pack: %v", err)
+	}
+	o.Only = []string{"model.whisper-turbo"}
+	if _, err := Generate(o); err == nil || !strings.Contains(err.Error(), "not a pack of linux-amd64") {
+		t.Fatalf("a model as --only: %v", err)
 	}
 }
 
@@ -129,7 +297,7 @@ func TestGenerateMissingAndStray(t *testing.T) {
 func TestGenerateSplit(t *testing.T) {
 	dist := t.TempDir()
 	buildPacks(t, dist, 64)
-	_, idx, _ := generate(t, dist)
+	_, idx := generate(t, dist)
 	for _, p := range idx.Packs {
 		if len(p.Parts) < 2 {
 			t.Fatalf("%s: %d parts", p.Name, len(p.Parts))

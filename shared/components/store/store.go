@@ -1,5 +1,5 @@
 // Package store reads and writes the components' desired and actual state (Epic 51,
-// story 51.02; slot 0175): the one place that knows the SQL, so no runner writes any.
+// story 51.02; slot 0178): the one place that knows the SQL, so no runner writes any.
 //
 //   - Desired state (components, component_overrides) is written by the API (and the
 //     supervisor's seed, 51.03) through SetDesired / SetOverride, each with its audit_log

@@ -82,6 +82,9 @@ jobs:
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       # tools/ci/ci_paths.py: a job in ci.yml gated by no filter of .github/ci-paths.yml and
       # not marked always-run, a filter no job uses, a tracked file no filter reads...
@@ -126,9 +129,22 @@ jobs:
         uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        if: inputs.go || inputs.pipeline
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        if: inputs.go || inputs.pipeline
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: all
 
       # Python for the pipeline's linters, and for its coverage (the Go part's coverage
       # floor measures both: a dropped lane must never pass)
@@ -144,6 +160,8 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Set up pnpm
         if: inputs.web
@@ -157,8 +175,16 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        if: inputs.web
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps
         if: inputs.web
@@ -184,6 +210,8 @@ jobs:
           version: v2.12.2
           working-directory: api
           args: --timeout=5m
+          # its lint cache: pull requests and tags restore main's, only a push to main saves
+          skip-save-cache: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
       - name: golangci-lint (streaming)
         if: inputs.go
@@ -192,6 +220,8 @@ jobs:
           version: v2.12.2
           working-directory: streaming
           args: --timeout=5m
+          # its lint cache: pull requests and tags restore main's, only a push to main saves
+          skip-save-cache: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
       - name: golangci-lint (cloud)
         if: inputs.go
@@ -200,6 +230,8 @@ jobs:
           version: v2.12.2
           working-directory: cloud
           args: --timeout=5m
+          # its lint cache: pull requests and tags restore main's, only a push to main saves
+          skip-save-cache: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
       - name: golangci-lint (shared/health/go)
         if: inputs.go
@@ -208,6 +240,8 @@ jobs:
           version: v2.12.2
           working-directory: shared/health/go
           args: --timeout=5m
+          # its lint cache: pull requests and tags restore main's, only a push to main saves
+          skip-save-cache: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
       - name: gofmt + go vet
         if: inputs.go
@@ -255,6 +289,21 @@ jobs:
         if: inputs.go || inputs.pipeline
         run: make test-coverage
 
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
+      - name: Save the pnpm store
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.pnpm-cache.outputs.key != '' && steps.pnpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.path }}
+          key: ${{ steps.pnpm-cache.outputs.key }}
+
   # Epic 51 (story 51.01): every stage of the graph and the built-in extensions, every
   # supervisor process and every listed loop is in exactly one catalog component; the
   # pipeline's copy and the loaders' shared dump are current; every title, phase and reason
@@ -275,6 +324,12 @@ jobs:
             cmd/maktaba-server/go.sum
             api/go.sum
             streaming/go.sum
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server shared/components
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v8.1.0

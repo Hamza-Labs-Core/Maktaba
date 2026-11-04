@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,5 +225,23 @@ func TestTheCAIsNeverRemadeOnItsOwn(t *testing.T) {
 	_ = os.WriteFile(certPath, otherCert, 0o600)
 	if _, _, err := b.ensureCA(now); err == nil {
 		t.Fatal("a key and another CA's certificate were taken")
+	}
+}
+
+// The cluster has room for every program's pools (MaxConnections), on the LAN and on
+// loopback, not Postgres's default of 100.
+func TestServerArgsSetMaxConnections(t *testing.T) {
+	want := "-c max_connections=" + strconv.Itoa(MaxConnections)
+	for _, lan := range []bool{true, false} {
+		b := clusterBundle(t, lan, true)
+		if args := strings.Join(b.ServerArgs(), " "); !strings.Contains(args, want) {
+			t.Fatalf("lan %v: %s lacks %q", lan, args, want)
+		}
+		if args := strings.Join(b.serverArgs(false), " "); !strings.Contains(args, want) {
+			t.Fatalf("Prepare's server: %s lacks %q", args, want)
+		}
+	}
+	if MaxConnections <= 100 {
+		t.Fatalf("MaxConnections = %d: no more room than Postgres's default", MaxConnections)
 	}
 }

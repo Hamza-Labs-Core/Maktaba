@@ -29,11 +29,14 @@ import (
 // Reason codes an install, a removal or an import fails with (the catalog's reasons:
 // each has English and Arabic words, components.reason.<code>).
 const (
-	ReasonIndexMissing        = "index_missing"
-	ReasonIndexExpired        = "index_expired"
-	ReasonIndexWrongVersion   = "index_wrong_version"
-	ReasonIndexReplayed       = "index_replayed"
-	ReasonVerifyFailed        = "verify_failed"
+	ReasonIndexMissing      = "index_missing"
+	ReasonIndexExpired      = "index_expired"
+	ReasonIndexWrongVersion = "index_wrong_version"
+	ReasonIndexReplayed     = "index_replayed"
+	ReasonVerifyFailed      = "verify_failed"
+	// ReasonOfflineVerifyFailed is verify_failed of an offline file's copy (an import): the
+	// file did not match the signed index it carries; name is the item's file.
+	ReasonOfflineVerifyFailed = "offline_verify_failed"
 	ReasonDownloadFailed      = "download_failed"
 	ReasonDiskSpace           = "disk_space"
 	ReasonUnpackRefused       = "unpack_refused"
@@ -41,16 +44,19 @@ const (
 	ReasonOfflineWrongPlat    = "offline_wrong_platform"
 	ReasonPacksDisabled       = "packs_disabled"
 	ReasonPackMissing         = "pack_missing"
-	ReasonInstallFailed       = "install_failed"
-	ReasonBusy                = "busy"
-	ReasonPlatform            = "platform_unsupported"
-	ReasonRequiredBy          = "required_by"
+	// ReasonPackNotPublished: the release has none of its signed files yet (a version not
+	// published, or not with its packs): the install fails until it is; name is the asset.
+	ReasonPackNotPublished = "pack_not_published"
+	ReasonInstallFailed    = "install_failed"
+	ReasonBusy             = "busy"
+	ReasonPlatform         = "platform_unsupported"
+	ReasonRequiredBy       = "required_by"
 )
 
 // Reasons is every reason code this package reports (the catalog must list each).
 var Reasons = []string{ReasonIndexMissing, ReasonIndexExpired, ReasonIndexWrongVersion, ReasonIndexReplayed,
-	ReasonVerifyFailed, ReasonDownloadFailed, ReasonDiskSpace, ReasonUnpackRefused, ReasonOfflineWrongVersion,
-	ReasonOfflineWrongPlat, ReasonPacksDisabled, ReasonPackMissing, ReasonInstallFailed, ReasonBusy,
+	ReasonVerifyFailed, ReasonOfflineVerifyFailed, ReasonDownloadFailed, ReasonDiskSpace, ReasonUnpackRefused, ReasonOfflineWrongVersion,
+	ReasonOfflineWrongPlat, ReasonPacksDisabled, ReasonPackMissing, ReasonPackNotPublished, ReasonInstallFailed, ReasonBusy,
 	ReasonPlatform, ReasonRequiredBy}
 
 // Detail codes of an install's steps (components.detail.<code> in the web's words).
@@ -100,6 +106,16 @@ func wrap(reason string, params map[string]any, err error) *Error {
 		return e
 	}
 	return &Error{Reason: reason, Params: params, Err: err}
+}
+
+// fromFile is err said of an offline file: verify_failed becomes offline_verify_failed
+// (the words name the file, not a download); any other error is err.
+func fromFile(err error) error {
+	var e *Error
+	if errors.As(err, &e) && e.Reason == ReasonVerifyFailed {
+		return &Error{Reason: ReasonOfflineVerifyFailed, Params: e.Params, Err: e.Err}
+	}
+	return err
 }
 
 // ReasonOf is err's reason code ("" for nil, install_failed for an error of no reason).

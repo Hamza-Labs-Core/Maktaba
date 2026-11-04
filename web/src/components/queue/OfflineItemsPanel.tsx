@@ -7,6 +7,7 @@ import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { OFFLINE_STEPS, queueApi } from "../../lib/queueApi";
 import type { OfflineItem, OfflineStep } from "../../lib/queueApi";
+import { useReadOrder } from "../../lib/readOrder";
 import { useFmt } from "./format";
 import { useAction } from "./useAction";
 
@@ -28,19 +29,24 @@ export function OfflineItemsPanel({ tick, libraryId }: OfflineItemsPanelProps) {
   const [items, setItems] = useState<OfflineItem[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
+  // the list's reads (every finished job reloads it) and the Cancel / Retry made
+  // here, in order: a page read before a change, or older than the one shown, is dropped
+  const order = useReadOrder();
 
   const load = useCallback(() => {
+    const ticket = order.begin();
     queueApi
       .offlineItems({ library_id: libraryId, step: step || undefined, limit: 50 })
       .then((r) => {
+        if (!order.fresh(ticket)) return;
         setItems(
           Array.isArray(r?.items) ? r.items.filter((i) => step || SHOWN.includes(i.step)) : []
         );
         setNext(r?.next ?? null);
         setLoadError(false);
       })
-      .catch(() => setLoadError(true));
-  }, [libraryId, step]);
+      .catch(() => order.fresh(ticket) && setLoadError(true));
+  }, [libraryId, step, order]);
 
   useEffect(() => {
     load();
@@ -48,18 +54,20 @@ export function OfflineItemsPanel({ tick, libraryId }: OfflineItemsPanelProps) {
 
   const more = () => {
     if (!next) return;
+    const ticket = order.begin();
     queueApi
       .offlineItems({ library_id: libraryId, step: step || undefined, before: next, limit: 50 })
       .then((r) => {
+        if (!order.fresh(ticket)) return;
         setItems((prev) => [...(prev ?? []), ...(r?.items ?? [])]);
         setNext(r?.next ?? null);
       })
-      .catch(() => setLoadError(true));
+      .catch(() => order.fresh(ticket) && setLoadError(true));
   };
 
   const control = (it: OfflineItem, what: "cancel" | "retry") =>
     void run(`${what}:${it.id}`, () =>
-      what === "cancel" ? queueApi.cancelJob(it.id) : queueApi.retryJob(it.id)
+      order.saving(() => (what === "cancel" ? queueApi.cancelJob(it.id) : queueApi.retryJob(it.id)))
     ).then((r) => r !== undefined && load());
 
   const stateText = (it: OfflineItem) => {

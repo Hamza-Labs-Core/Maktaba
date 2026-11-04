@@ -19,7 +19,7 @@ export const host = (over: Partial<StreamingHost> = {}): StreamingHost => ({
   can_live: true,
   version: "1.4.0",
   last_beat_at: "2026-10-19T08:00:00.000Z",
-  stream_base_url: "http://192.168.1.20:8081",
+  stream_base_url: "http://192.0.2.20:8081",
   stream_base_url_source: "reported",
   channels: ["c1"],
   ...over,
@@ -65,7 +65,7 @@ export const clusterView = (over: Partial<TvClusterView> = {}): TvClusterView =>
       capacity: 8,
       used: 0,
       load: { cpu: 0.05, gpu_sessions: 0, nvenc_max: 3 },
-      stream_base_url: "http://192.168.1.30:8081",
+      stream_base_url: "http://192.0.2.30:8081",
       channels: [],
     }),
     host({

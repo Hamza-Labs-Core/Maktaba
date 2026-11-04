@@ -11,10 +11,13 @@ import kotlinx.serialization.json.contentOrNull
 // The home still refuses an off feature's routes (409 component_off): hiding is never the rule.
 
 /**
- * The build switch for 51.11 (default on). Off, every app reads every feature as on and hides
- * nothing; the home's 409 still answers for what is off.
+ * The build switch for 51.11 (default on), as an app's build sets it: the Gradle property
+ * `maktaba.capabilitiesGate` (`-Pmaktaba.capabilitiesGate=off`), kept in the app's
+ * `BuildConfig.CAPABILITIES_GATE` and read here when the app makes its session. "off", "no",
+ * "false" or "0" turn it off; anything else, or nothing, leaves it on. Off, every app reads every
+ * feature as on and hides nothing; the home's 409 still answers for what is off.
  */
-const val CAPABILITIES_GATE = true
+fun capabilitiesGate(setting: String?): Boolean = setting?.trim()?.lowercase() !in setOf("off", "no", "false", "0")
 
 /** The features the apps know, as `GET /api/capabilities` names them. */
 object Feature {

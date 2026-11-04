@@ -175,6 +175,7 @@ final class PlayerLiveUITests: PlayerUITestCase {
         drag(times, by: CGVector(dx: 240, dy: 0), from: CGVector(dx: 0.1, dy: 0.5))
         drag(times, by: CGVector(dx: 240, dy: 0), from: CGVector(dx: 0.1, dy: 0.5))
         XCTAssertTrue(wait { abs(timeline.frame.minX - before) < 1 }, "back at the start of the time (\(timeline.frame.minX))")
+        XCTAssertFalse(element("live.detail.title").exists, "the drags' hold opened no programme")
 
         // a later programme: its sheet, no Watch (it has not started)
         let later = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'live.guide.ch-1.' AND NOT identifier ENDSWITH '.now'"))
@@ -204,6 +205,8 @@ final class PlayerLiveUITests: PlayerUITestCase {
         let before = top.frame.minY
         drag(top, by: CGVector(dx: 0, dy: -300))
         XCTAssertTrue(wait { top.frame.minY < before - 100 }, "the channels scrolled up (\(before) → \(top.frame.minY))")
+        // the drag held still on a programme first (`drag`): the hold opens nothing
+        XCTAssertFalse(element("live.detail.title").exists, "the hold opened no programme")
         XCTAssertTrue(element("live.guide.g-16.now").waitForExistence(timeout: 5))
     }
 
@@ -404,7 +407,8 @@ final class PlayerLiveUITests: PlayerUITestCase {
         launchSignedIn(section: "live", extra: ["-maktaba-live", "guide"])
         let guide = app.segmentedControls.buttons["Guide"].firstMatch
         XCTAssertTrue(guide.waitForExistence(timeout: 15), "the Now | Guide switch")
-        XCTAssertTrue(guide.isSelected, "Live TV opened on the guide")
+        // the launch's view wins over the scene the last run left (`LiveTVScreen.launchModeApplied`)
+        XCTAssertTrue(wait(timeout: 5) { guide.isSelected }, "Live TV opened on the guide")
     }
 
     /// The player's banner names a channel (number · name), within a few seconds.

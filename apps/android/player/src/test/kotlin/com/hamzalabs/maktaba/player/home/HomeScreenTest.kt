@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.session.AppSession
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.Window
@@ -133,6 +134,47 @@ class HomeScreenTest {
     }
 
     @Test
+    fun notInterestedWhileHomeIsReadAgainKeepsTheCardOut() {
+        showFull()
+        compose.settledUntil(5_000) { count("/api/recommendations") == 1 }
+        // read again (pull to refresh): the recommendations answered as the home has them when asked, held
+        val held = home.hold("/api/recommendations") { FakeHome.json(HomeFixtures.RECS) }
+        compose.onNodeWithTag("home-rows").performTouchInput { swipeDown() }
+        compose.settledUntil(5_000) { held.wasAsked }
+
+        val card = inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_1}")
+        compose.onNode(card).performTouchInput { longClick() }
+        waitForTag("menu-not-interested")
+        compose.onNodeWithTag("menu-not-interested").performClick()
+        compose.settledUntil(5_000) { count("/api/recommendations/items/${HomeFixtures.REC_1}", "DELETE") == 1 && compose.onAllNodes(card).fetchSemanticsNodes().isEmpty() }
+
+        held.release()
+        // the held read answered: the home has nothing more under way
+        compose.registerIdlingResource(home.idling)
+        compose.waitForIdle()
+        assertTrue("the card dismissed while Home was read again stays out", compose.onAllNodes(card).fetchSemanticsNodes().isEmpty())
+        compose.onNode(inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_2}")).assertExists()
+    }
+
+    @Test
+    fun aRefusedNotInterestedPutsTheCardBackInItsPlace() {
+        HomeFixtures.install(home)
+        home.answer("/api/recommendations/items/${HomeFixtures.REC_1}") { FakeHome.json("""{"title":"boom"}""", code = 500) }
+        compose.setHome(home)
+        waitForTag("row-$KEY_FROM_LIBRARY")
+        val card = inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_1}")
+        compose.onNode(card).performTouchInput { longClick() }
+        waitForTag("menu-not-interested")
+        compose.onNodeWithTag("menu-not-interested").performClick()
+        compose.settledUntil(5_000) { count("/api/recommendations/items/${HomeFixtures.REC_1}", "DELETE") == 1 }
+        compose.registerIdlingResource(home.idling)
+        compose.waitForIdle()
+        compose.onNode(card).assertExists()
+        val left = { tag: String -> compose.onNode(inRow(KEY_FOR_YOU, tag)).fetchSemanticsNode().boundsInRoot.left }
+        assertTrue("back before the card after it", left("card-${HomeFixtures.REC_1}") < left("card-${HomeFixtures.REC_2}"))
+    }
+
+    @Test
     fun theNextLaunchShowsTheKeptRowsBeforeTheHomeAnswers() {
         val launch = mutableIntStateOf(0)
         HomeFixtures.install(home)
@@ -213,6 +255,42 @@ class HomeScreenTest {
         waitForTag("home-switch")
         compose.onNodeWithTag("home-switch").performClick()
         compose.settledUntil(2_000) { home.home.session.phase.value == AppSession.Phase.ChoosingHome }
+    }
+
+    // ---------- Live TV off on the home (story 51.11) ----------
+
+    private fun gone(tag: String) = compose.onAllNodes(hasTestTag(tag)).fetchSemanticsNodes().isEmpty()
+
+    @Test
+    fun aViewerHasNoChannelRowWhileLiveTvIsOff() {
+        home.viewerWithOff(Feature.LIVE_TV)
+        showFull()
+        assertTrue("no channel row", gone("row-$KEY_LIVE"))
+        assertTrue(gone("channel-${HomeFixtures.CHANNEL}"))
+        assertFalse("nothing asks for channels: ${home.paths}", "/api/channels/now" in home.paths)
+        compose.onNodeWithTag("row-$KEY_CONTINUE").assertExists()
+    }
+
+    /** As the Apple Player's Home: an admin has no channel row either (Live TV's own tab says why). */
+    @Test
+    fun anAdminHasNoChannelRowWhileLiveTvIsOff() {
+        home.adminWithOff(Feature.LIVE_TV)
+        showFull()
+        assertTrue("no channel row", gone("row-$KEY_LIVE"))
+    }
+
+    /**
+     * The home's first answer comes after Home read its channels (both are asked at sign-in):
+     * the channel row goes when the answer says Live TV is off, the other rows stay.
+     */
+    @Test
+    fun liveTvOffInTheFirstAnswerTakesTheChannelRowAway() {
+        showFull()
+        compose.onNodeWithTag("row-$KEY_LIVE").assertExists()
+        home.viewerWithOff(Feature.LIVE_TV)
+        compose.settledUntil(5_000) { gone("row-$KEY_LIVE") }
+        compose.onNodeWithTag("row-$KEY_CONTINUE").assertExists()
+        compose.onNodeWithTag("row-$KEY_FROM_LIBRARY").assertExists()
     }
 
     @Test

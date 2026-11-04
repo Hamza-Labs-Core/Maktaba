@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
@@ -26,6 +27,10 @@ type Change struct {
 	// Generation the override row's (0: none). Every change of a request names the same
 	// machine, or none.
 	Machine string `json:"machine,omitempty"`
+	// Again writes the row even when nothing in it changes (a new generation, audited
+	// component.install): the install route's ask to install a wanted asset that is not
+	// on disk, or to try a failed install again. Not settable from JSON.
+	Again bool `json:"-"`
 }
 
 // Request is one batch of changes. Generation, when given, is the revision the caller
@@ -97,6 +102,13 @@ const (
 	CodeConflicts     = "component_conflicts"
 	CodeRequiredBy    = "component_required_by"
 	CodeNoUntil       = "hold_has_no_until"
+	// a restart (story 51.08 §2): a kind with nothing to restart (an asset, a stage
+	// group, an extension), or a component that is off, held or waiting
+	CodeNotRestartable = "not_restartable"
+	CodeNotRunning     = "not_running"
+	// an install of an asset not on this home while packs are off on its machine
+	// ([components] packs = "off": offline mode): nothing could install it
+	CodePacksDisabled = "packs_disabled"
 )
 
 // gate is what the desired state alone makes of one component, the way the runners
@@ -105,6 +117,9 @@ type gate struct {
 	on     bool
 	phase  string
 	reason string
+	// gen is the generation of the desired row the gate was read from (0: no row): a
+	// status row that observed an older one has not acted on it yet (settle).
+	gen int64
 }
 
 // gates computes every component's gate over rows, requirements first, every licence
@@ -114,8 +129,25 @@ func gates(cat *components.Catalog, rows map[string]store.Desired) map[string]ga
 }
 
 // gatesLicensed is gates with the home's licence (nil: every flag): an enabled component
-// whose flag it lacks waits, licence_missing (story 51.19).
+// whose flag it lacks waits, licence_missing (story 51.19). An asset has no run, so on
+// disk (installed or enabled) it is on and meets what requires it, as the runners read
+// it (runner.GatesAt); only absent is off.
 func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licensed func(string) bool) map[string]gate {
+	return gatesOn(cat, rows, licensed, nil)
+}
+
+// ReasonRequirementMissing is the reason of a component that is on but waits for the
+// files of an asset it requires (a runtime, a model) the machine does not have yet:
+// "requirement_missing:<asset>".
+const ReasonRequirementMissing = "requirement_missing"
+
+// gatesOn is gatesLicensed with what the machine has on disk: missing reports an asset
+// the machine is known not to have (its status row says Installed false; nil: none).
+// An enabled component one of whose requirements is only such assets waits for them
+// (requirement_missing:<asset>), still on (its gate is open: the runners start it and
+// it waits); a wanted asset not there makes it degraded (want_missing). This is the one
+// rule both a preview and the status (settle) read, so they say the same.
+func gatesOn(cat *components.Catalog, rows map[string]store.Desired, licensed func(string) bool, missing func(string) bool) map[string]gate {
 	out := map[string]gate{}
 	for _, id := range cat.Order() {
 		c, _ := cat.Get(id)
@@ -125,6 +157,8 @@ func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licen
 		case !c.Switchable || !has:
 		case d.Want == components.WantAbsent:
 			g = gate{phase: components.PhaseNotInstalled}
+		case c.Kind == components.KindAsset:
+			// on disk: met (no hold, licence or requirement applies to a file)
 		case d.Want != components.WantEnabled:
 			g = gate{phase: components.PhaseOff}
 		case d.Hold != nil:
@@ -139,17 +173,25 @@ func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licen
 				}
 			}
 		}
+		// on (by its row or the catalog's default) but a requirement's files are not here:
+		// it waits for them
+		if a := missingAsset(cat, id, missing); g.on && c.Switchable && c.Kind != components.KindAsset && a != "" {
+			g = gate{on: true, phase: components.PhaseWaiting, reason: ReasonRequirementMissing + ":" + a}
+		}
+		if has {
+			g.gen = d.Generation
+		}
 		out[id] = g
 	}
 	// wants do not order the catalog: read them once every gate is known
 	for _, id := range cat.Order() {
 		c, _ := cat.Get(id)
 		g := out[id]
-		if !g.on {
+		if !g.on || g.phase != components.PhaseRunning {
 			continue
 		}
 		for _, w := range c.Wants {
-			if !out[w].on {
+			if !out[w].on || isMissingAsset(cat, w, missing) {
 				g.phase, g.reason = components.PhaseDegraded, "want_missing:"+w
 				out[id] = g
 				break
@@ -157,6 +199,121 @@ func gatesLicensed(cat *components.Catalog, rows map[string]store.Desired, licen
 		}
 	}
 	return out
+}
+
+// missingAsset is the first asset id requires that the machine does not have: of a
+// requirement whose every alternative is an asset missing reports. "" when each
+// requirement has one there, or is no asset, or missing is nil (the files unknown: taken
+// as there, as before packs).
+func missingAsset(cat *components.Catalog, id string, missing func(string) bool) string {
+	if missing == nil {
+		return ""
+	}
+	for _, req := range cat.Requires(id) {
+		if len(req.AnyOf) > 0 && !slices.ContainsFunc(req.AnyOf, func(a string) bool { return !isMissingAsset(cat, a, missing) }) {
+			return req.AnyOf[0]
+		}
+	}
+	return ""
+}
+
+// isMissingAsset reports whether id is an asset missing says the machine does not have.
+func isMissingAsset(cat *components.Catalog, id string, missing func(string) bool) bool {
+	c, ok := cat.Get(id)
+	return ok && missing != nil && c.Kind == components.KindAsset && missing(id)
+}
+
+// settle is a machine's status rows of a component after its gate g (gatesOn, with
+// that machine's files): the part that runs it (the one with a RequirementsMet
+// condition) and reports running while g waits for a requirement's files waits too,
+// RequirementsMet false naming the asset (a runner does not check files: the stages of
+// transcription run inside the pipeline's worker when it has no stt process, and that
+// worker reports running); one that runs while g lacks what it wants is degraded. A
+// RequirementsMet that says neither yes nor why is given g's reason, so it names what
+// it waits on. Other rows are kept.
+//
+// A component its desired state turns off (off, held, not installed) reads that: a part
+// whose row observed an older generation reads g's phase. Such a part has not acted on
+// the change and, being a process the supervisor stops at once (the index worker), may
+// never report again: its last word (waiting on a model, running) is not the component's.
+func settle(rows []store.Status, g gate) []store.Status {
+	if !g.on && g.gen > 0 {
+		rows = quiet(rows, g)
+	}
+	code, asset, _ := strings.Cut(g.reason, ":")
+	needs := g.phase == components.PhaseWaiting && asset != "" &&
+		(code == ReasonRequirementMissing || code == "dependency_off")
+	wants := g.phase == components.PhaseDegraded && code == "want_missing"
+	if !needs && !wants {
+		return rows
+	}
+	out := make([]store.Status, len(rows))
+	for i, r := range rows {
+		out[i] = r
+		k := slices.IndexFunc(r.Conditions, func(c store.Condition) bool { return c.Type == components.CondRequirementsMet })
+		if k < 0 {
+			continue
+		}
+		if wants {
+			if r.Phase == components.PhaseRunning {
+				out[i].Phase = components.PhaseDegraded
+			}
+			continue
+		}
+		runs := r.Phase == components.PhaseRunning || r.Phase == components.PhaseDegraded || r.Phase == components.PhaseStarting
+		waits := code == ReasonRequirementMissing && runs
+		c := r.Conditions[k]
+		if !waits && (c.Status == "true" || c.Reason != "") {
+			continue
+		}
+		conds := slices.Clone(r.Conditions)
+		conds[k] = store.Condition{Type: components.CondRequirementsMet, Status: "false", Reason: g.reason,
+			Params: map[string]any{"component": asset}, ChangedAt: c.ChangedAt, Generation: c.Generation}
+		if waits {
+			out[i].Phase = components.PhaseWaiting
+			for j := range conds {
+				if conds[j].Type == components.CondReady && conds[j].Status == "true" {
+					conds[j].Status = "false"
+				}
+			}
+		}
+		out[i].Conditions = conds
+	}
+	return out
+}
+
+// quiet is rows with each one that observed a generation older than g's read as g's
+// phase (Ready false, with g's reason): g is closed, another part has acted on it (its
+// row observed g's generation: the supervisor stopped the process), and this part has
+// not reported since. With no part at g's generation nothing has acted yet: each part
+// keeps its word until it reports (the API's loops report draining, then off), so the
+// component never reads off before its loops stop. A part that drains keeps its word too.
+func quiet(rows []store.Status, g gate) []store.Status {
+	if !slices.ContainsFunc(rows, func(r store.Status) bool { return r.ObservedGeneration >= g.gen }) {
+		return rows
+	}
+	out, copied := rows, false
+	for i, r := range rows {
+		if r.ObservedGeneration >= g.gen || r.Phase == g.phase || r.Phase == components.PhaseDraining {
+			continue
+		}
+		if !copied {
+			out, copied = slices.Clone(rows), true
+		}
+		out[i].Phase = g.phase
+		out[i].Conditions = []store.Condition{{Type: components.CondReady, Status: "false", Reason: g.reason}}
+	}
+	return out
+}
+
+// present reports whether id is on as rows give it: enabled, or for an asset (which has
+// no run) on disk, installed or enabled.
+func present(cat *components.Catalog, rows map[string]store.Desired, id string) bool {
+	w := wantOf(rows, id)
+	if c, ok := cat.Get(id); ok && c.Kind == components.KindAsset {
+		return w != components.WantAbsent
+	}
+	return w == components.WantEnabled
 }
 
 // wantOf is the want rows give id: no row is the catalog default, on.
@@ -195,7 +352,7 @@ func requiredBy(cat *components.Catalog, rows map[string]store.Desired, id strin
 				continue
 			}
 			if slices.ContainsFunc(req.AnyOf, func(a string) bool {
-				return !gone[a] && wantOf(rows, a) == components.WantEnabled
+				return !gone[a] && present(cat, rows, a)
 			}) {
 				continue
 			}
@@ -253,7 +410,9 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 		if removeUnused && c.Kind == components.KindAsset {
 			continue // removed below
 		}
-		if c.Switchable && !in[id] && wantOf(rows, id) == components.WantEnabled {
+		// an asset left out keeps its files unless removeUnused (installed and enabled are
+		// the same for a file)
+		if c.Switchable && c.Kind != components.KindAsset && !in[id] && wantOf(rows, id) == components.WantEnabled {
 			out = append(out, Change{ID: id, Want: components.WantInstalled})
 		}
 	}
@@ -269,7 +428,7 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 	}
 	for _, id := range order {
 		c, _ := cat.Get(id)
-		if !c.Switchable || !in[id] || wantOf(rows, id) == components.WantEnabled {
+		if !c.Switchable || !in[id] || present(cat, rows, id) {
 			continue
 		}
 		out = append(out, Change{ID: id, Want: components.WantEnabled})
@@ -282,7 +441,7 @@ func bundleChanges(cat *components.Catalog, rows map[string]store.Desired, b str
 // is listed and the refused change is left out.
 func makePlan(cat *components.Catalog, licensed func(string) bool, now time.Time,
 	rows map[string]store.Desired, rev int64, req Request, actor Actor, collect bool) (*plan, error) {
-	return makePlanTier(cat, licensed, "", now, rows, rev, req, actor, collect)
+	return makePlanTier(cat, licensed, "", now, rows, rev, req, actor, collect, nil)
 }
 
 // licenceRefusal is the 403 of turning on c, whose flag the home's licence lacks.
@@ -292,9 +451,10 @@ func licenceRefusal(c *components.Component, tier string) *Refusal {
 	return r
 }
 
-// makePlanTier is makePlan with the home's tier, named in a licence_missing refusal.
+// makePlanTier is makePlan with the home's tier, named in a licence_missing refusal, and
+// the assets the home does not have (missing, gatesOn; nil: none known).
 func makePlanTier(cat *components.Catalog, licensed func(string) bool, tier string, now time.Time,
-	rows map[string]store.Desired, rev int64, req Request, actor Actor, collect bool) (*plan, error) {
+	rows map[string]store.Desired, rev int64, req Request, actor Actor, collect bool, missing func(string) bool) (*plan, error) {
 	if licensed == nil {
 		licensed = func(string) bool { return true }
 	}
@@ -446,11 +606,13 @@ func makePlanTier(cat *components.Catalog, licensed func(string) bool, tier stri
 			write(x, store.Desired{ID: x, Want: components.WantInstalled, Hold: o.Hold, Generation: o.Generation}, "component.disable")
 			p.preview.Conflicts = appendNew(p.preview.Conflicts, x)
 		}
-		if has && next.Want == cur.Want && (next.Hold == nil) == (cur.Hold == nil) {
+		if has && next.Want == cur.Want && (next.Hold == nil) == (cur.Hold == nil) && !ch.Again {
 			continue // nothing changes
 		}
 		verb := ""
 		switch {
+		case ch.Again && next.Want == was && (next.Hold == nil) == (cur.Hold == nil):
+			verb = ActionInstall
 		case next.Want != was && next.Want == components.WantEnabled:
 			verb = "component.enable"
 		case next.Want != was && next.Want == components.WantInstalled:
@@ -467,7 +629,7 @@ func makePlanTier(cat *components.Catalog, licensed func(string) bool, tier stri
 		write(ch.ID, next, verb)
 	}
 	p.writes = batch
-	before, after := gatesLicensed(cat, rows, licensed), gatesLicensed(cat, p.rows, licensed)
+	before, after := gatesOn(cat, rows, licensed, missing), gatesOn(cat, p.rows, licensed, missing)
 	p.preview.Effects = effects(cat, before, after)
 	for _, id := range cat.Order() {
 		if before[id].on && !after[id].on {

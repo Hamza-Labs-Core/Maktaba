@@ -13,6 +13,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/placement"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/idempotency"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
@@ -22,12 +23,18 @@ import (
 // a database that is never reached (a mount must not need one to register its routes).
 func everyMount(t *testing.T) chi.Router {
 	t.Helper()
+	return everyMountWith(t, nil)
+}
+
+// everyMountWith is everyMount with caps as the component_off check's snapshot (nil: off).
+func everyMountWith(t *testing.T, caps *components.Capabilities) chi.Router {
+	t.Helper()
 	db, err := sql.Open("postgres", "postgres://x:x@127.0.0.1:1/x?sslmode=disable&connect_timeout=1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	r := New(Deps{IdempotencyStore: idempotency.NewMemoryStore()})
+	r := New(Deps{IdempotencyStore: idempotency.NewMemoryStore(), Capabilities: caps})
 	MountLogs(r, LogsDeps{})
 	MountProcesses(r, ProcessesDeps{})
 	MountServerSettings(r, nil)
@@ -50,7 +57,7 @@ func everyMount(t *testing.T) chi.Router {
 	MountP31Agent(r, h, P31AgentDeps{DB: db, Driver: "postgres", Config: agent.Config{}})
 	MountClusterAuth(r, ClusterAuthDeps{DB: db})
 	MountNodeLocal(r, NodeLocalDeps{})
-	MountP51(r, P51Deps{DB: db})
+	MountP51(r, P51Deps{DB: db, Capabilities: caps})
 	return r
 }
 
@@ -109,6 +116,9 @@ func TestPlacementExamples(t *testing.T) {
 		{"GET", "/api/components", placement.Home},
 		{"GET", "/api/components/{id}", placement.Home},
 		{"POST", "/api/components/apply", placement.Home},
+		// the library dashboard's reads: the jobs table, through the node's role
+		{"GET", "/api/queues/libraries", placement.Any},
+		{"GET", "/api/queues/libraries/activity", placement.Any},
 	}
 	for _, c := range cases {
 		got, ok := Placement.Classify(c.method, c.pattern)

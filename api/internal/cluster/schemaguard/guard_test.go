@@ -75,7 +75,7 @@ func TestGuardKeepsTheVerdict(t *testing.T) {
 }
 
 // Every service ships the same SchemaRev: the API's, the streaming node's and the
-// pipeline's are raised together with each migration (slot 0174: the second listen's stage).
+// pipeline's are raised together with each migration (slot 0182: YouTube sources from the linked videos).
 func TestSchemaRevIsTheSameInEveryService(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "..")
 	for file, pattern := range map[string]string{

@@ -102,7 +102,7 @@ class ConnectProgressScreenshotTest {
         session.switchHome()
         show { HomePicker(session, MaktabaApp.Player) }
         compose.mainClock.advanceTimeBy(7_000)
-        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Darwish home")).fetchSemanticsNodes().isNotEmpty() }
+        compose.settledUntil(5_000) { compose.onAllNodes(hasText("Maktaba Home")).fetchSemanticsNodes().isNotEmpty() }
         progress.value = step
         capture(name)
     }
@@ -127,14 +127,14 @@ class ConnectProgressScreenshotTest {
     }
 
     private val finding = ConnectProgress.Finding()
-    private val trying = ConnectProgress.Trying("192.168.1.20:8088", 1, 3)
-    private val found = ConnectProgress.Found("Darwish home")
-    private val signingIn = ConnectProgress.SigningIn("Darwish home", ConnectStage.Password)
-    private val reconnecting = ConnectProgress.Reconnecting("Darwish home")
-    private val busy = ConnectProgress.HomeBusy("Darwish home", NOW + 7_000)
+    private val trying = ConnectProgress.Trying("192.0.2.20:8088", 1, 3)
+    private val found = ConnectProgress.Found("Maktaba Home")
+    private val signingIn = ConnectProgress.SigningIn("Maktaba Home", ConnectStage.Password)
+    private val reconnecting = ConnectProgress.Reconnecting("Maktaba Home")
+    private val busy = ConnectProgress.HomeBusy("Maktaba Home", NOW + 7_000)
     private val failed = ConnectProgress.Failed(
         FailReason.NoAnswer,
-        listOf("192.168.1.20:8088", "darwish.example.com", "relay.maktaba.tv/h/darwish"),
+        listOf("192.0.2.20:8088", "home.example.com", "relay.maktaba.tv/h/myhome"),
         ConnectStage.Connect,
         attempt = 2,
     )
@@ -187,10 +187,10 @@ class ConnectProgressScreenshotTest {
         /** The fixed clock: 2026-11-01 10:00 UTC. */
         const val NOW = 1_793_527_200_000L
 
-        val HOME = Home(url = "http://192.168.1.20:8088", name = "Darwish home")
+        val HOME = Home(url = "http://192.0.2.20:8088", name = "Maktaba Home")
 
         // no expiry from the home: ten minutes on this device's clock (10:00)
-        val CODE = """{"code":"ABCD1234","device_code":"scratch-device-secret","verify_url":"http://192.168.1.20:8088/pair?code=ABCD-1234","interval":2}"""
+        val CODE = """{"code":"ABCD1234","device_code":"scratch-device-secret","verify_url":"http://192.0.2.20:8088/pair?code=ABCD-1234","interval":2}"""
 
         fun json(body: String, code: Int = 200): MockResponse =
             MockResponse.Builder().code(code).setHeader("Content-Type", "application/json").body(body).build()

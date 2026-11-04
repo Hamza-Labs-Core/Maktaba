@@ -11,7 +11,7 @@ import (
 	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
-// componentBase are the older slots' tables slot 0175 touches (the columns it reads).
+// componentBase are the older slots' tables slot 0178 touches (the columns it reads).
 const componentBase = `
 CREATE TABLE cluster_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '');
 CREATE TABLE audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT NOT NULL, action TEXT NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 	placement TEXT NOT NULL DEFAULT 'any', enabled INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL)`
 
-// componentTables adds slot 0175's SQLite twin (and what it needs) to db.
+// componentTables adds slot 0178's SQLite twin (and what it needs) to db.
 func componentTables(t *testing.T, db *sql.DB) {
 	t.Helper()
 	for _, s := range strings.Split(componentBase, ";\n") {
@@ -34,7 +34,7 @@ func componentTables(t *testing.T, db *sql.DB) {
 			t.Fatalf("%v\n%s", err, s)
 		}
 	}
-	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0175_components.sqlite.sql"))
+	b, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0178_components.sqlite.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func componentTables(t *testing.T, db *sql.DB) {
 		if i := strings.Index(block, "-- +goose StatementEnd"); i >= 0 {
 			if s := strings.TrimSpace(block[:i]); s != "" {
 				if _, err := db.Exec(s); err != nil {
-					t.Fatalf("0175: %v\n%s", err, s)
+					t.Fatalf("0178: %v\n%s", err, s)
 				}
 			}
 		}
@@ -57,6 +57,13 @@ func componentTables(t *testing.T, db *sql.DB) {
 // writes its desired row and one audit row with the device, and a failure writes neither.
 func TestHDHRSwitchIsTheComponent(t *testing.T) {
 	db, srv := newServer(t, "")
+	// the audit names the admin as the components routes do: the user's name
+	if _, err := db.Exec(`CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO users (id, username) VALUES ('a', 'maya')`); err != nil {
+		t.Fatal(err)
+	}
 	want := func(w string, audits int) {
 		t.Helper()
 		var got string
@@ -77,8 +84,25 @@ func TestHDHRSwitchIsTheComponent(t *testing.T) {
 	}
 	want(comps.WantInstalled, 2)
 	var by string
-	if err := db.QueryRow(`SELECT updated_by FROM components WHERE id = 'livetv.hdhomerun'`).Scan(&by); err != nil || by != "a" {
-		t.Fatalf("updated_by %q (%v), want the admin", by, err)
+	if err := db.QueryRow(`SELECT updated_by FROM components WHERE id = 'livetv.hdhomerun'`).Scan(&by); err != nil || by != "maya" {
+		t.Fatalf("updated_by %q (%v), want the admin's name", by, err)
+	}
+	// the same value again writes nothing: no audit row, no new generation
+	gen := func() int64 {
+		t.Helper()
+		var g int64
+		if err := db.QueryRow(`SELECT generation FROM components WHERE id = 'livetv.hdhomerun'`).Scan(&g); err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	before := gen()
+	if code, _ := do(t, srv, "PATCH", "/api/tv/hdhr", `{"enabled":false}`, admin); code != 200 {
+		t.Fatalf("disable again: %d", code)
+	}
+	want(comps.WantInstalled, 2)
+	if after := gen(); after != before {
+		t.Fatalf("generation %d -> %d on a no-op", before, after)
 	}
 	// a rename is not a switch: no component change
 	if code, _ := do(t, srv, "PATCH", "/api/tv/hdhr", `{"friendly_name":"Den"}`, admin); code != 200 {

@@ -8,17 +8,17 @@ final class PlayerComponentsUITests: PlayerUITestCase {
     private static let ax3 = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
 
     /// Opens one gallery page in `language`, at AX3 when `large`.
-    private func gallery(_ piece: String, _ language: String, large: Bool, size: [String] = []) {
+    private func gallery(_ piece: String, _ language: String, large: Bool, size: [String] = [], extra: [String] = []) {
         launch(language, fresh: false,
-               extra: ["-maktaba-gallery", piece, "-maktaba-gallery-home", home.url] + (large ? Self.ax3 : size))
+               extra: ["-maktaba-gallery", piece, "-maktaba-gallery-home", home.url] + extra + (large ? Self.ax3 : size))
         XCTAssertTrue(element("gallery.\(piece)").waitForExistence(timeout: 15), "the \(piece) page")
     }
 
     /// Every language and size: `check` runs on each, then a screenshot.
-    private func eachVariant(_ piece: String, _ check: (_ language: String, _ large: Bool) -> Void) {
+    private func eachVariant(_ piece: String, extra: [String] = [], _ check: (_ language: String, _ large: Bool) -> Void) {
         for language in ["en", "ar"] {
             for large in [false, true] {
-                gallery(piece, language, large: large)
+                gallery(piece, language, large: large, extra: extra)
                 check(language, large)
                 shot("components-\(piece)\(large ? "-ax3" : "")")
                 // NFR-6: labels, roles, contrast, clipped text, hit regions (Dynamic Type below)
@@ -29,6 +29,8 @@ final class PlayerComponentsUITests: PlayerUITestCase {
                         // a rail's last card half off the screen's edge: the audit samples
                         // pixels beyond it (the cards fully on screen are still checked)
                         if self.contrastOutOfView(issue) { return true }
+                        // a card's frame over its poster still loading: the moving light
+                        if piece == "shimmer", self.contrastOverShimmer(issue) { return true }
                         return false
                     }
                 } catch {
@@ -158,10 +160,13 @@ final class PlayerComponentsUITests: PlayerUITestCase {
         XCTAssertGreaterThan(sides[true] ?? 0, sides[false] ?? .infinity, "AX3: the tile grows")
     }
 
-    /// A poster that does not come: the shimmer shows (after 0.4 s), read as "Loading…".
+    /// A poster that does not come: the shimmer shows (after 0.4 s), read as "Loading…". Its
+    /// light is held still (`-maktaba-gallery-still`, as under Reduce Motion): the audit
+    /// sampled the moving light between two frames, failed a node it could not name (#608's
+    /// iPhone AX3 run, an audit of 13.5 s), and there is no text in it to measure.
     func testShimmer() {
         home.delay("GET", "/api/videos/slow/poster", by: 60)
-        eachVariant("shimmer") { language, _ in
+        eachVariant("shimmer", extra: ["-maktaba-gallery-still"]) { language, _ in
             let shimmer = element("shimmer")
             XCTAssertTrue(shimmer.waitForExistence(timeout: 5))
             XCTAssertEqual(shimmer.label, language == "ar" ? "جارٍ التحميل…" : "Loading…")

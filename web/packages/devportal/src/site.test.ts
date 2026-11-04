@@ -7,12 +7,21 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { scanDir, scanText } from "../scripts/scan.mjs";
+import zlib from "node:zlib";
+import { imageMetadata, scanDir, scanText } from "../scripts/scan.mjs";
+import { APPS, appShots } from "../scripts/apps.mjs";
 import {
+  APP_IMAGES,
+  appImage,
+  appPath,
+  webpSize,
   DOCS,
   MAX_EXPIRY_MONTHS,
   REPO,
+  WIKI_ALLOW,
+  arabicWikiIndex,
   checkSources,
+  wikiSitePath,
   expiresAt,
   readDisclosurePolicy,
   rewriteHref,
@@ -26,14 +35,18 @@ import {
   MAX_LATIN_SHARE,
   applyOverlay,
   changelogOutline,
+  checkApps,
   checkChangelog,
   checkGuides,
   checkOverlay,
   checkPages,
+  checkWiki,
   htmlProse,
   latinShare,
   openapiProse,
+  wikiHash,
 } from "../scripts/parity.mjs";
+import { STRINGS as WIKI_UI, dbBase, langFrom } from "../../../wiki-app/src/lib/i18n";
 import { parse, type DefaultTreeAdapterMap } from "parse5";
 
 type Element = DefaultTreeAdapterMap["element"];
@@ -119,14 +132,78 @@ describe("the allow-list", () => {
     for (const d of DOCS) expect(fs.existsSync(path.join(DIST, d.out, "index.html"))).toBe(true);
   });
 
-  // the epics and specs live on GitHub: no epics wiki, no spec or story page on this site
-  it("carries no epics wiki and no spec pages", () => {
+  // the epics are on the site as the wiki (its database), never as spec or story pages
+  it("carries no spec pages: the epics are in the wiki", () => {
     const all = files(DIST);
-    expect(all.some((f) => f.startsWith("wiki/"))).toBe(false);
     expect(all.some((f) => /story-\d\d-|specs\/epics/.test(f))).toBe(false);
-    for (const p of all.filter((f) => f.endsWith(".html"))) {
-      expect(read(p), p).not.toMatch(/href="\/wiki\//);
+  });
+
+  it("every wiki file is one the wiki's allow-list names, and no mockup", () => {
+    const wiki = files(DIST).filter((f) => f.startsWith("wiki/") || f.startsWith("ar/wiki/"));
+    expect(wiki.length).toBeGreaterThan(5);
+    for (const f of wiki) {
+      expect(f.includes("mockups"), f).toBe(false);
+      if (f === "ar/wiki/index.html") continue; // written by the build from wiki/index.html
+      const rel = f.startsWith("ar/wiki/db/")
+        ? `db/ar/${f.slice("ar/wiki/db/".length)}`
+        : f.slice("wiki/".length);
+      expect(wikiSitePath(rel), f).toBe(f);
     }
+    // the allow-list maps the Arabic database under /ar/wiki/db/, and drops the rest
+    expect(wikiSitePath("db/ar/wiki.json")).toBe("ar/wiki/db/wiki.json");
+    expect(wikiSitePath("db/wiki-epics-01-09.json")).toBe("wiki/db/wiki-epics-01-09.json");
+    expect(wikiSitePath("mockups/home.html")).toBeNull();
+    expect(wikiSitePath("db/wiki-schema.json")).toBeNull();
+    expect(WIKI_ALLOW.length).toBeGreaterThan(0);
+  });
+
+  it("the wiki is at /wiki/ in English and /ar/wiki/ in Arabic, right to left", () => {
+    const en = read("wiki/index.html");
+    expect(en).toContain('<html lang="en" dir="ltr">');
+    expect(en).toMatch(/src="\/wiki\/assets\/index-[^"]+\.js"/);
+    expect(en).toContain('hreflang="ar" href="https://maktaba.dev/ar/wiki/"');
+    const ar = read("ar/wiki/index.html");
+    expect(ar).toContain('<html lang="ar" dir="rtl">');
+    expect(ar).toContain(`<title>${STRINGS.ar["wiki.title"]}</title>`);
+    // the same bundle: it picks the language from the path and loads /ar/wiki/db/
+    expect(ar.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]).toBe(
+      en.match(/src="(\/wiki\/assets\/[^"]+)"/)?.[1]
+    );
+    expect(ar).toContain('rel="canonical" href="https://maktaba.dev/ar/wiki/"');
+    expect(ar).toContain('hreflang="en" href="https://maktaba.dev/wiki/"');
+    // the portal links the wiki in each language
+    expect(read("index.html")).toContain('href="/wiki/"');
+    expect(read("ar/index.html")).toContain('href="/ar/wiki/"');
+  });
+
+  it("the wiki's database is served in both languages, the Arabic in Arabic", () => {
+    for (const f of ["wiki.json", "wiki-cross-refs.json"]) {
+      expect(fs.existsSync(path.join(DIST, "wiki/db", f)), f).toBe(true);
+      expect(fs.existsSync(path.join(DIST, "ar/wiki/db", f)), f).toBe(true);
+    }
+    const en = JSON.parse(read("wiki/db/wiki.json"));
+    const ar = JSON.parse(read("ar/wiki/db/wiki.json"));
+    expect(ar.lang).toBe("ar");
+    expect(ar.entries.map((e: { id: string }) => e.id)).toEqual(
+      en.entries.map((e: { id: string }) => e.id)
+    );
+    const epic = ar.entries.find((e: { type: string }) => e.type === "epic");
+    expect(/[؀-ۿ]/.test(epic.title), epic.title).toBe(true);
+    expect(/[؀-ۿ]/.test(epic.content)).toBe(true);
+    // the bundle reads the database where the build put it
+    const bundle = files(DIST)
+      .filter((f) => /^wiki\/assets\/.+\.js$/.test(f))
+      .map(read)
+      .join("\n");
+    expect(bundle).toContain("/ar");
+  });
+
+  it("no Linear: no linear.app link or Linear field anywhere on the site", () => {
+    for (const f of files(DIST).filter((f) => /\.(html|json|js)$/.test(f))) {
+      expect(read(f).includes("linear.app"), f).toBe(false);
+    }
+    const ar = JSON.parse(read("ar/wiki/db/wiki.json"));
+    for (const e of ar.entries) expect("linear" in e, e.id).toBe(false);
   });
 
   it("has the plugin, contributing and security guides, each in its group's contents", () => {
@@ -296,6 +373,12 @@ describe("English and Arabic", () => {
       const sitePath = "/" + p.replace(/index\.html$/, "").replace(/\.html$/, "");
       const html = read(p);
       expect(html, p).toContain('<html lang="en" dir="ltr">');
+      // the wiki's language switch is drawn by its app (LangSwitch.tsx), not in its HTML
+      if (p === "wiki/index.html") {
+        expect(read(`ar/${p}`)).toContain('<html lang="ar" dir="rtl">');
+        expect(html).toContain(`hreflang="ar" href="https://maktaba.dev/ar${sitePath}"`);
+        continue;
+      }
       expect(html, p).toMatch(new RegExp(`id="lang-switch"[^>]*href="/ar${sitePath}"`));
       const arHtml = read(`ar/${p}`);
       expect(arHtml, p).toContain('<html lang="ar" dir="rtl">');
@@ -405,6 +488,117 @@ describe("English and Arabic", () => {
     expect(checkOverlay(doc, { strings: english })[0]).toMatch(/not Arabic/);
   });
 
+  it("the wiki's Arabic database: a missing, stale or English entry fails, naming the entry and field", () => {
+    const content = "Plays a `video.mp4` from the start.";
+    const en = {
+      "wiki.json": {
+        entries: [
+          { id: "epic-01", type: "epic", epic: "01", title: "Playback", content, engine: "" },
+          { id: "glossary-x", type: "glossary", title: "Queue", content: "The jobs, in order." },
+        ],
+      },
+    };
+    const good = () => ({
+      "wiki.json": {
+        lang: "ar",
+        entries: [
+          {
+            id: "epic-01",
+            title: "التشغيل",
+            content: "يشغّل `video.mp4` من البداية.",
+            i18n: {
+              lang: "ar",
+              source: { title: wikiHash("Playback"), content: wikiHash(content) },
+            },
+          },
+          {
+            id: "glossary-x",
+            title: "الطابور",
+            content: "المهام، بالترتيب.",
+            i18n: {
+              lang: "ar",
+              source: { title: wikiHash("Queue"), content: wikiHash("The jobs, in order.") },
+            },
+          },
+        ],
+      },
+    });
+    expect(checkWiki(en, good(), "db")).toEqual([]);
+    // the English changed since it was translated
+    const changed = structuredClone(en);
+    changed["wiki.json"].entries[0].content = "Plays a `video.mp4` from where you left it.";
+    expect(checkWiki(changed, good(), "db")).toEqual([
+      "db/ar/wiki.json: epic-01 content: the English changed since it was translated: " +
+        "translate it again in docs/wiki/db/ar/epic-01.json, then run python3 docs/wiki/db/generate_wiki.py",
+    ]);
+    // an entry with no Arabic for a field, a missing entry, an English "translation"
+    const missing = good();
+    delete (missing["wiki.json"].entries[1].i18n.source as Record<string, string>).title;
+    expect(checkWiki(en, missing, "db")[0]).toBe(
+      "db/ar/wiki.json: glossary-x title has no Arabic: translate it in docs/wiki/db/ar/common.json, then run python3 docs/wiki/db/generate_wiki.py"
+    );
+    const gone = good();
+    gone["wiki.json"].entries.pop();
+    expect(checkWiki(en, gone, "db")[0]).toMatch(/glossary-x has no Arabic entry/);
+    const english = good();
+    english["wiki.json"].entries[1].content = "The jobs, in order.";
+    expect(checkWiki(en, english, "db")[0]).toMatch(/glossary-x content: the Arabic is English/);
+    // a file with no Arabic twin, or not marked Arabic
+    expect(checkWiki({ ...en, "wiki-epics-01-09.json": { entries: [] } }, good(), "db")[0]).toMatch(
+      /^db\/ar\/wiki-epics-01-09\.json: missing/
+    );
+    const unmarked = good() as Record<string, { lang?: string }>;
+    delete unmarked["wiki.json"].lang;
+    expect(checkWiki(en, unmarked, "db")[0]).toMatch(/not marked "lang": "ar"/);
+    // the hash is the generator's (wiki_ar.text_hash: sha256 of the UTF-8, 16 hex digits)
+    expect(wikiHash("Playback")).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("an Arabic wiki page whose prose is mostly Latin script fails", () => {
+    const en = { "wiki.json": { entries: [] as Record<string, string>[] } };
+    const ar = { "wiki.json": { lang: "ar", entries: [] as Record<string, unknown>[] } };
+    for (let i = 0; i < 4; i++) {
+      const text = `Entry ${i} was left in English, every word of it.`;
+      en["wiki.json"].entries.push({ id: `g${i}`, type: "glossary", title: "", content: text });
+      ar["wiki.json"].entries.push({
+        id: `g${i}`,
+        content: `مدخل ${i}: Entry was left in English, every word of it.`,
+        i18n: { lang: "ar", source: { content: wikiHash(text) } },
+      });
+    }
+    expect(checkWiki(en, ar, "db")).toEqual([
+      "db/ar/wiki.json: 89% of its Arabic prose is Latin script",
+    ]);
+  });
+
+  it("the wiki app's own strings are in both languages, the Arabic in Arabic", () => {
+    expect(Object.keys(WIKI_UI.ar).sort()).toEqual(Object.keys(WIKI_UI.en).sort());
+    for (const [k, v] of Object.entries(WIKI_UI.ar) as [string, string][]) {
+      // the switch and its label are in the language it opens: English
+      if (k.startsWith("lang.switch")) continue;
+      if (k === "nav.issues.hint") continue; // a product name: GitHub
+      expect(/[؀-ۿ]/.test(v), k).toBe(true);
+    }
+    expect(langFrom("/ar/wiki/")).toBe("ar");
+    expect(langFrom("/wiki/")).toBe("en");
+    expect(langFrom("/", "?lang=ar")).toBe("ar");
+    expect(dbBase("ar", "/wiki/")).toBe("/ar/wiki/db");
+    expect(dbBase("en", "/wiki/")).toBe("/wiki/db");
+  });
+
+  it("the Arabic wiki page is the English one in Arabic, right to left", () => {
+    const en = read("wiki/index.html");
+    const ar = arabicWikiIndex(
+      '<html lang="en" dir="ltr">\n<head><title>Maktaba Wiki</title><meta name="description" content="x" /></head>' +
+        "<body><noscript>needs JS</noscript></body></html>"
+    );
+    expect(ar).toContain('<html lang="ar" dir="rtl">');
+    expect(ar).toContain(`<noscript>${STRINGS.ar["wiki.noscript"]}</noscript>`);
+    expect(ar).toContain(`content="${STRINGS.ar["wiki.description"]}"`);
+    expect(() => arabicWikiIndex("<html><head></head></html>")).toThrow(/no <html lang dir>/);
+    expect(en).toContain("<noscript>");
+  });
+
   it("the portal's pages carry no inline script (the CSP allows none)", () => {
     // parsed as a browser would (parse5): every script has a src and no body, and no element
     // carries an event handler or a javascript: URL
@@ -506,7 +700,8 @@ describe("security.txt, robots.txt, sitemap", () => {
     const xml = read("sitemap.xml");
     const locs = [...xml.matchAll(/<loc>https:\/\/maktaba\.dev(\/[^<]*)<\/loc>/g)].map((m) => m[1]);
     expect(locs).toContain("/");
-    expect(locs).not.toContain("/wiki/");
+    expect(locs).toContain("/wiki/");
+    expect(locs).toContain("/ar/wiki/");
     expect(locs).toContain("/plugins/");
     expect(locs).toContain("/contributing/");
     expect(locs).toContain("/changelog/");
@@ -518,5 +713,268 @@ describe("security.txt, robots.txt, sitemap", () => {
   it("there is a 404 page in each language", () => {
     expect(read("404.html")).toContain(`<h1>${STRINGS.en["404.title"]}</h1>`);
     expect(read("ar/404.html")).toContain(`<h1>${STRINGS.ar["404.title"]}</h1>`);
+  });
+});
+
+// ---- the Apps pages ---------------------------------------------------------------------
+
+type Text = { en: string; ar: string };
+type Shot = { file: string; kind: string; alt: Text; page?: string };
+type AppPage = {
+  slug: string;
+  title: Text;
+  sections: { h: Text; blocks: { shots?: Shot[] }[] }[];
+};
+const PAGES = APPS as AppPage[];
+const ARABIC_SCRIPT = /[؀-ۿ]/;
+
+/** The screenshots of a built Apps page: each <img> in its article, with its attributes. */
+function appImages(rel: string) {
+  const doc = parse(read(rel));
+  const article = elements(doc).find((e) => e.tagName === "article" && attr(e, "class") === "apps");
+  expect(article, `${rel}: the Apps article`).toBeTruthy();
+  return elements(article!)
+    .filter((e) => e.tagName === "img")
+    .map((e) => ({
+      src: attr(e, "src") ?? "",
+      alt: attr(e, "alt") ?? "",
+      width: Number(attr(e, "width")),
+      height: Number(attr(e, "height")),
+    }));
+}
+const appRel = (lang: "en" | "ar", slugName: string) =>
+  `${lang === "ar" ? "ar/" : ""}${appPath(slugName).slice(1)}index.html`;
+
+describe("the Apps pages", () => {
+  it("lists every app: the overview, then Player, Remote, TV, the server and the web app", () => {
+    expect(PAGES.map((p) => p.slug)).toEqual(["", "player", "remote", "tv", "server", "web"]);
+  });
+
+  it("each page is built in English and in Arabic, with its lang, dir and title", () => {
+    for (const pg of PAGES) {
+      const en = read(appRel("en", pg.slug));
+      const ar = read(appRel("ar", pg.slug));
+      expect(en, pg.slug).toContain('<html lang="en" dir="ltr">');
+      expect(ar, pg.slug).toContain('<html lang="ar" dir="rtl">');
+      expect(en).toContain(`<h1>${pg.title.en.replace(/'/g, "&#39;")}</h1>`);
+      expect(ar).toContain(`<h1>${pg.title.ar}</h1>`);
+      // each links the other, and the Arabic page's links stay in Arabic
+      expect(en).toMatch(new RegExp(`id="lang-switch"[^>]*href="/ar${appPath(pg.slug)}"`));
+      expect(ar).toMatch(new RegExp(`id="lang-switch"[^>]*href="${appPath(pg.slug)}"`));
+      for (const other of PAGES) expect(ar).toContain(`href="/ar${appPath(other.slug)}"`);
+    }
+  });
+
+  it("the Arabic pages are Arabic, not only their headings", () => {
+    for (const pg of PAGES) {
+      const prose = htmlProse(read(appRel("ar", pg.slug)));
+      expect(latinShare(prose), pg.slug).toBeLessThan(MAX_LATIN_SHARE);
+      // whole paragraphs: far more Arabic than the headings and the navigation alone
+      expect((prose.match(/[؀-ۿ]/g) ?? []).length, pg.slug).toBeGreaterThan(800);
+    }
+  });
+
+  it("every image a page shows exists, as a WebP of the size the page says", () => {
+    let count = 0;
+    for (const pg of PAGES) {
+      for (const lang of ["en", "ar"] as const) {
+        const imgs = appImages(appRel(lang, pg.slug));
+        const shots = pg.sections.flatMap((s) => s.blocks.flatMap((b) => b.shots ?? []));
+        expect(imgs.length, `${lang} ${pg.slug}`).toBe(shots.length);
+        for (const img of imgs) {
+          expect(img.src).toMatch(/^\/assets\/apps\/[a-z0-9-]+-(?:en|ar)\.webp$/);
+          const file = path.join(DIST, img.src);
+          expect(fs.existsSync(file), img.src).toBe(true);
+          expect(webpSize(fs.readFileSync(file)), img.src).toEqual({ w: img.width, h: img.height });
+          count++;
+        }
+      }
+    }
+    expect(count).toBeGreaterThan(40);
+  });
+
+  it("a page shows its own language's screenshot where there is one", () => {
+    for (const sh of appShots() as Shot[]) {
+      for (const lang of ["en", "ar"] as const) {
+        if (fs.existsSync(path.join(APP_IMAGES, `${sh.file}-${lang}.webp`)))
+          expect(appImage(sh.file, lang)).toBe(`/assets/apps/${sh.file}-${lang}.webp`);
+      }
+    }
+  });
+
+  it("the alt text is in each page's language", () => {
+    for (const pg of PAGES) {
+      for (const img of appImages(appRel("en", pg.slug))) {
+        expect(img.alt.length, img.src).toBeGreaterThan(15);
+        expect(ARABIC_SCRIPT.test(img.alt), `${img.src}: ${img.alt}`).toBe(false);
+      }
+      for (const img of appImages(appRel("ar", pg.slug))) {
+        expect(img.alt.length, img.src).toBeGreaterThan(15);
+        expect(latinShare(img.alt), `${img.src}: ${img.alt}`).toBeLessThan(0.5);
+      }
+    }
+  });
+
+  it("the screenshots are light: WebP only, none over 100 KB, each built and shown", () => {
+    const shots = fs.readdirSync(APP_IMAGES);
+    expect(shots.length).toBeGreaterThan(0);
+    for (const f of shots) {
+      expect(f).toMatch(/^[a-z0-9-]+-(?:en|ar)\.webp$/);
+      expect(fs.statSync(path.join(APP_IMAGES, f)).size, f).toBeLessThan(100 * 1024);
+      expect(fs.existsSync(path.join(DIST, "assets/apps", f)), f).toBe(true);
+    }
+    // no stray image is published: each one is on some page
+    const shown = new Set(
+      PAGES.flatMap((pg) =>
+        (["en", "ar"] as const).flatMap((l) =>
+          appImages(appRel(l, pg.slug)).map((i) => path.basename(i.src))
+        )
+      )
+    );
+    expect([...shots].sort()).toEqual([...shown].sort());
+  });
+
+  it("is in the navigation, on the landing page and in the sitemap, in both languages", () => {
+    for (const lang of ["en", "ar"] as const) {
+      const pre = lang === "ar" ? "/ar" : "";
+      const home = read(lang === "ar" ? "ar/index.html" : "index.html");
+      expect(home).toContain(`href="${pre}/apps/">${STRINGS[lang]["nav.apps"]}</a>`);
+      expect(home).toContain(`<strong>${STRINGS[lang]["card.apps.title"]}</strong>`);
+    }
+    const xml = read("sitemap.xml");
+    for (const pg of PAGES)
+      for (const pre of ["", "/ar"])
+        expect(xml).toContain(`<loc>https://maktaba.dev${pre}${appPath(pg.slug)}</loc>`);
+  });
+
+  it("keeps words whole, and its tables fit a phone", () => {
+    const css = read("assets/portal.css");
+    const cells = css.match(/\.apps th,\s*\.apps td\s*\{([^}]*)\}/);
+    expect(cells, "the .apps th, .apps td rule").not.toBeNull();
+    expect(cells![1]).toMatch(/overflow-wrap:\s*break-word/);
+    expect(css).toMatch(/\.apps\s*\{[^}]*overflow-wrap:\s*break-word/);
+    // under 600 px a table's rows become cards, each cell under its column's name
+    expect(css).toMatch(
+      /@media \(max-width: 600px\)\s*\{[^@]*table\.stack td::before\s*\{[^}]*attr\(data-label\)/
+    );
+    for (const pg of PAGES) {
+      const doc = parse(read(appRel("ar", pg.slug)));
+      for (const td of elements(doc).filter((e) => e.tagName === "td"))
+        expect(attr(td, "data-label"), pg.slug).toBeTruthy();
+    }
+  });
+
+  it("the parity check fails a missing or English Arabic, Arabic in the English, a missing image", () => {
+    const page = (title: Text, file = "player-iphone-home") => [
+      {
+        slug: "x",
+        title,
+        card: { en: "Card", ar: "بطاقة" },
+        lead: { en: "Lead", ar: "مقدمة" },
+        sections: [
+          {
+            h: { en: "H", ar: "عنوان" },
+            blocks: [{ shots: [{ file, kind: "phone", alt: { en: "Alt", ar: "نص بديل" } }] }],
+          },
+        ],
+      },
+    ];
+    const run = (pages: unknown[]) =>
+      (checkApps(pages, appShots(pages), appImage) as string[]).join("\n");
+    expect(run(page({ en: "Player", ar: "المشغّل" }))).toBe("");
+    expect(run(page({ en: "Player", ar: "" }))).toMatch(/no Arabic/);
+    expect(run(page({ en: "Player", ar: "The Player" }))).toMatch(/the Arabic is not Arabic/);
+    expect(run(page({ en: "المشغّل", ar: "المشغّل" }))).toMatch(/Arabic script in the English/);
+    // the same key or product name in both may stay as it is (a right-to-left mark aside)
+    expect(run(page({ en: "TestFlight", ar: "‏TestFlight" }))).toBe("");
+    const missing = run(page({ en: "Player", ar: "المشغّل" }, "no-such-shot"));
+    expect(missing).toMatch(/no-such-shot has no image for en/);
+    expect(missing).toMatch(/no-such-shot has no image for ar/);
+    // and the real pages pass
+    expect(checkApps(APPS, appShots(), appImage)).toEqual([]);
+  });
+});
+
+describe("the public-safety scan: images and file names", () => {
+  const riff = (chunks: [string, Buffer][]) => {
+    const body = Buffer.concat(
+      chunks.map(([id, data]) => {
+        const head = Buffer.alloc(8);
+        head.write(id, 0, "ascii");
+        head.writeUInt32LE(data.length, 4);
+        return Buffer.concat([head, data, Buffer.alloc(data.length % 2)]);
+      })
+    );
+    const head = Buffer.alloc(12);
+    head.write("RIFF", 0, "ascii");
+    head.writeUInt32LE(body.length + 4, 4);
+    head.write("WEBP", 8, "ascii");
+    return Buffer.concat([head, body]);
+  };
+  const png = (chunks: [string, Buffer][]) =>
+    Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      ...[...chunks, ["IEND", Buffer.alloc(0)] as [string, Buffer]].map(([id, data]) => {
+        const head = Buffer.alloc(8);
+        head.writeUInt32BE(data.length, 0);
+        head.write(id, 4, "ascii");
+        return Buffer.concat([head, data, Buffer.alloc(4)]);
+      }),
+    ]);
+  const rules = (text: string) => scanText(text).map((f: { rule: string }) => f.rule);
+
+  it("a WebP's EXIF or XMP is metadata, and its text is scanned", () => {
+    expect(imageMetadata(riff([["VP8 ", Buffer.alloc(20)]]))).toEqual({ blocks: [], text: "" });
+    const exif = imageMetadata(
+      riff([
+        ["VP8 ", Buffer.alloc(20)],
+        ["EXIF", Buffer.from("Owner /Users/someone")],
+      ])
+    );
+    expect(exif.blocks).toEqual(["EXIF"]);
+    expect(rules(exif.text)).toContain("home-path");
+    expect(imageMetadata(riff([["XMP ", Buffer.from("<x/>")]])).blocks).toEqual(["XMP"]);
+  });
+
+  it("a PNG's text chunks are scanned, its EXIF refused", () => {
+    const text = imageMetadata(png([["tEXt", Buffer.from("Comment\0taken on 192.168.1.20")]]));
+    expect(text.blocks).toEqual([]);
+    expect(rules(text.text)).toContain("private-ip");
+    const z = imageMetadata(
+      png([
+        ["zTXt", Buffer.concat([Buffer.from("Comment\0\0"), zlib.deflateSync("/Users/someone")])],
+      ])
+    );
+    expect(rules(z.text)).toContain("home-path");
+    expect(imageMetadata(png([["eXIf", Buffer.from("MM")]])).blocks).toEqual(["eXIf"]);
+  });
+
+  it("flags an image's metadata, and a file name that is not plain, in a built folder", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "devportal-scan-"));
+    try {
+      fs.writeFileSync(
+        path.join(dir, "shot.webp"),
+        riff([
+          ["VP8 ", Buffer.alloc(20)],
+          ["EXIF", Buffer.from("x")],
+        ])
+      );
+      fs.writeFileSync(path.join(dir, "Screen Shot 1.webp"), riff([["VP8 ", Buffer.alloc(20)]]));
+      fs.writeFileSync(path.join(dir, "notes-192.168.1.20.txt"), "nothing");
+      const found = scanDir(dir).map((f: { file: string; rule: string }) => `${f.file}: ${f.rule}`);
+      expect(found).toContain("shot.webp: image-metadata");
+      expect(found).toContain("Screen Shot 1.webp: file-name");
+      expect(found).toContain("notes-192.168.1.20.txt: file-name:private-ip");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("no image on the site carries metadata, and the app screenshots no text at all", () => {
+    for (const f of files(DIST).filter((f) => /\.(png|webp|jpe?g)$/i.test(f))) {
+      const meta = imageMetadata(fs.readFileSync(path.join(DIST, f)));
+      expect(meta.blocks, f).toEqual([]);
+      if (f.startsWith("assets/apps/")) expect(meta.text, f).toBe("");
+    }
   });
 });

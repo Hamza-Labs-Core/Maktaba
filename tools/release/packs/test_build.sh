@@ -75,3 +75,33 @@ SH
 if build "$tmp/d" >"$tmp/d.log" 2>&1; then fail "a link out of the pack was built"; fi
 grep -q "leaves the folder" "$tmp/d.log" || { cat "$tmp/d.log"; fail "not refused for the link"; }
 echo "ok: a link out of the folder is refused"
+
+# runtime.ollama's recipe (story 51.16, a Core Mac's model server): the pinned archive
+# checked against its sha256, ollama and llama-server kept as they are (MLX left out),
+# with their licences; an archive that is not the pinned one fails the recipe. A fake
+# archive and pins stand in for Ollama's release.
+ol="$tmp/ollama"
+mkdir -p "$ol/src/mlx_metal_v3" "$ol/root/tools/release/mac-app"
+for b in ollama llama-server; do printf '#!/bin/sh\necho %s\n' "$b" >"$ol/src/$b"; done
+echo "MIT" >"$ol/src/LICENSE"
+echo "mlx" >"$ol/src/MLX-LICENSE"
+echo "big" >"$ol/src/mlx_metal_v3/lib.dylib"
+tar -czf "$ol/ollama-darwin.tgz" -C "$ol/src" .
+if command -v sha256sum >/dev/null; then sum="$(sha256sum "$ol/ollama-darwin.tgz" | cut -d' ' -f1)"; else sum="$(shasum -a 256 "$ol/ollama-darwin.tgz" | cut -d' ' -f1)"; fi
+pins() { printf 'OLLAMA_VERSION=0.40.2\nOLLAMA_URL=file://%s\nOLLAMA_SHA256=%s\n' "$ol/ollama-darwin.tgz" "$1" >"$ol/root/tools/release/mac-app/pins.env"; }
+pins "$sum"
+recipe() { WORK="$ol/work-$1" REPO_ROOT="$ol/root" bash "$here/recipes/runtime.ollama.sh" "$ol/stage-$1" "$2" 0.4.2; }
+recipe a darwin-arm64 >"$ol/a.log" 2>&1 || { cat "$ol/a.log"; fail "runtime.ollama's recipe"; }
+for f in ollama/ollama ollama/llama-server licenses/ollama/LICENSE licenses/ollama.txt; do
+    [ -f "$ol/stage-a/$f" ] || fail "runtime.ollama's pack has no $f"
+done
+[ -x "$ol/stage-a/ollama/ollama" ] || fail "runtime.ollama's ollama is not executable"
+cmp "$ol/src/ollama" "$ol/stage-a/ollama/ollama" || fail "runtime.ollama's ollama is not Ollama's"
+if [ -e "$ol/stage-a/licenses/ollama/MLX-LICENSE" ] || find "$ol/stage-a" -name 'mlx*' | grep -q .; then
+    fail "runtime.ollama's pack carries the MLX engine"
+fi
+if recipe b linux-amd64 >"$ol/b.log" 2>&1; then fail "runtime.ollama built for linux-amd64"; fi
+pins "0000000000000000000000000000000000000000000000000000000000000000"
+if recipe c darwin-arm64 >"$ol/c.log" 2>&1; then fail "runtime.ollama took an archive that is not the pinned one"; fi
+grep -q "pinned 0000" "$ol/c.log" || { cat "$ol/c.log"; fail "runtime.ollama's sha256 refusal"; }
+echo "ok: runtime.ollama's recipe gathers the pinned Ollama, and refuses another"

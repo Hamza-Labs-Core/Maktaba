@@ -17,7 +17,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
-// base are the older slots' tables slot 0175 and the store touch (the columns they
+// base are the older slots' tables slot 0178 and the store touch (the columns they
 // read; the rest of each table left out).
 const base = `
 CREATE TABLE cluster_nodes (id TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '');
@@ -61,7 +61,7 @@ func migration(t *testing.T, name string) string {
 	return string(b)
 }
 
-// sqliteDB is a fresh SQLite file with slot 0175's twin applied (twice: it is idempotent).
+// sqliteDB is a fresh SQLite file with slot 0178's twin applied (twice: it is idempotent).
 func sqliteDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "c.db"))
@@ -83,11 +83,11 @@ func sqliteDB(t *testing.T) *sql.DB {
 			t.Fatalf("%v\n%s", err, s)
 		}
 	}
-	twin := migration(t, "0175_components.sqlite.sql")
+	twin := migration(t, "0178_components.sqlite.sql")
 	for range 2 {
 		for _, s := range upStatements(t, twin) {
 			if _, err := db.Exec(s); err != nil {
-				t.Fatalf("0175: %v\n%s", err, s)
+				t.Fatalf("0178: %v\n%s", err, s)
 			}
 		}
 	}

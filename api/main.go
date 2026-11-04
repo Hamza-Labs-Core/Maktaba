@@ -326,7 +326,12 @@ func runServe() error {
 	// with handler or readiness pools.
 	// Epic 51 story 51.05: the background loops start and stop with their catalog
 	// component. Until the home's database is read every component is on, as before.
-	loops := components.NewRunner(logger)
+	loops := components.NewRunnerFor(logger, nodeMachine(nodeCfg))
+	// the Cloudflare Stream integration is the home API's alone (no stage, no loop): its
+	// component's status row is the API's
+	if !nodeCfg.Enabled {
+		loops.Serve("ext.cloudflare_stream")
+	}
 
 	idemStore, idemSweep, idemClose := buildIdempotencyStore(logger, nodeCfg.Enabled)
 	loops.Declare("idempotency_sweep", runner.Func(func(context.Context) { idemSweep() }))
@@ -438,7 +443,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
 		if err != nil {
 			return err
 		}
@@ -552,7 +557,7 @@ func runServe() error {
 			// PATCH /api/settings (a renamed home) reads at once in /api/auth/me
 			runtimeSettings := runtimecfg.New(appDB)
 			// the runner reads the home's desired state from here on
-			components.Start(loops, appDB, pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping), logger)
+			components.Start(loops, appDB, func() string { return pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping) }, logger)
 			var eventBus *eventbus.Bus
 			eventHub := ws.NewHub()
 			router.MountP6(r, router.P6Deps{
@@ -710,7 +715,7 @@ func runServe() error {
 			// and the capabilities every user reads, pushed on /ws/home (story 51.09)
 			router.MountP51(r, router.P51Deps{DB: appDB, License: licRef, Logger: logger,
 				Capabilities: capabilities, DSN: pgdsn.ForLibPQ(context.Background(), dsn, pgdsn.Ping),
-				Bus: eventBus, Hub: eventHub, RunCapabilities: true})
+				Bus: eventBus, Hub: eventHub, RunCapabilities: true, Loops: loops})
 			reaper := &watch.Reaper{
 				DB:            appDB,
 				RetentionDays: envIntDefault("MAKTABA_ANALYTICS_RETENTION_DAYS", 365),

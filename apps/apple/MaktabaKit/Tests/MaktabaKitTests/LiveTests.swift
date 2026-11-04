@@ -7,7 +7,7 @@ import Testing
 // `LiveSource` against a fake API and a fake clock.
 
 enum LiveFixtures {
-    static let home = URL(string: "http://192.168.50.177:8088")!
+    static let home = URL(string: "http://203.0.113.177:8088")!
 
     static let now = #"""
     {"server_time":"2026-10-31T20:15:00Z","channels":[
@@ -39,7 +39,7 @@ enum LiveFixtures {
     static func info(viaRelay: Bool, available: Bool = true, reason: String? = nil) -> String {
         let r = reason.map { "\"\($0)\"" } ?? "null"
         return #"""
-        {"stream_base_url":"http://192.168.50.177:8089","hdhr_address":"","xmltv_url":"","m3u_url":"","base_from_config":false,
+        {"stream_base_url":"http://203.0.113.177:8089","hdhr_address":"","xmltv_url":"","m3u_url":"","base_from_config":false,
          "xmltv_path":"/api/channels/xmltv","m3u_path":"/api/channels/playlist.m3u","hls_path_template":"/stream/channel/{id}/index.m3u8",
          "remote":{"available":\#(available),"reason":\#(r),"via_relay":\#(viaRelay),"max_streams":2,"token_ttl_minutes":60},
          "cluster":{"hosts_on_air":1}}
@@ -202,11 +202,25 @@ private func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
     @Test func theLogo() async throws {
         let c = LiveStub.client()
         let withLogo = LiveChannel(id: "c1", number: 101, name: "Classics", logoPath: "/api/channels/c1/logo")
-        #expect(c.channelLogoURL(withLogo)?.absoluteString == "http://192.168.50.177:8088/api/channels/c1/logo")
+        #expect(c.channelLogoURL(withLogo)?.absoluteString == "http://203.0.113.177:8088/api/channels/c1/logo")
         #expect(c.channelLogoURL(LiveChannel(id: "c2", number: 102, name: "Kids")) == nil)
         LiveStub.on("GET /api/channels/c1/logo", 200, "PNG")
         #expect(try await c.channelLogo("c1") == Data("PNG".utf8))
         #expect(LiveStub.seen.last?.auth == "Bearer a-live")
+    }
+
+    /// The corner the home burns the logo into (`watermark_position`); none, an older home or
+    /// an unknown corner read as nil (the overlays then sit at the bottom).
+    @Test func theWatermarksCorner() throws {
+        func corner(_ json: String) throws -> WatermarkCorner? {
+            try JSONDecoder.home.decode(LiveChannel.self, from: Data(json.utf8)).watermark
+        }
+        #expect(try corner(#"{"id":"c1","watermark_position":"bottom-left"}"#) == .bottomLeft)
+        #expect(try corner(#"{"id":"c1","watermark_position":"bottom-right"}"#) == .bottomRight)
+        #expect(try corner(#"{"id":"c1","watermark_position":"top-right"}"#) == .topRight)
+        #expect(try corner(#"{"id":"c1"}"#) == nil)
+        #expect(try corner(#"{"id":"c1","watermark_position":"middle"}"#) == nil)
+        #expect(WatermarkCorner.bottomLeft.isBottom && !WatermarkCorner.topLeft.isBottom)
     }
 
     @Test func readsWhereTheTVStreams() async throws {
@@ -221,8 +235,8 @@ private func at(_ s: String) -> Date { ISO8601DateFormatter().date(from: s)! }
 
     @Test func theLANPlaylistIsOnTheWebPort() {
         let c = LiveStub.client()
-        #expect(c.channelStreamURL("c1").absoluteString == "http://192.168.50.177:8088/stream/channel/c1/index.m3u8")
-        #expect(c.channelStreamURL("c1", template: "/tv/{id}/live.m3u8").absoluteString == "http://192.168.50.177:8088/tv/c1/live.m3u8")
+        #expect(c.channelStreamURL("c1").absoluteString == "http://203.0.113.177:8088/stream/channel/c1/index.m3u8")
+        #expect(c.channelStreamURL("c1", template: "/tv/{id}/live.m3u8").absoluteString == "http://203.0.113.177:8088/tv/c1/live.m3u8")
     }
 
     /// Tune: 202 starting, then 200 live; heartbeat; end. Each reaches its route with its body.

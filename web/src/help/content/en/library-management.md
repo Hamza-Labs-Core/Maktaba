@@ -25,6 +25,29 @@ Removing or merging a library never deletes a file from your disk. Maktaba only 
 
 Click **Edit** to rename it, add or remove folders, or open **Advanced settings**. The advanced settings are shown as JSON; leave them alone unless you know what each one does.
 
+Two of them belong to **Convert to MP4**, and both are off unless you add them:
+
+- `"convert": {"allow_reencode": true}` lets the library re-encode files whose video an MP4 cannot hold (VP9, AV1 and so on) to H.264. Re-encoding loses a little quality, so without it those files are skipped.
+- `"convert": {"auto": true}` is kept for automatic conversion after a scan. No scan queues a conversion in this version, so start it from the library's menu on the Processing page.
+
+See [How a conversion decides](/help/processing#convert-decides).
+
+### YouTube sources {#youtube-sources}
+
+Each card says where the library stands with YouTube, such as **YouTube: 1 source · off** or **YouTube: 3 sources · 1 on**. A library with one source has its **Downloads** switch right there: turning it on brings the source back in the mode it had when it was last on, or **New uploads and back catalogue** the first time.
+
+A library with no source shows **Add YouTube source**, which opens the dialog below. **Look for its channel** reads the YouTube ids in the library's file names (`… #<id>.mp4`, `… [<id>].mp4`) and its `.info.json` files, and matches them with what Maktaba already knows of YouTube; it asks YouTube nothing. When it finds one, the card says **Looks like channel …**, and **Add as source** adds it, off. When another library already follows that channel, or a library with a source has a name like this one's, the card says so and offers **Merge into …** (see [Merge](#merge)).
+
+Maktaba also finds each library's sources by itself, from the videos it has linked to YouTube (their `.info.json` files, or their titles). When most of a library's linked videos sit in real YouTube playlists that no other library's videos make up, those playlists become its sources; otherwise the channel most of them come from does. So several libraries of one channel, a playlist each, each get their own playlist. A source found this way is added **off**, says **Found from its linked videos**, and nothing about the sources already there changes. A channel or playlist is never the source of two libraries: when a library's videos come from one another library already follows, its card says so and offers **Merge into …** instead. **Look for its channel** looks at the linked videos first, so it gives the same answer.
+
+Click **YouTube sources…** on a library's card to see the YouTube channels and playlists it follows, add one by its link, turn one on or off, and set how it downloads. It is the same dialog as **YouTube sources…** in the library's menu on the Processing page. The channels a library already had start **Off**: nothing downloads until you set a source to **New uploads and back catalogue** or **New uploads only**. See [YouTube sources](/help/processing#youtube-sources) for the modes and options.
+
+### Import from Tartube {#tartube}
+
+**Import from Tartube…** at the top of the page makes the YouTube sources of every library at once from Tartube's records. The path of Tartube's database (`tartube.db`) or its JSON export is filled in when Maktaba finds one beside the library folders; change it if it is elsewhere, then press **Import**.
+
+Each channel and playlist Tartube downloads into a folder that is a library's folder becomes a source of that library, **off**, and every video Tartube downloaded there counts as downloaded, so it is never fetched again. Running it again changes nothing that is already there, and a source a library already has keeps its mode. The report lists what was **Added (off)**, what was **Already there**, what was **Skipped** and why (a search page, another site such as x.com, a link that is no channel or playlist), and the Tartube channels with no library: **Not in Maktaba yet**. No library is made: add one for its folder, then import again.
+
 ### Scan {#scan}
 
 **Scan now** looks for new, changed and missing files right away. A bar shows the scan while it runs, even if you reload the page.

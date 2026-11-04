@@ -7,10 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/stdlib"
+
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner/loopcheck"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgtest"
 )
 
 // T09 (F1, Go loops): every loop streaming declares is in the catalog, every catalog
@@ -58,6 +62,50 @@ func TestBackgroundLoopFollowsItsComponent(t *testing.T) {
 	waitUntil(t, func() bool { return running.Load() == 1 })
 	if !plain.On("livetv") || !plain.Stop(5*time.Second) {
 		t.Fatal("no runner: every component on, and Stop waits")
+	}
+}
+
+// Epic 51 on a real Postgres: a joined machine's streaming runs its loops on a runner of
+// that machine's desired state, so an override that turns livetv.hdhomerun off there stops
+// its loop on that machine only; the home's keeps running.
+func TestJoinedMachineLoopsFollowItsOverride(t *testing.T) {
+	if testing.Short() {
+		t.Skip("real Postgres")
+	}
+	dsn, pool := pgtest.ScratchDB(t)
+	t.Setenv("DATABASE_URL", dsn)
+	t.Setenv("MAKTABA_COMPONENTS_RECONCILE", "")
+	nodeID := uuid.NewString()
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `INSERT INTO cluster_nodes (id, name, state, os, arch, node_pubkey, approved_at, approved_by)
+		VALUES ($1, 'n', 'approved', 'linux', 'amd64', 'k-n', now(), 'test')`, nodeID); err != nil {
+		t.Fatal(err)
+	}
+	var homeOn, nodeOn atomic.Int32
+	loop := func(on *atomic.Int32) func(ctx context.Context) {
+		return func(ctx context.Context) {
+			on.Add(1)
+			defer on.Add(-1)
+			<-ctx.Done()
+		}
+	}
+	home, node := newBackground(ctx), newBackground(ctx)
+	startComponents(home, pool, "", slog.Default())
+	startComponents(node, pool, nodeID, slog.Default())
+	home.Loop("hdhr_ssdp", loop(&homeOn))
+	node.Loop("hdhr_ssdp", loop(&nodeOn))
+	t.Cleanup(func() { home.Stop(5 * time.Second); node.Stop(5 * time.Second) })
+	waitUntil(t, func() bool { return homeOn.Load() == 1 && nodeOn.Load() == 1 })
+	db := stdlib.OpenDBFromPool(pool)
+	defer func() { _ = db.Close() }()
+	if err := store.New(db).SetOverride(ctx, store.Override{Node: nodeID, ID: "livetv.hdhomerun", Want: components.WantInstalled},
+		store.Audit{By: "admin", ActorSource: "admin", Action: "component.disable"}); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, func() bool { return nodeOn.Load() == 0 })
+	time.Sleep(300 * time.Millisecond)
+	if homeOn.Load() != 1 || !home.On("livetv.hdhomerun") || node.On("livetv.hdhomerun") {
+		t.Fatalf("home %d (on %v), node on %v", homeOn.Load(), home.On("livetv.hdhomerun"), node.On("livetv.hdhomerun"))
 	}
 }
 

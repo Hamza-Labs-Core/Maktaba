@@ -54,18 +54,16 @@ func refusalOf(t *testing.T, err error, code string, status int) Refusal {
 
 func want(id, w string) Change { return Change{ID: id, Want: w} }
 
-// T01: turning a requirement off sends what requires it to waiting and what wants it to
-// degraded; their wants stay.
+// T01: turning a component off sends what wants it to degraded; its requirements and
+// their wants stay.
 func TestEffectOfTurningARequirementOff(t *testing.T) {
-	p, err := planOf(t, allOn(), Request{Changes: []Change{want("runtime.ollama", components.WantInstalled)}}, nil)
+	p, err := planOf(t, allOn(), Request{Changes: []Change{want("llm", components.WantInstalled)}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for id, w := range map[string]Effect{
-		"runtime.ollama":       {To: components.PhaseOff},
-		"llm":                  {To: components.PhaseWaiting, Reason: "dependency_off:runtime.ollama"},
-		"model.llm.qwen2_5-7b": {To: components.PhaseWaiting, Reason: "dependency_off:runtime.ollama"},
-		"classify":             {To: components.PhaseDegraded, Reason: "want_missing:llm"},
+		"llm":      {To: components.PhaseOff},
+		"classify": {To: components.PhaseDegraded, Reason: "want_missing:llm"},
 	} {
 		e, ok := effectOf(p, id)
 		if !ok || e.To != w.To || e.Reason != w.Reason || e.From != components.PhaseRunning {
@@ -75,7 +73,10 @@ func TestEffectOfTurningARequirementOff(t *testing.T) {
 	if _, ok := effectOf(p, "transcription"); ok {
 		t.Error("an unrelated component is listed")
 	}
-	if len(p.writes) != 1 || p.writes[0].Desired.ID != "runtime.ollama" || p.writes[0].Audit.Action != "component.disable" {
+	if _, ok := effectOf(p, "runtime.ollama"); ok {
+		t.Error("a requirement of what goes off is listed")
+	}
+	if len(p.writes) != 1 || p.writes[0].Desired.ID != "llm" || p.writes[0].Audit.Action != "component.disable" {
 		t.Fatalf("writes %+v: only the change itself, the dependents keep their wish", p.writes)
 	}
 	if p.preview.DrainS < components.DefaultStopGraceS {
@@ -93,9 +94,9 @@ func TestRemoveRefusedWhileRequired(t *testing.T) {
 			t.Errorf("required_by %v lacks %s", r.RequiredBy, id)
 		}
 	}
-	// two Whisper models on: either can go, not both
+	// two Whisper models on disk: either can go, not both
 	rows := allOn()
-	rows = with(rows, "model.whisper-medium", components.WantInstalled)
+	rows = with(rows, "model.whisper-medium", components.WantAbsent)
 	if _, err := planOf(t, rows, Request{Changes: []Change{want("model.whisper-turbo", components.WantAbsent)}}, nil); err != nil {
 		t.Fatalf("another enabled Whisper model is there: %v", err)
 	}
@@ -278,5 +279,304 @@ func TestNoRowIsOn(t *testing.T) {
 	g = gates(components.Default(), with(allOn(), "transcription", components.WantAbsent))
 	if g["transcription"].phase != components.PhaseNotInstalled || g["subtitles"].phase != components.PhaseWaiting {
 		t.Fatalf("absent: %+v %+v", g["transcription"], g["subtitles"])
+	}
+}
+
+// An asset has no run: installed (on disk) it meets what requires it, as enabled does.
+// The seed leaves assets installed, so a home where everything runs previews from
+// running, not waiting; removing one is refused while it is required, and a bundle
+// neither counts an installed asset as missing nor turns it on again.
+func TestInstalledAssetMeetsRequirements(t *testing.T) {
+	rows := allOn()
+	for _, c := range components.Default().Components() {
+		if c.Switchable && c.Kind == components.KindAsset {
+			rows = with(rows, c.ID, components.WantInstalled)
+		}
+	}
+	g := gates(components.Default(), rows)
+	for _, id := range []string{"llm", "transcription", "search.semantic", "classify", "runtime.ollama"} {
+		if g[id].phase != components.PhaseRunning || g[id].reason != "" {
+			t.Errorf("%s: %+v, want running", id, g[id])
+		}
+	}
+	p, err := planOf(t, rows, Request{Changes: []Change{want("llm", components.WantInstalled)}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := effectOf(p, "llm"); !ok || e.From != components.PhaseRunning || e.To != components.PhaseOff {
+		t.Fatalf("llm: %+v (listed %v)", e, ok)
+	}
+	_, err = planOf(t, rows, Request{Changes: []Change{want("runtime.ollama", components.WantAbsent)}}, nil)
+	if r := refusalOf(t, err, CodeRequiredBy, http.StatusConflict); !slices.Contains(r.RequiredBy, "llm") {
+		t.Fatalf("required_by %v", r.RequiredBy)
+	}
+	s := &Service{Catalog: components.Default()}
+	d := s.diffOf(rows, "full", false)
+	for _, id := range append(append([]string{}, d.Enable...), d.Disable...) {
+		if c, _ := components.Default().Get(id); c.Kind == components.KindAsset {
+			t.Errorf("bundle full changes the installed asset %s", id)
+		}
+	}
+	line := s.bundleLine(&snapshot{rows: rows})
+	for _, id := range line.Minus {
+		if c, _ := components.Default().Get(id); c.Kind == components.KindAsset {
+			t.Errorf("bundle line names the installed asset %s missing", id)
+		}
+	}
+}
+
+// transcriptionNoFiles is a home where everything is on and every asset installed (the
+// seed's rows), but runtime.ml and every Whisper model are not on disk.
+func transcriptionNoFiles() (map[string]store.Desired, func(string) bool) {
+	rows := allOn()
+	for _, c := range components.Default().Components() {
+		if c.Switchable && c.Kind == components.KindAsset {
+			rows = with(rows, c.ID, components.WantInstalled)
+		}
+	}
+	gone := map[string]bool{"runtime.ml": true, "model.whisper-turbo": true, "model.whisper-large-v3": true,
+		"model.whisper-medium": true}
+	return rows, func(id string) bool { return gone[id] }
+}
+
+// A component whose required runtime and models are not on the machine waits for them
+// (requirement_missing, naming the first), though its rows say installed; one of an
+// "any:" group there is enough. What it only wants, not there, makes it degraded.
+func TestMissingAssetRequirementWaits(t *testing.T) {
+	cat := components.Default()
+	rows, missing := transcriptionNoFiles()
+	g := gatesOn(cat, rows, nil, missing)
+	if tr := g["transcription"]; tr.phase != components.PhaseWaiting || tr.reason != ReasonRequirementMissing+":runtime.ml" || !tr.on {
+		t.Fatalf("transcription: %+v", tr)
+	}
+	// subtitles needs transcription, which is on (its gate is open): it is not told off
+	if sub := g["subtitles"]; sub.phase != components.PhaseRunning {
+		t.Fatalf("subtitles: %+v", sub)
+	}
+	ml := func(id string) bool { return id == "model.whisper-turbo" || id == "model.whisper-large-v3" }
+	if tr := gatesOn(cat, rows, nil, ml)["transcription"]; tr.phase != components.PhaseRunning {
+		t.Fatalf("medium is there: %+v", tr)
+	}
+	cohere := func(id string) bool { return id == "model.cohere-arabic" }
+	if tr := gatesOn(cat, rows, nil, cohere)["transcription"]; tr.phase != components.PhaseDegraded || tr.reason != "want_missing:model.cohere-arabic" {
+		t.Fatalf("cohere missing: %+v", tr)
+	}
+	if tr := gatesOn(cat, rows, nil, nil)["transcription"]; tr.phase != components.PhaseRunning {
+		t.Fatalf("files unknown: %+v", tr)
+	}
+	// the preview reads the same rule: turning transcription on goes to waiting
+	off := with(rows, "transcription", components.WantInstalled)
+	p, err := makePlanTier(cat, nil, "", time.Unix(1700000000, 0), off, 7,
+		Request{Changes: []Change{want("transcription", components.WantEnabled)}}, who, true, missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := effectOf(p, "transcription"); !ok || e.To != components.PhaseWaiting || e.Reason != ReasonRequirementMissing+":runtime.ml" {
+		t.Fatalf("enable transcription: %+v (listed %v)", e, ok)
+	}
+}
+
+// The pipeline worker runs transcription's stages when it has no stt process (workers
+// = 0) and reports running with RequirementsMet true: its row settles to waiting with
+// RequirementsMet false naming the runtime, Ready false. A part with no RequirementsMet
+// (a config part) is kept; a RequirementsMet that says neither yes nor why is named.
+func TestSettleWaitsForMissingFiles(t *testing.T) {
+	rows, missing := transcriptionNoFiles()
+	g := gatesOn(components.Default(), rows, nil, missing)["transcription"]
+	in := []store.Status{
+		{ID: "transcription", Part: "pipeline", Phase: components.PhaseRunning, Conditions: []store.Condition{
+			{Type: components.CondRequirementsMet, Status: "true"}, {Type: components.CondReady, Status: "true"}}},
+		{ID: "transcription", Part: "config", Phase: components.PhaseRunning},
+	}
+	out := settle(in, g)
+	if in[0].Phase != components.PhaseRunning || in[0].Conditions[0].Status != "true" {
+		t.Fatalf("settle changed its input: %+v", in[0])
+	}
+	if out[0].Phase != components.PhaseWaiting {
+		t.Fatalf("pipeline part: %+v", out[0])
+	}
+	req, ready := out[0].Conditions[0], out[0].Conditions[1]
+	if req.Status != "false" || req.Reason != ReasonRequirementMissing+":runtime.ml" || req.Params["component"] != "runtime.ml" || ready.Status != "false" {
+		t.Fatalf("conditions: %+v", out[0].Conditions)
+	}
+	if out[1].Phase != components.PhaseRunning || len(out[1].Conditions) != 0 {
+		t.Fatalf("config part: %+v", out[1])
+	}
+	roll := store.Rollup(out)
+	if roll.Phase != components.PhaseWaiting || roll.Reason() != ReasonRequirementMissing+":runtime.ml" {
+		t.Fatalf("rollup: %s %q", roll.Phase, roll.Reason())
+	}
+	// the supervisor's llm part waits on a model with no reason: it is named
+	llm := []store.Status{{ID: "llm", Part: "supervisor", Phase: components.PhaseWaiting, Conditions: []store.Condition{
+		{Type: components.CondRequirementsMet, Status: "unknown", Params: map[string]any{"component": "model.llm.qwen2_5-7b"}}}}}
+	lg := gate{on: true, phase: components.PhaseWaiting, reason: ReasonRequirementMissing + ":model.llm.qwen2_5-7b"}
+	if c := settle(llm, lg)[0].Conditions[0]; c.Status != "false" || c.Reason != ReasonRequirementMissing+":model.llm.qwen2_5-7b" {
+		t.Fatalf("llm: %+v", c)
+	}
+	// a running gate leaves the rows as they are
+	if out := settle(in, gate{on: true, phase: components.PhaseRunning}); out[0].Phase != components.PhaseRunning {
+		t.Fatalf("running gate: %+v", out[0])
+	}
+}
+
+// Smart search turned off while its model is missing: the supervisor stops the index
+// worker at once, and that worker's row stays at the old generation, waiting on the
+// model. The component reads off (the stale part reads the gate's phase), not waiting;
+// a part that reported the new generation keeps what it said, and an on gate leaves a
+// stale row as it is.
+func TestAnOffComponentReadsOffWhateverItsStalePartsSay(t *testing.T) {
+	rows := allOn()
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantInstalled, Generation: 4}
+	missing := func(id string) bool { return id == "model.embedder" }
+	g := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if g.on || g.phase != components.PhaseOff || g.gen != 4 {
+		t.Fatalf("gate: %+v", g)
+	}
+	in := []store.Status{
+		{ID: "search.semantic", Part: "supervisor", Phase: components.PhaseOff, ObservedGeneration: 4,
+			Conditions: []store.Condition{{Type: components.CondReady, Status: "false"}}},
+		{ID: "search.semantic", Part: "pipeline", Phase: components.PhaseOff, ObservedGeneration: 4},
+		{ID: "search.semantic", Part: "pipeline/index", Phase: components.PhaseWaiting, ObservedGeneration: 3,
+			Conditions: []store.Condition{
+				{Type: components.CondRequirementsMet, Status: "unknown", Params: map[string]any{"component": "model.embedder"}},
+				{Type: components.CondReady, Status: "false"}}},
+	}
+	roll, reason, settled, _ := statusOn(in, g, true)
+	if roll.Phase != components.PhaseOff || reason != "" {
+		t.Fatalf("rollup: %s %q (%+v)", roll.Phase, reason, settled)
+	}
+	if in[2].Phase != components.PhaseWaiting {
+		t.Fatalf("settle changed its input: %+v", in[2])
+	}
+	// a part at the new generation that still drains is what the component shows
+	draining := slices.Clone(in)
+	draining[1].Phase = components.PhaseDraining
+	if roll, _, _, _ := statusOn(draining, g, true); roll.Phase != components.PhaseDraining {
+		t.Fatalf("draining part: %s", roll.Phase)
+	}
+	// and so is one still at the old generation: it is stopping, not stale (the API's
+	// loops drain before they report off; components-live T14)
+	oldDrain := slices.Clone(in)
+	oldDrain[2].Phase, oldDrain[2].Conditions = components.PhaseDraining, nil
+	if roll, _, _, _ := statusOn(oldDrain, g, true); roll.Phase != components.PhaseDraining {
+		t.Fatalf("draining part at the old generation: %s", roll.Phase)
+	}
+	// a part alone at the old generation keeps its word: nothing has acted on the change
+	// yet (analytics' API loops still run until they report; components-live T14)
+	alone := []store.Status{{ID: "analytics", Part: "api", Phase: components.PhaseRunning, ObservedGeneration: 3,
+		Conditions: []store.Condition{{Type: components.CondReady, Status: "true"}}}}
+	if roll, _, _, _ := statusOn(alone, g, true); roll.Phase != components.PhaseRunning {
+		t.Fatalf("a part alone at the old generation: %s", roll.Phase)
+	}
+	// held: the stale part reads stopped, held
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled,
+		Hold: &store.Hold{By: "admin:test"}, Generation: 5}
+	hg := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	held := slices.Clone(in)
+	held[0].Phase, held[0].ObservedGeneration = components.PhaseStopped, 5 // the supervisor acted
+	if roll, reason, _, _ := statusOn(held, hg, true); roll.Phase != components.PhaseStopped || reason != "held" {
+		t.Fatalf("held: %s %q", roll.Phase, reason)
+	}
+	// on again: a stale row is the part's own word until it reports
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled, Generation: 6}
+	og := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if roll, _, _, _ := statusOn(in, og, true); roll.Phase != components.PhaseWaiting {
+		t.Fatalf("on: %s", roll.Phase)
+	}
+}
+
+// The install route's rule: a switchable asset the home wants is asked again unless the
+// home has it on disk or is installing it; a failed install is asked again (Retry).
+func TestInstallAgain(t *testing.T) {
+	asset := func(want string) Detail {
+		return Detail{View: View{ID: "runtime.ml", Kind: components.KindAsset, Switchable: true, Want: want}}
+	}
+	onDisk := asset(components.WantEnabled)
+	onDisk.Machines = []MachineView{{Machine: store.Home, Parts: []store.Status{{ID: "runtime.ml", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	failed := asset(components.WantEnabled)
+	failed.Progress = &InstallProgress{Phase: components.PhaseFailed}
+	busy := asset(components.WantEnabled)
+	busy.Progress = &InstallProgress{Phase: components.PhaseInstalling, Busy: true}
+	notAsset := asset(components.WantEnabled)
+	notAsset.Kind = "stages"
+	for name, c := range map[string]struct {
+		d    Detail
+		want bool
+	}{
+		"no status":    {asset(components.WantEnabled), true},
+		"installed":    {asset(components.WantInstalled), true},
+		"absent":       {asset(components.WantAbsent), false},
+		"on disk":      {onDisk, false},
+		"failed":       {failed, true},
+		"busy":         {busy, false},
+		"not an asset": {notAsset, false},
+	} {
+		if got := InstallAgain(c.d); got != c.want {
+			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// With packs off (offline mode) an install of an asset not on the home's disk is refused
+// 409 packs_disabled, its want absent or wanted, failed or busy; an asset on disk (its
+// Installed condition, or the supervisor's progress), another kind, and packs on are not.
+func TestInstallRefusedWithPacksOff(t *testing.T) {
+	asset := func(want string) Detail {
+		return Detail{View: View{ID: "runtime.ml", Kind: components.KindAsset, Switchable: true, Want: want}}
+	}
+	onDisk := asset(components.WantEnabled)
+	onDisk.Machines = []MachineView{{Machine: store.Home, Parts: []store.Status{{ID: "runtime.ml", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	progressOnDisk := asset(components.WantAbsent)
+	progressOnDisk.Progress = &InstallProgress{Installed: true}
+	elsewhere := asset(components.WantEnabled) // on a worker only: not the home's disk
+	elsewhere.Machines = []MachineView{{Machine: "7f1c9e1e-0000-4000-8000-000000000001", Parts: []store.Status{{ID: "runtime.ml",
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	failed := asset(components.WantEnabled)
+	failed.Progress = &InstallProgress{Phase: components.PhaseFailed, Reason: "download_failed"}
+	notAsset := asset(components.WantAbsent)
+	notAsset.Kind = "stages"
+	for name, c := range map[string]struct {
+		d       Detail
+		off     bool
+		refused bool
+	}{
+		"absent":           {asset(components.WantAbsent), true, true},
+		"wanted":           {asset(components.WantEnabled), true, true},
+		"failed":           {failed, true, true},
+		"on a worker only": {elsewhere, true, true},
+		"on disk":          {onDisk, true, false},
+		"progress on disk": {progressOnDisk, true, false},
+		"not an asset":     {notAsset, true, false},
+		"packs on":         {asset(components.WantAbsent), false, false},
+	} {
+		err := InstallRefused(c.d, c.off)
+		if !c.refused {
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			continue
+		}
+		r, ok := AsRefusal(err)
+		if !ok || r.Code != CodePacksDisabled || r.Status != http.StatusConflict || r.ID != "runtime.ml" {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+// Again writes a row whose want does not change (a new generation), audited
+// component.install; without it nothing is written.
+func TestAgainWritesTheRow(t *testing.T) {
+	rows := allOn()
+	p, err := makePlan(components.Default(), nil, time.Now(), rows, 1,
+		Request{Changes: []Change{{ID: "model.embedder", Want: components.WantEnabled}}}, who, false)
+	if err != nil || len(p.writes) != 0 {
+		t.Fatalf("a change to the same want wrote: %v %+v", err, p.writes)
+	}
+	p, err = makePlan(components.Default(), nil, time.Now(), rows, 1,
+		Request{Changes: []Change{{ID: "model.embedder", Want: components.WantEnabled, Again: true}}}, who, false)
+	if err != nil || len(p.writes) != 1 || p.writes[0].Audit.Action != ActionInstall {
+		t.Fatalf("again: %v %+v", err, p.writes)
 	}
 }

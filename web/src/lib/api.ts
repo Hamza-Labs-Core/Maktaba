@@ -412,21 +412,24 @@ export const api = {
 };
 
 /**
- * uploadWithProgress POSTs a multipart form and reports the upload's
- * progress (0..1). fetch cannot report upload progress, so this one call
- * uses XMLHttpRequest — with the same cookie, CSRF header and problem+json
- * error decoding as `request`.
+ * uploadWithProgress POSTs a multipart form (or a file as the whole body, sent
+ * as `contentType`) and reports the upload's progress (0..1). fetch cannot
+ * report upload progress, so this one call uses XMLHttpRequest — with the same
+ * cookie, CSRF header and problem+json error decoding as `request`.
  */
 export function uploadWithProgress<T>(
   path: string,
-  form: FormData,
-  onProgress?: (fraction: number) => void
+  form: FormData | Blob,
+  onProgress?: (fraction: number) => void,
+  contentType?: string
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `${BASE}${path}`);
     xhr.withCredentials = true;
     xhr.setRequestHeader("Accept", "application/json");
+    if (contentType && !(form instanceof FormData))
+      xhr.setRequestHeader("Content-Type", contentType);
     xhr.setRequestHeader(CLIENT_HEADER, clientHeaderValue());
     const tok = csrfToken();
     if (tok) xhr.setRequestHeader(CSRF_HEADER, tok);

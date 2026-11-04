@@ -8,6 +8,7 @@
 //	POST   /api/components/{id}/install    want installed, when it is absent
 //	POST   /api/components/{id}/stop       hold {by, at} until start; a body with until is 400 hold_has_no_until
 //	POST   /api/components/{id}/start      clear the hold
+//	POST   /api/components/{id}/restart    a process: the supervisor restarts it; a loop: cancelled and started again
 //	POST   /api/components/preview         {changes, with_conflicts?, bundle?}: the effect, changing nothing
 //	POST   /api/components/apply           {changes, generation?, with_conflicts?, bundle?}: all in one transaction, or none
 //	POST   /api/components/offline         build an offline file on this machine (story 51.16, packs.go)
@@ -39,6 +40,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // Handler serves /api/components*.
@@ -50,6 +52,9 @@ type Handler struct {
 	// Packs is this machine's pack installer (its supervisor); nil: none, so no progress
 	// and the offline and import routes answer 503.
 	Packs *Packs
+	// Loops is the API's Go-loop runner: a restart of a loop component whose loops run
+	// in the API (nil: none, so such a restart answers not_restartable).
+	Loops *runner.Runner
 }
 
 // Mount wires the routes behind adminOnly.
@@ -70,6 +75,7 @@ func (h *Handler) Mount(r chi.Router) {
 		r.Post("/api/components/{id}/install", h.install)
 		r.Post("/api/components/{id}/stop", h.stop)
 		r.Post("/api/components/{id}/start", h.start)
+		r.Post("/api/components/{id}/restart", h.restart)
 		r.Post("/api/components/{id}/settings/reset", h.resetSettings)
 		h.mountMachines(r)
 	})
@@ -287,8 +293,13 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantAbsent}}})
 }
 
-// install puts a component that is absent on disk, off (installed); one that is there
-// already is answered as it is. The supervisor's reconciler does the download.
+// install puts a component that is absent on disk, off (installed). With packs off on
+// this machine (offline mode) an asset not on disk is refused, 409 packs_disabled: nothing
+// could install it (svc.InstallRefused). An asset that is
+// wanted (its row, or the catalog default with no row) but not on this home, or whose
+// install failed, gets its row written again as it is (component.install, a new
+// generation): the supervisor's packs runner hears the change and installs it, or tries
+// the failed install again. Anything else is answered as it is.
 func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 	id, ok := h.known(w, r)
 	if !ok {
@@ -299,12 +310,34 @@ func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	if d.Want != components.WantAbsent {
-		common.WriteJSON(w, r, http.StatusOK, d)
+	WithProgress(r.Context(), h.Packs, &d.View)
+	if err := svc.InstallRefused(d, h.packsOff(r.Context(), d)); err != nil {
+		h.fail(w, r, err)
 		return
 	}
 	gen := d.Generation
-	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantInstalled, Generation: &gen}}})
+	switch {
+	case d.Want == components.WantAbsent:
+		h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: components.WantInstalled, Generation: &gen}}})
+	case svc.InstallAgain(d):
+		h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Want: d.Want, Generation: &gen, Again: true}}})
+	default:
+		common.WriteJSON(w, r, http.StatusOK, d)
+	}
+}
+
+// packsOff is whether this home's supervisor has packs off, asked only for an asset (no
+// supervisor, or no answer: false, and the install is written as before).
+func (h *Handler) packsOff(ctx context.Context, d svc.Detail) bool {
+	if h.Packs == nil || d.Kind != components.KindAsset {
+		return false
+	}
+	off, err := h.Packs.PacksOff(ctx)
+	if err != nil {
+		h.log().WarnContext(ctx, "components: whether packs are off is not known", "err", err, "event", "components_packs_unknown")
+		return false
+	}
+	return off
 }
 
 // stop holds a component until start. A hold has no end time: a body that asks for one
@@ -342,6 +375,47 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	}
 	held := false
 	h.one(w, r, id, svc.Request{Changes: []svc.Change{{ID: id, Hold: &held}}})
+}
+
+// restarted is a restart's answer: the component, and how many of its processes and
+// loops were restarted or started (0, with 202: none runs now, the supervisor starts them).
+type restarted struct {
+	svc.Detail
+	Restarted int `json:"restarted"`
+}
+
+// restart restarts a running component (story 51.08 §2; Restarter): 200 with how many
+// processes and loops it restarted, 202 when none runs now (the supervisor starts
+// them); 409 not_switchable, not_restartable or not_running; 503 with no supervisor.
+func (h *Handler) restart(w http.ResponseWriter, r *http.Request) {
+	id, ok := h.known(w, r)
+	if !ok {
+		return
+	}
+	n, err := Restarter{Service: h.Service, Packs: h.Packs, Loops: h.Loops}.Restart(r.Context(), id, h.actor(r))
+	var sup *supCallError
+	switch {
+	case errors.Is(err, ErrNoSupervisor):
+		httperror.Write(w, r, problem(http.StatusServiceUnavailable, CodeUnavailable, "no supervisor",
+			"this server runs under no supervisor"))
+		return
+	case errors.As(err, &sup):
+		h.packsFail(w, r, sup.err)
+		return
+	case err != nil:
+		h.fail(w, r, err)
+		return
+	}
+	d, err := h.Service.Show(r.Context(), id)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	status := http.StatusOK
+	if n == 0 {
+		status = http.StatusAccepted
+	}
+	common.WriteJSON(w, r, status, restarted{Detail: d, Restarted: n})
 }
 
 func (h *Handler) readRequest(w http.ResponseWriter, r *http.Request) (svc.Request, bool) {

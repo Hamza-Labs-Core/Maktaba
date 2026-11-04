@@ -79,7 +79,7 @@ func Resolve(cfg config.Config, exe string) (Server, bool, error) {
 	if mode == "off" || ExternalURL(cfg) != "" {
 		return Server{}, false, nil
 	}
-	bin := findBinary(cfg, exe)
+	bin := FindBinary(cfg, exe)
 	if bin == "" {
 		if mode == "on" {
 			return Server{}, false, errors.New("[llm] enabled = \"on\" but no ollama binary was found " +
@@ -87,6 +87,13 @@ func Resolve(cfg config.Config, exe string) (Server, bool, error) {
 		}
 		return Server{}, false, nil
 	}
+	return Planned(cfg, bin), true, nil
+}
+
+// Planned is the bundled server cfg describes with bin as its program ("" when it is not
+// on this machine yet: the llm component's dormant process, story 51.04, whose binary a
+// runtime.ollama pack brings later).
+func Planned(cfg config.Config, bin string) Server {
 	port := cfg.LLM.Port
 	if port <= 0 {
 		port = DefaultPort
@@ -99,12 +106,44 @@ func Resolve(cfg config.Config, exe string) (Server, bool, error) {
 		Want:    Models(cfg),
 		Pull:    !strings.EqualFold(strings.TrimSpace(cfg.LLM.Pull), "off"),
 		PortSet: cfg.LLM.Port > 0,
-	}, true, nil
+	}
 }
 
-// findBinary: $MAKTABA_OLLAMA_BIN, [llm] binary, else the payload's
-// ollama/ollama ($MAKTABA_APP_BUNDLE, or beside the bin/ of this executable).
-// Never PATH: a Homebrew Ollama is the user's, not Maktaba's.
+// FindBinary: $MAKTABA_OLLAMA_BIN, [llm] binary, else the payload's ollama/ollama
+// ($MAKTABA_APP_BUNDLE, or beside the bin/ of this executable), else the runtime.ollama
+// pack's (Epic 51 story 51.16: a Core Mac installs it later). Never PATH: a Homebrew
+// Ollama is the user's, not Maktaba's.
+func FindBinary(cfg config.Config, exe string) string {
+	if b := findBinary(cfg, exe); b != "" {
+		return b
+	}
+	if os.Getenv("MAKTABA_OLLAMA_BIN") != "" || strings.TrimSpace(cfg.LLM.Binary) != "" {
+		return ""
+	}
+	return PackBinary(cfg.StateDir())
+}
+
+// PackDir is the runtime.ollama pack's folder under the state root (packs.Layout's).
+func PackDir(stateDir string) string { return filepath.Join(stateDir, "components", "runtime.ollama") }
+
+// PackBinary is the ollama of the installed runtime.ollama pack (its current pointer's
+// folder), or "".
+func PackBinary(stateDir string) string {
+	dir := PackDir(stateDir)
+	b, err := os.ReadFile(filepath.Join(dir, "current"))
+	if err != nil {
+		return ""
+	}
+	name := strings.TrimSpace(string(b))
+	if name == "" || strings.ContainsAny(name, `/\\`) || strings.HasPrefix(name, ".") {
+		return ""
+	}
+	if p := filepath.Join(dir, name, "ollama", "ollama"); isExecutable(p) {
+		return p
+	}
+	return ""
+}
+
 func findBinary(cfg config.Config, exe string) string {
 	for _, b := range []string{os.Getenv("MAKTABA_OLLAMA_BIN"), cfg.LLM.Binary} {
 		if b = strings.TrimSpace(b); b != "" {

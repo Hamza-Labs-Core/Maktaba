@@ -18,6 +18,7 @@ import (
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/serversettings"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
@@ -31,6 +32,8 @@ type fakeSupervisor struct {
 	importBody   []byte
 	importType   string
 	importRefuse bool
+	// packsOff: [components] packs = "off" on this machine (offline mode)
+	packsOff bool
 }
 
 const supToken = "boot-token"
@@ -49,6 +52,11 @@ func (s *fakeSupervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(v)
 	}
 	switch p := r.URL.Path; {
+	case p == "/components/packs" && r.Method == http.MethodGet:
+		s.mu.Lock()
+		on := map[bool]string{true: "off", false: "on"}[s.packsOff]
+		s.mu.Unlock()
+		j(200, map[string]any{"packs": on})
 	case p == "/components/runtime.ml/progress":
 		j(200, map[string]any{"id": "runtime.ml", "installed": false, "progress": map[string]any{
 			"phase": "installing", "percent": 42, "detail": "pack_downloading", "name": "runtime.ml.tar.zst",
@@ -56,6 +64,10 @@ func (s *fakeSupervisor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case p == "/components/model.refine/progress":
 		j(200, map[string]any{"id": "model.refine", "installed": false, "progress": map[string]any{
 			"phase": "installing", "percent": 10, "reason": "disk_space", "params": map[string]any{"need": "4 GB"}, "busy": false}})
+	case p == "/components/transcription/restart" && r.Method == http.MethodPost:
+		j(200, map[string]any{"id": "transcription", "restarted": 2})
+	case strings.HasSuffix(p, "/restart") && r.Method == http.MethodPost:
+		j(200, map[string]any{"restarted": 0}) // none of its processes runs now
 	case strings.HasSuffix(p, "/progress"):
 		j(200, map[string]any{"installed": true, "progress": nil})
 	case p == "/components/offline" && r.Method == http.MethodPost:
@@ -113,6 +125,12 @@ func packsFixture(t *testing.T) (*fixture, *fakeSupervisor) {
 // withSupervisor routes f through a Handler whose Packs is a fake supervisor.
 func withSupervisor(t *testing.T, f *fixture) *fakeSupervisor {
 	t.Helper()
+	return withSupervisorAndLoops(t, f, nil)
+}
+
+// withSupervisorAndLoops is withSupervisor with loops as the API's Go-loop runner.
+func withSupervisorAndLoops(t *testing.T, f *fixture, loops *runner.Runner) *fakeSupervisor {
+	t.Helper()
 	sup := &fakeSupervisor{}
 	srv := httptest.NewServer(sup)
 	t.Cleanup(srv.Close)
@@ -122,7 +140,7 @@ func withSupervisor(t *testing.T, f *fixture) *fakeSupervisor {
 	}
 	s := &svc.Service{Store: f.st, Catalog: components.Default(), Licensed: func(string) bool { return true }}
 	r := chi.NewRouter()
-	(&Handler{Service: s, DB: f.db, Packs: &Packs{Sup: &serversettings.Supervisor{URL: srv.URL, TokenFile: tf}}}).Mount(r)
+	(&Handler{Service: s, DB: f.db, Packs: &Packs{Sup: &serversettings.Supervisor{URL: srv.URL, TokenFile: tf}}, Loops: loops}).Mount(r)
 	f.r = r
 	return sup
 }
@@ -336,5 +354,71 @@ func TestImportRefused(t *testing.T) {
 	}
 	if f.actions(t, svc.ActionImport) != 1 {
 		t.Fatal("what went in before the refusal is not recorded")
+	}
+}
+
+func (s *fakeSupervisor) packsAsked() int {
+	n := 0
+	for _, c := range s.called() {
+		if c == "GET /components/packs" {
+			n++
+		}
+	}
+	return n
+}
+
+// Offline mode ([components] packs = "off" on this machine, the supervisor's answer):
+// an install of an asset not on disk is 409 packs_disabled, nothing written or recorded,
+// whether its want is absent or wanted (Retry); an asset on disk and a component that is
+// no asset are answered as before. The role comes first: a viewer is 403 and the
+// supervisor is not asked.
+func TestInstallRefusedWithPacksOff(t *testing.T) {
+	f, sup := packsFixture(t)
+	sup.packsOff = true
+	if rec := f.do("POST", "/api/components/runtime.ml/install", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer: %d", rec.Code)
+	}
+	if got := sup.called(); len(got) != 0 {
+		t.Fatalf("the supervisor was asked for a viewer: %v", got)
+	}
+	if _, err := f.db.Exec(`UPDATE components SET want = 'absent' WHERE id = ?`, "model.refine"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"runtime.ml", "model.refine"} {
+		before := f.want(t, id)
+		body := code(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), http.StatusConflict, svc.CodePacksDisabled)
+		if d, _ := body["detail"].(string); !strings.Contains(d, "packs") {
+			t.Fatalf("%s: %v", id, body)
+		}
+		if after := f.want(t, id); after.Want != before.Want || after.Generation != before.Generation {
+			t.Fatalf("%s: written with packs off: %+v -> %+v", id, before, after)
+		}
+	}
+	if n := f.audits(t); n != 0 {
+		t.Fatalf("%d audit rows with packs off", n)
+	}
+	// on disk (the home's packs row says Installed): answered as it is
+	if err := f.st.ReportStatus(context.Background(), store.Home, "packs", []store.Status{{ID: "tool.yt-dlp", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	gen := f.want(t, "tool.yt-dlp").Generation
+	decode(t, f.do("POST", "/api/components/tool.yt-dlp/install", "", admin()), 200, nil)
+	if f.want(t, "tool.yt-dlp").Generation != gen {
+		t.Fatal("an asset on disk was written")
+	}
+	// not an asset: packs are not asked about
+	n := sup.packsAsked()
+	decode(t, f.do("POST", "/api/components/youtube/install", "", admin()), 200, nil)
+	if sup.packsAsked() != n {
+		t.Fatal("packs were asked about for a component that is no asset")
+	}
+	// packs on: the install is written as before (model.refine: absent to installed)
+	sup.mu.Lock()
+	sup.packsOff = false
+	sup.mu.Unlock()
+	decode(t, f.do("POST", "/api/components/model.refine/install", "", admin()), 200, nil)
+	if w := f.want(t, "model.refine"); w.Want != components.WantInstalled {
+		t.Fatalf("packs on: %+v", w)
 	}
 }

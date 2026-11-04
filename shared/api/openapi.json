@@ -3892,6 +3892,578 @@
         "operationId": "getQueueLibraries"
       }
     },
+    "/queues/libraries/activity": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Each library's finished jobs per day (cached 1 min)",
+        "description": "The jobs of each library that finished done or failed on each UTC day of the window, oldest first. `done` and `failed` are aligned with `days`; a library with no finished job in the window is left out. Home admins only.",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "description": "Days in the window, ending today (UTC).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 60,
+              "default": 14
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "days",
+                    "items"
+                  ],
+                  "properties": {
+                    "days": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "format": "date"
+                      }
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "library_id",
+                          "done",
+                          "failed"
+                        ],
+                        "properties": {
+                          "library_id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "done": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          },
+                          "failed": {
+                            "type": "array",
+                            "items": {
+                              "type": "integer"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getQueueLibraryActivity"
+      }
+    },
+    "/libraries/{id}/youtube/sources/{sid}": {
+      "patch": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Switch a source on or off, or change its mode, folder or options",
+        "description": "`on: false` turns the source off; `on: true` turns it on in the mode it had when it was last on (`last_on_mode`), else `new_and_backfill`, and queues the library's refresh. `on` and `mode` cannot be sent together. Home admins only (403 otherwise); audited.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "sid",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "on": {
+                    "type": "boolean",
+                    "description": "The switch: false is off, true restores the last mode it had on."
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "off",
+                      "new_and_backfill",
+                      "new_only"
+                    ]
+                  },
+                  "folder": {
+                    "type": "string"
+                  },
+                  "options": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The source as written, and the refresh it queued (null when none).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "library_id": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "channel",
+                            "playlist"
+                          ]
+                        },
+                        "url": {
+                          "type": "string"
+                        },
+                        "external_id": {
+                          "type": "string"
+                        },
+                        "folder": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": [
+                            "off",
+                            "new_and_backfill",
+                            "new_only"
+                          ]
+                        },
+                        "last_on_mode": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "new_and_backfill",
+                            "new_only",
+                            null
+                          ],
+                          "description": "The mode the source had when it was last on: what `on: true` restores."
+                        },
+                        "options": {
+                          "type": "object"
+                        },
+                        "downloads": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "refresh": {
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`on` with `mode`, an unknown mode, or bad options.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "patchYouTubeSource"
+      }
+    },
+    "/libraries/{id}/youtube/guess": {
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Look for the channel a library's files come from",
+        "description": "The library's linked videos come first, so the answer agrees with the sources Maktaba derives from them (slot 0182): the playlist or channel the derivation chose (or the one another library already follows), else the channel most linked videos are from; `ids_found` is then the linked videos, `ids_matched` those of the answer, and `evidence` says whether most links came from `.info.json` files or from titles. Only a library with no link has its files read: the YouTube ids in its file names (`#<id>`, `[<id>]`) and up to 40 of its `.info.json` files, resolved through what Maktaba already knows of YouTube, with no network. The answer is kept and shown on the library's card; nothing is added or turned on. Home admins only (403 otherwise); audited.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What it found: `kind`, `external_id` and `url` are null when it found nothing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "library_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "kind": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "channel",
+                        "playlist",
+                        null
+                      ]
+                    },
+                    "external_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "url": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "title": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "evidence": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "info_json",
+                        "filename",
+                        null
+                      ]
+                    },
+                    "sample_youtube_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "ids_found": {
+                      "type": "integer"
+                    },
+                    "ids_matched": {
+                      "type": "integer"
+                    },
+                    "looked_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "followed_by": {
+                      "type": "array",
+                      "description": "The libraries that already follow it.",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such library.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "guessYouTubeSource"
+      }
+    },
+    "/queues/youtube-tartube": {
+      "get": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "The last Tartube import of every library's sources, and the file to offer",
+        "description": "The newest `youtube_tartube` job with its state and report, and `suggested_path`: a `tartube.db` or `tartube_db_export.json` in the folder that holds the most library folders, when one is found within 3 seconds. Home admins only (403 otherwise).",
+        "responses": {
+          "200": {
+            "description": "The last import (its fields null when there was none) and the suggested path.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "state": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "error": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "created_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "finished_at": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "format": "date-time"
+                    },
+                    "path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "report": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "description": "The import's report: `created`, `existing`, `skipped` (each with its `reason`: no_url, not_youtube, search, unrecognised, unresolved) and `not_in_maktaba` (Tartube entries no library's folder matches), each list at most 500 rows, and `counts`.",
+                      "properties": {
+                        "entries": {
+                          "type": "integer"
+                        },
+                        "created": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "existing": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "skipped": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "not_in_maktaba": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        },
+                        "counts": {
+                          "type": "object"
+                        }
+                      }
+                    },
+                    "suggested_path": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "getYouTubeTartubeImport"
+      },
+      "post": {
+        "tags": [
+          "Queue"
+        ],
+        "summary": "Make every library's YouTube sources from Tartube's records, off",
+        "description": "Queues the `youtube_tartube` job. Each channel or playlist Tartube downloads into a folder that is a library's folder becomes a source of that library with mode `off`, and what Tartube downloaded is counted as downloaded. It is idempotent: a source a library already has keeps its mode. No library is made; x.com and YouTube search pages are skipped and reported. Home admins only (403 otherwise); audited.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "description": "Tartube's database (`tartube.db`) or its JSON export, on the home."
+                  },
+                  "database": {
+                    "type": "string",
+                    "description": "The `tartube.db` to read beside a JSON export that lacks the download records."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "job_id": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "outcome": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "A path that is not an absolute path to Tartube's .json export or its .db.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "importYouTubeTartubeSources"
+      }
+    },
     "/queues/health": {
       "get": {
         "tags": [
@@ -5664,7 +6236,7 @@
           "Components"
         ],
         "summary": "List the components",
-        "description": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, and the home's bundle.",
+        "description": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason's message fills in, absent when it has none), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home's bundle.",
         "responses": {
           "200": {
             "description": "The components.",
@@ -6540,7 +7112,7 @@
             "$ref": "#/components/responses/NotFound"
           },
           "409": {
-            "description": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
+            "description": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...), or installing is turned off on this machine and the asset is not on its disk (`packs_disabled`: offline mode). Nothing was written.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6712,6 +7284,93 @@
           }
         },
         "operationId": "startComponent"
+      }
+    },
+    "/components/{id}/restart": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The component's id in the catalog."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Components"
+        ],
+        "summary": "Restart a component",
+        "description": "Restarts a running component: its processes through this machine's supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.",
+        "responses": {
+          "200": {
+            "description": "The component after the restart, with `restarted`: how many of its processes and loops started again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "None of its processes runs now: the supervisor starts them (`restarted` is 0).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server runs under no supervisor, or the supervisor does not answer.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "restartComponent"
       }
     },
     "/components/{id}/settings/reset": {
@@ -9450,6 +10109,13 @@
               "null"
             ],
             "additionalProperties": true
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A `component_catchup` job: the components it catches up, from its payload. Absent on every other job."
           }
         }
       },

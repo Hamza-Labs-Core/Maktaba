@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // Programs is the Postgres install the tests run (MAKTABA_TEST_PG_BIN); the test is
@@ -34,15 +34,10 @@ func Programs(t *testing.T) string {
 	return home
 }
 
-// FreePort is a free loopback port.
+// FreePort is a free loopback port, held for this test (testport.Free).
 func FreePort(t *testing.T) int {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port
+	return testport.Free(t)
 }
 
 // WaitFor polls ok until it holds or d passes.

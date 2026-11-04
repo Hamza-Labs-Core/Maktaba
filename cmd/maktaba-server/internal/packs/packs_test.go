@@ -7,8 +7,10 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -238,7 +240,7 @@ func TestFullHomeCountsAsInstalled(t *testing.T) {
 	}
 	r := &Runner{M: f.m, Machine: store.Home}
 	r.ctx = context.Background()
-	r.Desired(map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantInstalled, Generation: 1}})
+	r.Desired(packsAbsent(f.m, "", map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantInstalled, Generation: 1}}))
 	time.Sleep(50 * time.Millisecond)
 	if n := len(f.reqs("")); n != 0 || f.m.Busy("runtime.ml") {
 		t.Fatalf("the runner acted on an installed asset: %d requests", n)
@@ -247,6 +249,49 @@ func TestFullHomeCountsAsInstalled(t *testing.T) {
 		if row.ID == "runtime.ml" && (row.Phase != components.PhaseOff || row.Conditions[0].Status != "true") {
 			t.Fatalf("runtime.ml's row: %+v", row)
 		}
+	}
+}
+
+// A release whose signed files are not there (not published yet) is pack_not_published
+// naming the asset, not a download cut short (download_failed); the row says so.
+func TestAReleaseNotPublishedIsSaidSo(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	delete(f.served, rv.ChecksumsFile)
+	err := f.m.Install(context.Background(), "runtime.ml", nil)
+	if ReasonOf(err) != ReasonPackNotPublished || ParamsOf(err)["name"] != "runtime.ml" {
+		t.Fatalf("install from a release not published: %v (%s %v)", err, ReasonOf(err), ParamsOf(err))
+	}
+	r := &Runner{M: f.m, Machine: store.Home}
+	for _, row := range r.Rows() {
+		if row.ID == "runtime.ml" && (row.Phase != components.PhaseFailed || row.Reason() != ReasonPackNotPublished) {
+			t.Fatalf("runtime.ml's row: %+v", row)
+		}
+	}
+	// the catalog lists it (its words, components.reason.pack_not_published)
+	if !slices.Contains(components.Default().Reasons, ReasonPackNotPublished) {
+		t.Fatal("the catalog does not list pack_not_published")
+	}
+}
+
+// Story 51.14: an installed pack's row carries its folder's size on disk (disk_mb); an
+// asset from before packs (no folder) carries none, the catalog's size stands for it.
+func TestInstalledPackRowCarriesItsDiskSize(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home}
+	if err := f.m.Install(context.Background(), "runtime.ml", nil); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(f.m.Layout.Dir("runtime.ml"), f.m.Layout.Current("runtime.ml"))
+	if err := os.WriteFile(filepath.Join(dir, "big.bin"), make([]byte, 3<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.m.OnDisk = func(id string) bool { return id == "tool.yt-dlp" }
+	got := map[string]any{}
+	for _, row := range r.Rows() {
+		got[row.ID] = row.Detail["disk_mb"]
+	}
+	if got["runtime.ml"] != int64(4) || got["tool.yt-dlp"] != nil {
+		t.Fatalf("disk_mb runtime.ml %v (want 4: 3 MB and the pack's files), tool.yt-dlp %v", got["runtime.ml"], got["tool.yt-dlp"])
 	}
 }
 
@@ -394,11 +439,16 @@ func TestRunnerFinishesARemoval(t *testing.T) {
 	}
 	r := &Runner{M: f.m, Machine: store.Home}
 	r.ctx = context.Background()
-	r.Desired(map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantAbsent, Generation: 3}})
-	waitIdle(t, f.m, "runtime.ml")
-	if f.m.Layout.Removing("runtime.ml") || f.m.Layout.Current("runtime.ml") != "" {
-		t.Fatalf("the removal was not finished\n%s", f.log.String())
+	// the other packs absent: one with no row is wanted and would install alongside
+	r.Desired(packsAbsent(f.m, "", map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantAbsent, Generation: 3}}))
+	deadline := time.Now().Add(10 * time.Second)
+	for f.m.Layout.Removing("runtime.ml") || f.m.Layout.Current("runtime.ml") != "" {
+		if time.Now().After(deadline) {
+			t.Fatalf("the removal was not finished\n%s", f.logString())
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
+	waitIdle(t, f.m, "runtime.ml")
 }
 
 func waitIdle(t *testing.T, m *Manager, id string) {
@@ -419,21 +469,21 @@ func TestRunnerRules(t *testing.T) {
 	f := newFixture(t, fixtureOpts{})
 	r := &Runner{M: f.m, Machine: store.Home}
 	r.ctx = context.Background()
-	d := map[string]store.Desired{
+	d := packsAbsent(f.m, "", map[string]store.Desired{
 		"model.whisper-turbo": {ID: "model.whisper-turbo", Want: components.WantInstalled, Generation: 1},
-	}
+	})
 	r.Desired(d) // the first read: a model wanted is left to the pipeline
 	time.Sleep(50 * time.Millisecond)
 	if f.m.Busy("model.whisper-turbo") || len(f.reqs("")) != 0 {
 		t.Fatal("a model was installed from the first desired state")
 	}
-	d2 := map[string]store.Desired{
+	d2 := packsAbsent(f.m, "", map[string]store.Desired{
 		"model.whisper-turbo": {ID: "model.whisper-turbo", Want: components.WantAbsent, Generation: 2},
-	}
+	})
 	r.Desired(d2)
-	d3 := map[string]store.Desired{
+	d3 := packsAbsent(f.m, "", map[string]store.Desired{
 		"model.whisper-turbo": {ID: "model.whisper-turbo", Want: components.WantInstalled, Generation: 3},
-	}
+	})
 	r.Desired(d3) // seen to change to installed
 	waitIdle(t, f.m, "model.whisper-turbo")
 	if !f.m.Installed("model.whisper-turbo") || !f.m.Installed("runtime.ml") {
@@ -444,7 +494,7 @@ func TestRunnerRules(t *testing.T) {
 	g := newFixture(t, fixtureOpts{noIndex: true})
 	rg := &Runner{M: g.m, Machine: store.Home}
 	rg.ctx = context.Background()
-	want := map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantInstalled, Generation: 5}}
+	want := packsAbsent(g.m, "runtime.ml", map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantInstalled, Generation: 5}})
 	rg.Desired(want)
 	waitIdle(t, g.m, "runtime.ml")
 	n := len(g.reqs("/" + rv.ChecksumsFile + " "))
@@ -473,6 +523,114 @@ func TestRunnerRules(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if len(h.reqs("")) != 0 {
 		t.Fatal("reconcile = off acted")
+	}
+}
+
+// packsAbsent adds an absent row (generation 1) for every pack asset of m's platform but
+// keep and those rows has, so a test's runner acts on what it names only.
+func packsAbsent(m *Manager, keep string, rows map[string]store.Desired) map[string]store.Desired {
+	for _, id := range m.Catalog.Order() {
+		c, _ := m.Catalog.Get(id)
+		if _, has := rows[id]; has || id == keep || c.Kind != components.KindAsset ||
+			!strings.HasPrefix(c.SourceFor(m.Platform), "pack:") {
+			continue
+		}
+		rows[id] = store.Desired{ID: id, Want: components.WantAbsent, Generation: 1}
+	}
+	return rows
+}
+
+func rowOf(t *testing.T, r *Runner, id string) store.Status {
+	t.Helper()
+	for _, x := range r.Rows() {
+		if x.ID == id {
+			return x
+		}
+	}
+	t.Fatalf("no row for %s", id)
+	return store.Status{}
+}
+
+// A pack with no desired row (a fresh home's seed leaves the runtime a stage needs so)
+// reads as the catalog default, wanted: the runner installs it from the first read.
+// packs = off leaves it, saying why; a failure is tried once, and again only when the
+// install route writes the row (a new generation).
+func TestRunnerInstallsAPackWithNoRow(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home}
+	r.ctx = context.Background()
+	r.Desired(packsAbsent(f.m, "runtime.ml", map[string]store.Desired{}))
+	waitIdle(t, f.m, "runtime.ml")
+	if !f.m.Installed("runtime.ml") {
+		t.Fatalf("a wanted pack with no row was not installed\n%s", f.log.String())
+	}
+
+	g := newFixture(t, fixtureOpts{})
+	g.m.Disabled = true
+	rg := &Runner{M: g.m, Machine: store.Home}
+	rg.ctx = context.Background()
+	rg.Desired(map[string]store.Desired{})
+	time.Sleep(50 * time.Millisecond)
+	if n := len(g.reqs("")); n != 0 || g.m.Busy("runtime.ml") {
+		t.Fatalf("packs = off: %d requests", n)
+	}
+	if row := rowOf(t, rg, "runtime.ml"); row.Phase != components.PhaseNotInstalled || row.Conditions[0].Reason != ReasonPacksDisabled {
+		t.Fatalf("packs = off, no row: %+v", row)
+	}
+
+	h := newFixture(t, fixtureOpts{noIndex: true})
+	rh := &Runner{M: h.m, Machine: store.Home}
+	rh.ctx = context.Background()
+	none := packsAbsent(h.m, "runtime.ml", map[string]store.Desired{})
+	tries := func() int { return len(h.reqs("/" + rv.ChecksumsFile + " ")) }
+	rh.Desired(none)
+	waitIdle(t, h.m, "runtime.ml")
+	if tries() != 1 {
+		t.Fatalf("%d tries", tries())
+	}
+	rh.Desired(none)
+	waitIdle(t, h.m, "runtime.ml")
+	if tries() != 1 {
+		t.Fatal("a failed install was tried again with nothing asked")
+	}
+	if row := rowOf(t, rh, "runtime.ml"); row.Phase != components.PhaseFailed {
+		t.Fatalf("the failure is not reported: %+v", row)
+	}
+	again := packsAbsent(h.m, "runtime.ml", map[string]store.Desired{
+		"runtime.ml": {ID: "runtime.ml", Want: components.WantEnabled, Generation: 1}})
+	rh.Desired(again)
+	waitIdle(t, h.m, "runtime.ml")
+	if tries() != 2 {
+		t.Fatalf("the install route's row did not try again: %d tries", tries())
+	}
+}
+
+// Retry of a model: the install route writes its row again (same want, a new
+// generation) and the runner tries the failed install once more.
+func TestRunnerRetriesAModelOnANewGeneration(t *testing.T) {
+	f := newFixture(t, fixtureOpts{noIndex: true})
+	r := &Runner{M: f.m, Machine: store.Home}
+	r.ctx = context.Background()
+	tries := func() int { return len(f.reqs("/" + rv.ChecksumsFile + " ")) }
+	model := func(want string, gen int64) map[string]store.Desired {
+		return packsAbsent(f.m, "", map[string]store.Desired{
+			"model.whisper-turbo": {ID: "model.whisper-turbo", Want: want, Generation: gen}})
+	}
+	r.Desired(model(components.WantAbsent, 1))
+	r.Desired(model(components.WantInstalled, 2)) // Install: seen to change
+	waitIdle(t, f.m, "model.whisper-turbo")
+	if tries() != 1 {
+		t.Fatalf("%d tries after the change to installed", tries())
+	}
+	r.Desired(model(components.WantInstalled, 2))
+	waitIdle(t, f.m, "model.whisper-turbo")
+	if tries() != 1 {
+		t.Fatal("a failed model install was tried again with nothing asked")
+	}
+	r.Desired(model(components.WantInstalled, 3)) // Retry: the row written again
+	waitIdle(t, f.m, "model.whisper-turbo")
+	if tries() != 2 {
+		t.Fatalf("Retry did not try again: %d tries", tries())
 	}
 }
 
@@ -566,14 +724,54 @@ func TestOfflineFileAndImport(t *testing.T) {
 	h.m.Version, h.m.Platform = tVersion, "darwin-arm64"
 	_, err = h.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes()))
 	wantReason(t, err, ReasonOfflineWrongPlat)
-	// a file whose pack was changed after it was made: verify_failed, nothing installed
+	// a file whose pack was changed after it was made: offline_verify_failed (its words
+	// name the file, not a download), on the import and on the asset's row; nothing installed
 	bad := tamper(t, buf.Bytes(), "packs/")
 	k := newFixture(t, fixtureOpts{})
 	k.m.Net, k.m.Trusted = nil, f.m.Trusted
 	_, err = k.m.ImportFrom(context.Background(), bytes.NewReader(bad))
-	wantReason(t, err, ReasonVerifyFailed)
+	wantReason(t, err, ReasonOfflineVerifyFailed)
 	if k.m.Installed("runtime.ml") {
 		t.Fatal("a changed pack was installed")
+	}
+	if p, _ := k.m.Progress("runtime.ml"); p.Reason != ReasonOfflineVerifyFailed {
+		t.Fatalf("runtime.ml's progress says %q", p.Reason)
+	}
+	if !slices.Contains(components.Default().Reasons, ReasonOfflineVerifyFailed) {
+		t.Fatal("the catalog does not list offline_verify_failed")
+	}
+	// a download that does not match is still verify_failed
+	if fromFile(nil) != nil || ReasonOf(fromFile(fail(ReasonDownloadFailed, nil, ""))) != ReasonDownloadFailed {
+		t.Fatal("fromFile changed what is not verify_failed")
+	}
+}
+
+// A damaged offline file imported over the same release already installed fails its check
+// (offline_verify_failed, naming the item) instead of answering installed; the good file still
+// imports over it, and a damaged model file is caught the same way.
+func TestImportOverTheSameReleaseStillChecksTheFile(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	var buf bytes.Buffer
+	if _, err := f.m.MakeOffline(context.Background(), &buf, OfflineRequest{Components: []string{"model.whisper-turbo"}}); err != nil {
+		t.Fatalf("%v\n%s", err, f.log.String())
+	}
+	g := newFixture(t, fixtureOpts{})
+	g.m.Net, g.m.Trusted = nil, f.m.Trusted
+	if _, err := g.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatalf("%v\n%s", err, g.log.String())
+	}
+	for _, prefix := range []string{"packs/", "models/"} {
+		ids, err := g.m.ImportFrom(context.Background(), bytes.NewReader(tamper(t, buf.Bytes(), prefix)))
+		wantReason(t, err, ReasonOfflineVerifyFailed)
+		if prefix == "packs/" && len(ids) != 0 {
+			t.Fatalf("a damaged pack over the installed one answered %v installed", ids)
+		}
+		if !g.m.Installed("runtime.ml") || !g.m.Installed("model.whisper-turbo") {
+			t.Fatalf("%s: the installed release was touched", prefix)
+		}
+	}
+	if ids, err := g.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes())); err != nil || len(ids) != 2 {
+		t.Fatalf("the good file again: %v %v", ids, err)
 	}
 }
 
@@ -642,5 +840,189 @@ func TestLayoutNamesStayInside(t *testing.T) {
 	}
 	if f := PackFolder("0.4.2", "0123456789abcdef"); f != "0.4.2_0123456789ab" {
 		t.Errorf("PackFolder = %q", f)
+	}
+}
+
+// Import opens only a file or folder named absolutely, with no "..".
+func TestImportRefusesOtherPaths(t *testing.T) {
+	m := &Manager{}
+	for _, p := range []string{"offline.tar", "../offline.tar", "/srv/../etc/offline.tar", filepath.Join("a", "b")} {
+		_, err := m.Import(context.Background(), p)
+		if err == nil || !strings.Contains(err.Error(), "not an absolute path") && !strings.Contains(err.Error(), "a path with a .. element") {
+			t.Errorf("Import(%q) = %v, want refused", p, err)
+		}
+	}
+}
+
+// A folder source reads only its own files: a version naming another folder is refused.
+func TestFolderSourceReadsOnlyItsFiles(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{rv.ChecksumsFile, rv.BundleFile, rv.ManifestFile} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := &FolderSource{Dir: dir}
+	if _, err := f.Signed(context.Background(), "1.2.3"); err != nil {
+		t.Fatalf("a plain version: %v", err)
+	}
+	for _, v := range []string{"../../etc/x", "1.2.3/../../x", `1.2.3\..\x`} {
+		if _, err := f.Signed(context.Background(), v); err == nil || !strings.Contains(err.Error(), "not a file of the release's folder") {
+			t.Errorf("Signed(%q) = %v, want refused", v, err)
+		}
+	}
+}
+
+// A fresh home's first read comes before the seed: no rows at all. Nothing acts on it
+// (an asset the seed then leaves absent, model.refine, is never installed in between),
+// and the seeded state that follows is the first one seen.
+func TestRunnerWaitsForTheSeed(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home}
+	r.ctx = context.Background()
+	r.Desired(map[string]store.Desired{})
+	time.Sleep(50 * time.Millisecond)
+	if n := len(f.reqs("")); n != 0 || f.m.Busy("runtime.ml") || f.m.Busy("model.refine") {
+		t.Fatalf("a desired state not seeded acted: %d requests\n%s", n, f.log.String())
+	}
+	seeded := packsAbsent(f.m, "runtime.ml", map[string]store.Desired{
+		"model.refine":        {ID: "model.refine", Want: components.WantAbsent, Generation: 1},
+		"model.whisper-turbo": {ID: "model.whisper-turbo", Want: components.WantInstalled, Generation: 1},
+	})
+	r.Desired(seeded)
+	waitIdle(t, f.m, "runtime.ml")
+	if !f.m.Installed("runtime.ml") {
+		t.Fatalf("the seeded state's wanted pack was not installed\n%s", f.log.String())
+	}
+	if _, ran := f.m.Progress("model.refine"); ran {
+		t.Fatalf("model.refine (absent) was acted on\n%s", f.log.String())
+	}
+	if f.m.Busy("model.whisper-turbo") || f.m.Installed("model.whisper-turbo") {
+		t.Fatal("a model was installed from the first seeded state (it is left to the pipeline)")
+	}
+	if row := rowOf(t, r, "model.refine"); row.Phase != components.PhaseNotInstalled {
+		t.Fatalf("model.refine: %+v", row)
+	}
+}
+
+// An asset whose want is absent reads not installed when it is not on this machine,
+// even after an earlier want's install of it failed this boot.
+func TestAbsentAssetIsNeverFailed(t *testing.T) {
+	f := newFixture(t, fixtureOpts{noIndex: true})
+	r := &Runner{M: f.m, Machine: store.Home}
+	r.ctx = context.Background()
+	r.Desired(packsAbsent(f.m, "runtime.ml", map[string]store.Desired{}))
+	waitIdle(t, f.m, "runtime.ml")
+	if row := rowOf(t, r, "runtime.ml"); row.Phase != components.PhaseFailed {
+		t.Fatalf("the wanted install's failure is not reported: %+v", row)
+	}
+	r.Desired(packsAbsent(f.m, "", map[string]store.Desired{}))
+	if row := rowOf(t, r, "runtime.ml"); row.Phase != components.PhaseNotInstalled || row.Conditions[0].Reason != "" {
+		t.Fatalf("an absent asset not on disk: %+v", row)
+	}
+	if _, _, failed := f.m.Failed("runtime.ml"); !failed {
+		t.Fatal("the failure itself is still the manager's to say")
+	}
+}
+
+// An install whose requirement installs in this process already waits for it: never
+// a busy failure (model.refine and runtime.ml at a fresh home's first pass).
+func TestInstallWaitsForARequirementInstalling(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	block := make(chan struct{})
+	f.m.Prepare = map[string]PrepareFunc{"runtime.ml": func(context.Context, string, string, func(int)) error {
+		<-block
+		return nil
+	}}
+	first := make(chan error, 1)
+	go func() { first <- f.m.Install(context.Background(), "runtime.ml", nil) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if p, _ := f.m.Progress("runtime.ml"); p.Detail == DetailPreparing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("never prepared")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	second := make(chan error, 1)
+	go func() { second <- f.m.Install(context.Background(), "model.whisper-turbo", nil) }()
+	time.Sleep(3 * idlePoll)
+	if p, _ := f.m.Progress("model.whisper-turbo"); !p.Busy {
+		t.Fatalf("the model did not wait for its requirement: %+v\n%s", p, f.log.String())
+	}
+	close(block)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if err := <-second; err != nil {
+		t.Fatalf("the model's install: %v\n%s", err, f.log.String())
+	}
+	if !f.m.Installed("model.whisper-turbo") {
+		t.Fatal("the model is not installed")
+	}
+}
+
+// A busy outcome is no failure: the runner tries the action again once the asset is
+// free, while the want still asks for it; the row never reads failed for it.
+func TestRunnerRetriesABusyAction(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home, BusyRetry: 10 * time.Millisecond}
+	r.ctx = context.Background()
+	r.tried = map[string]int64{}
+	r.desired = map[string]store.Desired{"runtime.ml": {ID: "runtime.ml", Want: components.WantEnabled, Generation: 4}}
+	calls := make(chan int, 10)
+	n := 0
+	r.act("runtime.ml", 4, true, func(context.Context) error {
+		n++
+		calls <- n
+		if n == 1 {
+			// what Install leaves when another one held the asset
+			if err := f.m.begin("runtime.ml", components.PhaseInstalling); err != nil {
+				t.Error(err)
+			}
+			err := fail(ReasonBusy, map[string]any{"component": "runtime.ml"}, "runtime.ml is installing already")
+			f.m.end("runtime.ml", err)
+			if row := rowOf(t, r, "runtime.ml"); row.Phase == components.PhaseFailed {
+				t.Errorf("busy reads failed: %+v", row)
+			}
+			if _, _, failed := f.m.Failed("runtime.ml"); failed {
+				t.Error("busy is a failure to the manager")
+			}
+			return err
+		}
+		return nil
+	})
+	for want := 1; want <= 2; want++ {
+		select {
+		case got := <-calls:
+			if got != want {
+				t.Fatalf("call %d, want %d", got, want)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("a busy action was not tried again (%d calls)", want-1)
+		}
+	}
+
+	// the want changed meanwhile: not tried again
+	var m atomic.Int32
+	r.mu.Lock()
+	r.desired = map[string]store.Desired{"tool.yt-dlp": {ID: "tool.yt-dlp", Want: components.WantEnabled, Generation: 2}}
+	r.mu.Unlock()
+	done := make(chan struct{})
+	r.act("tool.yt-dlp", 2, true, func(context.Context) error {
+		if m.Add(1) == 1 {
+			r.mu.Lock()
+			r.desired = map[string]store.Desired{"tool.yt-dlp": {ID: "tool.yt-dlp", Want: components.WantAbsent, Generation: 3}}
+			r.mu.Unlock()
+			close(done)
+		}
+		return fail(ReasonBusy, nil, "busy")
+	})
+	<-done
+	time.Sleep(100 * time.Millisecond)
+	if got := m.Load(); got != 1 {
+		t.Fatalf("an install no longer wanted was tried again: %d calls", got)
 	}
 }

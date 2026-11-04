@@ -37,6 +37,10 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');
 CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL,
 	updated_at TEXT NOT NULL DEFAULT (datetime('now')), updated_by TEXT);
+CREATE TABLE extensions (name TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0,
+	settings TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')));
+CREATE TABLE hdhr_device (id INTEGER PRIMARY KEY DEFAULT 1, device_id TEXT NOT NULL DEFAULT '',
+	enabled INTEGER NOT NULL DEFAULT 0);
 `
 
 func upStatements(sqlText string) []string {
@@ -55,15 +59,10 @@ func upStatements(sqlText string) []string {
 	return out
 }
 
-// sqliteDB is a fresh SQLite file with slot 0175's twin.
-func sqliteDB(t *testing.T) *sql.DB {
+// sqliteDB is a fresh SQLite file with slot 0178's twin.
+// schema creates the base tables and 0178's components tables in db.
+func schema(t testing.TB, db *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "c.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = db.Close() })
 	for _, s := range strings.Split(base, ";\n") {
 		if strings.TrimSpace(s) == "" {
 			continue
@@ -72,16 +71,15 @@ func sqliteDB(t *testing.T) *sql.DB {
 			t.Fatalf("%v\n%s", err, s)
 		}
 	}
-	twin, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0175_components.sqlite.sql"))
+	twin, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "shared", "db", "migrations", "0178_components.sqlite.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range upStatements(string(twin)) {
 		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("0175: %v\n%s", err, s)
+			t.Fatalf("0178: %v\n%s", err, s)
 		}
 	}
-	return db
 }
 
 type fixture struct {
@@ -97,9 +95,24 @@ type fixture struct {
 // livetv.inprocess (off: it conflicts with livetv.slots) and cloud.relay (off).
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	db := sqliteDB(t)
+	return fixtureFrom(t, fromTemplate(t, "home", seedHome))
+}
+
+// fixtureFrom is a fixture over db.
+func fixtureFrom(t *testing.T, db *sql.DB) *fixture {
+	t.Helper()
 	f := &fixture{db: db, st: store.New(db), licence: true}
-	_, err := f.st.SetDesiredBatch(context.Background(), func(map[string]store.Desired, int64) (store.BatchPlan, error) {
+	f.auditBase = f.audits(t)
+	f.r = f.router()
+	return f
+}
+
+// seedHome builds the home newFixture copies: the schema, and every switchable
+// component's desired row as the seed writes it.
+func seedHome(t testing.TB, db *sql.DB) {
+	t.Helper()
+	schema(t, db)
+	_, err := store.New(db).SetDesiredBatch(context.Background(), func(map[string]store.Desired, int64) (store.BatchPlan, error) {
 		var p store.BatchPlan
 		for _, c := range components.Default().Components() {
 			if !c.Switchable {
@@ -117,9 +130,6 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.auditBase = f.audits(t)
-	f.r = f.router()
-	return f
 }
 
 func (f *fixture) router() chi.Router {
@@ -222,6 +232,7 @@ var routes = []struct{ method, path, body string }{
 	{"PUT", "/api/components/llm", `{"want":"installed"}`},
 	{"DELETE", "/api/components/youtube", ""},
 	{"POST", "/api/components/youtube/install", ""},
+	{"POST", "/api/components/model.embedder/install", ""},
 	{"POST", "/api/components/transcription/stop", ""},
 	{"POST", "/api/components/transcription/start", ""},
 	{"POST", "/api/components/preview", `{"changes":[{"id":"llm","want":"installed"}]}`},
@@ -269,13 +280,13 @@ func TestPreviewChangesNothing(t *testing.T) {
 	f := newFixture(t)
 	rev := f.revision(t)
 	var p svc.Preview
-	decode(t, f.do("POST", "/api/components/preview", `{"changes":[{"id":"runtime.ollama","want":"installed"}]}`, admin()), 200, &p)
+	decode(t, f.do("POST", "/api/components/preview", `{"changes":[{"id":"llm","want":"installed"}]}`, admin()), 200, &p)
 	found := map[string]svc.Effect{}
 	for _, e := range p.Effects {
 		found[e.ID] = e
 	}
-	if found["llm"].To != components.PhaseWaiting || found["llm"].Reason != "dependency_off:runtime.ollama" ||
-		found["classify"].To != components.PhaseDegraded {
+	if found["llm"].From != components.PhaseRunning || found["llm"].To != components.PhaseOff ||
+		found["classify"].To != components.PhaseDegraded || found["classify"].Reason != "want_missing:llm" {
 		t.Fatalf("effects %+v", p.Effects)
 	}
 	if f.revision(t) != rev || f.audits(t) != 0 {
@@ -343,6 +354,57 @@ func TestRemoveRequired(t *testing.T) {
 	decode(t, f.do("POST", "/api/components/youtube/install", "", admin()), 200, nil)
 	if f.audits(t) != n {
 		t.Fatal("a second install wrote")
+	}
+}
+
+// Install of a wanted asset that is not on disk: with no desired row (a fresh home's seed
+// leaves the search model so) it writes the row as the catalog default (enabled), audited
+// component.install; asked again (Retry after a failure) it writes a new generation; once
+// the home reports it installed, it writes nothing.
+func TestInstallWantedAssetNotOnDisk(t *testing.T) {
+	f := newFixture(t)
+	const id = "model.embedder"
+	if _, err := f.db.Exec(`DELETE FROM components WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	var v svc.Detail
+	decode(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), 200, &v)
+	d := f.want(t, id)
+	if !v.HasRow || v.Want != components.WantEnabled || d.Want != components.WantEnabled {
+		t.Fatalf("no row written: has_row %v want %q, row %+v", v.HasRow, v.Want, d)
+	}
+	if n := f.audits(t); n != 1 {
+		t.Fatalf("%d audit rows", n)
+	}
+	var action, source string
+	if err := f.db.QueryRow(`SELECT action, actor_source FROM audit_log WHERE target_id = ? ORDER BY id DESC LIMIT 1`, id).Scan(&action, &source); err != nil ||
+		action != svc.ActionInstall || source != "web" {
+		t.Fatalf("audited %q %q %v", action, source, err)
+	}
+	// Retry: the same want, a new generation the packs runner acts on
+	decode(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), 200, nil)
+	if again := f.want(t, id); again.Generation <= d.Generation || again.Want != components.WantEnabled || f.audits(t) != 2 {
+		t.Fatalf("retry: %+v after %+v, %d audit rows", again, d, f.audits(t))
+	}
+	// installed at home: nothing to ask
+	if err := f.st.ReportStatus(context.Background(), store.Home, "packs", []store.Status{{ID: id, Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	gen := f.want(t, id).Generation
+	decode(t, f.do("POST", "/api/components/"+id+"/install", "", admin()), 200, nil)
+	if f.want(t, id).Generation != gen || f.audits(t) != 2 {
+		t.Fatal("an install of an asset on disk wrote")
+	}
+	// a viewer cannot ask
+	if rec := f.do("POST", "/api/components/runtime.ml/install", "", viewer()); rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer: %d", rec.Code)
+	}
+	// a component that is not an asset and is on is answered as it is
+	g := f.want(t, "youtube").Generation
+	decode(t, f.do("POST", "/api/components/youtube/install", "", admin()), 200, nil)
+	if f.want(t, "youtube").Generation != g {
+		t.Fatal("install of an enabled process wrote")
 	}
 }
 
@@ -472,6 +534,73 @@ func TestList(t *testing.T) {
 		if c.ID == "model.embedder" && c.InstallSizeMB <= 0 {
 			t.Fatalf("embedder size %d", c.InstallSizeMB)
 		}
+	}
+}
+
+// Each component carries settings: the catalog's list, verbatim (the page's Settings
+// link reads it); a component that owns none answers [], never null.
+func TestListAndShowCarrySettings(t *testing.T) {
+	f := newFixture(t)
+	want := []any{"rules.transcription", "toml:transcription.workers"}
+	var l struct {
+		Components []map[string]any `json:"components"`
+	}
+	decode(t, f.do("GET", "/api/components", "", admin()), 200, &l)
+	seen := 0
+	for _, c := range l.Components {
+		got, ok := c["settings"].([]any)
+		if !ok {
+			t.Fatalf("%v: settings %#v", c["id"], c["settings"])
+		}
+		cat, _ := components.Default().Get(c["id"].(string))
+		if len(got) != len(cat.Settings) {
+			t.Fatalf("%v: settings %v, catalog %v", c["id"], got, cat.Settings)
+		}
+		if c["id"] == "transcription" {
+			seen++
+			if !slices.Equal(got, want) {
+				t.Fatalf("transcription settings %v", got)
+			}
+		}
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	if got, _ := one["settings"].([]any); seen != 1 || !slices.Equal(got, want) {
+		t.Fatalf("show: settings %v (listed %d)", one["settings"], seen)
+	}
+}
+
+// The reason's params ride with it, as text, on the component and on each machine: the
+// page fills components.reason.<reason> from them.
+func TestReasonParams(t *testing.T) {
+	f := newFixture(t)
+	if err := f.st.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{
+		Machine: store.Home, ID: "transcription", Part: "supervisor", Phase: components.PhaseFailed,
+		Conditions: []store.Condition{
+			{Type: "Ready", Status: "true"},
+			{Type: "Started", Status: "false", Reason: "settings_invalid", Params: map[string]any{"name": "release", "holder_pid": 4242}},
+		}}}); err != nil {
+		t.Fatal(err)
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	want := map[string]any{"name": "release", "holder_pid": "4242"}
+	got, _ := one["reason_params"].(map[string]any)
+	if one["reason"] != "settings_invalid" || len(got) != 2 || got["name"] != want["name"] || got["holder_pid"] != want["holder_pid"] {
+		t.Fatalf("component: reason %v, params %v", one["reason"], one["reason_params"])
+	}
+	machines, _ := one["machines"].([]any)
+	if len(machines) != 1 {
+		t.Fatalf("machines %v", one["machines"])
+	}
+	if mp, _ := machines[0].(map[string]any)["reason_params"].(map[string]any); mp["name"] != "release" {
+		t.Fatalf("machine params %v", machines[0])
+	}
+	// no reason, no params
+	var llm map[string]any
+	decode(t, f.do("GET", "/api/components/llm", "", admin()), 200, &llm)
+	if _, has := llm["reason_params"]; has {
+		t.Fatalf("llm %v", llm["reason_params"])
 	}
 }
 

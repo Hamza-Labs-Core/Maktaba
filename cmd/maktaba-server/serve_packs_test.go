@@ -14,6 +14,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/appvenv"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/llmserver"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
@@ -110,6 +111,22 @@ func TestPacksInstallAndProgressRoutes(t *testing.T) {
 	}
 }
 
+// GET /components/packs says whether this machine installs packs (the API's install
+// route refuses with packs_disabled when it does not), behind the token.
+func TestPacksStateRoute(t *testing.T) {
+	a, _, h := packsTestAdmin(t)
+	if code, _ := packsCall(t, h, http.MethodGet, "/components/packs", ""); code != http.StatusForbidden {
+		t.Fatalf("no token: %d", code)
+	}
+	if code, out := packsCall(t, h, http.MethodGet, "/components/packs", "tok"); code != http.StatusOK || out["packs"] != "on" {
+		t.Fatalf("packs on: %d %v", code, out)
+	}
+	a.m.Disabled = true
+	if code, out := packsCall(t, h, http.MethodGet, "/components/packs", "tok"); code != http.StatusOK || out["packs"] != "off" {
+		t.Fatalf("packs off: %d %v", code, out)
+	}
+}
+
 // A file for another version is refused by the import route with its reason.
 func TestPacksImportRouteRefusesAnotherVersion(t *testing.T) {
 	a, _, h := packsTestAdmin(t)
@@ -166,6 +183,40 @@ func TestPacksRoutesRefuseOtherPaths(t *testing.T) {
 
 // The venv a pack brings: the extras of what is installed, the packs' wheels alone when
 // each has its pack; a removal keeps the others' and builds with none when nothing is left.
+// Story 51.16: the Manager puts the runtime.ollama pack and the language models where the
+// model server looks for them (llmserver's pack folder, the bundled server's store).
+func TestPacksManagerPutsOllamaWhereTheServerLooks(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", filepath.Join(home, ".local", "share"))
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(home, "server.toml"))
+	t.Setenv("MAKTABA_APP_BUNDLE", "")
+	t.Setenv("MAKTABA_OLLAMA_BIN", "")
+	cfg := config.Defaults()
+	m := newPacksManager(cfg, "", io.Discard)
+	if got, want := m.Layout.Dir("runtime.ollama"), llmserver.PackDir(cfg.StateDir()); got != want {
+		t.Fatalf("runtime.ollama's folder %s, the server looks in %s", got, want)
+	}
+	if got, want := m.OllamaModels, llmserver.Planned(cfg, "").Models; got != want || got == "" {
+		t.Fatalf("the models go to %q, the server's store is %q", got, want)
+	}
+}
+
+// This machine's Manager downloads from the bases the environment names
+// (MAKTABA_PACKS_URL, HF_ENDPOINT, MAKTABA_OLLAMA_REGISTRY).
+func TestPacksManagerDownloadsFromTheEnvironmentsSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("MAKTABA_CONFIG", filepath.Join(home, "server.toml"))
+	t.Setenv(packs.EnvReleasesURL, "http://127.0.0.1:9/releases")
+	t.Setenv(packs.EnvHFEndpoint, "http://127.0.0.1:9/hf")
+	t.Setenv(packs.EnvOllamaRegistry, "http://127.0.0.1:9/ollama")
+	n, ok := newPacksManager(config.Defaults(), "", io.Discard).Net.(*packs.Net)
+	if !ok || n.Releases != "http://127.0.0.1:9/releases" || n.HF != "http://127.0.0.1:9/hf" || n.OllamaRegistry != "http://127.0.0.1:9/ollama" {
+		t.Fatalf("the Manager's network source %+v", n)
+	}
+}
+
 func TestPackVenvSpec(t *testing.T) {
 	payload := t.TempDir()
 	t.Setenv("MAKTABA_APP_BUNDLE", payload)
@@ -229,5 +280,36 @@ func packsIdle(t *testing.T, m *packs.Manager, id string) {
 			t.Fatalf("%s did not end", id)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+type fakeRestarter struct{ asked []string }
+
+func (f *fakeRestarter) RestartComponent(id string) int {
+	f.asked = append(f.asked, id)
+	return 2
+}
+
+// POST /components/{id}/restart asks the supervisor to restart the component's
+// processes, behind the token, with or without a reconciler; no supervisor is 503.
+func TestPacksRestartRoute(t *testing.T) {
+	f := &fakeRestarter{}
+	h := (&packsAdmin{token: "tok", sup: f}).adminHandler(http.NotFoundHandler())
+	if code, _ := packsCall(t, h, http.MethodPost, "/components/transcription/restart", ""); code != http.StatusForbidden {
+		t.Fatalf("no token: %d", code)
+	}
+	code, out := packsCall(t, h, http.MethodPost, "/components/transcription/restart", "tok")
+	if code != http.StatusOK || out["restarted"] != float64(2) || len(f.asked) != 1 || f.asked[0] != "transcription" {
+		t.Fatalf("%d %v %v", code, out, f.asked)
+	}
+	if code, _ := packsCall(t, h, http.MethodGet, "/components/transcription/restart", "tok"); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET: %d", code)
+	}
+	if code, _ := packsCall(t, h, http.MethodPost, "/components/../restart", "tok"); code == http.StatusOK {
+		t.Fatalf("a bad id: %d", code)
+	}
+	none := (&packsAdmin{token: "tok"}).adminHandler(http.NotFoundHandler())
+	if code, _ := packsCall(t, none, http.MethodPost, "/components/transcription/restart", "tok"); code != http.StatusServiceUnavailable {
+		t.Fatalf("no supervisor: %d", code)
 	}
 }

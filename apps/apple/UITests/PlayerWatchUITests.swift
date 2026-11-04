@@ -108,8 +108,10 @@ final class PlayerWatchUITests: PlayerUITestCase {
         XCTAssertTrue(en.isSelected, "an audio track is selected")
         XCTAssertEqual(ar.label, "Arabic")
         ar.tap()
-        // a track switch re-buffers the stream: on a loaded simulator that is more than 15 s
-        waitFor("the Arabic audio, with sound", timeout: 30) {
+        // a track switch re-buffers the stream: on a loaded simulator that is more than 15 s,
+        // and a player that stays waiting is opened again 20 to 30 s in (`WatchLogic.stuck`:
+        // PR #614's iPhone run stopped at 1257 s for good after the switch, its rate 1)
+        waitFor("the Arabic audio, with sound", timeout: 60) {
             state["audio"] == "ar" && state["sound"] == "aac" && state["audible"] == "true"
         }
     }
@@ -117,19 +119,32 @@ final class PlayerWatchUITests: PlayerUITestCase {
     func testQualityReopensAtTheSamePositionWithMaxBitrate() throws {
         watch("v2")
         waitFor("it plays") { state["playing"] == "true" }
+        // `Playback.setQuality` promises the same position, paused if it was paused. Paused, the
+        // position stands still while the sheet opens and the tap lands, however slow the
+        // runner (playing, it ran on 5 s past the read on an iPad run of #626), so the reopen
+        // is checked against that one position, within a second of the seek's rounding
+        showControls()
+        app.buttons["player.playPause"].tap()
+        waitFor("paused") { state["playing"] == "false" }
+        let at = Int(state["position"] ?? "") ?? 0
+        XCTAssertGreaterThan(at, 0, "paused past the start")
         openSheet("player.quality")
         XCTAssertTrue(app.buttons["player.quality.auto"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["player.quality.auto"].isSelected)
         XCTAssertEqual(app.buttons["player.quality.6000"].label, "1080p")
         XCTAssertEqual(app.buttons["player.quality.1200"].label, "480p")
-        let at = Int(state["position"] ?? "") ?? 0
         app.buttons["player.quality.3000"].tap()
         waitFor("a session capped at 3000 kb/s") { sessions().contains { $0["max_bitrate_kbps"] as? Int == 3000 } }
         let reopened = try XCTUnwrap(sessions().last)
         XCTAssertEqual(reopened["video_id"] as? String, "v2")
         let start = try XCTUnwrap(reopened["start_sec"] as? Int)
-        XCTAssertTrue((at - 1 ... at + 15).contains(start), "reopened at \(start), was at \(at)")
-        waitFor("it plays on, capped") { state["quality"] == "3000" && state["playing"] == "true" }
+        XCTAssertTrue((at - 1 ... at + 1).contains(start), "reopened at \(start), paused at \(at)")
+        // the capped item is at that position, and still paused (its position is 0 until its
+        // seek lands)
+        waitFor("capped, paused, at \(at)") {
+            let p = Int(state["position"] ?? "") ?? 0
+            return state["quality"] == "3000" && state["playing"] == "false" && (at - 1 ... at + 1).contains(p)
+        }
         openSheet("player.quality")
         XCTAssertTrue(app.buttons["player.quality.3000"].waitForExistence(timeout: 10))
         XCTAssertTrue(app.buttons["player.quality.3000"].isSelected)

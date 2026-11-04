@@ -55,6 +55,7 @@ const (
 	reasonLicence        = "licence_missing"
 	reasonPlatform       = "platform_unsupported"
 	reasonMemory         = "not_enough_memory"
+	reasonNotInPayload   = "not_in_payload"
 	reasonReconcileOff   = "reconcile_off"
 	ReasonBootFlag       = "boot_flag"
 	ReasonEnvOverride    = "env_override"
@@ -85,6 +86,12 @@ type Loop struct {
 // AssetState answers whether an asset component is installed on this machine.
 type AssetState interface {
 	Installed(id string) bool
+}
+
+// AssetFailures is an AssetState that also says why an asset's last install failed (ok
+// false: it did not, or none ran this boot).
+type AssetFailures interface {
+	Failed(id string) (reason string, params map[string]any, ok bool)
 }
 
 // gateTable is what the reconciler reads and drives: *Supervisor (tests give a fake).
@@ -135,6 +142,9 @@ type Reconciler struct {
 	// OnDesired gets each desired state read from the database (the asset half acts on
 	// it: packs.Runner).
 	OnDesired func(desired map[string]store.Desired)
+	// RSS reads the resident memory of running pids, in bytes (hostinfo.ProcessRSS; nil:
+	// not measured): sampled every rssEvery for the rows' rss_mb (story 51.14).
+	RSS func(pids []int) map[int]uint64
 
 	table gateTable
 
@@ -151,6 +161,8 @@ type Reconciler struct {
 	passes   int
 	loopsCtx context.Context
 	health   map[string]*compHealth // story 51.14: transitions and last errors, by component
+	rssAt    time.Time              // the last RSS sample
+	rss      map[string]int64       // by component, MB, as last written (hysteresis: rssMoved)
 }
 
 // compHealth is what the status rows' detail carries of one component beyond its phase
@@ -521,6 +533,12 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 		return dec
 	}
 	dec.conds = append(dec.conds, cond(components.CondRequirementsMet, condTrue, "", nil))
+	// its program is not on this machine (a dormant ollama before its pack is installed):
+	// it waits, the want kept, and starts once the program is there
+	if !wasOpen && len(own) > 0 && allMissing(own) {
+		dec.conds = append(dec.conds, cond(components.CondInstalled, condFalse, reasonNotInPayload, nil))
+		return dec
+	}
 	// a process today's server.toml leaves out is checked for memory before it first
 	// starts, never to stop one that runs
 	if !wasOpen && r.FreeMB != nil && comp.Resources.RAMMB > 0 && len(own) > 0 && allDormant(own) {
@@ -532,6 +550,15 @@ func (r *Reconciler) decide(comp *components.Component, procs map[string][]procV
 	}
 	dec.open = true
 	return dec
+}
+
+func allMissing(ps []procView) bool {
+	for _, p := range ps {
+		if !p.Missing || p.Running {
+			return false
+		}
+	}
+	return true
 }
 
 func allDormant(ps []procView) bool {
@@ -602,6 +629,59 @@ func (r *Reconciler) requirements(id string, procs map[string][]procView, desire
 		unknown = ""
 	}
 	return met, unknown, off
+}
+
+// modelWait is the condition of a component that needs a model this machine does not
+// have (Assets): RequirementsMet unknown naming the model while it is not there, false
+// with the install's reason when that failed. ok is false when every model group it
+// requires has one installed (or Assets is nil). A model does not close the gate (the
+// pipeline may fetch one itself): only the status says what it waits on.
+func (r *Reconciler) modelWait(id string) (store.Condition, bool) {
+	if r.Assets == nil {
+		return store.Condition{}, false
+	}
+	for _, req := range r.Catalog.Requires(id) {
+		var models []string
+		have := false
+		for _, alt := range req.AnyOf {
+			comp, ok := r.Catalog.Get(alt)
+			if !ok || comp.Kind != components.KindAsset || !components.IsModelSource(comp.SourceFor(r.Platform)) {
+				continue
+			}
+			models = append(models, alt)
+			if r.Assets.Installed(alt) {
+				have = true
+				break
+			}
+		}
+		if have || len(models) == 0 {
+			continue
+		}
+		if f, ok := r.Assets.(AssetFailures); ok {
+			for _, m := range models {
+				if why, params, failed := f.Failed(m); failed {
+					p := map[string]any{"component": m}
+					for k, v := range params {
+						p[k] = v
+					}
+					return cond(components.CondRequirementsMet, condFalse, why, p), true
+				}
+			}
+		}
+		return cond(components.CondRequirementsMet, condUnknown, "", map[string]any{"component": models[0]}), true
+	}
+	return store.Condition{}, false
+}
+
+// replaceCond is cs with c in place of the condition of its type (appended when none).
+func replaceCond(cs []store.Condition, c store.Condition) []store.Condition {
+	out := make([]store.Condition, 0, len(cs)+1)
+	for _, x := range cs {
+		if x.Type != c.Type {
+			out = append(out, x)
+		}
+	}
+	return append(out, c)
 }
 
 func gateOpen(ps []procView) bool {
@@ -797,6 +877,7 @@ func (r *Reconciler) runLoop(ctx context.Context, l *Loop, done chan struct{}) {
 // rows is the status of every component the supervisor has something of here.
 func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 	views := r.table.procViews()
+	r.sampleRSS(views)
 	procs := byComponent(views)
 	var out []store.Status
 	for _, comp := range r.reconciled(procs) {
@@ -827,6 +908,15 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		if !dec.open && phase != components.PhaseDraining && comp.Switchable && !r.Off {
 			phase = dec.phase
 		}
+		// open and running, but a model it needs is not on this machine (or its install
+		// failed): it can do nothing yet, and says what it waits on
+		if dec.open && (phase == components.PhaseRunning || phase == components.PhaseDegraded ||
+			phase == components.PhaseStarting) && comp.Switchable && !r.Off {
+			if c, ok := r.modelWait(comp.ID); ok {
+				phase, reason = components.PhaseWaiting, c.Reason
+				dec.conds = replaceCond(dec.conds, c)
+			}
+		}
 		row.Phase = phase
 		row.Conditions = append(row.Conditions, dec.conds...)
 		ready := cond(components.CondReady, condFalse, reason, nil)
@@ -839,6 +929,12 @@ func (r *Reconciler) rows(decs map[string]decision) []store.Status {
 		detail := r.healthDetail(comp.ID, dec.gen, phase, reason)
 		if restarts > 0 {
 			detail["restarts"] = restarts
+		}
+		if n := restarts24(own); n > 0 {
+			detail["restarts_24h"] = n
+		}
+		if mb, ok := r.rssOf(comp.ID, own); ok {
+			detail["rss_mb"] = mb
 		}
 		if len(detail) > 0 {
 			row.Detail = detail

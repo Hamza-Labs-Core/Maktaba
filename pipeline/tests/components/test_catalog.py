@@ -4,8 +4,11 @@ file, and this loader answers what the Go loader answers."""
 
 from __future__ import annotations
 
+import ast
 import importlib
+import importlib.resources
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -61,6 +64,121 @@ def test_every_stage_is_in_exactly_one_component() -> None:
     assert not extra, f"catalog stages the graph does not have: {extra}"
 
 
+# Every StageDef the package's source can make, found by reading every module of it (not
+# a list of files, nor only what GRAPH and BUILTIN import): a stage added in a new file, or
+# by an extension left out of BUILTIN, cannot escape the check above.
+_PACKAGE = _ROOT / "pipeline" / "src" / "maktaba_pipeline"
+
+
+def _stage_factories(tree: ast.Module) -> dict[str, int]:
+    """The module's functions that return a StageDef named by one of their parameters
+    (``engine/graph.py``'s ``_legacy``): function name -> that parameter's position."""
+    out: dict[str, int] = {}
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        params = [a.arg for a in fn.args.posonlyargs + fn.args.args]
+        for call in ast.walk(fn):
+            name = _stage_name_arg(call)
+            if isinstance(name, ast.Name) and name.id in params:
+                out[fn.name] = params.index(name.id)
+    return out
+
+
+def _callee(node: ast.AST) -> str | None:
+    if not isinstance(node, ast.Call):
+        return None
+    f = node.func
+    return f.id if isinstance(f, ast.Name) else f.attr if isinstance(f, ast.Attribute) else None
+
+
+def _stage_name_arg(node: ast.AST, position: int = 0) -> ast.expr | None:
+    """The ``name`` argument of a ``StageDef(...)`` call (keyword or first positional)."""
+    if _callee(node) != "StageDef":
+        return None
+    assert isinstance(node, ast.Call)
+    for kw in node.keywords:
+        if kw.arg == "name":
+            return kw.value
+    return node.args[position] if len(node.args) > position else None
+
+
+def source_stages(root: Path = _PACKAGE) -> tuple[dict[str, str], list[str]]:
+    """Every stage name a StageDef call (or a factory of one) in ``root``'s modules makes,
+    with where; and every call whose name is not a string literal (which no static check
+    can map, so it is refused)."""
+    found: dict[str, str] = {}
+    bad: list[str] = []
+    for path in sorted(root.rglob("*.py")):
+        src = path.read_text(encoding="utf-8")
+        if "StageDef(" not in src:
+            continue
+        tree = ast.parse(src, filename=str(path))
+        factories = _stage_factories(tree)
+        inside = {
+            id(n)
+            for fn in ast.walk(tree)
+            if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef) and fn.name in factories
+            for n in ast.walk(fn)
+        }
+        for node in ast.walk(tree):
+            callee = _callee(node)
+            if callee == "StageDef":
+                if id(node) in inside:
+                    continue  # the factory's own call: its callers name the stage
+                arg = _stage_name_arg(node)
+            elif callee in factories:
+                assert isinstance(node, ast.Call)
+                pos = factories[callee]
+                arg = node.args[pos] if len(node.args) > pos else None
+                for kw in node.keywords:
+                    if kw.arg == "name":
+                        arg = kw.value
+            else:
+                continue
+            where = f"{path.relative_to(root.parent)}:{getattr(node, 'lineno', 0)}"
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                found.setdefault(arg.value, where)
+            else:
+                bad.append(where)
+    return found, bad
+
+
+def test_every_stage_in_the_source_is_in_the_catalog_and_the_graph() -> None:
+    found, bad = source_stages()
+    assert not bad, f"StageDef named by no string literal (the catalog check cannot map it): {bad}"
+    assert len(found) >= 40, f"found only {len(found)} stages in {_PACKAGE}"
+    cat = catalog.default()
+    missing = {s: w for s, w in found.items() if cat.by_stage(s) is None}
+    assert not missing, f"stages in no catalog component: {missing} (add them to catalog.toml)"
+    # and every one is in what the pipeline runs (GRAPH and BUILTIN): a stage made in a
+    # file nothing loads is dead code, or an extension left out of BUILTIN
+    loaded = {s.name for s in _all_stages()}
+    unloaded = {s: w for s, w in found.items() if s not in loaded}
+    assert not unloaded, f"stages no graph the pipeline builds has: {unloaded}"
+    assert loaded <= set(found), sorted(loaded - set(found))
+
+
+def test_a_stage_in_a_new_file_is_found(tmp_path: Path) -> None:
+    pkg = tmp_path / "pkg"
+    (pkg / "extensions" / "newext").mkdir(parents=True)
+    (pkg / "extensions" / "newext" / "__init__.py").write_text(
+        "from x import StageDef\n"
+        "def register(g):\n"
+        "    g.add_stage(StageDef(name='brand_new_stage', label='x'))\n"
+        "def _make(stage_name, label):\n"
+        "    return StageDef(name=stage_name, label=label)\n"
+        "LATE = (_make('made_by_a_factory', 'y'), StageDef('positional', 'z'))\n"
+        "def dynamic(n):\n"
+        "    return StageDef(name=f'stage_{n}', label='w')\n",
+        encoding="utf-8",
+    )
+    found, bad = source_stages(pkg)
+    assert set(found) == {"brand_new_stage", "made_by_a_factory", "positional"}
+    assert bad == ["pkg/extensions/newext/__init__.py:8"]
+    assert unmapped(catalog.default(), sorted(found)) == sorted(found)
+
+
 def test_extension_stages_belong_to_their_extension_component() -> None:
     cat = catalog.default()
     for stage, ext in _builtin_stages().items():
@@ -95,15 +213,63 @@ def test_rules_sections_exist() -> None:
                 owned[section] = c.id
 
 
+def _check_copy() -> None:
+    shared = (_SHARED / "catalog.toml").read_bytes()
+    # a plain raise, not assert: pytest would diff the two files line by line (untruncated
+    # under CI=true), which takes over a second and trips the unit soft cap
+    if catalog.raw() != shared:
+        raise AssertionError("the pipeline's catalog.toml differs: run make catalog-sync")
+
+
 # T05: the packaged copy is the shared file, byte for byte.
 def test_pipeline_copy_is_the_shared_file() -> None:
-    shared = (_SHARED / "catalog.toml").read_bytes()
-    assert catalog.raw() == shared, "the pipeline's catalog.toml differs: run make catalog-sync"
+    _check_copy()
 
 
-def test_an_edited_copy_is_caught() -> None:
+class _Package:
+    """A stand-in for ``importlib.resources.files(<package>)``: the package folder."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+
+    def joinpath(self, name: str) -> Path:
+        return self.root / name
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda b: b + b"\n# edited\n",
+        lambda b: b.replace(b"drain     = { grace_s = 120,", b"drain     = { grace_s = 90,", 1),
+    ],
+    ids=["comment", "drain"],
+)
+def test_an_edited_copy_is_caught(
+    edit: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # the packaged file the pipeline loads, edited: the check above refuses it, and what
+    # the pipeline would run (raw, default) is that edited file, not the shared one
     shared = (_SHARED / "catalog.toml").read_bytes()
-    assert shared + b"\n# edited\n" != shared  # what the check above compares
+    edited = edit(shared)
+    assert edited != shared
+    (tmp_path / "catalog.toml").write_bytes(edited)
+    pkg = catalog.__package__
+    real_files = importlib.resources.files
+    monkeypatch.setattr(
+        importlib.resources,
+        "files",
+        lambda p: _Package(tmp_path) if p == pkg else real_files(p),
+    )
+    assert catalog.raw() == edited
+    with pytest.raises(AssertionError, match="run make catalog-sync"):
+        _check_copy()
+    catalog.default.cache_clear()
+    try:
+        grace = catalog.default().get("transcription")
+        assert grace is not None
+        assert grace.drain.grace_s == (90 if b"grace_s = 90," in edited else 120)
+    finally:
+        catalog.default.cache_clear()
 
 
 # T09 (Python side): the dump is the fixture the Go loader writes.

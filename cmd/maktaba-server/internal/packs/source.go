@@ -28,6 +28,9 @@ type ModelFile struct {
 	Repo string // org/name on Hugging Face
 	Rev  string // the 40-hex commit
 	Path string // the file's path in the repo
+	// Ollama: a language model's file (Repo its name, library/qwen2.5; Rev the pinned
+	// manifest digest; Path blobs/sha256-<hex>), from Ollama's registry
+	Ollama bool
 }
 
 // Source is where packs and models come from: the network (the release's files on
@@ -59,6 +62,8 @@ type Net struct {
 	Releases string
 	// HF is Hugging Face's base (default https://huggingface.co).
 	HF string
+	// OllamaRegistry is Ollama's model registry (default https://registry.ollama.ai).
+	OllamaRegistry string
 	// Token is the Hugging Face token for a gated model ("" none).
 	Token func() string
 	// URLs, when set, are the release's files by name (an update's job: the asset URLs
@@ -74,6 +79,33 @@ func NewNet(repo string, c *http.Client) *Net {
 		c = &http.Client{Transport: http.DefaultTransport}
 	}
 	return &Net{HTTP: c, Releases: "https://github.com/" + repo + "/releases/download", HF: "https://huggingface.co"}
+}
+
+// The environment that points the network source elsewhere (a test stack, a mirror on
+// a network with no GitHub), as MAKTABA_UPDATE_REPO points the updates: the release
+// download base (its files at <base>/v<version>/<name>), Hugging Face's endpoint (the
+// variable huggingface_hub reads, so the pipeline and the packs agree) and Ollama's
+// registry. What is fetched is verified against the signed index all the same.
+const (
+	EnvReleasesURL    = "MAKTABA_PACKS_URL"
+	EnvHFEndpoint     = "HF_ENDPOINT"
+	EnvOllamaRegistry = "MAKTABA_OLLAMA_REGISTRY"
+)
+
+// WithEnv is n with each base getenv names (EnvReleasesURL, EnvHFEndpoint,
+// EnvOllamaRegistry) in place of its default; a value that is not an http(s) URL is
+// ignored.
+func (n *Net) WithEnv(getenv func(string) string) *Net {
+	for _, o := range []struct {
+		env string
+		to  *string
+	}{{EnvReleasesURL, &n.Releases}, {EnvHFEndpoint, &n.HF}, {EnvOllamaRegistry, &n.OllamaRegistry}} {
+		v := strings.TrimRight(strings.TrimSpace(getenv(o.env)), "/")
+		if strings.HasPrefix(v, "http://") || strings.HasPrefix(v, "https://") {
+			*o.to = v
+		}
+	}
+	return n
 }
 
 func (n *Net) Kind() string { return "network" }
@@ -119,6 +151,11 @@ func (n *Net) small(ctx context.Context, u string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	return n.fetchSmall(req)
+}
+
+// fetchSmall does req and reads its body, at most smallLimit bytes.
+func (n *Net) fetchSmall(req *http.Request) ([]byte, error) {
 	resp, err := n.HTTP.Do(req)
 	if err != nil {
 		return nil, err
@@ -145,6 +182,9 @@ func (n *Net) Pack(ctx context.Context, version, name, dst string, size int64, p
 }
 
 func (n *Net) Model(ctx context.Context, f ModelFile, dst string, size int64, progress func(int64)) error {
+	if f.Ollama {
+		return n.resume(ctx, n.ollamaURL(f), "", dst, size, progress)
+	}
 	var segs []string
 	for _, s := range strings.Split(f.Path, "/") {
 		segs = append(segs, url.PathEscape(s))
@@ -260,6 +300,10 @@ func (f *FolderSource) Kind() string { return "folder" }
 func (f *FolderSource) Signed(_ context.Context, version string) (Signed, error) {
 	var s Signed
 	read := func(name string, optional bool) ([]byte, error) {
+		// a file of the folder itself: the index's name carries the version asked for
+		if strings.Contains(name, "..") || strings.ContainsAny(name, `/\`) {
+			return nil, fmt.Errorf("%q: not a file of the release's folder", name)
+		}
 		b, err := readSmall(filepath.Join(f.Dir, name))
 		if optional && errors.Is(err, os.ErrNotExist) {
 			return nil, nil

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const { get, post, put, patch, hub } = vi.hoisted(() => {
@@ -26,7 +26,10 @@ vi.mock("../../lib/api", async () => {
 });
 vi.mock("../../lib/ws", () => ({ subscribe: hub.subscribe }));
 
+import arJson from "../../i18n/ar.json";
 import { QueueOverview } from "./QueueOverview";
+
+const ar = arJson as Record<string, string>;
 import { routeGet, renderAt } from "../../test/queueHarness";
 import {
   events,
@@ -133,10 +136,10 @@ describe("QueueOverview", () => {
     const issues = screen.getByRole("heading", { name: "Needs attention" }).closest("section")!;
     expect(within(issues).getByText("YouTube asked for a bot check")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Apply" })).toBeNull();
-    // libraries table
+    // libraries panel: the one needing attention opens its library page
     expect(screen.getByRole("link", { name: /Islamic lectures/ })).toHaveAttribute(
       "href",
-      "/queue/items/library/lib-1"
+      "/admin/libraries/lib-1#queues"
     );
   });
 
@@ -311,25 +314,6 @@ describe("QueueOverview", () => {
     });
   });
 
-  it("re-queues several libraries at once from the table", async () => {
-    setup();
-    await screen.findByRole("link", { name: /Islamic lectures/ });
-    await userEvent.click(screen.getByLabelText("Select all libraries"));
-    await userEvent.click(screen.getByRole("button", { name: "Re-queue selected (2)" }));
-    const dialog = await screen.findByRole("dialog");
-    expect(within(dialog).getByRole("button", { name: "Queue work (2)" })).toBeEnabled();
-  });
-
-  it("filters the libraries table by name", async () => {
-    setup();
-    await screen.findByRole("link", { name: /Islamic lectures/ });
-    fireEvent.change(screen.getAllByPlaceholderText("Search libraries")[0], {
-      target: { value: "قصة" },
-    });
-    expect(screen.queryByRole("link", { name: /Islamic lectures/ })).toBeNull();
-    expect(screen.getByRole("link", { name: /قصة وآية/ })).toBeInTheDocument();
-  });
-
   it("uses only token colours (no inline colour styles) in light and dark", async () => {
     document.documentElement.setAttribute("data-theme", "dark");
     const { container } = setup();
@@ -353,6 +337,39 @@ describe("QueueOverview", () => {
     ).toBeInTheDocument();
     expect(document.documentElement.dir).toBe("rtl");
     document.documentElement.dir = "ltr";
+  });
+
+  it("titles each stage in Arabic, keeping the API's label for a stage with no words", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      setup({
+        stages: snapshotFixture.stages.map((s) =>
+          s.stage === "thumb_hash" ? { ...s, stage: "from_the_future", label: "Future step" } : s
+        ),
+        queues: snapshotFixture.queues.map((q) =>
+          q.stage === "thumb_hash" ? { ...q, stage: "from_the_future" } : q
+        ),
+      });
+      const card = await waitFor(() => {
+        const el = document.querySelector<HTMLElement>('[data-stage="probe"]');
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(
+        within(card).getByRole("link", { name: ar["queue.stage.probe.title"]! })
+      ).toBeInTheDocument();
+      expect(card).not.toHaveTextContent("Length");
+      const tag = document.querySelector<HTMLElement>('[data-stage="tag"]')!;
+      expect(tag).toHaveTextContent(ar["queue.stage.tag.title"]!);
+      expect(
+        within(document.querySelector<HTMLElement>('[data-stage="from_the_future"]')!).getByText(
+          "Future step"
+        )
+      ).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem("mkt:locale");
+      document.documentElement.dir = "ltr";
+    }
   });
 
   it("falls back to polling /api/queues only after 10 s of stream silence", async () => {

@@ -88,6 +88,39 @@ describe("App routes (test-cases/app-shell.md)", () => {
     await browserBack();
     expect(window.location.pathname).toBe("/elsewhere-before");
   });
+
+  // the library dashboard and a library's admin page are routed (lazily, with
+  // the server pages); a member gets the admins-only message, never a 404
+  it("routes /queue/libraries and /admin/libraries/:id: admins see them, members are refused", async () => {
+    signedIn = true;
+    amal.is_admin = true;
+    try {
+      const { unmount } = open("/queue/libraries");
+      expect(
+        await screen.findByRole(
+          "heading",
+          { level: 1, name: en["libdash.title"] },
+          { timeout: 3000 }
+        )
+      ).toBeInTheDocument();
+      unmount();
+      const page = open("/admin/libraries/lib-1");
+      // the generic answers list no libraries, so this one is not found (not a 404 page)
+      expect(
+        await screen.findByText(en["libpage.notFound.title"], {}, { timeout: 3000 })
+      ).toBeInTheDocument();
+      page.unmount();
+    } finally {
+      amal.is_admin = false;
+    }
+    for (const path of ["/queue/libraries", "/admin/libraries/lib-1"]) {
+      const { unmount } = open(path);
+      expect(
+        await screen.findByText(en["common.forbidden.desc"], {}, { timeout: 3000 })
+      ).toBeInTheDocument();
+      unmount();
+    }
+  });
 });
 
 // The public pages sit outside AppShell, so App.tsx gives them their own

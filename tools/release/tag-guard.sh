@@ -38,7 +38,7 @@ if ! out="$(printf '%s\n' "${published}" | (cd "${here}" && go run ./cmd/release
     --allow "${ALLOW_TAG:-}") 2>&1)"; then
     err "${out#release-order: refused: }"
 fi
-field() { sed -n "s/^$1=//p" <<<"${out}" | head -1; }
+field() { sed -n "s/^$1=//p" <<<"${out}" | sed -n 1p; }
 maintenance="$(field maintenance)"
 is_published="$(field published)"
 latest="$(field latest)"

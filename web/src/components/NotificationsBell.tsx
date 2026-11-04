@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useI18n } from "../lib/i18n";
 import { notificationsApi, type AppNotification } from "../lib/notificationsApi";
 import { reconcileList } from "../lib/tvChanges";
+import { useReadOrder } from "../lib/readOrder";
 import "../styles/notifications.css";
 
 export const NOTIFY_POLL_MS = 30_000;
@@ -36,19 +37,23 @@ export function NotificationsBell() {
   const button = useRef<HTMLButtonElement | null>(null);
   const panelId = useId();
   const alive = useRef(true);
+  // A read that began before a notice was marked read still has it unread: it
+  // is dropped, so the badge and the dots do not come back (lib/readOrder).
+  const order = useReadOrder();
 
   const load = useCallback(async () => {
+    const ticket = order.begin();
     try {
       const r = await notificationsApi.list(30);
-      if (!alive.current) return;
+      if (!alive.current || !order.fresh(ticket)) return;
       // one batched update per read; unchanged notices keep their objects
       setItems((prev) => reconcileList(prev, r.items ?? []));
       setUnread(r.unread ?? 0);
       setFailed(false);
     } catch {
-      if (alive.current) setFailed(true);
+      if (alive.current && order.fresh(ticket)) setFailed(true);
     }
-  }, []);
+  }, [order]);
 
   useEffect(() => {
     alive.current = true;
@@ -102,7 +107,7 @@ export function NotificationsBell() {
       setItems((prev) => prev?.map((y) => (y.id === x.id ? { ...y, read: true } : y)) ?? prev);
       setUnread((u) => Math.max(0, u - 1));
       try {
-        const r = await notificationsApi.read(x.id);
+        const r = await order.saving(() => notificationsApi.read(x.id));
         // an answer without a count keeps ours (never a NaN badge)
         if (typeof r?.unread === "number") setUnread(r.unread);
       } catch {
@@ -116,7 +121,7 @@ export function NotificationsBell() {
     setItems((prev) => prev?.map((y) => (y.read ? y : { ...y, read: true })) ?? prev);
     setUnread(0);
     try {
-      const r = await notificationsApi.readAll();
+      const r = await order.saving(() => notificationsApi.readAll());
       if (typeof r?.unread === "number") setUnread(r.unread);
     } catch {
       /* the next read corrects it */

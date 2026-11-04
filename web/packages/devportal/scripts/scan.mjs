@@ -4,10 +4,14 @@
 //
 //   node scripts/scan.mjs dist     exits 1 and lists each finding
 //
-// A finding is a file and the rule it broke, with the matched text masked.
+// A finding is a file and the rule it broke, with the matched text masked. Text files are
+// read whole; every file's name and path are read too; an image's metadata (EXIF, XMP, a
+// PNG's text chunks) is refused or read as text, since a screenshot's can name the machine,
+// the person or the place it was taken.
 
 import fs from "node:fs";
 import path from "node:path";
+import zlib from "node:zlib";
 import { fileURLToPath } from "node:url";
 
 // mDNS names the docs use on purpose: the product's own service name, not anyone's machine
@@ -78,10 +82,115 @@ export function scanText(text, { vendored = false } = {}) {
   return found;
 }
 
+// ---- images: what they carry besides pixels ---------------------------------------------
+
+const IMAGE = /\.(png|webp|jpe?g)$/i;
+// A WebP's own chunks: the picture, its alpha and animation. Anything else (EXIF, XMP, ICCP
+// or an unknown chunk) is metadata, and a screenshot's can name the machine, the person or
+// the place it was taken.
+const WEBP_PICTURE = new Set(["VP8 ", "VP8L", "VP8X", "ALPH", "ANIM", "ANMF"]);
+// a PNG's text chunks (scanned as text) and its EXIF chunk (refused, like a WebP's)
+const PNG_TEXT = new Set(["tEXt", "zTXt", "iTXt"]);
+
+/**
+ * An image's metadata: `blocks` names each metadata chunk it carries that is refused (EXIF,
+ * XMP and the like), `text` is the text of every metadata chunk, for the text rules.
+ */
+export function imageMetadata(buf) {
+  const blocks = [];
+  const texts = [];
+  const latin1 = (b) => Buffer.from(b).toString("latin1");
+  if (
+    buf.length >= 12 &&
+    buf.toString("ascii", 0, 4) === "RIFF" &&
+    buf.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    for (let at = 12; at + 8 <= buf.length; ) {
+      const id = buf.toString("ascii", at, at + 4);
+      const size = buf.readUInt32LE(at + 4);
+      const body = buf.subarray(at + 8, at + 8 + size);
+      if (!WEBP_PICTURE.has(id)) {
+        blocks.push(id.trim());
+        texts.push(latin1(body));
+      }
+      at += 8 + size + (size % 2);
+    }
+  } else if (buf.length >= 8 && buf.readUInt32BE(0) === 0x89504e47) {
+    for (let at = 8; at + 12 <= buf.length; ) {
+      const size = buf.readUInt32BE(at);
+      const id = buf.toString("ascii", at + 4, at + 8);
+      const body = buf.subarray(at + 8, at + 8 + size);
+      if (id === "eXIf") {
+        blocks.push(id);
+        texts.push(latin1(body));
+      } else if (PNG_TEXT.has(id)) {
+        let text = latin1(body);
+        if (id === "zTXt") {
+          const nul = body.indexOf(0);
+          try {
+            text =
+              latin1(body.subarray(0, nul)) +
+              " " +
+              zlib.inflateSync(body.subarray(nul + 2)).toString("utf8");
+          } catch {
+            blocks.push(id);
+          }
+        } else if (id === "iTXt") {
+          // keyword, NUL, compressed flag, method, language, NUL, keyword, NUL, text
+          const nul = body.indexOf(0);
+          const compressed = body[nul + 1] === 1;
+          let rest = nul + 3;
+          rest = body.indexOf(0, rest) + 1;
+          rest = body.indexOf(0, rest) + 1;
+          const data = body.subarray(rest);
+          try {
+            text =
+              latin1(body.subarray(0, nul)) +
+              " " +
+              (compressed ? zlib.inflateSync(data) : data).toString("utf8");
+          } catch {
+            blocks.push(id);
+          }
+        }
+        texts.push(text);
+      }
+      if (id === "IEND") break;
+      at += 12 + size;
+    }
+  } else if (buf.length >= 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    for (let at = 2; at + 4 <= buf.length && buf[at] === 0xff; ) {
+      const marker = buf[at + 1];
+      if (marker === 0xda || marker === 0xd9) break; // the picture itself, or its end
+      const size = buf.readUInt16BE(at + 2);
+      const body = buf.subarray(at + 4, at + 2 + size);
+      // APP1 (EXIF, XMP), APP13 (IPTC) and comments
+      if (marker === 0xe1 || marker === 0xed || marker === 0xfe) {
+        blocks.push(marker === 0xfe ? "COM" : `APP${marker - 0xe0}`);
+        texts.push(latin1(body));
+      }
+      at += 2 + size;
+    }
+  }
+  return { blocks, text: texts.join("\n") };
+}
+
+// A published file's name and path: plain letters, digits and . _ - / @ only (no spaces, no
+// names copied from someone's disk), and the text rules apply to it as to any text.
+const SAFE_NAME = /^[A-Za-z0-9._@/-]+$/;
+
 /** Scan a built site; returns [{file, rule, match}]. */
 export function scanDir(dir) {
   const findings = [];
   for (const rel of walk(dir)) {
+    if (!SAFE_NAME.test(rel)) findings.push({ file: rel, rule: "file-name", match: mask(rel) });
+    for (const f of scanText(rel)) findings.push({ file: rel, ...f, rule: `file-name:${f.rule}` });
+    if (IMAGE.test(rel)) {
+      const meta = imageMetadata(fs.readFileSync(path.join(dir, rel)));
+      for (const b of meta.blocks) findings.push({ file: rel, rule: "image-metadata", match: b });
+      for (const f of scanText(meta.text))
+        findings.push({ file: rel, ...f, rule: `image-metadata:${f.rule}` });
+      continue;
+    }
     if (!TEXT.test(rel)) continue;
     const text = fs.readFileSync(path.join(dir, rel), "utf8");
     const vendored = VENDORED.some((re) => re.test(rel));

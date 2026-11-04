@@ -16,7 +16,7 @@ object ProfileHome {
     ],"limit":50,"offset":0}"""
 
     const val SESSIONS = """{"items":[
-        {"id":"s1","created_at":"2026-10-27T09:00:00Z","last_seen_at":"2026-10-31T08:00:00Z","expires_at":"2026-11-26T09:00:00Z","ip":"192.168.1.20","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15","current":false},
+        {"id":"s1","created_at":"2026-10-27T09:00:00Z","last_seen_at":"2026-10-31T08:00:00Z","expires_at":"2026-11-26T09:00:00Z","ip":"192.0.2.20","user_agent":"Mozilla/5.0 (Macintosh; Intel Mac OS X 15_0) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15","current":false},
         {"id":"s2","created_at":"2026-10-15T12:00:00Z","last_seen_at":"2026-10-25T12:00:00Z","expires_at":"2026-11-14T12:00:00Z","ip":null,"user_agent":"Mozilla/5.0 (Windows NT 10.0) Chrome/130.0 Safari/537.36","current":false}
     ]}"""
 

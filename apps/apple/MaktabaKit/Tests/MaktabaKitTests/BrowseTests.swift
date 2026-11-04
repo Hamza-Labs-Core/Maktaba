@@ -28,13 +28,40 @@ final class BrowseStub: URLProtocol, @unchecked Sendable {
 
     nonisolated(unsafe) private static var routes: [String: [(Int, String)]] = [:]
     nonisolated(unsafe) private static var seen: [Seen] = []
+    nonisolated(unsafe) private static var held: [String: Hold] = [:]
     private static let lock = NSLock()
 
     static func reset() {
         lock.withLock {
             routes = [:]
             seen = []
+            held = [:]
         }
+    }
+
+    /// The next "METHOD /path" is answered (as its queue says, at the time it is asked) only
+    /// once the test lets it go: a read still in flight while the test does something else.
+    final class Hold: @unchecked Sendable {
+        fileprivate let release = DispatchSemaphore(value: 0)
+        private let lock = NSLock()
+        private var askedFlag = false
+        /// The request came in (and is held).
+        var asked: Bool { lock.withLock { askedFlag } }
+        fileprivate func markAsked() { lock.withLock { askedFlag = true } }
+        func letGo() { release.signal() }
+
+        /// Waits (up to `seconds`) for the request to come in.
+        func waitUntilAsked(seconds: Double = 5) async -> Bool {
+            let end = Date().addingTimeInterval(seconds)
+            while !asked, Date() < end { try? await Task.sleep(for: .milliseconds(10)) }
+            return asked
+        }
+    }
+
+    static func hold(_ method: String, _ path: String) -> Hold {
+        let h = Hold()
+        lock.withLock { held["\(method) \(path)"] = h }
+        return h
     }
 
     static func on(_ method: String, _ path: String, _ answers: (Int, String)...) {
@@ -81,9 +108,22 @@ final class BrowseStub: URLProtocol, @unchecked Sendable {
         let (code, text) = answer ?? (404, #"{"type":"https://maktaba.tv/problems/not-found","status":404,"title":"no stub"}"#)
         let resp = HTTPURLResponse(url: url, statusCode: code, httpVersion: "HTTP/1.1",
                                    headerFields: ["Content-Type": "application/json"])!
-        client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(text.utf8))
-        client?.urlProtocolDidFinishLoading(self)
+        let hold = Self.lock.withLock { Self.held.removeValue(forKey: "\(method) \(path)") }
+        guard let hold else {
+            client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(text.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        // answered off the loading thread, so the other requests go on meanwhile
+        hold.markAsked()
+        nonisolated(unsafe) let me = self
+        DispatchQueue.global().async {
+            _ = hold.release.wait(timeout: .now() + 10)
+            me.client?.urlProtocol(me, didReceive: resp, cacheStoragePolicy: .notAllowed)
+            me.client?.urlProtocol(me, didLoad: Data(text.utf8))
+            me.client?.urlProtocolDidFinishLoading(me)
+        }
     }
 
     override func stopLoading() {}
@@ -360,6 +400,63 @@ enum BrowseHome {
             #expect(BrowseStub.last?.json?["watched"] as? Bool == true)
             try await c.markFavorite([BrowseHome.v1], false)
             #expect(BrowseStub.last?.path == "/api/me/favorites" && BrowseStub.last?.json?["favorite"] as? Bool == false)
+        }
+
+        /// Favorite and Mark watched tapped while the page is read again (coming back from the
+        /// player) are kept: that read was answered before the saves, so it still has the old
+        /// marks and must not put them back on screen while the home has the new ones.
+        @MainActor @Test func aToggleWhileThePageIsReadAgainIsKept() async throws {
+            let v = BrowseHome.v1
+            BrowseStub.on("GET", "/api/videos/\(v)",
+                          (200, #"{"id":"\#(v)","library_id":"l","filename":"a.mp4","duration_sec":3600,"playback_state":{"position_sec":754.5,"completed":false}}"#))
+            BrowseStub.on("GET", "/api/me/videos/\(v)",
+                          (200, #"{"video_id":"\#(v)","position_sec":754.5,"completed":false,"favorite":false,"playlists":[]}"#))
+            try BrowseHome.answer("POST", "/api/me/watched", "mark-watched")
+            try BrowseHome.answer("POST", "/api/me/favorites", "mark-favorite")
+            let page = VideoPage(client: BrowseHome.client().0, id: v)
+            await page.load()
+            #expect(!page.favorite && !page.watched && page.resumeAt == 754.5)
+
+            // read again; its own marks are answered as the home has them now, then held
+            let mine = BrowseStub.hold("GET", "/api/me/videos/\(v)")
+            let reading = Task { await page.load() }
+            #expect(await mine.waitUntilAsked())
+            await page.toggleFavorite()
+            await page.toggleWatched()
+            #expect(!page.saveFailed && page.favorite && page.watched)
+            mine.letGo()
+            await reading.value
+
+            #expect(page.favorite, "the favorite tapped while the page was read again stays")
+            #expect(page.watched, "the watched mark tapped while the page was read again stays")
+            // and watched still starts it over: Play, not Resume
+            #expect(page.resumeAt == nil)
+        }
+
+        /// A series' page is read again each time it shows (back from an episode): a watched
+        /// mark saved while that read is in flight stays, as on the video's page.
+        @MainActor @Test func aSeriesMarkWhileThePageIsReadAgainIsKept() async throws {
+            let s = BrowseHome.series
+            try BrowseHome.answer("/api/series/\(s)", "series")
+            try BrowseHome.answer("/api/series/\(s)/episodes", "series-episodes")
+            try BrowseHome.answer("POST", "/api/me/watched", "mark-watched")
+            let model = SeriesModel(client: BrowseHome.client().0, id: s, signedOut: {})
+            await model.load()
+            let lesson = try #require(model.seasons.flatMap(\.episodes).first { $0.videoID == BrowseHome.v2 })
+            #expect(!model.watched(lesson))
+
+            // read again; the episodes are answered as the home has them now, then held
+            let episodes = BrowseStub.hold("GET", "/api/series/\(s)/episodes")
+            let reading = Task { await model.load() }
+            #expect(await episodes.waitUntilAsked())
+            await model.mark([BrowseHome.v2], watched: true)
+            #expect(!model.markFailed && model.watched(lesson))
+            episodes.letGo()
+            await reading.value
+
+            let after = try #require(model.seasons.flatMap(\.episodes).first { $0.videoID == BrowseHome.v2 })
+            #expect(model.watched(after), "the mark saved while the page was read again stays")
+            #expect(model.progress(after) == 1)
         }
     }
 

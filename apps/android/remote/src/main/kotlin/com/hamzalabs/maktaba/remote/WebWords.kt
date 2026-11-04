@@ -299,6 +299,7 @@ internal object WebWords {
         "failed" to R.string.w_health_processes_state_failed,
         "exited" to R.string.w_health_processes_state_exited,
         "stopped" to R.string.w_health_processes_state_stopped,
+        "held" to R.string.w_health_processes_state_held,
     )
 
     /** `health.processes.role.*` */
@@ -307,6 +308,23 @@ internal object WebWords {
         "streaming" to R.string.w_health_processes_role_streaming,
         "pipeline" to R.string.w_health_processes_role_pipeline,
         "tv-slot" to R.string.w_health_processes_role_tv_slot,
+        "copy" to R.string.w_health_processes_role_copy,
+        "ollama" to R.string.w_health_processes_role_ollama,
+        "postgres" to R.string.w_health_processes_role_postgres,
+        "relay" to R.string.w_health_processes_role_relay,
+    )
+
+    /** `health.processes.instance.*` (stt-<n> is w_health_processes_instance_stt with its number) */
+    val processInstance: Map<String, Int> = mapOf(
+        "index" to R.string.w_health_processes_instance_index,
+        "chroma-copy" to R.string.w_health_processes_instance_chroma_copy,
+    )
+
+    /** `tvchanges.slots.color.*`: a TV slot's instance */
+    val slotColor: Map<String, Int> = mapOf(
+        "blue" to R.string.w_tvchanges_slots_color_blue,
+        "green" to R.string.w_tvchanges_slots_color_green,
+        "amber" to R.string.w_tvchanges_slots_color_amber,
     )
 
     /** `setup.starting.detail.*` */

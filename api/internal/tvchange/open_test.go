@@ -226,3 +226,34 @@ func TestTwoOpenChangesCollapseIntoTheOlder(t *testing.T) {
 		})
 	}
 }
+
+// Move writes the state and its event together: when the event cannot be written the
+// change stays where it was (update-rehearsal scenario 11 read "verifying" with no
+// start_verify event yet, from a Move that wrote them one after the other).
+func TestMoveStateAndEventTogether(t *testing.T) {
+	for _, be := range tvchangetest.Backends(t) {
+		t.Run(be.Name, func(t *testing.T) {
+			ctx := context.Background()
+			s := &Store{DB: be.DB}
+			c := planChange(t, s, be.DB, "d1")
+			// an event that cannot be written: its table is gone
+			if _, err := be.DB.Exec(`ALTER TABLE tv_change_events RENAME TO tv_change_events_away`); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _, _ = be.DB.Exec(`ALTER TABLE tv_change_events_away RENAME TO tv_change_events`) })
+			if err := s.Move(ctx, be.DB, c, StateStaged, ActionStage, nil, nil, nil); err == nil {
+				t.Fatal("moved with no event table")
+			}
+			if c.State != StateDraft {
+				t.Errorf("the change in memory says %s", c.State)
+			}
+			var state string
+			if err := be.DB.QueryRow(`SELECT state FROM tv_changes WHERE id = $1`, c.ID).Scan(&state); err != nil {
+				t.Fatal(err)
+			}
+			if state != StateDraft {
+				t.Errorf("the row moved to %s with no event", state)
+			}
+		})
+	}
+}

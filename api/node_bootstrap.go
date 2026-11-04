@@ -45,6 +45,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/schemaguard"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/switchover"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/vodfallback"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	grpcpipeline "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/pipeline"
 	grpcstreaming "github.com/Hamza-Labs-Core/Maktaba/api/internal/grpcclients/streaming"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/clusterauth"
@@ -59,6 +60,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/system"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/version"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // nodeDBs are a full node's databases: the pair its handlers use (reads on the copy,
@@ -71,6 +73,13 @@ type nodeDBs struct {
 	copyDB *sql.DB
 }
 
+// The node's own pools beside its handlers' pair (MAKTABA_DB_MAX_OPEN, 16).
+const (
+	nodeHomeMaxOpen = 4
+	nodeCopyMaxOpen = 4
+	nodeIdleTime    = time.Minute
+)
+
 // openNodeDBs opens them from the home's DSN (the node role's) and the copy's ("": none).
 func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) {
 	// the node's dsn says sslmode=prefer, which lib/pq does not take: pgdsn settles it;
@@ -81,6 +90,11 @@ func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) 
 	}
 	d := nodeDBs{pair: &nodedb.Pair{Home: &nodedb.Source{Name: "home", Conn: homeConn}, Logger: logger},
 		home: sql.OpenDB(homeConn)}
+	// the home's alone answers the role check, the beat's report and a switch's notices: a
+	// few connections, let go once idle (every machine's pools share the home's Postgres)
+	d.home.SetMaxOpenConns(nodeHomeMaxOpen)
+	d.home.SetMaxIdleConns(1)
+	d.home.SetConnMaxIdleTime(nodeIdleTime)
 	if copyDSN != "" {
 		copyConn, err := pgdsn.Connector(copyDSN)
 		if err != nil {
@@ -89,7 +103,8 @@ func openNodeDBs(homeDSN, copyDSN string, logger *slog.Logger) (nodeDBs, error) 
 		}
 		d.pair.Copy = &nodedb.Source{Name: "copy", Conn: copyConn}
 		d.copyDB = sql.OpenDB(copyConn)
-		d.copyDB.SetMaxOpenConns(4)
+		d.copyDB.SetMaxOpenConns(nodeCopyMaxOpen)
+		d.copyDB.SetConnMaxIdleTime(nodeIdleTime)
 	}
 	d.app = d.pair.Open(time.Minute)
 	return d, nil
@@ -807,11 +822,20 @@ func mountHomeClusterAuth(r chi.Router, db *sql.DB, hubRef *router.HubRef, logge
 	safego.Go(logger, "cluster_copies", func() { copies.Run(context.Background()) })
 }
 
+// nodeMachine is this machine's id in the components' desired state: the node's, or ""
+// (the home).
+func nodeMachine(cfg nodemode.Config) string {
+	if cfg.Enabled {
+		return cfg.NodeID
+	}
+	return ""
+}
+
 // mountNode opens the home's database with the node's role, and this machine's copy of
 // it, and mounts what a full node serves itself: the library and queue reads (`any`),
 // the guide reads, this machine's routes (`local`); everything else is proxied to the
 // home.
-func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.Logger) (*nodeRuntime, func(), error) {
+func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, loops *runner.Runner, logger *slog.Logger) (*nodeRuntime, func(), error) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		return nil, nil, fmt.Errorf("node mode needs the home's database (DATABASE_URL, the node role's from node.json)")
@@ -835,6 +859,9 @@ func mountNode(r chi.Router, cfg nodemode.Config, dataDir string, logger *slog.L
 		dbs.close()
 		return nil, nil, err
 	}
+	// Epic 51: this machine's loops follow its own desired state (the home's with this
+	// machine's overrides), read from the home's database with the node's login
+	components.Start(loops, dbs.home, func() string { return pgdsn.ForLibPQ(ctx, dsn, pgdsn.Ping) }, logger)
 	var streamingClient grpcstreaming.Client
 	if addr := os.Getenv("MAKTABA_STREAMING_ADDR"); addr != "" {
 		c := grpcstreaming.DefaultConfig()

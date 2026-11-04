@@ -59,7 +59,7 @@ class TvConnectTest {
         MockResponse.Builder().code(code).setHeader("Content-Type", "application/json").body(body).build()
 
     private fun code(n: Int) = """{"code":"ABCD-000$n","device_code":"secret-$n","expires_at":"2099-01-01T00:00:00Z",
-        "verify_path":"/pair?code=ABCD-000$n","verify_url":"http://192.168.1.5:8088/pair?code=ABCD-000$n","interval":2}"""
+        "verify_path":"/pair?code=ABCD-000$n","verify_url":"http://192.0.2.5:8088/pair?code=ABCD-000$n","interval":2}"""
 
     private val tokens = mutableMapOf<String, MemoryTokens>()
     private fun session() = AppSession(MapStore(), CoroutineScope(Dispatchers.Unconfined), { tokens.getOrPut(it) { MemoryTokens() } })
@@ -87,10 +87,10 @@ class TvConnectTest {
         val found = listOf(
             FoundHome("Kitchen", "http://kitchen.local:8088", "0a1b2c3d", "v1"),
             // the same id at another address: a new home (its tokens are not the saved one's)
-            FoundHome("Kitchen", "http://192.168.1.9:8088", "0a1b2c3d", "v1"),
+            FoundHome("Kitchen", "http://192.0.2.9:8088", "0a1b2c3d", "v1"),
             FoundHome("Den", "https://den.local:8443/maktaba", null, null),
         )
-        assertEquals(listOf("http://192.168.1.9:8088", "https://den.local:8443/maktaba"), HomeChoices.nearby(found, saved).map { it.url })
+        assertEquals(listOf("http://192.0.2.9:8088", "https://den.local:8443/maktaba"), HomeChoices.nearby(found, saved).map { it.url })
         assertEquals(3, HomeChoices.nearby(found, emptyList()).size)
     }
 
@@ -98,21 +98,21 @@ class TvConnectTest {
     fun whatWasTypedIsALinkOrTheAddressesToTry() {
         assertNull(HomeChoices.typed("   "))
         assertNull(HomeChoices.typed("not an address"))
-        assertEquals(listOf("http://192.168.1.20:8088"), HomeChoices.typed("192.168.1.20:8088")!!.urls)
+        assertEquals(listOf("http://maktaba.local:8088"), HomeChoices.typed("maktaba.local:8088")!!.urls)
         // a page's path typed by mistake: as typed first, then the root
         assertEquals(
             listOf("https://nas.example.com/maktaba", "https://nas.example.com"),
             HomeChoices.typed("https://nas.example.com/maktaba")!!.urls,
         )
-        val link = HomeChoices.typed("maktaba://connect?id=h1&n=Den&u=http%3A%2F%2F10.0.0.2%3A8088&u=https%3A%2F%2Fden.relay.maktaba.tv")!!
+        val link = HomeChoices.typed("maktaba://connect?id=h1&n=Den&u=http%3A%2F%2F198.51.100.2%3A8088&u=https%3A%2F%2Fden.relay.maktaba.tv")!!
         assertEquals("Den", link.name)
         assertEquals("h1", link.id)
-        assertEquals(listOf("http://10.0.0.2:8088", "https://den.relay.maktaba.tv"), link.urls)
+        assertEquals(listOf("http://198.51.100.2:8088", "https://den.relay.maktaba.tv"), link.urls)
     }
 
     @Test
     fun theApprovePageIsReadOutWithoutItsCode() {
-        assertEquals("192.168.1.5:8088/pair", HomeChoices.shownApprovePage("http://192.168.1.5:8088/pair?code=ABCD-1234"))
+        assertEquals("192.0.2.5:8088/pair", HomeChoices.shownApprovePage("http://192.0.2.5:8088/pair?code=ABCD-1234"))
         assertEquals("nas.example.com/maktaba/pair", HomeChoices.shownApprovePage("https://nas.example.com/maktaba/pair?code=X"))
     }
 
@@ -141,16 +141,16 @@ class TvConnectTest {
         tokens["http://kitchen.local:8088"] = MemoryTokens("old", "old-r")
         s.use(Home("http://kitchen.local:8088", "Kitchen", "0a1b2c3d"))
         s.switchHome()
-        s.use(Home("http://192.168.1.9:8088", "Kitchen", "0a1b2c3d"))
-        assertNull(tokens.getValue("http://192.168.1.9:8088").access)
+        s.use(Home("http://192.0.2.9:8088", "Kitchen", "0a1b2c3d"))
+        assertNull(tokens.getValue("http://192.0.2.9:8088").access)
         assertEquals(2, s.homes.value.size)
     }
 
     @Test
     fun aLinkFromOutsideWaitsForYes() {
         val s = session()
-        assertTrue(s.openLink("maktaba://connect?n=Den&u=http%3A%2F%2F10.0.0.2%3A8088"))
-        assertEquals(ConnectLink(null, "Den", listOf("http://10.0.0.2:8088")), s.link.value)
+        assertTrue(s.openLink("maktaba://connect?n=Den&u=http%3A%2F%2F198.51.100.2%3A8088"))
+        assertEquals(ConnectLink(null, "Den", listOf("http://198.51.100.2:8088")), s.link.value)
         assertEquals("nothing is used before yes", AppSession.Phase.ChoosingHome, s.phase.value)
         s.dismissLink()
         assertNull(s.link.value)
@@ -180,7 +180,7 @@ class TvConnectTest {
         s.signInWithCode("Android TV (Shield)", onCode = { shown += it }, sleep = {})
         assertEquals(listOf("ABCD-0001", "ABCD-0002"), shown.map { it.code })
         // the QR holds the home's verify_url
-        assertEquals("http://192.168.1.5:8088/pair?code=ABCD-0002", shown.last().approveUrl(server.url("/")))
+        assertEquals("http://192.0.2.5:8088/pair?code=ABCD-0002", shown.last().approveUrl(server.url("/")))
         assertEquals("amina", (s.phase.value as AppSession.Phase.SignedIn).user.username)
         assertEquals("a2", tokens.getValue(base).access)
         val asks = seen.filter { it.url.encodedPath == "/api/pairing/device" }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -79,10 +81,25 @@ func TestMigrationShape(t *testing.T) {
 	if err := db.QueryRow(`SELECT placement FROM job_stages WHERE stage = 'component_catchup'`).Scan(&placement); err != nil || placement != "home" {
 		t.Fatalf("catch-up stage: %q %v", placement, err)
 	}
-	clustertest.MigrateTo(t, db, 0) // goose: nothing left to apply
+	// the slot's Up again, as its SQL (goose would skip it: it is applied already): no
+	// error, no second meta row, no second catch-up stage
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "shared", "db", "migrations", "0178_components.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, _, ok := strings.Cut(string(src), "-- +goose Down")
+	if !ok {
+		t.Fatal("0178 has no Down")
+	}
+	if _, err := db.Exec(up); err != nil {
+		t.Fatalf("the slot's Up again: %v", err)
+	}
 	_ = db.QueryRow(`SELECT count(*) FROM component_meta`).Scan(&n)
 	if n != 1 {
 		t.Fatalf("component_meta has %d rows", n)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM job_stages WHERE stage = 'component_catchup'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("%d catch-up stages, %v", n, err)
 	}
 	// a bad want or bundle is refused by the table itself
 	if _, err := db.Exec(`INSERT INTO components (id, want) VALUES ('x', 'on')`); err == nil {

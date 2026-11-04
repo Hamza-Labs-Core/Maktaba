@@ -3,7 +3,10 @@ package com.hamzalabs.maktaba.player.search
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.player.harness.FakeHome
 import com.hamzalabs.maktaba.player.harness.FakeHome.Companion.json
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -106,6 +109,38 @@ class SearchModelTest {
         assertTrue(m.recent.isEmpty())
         val deletes = home.requests.filter { it.method == "DELETE" }.map { it.url.encodedPath }
         assertEquals(listOf("/api/search/recent/r1", "/api/search/recent"), deletes)
+    }
+
+    /**
+     * The recent searches read again (held: answered as the home had them when asked) while
+     * [change] is saved on the home: the read's older answer must not put back what it removed.
+     */
+    private fun whileRecentIsRead(change: suspend (SearchModel) -> Unit): SearchModel = runBlocking {
+        val m = model()
+        m.loadRecent()
+        assertEquals(2, m.recent.size)
+        val recent = SearchFixtures.recent(SearchFixtures.EN)
+        val held = home.hold("/api/search/recent") { json(if (it.method == "DELETE") "" else recent, if (it.method == "DELETE") 204 else 200) }
+        val read = launch { m.loadRecent() }
+        withContext(Dispatchers.IO) { held.awaitAsked() }
+        change(m)
+        held.release()
+        read.join()
+        m
+    }
+
+    @Test
+    fun aRecentSearchForgottenWhileTheyAreReadAgainStaysForgotten() {
+        val m = whileRecentIsRead { it.forget(it.recent[1]) }
+        assertTrue(home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/search/recent/r1" })
+        assertEquals(listOf("patience"), m.recent.map { it.q })
+    }
+
+    @Test
+    fun clearAllWhileTheRecentSearchesAreReadAgainStaysCleared() {
+        val m = whileRecentIsRead { it.clearRecent() }
+        assertTrue(home.requests.any { it.method == "DELETE" && it.url.encodedPath == "/api/search/recent" })
+        assertTrue(m.recent.isEmpty())
     }
 
     @Test

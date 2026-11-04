@@ -68,7 +68,7 @@ func TestComponentOffAnswer(t *testing.T) {
 	r := gated(livetvOff(), "GET /api/channels/now", "GET /api/channels/{id}/guide")
 	for _, path := range []string{"/api/channels/now", "/api/channels/abc/guide"} {
 		rec := httptest.NewRecorder()
-		r.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		r.ServeHTTP(rec, as(httptest.NewRequest("GET", path, nil), viewerP()))
 		var b map[string]any
 		_ = json.Unmarshal(rec.Body.Bytes(), &b)
 		if rec.Code != http.StatusConflict || b["code"] != "component_off" || b["component"] != "livetv" ||
@@ -80,7 +80,7 @@ func TestComponentOffAnswer(t *testing.T) {
 	caps := livetvOff()
 	caps.Apply(nil, 10)
 	rec := httptest.NewRecorder()
-	gated(caps, "GET /api/channels/now").ServeHTTP(rec, httptest.NewRequest("GET", "/api/channels/now", nil))
+	gated(caps, "GET /api/channels/now").ServeHTTP(rec, as(httptest.NewRequest("GET", "/api/channels/now", nil), viewerP()))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("on: %d", rec.Code)
 	}

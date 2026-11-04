@@ -2505,6 +2505,64 @@ paths:
         '429': *id002
         '401': *id003
       operationId: getQueueLibraries
+  /queues/libraries/activity:
+    get:
+      tags:
+      - Queue
+      summary: Each library's finished jobs per day (cached 1 min)
+      description: The jobs of each library that finished done or failed on each UTC day of
+        the window, oldest first. `done` and `failed` are aligned with `days`; a library with
+        no finished job in the window is left out. Home admins only.
+      parameters:
+      - name: days
+        in: query
+        description: Days in the window, ending today (UTC).
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 60
+          default: 14
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [days, items]
+                properties:
+                  days:
+                    type: array
+                    items:
+                      type: string
+                      format: date
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [library_id, done, failed]
+                      properties:
+                        library_id:
+                          type: string
+                          format: uuid
+                        done:
+                          type: array
+                          items:
+                            type: integer
+                        failed:
+                          type: array
+                          items:
+                            type: integer
+        '400':
+          description: Invalid request.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: getQueueLibraryActivity
   /queues/health:
     get:
       tags:
@@ -3091,7 +3149,7 @@ paths:
     patch:
       tags:
       - Queue
-      summary: "Change a source's mode, folder or options; turning it on queues a refresh"
+      summary: "Switch a source on or off, or change its mode, folder or options; turning it on queues a refresh"
       description: Admin only (403 otherwise); audited when it writes. Epic 47.
       parameters:
       - name: id
@@ -3112,7 +3170,8 @@ paths:
           application/json:
             schema:
               type: object
-              description: "{mode?, folder?, options?}"
+              description: "{on?: boolean, mode?, folder?, options?}: on false turns it off; on true restores
+                its last_on_mode, else new_and_backfill; not with mode"
       responses:
         '200':
           description: OK
@@ -3149,6 +3208,73 @@ paths:
         '429': *id002
         '401': *id003
       operationId: deleteYouTubeSource
+  /libraries/{id}/youtube/guess:
+    post:
+      tags:
+      - Queue
+      summary: "Look for the channel a library's files come from (its linked videos first, then file-name ids and .info.json; no network)"
+      description: Admin only (403 otherwise); audited. The library's linked videos come first, so the answer
+        agrees with the sources the pipeline derives from them (slot 0182); only a library with no link has
+        its files read. The answer is kept for the library's card; nothing is added or turned on. Slot 0175.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: guessYouTubeSource
+  /queues/youtube-tartube:
+    get:
+      tags:
+      - Queue
+      summary: "The last Tartube import of every library's sources, and the file to offer"
+      description: Admin only (403 otherwise). Slot 0175.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: getYouTubeTartubeImport
+    post:
+      tags:
+      - Queue
+      summary: "Make every library's YouTube sources from Tartube's records, off (youtube_tartube)"
+      description: Admin only (403 otherwise); audited. Idempotent; a source a library has keeps its mode;
+        no library is made. Slot 0175.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: "{path: string, database?: string}"
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                type: object
+        default: *id001
+        '429': *id002
+        '401': *id003
+      operationId: importYouTubeTartubeSources
   /libraries/{id}/offline-summary:
     get:
       tags:
@@ -3855,7 +3981,7 @@ paths:
       tags:
       - Components
       summary: List the components
-      description: 'Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, and the home''s bundle.'
+      description: 'Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason''s message fills in, absent when it has none), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home''s bundle.'
       responses:
         '200':
           description: The components.
@@ -4415,7 +4541,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.'
+          description: 'Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...), or installing is turned off on this machine and the asset is not on its disk (`packs_disabled`: offline mode). Nothing was written.'
           content:
             application/problem+json:
               schema:
@@ -4523,6 +4649,61 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
       operationId: startComponent
+  /components/{id}/restart:
+    parameters:
+    - name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: 'The component''s id in the catalog.'
+    post:
+      tags:
+      - Components
+      summary: Restart a component
+      description: 'Restarts a running component: its processes through this machine''s supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.'
+      responses:
+        '200':
+          description: 'The component after the restart, with `restarted`: how many of its processes and loops started again.'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '202':
+          description: 'None of its processes runs now: the supervisor starts them (`restarted` is 0).'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '403':
+          description: Admin only.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: 'Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '503':
+          description: 'This server runs under no supervisor, or the supervisor does not answer.'
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        default:
+          $ref: '#/components/responses/InternalError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+      operationId: restartComponent
   /components/{id}/settings/reset:
     parameters:
     - name: id
@@ -6437,6 +6618,11 @@ components:
           - object
           - 'null'
           additionalProperties: true
+        components:
+          type: array
+          items:
+            type: string
+          description: 'A `component_catchup` job: the components it catches up, from its payload. Absent on every other job.'
     QueueEdge:
       type: object
       description: One edge of the stage graph.

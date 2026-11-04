@@ -278,7 +278,8 @@ func (h *Handler) Bootstrap(ctx context.Context, name string) (cluster.Identity,
 
 // Run does the housekeeping every interval until ctx ends: the
 // accept-joins switch turns itself off after its hour (and the
-// announcement follows), and sealed credentials are dropped once used.
+// announcement follows), sealed credentials are dropped once used, and a
+// deleted machine's component status rows are pruned.
 func (h *Handler) Run(ctx context.Context, interval time.Duration) {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -292,6 +293,11 @@ func (h *Handler) Run(ctx context.Context, interval time.Duration) {
 			}
 			if err := h.Store.ClearSealed(ctx, h.now().Add(-SealedTTL)); err != nil {
 				h.log().Warn("cluster: clearing sealed credentials failed", "err", err, "event", "cluster_tick_failed")
+			}
+			if n, err := h.Store.PruneComponentStatus(ctx); err != nil {
+				h.log().Warn("cluster: pruning deleted machines' component status failed", "err", err, "event", "cluster_tick_failed")
+			} else if n > 0 {
+				h.log().Info("cluster: pruned deleted machines' component status", "rows", n, "event", "components_status_pruned")
 			}
 		}
 	}

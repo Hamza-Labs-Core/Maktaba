@@ -1,17 +1,19 @@
 import Foundation
 
-/// A TV home's shelves, top to bottom, in the iPhone/iPad Player's Home order (FR-10):
+/// Home's shelves, top to bottom, for every Apple app that has a Home: the Player (iPhone,
+/// iPad, Mac) and the Apple TV app build their rows here, the same way, in FR-10's order:
 /// Continue watching, Up next (On Deck), Live TV on now, Favorites, Recently added, Recently
 /// watched, one shelf per pinned library, For you, From your libraries. Built from the same
-/// three answers the Player reads (`GET /api/home`, `GET /api/recommendations`,
-/// `GET /api/channels/now`), so the platforms show the same rows.
+/// three answers (`GET /api/home`, `GET /api/recommendations`, `GET /api/channels/now`), so the
+/// platforms show the same rows.
 ///
 /// A shelf with nothing in it is left out. A source that fails is not: its shelf stays, as a
-/// retry tile (`.failed`), so a row never just vanishes. Live TV is the exception for a person
-/// (or a home) without it: a 403 or 404 there means no Live TV, and no shelf.
+/// retry tile (`.failed`), so a row never just vanishes, unless the rows it showed before are
+/// passed as `keeping`: a refresh that fails then keeps them. Live TV is the exception for a
+/// person (or a home) without it: a 403 or 404 there means no Live TV, and no shelf.
 public struct HomeShelf: Identifiable, Equatable, Sendable {
     /// What the shelf is; the screen says its title (translated), a library by its name.
-    public enum Kind: Hashable, Sendable {
+    public enum Kind: Hashable, Codable, Sendable {
         case continueWatching, upNext, liveNow, favorites, recentlyAdded, recentlyWatched
         case library(id: String, name: String)
         case forYou, fromLibrary
@@ -19,6 +21,11 @@ public struct HomeShelf: Identifiable, Equatable, Sendable {
         case home
         /// `GET /api/recommendations` did not answer: For you and From your libraries.
         case recommendations
+    }
+
+    /// Which of the three answers a shelf comes from (a failed one is one retry tile).
+    public enum Source: Hashable, Sendable {
+        case home, live, recommendations
     }
 
     public enum Content: Equatable, Sendable {
@@ -33,7 +40,35 @@ public struct HomeShelf: Identifiable, Equatable, Sendable {
     public let kind: Kind
     public var content: Content
 
+    public init(key: String, kind: Kind, content: Content) {
+        self.key = key
+        self.kind = kind
+        self.content = content
+    }
+
     public var id: String { key }
+
+    public var source: Source {
+        switch kind {
+        case .liveNow: .live
+        case .forYou, .fromLibrary, .recommendations: .recommendations
+        default: .home
+        }
+    }
+
+    /// A recommendation's card has Not interested.
+    public var isRecommendation: Bool { kind == .forYou || kind == .fromLibrary }
+
+    /// The cards (empty for Live TV and a retry tile).
+    public var cards: [HomeShelfCard] {
+        if case let .cards(cards) = content { return cards }
+        return []
+    }
+
+    public var failure: HomeFailure? {
+        if case let .failed(f) = content { return f }
+        return nil
+    }
 
     public static let continueWatching = "continue"
     public static let upNext = "ondeck"
@@ -49,8 +84,9 @@ public struct HomeShelf: Identifiable, Equatable, Sendable {
 }
 
 /// A card on a shelf: a video (its poster from `GET /api/videos/{id}/poster`), or a series of
-/// Recently added with its new lessons (opened at the series' newest lesson).
-public struct HomeShelfCard: Identifiable, Hashable, Sendable {
+/// Recently added with its new lessons (opened at the series' newest lesson). `Codable`: the
+/// Player keeps its last shelves on the device for the next launch (FR-12).
+public struct HomeShelfCard: Identifiable, Hashable, Codable, Sendable {
     public let videoID: String
     /// Nil for a recommendation the home sent without a title (the card asks for the video).
     public let title: String?
@@ -60,17 +96,20 @@ public struct HomeShelfCard: Identifiable, Hashable, Sendable {
     /// A series' id when this card stands for its new lessons.
     public let seriesID: String?
     public let newLessons: Int?
+    /// Continue watching: where the person stopped, in seconds (Resume plays from there).
+    public let resumeAt: Double?
 
     public var id: String { seriesID.map { "series:\($0)" } ?? videoID }
 
     public init(videoID: String, title: String?, subtitle: String? = nil, progress: Double = 0,
-                seriesID: String? = nil, newLessons: Int? = nil) {
+                seriesID: String? = nil, newLessons: Int? = nil, resumeAt: Double? = nil) {
         self.videoID = videoID
         self.title = title
         self.subtitle = subtitle
         self.progress = progress
         self.seriesID = seriesID
         self.newLessons = newLessons
+        self.resumeAt = resumeAt
     }
 }
 
@@ -81,59 +120,92 @@ public enum HomeShelves {
         ("from_library", HomeShelf.fromLibrary, .fromLibrary),
     ]
 
-    /// Reads the three answers together and builds the shelves (the calls are the client's;
-    /// tests pass their own).
-    public static func load(
+    /// Each source's answer, or why it did not come.
+    public struct Answers: Sendable {
+        public let home: Result<HomeRows, Error>
+        public let rails: Result<[Rail], Error>
+        public let now: Result<[ChannelNow], Error>
+    }
+
+    /// Asks the three sources together (the calls are the client's; tests pass their own).
+    public static func read(
         home: @escaping @Sendable () async throws -> HomeRows,
         rails: @escaping @Sendable () async throws -> [Rail],
         now: @escaping @Sendable () async throws -> ChannelsNow
-    ) async -> [HomeShelf] {
+    ) async -> Answers {
         async let h = attempt(home)
         async let r = attempt(rails)
         async let n = attempt { try await now().channels }
-        return await build(home: h, rails: r, now: n)
+        return await Answers(home: h, rails: r, now: n)
     }
 
-    /// The shelves from what each source answered (or why it did not).
+    /// Reads the three answers together and builds the shelves; a source that fails keeps
+    /// its shelves in `keeping` (what showed before), else becomes a retry tile.
+    public static func load(
+        home: @escaping @Sendable () async throws -> HomeRows,
+        rails: @escaping @Sendable () async throws -> [Rail],
+        now: @escaping @Sendable () async throws -> ChannelsNow,
+        keeping: [HomeShelf] = []
+    ) async -> [HomeShelf] {
+        let a = await read(home: home, rails: rails, now: now)
+        return build(home: a.home, rails: a.rails, now: a.now, keeping: keeping)
+    }
+
+    /// The shelves from what each source answered (or why it did not). A source that failed
+    /// keeps its shelves of `keeping` when there are any (a refresh that fails changes nothing
+    /// it showed); otherwise it is a retry tile where its rows would be.
     public static func build(home: Result<HomeRows, Error>, rails: Result<[Rail], Error>,
-                             now: Result<[ChannelNow], Error>) -> [HomeShelf] {
+                             now: Result<[ChannelNow], Error>, keeping: [HomeShelf] = []) -> [HomeShelf] {
         var out: [HomeShelf] = []
         func add(_ key: String, _ kind: HomeShelf.Kind, _ cards: [HomeShelfCard]) {
             if !cards.isEmpty { out.append(HomeShelf(key: key, kind: kind, content: .cards(cards))) }
         }
+        func kept(_ source: HomeShelf.Source) -> [HomeShelf] {
+            keeping.filter { $0.source == source && $0.failure == nil }
+        }
         var names: [String: (title: String, series: String?)] = [:]
         switch home {
         case let .success(h):
-            add(HomeShelf.continueWatching, .continueWatching, h.continueWatching.map(card))
-            add(HomeShelf.upNext, .upNext, h.onDeck.map(card))
-            add(HomeShelf.favorites, .favorites, h.favorites.map(card))
+            add(HomeShelf.continueWatching, .continueWatching, h.continueWatching.map { card($0, resume: true) })
+            add(HomeShelf.upNext, .upNext, h.onDeck.map { card($0) })
+            add(HomeShelf.favorites, .favorites, h.favorites.map { card($0) })
             // grouped by series when the home sends it (an older home: the plain list)
             add(HomeShelf.recentlyAdded, .recentlyAdded,
-                h.recentlyAddedGrouped.isEmpty ? h.recentlyAdded.map(card) : h.recentlyAddedGrouped.map(card))
-            add(HomeShelf.recentlyWatched, .recentlyWatched, h.recentlyWatched.map(card))
+                h.recentlyAddedGrouped.isEmpty ? h.recentlyAdded.map { card($0) } : h.recentlyAddedGrouped.map(card))
+            add(HomeShelf.recentlyWatched, .recentlyWatched, h.recentlyWatched.map { card($0) })
             for p in h.pinned {
                 // what the person is in the middle of first, then what is new (the web's order)
                 var seen = Set<String>()
                 let videos = (p.continueWatching + p.recentlyAdded).filter { seen.insert($0.id).inserted }
                 add(HomeShelf.libraryPrefix + p.library.id, .library(id: p.library.id, name: p.library.name),
-                    videos.map(card))
+                    videos.map { card($0) })
             }
             let all = h.continueWatching + h.onDeck + h.favorites + h.recentlyAdded
                 + h.recentlyAddedGrouped.map(\.video) + h.recentlyWatched
                 + h.pinned.flatMap { $0.continueWatching + $0.recentlyAdded }
             for v in all { names[v.id] = (v.displayTitle, v.series?.name) }
         case let .failure(e):
-            out.append(HomeShelf(key: HomeShelf.home, kind: .home, content: .failed(HomeFailure(e))))
+            let old = kept(.home)
+            if old.isEmpty {
+                out.append(HomeShelf(key: HomeShelf.home, kind: .home, content: .failed(HomeFailure(e))))
+            } else {
+                out += old
+                // the kept cards still name the videos a recommendation shows
+                for c in old.flatMap(\.cards) where c.seriesID == nil {
+                    if let t = c.title { names[c.videoID] = (t, c.subtitle) }
+                }
+            }
         }
 
+        // after Continue watching and Up next, before the rest
+        var liveAt: Int { out.prefix { [HomeShelf.continueWatching, HomeShelf.upNext].contains($0.key) }.count }
         switch now {
         case let .success(channels) where !channels.isEmpty:
-            // after Continue watching and Up next, before the rest
-            let at = out.prefix { [HomeShelf.continueWatching, HomeShelf.upNext].contains($0.key) }.count
-            out.insert(HomeShelf(key: HomeShelf.liveNow, kind: .liveNow, content: .channels(channels)), at: at)
+            out.insert(HomeShelf(key: HomeShelf.liveNow, kind: .liveNow, content: .channels(channels)), at: liveAt)
         case let .failure(e) where !noLiveTV(e):
-            let at = out.prefix { [HomeShelf.continueWatching, HomeShelf.upNext].contains($0.key) }.count
-            out.insert(HomeShelf(key: HomeShelf.liveNow, kind: .liveNow, content: .failed(HomeFailure(e))), at: at)
+            let shelf = kept(.live).first
+                ?? HomeShelf(key: HomeShelf.liveNow, kind: .liveNow, content: .failed(HomeFailure(e)))
+            out.insert(shelf, at: liveAt)
         default:
             break
         }
@@ -146,17 +218,46 @@ public enum HomeShelves {
                     .filter { seen.insert($0.videoID).inserted }
                 add(key, shelf, items.map { item in
                     HomeShelfCard(videoID: item.videoID, title: names[item.videoID]?.title,
-                                  subtitle: names[item.videoID]?.series, progress: item.progress)
+                                  subtitle: names[item.videoID]?.series, progress: max(0, item.progress))
                 })
             }
         case let .failure(e):
-            out.append(HomeShelf(key: HomeShelf.recommendations, kind: .recommendations, content: .failed(HomeFailure(e))))
+            let old = kept(.recommendations)
+            if old.isEmpty {
+                out.append(HomeShelf(key: HomeShelf.recommendations, kind: .recommendations,
+                                     content: .failed(HomeFailure(e))))
+            } else {
+                out += old
+            }
         }
         return out
     }
 
-    static func card(_ v: BrowseVideo) -> HomeShelfCard {
-        HomeShelfCard(videoID: v.id, title: v.displayTitle, subtitle: v.series?.name, progress: max(0, v.progress))
+    /// The shelves a Home shows: with Live TV off on the home (story 51.11) there is no On now
+    /// shelf, its channels or its failure (the channels' call answers 409 `component_off`
+    /// then), as the Player's Home. Read at each draw, so the row goes or comes back with the
+    /// capabilities' answer.
+    public static func shown(_ shelves: [HomeShelf], liveTV: Bool) -> [HomeShelf] {
+        liveTV ? shelves : shelves.filter { $0.key != HomeShelf.liveNow }
+    }
+
+    /// Not interested: `videoID` leaves the recommendation shelves at once (a shelf it
+    /// empties goes too); the other shelves keep it.
+    public static func dropping(_ videoID: String, from shelves: [HomeShelf]) -> [HomeShelf] {
+        shelves.compactMap { shelf in
+            guard shelf.isRecommendation, case let .cards(cards) = shelf.content else { return shelf }
+            let left = cards.filter { $0.videoID != videoID }
+            if left.isEmpty { return nil }
+            var s = shelf
+            s.content = .cards(left)
+            return s
+        }
+    }
+
+    /// A video's card; `resume` gives it where the person stopped (Continue watching).
+    static func card(_ v: BrowseVideo, resume: Bool = false) -> HomeShelfCard {
+        HomeShelfCard(videoID: v.id, title: v.displayTitle, subtitle: v.series?.name, progress: max(0, v.progress),
+                      resumeAt: resume ? (v.positionSec ?? 0) : nil)
     }
 
     static func card(_ e: AddedEntry) -> HomeShelfCard {

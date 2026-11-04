@@ -66,12 +66,12 @@ describe("Canonical paths panel", () => {
       status({
         phase: "done",
         last: { batch: "b1", changes: 148593, finished_at: "2026-10-19T10:00:00Z" },
-        servers_added: [{ name: "home-nas", addresses: ["192.168.50.94", "Home-NAS.lan"] }],
+        servers_added: [{ name: "home-nas", addresses: ["203.0.113.94", "Home-NAS.lan"] }],
         plex_added: ["smb://home-nas/Originals/=/volume1/Originals/"],
       })
     );
     expect(screen.getByText(/Last conversion: 148,593 values/)).toBeInTheDocument();
-    expect(screen.getByText(/smb:\/\/home-nas\/ \(192\.168\.50\.94/)).toBeInTheDocument();
+    expect(screen.getByText(/smb:\/\/home-nas\/ \(203\.0\.113\.94/)).toBeInTheDocument();
     expect(
       screen.getByText(/smb:\/\/home-nas\/Originals\/=\/volume1\/Originals\//)
     ).toBeInTheDocument();

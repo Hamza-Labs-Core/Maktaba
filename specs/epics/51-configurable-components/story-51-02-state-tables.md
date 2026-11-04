@@ -12,7 +12,7 @@ Go and in Python that every runner (51.04–51.06) uses, so none of them writes 
 
 ## Description
 
-### 1. Migration `0175_components` (Postgres and SQLite twins)
+### 1. Migration `0178_components` (Postgres and SQLite twins)
 
 Next free slot after `0172`. Additive only.
 
@@ -157,9 +157,9 @@ built in parallel without racing for slots.
 ## Acceptance criteria
 
 - **Given** a database at 0172,
-  **when** 0175 runs,
+  **when** 0178 runs,
   **then** the four tables, both functions, the trigger and the `component_catchup` stage row
-  exist, `component_meta` has its one row, and running 0175 again changes nothing.
+  exist, `component_meta` has its one row, and running 0178 again changes nothing.
 - **Given** a runner listening,
   **when** a `components` row is updated,
   **then** it receives `components_changed` with the new revision within 1 s, and the row's
@@ -216,9 +216,9 @@ built in parallel without racing for slots.
 
 | File | Change |
 |---|---|
-| `shared/db/migrations/0175_components.sql` (new) | §1–§3, §6. |
-| `shared/db/migrations/0175_components.sqlite.sql` (new) | SQLite twin (no NOTIFY, no `SECURITY DEFINER`; triggers for revision). |
-| `shared/db/migrations/MANIFEST.md` | Row for `0175`. Additive. |
+| `shared/db/migrations/0178_components.sql` (new) | §1–§3, §6. |
+| `shared/db/migrations/0178_components.sqlite.sql` (new) | SQLite twin (no NOTIFY, no `SECURITY DEFINER`; triggers for revision). |
+| `shared/db/migrations/MANIFEST.md` | Row for `0178`. Additive. |
 | `pipeline/src/maktaba_pipeline/cluster/schema.py` | `SCHEMA_REV = 173`. |
 | `streaming/internal/cluster/schema.go` | `SchemaRev = 173`. |
 | `shared/components/store/store.go` (new) | Go store (§4). |
@@ -236,7 +236,7 @@ built in parallel without racing for slots.
 - Unit: T07–T11 in Go and Python.
 - Integration: T01–T06, T13 in the existing `integration` job (Go and pipeline Postgres
   tests); T12 in the existing `lint-migrations` step.
-- The **update rehearsal** runs on this PR (it touches `shared/db/migrations/**`); 0175 is
+- The **update rehearsal** runs on this PR (it touches `shared/db/migrations/**`); 0178 is
   additive so scenarios 01–11 must pass unchanged.
 
 ### Rollout

@@ -351,7 +351,7 @@ join_machine() { # a|b
   pid_var=PID_join_$m
   pid=${!pid_var}
   wait_until "$E2E_JOIN_TIMEOUT" "machine $M's pairing code" code_shown "$log"
-  code=$(sed -n 's/.*Pairing code: *\([0-9]\{3\}\) *\([0-9]\{3\}\).*/\1\2/p' "$log" | head -1)
+  code=$(sed -n 's/.*Pairing code: *\([0-9]\{3\}\) *\([0-9]\{3\}\).*/\1\2/p' "$log" | sed -n 1p)
   [[ $code =~ ^[0-9]{6}$ ]] || e2e_die "no pairing code in $log"
   node_id=$(json 'd["node_id"]' <"$RUN/machine-$m/node.json")
   e2e_state_set "$STATE" "NODE_$M" "$node_id"

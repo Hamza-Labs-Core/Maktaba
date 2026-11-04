@@ -45,6 +45,10 @@ export interface ProcessStatus {
   last_restart_at?: string;
   next_restart_at?: string;
   last_probe?: { at: string; ok: boolean; error?: string; consecutive_failures: number };
+  /** The catalog component it belongs to (Epic 51). */
+  component?: string;
+  /** Its component is off: it does not run (state "held" while it does not). */
+  blocked?: boolean;
 }
 
 export interface ProcessEvent {
@@ -162,11 +166,30 @@ export function ProcessesCard() {
   );
 }
 
-function roleName(t: (k: string) => string, role: string, instance?: string): string {
+type Words = (k: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * An instance's words: the index worker, the search index copy, a transcription worker
+ * (stt-2: its number) and a TV slot's colour. One with no words shows as the supervisor
+ * named it.
+ */
+export function instanceName(t: Words, role: string, instance: string): string {
+  const stt = /^stt-(\d+)$/.exec(instance);
+  if (stt) return t("health.processes.instance.stt", { n: stt[1]! });
+  const key =
+    role === "tv-slot"
+      ? `tvchanges.slots.color.${instance}`
+      : `health.processes.instance.${instance}`;
+  const v = t(key);
+  return v === key ? instance : v;
+}
+
+/** A process's name: its role's words, and its instance's when the role has several. */
+export function roleName(t: Words, role: string, instance?: string): string {
   const key = `health.processes.role.${role}`;
   const v = t(key);
   const name = v === key ? role : v;
-  return instance ? `${name} · ${instance}` : name;
+  return instance ? `${name} · ${instanceName(t, role, instance)}` : name;
 }
 
 /** A process's identity: its role, and its instance when the role has several. */
@@ -185,8 +208,12 @@ function detailText(
     for (const [k, v] of Object.entries(p.detail_params ?? {})) {
       if (v !== null && v !== undefined) vars[k] = typeof v === "number" ? v : String(v);
     }
-    const text = t(key, vars);
-    if (text !== key) return text;
+    const template = t(key);
+    // a code sent without a value its words need (an older home) says the
+    // home's English instead of a raw {percent}
+    const names = [...template.matchAll(/\{(\w+)\}/g)].map((m) => m[1]);
+    const complete = names.every((n) => n in vars);
+    if (template !== key && complete) return t(key, vars);
   }
   return p.detail || null;
 }

@@ -6,39 +6,47 @@
 // finding.
 //
 // The site carries what outside developers need to extend Maktaba or contribute to it: the
-// plugin guides, the contributing guides, security, the API reference and the changelog.
-// The epics and specs live on GitHub, and the site links there.
+// wiki (every epic, story and plan, built from web/wiki-app), the plugin guides, the
+// contributing guides, security, the API reference and the changelog.
 //
 // Every page is in English and Arabic: /x/ in English, /ar/x/ in Arabic (right to left), each
 // linking the other. A guide's Arabic is its twin file (name.ar.md), the changelog's is
-// CHANGELOG.ar.md, the API reference's prose is shared/api/openapi.ar.json, and the portal's
-// own pages are scripts/strings.mjs. The parity checks (scripts/parity.mjs) fail the build
-// when the two languages drift.
+// CHANGELOG.ar.md, the API reference's prose is shared/api/openapi.ar.json, the wiki's is its
+// Arabic database (web/wiki-app/public/db/ar/, generated from the translation store in
+// docs/wiki/db/ar/), and the portal's own pages are scripts/strings.mjs. The parity checks
+// (scripts/parity.mjs) fail the build when the two languages drift.
 //
-//   npm run build
+//   npm run build            (web/wiki-app needs `npm ci` once first)
 
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { Marked } from "marked";
 import { STRINGS } from "./strings.mjs";
+import { APPS, appShots } from "./apps.mjs";
 import { scanDir } from "./scan.mjs";
 import { ORIGIN, isSafeUrl } from "./urls.mjs";
 import {
   applyOverlay,
   arabicOf,
+  checkApps,
   checkArabicMarkdown,
   checkChangelog,
   checkGuides,
   checkOverlay,
   checkPages,
+  checkWiki,
 } from "./parity.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
 export const REPO = path.resolve(PKG, "../../..");
 const DIST = path.join(PKG, "dist");
+const STAGE = path.join(PKG, ".stage");
+const WIKI_APP = path.join(REPO, "web/wiki-app");
+const WIKI_DB = "web/wiki-app/public/db";
 
 export { ORIGIN };
 export const GITHUB = "https://github.com/Hamza-Labs-Core/Maktaba";
@@ -93,6 +101,60 @@ const PREFIX = { en: "", ar: "/ar" };
 const DIR = { en: "ltr", ar: "rtl" };
 /** A page's path in a language: "/plugins/" -> "/ar/plugins/". */
 export const localPath = (lang, p) => PREFIX[lang] + p;
+
+// The wiki's build output: only these shapes are published (relative to the wiki's outDir),
+// each at the site path it maps to. The English database is /wiki/db/, the Arabic one
+// /ar/wiki/db/; /ar/wiki/ is the same bundle, which picks its language from the path. No
+// mockups: their sample data (home paths, LAN addresses) is not for a public site, so the
+// wiki is built with VITE_WIKI_NO_MOCKUPS=1 and links each mockup's source instead.
+const WIKI_DB_FILE = String.raw`(?:wiki|wiki-cross-refs|wiki-epics-\d\d-\d\d)\.json`;
+export const WIKI_ALLOW = [
+  [/^index\.html$/, (rel) => `wiki/${rel}`],
+  [/^assets\/[A-Za-z0-9._-]+\.(?:js|css|woff2?|svg|png)$/, (rel) => `wiki/${rel}`],
+  [new RegExp(`^db/${WIKI_DB_FILE}$`), (rel) => `wiki/${rel}`],
+  [new RegExp(`^db/ar/${WIKI_DB_FILE}$`), (rel) => `ar/wiki/db/${rel.slice("db/ar/".length)}`],
+  [/^diagrams\/[A-Za-z0-9/_.-]+\.(?:drawio|svg|png)$/, (rel) => `wiki/${rel}`],
+];
+/** Where a file of the wiki's build is published (a dist/ path), or null when it is not. */
+export function wikiSitePath(rel) {
+  for (const [re, to] of WIKI_ALLOW) if (re.test(rel)) return to(rel);
+  return null;
+}
+
+/**
+ * The Arabic wiki page (/ar/wiki/) from the English one: the same bundle (it reads the path
+ * and loads /ar/wiki/db/), with the page's own text in Arabic and right to left from the
+ * first paint, and each page naming the other for crawlers.
+ */
+export function arabicWikiIndex(html) {
+  const swap = (re, to, what) => {
+    if (!re.test(html)) throw new Error(`build: the wiki's index.html has no ${what}`);
+    html = html.replace(re, to);
+  };
+  swap(/<html lang="en" dir="ltr">/, '<html lang="ar" dir="rtl">', "<html lang dir>");
+  swap(/<title>[^<]*<\/title>/, `<title>${esc(tr("ar", "wiki.title"))}</title>`, "<title>");
+  swap(
+    /<meta name="description" content="[^"]*"/,
+    `<meta name="description" content="${esc(tr("ar", "wiki.description"))}"`,
+    "description"
+  );
+  swap(
+    /<noscript>[\s\S]*?<\/noscript>/,
+    `<noscript>${esc(tr("ar", "wiki.noscript"))}</noscript>`,
+    "<noscript>"
+  );
+  return wikiAlternates(html, "/ar/wiki/");
+}
+
+/** A wiki page's canonical link and its two language alternates. */
+export function wikiAlternates(html, here) {
+  const links =
+    `\n    <link rel="canonical" href="${ORIGIN}${here}" />` +
+    `\n    <link rel="alternate" hreflang="en" href="${ORIGIN}/wiki/" />` +
+    `\n    <link rel="alternate" hreflang="ar" href="${ORIGIN}/ar/wiki/" />`;
+  if (!html.includes("</head>")) throw new Error("build: the wiki's index.html has no </head>");
+  return html.replace("</head>", `${links}\n  </head>`);
+}
 
 // Repo files copied as they are: repo path -> site path.
 const FILES = [
@@ -170,6 +232,8 @@ const v = (sitePath) => {
 
 const NAV = [
   ["nav.home", "/"],
+  ["nav.apps", "/apps/"],
+  ["nav.wiki", "/wiki/"],
   ["nav.plugins", "/plugins/"],
   ["nav.contributing", "/contributing/"],
   ["nav.api", "/api/"],
@@ -257,12 +321,15 @@ function landing(lang) {
       ${s("home.lead2", "p")}
       <div class="ctas">
         <a class="btn primary" href="${GITHUB}">${esc(t("home.cta.source"))}</a>
+        <a class="btn" href="${href("/wiki/")}">${esc(t("home.cta.wiki"))}</a>
         <a class="btn" href="${href("/plugins/")}">${esc(t("home.cta.plugins"))}</a>
         <a class="btn" href="${href("/contributing/")}">${esc(t("home.cta.contributing"))}</a>
       </div>
     </section>
     ${s("home.cards", "h2")}
     <ul class="cards">
+${card("apps", "/apps/")}
+${card("wiki", "/wiki/")}
 ${card("plugins", "/plugins/")}
 ${card("contributing", "/contributing/")}
 ${card("api", "/api/")}
@@ -334,6 +401,132 @@ function apiPage(lang) {
     ${s("api.lang", "p", ' class="note"')}
     <p><a href="${spec}">${esc(t("api.download"))}</a></p>
     <div id="redoc" data-spec="${spec}" dir="ltr" lang="${lang}">${s("api.loading", "p")}</div>`,
+  });
+}
+
+// ---- the Apps pages (scripts/apps.mjs) --------------------------------------------------
+
+// The screenshots: static/assets/apps/<name>-<lang>.webp, or <name>.webp when the app was shot
+// in one language only (the name then ends in -en or -ar).
+export const APP_IMAGES = path.join(PKG, "static/assets/apps");
+
+/** The site path of a screenshot in a language, or null when there is no such image. */
+export function appImage(file, lang) {
+  for (const name of [`${file}-${lang}.webp`, `${file}.webp`]) {
+    if (fs.existsSync(path.join(APP_IMAGES, name))) return `/assets/apps/${name}`;
+  }
+  return null;
+}
+
+/** A WebP's width and height (from its VP8, VP8L or VP8X header), or null. */
+export function webpSize(buf) {
+  if (buf.length < 30) return null;
+  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP")
+    return null;
+  const kind = buf.toString("ascii", 12, 16);
+  if (kind === "VP8X") return { w: 1 + buf.readUIntLE(24, 3), h: 1 + buf.readUIntLE(27, 3) };
+  if (kind === "VP8 ")
+    return { w: buf.readUInt16LE(26) & 0x3fff, h: buf.readUInt16LE(28) & 0x3fff };
+  if (kind === "VP8L") {
+    const b = buf.readUInt32LE(21);
+    return { w: 1 + (b & 0x3fff), h: 1 + ((b >> 14) & 0x3fff) };
+  }
+  return null;
+}
+
+/** An Apps page's inline markup, after escaping: **bold**, `code` and [text](href). */
+export function inline(text, lang) {
+  return esc(text)
+    .replace(/`([^`]+)`/g, '<code dir="ltr">$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, href) => {
+      const raw = href.replace(/&amp;/g, "&");
+      if (!isSafeUrl(raw)) return label;
+      return `<a href="${raw.startsWith("/") ? localPath(lang, raw) : href}">${label}</a>`;
+    });
+}
+const plain = (text) => text.replace(/\*\*|`/g, "").replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
+
+function appShotsHtml(shots, lang) {
+  // consecutive shots of one kind share a grid: phones side by side, wide ones a row each
+  const groups = [];
+  for (const sh of shots) {
+    if (groups.length && groups.at(-1).kind === sh.kind) groups.at(-1).items.push(sh);
+    else groups.push({ kind: sh.kind, items: [sh] });
+  }
+  return groups
+    .map(({ kind, items }) => {
+      const figs = items.map((sh) => {
+        const src = appImage(sh.file, lang);
+        if (!src)
+          throw new Error(`build: the Apps pages show ${sh.file}, with no image in ${lang}`);
+        const size = webpSize(fs.readFileSync(path.join(PKG, "static", src)));
+        if (!size) throw new Error(`build: ${src} is not a WebP image`);
+        const alt = esc(sh.alt[lang]);
+        return (
+          `        <figure><img src="${src}" alt="${alt}" width="${size.w}" height="${size.h}"` +
+          ` loading="lazy" decoding="async"><figcaption>${alt}</figcaption></figure>`
+        );
+      });
+      return `      <div class="shots ${kind}">\n${figs.join("\n")}\n      </div>`;
+    })
+    .join("\n");
+}
+
+// a table whose rows become cards on a phone (portal.css, table.stack): each cell carries its
+// column's name for that
+function appTable({ head, rows }, lang) {
+  const th = head.map((c) => `<th scope="col">${inline(c[lang], lang)}</th>`).join("");
+  const td = (c, i) =>
+    `<td data-label="${esc(plain(head[i][lang]))}">${inline(c[lang], lang)}</td>`;
+  const trs = rows.map((r) => `<tr>${r.map(td).join("")}</tr>`).join("\n        ");
+  return `      <table class="stack">\n        <thead><tr>${th}</tr></thead>\n        <tbody>\n        ${trs}\n        </tbody>\n      </table>`;
+}
+
+/** The site path of an Apps page: "" -> /apps/, "player" -> /apps/player/. */
+export const appPath = (slugName) => (slugName ? `/apps/${slugName}/` : "/apps/");
+
+function appPage(lang, pg) {
+  const { t } = inLang(lang);
+  const block = (b) => {
+    if (b.p) return `      <p>${inline(b.p[lang], lang)}</p>`;
+    if (b.ul)
+      return `      <ul>\n${b.ul.map((li) => `        <li>${inline(li[lang], lang)}</li>`).join("\n")}\n      </ul>`;
+    if (b.table) return appTable(b.table, lang);
+    if (b.shots) return appShotsHtml(b.shots, lang);
+    throw new Error(`build: an Apps block of no known kind on ${appPath(pg.slug)}`);
+  };
+  const sections = pg.sections
+    .map(
+      (s) =>
+        `    <section>\n      <h2 id="${slug(s.h.en)}">${inline(s.h[lang], lang)}</h2>\n` +
+        `${s.blocks.map(block).join("\n")}\n    </section>`
+    )
+    .join("\n");
+  const href = (p) => localPath(lang, appPath(p.slug));
+  const cards = pg.slug
+    ? ""
+    : `\n    <h2>${esc(t("apps.pages"))}</h2>\n    <ul class="cards">\n` +
+      APPS.filter((p) => p.slug)
+        .map(
+          (p) =>
+            `      <li><a href="${href(p)}"><strong>${esc(plain(p.title[lang]))}</strong>` +
+            `<span>${esc(p.card[lang])}</span></a></li>`
+        )
+        .join("\n") +
+      "\n    </ul>";
+  const toc = APPS.map(
+    (p) =>
+      `<li><a href="${href(p)}"${p === pg ? ' aria-current="page"' : ""}>${esc(plain(p.title[lang]))}</a></li>`
+  ).join("\n");
+  const article =
+    `<article class="apps">\n    <h1>${esc(plain(pg.title[lang]))}</h1>\n` +
+    `    <p class="lead">${inline(pg.lead[lang], lang)}</p>${cards}\n${sections}\n</article>`;
+  return page({
+    lang,
+    path: appPath(pg.slug),
+    title: plain(pg.title[lang]),
+    body: `<div class="layout">\n<nav class="toc" aria-label="${esc(t("apps.toc"))}"><ul>\n${toc}\n</ul></nav>\n<div>\n${article}\n</div>\n</div>`,
   });
 }
 
@@ -502,6 +695,37 @@ function walk(dir, base = dir, out = []) {
   return out;
 }
 
+/**
+ * The wiki, built once with base /wiki/ and published in both languages: the English page at
+ * /wiki/, the Arabic at /ar/wiki/ (the same bundle and diagrams; its own database).
+ */
+function buildWiki() {
+  if (!fs.existsSync(path.join(WIKI_APP, "node_modules"))) {
+    throw new Error("web/wiki-app has no node_modules: run `npm ci` in web/wiki-app first");
+  }
+  const out = path.join(STAGE, "wiki");
+  execFileSync(
+    "npm",
+    ["run", "build", "--", "--base", "/wiki/", "--outDir", out, "--emptyOutDir"],
+    {
+      cwd: WIKI_APP,
+      env: { ...process.env, VITE_WIKI_NO_MOCKUPS: "1" },
+      stdio: ["ignore", "inherit", "inherit"],
+    }
+  );
+  const dropped = [];
+  for (const rel of walk(out)) {
+    const to = wikiSitePath(rel);
+    if (to) copy(path.join(out, rel), to);
+    else dropped.push(rel);
+  }
+  const index = fs.readFileSync(path.join(out, "index.html"), "utf8");
+  write("wiki/index.html", wikiAlternates(index, "/wiki/"));
+  write("ar/wiki/index.html", arabicWikiIndex(index));
+  if (dropped.length)
+    console.log(`build: not published from the wiki build: ${dropped.join(", ")}`);
+}
+
 export function sitemap(paths) {
   const urls = paths.map((p) => `  <url><loc>${ORIGIN}${p}</loc></url>`).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`;
@@ -516,6 +740,7 @@ export function checkSources() {
     if (fs.existsSync(path.join(REPO, d.ar)))
       findings.push(...checkArabicMarkdown(d.ar, read(d.ar)));
   }
+  findings.push(...checkApps(APPS, appShots(), appImage));
   findings.push(...checkChangelog(read("CHANGELOG.md"), read("CHANGELOG.ar.md")));
   findings.push(
     ...checkOverlay(
@@ -523,6 +748,14 @@ export function checkSources() {
       JSON.parse(read("shared/api/openapi.ar.json"))
     )
   );
+  const wikiDb = (dir) =>
+    Object.fromEntries(
+      fs
+        .readdirSync(path.join(REPO, dir))
+        .filter((f) => f.endsWith(".json"))
+        .map((f) => [f, JSON.parse(read(`${dir}/${f}`))])
+    );
+  findings.push(...checkWiki(wikiDb(WIKI_DB), wikiDb(`${WIKI_DB}/ar`), WIKI_DB));
   return findings;
 }
 
@@ -539,6 +772,7 @@ export function build() {
   if (drift.length) fail("the English/Arabic parity check", drift);
 
   fs.rmSync(DIST, { recursive: true, force: true });
+  fs.rmSync(STAGE, { recursive: true, force: true });
   fs.mkdirSync(DIST, { recursive: true });
 
   // the portal's own static files (authored in this package)
@@ -580,11 +814,18 @@ export function build() {
         localPath(lang, p)
       )
     );
+    for (const pg of APPS) {
+      write(`${pre}${appPath(pg.slug).slice(1)}index.html`, appPage(lang, pg));
+      pages.push(localPath(lang, appPath(pg.slug)));
+    }
     for (const doc of DOCS) {
       write(`${pre}${doc.out}index.html`, renderDoc(doc, lang, published, groups));
       pages.push(siteUrl(doc.out, lang));
     }
   }
+
+  buildWiki();
+  pages.push(...LANGS.map((lang) => localPath(lang, "/wiki/")));
 
   // Expires rolls with each build, and devportal-deploy.yml deploys monthly, so the live
   // file is always 10 to 11 months from expiring. No date to edit by hand.
@@ -594,6 +835,7 @@ export function build() {
   write(".well-known/security.txt", securityTxt(policy));
   write("robots.txt", `User-agent: *\nAllow: /\n\nSitemap: ${ORIGIN}/sitemap.xml\n`);
   write("sitemap.xml", sitemap(pages));
+  fs.rmSync(STAGE, { recursive: true, force: true });
 
   const built = walk(DIST);
   const unpaired = checkPages(built, (f) => fs.readFileSync(path.join(DIST, f), "utf8"));

@@ -60,12 +60,12 @@ func TestBundleWithAGatedComponent(t *testing.T) {
 		"paid2": {ID: "paid2", Want: components.WantInstalled, Generation: 1},
 	}
 	none := func(string) bool { return false }
-	_, err := makePlanTier(cat, none, "free", time.Now(), rows, 7, Request{Bundle: "full"}, who, false)
+	_, err := makePlanTier(cat, none, "free", time.Now(), rows, 7, Request{Bundle: "full"}, who, false, nil)
 	r := refusalOf(t, err, CodeLicence, http.StatusForbidden)
 	if !slices.Equal(r.Components, []string{"paid", "paid2"}) || r.Tier != "free" || r.ID != "paid" || r.Licence != "cloud_relay" {
 		t.Fatalf("refusal %+v", r)
 	}
-	p, err := makePlanTier(cat, none, "free", time.Now(), rows, 7, Request{Bundle: "full"}, who, true)
+	p, err := makePlanTier(cat, none, "free", time.Now(), rows, 7, Request{Bundle: "full"}, who, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +76,7 @@ func TestBundleWithAGatedComponent(t *testing.T) {
 		t.Fatalf("preview effect %+v", p.preview.Effects)
 	}
 	// with the licence the bundle applies all three
-	p, err = makePlanTier(cat, nil, "home", time.Now(), rows, 7, Request{Bundle: "full"}, who, false)
+	p, err = makePlanTier(cat, nil, "home", time.Now(), rows, 7, Request{Bundle: "full"}, who, false, nil)
 	if err != nil || len(p.writes) != 3 {
 		t.Fatalf("licensed bundle: %v, %d writes", err, len(p.writes))
 	}

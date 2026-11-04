@@ -37,7 +37,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: shared/go/releaseverify/go.mod
-          cache-dependency-path: shared/go/releaseverify/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a run on main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('shared/go/releaseverify/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: shared/go/releaseverify
+          offline: "false"
 
       - name: How old is the embedded root
         id: age
@@ -85,3 +99,11 @@ jobs:
           gh pr create --base main --head "${branch}" \
             --title "chore(releaseverify): refresh the embedded Sigstore trusted root" \
             --body "The weekly refresh of the Sigstore trusted root compiled into releaseverify (\`go generate\` in shared/go/releaseverify, through Sigstore's TUF repository). Release builds refuse a root older than 90 days; the embedded one was ${DAYS} days old. Merge it before then."
+
+      # only a run on main (scheduled or dispatched) writes the caches restored above
+      - name: Save the Go caches
+        if: github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}

@@ -78,6 +78,23 @@ internal fun readableMessage(message: String): String =
         .joinToString("\n") { isolateRtl(it) }
         .trim()
 
+/** check_clips' message (pipeline stages/check_clips.py): "<failed> of <total> clips got no answer from the model". */
+private val clipsNoAnswer = Regex("""^(\d+) of (\d+) clips got no answer from the model$""")
+
+/**
+ * A group's sample message in this language: a message the app knows (check_clips' count) from
+ * its own plural words, each number set in the language's digits; anything else as the home
+ * wrote it, made readable ([readableMessage]).
+ */
+internal fun Say.sampleMessage(message: String): String {
+    clipsNoAnswer.matchEntire(message.trim())?.let { m ->
+        val failed = m.groupValues[1].toIntOrNull()
+        val total = m.groupValues[2].toIntOrNull()
+        if (failed != null && total != null) return plural(R.plurals.clips_no_answer, total, failed, total)
+    }
+    return readableMessage(message)
+}
+
 private const val FSI = '⁨'
 private const val PDI = '⁩'
 

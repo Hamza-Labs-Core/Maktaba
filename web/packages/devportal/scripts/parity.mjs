@@ -5,12 +5,16 @@
 //     file is left without its English one; CHANGELOG.ar.md has the same releases, the same
 //     sections and the same entries, in the same order, as CHANGELOG.md; the OpenAPI
 //     overlay (shared/api/openapi.ar.json) translates every summary and description the
-//     OpenAPI description has, against its current English;
+//     OpenAPI description has, against its current English; the wiki's Arabic database
+//     (web/wiki-app/public/db/ar/) has every entry of the English one, translated from its
+//     current English, and is Arabic;
 //   - the output: every English page has its /ar/ page and the other way round, and an
 //     Arabic page is Arabic: its prose outside code is mostly Arabic script.
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { appTexts } from "./apps.mjs";
 
 // ---- the share of Latin-script prose ----------------------------------------------------
 
@@ -212,6 +216,104 @@ export function applyOverlay(doc, overlay) {
   return out;
 }
 
+// ---- the wiki's database ----------------------------------------------------------------
+
+// The wiki (/wiki/ and /ar/wiki/) reads web/wiki-app/public/db/*.json and its Arabic twin
+// db/ar/*.json, which docs/wiki/db/generate_wiki.py writes from the translation store
+// (docs/wiki/db/ar/, see docs/wiki/db/wiki_ar.py). The generator's --check holds the store to
+// the specs; this check holds the database the site serves: every English entry has its
+// Arabic, translated from its current English (the hash it records), and the Arabic is
+// Arabic. The rules mirror wiki_ar.py.
+
+/** The fields of an entry the wiki shows as text, per type (wiki_ar.FIELDS). */
+export const WIKI_FIELDS = {
+  epic: ["title", "content", "engine"],
+  endpoint: ["content"],
+  entity: ["content"],
+};
+const WIKI_DEFAULT_FIELDS = ["title", "content"];
+
+const FENCE = /^[ \t]*```[^\n]*\n[\s\S]*?^[ \t]*```/gm;
+const CODE_SPAN = /`(?:[^`\n]|\n(?![ \t]*\n))+`/g;
+
+/** A wiki text's prose (wiki_ar.prose): code, URLs, link targets, paths and identifiers dropped. */
+export function wikiProse(text) {
+  return text
+    .replace(FENCE, " ")
+    .replace(/^[ \t]*```[\s\S]*$(?![\s\S])/m, " ")
+    .replace(CODE_SPAN, " ")
+    .replace(/`[^`]*$(?![\s\S])/, " ")
+    .replace(/\]\([^)]*\)/g, "]")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\S*[/_.]\S*[A-Za-z]\S*/g, " ");
+}
+
+/** The hash a translation records of the English it translates (wiki_ar.text_hash). */
+export const wikiHash = (text) =>
+  createHash("sha256").update(text, "utf8").digest("hex").slice(0, 16);
+
+/** The translation store file an entry's Arabic is kept in (wiki_ar.store_file). */
+export const wikiStoreFile = (e) =>
+  `docs/wiki/db/ar/${["epic", "story", "plan"].includes(e.type) && e.epic ? `epic-${e.epic.slice(0, 2)}` : "common"}.json`;
+
+/**
+ * The served database against its Arabic: `en` maps a file name (wiki.json,
+ * wiki-epics-01-09.json) to its parsed English, `ar` the same for db/ar/.
+ */
+export function checkWiki(en, ar, dir = "web/wiki-app/public/db") {
+  const findings = [];
+  const regen = "run python3 docs/wiki/db/generate_wiki.py";
+  for (const name of Object.keys(en))
+    if (!(name in ar))
+      findings.push(`${dir}/ar/${name}: missing (the Arabic of ${dir}/${name}): ${regen}`);
+  for (const name of Object.keys(ar))
+    if (!(name in en)) findings.push(`${dir}/ar/${name}: an Arabic file with no English one`);
+  for (const [name, doc] of Object.entries(en)) {
+    const arDoc = ar[name];
+    if (!arDoc || !Array.isArray(doc.entries)) continue;
+    if (arDoc.lang !== "ar") findings.push(`${dir}/ar/${name}: not marked "lang": "ar"`);
+    const arById = new Map((arDoc.entries ?? []).map((e) => [e.id, e]));
+    const prose = [];
+    for (const e of doc.entries) {
+      const a = arById.get(e.id);
+      const store = wikiStoreFile(e);
+      if (!a) {
+        findings.push(`${dir}/ar/${name}: ${e.id} has no Arabic entry: ${regen}`);
+        continue;
+      }
+      arById.delete(e.id);
+      for (const field of WIKI_FIELDS[e.type] ?? WIKI_DEFAULT_FIELDS) {
+        const text = e[field];
+        if (typeof text !== "string" || !/[A-Za-z]/.test(wikiProse(text))) continue;
+        const src = a.i18n?.source?.[field];
+        if (!src)
+          findings.push(
+            `${dir}/ar/${name}: ${e.id} ${field} has no Arabic: translate it in ${store}, then ${regen}`
+          );
+        else if (src !== wikiHash(text))
+          findings.push(
+            `${dir}/ar/${name}: ${e.id} ${field}: the English changed since it was translated: ` +
+              `translate it again in ${store}, then ${regen}`
+          );
+        else if (a[field] === text || !(String(a[field]).match(ARABIC) ?? []).length)
+          findings.push(
+            `${dir}/ar/${name}: ${e.id} ${field}: the Arabic is English or empty (${store})`
+          );
+        else prose.push(wikiProse(String(a[field])));
+      }
+    }
+    for (const id of arById.keys())
+      findings.push(`${dir}/ar/${name}: ${id} is not in the English database`);
+    const share = latinShare(prose.join("\n"));
+    if (share > MAX_LATIN_SHARE)
+      findings.push(
+        `${dir}/ar/${name}: ${Math.round(share * 100)}% of its Arabic prose is Latin script`
+      );
+  }
+  return findings;
+}
+
 // ---- the output -------------------------------------------------------------------------
 
 /** Every English page has its /ar/ page and the other way round; every Arabic page is Arabic. */
@@ -226,6 +328,40 @@ export function checkPages(files, read) {
       if (share > MAX_LATIN_SHARE)
         findings.push(`${f}: ${Math.round(share * 100)}% of its prose is Latin script`);
     } else if (!set.has(`ar/${f}`)) findings.push(`${f}: no Arabic page (ar/${f})`);
+  }
+  return findings;
+}
+
+// ---- the Apps pages ---------------------------------------------------------------------
+
+const RLM = /‏/g;
+const HAS_ARABIC = /[؀-ۿ]/;
+
+/**
+ * The Apps pages (scripts/apps.mjs) in both languages: every text has its English and its
+ * Arabic, the English carries no Arabic script and the Arabic is Arabic (a cell that is the
+ * same text in both, a product name or a key, may stay as it is), and every screenshot has an
+ * image in each language (its own, or the one language it was taken in). `imageOf(file, lang)`
+ * is the image's site path, or null.
+ */
+export function checkApps(pages, shots, imageOf) {
+  const findings = [];
+  for (const { where, en, ar } of appTexts(pages)) {
+    if (typeof en !== "string" || !en.trim()) findings.push(`${where}: no English`);
+    if (typeof ar !== "string" || !ar.trim()) {
+      findings.push(`${where}: no Arabic`);
+      continue;
+    }
+    if (typeof en === "string" && HAS_ARABIC.test(en))
+      findings.push(`${where}: Arabic script in the English`);
+    if (!HAS_ARABIC.test(ar) && ar.replace(RLM, "") !== en)
+      findings.push(`${where}: the Arabic is not Arabic`);
+  }
+  for (const sh of shots) {
+    for (const lang of ["en", "ar"]) {
+      if (!imageOf(sh.file, lang))
+        findings.push(`apps/${sh.page || "index"}: ${sh.file} has no image for ${lang}`);
+    }
   }
   return findings;
 }

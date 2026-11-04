@@ -92,8 +92,8 @@ func TestAssetBytes(t *testing.T) {
 		t.Fatalf("whisper-turbo: mac %d, linux %d (one source each, not both summed)", mac, linux)
 	}
 	ollama, _ := cat.Get("runtime.ollama")
-	if ollama.AssetBytes("darwin-arm64") != 0 || ollama.AssetBytes("linux-amd64") == 0 {
-		t.Fatalf("ollama: the Mac's full payload carries it, elsewhere a pack")
+	if ollama.AssetBytes("darwin-arm64") == 0 || ollama.AssetBytes("linux-amd64") == 0 {
+		t.Fatalf("ollama: a pack on every platform (a Core Mac downloads it too)")
 	}
 	ml, _ := cat.Get("runtime.ml")
 	if ml.AssetBytes("linux-amd64") == 0 {

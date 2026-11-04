@@ -41,6 +41,8 @@ jobs:
           version: "0.13.4"
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build the node release assets
         run: deploy/packaging/node/build-release.sh --version "v${NODE_VERSION}" --out dist
@@ -118,9 +120,20 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: |
-            tools/release/go.sum
-            shared/go/releaseverify/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release shared/go/releaseverify
 
       # every module both go.sums name, so the cache this job saves holds what
       # sign-and-release runs too (gen-release-json, release-order, releaseverify's tests);
@@ -155,6 +168,14 @@ jobs:
           cat "$rel/release.json"
           go run ./cmd/gen-release-json --check "$rel/release.json" --repo ../..
 
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
   installer-tests:
     name: installer tests (${{ matrix.os }})
     if: inputs.packaging
@@ -167,6 +188,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: shellcheck
         if: runner.os == 'Linux'
         run: |
@@ -220,13 +244,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: tools/release/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum') }}
+
       # The static nfpm _launcher.yml builds and main's runs cache, under the same key: a
       # build from source here fetched some 50 modules and their checksums each run, and
       # one sum.golang.org stream error failed the job.
       - name: nfpm from the cache
         id: nfpm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/go/bin/nfpm
           key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
@@ -248,10 +280,32 @@ jobs:
             go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
           fi
           echo "$(go env GOPATH)/bin" >>"${GITHUB_PATH}"
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+
       - name: apt and dnf repositories
         run: REQUIRE=apt,rpm,dnf bash tools/release/pkg-repo-test.sh
       - name: Homebrew formula and cask
         run: bash tools/release/homebrew-tap-test.sh
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
+
+      - name: Save the static nfpm
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.nfpm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/go/bin/nfpm
+          key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
 
   install-linux:
     name: install from the archive (linux, --system)
@@ -261,10 +315,49 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: astral-sh/setup-uv@v8.1.0
-      - uses: actions/download-artifact@v8.0.1
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Download node-release
+        id: artifact-node-release
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
           path: dist
+      - name: Wait 15s to retry the download of node-release
+        if: steps.artifact-node-release.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download node-release (attempt 2)
+        id: artifact-node-release-2
+        if: steps.artifact-node-release.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Wait 45s to retry the download of node-release
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download node-release (attempt 3)
+        id: artifact-node-release-3
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Check node-release downloaded
+        id: artifact-node-release-check
+        if: steps.artifact-node-release-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: node-release
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
       # No checkout: the archive is all the machine has. System scope, because a CI
       # runner has no systemd user session; enabled, not started, not joined.
       - name: Install
@@ -289,10 +382,49 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: astral-sh/setup-uv@v8.1.0
-      - uses: actions/download-artifact@v8.0.1
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      - name: Download node-release
+        id: artifact-node-release
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
           path: dist
+      - name: Wait 15s to retry the download of node-release
+        if: steps.artifact-node-release.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download node-release (attempt 2)
+        id: artifact-node-release-2
+        if: steps.artifact-node-release.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Wait 45s to retry the download of node-release
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download node-release (attempt 3)
+        id: artifact-node-release-3
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Check node-release downloaded
+        id: artifact-node-release-check
+        if: steps.artifact-node-release-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: node-release
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
       - name: Install
         run: |
           set -euo pipefail
@@ -384,12 +516,61 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: cmd/maktaba-server/go.sum
+          cache: false
 
-      - uses: actions/download-artifact@v8.0.1
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('cmd/maktaba-server/go.sum') }}
+
+      # this job's Go modules, retried; later steps read the module cache only
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server
+
+      - name: Download node-release
+        id: artifact-node-release
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
           path: dist
+      - name: Wait 15s to retry the download of node-release
+        if: steps.artifact-node-release.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download node-release (attempt 2)
+        id: artifact-node-release-2
+        if: steps.artifact-node-release.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Wait 45s to retry the download of node-release
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download node-release (attempt 3)
+        id: artifact-node-release-3
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Check node-release downloaded
+        id: artifact-node-release-check
+        if: steps.artifact-node-release-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: node-release
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: The release's venv (appvenv, real pip)
         working-directory: cmd/maktaba-server
@@ -402,6 +583,14 @@ jobs:
           go test -count=1 -timeout 20m -run 'TestRealVenvFromARelease$' -v ./internal/appvenv/ | tee "$RUNNER_TEMP/release-venv.out"
           grep -q -- "--- PASS: TestRealVenvFromARelease " "$RUNNER_TEMP/release-venv.out" ||
             { echo "::error::TestRealVenvFromARelease did not pass (or was skipped)"; exit 1; }
+
+      # only a push to main writes the caches restored above (pull requests and tags read main's)
+      - name: Save the Go caches
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.go-cache.outputs.key != '' && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ steps.go-cache.outputs.path }}
+          key: ${{ steps.go-cache.outputs.key }}
 
   # Maktaba for Windows's first run (Epic 38, story 38.7): the bootstrap's tests on Windows
   # (real venvs, the msvcrt lock, CTRL_BREAK mid-download), then the venv built from the
@@ -437,15 +626,53 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: pipeline/uv.lock
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: venv bootstrap tests
         working-directory: pipeline
         run: uv run --frozen --extra dev pytest tests/test_venv_bootstrap.py -q -rs -p no:cacheprovider
 
-      - uses: actions/download-artifact@v8.0.1
+      - name: Download node-release
+        id: artifact-node-release
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
           path: dist
+      - name: Wait 15s to retry the download of node-release
+        if: steps.artifact-node-release.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download node-release (attempt 2)
+        id: artifact-node-release-2
+        if: steps.artifact-node-release.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Wait 45s to retry the download of node-release
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download node-release (attempt 3)
+        id: artifact-node-release-3
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Check node-release downloaded
+        id: artifact-node-release-check
+        if: steps.artifact-node-release-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: node-release
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Windows app venv from the wheel
         shell: pwsh
@@ -509,6 +736,9 @@ jobs:
         with:
           sparse-checkout: deploy/packaging/node
       - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
       - name: node-origin tests (Windows PowerShell 5.1)
         shell: powershell
         run: .\deploy\packaging\node\tests\node-origin.Tests.ps1
@@ -522,10 +752,46 @@ jobs:
       - name: node-config tests (PowerShell 7)
         shell: pwsh
         run: .\deploy\packaging\node\tests\node-config.Tests.ps1
-      - uses: actions/download-artifact@v8.0.1
+      - name: Download node-release
+        id: artifact-node-release
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
         with:
           name: node-release
           path: dist
+      - name: Wait 15s to retry the download of node-release
+        if: steps.artifact-node-release.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download node-release (attempt 2)
+        id: artifact-node-release-2
+        if: steps.artifact-node-release.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Wait 45s to retry the download of node-release
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download node-release (attempt 3)
+        id: artifact-node-release-3
+        if: steps.artifact-node-release-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: node-release
+          path: dist
+      - name: Check node-release downloaded
+        id: artifact-node-release-check
+        if: steps.artifact-node-release-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: node-release
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
       # From the archive alone (Windows PowerShell 5.1, what a stock PC has): a scheduled
       # task, registered and not started, not joined.
       - name: Install

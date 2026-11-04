@@ -206,6 +206,10 @@ func TestOffline_EveryEndpointIsAdminOnly(t *testing.T) {
 		{"GET", "/api/queues/youtube-downloads", "", 200},
 		{"GET", "/api/queues/file-actions", "", 200},
 		{"POST", "/api/queues/file-actions/" + oDone + "/restore", "", 200},
+		{"PATCH", src, `{"on":true}`, 200},
+		{"POST", "/api/libraries/" + oLibA + "/youtube/guess", "", 200},
+		{"GET", "/api/queues/youtube-tartube", "", 200},
+		{"POST", "/api/queues/youtube-tartube", `{"path":"/Volumes/O/tartube.db"}`, 202},
 		{"DELETE", src, "", 204},
 		{"GET", "/api/queues/duplicates", "", 200},
 		{"POST", "/api/queues/duplicates/" + oGroup + "/apply", `{"keeper_video_id":"` + oMP4 + `"}`, 200},
@@ -228,6 +232,7 @@ func TestOffline_EveryEndpointIsAdminOnly(t *testing.T) {
 	for _, a := range []string{"queue.library.convert", "queue.library.dedup_scan", "queue.library.youtube_refresh",
 		"queue.library.youtube_backfill", "queue.library.youtube_retry", "queue.library.youtube_tartube",
 		"queue.youtube_source.add", "queue.youtube_source.patch", "queue.youtube_source.delete",
+		"queue.youtube_source.guess", "queue.youtube_tartube.import",
 		"queue.file_action.restore", "queue.duplicates.apply", "queue.duplicates.dismiss"} {
 		e.audited(a, "")
 	}

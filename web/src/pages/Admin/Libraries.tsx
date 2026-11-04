@@ -4,13 +4,19 @@
 //                               not), counts, last scan, a running scan, and the
 //                               folders two libraries claim (conflict_groups)
 //
-// Each library has Scan (with progress, followed after a reload too), Edit,
+// Each library's name opens its own admin page (/admin/libraries/:id); each has
+// Scan (with progress, followed after a reload too), Edit, its YouTube state
+// (./libraries/YouTubeState: the switch of its one source, Sources… or Add
+// YouTube source, which open the dashboard's dialog, components/queue; the same
+// list is the library page's YouTube section),
 // Empty trash, Merge and Remove; "Folders claimed twice" offers a one-click
-// Merge into the library that holds the videos. The dialogs live in
+// Merge into the library that holds the videos. Import from Tartube… makes every
+// library's sources from Tartube's records (off). The dialogs live in
 // ./libraries/. The API refuses all of it to anyone but an admin. A return
 // shows the last answer at once (lib/usePageData); a change drops the
 // answers it makes stale, the members' views of the libraries too.
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { Button } from "@ds/components/Button/Button";
@@ -32,11 +38,16 @@ import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { Loading } from "../../components/Placeholders";
 import { LibraryForm } from "./libraries/LibraryForm";
 import { EmptyTrashDialog, MergeDialog, RemoveDialog } from "./libraries/ConfirmDialogs";
+import { YouTubeSourcesDialog } from "../../components/queue/YouTubeSourcesDialog";
+import { YouTubeState } from "./libraries/YouTubeState";
+import { TartubeImportDialog } from "./libraries/TartubeImport";
 import "../../styles/libraryAdmin.css";
 
 type Dialog =
   | { kind: "add" }
+  | { kind: "tartube" }
   | { kind: "edit"; library: ManagedLibrary }
+  | { kind: "youtube"; library: ManagedLibrary }
   | { kind: "trash"; library: ManagedLibrary }
   | { kind: "merge"; library: ManagedLibrary; target?: string }
   | { kind: "remove"; library: ManagedLibrary };
@@ -79,9 +90,14 @@ function LibrariesInner() {
         <TitleRow>
           <h1>{t("libraryAdmin.title")}</h1>
         </TitleRow>
-        <Button type="button" onClick={() => setDialog({ kind: "add" })}>
-          {t("libraryAdmin.add")}
-        </Button>
+        <div className="mkt-libadmin__header-actions">
+          <Button type="button" variant="secondary" onClick={() => setDialog({ kind: "tartube" })}>
+            {t("libraryAdmin.tartube.button")}
+          </Button>
+          <Button type="button" onClick={() => setDialog({ kind: "add" })}>
+            {t("libraryAdmin.add")}
+          </Button>
+        </div>
       </header>
       <p className="mkt-muted">{t("libraryAdmin.desc")}</p>
 
@@ -122,9 +138,11 @@ function LibrariesInner() {
               <LibraryCard
                 key={lib.id}
                 library={lib}
+                libraries={libraries}
                 onReload={changed}
                 canMerge={libraries.length > 1}
                 onAction={(kind) => setDialog({ kind, library: lib })}
+                onMergeInto={(target) => setDialog({ kind: "merge", library: lib, target })}
               />
             ))}
           </ul>
@@ -134,6 +152,16 @@ function LibrariesInner() {
       {dialog?.kind === "add" && <LibraryForm onClose={() => setDialog(null)} onSaved={done} />}
       {dialog?.kind === "edit" && (
         <LibraryForm library={dialog.library} onClose={() => setDialog(null)} onSaved={done} />
+      )}
+      {dialog?.kind === "youtube" && (
+        <YouTubeSourcesDialog
+          library={{ id: dialog.library.id, name: dialog.library.name }}
+          onClose={() => setDialog(null)}
+          onChanged={changed}
+        />
+      )}
+      {dialog?.kind === "tartube" && (
+        <TartubeImportDialog onClose={() => setDialog(null)} onDone={changed} />
       )}
       {dialog?.kind === "trash" && (
         <EmptyTrashDialog library={dialog.library} onClose={() => setDialog(null)} onDone={done} />
@@ -174,7 +202,7 @@ function LibrariesPlaceholder() {
           </ul>
           <Skeleton variant="text" className="mkt-ph-line" width="40%" />
           <div className="mkt-libadmin__actions">
-            {[0, 1, 2, 3, 4].map((b) => (
+            {[0, 1, 2, 3, 4, 5].map((b) => (
               <Skeleton key={b} variant="rect" className="mkt-ph-button" width="6rem" />
             ))}
           </div>
@@ -263,14 +291,18 @@ function Conflicts({
 
 function LibraryCard({
   library: lib,
+  libraries,
   onReload,
   canMerge,
   onAction,
+  onMergeInto,
 }: {
   library: ManagedLibrary;
+  libraries: ManagedLibrary[];
   onReload: () => void;
   canMerge: boolean;
-  onAction: (kind: "edit" | "trash" | "merge" | "remove") => void;
+  onAction: (kind: "edit" | "youtube" | "trash" | "merge" | "remove") => void;
+  onMergeInto: (target: string) => void;
 }) {
   const { t, n, formatDate } = useI18n();
   const c = lib.counts;
@@ -281,7 +313,9 @@ function LibraryCard({
     <li className="mkt-libadmin__card" aria-labelledby={headingId}>
       <div className="mkt-libadmin__card-head">
         <h2 id={headingId}>
-          <bdi>{lib.name}</bdi>
+          <Link to={`/admin/libraries/${encodeURIComponent(lib.id)}`}>
+            <bdi>{lib.name}</bdi>
+          </Link>
         </h2>
         <p className="mkt-libadmin__counts">
           {t("libraryAdmin.counts.videos", { count: n(c.total) })}
@@ -344,6 +378,14 @@ function LibraryCard({
           : t("libraryAdmin.neverScanned")}
         {scan?.error ? ` — ${scan.error}` : ""}
       </p>
+
+      <YouTubeState
+        library={lib}
+        libraries={libraries}
+        onSources={() => onAction("youtube")}
+        onMerge={onMergeInto}
+        onChanged={onReload}
+      />
 
       <div className="mkt-libadmin__actions">
         <ScanNow libraryId={lib.id} jobId={lib.scanning ? scan?.job_id : null} onDone={onReload} />

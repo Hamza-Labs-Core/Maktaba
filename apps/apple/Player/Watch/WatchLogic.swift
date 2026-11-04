@@ -25,6 +25,16 @@ enum WatchLogic {
         onStartSide ? -doubleTapSeconds : doubleTapSeconds
     }
 
+    /// A player still waiting this long after it was first seen waiting is stuck: it is
+    /// opened again where it is (AVPlayer can give up on a segment and wait for good).
+    static let stuckAfter: TimeInterval = 15
+
+    /// Whether a player first seen waiting at `waitingSince` (nil: not waiting) is stuck now.
+    static func stuck(waitingSince: Date?, now: Date) -> Bool {
+        guard let waitingSince else { return false }
+        return now.timeIntervalSince(waitingSince) >= stuckAfter
+    }
+
     /// Up next is due in the last `upNextSeconds` of a video, or at its end.
     static func upNextDue(position: Double, duration: Double, ended: Bool) -> Bool {
         if ended { return true }

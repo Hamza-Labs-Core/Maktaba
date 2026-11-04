@@ -257,10 +257,21 @@
     <string name="w_health_processes_state_failed">Failed</string>
     <string name="w_health_processes_state_exited">Stopped</string>
     <string name="w_health_processes_state_stopped">Stopped</string>
+    <string name="w_health_processes_state_held">Held: its component is off</string>
     <string name="w_health_processes_role_api">API</string>
     <string name="w_health_processes_role_streaming">Live TV and streaming</string>
     <string name="w_health_processes_role_pipeline">Processing pipeline</string>
     <string name="w_health_processes_role_tv_slot">TV slot</string>
+    <string name="w_health_processes_role_copy">Database copy</string>
+    <string name="w_health_processes_role_ollama">Language model server</string>
+    <string name="w_health_processes_role_postgres">Database</string>
+    <string name="w_health_processes_role_relay">Remote access relay</string>
+    <string name="w_health_processes_instance_index">search index</string>
+    <string name="w_health_processes_instance_chroma_copy">search index copy</string>
+    <string name="w_health_processes_instance_stt">transcription %1$s</string>
+    <string name="w_tvchanges_slots_color_blue">blue</string>
+    <string name="w_tvchanges_slots_color_green">green</string>
+    <string name="w_tvchanges_slots_color_amber">amber</string>
     <string name="w_setup_starting_detail_db_waiting">Waiting for the library database.</string>
     <string name="w_setup_starting_detail_db_checking">Checking the library database.</string>
     <string name="w_setup_starting_detail_db_dumping">Saving the library database before the update to %1$s.</string>
@@ -405,6 +416,11 @@
     <string name="cause">Cause</string>
     <string name="fixed_on_web">This one is fixed from the home\'s web page (%1$s).</string>
     <string name="nothing_needs_attention">Nothing needs attention</string>
+    <!-- check_clips' message: %1$d clips of %2$d got no answer; the quantity is %2$d -->
+    <plurals name="clips_no_answer">
+        <item quantity="one">%1$d of %2$d clip got no answer from the model</item>
+        <item quantity="other">%1$d of %2$d clips got no answer from the model</item>
+    </plurals>
     <plurals name="jobs">
         <item quantity="one">%1$d job</item>
         <item quantity="other">%1$d jobs</item>

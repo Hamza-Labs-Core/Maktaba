@@ -9,6 +9,7 @@ import { useI18n } from "../../lib/i18n";
 import { tvRemoteApi } from "../../lib/tvRemoteApi";
 import type { RemoteControllerStatus } from "../../lib/tvRemoteApi";
 import { useAction } from "../../components/queue/useAction";
+import { useReadOrder } from "../../lib/readOrder";
 
 const RUNNING = new Set(["requested", "connecting", "live", "stopping"]);
 
@@ -18,12 +19,21 @@ export function RemoteUsage({ admin = true }: { admin?: boolean }) {
   const [st, setSt] = useState<RemoteControllerStatus | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
+  // A read begun before a push was stopped still has it running: it is
+  // dropped (lib/readOrder).
+  const order = useReadOrder();
+
   const load = useCallback(() => {
+    const ticket = order.begin();
     tvRemoteApi
       .status()
-      .then((r) => setSt(r.remote ?? null))
-      .catch(() => setSt(null));
-  }, []);
+      .then((r) => {
+        if (order.fresh(ticket)) setSt(r.remote ?? null);
+      })
+      .catch(() => {
+        if (order.fresh(ticket)) setSt(null);
+      });
+  }, [order]);
   useEffect(load, [load]);
 
   if (!st) return null;
@@ -35,7 +45,7 @@ export function RemoteUsage({ admin = true }: { admin?: boolean }) {
   const rotate = () => {
     if (!window.confirm(t("cfremote.rotateConfirm"))) return;
     void action
-      .run("rotate", () => tvRemoteApi.rotateKey())
+      .run("rotate", () => order.saving(() => tvRemoteApi.rotateKey()))
       .then((r) => {
         if (!r) return;
         setNote(r.old_deleted ? t("cfremote.rotated") : (r.error ?? t("cfremote.rotated")));
@@ -43,7 +53,7 @@ export function RemoteUsage({ admin = true }: { admin?: boolean }) {
       });
   };
   const stop = (id: string) =>
-    void action.run("stop:" + id, () => tvRemoteApi.stopPush(id)).then(load);
+    void action.run("stop:" + id, () => order.saving(() => tvRemoteApi.stopPush(id))).then(load);
 
   return (
     <section className="mkt-q-cfusage" aria-label={t("cfremote.usage")}>

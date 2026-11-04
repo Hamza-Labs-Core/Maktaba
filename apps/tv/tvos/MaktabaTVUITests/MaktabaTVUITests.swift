@@ -2,7 +2,7 @@ import XCTest
 
 /// Drives Maktaba TV with the Siri remote against a real home. The home and the account
 /// come from the environment (xcodebuild passes `TEST_RUNNER_<name>` through):
-///   MAKTABA_HOME      e.g. http://192.168.50.177:8088
+///   MAKTABA_HOME      e.g. http://203.0.113.177:8088
 ///   MAKTABA_USER      a viewer account on it
 ///   MAKTABA_PASSWORD  its password
 ///   MAKTABA_SHOTS     optional: a folder for screenshots of each step

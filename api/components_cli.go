@@ -39,6 +39,7 @@ const componentsUsage = `Usage:
   maktaba-server components disable <id> [--yes]
   maktaba-server components stop <id> [--yes]               stopped until start (a hold has no end time)
   maktaba-server components start <id>
+  maktaba-server components restart <id> [--yes]            restart its processes (its running work starts again)
   maktaba-server components install <id>                    put it on disk, off
   maktaba-server components remove <id> [--yes]             take it off disk
   maktaba-server components reset-settings <id> [--yes]     its settings back to the defaults
@@ -63,6 +64,8 @@ type componentsService interface {
 // componentsPacks is this machine's pack installer (its supervisor): *componentsh.Packs is one.
 type componentsPacks interface {
 	ProgressOf(ctx context.Context, ids []string) map[string]*components.InstallProgress
+	// PacksOff is whether this machine has [components] packs = "off" (offline mode).
+	PacksOff(ctx context.Context) (bool, error)
 	ImportPath(ctx context.Context, path string) ([]string, error)
 	MakeOffline(ctx context.Context, req componentsh.OfflineRequest) (string, error)
 	FetchOffline(ctx context.Context, name string, header http.Header) (*http.Response, *components.InstallProgress, error)
@@ -85,6 +88,9 @@ type componentsCLI struct {
 	user     string            // the OS user: the audit's actor
 	values   map[string]string // --out, --platform
 	wait     func(time.Duration)
+	// restart is a restart through this machine's supervisor (componentsh.Restarter;
+	// nil: none). A loop restarts only in its own process, so not from here.
+	restart func(ctx context.Context, id string, actor components.Actor) (int, error)
 }
 
 // runComponents is `maktaba-api components …`: the components' desired state from the
@@ -144,9 +150,12 @@ func runComponents(argv []string) int {
 	c := &componentsCLI{svc: s, settings: s, in: os.Stdin, out: os.Stdout, errOut: os.Stderr,
 		tty: term.IsTerminal(int(os.Stdin.Fd())), user: name, values: componentsValues(argv), wait: time.Sleep}
 	// the supervisor maktaba-server names in the environment it passes (nil: none)
+	restarter := componentsh.Restarter{Service: s}
 	if pk := componentsh.PacksFromEnv(); pk != nil {
 		c.packs = pk
+		restarter.Packs = pk
 	}
+	c.restart = restarter.Restart
 	return c.run(ctx, flags, args)
 }
 
@@ -270,11 +279,21 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 			if err != nil {
 				return c.fail(err)
 			}
-			if d.Want != catalog.WantAbsent {
+			if err := c.installRefused(ctx, d); err != nil {
+				return c.fail(err)
+			}
+			switch {
+			case d.Want == catalog.WantAbsent:
+				ch.Want = catalog.WantInstalled
+			case node == "" && components.InstallAgain(d):
+				// wanted but not on this home (or its install failed): the row written
+				// again, a new generation the packs runner installs from
+				gen := d.Generation
+				ch.Want, ch.Generation, ch.Again = d.Want, &gen, true
+			default:
 				fmt.Fprintf(c.out, "%s is installed already (%s).\n", id, d.Want)
 				return 0
 			}
-			ch.Want = catalog.WantInstalled
 		case "stop":
 			ch.Hold = &on
 		case "start":
@@ -283,6 +302,12 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 		req := components.Request{Changes: []components.Change{ch}, WithConflicts: flags["with-conflicts"]}
 		// start only brings back what was stopped: nothing to ask
 		return c.write(ctx, req, yes || verb == "start" || verb == "install")
+	case "restart":
+		id, ok := one()
+		if !ok {
+			return c.usage("restart <id>")
+		}
+		return c.restartOne(ctx, id, yes)
 	case "reset-settings":
 		id, ok := one()
 		if !ok {
@@ -311,6 +336,21 @@ func (c *componentsCLI) run(ctx context.Context, flags map[string]bool, args []s
 func (c *componentsCLI) usage(msg string) int {
 	fmt.Fprintf(c.errOut, "components: %s\n\n%s\n", msg, componentsUsage)
 	return exitComponentsFailed
+}
+
+// installRefused is the install route's refusal of d with packs off on this machine
+// (offline mode, its supervisor's answer): an asset not on disk cannot be installed. No
+// supervisor, or no answer: nil, as before.
+func (c *componentsCLI) installRefused(ctx context.Context, d components.Detail) error {
+	if c.packs == nil || d.Kind != catalog.KindAsset {
+		return nil
+	}
+	off, err := c.packs.PacksOff(ctx)
+	if err != nil || !off {
+		return nil
+	}
+	d.Progress = c.packs.ProgressOf(ctx, []string{d.ID})[d.ID]
+	return components.InstallRefused(d, true)
 }
 
 func (c *componentsCLI) fail(err error) int {
@@ -588,6 +628,42 @@ func (c *componentsCLI) showMachine(ctx context.Context, id, node string, asJSON
 
 // resetSettings is `components reset-settings <id>` (story 51.13): what a reset loses,
 // asked first unless yes, then the component's rules sections back to the defaults.
+// restartOne restarts id's processes (story 51.08 §2), as the admin route does; it asks
+// first, since the work they run is interrupted.
+func (c *componentsCLI) restartOne(ctx context.Context, id string, yes bool) int {
+	if c.restart == nil {
+		return c.fail(errors.New("no restart on this machine"))
+	}
+	fmt.Fprintf(c.out, "Restart %s? What it runs now is interrupted and starts again.\n", id)
+	if !yes {
+		if !c.tty {
+			fmt.Fprintln(c.errOut, "components: no terminal to ask on: add --yes to restart it")
+			return exitComponentsNeedYes
+		}
+		fmt.Fprint(c.out, "Continue? [y/N] ")
+		line, _ := bufio.NewReader(c.in).ReadString('\n')
+		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+			fmt.Fprintln(c.out, "Nothing changed.")
+			return exitComponentsFailed
+		}
+	}
+	n, err := c.restart(ctx, id, components.Actor{By: c.user, Source: "cli"})
+	if errors.Is(err, componentsh.ErrNoSupervisor) {
+		fmt.Fprintln(c.errOut, "components: no maktaba-server answers on this machine: run this through maktaba-server")
+		return exitComponentsFailed
+	}
+	if err != nil {
+		return c.fail(err)
+	}
+	if n == 0 {
+		fmt.Fprintf(c.out, "%s: none of its processes runs now; the server starts them.\n", id)
+	} else {
+		fmt.Fprintf(c.out, "%s: restarted %d.\n", id, n)
+	}
+	fmt.Fprintln(c.out, "Done.")
+	return 0
+}
+
 func (c *componentsCLI) resetSettings(ctx context.Context, id string, yes bool) int {
 	if c.settings == nil {
 		return c.fail(errors.New("no settings service"))

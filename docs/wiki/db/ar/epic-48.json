@@ -1,0 +1,385 @@
+{
+  "about": "The Arabic (Modern Standard) of the wiki's Epic 48 entries, for maktaba.dev/ar/wiki/. Keyed by entry id and field; `hash` is the first 16 hex digits of the SHA-256 of the English it translates (docs/wiki/db/wiki_ar.py). Code, identifiers, paths and endpoint names stay as written.",
+  "entries": {
+    "epic-48-native-players": {
+      "title": {
+        "hash": "ebf71c1a133feb42",
+        "ar": "المشغّلات الأصلية"
+      },
+      "content": {
+        "hash": "1f6f844a85972b9b",
+        "ar": "المشغّلات الأصلية: بجودة الويب، وبجودة Plex.\n\nكشفت مراجعة لتطبيقات المشغّل في 2026-10-31 عن خمس ثغرات: يبدأ التطبيق بالسمة الفاتحة دون أي سمة خاصة؛ ولا يوجد تنقل، بل عرض للمكتبات فقط، ولا شيء يشبه Plex؛ ولا يوجد تلفاز؛ ومع ذلك عُدّت الملحمة 42 منجزة؛ وصفحتا تسجيل الدخول في التطبيقين عاريتان، بلا شعار ولا سمة كما في الويب."
+      }
+    },
+    "story-48.1": {
+      "title": {
+        "hash": "a1344a81b9b40b10",
+        "ar": "المواصفة"
+      },
+      "content": {
+        "hash": "31c1990711a69e03",
+        "ar": "المواصفة. هذا المجلد، وصف الملحمة في الفهرس، وملاحظة الملحمة 42، وملف CHANGELOG، والسجل."
+      }
+    },
+    "story-48.2": {
+      "title": {
+        "hash": "576f395db8e2c8ca",
+        "ar": "مصدر واحد للرموز التصميمية"
+      },
+      "content": {
+        "hash": "5d0419b9b17717c5",
+        "ar": "مصدر واحد للرموز التصميمية. الملفات: `web/design-system/tokens/*.json`، و`web/design-system/build/*`، وملف جديد `Tokens.swift` ‏(MaktabaKit)، وملف جديد `Tokens.kt` (النواة)، و`Makefile` (‏`test-tokens` فقط)."
+      }
+    },
+    "story-48.3": {
+      "title": {
+        "hash": "d934cbd4ff323b76",
+        "ar": "بث القناة يتبع صلاحية الوصول إلى المكتبة (G1)"
+      },
+      "content": {
+        "hash": "aeb3e706397261b6",
+        "ar": "بث القناة يتبع صلاحية الوصول إلى المكتبة (G1). الملفات: `cmd/maktaba-server/stream_gate.go`، واختباراته."
+      }
+    },
+    "story-48.4": {
+      "title": {
+        "hash": "532f25f003f47dca",
+        "ar": "الترجمات كإصدارات HLS ‏(G3)"
+      },
+      "content": {
+        "hash": "965edb9e451fb354",
+        "ar": "الترجمات كإصدارات HLS ‏(G3). الملفات: `streaming/internal/handlers/manifest.go`، وملف جديد `subtitle_playlist.go`، والاختبارات."
+      }
+    },
+    "story-48.5": {
+      "title": {
+        "hash": "abfb4c23ebc00940",
+        "ar": "ملصقات صغيرة (G4)"
+      },
+      "content": {
+        "hash": "12c29f45317cec1a",
+        "ar": "ملصقات صغيرة (G4). الملفات: `api/internal/handlers/videos/poster.go`، والاختبارات."
+      }
+    },
+    "story-48.6": {
+      "title": {
+        "hash": "e480e4062fc26da5",
+        "ar": "MaktabaKit: عميل التصفح"
+      },
+      "content": {
+        "hash": "b5a3adc1a639d0b1",
+        "ar": "MaktabaKit: عميل التصفح. الملفات: ملف جديد `MaktabaKit/Sources/MaktabaKit/Browse.swift`، وملف اختبار جديد وعيّنات."
+      }
+    },
+    "story-48.7": {
+      "title": {
+        "hash": "fd58362cfcc98fb7",
+        "ar": "MaktabaKit: عميل البث المباشر"
+      },
+      "content": {
+        "hash": "df47ab44eb6bd3cd",
+        "ar": "MaktabaKit: عميل البث المباشر. الملفات: ملف جديد `MaktabaKit/Sources/MaktabaKit/Live.swift`، والاختبارات."
+      }
+    },
+    "story-48.8": {
+      "title": {
+        "hash": "764a10dcd69752b1",
+        "ar": "عميل Android: التصفح"
+      },
+      "content": {
+        "hash": "055bf857cbc596e4",
+        "ar": "عميل Android: التصفح. الملفات: ملف جديد `apps/android/client/src/main/kotlin/com/hamzalabs/maktaba/core/api/Browse.kt`، والاختبارات."
+      }
+    },
+    "story-48.9": {
+      "title": {
+        "hash": "d9271d03e281f2e0",
+        "ar": "عميل Android: البث المباشر"
+      },
+      "content": {
+        "hash": "faa4f2e3f1fe7051",
+        "ar": "عميل Android: البث المباشر. الملفات: ملف جديد `…/core/api/Live.kt`، والاختبارات."
+      }
+    },
+    "story-48.10": {
+      "title": {
+        "hash": "3d1f407b83ba5863",
+        "ar": "الهوية البصرية على Apple"
+      },
+      "content": {
+        "hash": "1fc0cfa5e39d8e74",
+        "ar": "الهوية البصرية على Apple. بعد 48.2. الملفات: `MaktabaKit/Sources/MaktabaKit/Theme.swift`، و`StartViews.swift`، وملف جديد `Brand.swift`، و`MaktabaKit/Sources/MaktabaKit/Resources/*` (الخطوط، والرسومات، والشعار)، و`MaktabaKit/Package.swift`، و`apps/apple/Player/Info-*.plist` و`Remote/Info-*.plist` (شاشة الإقلاع فقط)."
+      }
+    },
+    "story-48.11": {
+      "title": {
+        "hash": "acac6690ad30e4c6",
+        "ar": "الإعدادات الافتراضية للهوية البصرية على Android"
+      },
+      "content": {
+        "hash": "e6b7038f4a495cbe",
+        "ar": "الإعدادات الافتراضية للهوية البصرية على Android. بعد 48.2. الملفات: `apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Theme.kt`، و`core/…/ui/StartScreens.kt`، و`core/src/main/res/values*/themes.xml`، و`ThemeStoreTest.kt`."
+      }
+    },
+    "story-48.12": {
+      "title": {
+        "hash": "1a65bac8429b31d3",
+        "ar": "روابط البث الموقّعة تجتاز البوابة (G2)"
+      },
+      "content": {
+        "hash": "92e40fdfcdbbd3f9",
+        "ar": "روابط البث الموقّعة تجتاز البوابة (G2). بعد 48.3. الملفات: `cmd/maktaba-server/stream_gate.go`، والاختبارات."
+      }
+    },
+    "story-48.13": {
+      "title": {
+        "hash": "92ed461046277217",
+        "ar": "غلاف المشغّل على Apple وأداة الاختبار"
+      },
+      "content": {
+        "hash": "9a9155b0384a8ea9",
+        "ar": "غلاف المشغّل على Apple وأداة الاختبار. الملفات: `apps/apple/Player/PlayerApp.swift`، وملفات جديدة `Player/Shell/*`، و`Player/LibraryBrowser.swift` (نُقل إلى قسم المكتبات)، و`apps/apple/project.yml`، و`apps/apple/UITests/MockHome.swift`، وملفات جديدة `UITests/Player*UITests.swift`، و`.github/workflows/_apple-apps.yml`، و`tools/apple/check-string-catalogs.py`."
+      }
+    },
+    "story-48.14": {
+      "title": {
+        "hash": "1c5bddcfc61c1e41",
+        "ar": "مكوّنات المشغّل على Apple"
+      },
+      "content": {
+        "hash": "d8373ae4cde5f72d",
+        "ar": "مكوّنات المشغّل على Apple. بعد 48.2 و48.6 و48.13. الملفات: ملفات جديدة `apps/apple/Player/Components/*`."
+      }
+    },
+    "story-48.15": {
+      "title": {
+        "hash": "de800a3c1e37136c",
+        "ar": "غلاف المشغّل على Android وأداة الاختبار"
+      },
+      "content": {
+        "hash": "d34d3f63a3ab39f4",
+        "ar": "غلاف المشغّل على Android وأداة الاختبار. الملفات: `apps/android/player/build.gradle.kts`، و`apps/android/gradle/libs.versions.toml` (يضيف المكتبات `navigation-suite` و`navigation-compose` و`media3-session` و`media3-cast` و`play-services-cast-framework` وCoil وRoborazzi)، و`player/…/MainActivity.kt`، وملفات جديدة `player/…/shell/*`، و`player/…/LibraryBrowser.kt` (منقول)، و`.github/workflows/_android-apps.yml`."
+      }
+    },
+    "story-48.16": {
+      "title": {
+        "hash": "81e3055c1c81cb8d",
+        "ar": "مكوّنات المشغّل على Android"
+      },
+      "content": {
+        "hash": "347548524975d131",
+        "ar": "مكوّنات المشغّل على Android. بعد 48.2 و48.8 و48.15. الملفات: ملفات جديدة `player/…/ui/components/*`."
+      }
+    },
+    "story-48.17": {
+      "title": {
+        "hash": "3a78695388b38b5c",
+        "ar": "الرئيسية"
+      },
+      "content": {
+        "hash": "f69ee79e9d65fe39",
+        "ar": "الرئيسية. من FR-10 إلى FR-13."
+      }
+    },
+    "story-48.18": {
+      "title": {
+        "hash": "9ea6fb3c7c75e818",
+        "ar": "المكتبات، ومكتبة، والمسلسلات، ومسلسل"
+      },
+      "content": {
+        "hash": "c74995e2a2760cd6",
+        "ar": "المكتبات، ومكتبة، والمسلسلات، ومسلسل. من FR-14 إلى FR-17."
+      }
+    },
+    "story-48.19": {
+      "title": {
+        "hash": "dd12080cae6c2ba2",
+        "ar": "صفحة الفيديو"
+      },
+      "content": {
+        "hash": "80d8bb870c89cdce",
+        "ar": "صفحة الفيديو. FR-18."
+      }
+    },
+    "story-48.20": {
+      "title": {
+        "hash": "49c266baaaa70981",
+        "ar": "البحث"
+      },
+      "content": {
+        "hash": "fd2dada99f450686",
+        "ar": "البحث. FR-19 وFR-20."
+      }
+    },
+    "story-48.21": {
+      "title": {
+        "hash": "d451ef69d2835cb2",
+        "ar": "التلفاز المباشر"
+      },
+      "content": {
+        "hash": "99110318d94d3816",
+        "ar": "التلفاز المباشر. بعد 48.7 و48.3. من FR-21 إلى FR-24."
+      }
+    },
+    "story-48.22": {
+      "title": {
+        "hash": "d7308a5f986c4251",
+        "ar": "الملف الشخصي والإعدادات"
+      },
+      "content": {
+        "hash": "25ec3c58629cd369",
+        "ar": "الملف الشخصي والإعدادات. من FR-25 إلى FR-31."
+      }
+    },
+    "story-48.23": {
+      "title": {
+        "hash": "fc36741135cf7cc0",
+        "ar": "المشغّل: الاستئناف، والتالي، والمسارات، والجودة"
+      },
+      "content": {
+        "hash": "f553693fd7c6d1c5",
+        "ar": "المشغّل: الاستئناف، والتالي، والمسارات، والجودة. بعد 48.4. الملفات: `apps/apple/Player/Playback.swift`، وملفات جديدة `Player/Watch/*`، و`MaktabaKit/PlayerSurface.swift`."
+      }
+    },
+    "story-48.24": {
+      "title": {
+        "hash": "97f9a10530593435",
+        "ar": "المشغّل: صورة داخل صورة، وAirPlay، وNow Playing"
+      },
+      "content": {
+        "hash": "baf1e79ffd609ee1",
+        "ar": "المشغّل: صورة داخل صورة، وAirPlay، وNow Playing. بعد 48.23 و48.12. الملفات: كما في 48.23."
+      }
+    },
+    "story-48.25": {
+      "title": {
+        "hash": "4e48756f19e45ca2",
+        "ar": "مشغّل Mac"
+      },
+      "content": {
+        "hash": "f4422e9475edcbe3",
+        "ar": "مشغّل Mac. بعد 48.13. الملفات: `apps/apple/Player/PlayerApp.swift` (الأوامر فقط)، وملفات جديدة `Player/Mac/*`، و`PlayerMacTests/*`."
+      }
+    },
+    "story-48.26": {
+      "title": {
+        "hash": "3a78695388b38b5c",
+        "ar": "الرئيسية"
+      },
+      "content": {
+        "hash": "1866d2f6e204f46f",
+        "ar": "الرئيسية. كما في 48.17."
+      }
+    },
+    "story-48.27": {
+      "title": {
+        "hash": "9ea6fb3c7c75e818",
+        "ar": "المكتبات، ومكتبة، والمسلسلات، ومسلسل"
+      },
+      "content": {
+        "hash": "34313942253e0f33",
+        "ar": "المكتبات، ومكتبة، والمسلسلات، ومسلسل. كما في 48.18، مع عرض القائمة والتفاصيل عبر `Panes` عند 600 dp وعند المفصل (على نمط الاختبار المُجهَّز `HingeSplitTest`، يُشغَّل محليًا؛ واختبار JVM في التكامل المستمر)."
+      }
+    },
+    "story-48.28": {
+      "title": {
+        "hash": "dd12080cae6c2ba2",
+        "ar": "صفحة الفيديو"
+      },
+      "content": {
+        "hash": "d5051e0d58796702",
+        "ar": "صفحة الفيديو. كما في 48.19."
+      }
+    },
+    "story-48.29": {
+      "title": {
+        "hash": "49c266baaaa70981",
+        "ar": "البحث"
+      },
+      "content": {
+        "hash": "14859d12c8790959",
+        "ar": "البحث. كما في 48.20."
+      }
+    },
+    "story-48.30": {
+      "title": {
+        "hash": "d451ef69d2835cb2",
+        "ar": "التلفاز المباشر"
+      },
+      "content": {
+        "hash": "a265bfcccd62eb6c",
+        "ar": "التلفاز المباشر. بعد 48.9 و48.3. كما في 48.21."
+      }
+    },
+    "story-48.31": {
+      "title": {
+        "hash": "d7308a5f986c4251",
+        "ar": "الملف الشخصي والإعدادات"
+      },
+      "content": {
+        "hash": "6c938920596b6b7f",
+        "ar": "الملف الشخصي والإعدادات. كما في 48.22؛ وتستخدم اللغة `setApplicationLocales` و`locales_config.xml` (مع اختبار على Android 13 وما بعده، والبديل داخل التطبيق أدناه)."
+      }
+    },
+    "story-48.32": {
+      "title": {
+        "hash": "fc36741135cf7cc0",
+        "ar": "المشغّل: الاستئناف، والتالي، والمسارات، والجودة"
+      },
+      "content": {
+        "hash": "a056c0b819a4c727",
+        "ar": "المشغّل: الاستئناف، والتالي، والمسارات، والجودة. بعد 48.4. الملفات: `player/…/Playback.kt`، و`Watch.kt`، و`PlaybackFailure.kt`، وملفات جديدة `player/…/watch/*`. كما في 48.23."
+      }
+    },
+    "story-48.33": {
+      "title": {
+        "hash": "7194fd04399b9711",
+        "ar": "المشغّل: صورة داخل صورة، والتشغيل في الخلفية، وCast"
+      },
+      "content": {
+        "hash": "6ee6ba64e5466a4a",
+        "ar": "المشغّل: صورة داخل صورة، والتشغيل في الخلفية، وCast. بعد 48.32 و48.12. الملفات: كما في 48.32، و`player/src/main/AndroidManifest.xml`، وملفات جديدة `player/…/media/*`."
+      }
+    },
+    "story-48.34": {
+      "title": {
+        "hash": "6a32f249588d471d",
+        "ar": "Apple TV: التلفاز المباشر"
+      },
+      "content": {
+        "hash": "fd4167209f16f497",
+        "ar": "Apple TV: التلفاز المباشر. بعد 48.7 و48.3. الملفات: `apps/tv/tvos/MaktabaTV/ContentView.swift`، وملفات جديدة `Views/Live*.swift`، وفهرس نصوصها، و`UITests` للتلفاز."
+      }
+    },
+    "story-48.35": {
+      "title": {
+        "hash": "dd28c7b4a8410041",
+        "ar": "Android TV: التلفاز المباشر"
+      },
+      "content": {
+        "hash": "1463f89609ff6398",
+        "ar": "Android TV: التلفاز المباشر. بعد 48.9 و48.3. الملفات: `apps/tv/android/app/src/main/java/com/hamzalabs/maktaba/tv/ui/screens/Live*.kt`، و`ui/SignedInApp.kt`، و`ui/components/TopBar.kt`، و`data/TvApi.kt`، والنصوص."
+      }
+    },
+    "story-48.36": {
+      "title": {
+        "hash": "49ce068622a3e848",
+        "ar": "المساعدة، ولقطات شاشة المتاجر، والتحقق"
+      },
+      "content": {
+        "hash": "05101a5f0e374877",
+        "ar": "المساعدة، ولقطات شاشة المتاجر، والتحقق. بعد كل شيء. الملفات: `web/src/help/content/{en,ar}/{apple-apps,android-apps,apple-tv,android-tv,watch-tv}.md`، وملف CHANGELOG (ومُدخله في السجل ضمن طلب دمج خاص بالسجل وحده)."
+      }
+    },
+    "story-48.37": {
+      "title": {
+        "hash": "5ceed03a7f3598a9",
+        "ar": "تقدّم الاتصال: لا مؤشر دوّار مجرّد أبدًا"
+      },
+      "content": {
+        "hash": "02f58f04d3792baa",
+        "ar": "تقدّم الاتصال: لا مؤشر دوّار مجرّد أبدًا. ملفات Apple: في MaktabaKit ‏`ConnectProgress.swift`، و`ConnectProgressView.swift`، و`Connect.swift` ‏(`HomeProbe`)، و`Homes.swift` ‏(`AppSession`: الاتصال، والاستعادة، وكلمة المرور)، و`CodeSignIn.swift`، و`StartViews.swift`، و`CloudViews.swift`، و`ApproveSignIn.swift`، وفهرس نصوصها. ملفات Android: ‏`core/session`، وشاشات البدء في `core/ui`، ونصوصها. كل انتظار في شاشة اتصال أو تسجيل دخول أو إعادة اتصال يقول ما يحدث الآن، بالإنجليزية والعربية: \"جارٍ البحث عن جهازك الرئيسي…\"، وكل عنوان تجري تجربته (\"تجربة [عنوان خاص] — 1 من 3\")، و\"تم العثور على <home>\"؛ ولتسجيل الدخول بالرمز \""
+      }
+    }
+  }
+}

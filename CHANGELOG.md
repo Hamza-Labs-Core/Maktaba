@@ -36,10 +36,99 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The library dashboard and the queue page load at once on a large home.** On a home with
+  3.3 million queue jobs, the library dashboard's numbers took 18 to 34 seconds and often
+  failed, the queue page took 18 to 20 seconds, and the cluster's queue snapshot timed out
+  every 10 seconds: each read counted the jobs' whole history, and every request ran it
+  again. A new table keeps the items each stage has finished per library, kept up to date by
+  the database as jobs finish (slot 0183, filled from the existing jobs when it is added);
+  three new indexes cover the waiting, finished and awaiting-review jobs, and the failed
+  items' latest runs are read one step each. On 3.1 million jobs the library numbers are
+  built in about 0.14 s and the queue snapshot in about 0.11 s. Every reader shares one
+  build, a slow or failed rebuild serves the last numbers instead of an error, and a pause
+  or a pool change shows at once. The dashboard and a library's page no longer wait forever:
+  after 8 seconds they say the read is slow, after 30 seconds that it failed, each with Try
+  again, and a refresh that fails keeps the tiles with a notice (English and Arabic).
+
+- **Processes no longer show a raw `{percent}`, and the Remote's Needs attention reads right in
+  Arabic.** A process whose detail code came without its values (an older home, a test
+  fixture) showed its words' placeholder, as in "Installing the transcription tools
+  ({percent}%)". The iPhone Remote, the Android Remote and the web's Processes card now fill the
+  values when they are sent and say the home's own sentence when they are not. On the Android
+  Remote, the check-clips count ("4 of 4 clips got no answer from the model") is said in the
+  app's language with its plural, so the Arabic no longer puts the number at the wrong end, and
+  each sample message keeps its own direction. The Arabic bar label for Needs attention is
+  «انتباه», the same word as the screen's title «ما يحتاج إلى انتباه».
+- **Apple Player: a quality change while paused stays paused.** Choosing a quality reopened
+  the video and played it for a moment before pausing it again, and the controls then said
+  it was playing. A paused video now reopens at the new quality paused, and the controls say
+  so.
+- **Test data is neutral.** The Android, Android TV, Apple and web tests and their screenshot
+  references use an invented home ("Maktaba Home"), addresses from the documentation ranges
+  (192.0.2.x, 198.51.100.x, 203.0.113.x) or `.local` names, and an invented media path.
+- **Every library's YouTube sources come from its linked videos.** The sources were seeded
+  once from the channels list, which keeps one library per channel, so 10 libraries had none:
+  seven that share one channel through a playlist each, and others whose channel was never
+  listed. Maktaba now works them out itself from what the link stage learned of each video
+  (its `.info.json` file or its title): the real playlists most of a library's linked videos
+  sit in, when no other library's videos make up those playlists, else the channel most of
+  them come from. A source found this way is added off and says so on the library's card; no
+  source already there changes, and none is turned on. A channel or playlist is never the
+  source of two libraries: the card shows the library that already follows it, with Merge.
+  It runs after each new link and in the reconciler's pass every 6 hours
+  (`MAKTABA_YT_DERIVE_HOURS`), whose first pass after the update covers the links made before
+  it; each decision and its reason is kept (`youtube_source_decisions`, slot 0182), and
+  `python -m maktaba_pipeline.tools.youtube_derive` prints them (a dry run unless `--apply`).
+  Every channel a linked video names is now known, with all the libraries its videos are in
+  (`youtube_channel_libraries`), so the title match also finds a shared channel's videos.
+  **Look for its channel** reads the linked videos first and gives the same answer, and the
+  MediaIntel import no longer gives a second library a source of a channel another library
+  holds.
+
+- **The MediaIntel import says what it does not seed.** A folder whose YouTube channel another
+  library already holds is now listed (its sources come from its linked videos), and a
+  folder with no channel id is listed and logged, instead of both being passed over in silence.
+
+- **The home's database no longer runs out of connections.** The API's background jobs (the
+  update check, the health samples, housekeeping) failed now and then with Postgres error
+  53300 ("remaining connection slots are reserved"): the bundled Postgres allowed its default
+  100 connections, while the streaming service and each TV slot opened one connection per
+  CPU (28 on a 28-core Mac) and a full node's pool on the home's database had no cap. The
+  bundled Postgres now allows 300 connections, the streaming service's pools have a cap (10,
+  6 for a TV slot, 4 on a machine's copy) and let an idle connection go after a minute, a full
+  node opens at most 4 connections of its own on the home's database, and a pipeline worker
+  lets an idle connection go after a minute and closes its LISTEN connections when it stops.
+  The new limit applies from the next update, which restarts the database.
+
+- **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
+  logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
+  data, or its stall notice) did not change the playback phase, so the channel banner did not
+  come back. A wait of more than a second now shows the banner and a Buffering line; both go
+  when the picture moves again (the banner 6 s later). `GET /api/channels/now` and the guide
+  give each channel's `watermark_position`, the corner the home burns its logo into; with a
+  bottom corner the banner and the mini-guide sit at the top. The iPhone, iPad and Mac Player's
+  Home now uses MaktabaKit's `HomeShelves`, as the Apple TV: a row that cannot be read keeps
+  what it showed, or shows a tile that reads Home again, in English and Arabic.
+
 - **Android: Favorite or Mark watched tapped while a video's page is read again stays as
   tapped.** Coming back to a video's page reads it again behind the page shown; a tap on
   Favorite or Mark watched before that read came back was saved, but the read then put the old
   state back on screen. The page now keeps what was tapped since the read began.
+- **The same fix everywhere else a page is read again while you change it.** On iPhone, iPad
+  and Mac, Favorite and Mark watched on a video's page, and a series' watched marks (on Android
+  too); on the web, the library grid's Mark watched and Add to favorites; in Maktaba Remote on
+  iPhone, iPad and Android, Pause, Resume, Machines may ask to join and Drain. A change made while the
+  page's read was on its way stays on screen as the home has it, instead of the old state
+  coming back.
+- **A row removed, or a switch turned, while its list is read again stays as you left it.** On
+  iPhone, iPad, Mac and Android: Forget in History (and its Load more), signing a session out,
+  forgetting or clearing recent searches, Not interested on Home and pinning a library. On the
+  web: recent and saved searches, marking notifications read, the Machines page, the relay and
+  home-switch cards, Live TV's hosts, channels, changes and simulcast outputs, Updates, speech
+  models, the Cloudflare remote, backups, the processing queue's pages and panels, the library
+  dashboard's sources, the Style and Enrichment panels, and a series' watched count on a video.
+  A read that began before the change was saved no longer brings the removed row or the old
+  state back on screen.
 
 - **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
   transcribe.** Its capability report looked for the GPU only through `pynvml`, which no
@@ -87,6 +176,45 @@ build fails when the two differ.
   a smaller download; Worker, for a joined machine), the bundle can be changed later, and a
   component added later downloads as a signed pack, or from an offline file for a home without
   internet. `[components] reconcile = off` in `server.toml` leaves everything as it is.
+- **Every YouTube source has an on/off switch, and Manage libraries shows each library's
+  YouTube.** In YouTube sources… each channel or playlist, off or on, has its **Downloads**
+  switch; turning it on brings it back in the mode it had when it was last on (kept per source),
+  or new uploads and the back catalogue the first time, and the mode list shows only while it is
+  on. Each card on Manage libraries says where its library stands, such as "YouTube: 1 source ·
+  off", with the switch right there for a library with one source, **YouTube sources…** for one
+  with several and **Add YouTube source** for one with none, all from the page's one read. For a
+  library with no source, **Look for its channel** reads the YouTube ids in its file names and
+  `.info.json` files and matches them with what Maktaba already knows (no network), then offers
+  **Add as source**, off; a library whose channel another library already follows, or whose name
+  is like one with a source, offers to merge into it. **Import from Tartube…** at the top of the
+  page makes every library's sources from Tartube's database or export at once (the path filled
+  in when one is found beside the library folders): each channel or playlist whose Tartube folder
+  is a library's folder becomes a source of that library, off, what Tartube downloaded counts as
+  downloaded, a source a library has keeps its mode, and the report lists what was added, what
+  was there, what was skipped (x.com, YouTube searches) and the Tartube channels with no library
+  yet; no library is made. Only admins can change a source, enforced by the API. New
+  `POST /api/libraries/{id}/youtube/guess`, `GET` and `POST /api/queues/youtube-tartube`, the
+  PATCH `on` field and the `youtube_tartube` stage, in English and Arabic.
+
+- **Maktaba Remote for iPad on TestFlight.** Every release tag now uploads the iPad Remote
+  (`Maktaba Remote iPad`, `com.hamzalabs.maktaba.remote.tablet`) to TestFlight beside the
+  other five Apple apps, and pull requests build it in the Apple apps check.
+
+- **A library dashboard and a page for each library.** Processing > Library dashboard
+  (`/queue/libraries`, admins) shows one tile per library: overall progress as a gauge, done,
+  running, waiting and failed as a bar, the last two weeks' finished jobs as a small chart, and
+  badges for failures, YouTube on or off (one click opens its sources), files left to convert and
+  duplicates to review. The tiles filter by needs attention, failing, to convert and YouTube off
+  (each with its count), sort by attention, name, failures, size or last change, and can be
+  selected for Re-queue, Refresh from YouTube, Convert to MP4 and Find duplicates. A library's
+  name opens its own admin page (`/admin/libraries/:id`, also from Manage libraries and the
+  Queues page) with its overview (videos, series, hours, storage, folders, health), queue
+  status (gauge, work per day, failing items, every queue and the actions), YouTube sources
+  with their modes, conversion (files left and the re-encode and convert-after-scan settings),
+  duplicates, trash, settings and access. The Queues page's long libraries table gives way to a
+  short list of the libraries needing attention. The new `GET /api/queues/libraries/activity`
+  (admins only, cached a minute) gives each library's finished and failed jobs per day. In
+  English and Arabic, right to left, and at phone width without sideways scrolling.
 - **maktaba.dev, the developer portal.** The plugin guides, the contributing guides, security
   (the policy, `security.txt` and the rules plugins and contributors follow), the API reference
   and the changelog on one site; the epics and specs stay on GitHub. Every page is in English

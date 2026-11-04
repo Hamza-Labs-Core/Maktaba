@@ -33,6 +33,10 @@ const (
 	StateExited State = "exited"
 	// StateStopped: stopped by a supervisor shutdown.
 	StateStopped State = "stopped"
+	// StateHeld: its component's gate is closed (Allow) and it does not run: a Snapshot
+	// reports it so, whatever the loop was at when the gate closed (a wait between two
+	// restarts reads held, not backoff, and has no next restart).
+	StateHeld State = "held"
 )
 
 // Exit reasons recorded in ExitInfo.Reason and Event.Reason.
@@ -78,7 +82,8 @@ type ProbeInfo struct {
 type ChildStatus struct {
 	Role     Role   `json:"role"`
 	Instance string `json:"instance,omitempty"`
-	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby).
+	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby). An
+	// always-on process that is held (Blocked, no pid) is not wanted until its gate opens.
 	Wanted        bool       `json:"wanted"`
 	State         State      `json:"state"`
 	PID           int        `json:"pid,omitempty"`
@@ -213,6 +218,16 @@ func (s *Supervisor) snapshot(llm *llmserver.Status, ff *ffmpeg.Report) Snapshot
 		st.CrashLoop = c.failed && !(st.PID > 0 && st.UptimeSec >= s.policy.HealthyAfter.Seconds())
 		st.LastExit = copyPtr(st.LastExit)
 		st.LastProbe = copyPtr(st.LastProbe)
+		if st.Blocked && st.PID == 0 {
+			// its component is off: nothing restarts or loops until the gate opens
+			st.State, st.NextRestartAt, st.CrashLoop = StateHeld, nil, false
+			if !c.proc.OnDemand {
+				// and an always-on process is not wanted until it opens: nothing waits on
+				// it (an update's checks, healthyFor, the health page); it starts once the
+				// gate opens (c.wanted is kept). An on-demand one keeps whether it was asked for.
+				st.Wanted = false
+			}
+		}
 		out.Processes = append(out.Processes, st)
 	}
 	from := 0

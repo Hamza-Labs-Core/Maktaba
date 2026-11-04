@@ -7,7 +7,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,13 +49,47 @@ func TestAllowStopsWithCatalogGraceAndNoRestart(t *testing.T) {
 	}
 	time.Sleep(1500 * time.Millisecond) // 30 backoffs of the test policy
 	st = proc(s.Snapshot(), RolePipeline)
-	if st.PID != 0 || st.Restarts != 0 || st.State != StateStopped {
+	if st.PID != 0 || st.Restarts != 0 || st.State != StateHeld {
 		t.Fatalf("restarted after Allow(false): %+v", st)
 	}
 	if err := s.Allow(RolePipeline, "stt-1", true); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, s, "running again", func(sn Snapshot) bool { return proc(sn, RolePipeline).State == StateRunning })
+}
+
+// A dormant process built before its program was on this machine (ollama before the
+// runtime.ollama pack) reads Present and Path again: missing while the program is not
+// there, and once it is, the gate opened starts that program.
+func TestDormantProgramFoundAfterTheBoot(t *testing.T) {
+	p, _ := fakeProc(t, RoleOllama, "serve")
+	bin, env := p.Cmd.Path, p.Cmd.Env
+	p.Cmd = exec.Command(filepath.Join(t.TempDir(), "not-yet", "ollama"), p.Cmd.Args[1:]...)
+	p.Cmd.Env = env
+	var found atomic.Bool
+	p.Dormant = true
+	p.Path = func() string {
+		if found.Load() {
+			return bin
+		}
+		return ""
+	}
+	p.Present = found.Load
+	s := New([]Process{p}, testPolicy(), WithLog(io.Discard))
+	running(t, s)
+	if v := s.procViews(); len(v) != 1 || !v[0].Missing {
+		t.Fatalf("views %+v: the program is not here yet", v)
+	}
+	found.Store(true)
+	if v := s.procViews(); v[0].Missing {
+		t.Fatalf("views %+v: the program is here now", v)
+	}
+	if err := s.Allow(RoleOllama, "", true); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, s, "the program found after the boot running", func(sn Snapshot) bool {
+		return proc(sn, RoleOllama).State == StateRunning
+	})
 }
 
 // T03: a slot whose gate is closed does not start when wanted, and the front door's

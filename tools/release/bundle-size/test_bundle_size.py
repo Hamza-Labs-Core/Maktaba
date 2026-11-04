@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -146,6 +147,19 @@ class ProcessTreeTest(unittest.TestCase):
         t = bundle_size.process_tree(100, ps)
         self.assertEqual(len(t["processes"]), 5)
         self.assertEqual(t["helpers"], [])
+
+    def test_imports_without_tomllib(self) -> None:
+        # core-home.sh runs the Mac's /usr/bin/python3 (3.9): process_tree needs no tomllib
+        code = (
+            "import sys; sys.modules['tomllib'] = None; sys.path.insert(0, sys.argv[1]); "
+            "import bundle_size; print(bundle_size.process_tree(100, sys.argv[2])['processes'])"
+        )
+        out = subprocess.run(
+            [sys.executable, "-I", "-c", code, str(Path(__file__).parent), self.PS],
+            capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("maktaba-api", out.stdout)
 
     def test_no_supervisor(self) -> None:
         with self.assertRaises(ValueError):

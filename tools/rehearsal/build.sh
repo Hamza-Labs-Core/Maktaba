@@ -93,8 +93,9 @@ build() {
 build "$prev_src" "$out/prev" "$prev_version" 0
 build "$cur_src" "$out/cur" "$cur" $((rev + 1))
 build "$cur_src" "$out/next" "$next" $((rev + 1))
-# story 51.18 (scenario 13): a release after the failing one that passes
-build "$cur_src" "$out/after" "$after" $((rev + 1))
+# story 51.18 (scenario 13): a release after the failing one that passes. It carries the
+# failing release's migration too (rev+2, kept by the rollback: afterSpec), so it knows it
+build "$cur_src" "$out/after" "$after" $((rev + 2))
 
 # story 51.18 (scenarios 13, 14): this commit's tool.yt-dlp pack for this machine's
 # platform, built by the release's own pack build for each of this commit's versions,
@@ -108,9 +109,14 @@ if [ -f "$cur_src/tools/release/packs/build.sh" ]; then
         echo "build.sh: the tool.yt-dlp pack of $v ($platform)"
         bash "$cur_src/tools/release/packs/build.sh" --version "$v" --platform "$platform" --only tool.yt-dlp \
             --out "$out/packs/$v"
+        # --platform and --only: the index of the one pack built here (a missing pack of
+        # the release is an error; this kit builds one); a tree from before the two flags
+        # left the others out with a warning
+        only=(--platform "$platform" --only tool.yt-dlp)
+        grep -q '"only"' "$cur_src/tools/release/cmd/gen-components-index/main.go" || only=()
         (cd "$cur_src/tools/release" && GOTOOLCHAIN=local go run ./cmd/gen-components-index --version "$v" \
             --commit 0000000000000000000000000000000000000000 --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --dist "$out/packs/$v")
+            --dist "$out/packs/$v" ${only[@]+"${only[@]}"})
     done
 else
     echo "build.sh: $cur_src has no pack build: no packs in the kit"

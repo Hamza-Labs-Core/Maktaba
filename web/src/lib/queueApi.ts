@@ -40,6 +40,8 @@ export interface JobRef {
   } | null;
   /** the worker (workers.id) running it; absent on older servers, null while it waits */
   claimed_by?: string | null;
+  /** component_catchup (Epic 51, story 51.14): the components it catches up for (its payload) */
+  components?: string[];
 }
 
 export interface Pool {
@@ -280,6 +282,8 @@ export interface YouTubeSource {
   external_id: string;
   folder: string | null;
   mode: SourceMode;
+  /** the mode it had when last on: what switching it on restores */
+  last_on_mode?: Exclude<SourceMode, "off"> | null;
   added_at: string | null;
   options: SourceOptions;
   status: string | null;
@@ -300,6 +304,63 @@ export interface YouTubeSource {
 export interface SourceWriteResponse {
   source: YouTubeSource;
   refresh: LibraryActionResult | null;
+}
+
+/** POST /api/libraries/{id}/youtube/guess: the channel a library's files look like. */
+export interface SourceGuess {
+  library_id: string;
+  /** null: it looked and found none */
+  kind: "channel" | "playlist" | null;
+  external_id: string | null;
+  url: string | null;
+  title: string | null;
+  evidence: "info_json" | "filename" | null;
+  sample_youtube_id: string | null;
+  ids_found: number;
+  ids_matched: number;
+  looked_at: string;
+  /** the libraries that already follow it */
+  followed_by: { id: string; name: string }[];
+}
+
+export interface TartubeRow {
+  name: string;
+  kind?: "channel" | "playlist";
+  url?: string | null;
+  library_id?: string;
+  library?: string;
+  external_id?: string | null;
+  /** skipped: no_url, not_youtube, search, unrecognised, unresolved */
+  reason?: string;
+}
+
+/** The youtube_tartube job's report (its output summary). */
+export interface TartubeReport {
+  entries: number;
+  created: TartubeRow[];
+  existing: TartubeRow[];
+  skipped: TartubeRow[];
+  not_in_maktaba: TartubeRow[];
+  counts: {
+    created: number;
+    existing: number;
+    skipped: number;
+    not_in_maktaba: number;
+    seeded: number;
+    downloaded: number;
+  };
+}
+
+/** GET /api/queues/youtube-tartube: the last import and the file to offer. */
+export interface TartubeImport {
+  job_id: string | null;
+  state: string | null;
+  error: string | null;
+  created_at: string | null;
+  finished_at: string | null;
+  path: string | null;
+  report: TartubeReport | null;
+  suggested_path: string | null;
 }
 
 export type DownloadState = "wanted" | "downloading" | "done" | "skipped" | "gone" | "failed";
@@ -697,6 +758,12 @@ export interface LibraryQueueRow {
   last_activity_at: string | null;
 }
 
+/** GET /api/queues/libraries/activity: done / failed per day, aligned with days */
+export interface LibraryActivityResponse {
+  days: string[];
+  items: { library_id: string; done: number[]; failed: number[] }[];
+}
+
 export interface HealthSeries {
   metric: string;
   points: { t: string; v: number }[];
@@ -929,6 +996,12 @@ export const queueApi = {
   running: (host?: string) =>
     api.get<{ host: string; jobs: JobRef[] }>(`/api/queues/running${qs({ host })}`),
   libraries: () => api.get<{ items: LibraryQueueRow[] }>("/api/queues/libraries"),
+  /** each library's finished jobs per UTC day, oldest first (admin; cached 1 min) */
+  libraryActivity: (days = 14) =>
+    api.get<LibraryActivityResponse>(`/api/queues/libraries/activity${qs({ days })}`),
+  /** one library's Epic 47 summary (YouTube, Not MP4, duplicates, trash) */
+  offlineSummary: (id: string) =>
+    api.get<OfflineSummary>(`/api/libraries/${q(id)}/offline-summary`),
   health: (hours = 4) => api.get<{ series: HealthSeries[] }>(`/api/queues/health${qs({ hours })}`),
   explain: (text: string, libraryId?: string, limit?: number) =>
     api.get<ExplainResponse>(`/api/explain${qs({ q: text, library_id: libraryId, limit })}`),
@@ -994,6 +1067,10 @@ export const queueApi = {
     ),
   importTartube: (id: string, body: { path: string; database?: string; channels?: string[] }) =>
     api.post<LibraryActionResponse>(`/api/libraries/${q(id)}/youtube/tartube`, body),
+  guessSource: (id: string) => api.post<SourceGuess>(`/api/libraries/${q(id)}/youtube/guess`),
+  tartubeSources: () => api.get<TartubeImport>("/api/queues/youtube-tartube"),
+  importTartubeSources: (body: { path: string; database?: string }) =>
+    api.post<{ job_id: number | null; outcome: string }>("/api/queues/youtube-tartube", body),
   sources: (id: string) =>
     api.get<{ items: YouTubeSource[] }>(`/api/libraries/${q(id)}/youtube/sources`),
   addSource: (
@@ -1003,7 +1080,13 @@ export const queueApi = {
   patchSource: (
     id: string,
     sid: string,
-    body: { mode?: SourceMode; folder?: string; options?: Record<string, unknown> }
+    body: {
+      mode?: SourceMode;
+      /** the switch: false is off, true restores the last mode it had on */
+      on?: boolean;
+      folder?: string;
+      options?: Record<string, unknown>;
+    }
   ) => api.patch<SourceWriteResponse>(`/api/libraries/${q(id)}/youtube/sources/${q(sid)}`, body),
   deleteSource: (id: string, sid: string) =>
     api.delete<void>(`/api/libraries/${q(id)}/youtube/sources/${q(sid)}`),

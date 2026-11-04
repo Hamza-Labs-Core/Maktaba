@@ -73,11 +73,90 @@ struct HomeShelvesTests {
         guard case .failed = noHome.first?.content else { Issue.record("home's retry tile"); return }
     }
 
+    /// A refresh that fails keeps what that source showed (the Player's kept rows, the TV's
+    /// last read); with nothing to keep, the retry tile.
+    @Test func aFailedRefreshKeepsWhatShowed() throws {
+        let (home, rails, now) = try Self.answers()
+        let down = APIError.transport("The network connection was lost.")
+        let before = HomeShelves.build(home: .success(home), rails: .success(rails), now: .success(now))
+
+        let again = HomeShelves.build(home: .failure(down), rails: .failure(down), now: .failure(down), keeping: before)
+        #expect(again == before, "every row as it was, in its place")
+
+        // the recommendations read again, Home not: the kept cards still name them
+        let recsOnly = HomeShelves.build(home: .failure(down), rails: .success(rails), now: .success(now), keeping: before)
+        #expect(recsOnly.map(\.key) == before.map(\.key))
+        #expect(recsOnly.first { $0.key == HomeShelf.forYou }?.cards.allSatisfy { $0.title != nil } == true)
+
+        // nothing to keep for a source: its tile
+        let homeOnly = before.filter { $0.source == .home }
+        let tiles = HomeShelves.build(home: .success(home), rails: .failure(down), now: .failure(down), keeping: homeOnly)
+        #expect(tiles.first { $0.key == HomeShelf.liveNow }?.failure != nil)
+        #expect(tiles.last?.key == HomeShelf.recommendations && tiles.last?.failure != nil)
+        // a tile is never kept as rows
+        let fromTiles = HomeShelves.build(home: .success(home), rails: .failure(down), now: .success([]), keeping: tiles)
+        #expect(fromTiles.last?.failure != nil)
+    }
+
+    /// Continue watching's cards carry where the person stopped (Resume); the others none.
+    @Test func continueWatchingResumesWhereThePersonStopped() throws {
+        let (home, _, _) = try Self.answers()
+        let shelves = HomeShelves.build(home: .success(home), rails: .success([]), now: .success([]))
+        let cw = try #require(shelves.first { $0.key == HomeShelf.continueWatching })
+        #expect(cw.cards.map(\.resumeAt) == home.continueWatching.map { $0.positionSec ?? 0 })
+        #expect(shelves.filter { $0.key != HomeShelf.continueWatching }.flatMap(\.cards).allSatisfy { $0.resumeAt == nil })
+    }
+
+    /// Not interested takes the video out of the recommendation shelves only; an emptied
+    /// shelf goes.
+    @Test func notInterestedLeavesTheRecommendations() {
+        let card = { (id: String) in HomeShelfCard(videoID: id, title: id) }
+        let shelves = [
+            HomeShelf(key: HomeShelf.favorites, kind: .favorites, content: .cards([card("v1"), card("v2")])),
+            HomeShelf(key: HomeShelf.forYou, kind: .forYou, content: .cards([card("v1"), card("v3")])),
+            HomeShelf(key: HomeShelf.fromLibrary, kind: .fromLibrary, content: .cards([card("v1")])),
+        ]
+        let left = HomeShelves.dropping("v1", from: shelves)
+        #expect(left.map(\.key) == [HomeShelf.favorites, HomeShelf.forYou])
+        #expect(left[0].cards.map(\.videoID) == ["v1", "v2"], "Favorites keeps it")
+        #expect(left[1].cards.map(\.videoID) == ["v3"])
+        #expect(shelves[1].isRecommendation && !shelves[0].isRecommendation)
+    }
+
+    /// The Player keeps shelves on the device: kinds and cards survive a round trip.
+    @Test func shelvesCanBeKept() throws {
+        let kinds: [HomeShelf.Kind] = [.continueWatching, .library(id: "lib-1", name: "Lectures"), .forYou]
+        #expect(try JSONDecoder().decode([HomeShelf.Kind].self, from: JSONEncoder().encode(kinds)) == kinds)
+        let card = HomeShelfCard(videoID: "v1", title: "One", subtitle: "S", progress: 0.5, resumeAt: 12)
+        #expect(try JSONDecoder().decode(HomeShelfCard.self, from: JSONEncoder().encode(card)) == card)
+    }
+
     @Test func noLiveTVIsNoShelf() throws {
         let (home, _, _) = try Self.answers()
         let shelves = HomeShelves.build(home: .success(home), rails: .success([]),
                                         now: .failure(APIError.status(403, "{}")))
         #expect(!shelves.contains { $0.key == HomeShelf.liveNow })
+    }
+
+    /// Live TV off on the home (story 51.11): no On now row, and no retry tile for the
+    /// channels' 409 either; the other rows, and their own failures, as always.
+    @Test func liveTVOffShowsNoOnNowRowNorItsFailure() throws {
+        let (home, rails, now) = try Self.answers()
+        let off = APIError.status(409, #"{"code":"component_off","feature":"live_tv"}"#)
+        let failed = HomeShelves.build(home: .success(home), rails: .success(rails), now: .failure(off))
+        #expect(failed.first { $0.key == HomeShelf.liveNow }?.failure != nil, "the 409 alone is a retry tile")
+        let shown = HomeShelves.shown(failed, liveTV: false)
+        #expect(!shown.contains { $0.key == HomeShelf.liveNow })
+        #expect(shown.map(\.key) == failed.map(\.key).filter { $0 != HomeShelf.liveNow })
+
+        let channels = HomeShelves.build(home: .success(home), rails: .success(rails), now: .success(now))
+        #expect(!HomeShelves.shown(channels, liveTV: false).contains { $0.key == HomeShelf.liveNow })
+        #expect(HomeShelves.shown(channels, liveTV: true) == channels, "on: every row")
+        #expect(HomeShelves.shown(failed, liveTV: true) == failed, "on: a failure still offers Retry")
+
+        let down = APIError.transport("The network connection was lost.")
+        let noHome = HomeShelves.build(home: .failure(down), rails: .success(rails), now: .failure(off))
+        #expect(HomeShelves.shown(noHome, liveTV: false).first?.key == HomeShelf.home, "another row's failure stays")
     }
 
     @Test func emptyRowsAreLeftOut() throws {

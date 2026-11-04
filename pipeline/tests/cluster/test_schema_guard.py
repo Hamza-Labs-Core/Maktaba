@@ -71,8 +71,8 @@ def test_schema_rev_is_the_highest_migration_this_code_ships() -> None:
 
 
 def test_schema_rev_is_the_same_in_every_service() -> None:
-    """The API's and the streaming node's SchemaRev are raised with this one (slot 0174:
-    the second listen's stage)."""
+    """The API's and the streaming node's SchemaRev are raised with this one (slot 0182:
+    YouTube sources from the linked videos)."""
     root = MIGRATIONS_DIR.parents[2]
     for go in ("api/internal/cluster/schemaguard/guard.go", "streaming/internal/cluster/schema.go"):
         m = re.search(r"const SchemaRev = (\d+)", (root / go).read_text(encoding="utf-8"))

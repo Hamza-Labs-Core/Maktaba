@@ -6,7 +6,9 @@ started by ``runtime.py``. It reads desired state with the 51.02 store (``LISTEN
 components_changed`` on Postgres, and a revision poll every :data:`~.store.POLL_S`
 seconds: when nothing changes that poll is its only query), and on every change:
 
-1. computes each component's gate (:mod:`.stages`);
+1. computes each component's gate (:mod:`.stages`), a component whose settings section
+   could not be moved to this release's shape kept off with ``settings_invalid``
+   (``settings_migrate.blocked``, story 51.13: it never runs on the defaults);
 2. gives the closed stage groups' stages to this worker's ``StageSelector`` at once
    (``component_off:<id>`` / ``component_held:<id>``), so it stops claiming them;
 3. drains this worker's jobs of the stages that just stopped (``drain_stages``: ask them
@@ -29,11 +31,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from collections.abc import Awaitable, Callable, Collection, Coroutine, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from ..cluster.stages import REASON_UNAVAILABLE
 from ..engine.graph import CATALOG_ID, StageDef
 from ..engine.sql import is_pg, now, parse_ts
 from ..engine.sync import COMPONENT_OFF, apply_gates
@@ -43,6 +47,7 @@ from . import store
 from .catalog import DEFAULT_STOP_GRACE_S, Catalog, default
 from .stages import (
     HELD,
+    SETTINGS_INVALID,
     Gate,
     extension_name,
     gates,
@@ -62,6 +67,9 @@ __all__ = [
 ]
 
 _log = get_logger()
+
+#: phases a change passes through, not one it ends in (no transition is timed to them)
+_PASSING = frozenset({"starting", "draining", "installing", "removing", ""})
 
 #: every loop the pipeline runs, by its catalog name (``pipeline:<name>``), and the
 #: component it belongs to. ``core.pipeline``'s are declared and never stopped; the others
@@ -83,6 +91,9 @@ PIPELINE_LOOPS: dict[str, str] = {
 
 #: the home's stage gates are written by one worker at a time
 LEADER_KEY = "components_stage_gates"
+
+#: how long the last read and report at close may take (each), so a stop is never held up
+FINAL_REPORT_S = 2.0
 
 LoopFn = Callable[[asyncio.Event], Coroutine[Any, Any, None]]
 
@@ -155,6 +166,7 @@ class ComponentRunner:
         extension_states: Callable[[], Awaitable[Mapping[str, Any]]] | None = None,
         paused: Callable[[], bool] | None = None,
         drain_poll_s: float = 1.0,
+        settings_failed: Callable[[], Awaitable[Mapping[str, str]]] | None = None,
     ) -> None:
         self.db = db
         self.machine = machine or HOME
@@ -171,6 +183,10 @@ class ComponentRunner:
         self._extension_states = extension_states
         self._paused = paused
         self.drain_poll_s = drain_poll_s
+        self._settings_failed = settings_failed
+        #: component -> [(section, error)]: the components whose settings failed to move
+        #: (story 51.13), read at each pass that acts
+        self.settings_blocked: dict[str, list[tuple[str, str]]] = {}
         self.claims: Any = None
         self.gates: dict[str, Gate] = {}
         self.home_gates: dict[str, Gate] = {}
@@ -185,6 +201,10 @@ class ComponentRunner:
         #: acts (story 51.07: an enabled extension without its settings is Waiting)
         self.ext_states: Mapping[str, Any] = {}
         self._reported: list[Status] | None = None
+        #: component -> [generation acted on, when (monotonic), pending, last_transition]:
+        #: the time from a generation to the phase it reached (story 51.14), as the
+        #: supervisor reports it
+        self._transitions: dict[str, list[Any]] = {}
         self._wake = asyncio.Event()
         self._listener: Any = None
         self._graph_names = {s.name for s in self.graph}
@@ -207,6 +227,30 @@ class ComponentRunner:
     async def _desired(self) -> tuple[dict[str, Desired], int]:
         return await store.desired(self.db, self.machine)
 
+    async def _read_settings(self) -> bool:
+        """Read which components' settings failed to move (story 51.13); True when that
+        changed. A read that fails keeps the last answer."""
+        from . import settings_migrate
+
+        try:
+            if self._settings_failed is not None:
+                failed = await self._settings_failed()
+            else:
+                failed = await settings_migrate.failed_sections(self.db)
+        except Exception as exc:  # noqa: BLE001 - the last answer stands
+            _log.warning("components_settings_unreadable", error=f"{type(exc).__name__}: {exc}")
+            return False
+        blocked = settings_migrate.blocked(failed, self.catalog)
+        if blocked == self.settings_blocked:
+            return False
+        self.settings_blocked = blocked
+        if blocked:
+            _log.warning(
+                "components_settings_invalid",
+                components={cid: [s for s, _ in items] for cid, items in blocked.items()},
+            )
+        return True
+
     async def prime(self) -> dict[str, str] | None:
         """Before the worker's first selection and graph sync: read desired state, set
         this machine's stage gates on the selector, and answer the home's stage gates for
@@ -220,7 +264,8 @@ class ComponentRunner:
             _log.warning("components_desired_unreadable", error=f"{type(exc).__name__}: {exc}")
             return None
         self.revision = rev
-        self.gates = gates(desired, self.catalog)
+        await self._read_settings()
+        self.gates = gates(desired, self.catalog, self.settings_blocked)
         self.home_gates = self.gates if self.machine == HOME else {}
         if not self.reconcile:
             return None
@@ -245,6 +290,9 @@ class ComponentRunner:
         global _ACTIVE
         _ACTIVE = self
         try:
+            # LISTEN first: a change written after the first pass read desired state, but
+            # before the listener was up, would otherwise wait for the next poll
+            await self._listen()
             await self._pass(force=True)
             while not stop.is_set():
                 await self._listen()
@@ -293,22 +341,33 @@ class ComponentRunner:
         if self._paused is not None and self._paused():
             return
         try:
+            settings_read = False
             if not force:
                 rev = await store.revision(self.db)
                 if rev == self.revision:
-                    return
+                    # a component kept off by its settings is looked at again on every
+                    # poll (a full save clears it without moving the revision); otherwise
+                    # the poll stays one query (T10)
+                    if not self.settings_blocked or not await self._read_settings():
+                        return
+                    settings_read = True
             desired, rev = await self._desired()
-            await self.apply(desired, rev)
+            await self.apply(desired, rev, settings_read=settings_read)
         except Exception:  # noqa: BLE001 - the next pass tries again
             self.revision = -1
             _log.exception("components_pass_failed", part=self.part)
 
     # -- one pass ----------------------------------------------------------------
 
-    async def apply(self, desired: Mapping[str, Desired], rev: int) -> None:
-        """Act on ``desired`` (this machine's merged desired state, read at ``rev``)."""
+    async def apply(
+        self, desired: Mapping[str, Desired], rev: int, *, settings_read: bool = False
+    ) -> None:
+        """Act on ``desired`` (this machine's merged desired state, read at ``rev``), with
+        the failed settings sections read again unless ``settings_read``."""
         self.revision = rev
-        self.gates = gates(desired, self.catalog)
+        if not settings_read:
+            await self._read_settings()
+        self.gates = gates(desired, self.catalog, self.settings_blocked)
         if self.machine == HOME:
             self.home_gates = self.gates
         await self._read_extensions()
@@ -567,10 +626,21 @@ class ComponentRunner:
             elif g.open and ext is not None and not ext.configured:
                 phase = "waiting"
                 conds.append(Condition("Ready", "false", "not_configured"))
+            elif g.open and (model := self._unavailable_model(cid)) is not None:
+                # on, but none of its stages can run here for want of a model this machine
+                # does not have (stage_unavailable_here): it waits on that model
+                phase = "waiting"
+                conds.append(Condition("RequirementsMet", "unknown", "", {"component": model}))
+                conds.append(Condition("Ready", "false"))
             elif g.open:
                 phase = "running"
                 conds.append(Condition("RequirementsMet", "true"))
                 conds.append(Condition("Ready", "true"))
+            elif g.reason == SETTINGS_INVALID:
+                # its settings could not be moved to this release's shape: failed, not on
+                # the defaults (story 51.13), until an admin saves the section in full
+                phase = "failed"
+                conds.append(Condition("Ready", "false", SETTINGS_INVALID, dict(g.params)))
             elif g.reason == "dependency_off":
                 phase = "waiting" if g.state != HELD else "stopped"
                 conds.append(
@@ -585,6 +655,8 @@ class ComponentRunner:
             else:
                 phase = "off"
                 conds.append(Condition("Ready", "false"))
+            if (lt := self._transition(cid, g.generation, phase)) is not None:
+                detail["last_transition"] = lt
             out.append(
                 Status(
                     id=cid,
@@ -595,6 +667,41 @@ class ComponentRunner:
                 )
             )
         return out
+
+    def _transition(self, cid: str, generation: int, phase: str) -> dict[str, Any] | None:
+        """{to, seconds}: from the generation of cid this runner acted on to the settled
+        phase it reached (the supervisor's maktaba_component_transition_seconds reads it);
+        None before the first one settled."""
+        t = self._transitions.get(cid)
+        if t is None or t[0] != generation:
+            t = [generation, time.monotonic(), True, t[3] if t else None]
+            self._transitions[cid] = t
+        if t[2] and phase not in _PASSING:
+            t[2] = False
+            t[3] = {"to": phase, "seconds": round(time.monotonic() - t[1], 3)}
+        return t[3]  # type: ignore[no-any-return]
+
+    def _unavailable_model(self, cid: str) -> str | None:
+        """The model component cid needs when every one of its stages this worker serves
+        is unavailable here (the selector's ``unavailable`` reasons: a model the engine
+        cannot load); None when one can run, none is served here, or it needs no model."""
+        sel = self.selector
+        c = self.catalog.get(cid)
+        if sel is None or c is None or not c.stages:
+            return None
+        requested = getattr(sel, "requested", None)
+        mine = [
+            s for s in c.stages if s in self._graph_names and (requested is None or s in requested)
+        ]
+        off = getattr(sel, "stages_off", {}) or {}
+        if not mine or not all(str(off.get(s, "")).startswith(REASON_UNAVAILABLE) for s in mine):
+            return None
+        for group in self.catalog.requires(cid):
+            for alt in group:
+                a = self.catalog.get(alt)
+                if a is not None and a.kind == "asset" and alt.startswith("model."):
+                    return alt
+        return None
 
     def _extension_of(self, cid: str) -> Any:
         """The ExtensionState of a built-in extension component (None: not one, or no
@@ -618,9 +725,30 @@ class ComponentRunner:
 
     # -- the end ---------------------------------------------------------------
 
+    async def _report_final(self) -> None:
+        """Before the process goes: read desired state once more and report this part's
+        rows from it when a gate moved since the last pass. The supervisor stops a process
+        whose component was just turned off or held, often before this runner's pass saw
+        the change; without this its rows would stay at the old generation (waiting or
+        running) while it no longer runs, and nothing else writes them. Bounded by
+        :data:`FINAL_REPORT_S`; a failure leaves the rows as they were."""
+        if not self.reconcile or self.revision < 0:
+            return
+        try:
+            desired, _rev = await asyncio.wait_for(self._desired(), FINAL_REPORT_S)
+            fresh = gates(desired, self.catalog, self.settings_blocked)
+            if fresh == self.gates:
+                return
+            self.gates = fresh
+            await asyncio.wait_for(self._report(), FINAL_REPORT_S)
+        except Exception as exc:  # noqa: BLE001 - going anyway: the rows stay as they were
+            _log.warning("components_final_report_failed", error=f"{type(exc).__name__}: {exc}")
+
     async def close(self) -> None:
-        """Stop every loop it started (each within its grace) and every drain."""
+        """Report what desired state now makes of this part (:meth:`_report_final`), then
+        stop every loop it started (each within its grace) and every drain."""
         global _ACTIVE
+        await self._report_final()
         for lp in self.loops.values():
             if lp.stop is not None:
                 lp.stop.set()

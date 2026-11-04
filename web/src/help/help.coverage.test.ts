@@ -49,6 +49,18 @@ function anchorSet(topic: string): Set<string> {
   return new Set(anchors(src("en", topic) ?? ""));
 }
 
+/** The text of the entry headed `{#anchor}`, up to the next heading of its level or higher. */
+function section(md: string, anchor: string): string {
+  const lines = md.split("\n");
+  const at = lines.findIndex((l) => /^#{1,6}\s/.test(l) && l.includes(`{#${anchor}}`));
+  if (at < 0) return "";
+  const level = /^(#+)/.exec(lines[at]!)![1]!.length;
+  const end = lines.findIndex(
+    (l, i) => i > at && /^(#+)\s/.test(l) && /^(#+)/.exec(l)![1]!.length <= level
+  );
+  return lines.slice(at, end < 0 ? undefined : end).join("\n");
+}
+
 function expectRef(ref: HelpRef, what: string) {
   expect(isHelpTopic(ref.topic), `${what}: no topic ${ref.topic}`).toBe(true);
   if (ref.anchor) {
@@ -188,6 +200,38 @@ describe("help links from the app", () => {
       .filter((s): s is string => !!s);
     expect(stages.length).toBeGreaterThan(10);
     for (const s of stages) expectRef(stageHelp(s), `stage ${s}`);
+  });
+
+  it("every stage the pipeline ships has its entry, and none says it is not built yet", () => {
+    // the pipeline's stage registry (engine/stages/registry.py CORE_MODULES) and the
+    // graph's StageDef.unreleased flag: a stage still unreleased may say it comes later
+    const registry = read("../pipeline/src/maktaba_pipeline/engine/stages/registry.py");
+    const core = /CORE_MODULES[^=]*=\s*\{([\s\S]*?)\n\}/.exec(registry)?.[1] ?? "";
+    const shipped = [...core.matchAll(/^\s+"([a-z0-9_]+)":\s*"maktaba_pipeline\./gm)].map(
+      (m) => m[1]!
+    );
+    expect(shipped.length).toBeGreaterThan(40);
+    const graph = read("../pipeline/src/maktaba_pipeline/engine/graph.py");
+    const unreleased = new Set(
+      [
+        ...graph.matchAll(
+          /StageDef\(\s*name="([a-z0-9_]+)"(?:(?!StageDef\()[\s\S])*?unreleased=True/g
+        ),
+      ].map((m) => m[1]!)
+    );
+    const LATER: Record<(typeof LOCALES)[number], RegExp> = {
+      en: /not set up yet|later version|not built yet|coming soon/i,
+      ar: /غير مُعدّ بعد|غير معد بعد|إصدار لاحق/,
+    };
+    for (const stage of shipped) {
+      const ref = stageHelp(stage);
+      expectRef(ref, `stage ${stage}`);
+      if (unreleased.has(stage)) continue;
+      for (const l of LOCALES) {
+        const body = section(src(l, "stages")!, ref.anchor!);
+        expect(body, `${l}/stages#${ref.anchor}`).not.toMatch(LATER[l]);
+      }
+    }
   });
 
   it("every part of the System health page has its entry, and the API's kinds are all listed", () => {

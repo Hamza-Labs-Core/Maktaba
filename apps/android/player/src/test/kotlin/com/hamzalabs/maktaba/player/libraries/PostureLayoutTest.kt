@@ -13,7 +13,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
@@ -219,7 +219,8 @@ class PostureLayoutTest {
         searchFor(SearchFixtures.EN.query)
         assertTrue("the results are on the start page", bounds("search-results").right <= hinge.left + 0.5.dp)
         compose.onNodeWithTag("title-v1").assertIsSelected()
-        compose.onNodeWithText("The Message").assertExists()
+        // the page's heading: the poster shows the title too once its picture is found missing
+        compose.onNodeWithTag("video-title").assertTextEquals("The Message")
         compose.onNodeWithTag("title-v2").performClick()
         compose.settled(home, "the second result's page") { compose.onAllNodes(hasText("Omar, Episode 1")).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("title-v2").assertIsSelected()

@@ -28,6 +28,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/cluster"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/placement"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/slot"
@@ -69,7 +70,7 @@ func runSlot(args []string) error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-	pool, err := pgxpool.New(ctx, dsn)
+	pool, err := pgpool.New(ctx, dsn, pgpool.Slot)
 	if err != nil {
 		return err
 	}

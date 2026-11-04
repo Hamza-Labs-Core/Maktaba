@@ -122,7 +122,45 @@ func Plan(cat *components.Catalog, f Facts) map[string]string {
 		out[c.ID] = w
 	}
 	keepRequirementsOn(cat, out)
+	unsetNeededAssets(cat, out)
 	return out
+}
+
+// unsetNeededAssets leaves with no desired row the asset an enabled component needs when
+// none of its requirement is on disk yet (a fresh home, one that never transcribed):
+// seeding it absent would turn the stage off, and seeding it installed would say it is
+// there when it is not. With no row it reads as the catalog default (wanted): the packs
+// runner installs a missing pack (runtime.ml) and a model is fetched on first use, or when
+// an admin asks for it on the Components page. The first of an "any:" group that runs
+// here is taken.
+func unsetNeededAssets(cat *components.Catalog, out map[string]string) {
+	platform := Platform()
+	for _, c := range cat.Components() {
+		if out[c.ID] != components.WantEnabled {
+			continue
+		}
+		for _, r := range cat.Requires(c.ID) {
+			pick := ""
+			met := false
+			for _, id := range r.AnyOf {
+				dep, ok := cat.Get(id)
+				if !ok || dep.Kind != components.KindAsset {
+					met = true // not an asset: keepRequirementsOn's rule
+					break
+				}
+				if out[id] != components.WantAbsent {
+					met = true
+					break
+				}
+				if pick == "" && dep.RunsOn(platform) {
+					pick = id
+				}
+			}
+			if !met && pick != "" {
+				delete(out, pick)
+			}
+		}
+	}
 }
 
 // keepRequirementsOn enables what an enabled component requires, so nothing that runs

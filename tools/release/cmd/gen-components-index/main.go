@@ -2,10 +2,13 @@
 // the packs a platform builds:
 //
 //	gen-components-index --list --platform linux-amd64 [--catalog FILE]
-//	gen-components-index --version 0.4.2 --commit <sha> --published <RFC 3339> --dist dist [--catalog FILE] [--require-all]
+//	gen-components-index --version 0.4.2 --commit <sha> --published <RFC 3339> --dist dist [--catalog FILE]
+//	    [--platform P [--only ID]]
 //
-// The index goes to dist/components-<version>.json. A pack the catalog asks for that is
-// not in dist (a failed build leg) is a warning, or an error with --require-all.
+// The index goes to dist/components-<version>.json. Every pack the catalog asks for must be
+// in dist: a missing one (a failed build leg) fails the command and writes no index, so a
+// release never ships without some platform's packs. --platform and --only index part of a
+// release (one platform's packs, the update rehearsal's tool.yt-dlp): a release sets neither.
 package main
 
 import (
@@ -29,14 +32,14 @@ func main() {
 
 func run() error {
 	var (
-		list       = flag.Bool("list", false, "print the packs --platform builds (id per line) and stop")
-		platform   = flag.String("platform", "", "the platform for --list")
-		catalog    = flag.String("catalog", "", "a catalog file (default: the embedded one)")
-		version    = flag.String("version", "", "the release version, without v")
-		commit     = flag.String("commit", "", "the 40-hex commit")
-		published  = flag.String("published", "", "the commit's time, RFC 3339")
-		dist       = flag.String("dist", "dist", "the release files")
-		requireAll = flag.Bool("require-all", false, "fail when a pack is missing")
+		list      = flag.Bool("list", false, "print the packs --platform builds (id per line) and stop")
+		platform  = flag.String("platform", "", "the platform for --list; for an index, only its packs")
+		only      = flag.String("only", "", "for an index, only this pack (needs --platform)")
+		catalog   = flag.String("catalog", "", "a catalog file (default: the embedded one)")
+		version   = flag.String("version", "", "the release version, without v")
+		commit    = flag.String("commit", "", "the 40-hex commit")
+		published = flag.String("published", "", "the commit's time, RFC 3339")
+		dist      = flag.String("dist", "dist", "the release files")
 	)
 	flag.Parse()
 	cat := components.Default()
@@ -62,20 +65,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("--published: %w", err)
 	}
-	idx, missing, err := componentsindex.Generate(componentsindex.Options{Catalog: cat, Version: *version,
-		Commit: *commit, Published: pub, Dist: *dist})
+	o := componentsindex.Options{Catalog: cat, Version: *version, Commit: *commit, Published: pub, Dist: *dist,
+		Platform: *platform}
+	if *only != "" {
+		if *platform == "" {
+			return fmt.Errorf("--only needs --platform")
+		}
+		o.Only = []string{*only}
+	}
+	idx, err := componentsindex.Generate(o)
 	if err != nil {
 		return err
-	}
-	for _, m := range missing {
-		prefix := ""
-		if os.Getenv("GITHUB_ACTIONS") == "true" {
-			prefix = "::warning::"
-		}
-		fmt.Fprintf(os.Stderr, "%sno pack %s in %s: the index leaves it out\n", prefix, m, *dist)
-	}
-	if *requireAll && len(missing) > 0 {
-		return fmt.Errorf("%d packs missing", len(missing))
 	}
 	b, err := componentsindex.Marshal(idx)
 	if err != nil {

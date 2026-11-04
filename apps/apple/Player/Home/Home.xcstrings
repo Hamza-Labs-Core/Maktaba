@@ -164,6 +164,28 @@
         }
       }
     },
+    "This row could not be loaded." : {
+      "comment" : "A Home row the home did not send: the tile in its place",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر تحميل هذا الصف."
+          }
+        }
+      }
+    },
+    "Try again" : {
+      "comment" : "The tile of a Home row that did not load: read it again",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أعد المحاولة"
+          }
+        }
+      }
+    },
     "Couldn't refresh — showing the last rows." : {
       "comment" : "Home's refresh failed; the rows shown are the last ones read",
       "localizations" : {

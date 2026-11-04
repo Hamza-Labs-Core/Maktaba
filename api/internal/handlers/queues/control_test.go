@@ -660,8 +660,11 @@ func TestExtensions(t *testing.T) {
 	// the component's desired row (story 51.07: enabled goes through it, same transaction)
 	componentRows := func(ext string) []*queuestest.Rule {
 		return []*queuestest.Rule{
-			{Match: "select hold_by, cast(hold_at as text) from components", Cols: []string{"hold_by", "hold_at"},
-				Rows: [][]driver.Value{{nil, nil}}},
+			// a save of settings alone: the row keeps its enabled, a new one starts as
+			// the component's desired state says
+			{Match: "select want from components", Cols: []string{"want"}, Rows: [][]driver.Value{{"installed"}}},
+			{Match: "select want, generation, hold_by, cast(hold_at as text) from components",
+				Cols: []string{"want", "generation", "hold_by", "hold_at"}, Rows: [][]driver.Value{{"installed", int64(1), nil, nil}}},
 			{Match: "from components where id", Cols: []string{"id", "want", "hold_by", "hold_at", "generation"},
 				Rows: [][]driver.Value{{"ext." + ext, "enabled", nil, nil, int64(2)}}},
 		}

@@ -62,7 +62,7 @@ simulator, Run. Signing is automatic (team G58UVTKQPB), as for the other Apple a
 The UI tests need a home and an account, passed through the environment:
 
 ```bash
-TEST_RUNNER_MAKTABA_HOME=http://192.168.50.177:8088 TEST_RUNNER_MAKTABA_USER=… TEST_RUNNER_MAKTABA_PASSWORD=… \
+TEST_RUNNER_MAKTABA_HOME=http://192.0.2.20:8088 TEST_RUNNER_MAKTABA_USER=… TEST_RUNNER_MAKTABA_PASSWORD=… \
   xcodebuild -project apps/apple/Maktaba.xcodeproj -scheme "Maktaba TV" \
   -destination 'platform=tvOS Simulator,name=Apple TV 4K (3rd generation)' test
 ```

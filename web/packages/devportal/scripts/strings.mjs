@@ -7,6 +7,8 @@ export const STRINGS = {
   en: {
     "site.name": "Maktaba for developers",
     "nav.home": "Home",
+    "nav.apps": "Apps",
+    "nav.wiki": "Wiki",
     "nav.api": "API",
     "nav.plugins": "Plugins",
     "nav.contributing": "Contributing",
@@ -21,14 +23,22 @@ export const STRINGS = {
     "home.lead":
       "Maktaba is a self-hosted video library. It transcribes your videos, finds what is said in them, and streams them to the web, phones and TVs, from a computer you own.",
     "home.lead2":
-      "This site is for developers who extend Maktaba or work on it: how to build a plugin, how to contribute, the API reference, security and what changed in each release.",
+      "This site is for developers who extend Maktaba or work on it: the wiki of every epic and story, how to build a plugin, how to contribute, the API reference, security and what changed in each release.",
     "home.cta.source": "Source on GitHub",
+    "home.cta.wiki": "Open the wiki",
     "home.cta.plugins": "Build a plugin",
     "home.cta.contributing": "Contribute",
     "home.cards": "Where to start",
     "card.source.title": "Source code",
     "card.source.body":
       "The whole project: the API, the pipeline, the web app and the native apps.",
+    "card.wiki.title": "Wiki",
+    "card.wiki.body":
+      "The project map: every epic, story and plan, with the API endpoints and database tables they touch, searchable.",
+    "wiki.title": "Maktaba Wiki",
+    "wiki.description": "The Maktaba project map: every epic, story and plan, searchable.",
+    "wiki.noscript":
+      "The wiki needs JavaScript. The specs are on GitHub: https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics",
     "card.specs.title": "Specs and epics",
     "card.specs.body": "What each part of Maktaba must do and why, epic by epic, on GitHub.",
     "card.plugins.title": "Build a plugin",
@@ -41,6 +51,11 @@ export const STRINGS = {
     "card.api.body": "The Maktaba API from its OpenAPI description: every endpoint and type.",
     "card.changelog.title": "Changelog",
     "card.changelog.body": "Every release and what is waiting for the next one.",
+    "card.apps.title": "The apps",
+    "card.apps.body":
+      "Maktaba Player, Maktaba Remote, Maktaba TV, the server app and the web app: who each is for, its platforms and how to get it.",
+    "apps.pages": "Each app",
+    "apps.toc": "The apps",
     "card.security.title": "Security",
     "card.security.body": "How to report a vulnerability, and our disclosure policy.",
     "home.lang.note":
@@ -85,6 +100,8 @@ export const STRINGS = {
   ar: {
     "site.name": "مكتبة للمطوّرين",
     "nav.home": "الرئيسية",
+    "nav.apps": "التطبيقات",
+    "nav.wiki": "الويكي",
     "nav.api": "الواجهة البرمجية",
     "nav.plugins": "الإضافات",
     "nav.contributing": "المساهمة",
@@ -99,14 +116,22 @@ export const STRINGS = {
     "home.lead":
       "مكتبة خادمُ فيديو تستضيفه بنفسك: يُفرّغ نصوص مقاطعك، ويجد ما قيل فيها، ويبثّها إلى الويب والهواتف والتلفزيونات، من حاسوب تملكه.",
     "home.lead2":
-      "هذا الموقع للمطوّرين الذين يوسّعون مكتبة أو يعملون عليها: كيف تبني إضافة، وكيف تساهم، ومرجع الواجهة البرمجية، والأمان، وما تغيّر في كل إصدار.",
+      "هذا الموقع للمطوّرين الذين يوسّعون مكتبة أو يعملون عليها: ويكي كل ملحمة وقصة، وكيف تبني إضافة، وكيف تساهم، ومرجع الواجهة البرمجية، والأمان، وما تغيّر في كل إصدار.",
     "home.cta.source": "الشيفرة على GitHub",
+    "home.cta.wiki": "افتح الويكي",
     "home.cta.plugins": "ابنِ إضافة",
     "home.cta.contributing": "ساهم",
     "home.cards": "من أين تبدأ",
     "card.source.title": "الشيفرة المصدرية",
     "card.source.body":
       "المشروع كاملاً: الواجهة البرمجية، وخط المعالجة، وتطبيق الويب، والتطبيقات الأصلية.",
+    "card.wiki.title": "الويكي",
+    "card.wiki.body":
+      "خريطة المشروع: كل ملحمة وقصة وخطة، مع نقاط وصول الواجهة البرمجية وجداول قاعدة البيانات التي تمسّها، مع البحث.",
+    "wiki.title": "ويكي مكتبة",
+    "wiki.description": "خريطة مشروع مكتبة: كل ملحمة وقصة وخطة، مع البحث.",
+    "wiki.noscript":
+      "لا يعمل الويكي دون جافاسكربت. وتجد المواصفات في مستودع المشروع: https://github.com/Hamza-Labs-Core/Maktaba/tree/main/specs/epics",
     "card.specs.title": "المواصفات والملاحم",
     "card.specs.body": "ما يجب أن يفعله كل جزء من مكتبة ولماذا، ملحمةً ملحمة، على GitHub.",
     "card.plugins.title": "ابنِ إضافة",
@@ -119,6 +144,11 @@ export const STRINGS = {
     "card.api.body": "واجهة مكتبة البرمجية من وصف OpenAPI: كل نقطة وصول وكل نوع.",
     "card.changelog.title": "سجل التغييرات",
     "card.changelog.body": "كل إصدار، وما ينتظر الإصدار التالي.",
+    "card.apps.title": "التطبيقات",
+    "card.apps.body":
+      "المشغّل والإدارة عن بُعد وتطبيق التلفاز وتطبيق الخادم وتطبيق الويب: لمن كل منها، ومنصاته، وطريقة الحصول عليه.",
+    "apps.pages": "كل تطبيق",
+    "apps.toc": "التطبيقات",
     "card.security.title": "الأمان",
     "card.security.body": "كيف تبلّغ عن ثغرة، وسياستنا في الإفصاح.",
     "home.lang.note":

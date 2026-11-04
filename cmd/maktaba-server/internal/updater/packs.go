@@ -50,7 +50,7 @@ func (p *Packs) source(j *Journal) packs.Source {
 		n.URLs[k] = v
 	}
 	if base, ok := p.M.Net.(*packs.Net); ok && base != nil {
-		n.HF, n.Token = base.HF, base.Token
+		n.HF, n.OllamaRegistry, n.Token = base.HF, base.OllamaRegistry, base.Token
 	}
 	return n
 }
@@ -117,9 +117,9 @@ func packsFailure(err error) error {
 	}
 	code := "packs_failed"
 	switch packs.ReasonOf(err) {
-	case packs.ReasonVerifyFailed, packs.ReasonUnpackRefused:
+	case packs.ReasonVerifyFailed, packs.ReasonOfflineVerifyFailed, packs.ReasonUnpackRefused:
 		code = "pack_verify_failed"
-	case packs.ReasonDownloadFailed:
+	case packs.ReasonDownloadFailed, packs.ReasonPackNotPublished:
 		code = "pack_download_failed"
 	case packs.ReasonBusy:
 		code = "components_busy"

@@ -267,12 +267,17 @@ func TestPrepareRefusesALostSuperuserPassword(t *testing.T) {
 
 func TestPrepareFailsWhenPostgresExits(t *testing.T) {
 	b, _ := fakeBundle(t)
-	if err := os.WriteFile(b.Bin("postgres"), []byte("#!/bin/sh\nexit 3\n"), 0o755); err != nil {
+	if err := os.WriteFile(b.Bin("postgres"), []byte("#!/bin/sh\necho 'LOG:  starting'\n"+
+		"echo 'FATAL:  could not create any TCP/IP sockets' >&2\nexit 3\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	err := b.Prepare(context.Background(), io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "exited while starting") {
 		t.Fatalf("Prepare = %v, want the exit reported", err)
+	}
+	// its own words are in the error, though the log was discarded
+	if !strings.Contains(err.Error(), "FATAL:  could not create any TCP/IP sockets") {
+		t.Fatalf("Prepare = %v, want postgres's own output in it", err)
 	}
 	if _, err := os.Stat(filepath.Join(b.Data, bootstrapMarker)); err == nil {
 		t.Fatal("no bootstrap marker after a failed bootstrap")

@@ -10,6 +10,7 @@ package main
 //	POST /components/{id}/install    202 {"id","progress"}: starts it now (200 when installed)
 //	POST /components/{id}/remove     202; 409 component_required_by {"components":[...]}
 //	GET  /components/{id}/progress   {"id","installed","progress":{...}|null}
+//	GET  /components/packs           {"packs":"on"|"off"}: [components] packs (off: offline mode)
 //	POST /components/offline         202 {"name"}: builds maktaba-offline-<v>-<platform>-<bundle>.tar
 //	GET  /components/offline/{name}  the file once built (202 while it is, 404 after 24 h)
 //	POST /components/import          a tar body (streamed) or {"path": "..."}: 200 {"installed":[...]}
@@ -105,7 +106,8 @@ func (d *diskAssets) onDisk(id string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.have == nil || time.Since(d.at) > 5*time.Second {
-		have := componentseed.Assets(components.Default(), componentseed.Disk{Config: d.cfg, ReleaseDir: d.releaseDir, Ollama: d.ollama})
+		have := componentseed.Assets(components.Default(), componentseed.Disk{Config: d.cfg, ReleaseDir: d.releaseDir, Ollama: d.ollama,
+			Python: supervisor.PipelinePython(supervisor.Options{Config: d.cfg, ReleaseDir: d.releaseDir})})
 		venvs := []string{filepath.Join(d.cfg.StateDir(), "venv")}
 		if d.releaseDir != "" {
 			venvs = append(venvs, filepath.Join(d.releaseDir, "venv"))
@@ -137,7 +139,7 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 	}
 	trust := &rv.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
 	home := hfHome(cfg)
-	net := packs.NewNet(id.Repo(), nil)
+	net := packs.NewNet(id.Repo(), nil).WithEnv(os.Getenv)
 	net.Token = func() string {
 		if t := strings.TrimSpace(os.Getenv("HF_TOKEN")); t != "" {
 			return t
@@ -161,10 +163,12 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 		Identity:  id,
 		Watermark: rv.IndexWatermarkPath(cfg.StateDir()),
 		HFHub:     filepath.Join(home, "hub"),
-		FreeDisk:  hostinfo.FreeDisk,
-		OnDisk:    disk.onDisk,
-		Disabled:  !cfg.Components.PacksOn(),
-		Log:       log,
+		// the language models go where the bundled server keeps them
+		OllamaModels: llmserver.Planned(cfg, "").Models,
+		FreeDisk:     hostinfo.FreeDisk,
+		OnDisk:       disk.onDisk,
+		Disabled:     !cfg.Components.PacksOn(),
+		Log:          log,
 	}
 	v := &packVenv{cfg: cfg, m: m, log: log}
 	m.Prepare = map[string]packs.PrepareFunc{"runtime.ml": v.prepare, "tool.yt-dlp": v.prepare}
@@ -288,6 +292,9 @@ type packsAdmin struct {
 	// metrics are this machine's component metrics on /metrics (story 51.14); nil
 	// without a reconciler.
 	metrics *supervisor.ComponentMetrics
+	// sup restarts a component's processes (POST /components/{id}/restart, story
+	// 51.08); nil: the route answers 503.
+	sup restarter
 
 	mu      sync.Mutex
 	offline map[string]*offlineJob
@@ -308,6 +315,11 @@ func (a *packsAdmin) authorized(r *http.Request) bool {
 	return a.token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+a.token)) == 1
 }
 
+// restarter is the supervisor as the restart route uses it.
+type restarter interface {
+	RestartComponent(id string) int
+}
+
 // adminHandler adds /components/ to base.
 func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 	mux := http.NewServeMux()
@@ -317,12 +329,25 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		rest := strings.TrimPrefix(r.URL.Path, "/components/")
+		// a restart is the processes', not the packs': it works with no reconciler
+		if id, ok := strings.CutSuffix(rest, "/restart"); ok {
+			a.postRestart(w, r, id)
+			return
+		}
 		if a.m == nil {
 			writeConfigJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "components_unavailable"})
 			return
 		}
-		rest := strings.TrimPrefix(r.URL.Path, "/components/")
 		switch {
+		case rest == "packs" && r.Method == http.MethodGet:
+			// whether this machine installs packs ([components] packs): the API's install
+			// route refuses an asset not on disk when they are off (offline mode)
+			on := "on"
+			if a.m.Disabled {
+				on = "off"
+			}
+			writeConfigJSON(w, http.StatusOK, map[string]string{"packs": on})
 		case rest == "offline" && r.Method == http.MethodPost:
 			a.postOffline(w, r)
 		case strings.HasPrefix(rest, "offline/") && r.Method == http.MethodGet:
@@ -350,6 +375,24 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 		}
 	})
 	return mux
+}
+
+// postRestart restarts component id's running processes: {id, restarted} (0: none of
+// them runs now).
+func (a *packsAdmin) postRestart(w http.ResponseWriter, r *http.Request, id string) {
+	if id == "" || strings.Contains(id, "..") || strings.ContainsAny(id, `/\`) {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	if a.sup == nil {
+		writeConfigJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "components_unavailable"})
+		return
+	}
+	writeConfigJSON(w, http.StatusOK, map[string]any{"id": id, "restarted": a.sup.RestartComponent(id)})
 }
 
 func reasonJSON(err error) map[string]any {

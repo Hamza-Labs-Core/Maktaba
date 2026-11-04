@@ -257,6 +257,7 @@ public enum StatusWords {
         "backoff": "Restarting",
         "exited": "Stopped",
         "failed": "Failed",
+        "held": "Held: its component is off",
         "running": "Running",
         "starting": "Starting",
         "stopped": "Stopped",
@@ -266,9 +267,20 @@ public enum StatusWords {
     /// A process's role (`health.processes.role.*`)
     public static let processRoles: [String: String] = [
         "api": "API",
+        "copy": "Database copy",
+        "ollama": "Language model server",
         "pipeline": "Processing pipeline",
+        "postgres": "Database",
+        "relay": "Remote access relay",
         "streaming": "Live TV and streaming",
         "tv-slot": "TV slot",
+    ]
+
+    /// A pipeline worker's instance (`health.processes.instance.*`; stt is stt-<n>)
+    public static let processInstances: [String: String] = [
+        "chroma-copy": "search index copy",
+        "index": "search index",
+        "stt": "transcription {n}",
     ]
 
     /// A TV slot's colour, its instance (`tvchanges.slots.color.*`)
@@ -412,12 +424,22 @@ public enum StatusWords {
         "sqlite": "Joining machines needs a Postgres home (this home runs on SQLite).",
     ]
 
-    /// A process's name: its role's words, a TV slot with its colour ("TV slot blue").
+    /// A process's name: its role's words, a TV slot with its colour ("TV slot blue"), a
+    /// pipeline instance in words ("Processing pipeline search index", "... transcription 2").
     static func processName(role: String, instance: String?, locale: Locale = AppLanguage.locale) -> String {
         let base = words(processRoles, "health.processes.role.", role, locale)
-        guard let instance else { return base }
-        let i = role == "tv-slot" ? words(slotColors, "tvchanges.slots.color.", instance, locale) : instance
-        return "\(base) \(i)"
+        guard let instance, !instance.isEmpty else { return base }
+        return "\(base) \(instanceName(role: role, instance: instance, locale: locale))"
+    }
+
+    /// An instance's words; one with no words shows as the supervisor named it.
+    static func instanceName(role: String, instance: String, locale: Locale = AppLanguage.locale) -> String {
+        if role == "tv-slot" { return words(slotColors, "tvchanges.slots.color.", instance, locale) }
+        if instance.hasPrefix("stt-"), let n = Int(instance.dropFirst(4)) {
+            return filled(processInstances, "health.processes.instance.", "stt", ["n": String(n)], locale)
+        }
+        guard processInstances[instance] != nil else { return instance }
+        return words(processInstances, "health.processes.instance.", instance, locale)
     }
 }
 
@@ -429,6 +451,12 @@ func filled(_ table: [String: String], _ prefix: String, _ value: String, _ para
         s = s.replacingOccurrences(of: "{\(k)}", with: v)
     }
     return s
+}
+
+/// The {name}s a template takes.
+func templateNames(_ template: String) -> Set<String> {
+    let names = template.matches(of: /\{(\w+)\}/).map { String($0.output.1) }
+    return Set(names)
 }
 
 /// A value's words from `table`, whose catalog keys are `prefix` + the value, in `locale`'s
@@ -445,6 +473,7 @@ extension StatusWords {
         ("updates.waiting.", waiting), ("updates.plan.waiting.", planWaitingTable),
         ("updates.blocked.reason.", blockedReasons), ("machines.homeDb.code.", homeDBCodes),
         ("health.processes.state.", processStates), ("health.processes.role.", processRoles),
+        ("health.processes.instance.", processInstances),
         ("tvchanges.slots.color.", slotColors), ("tvchanges.check.", checkNames),
         ("tvchanges.result.", checkResults), ("tvchanges.value.", checkValues), ("updates.trigger.", triggers),
         ("setup.starting.detail.", processDetails), ("machines.home.reason.", rolesReasons),

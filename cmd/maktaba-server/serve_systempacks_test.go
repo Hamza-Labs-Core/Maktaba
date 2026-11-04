@@ -150,3 +150,20 @@ func TestSystemPacksDir(t *testing.T) {
 		t.Errorf("override %q", got)
 	}
 }
+
+// The kill switch: with [components] reconcile = off the first start imports nothing (and
+// leaves no marker, so the import runs once the switch is back on).
+func TestSystemPacksReconcileOff(t *testing.T) {
+	s, f, log := systemPacksFixture(t, fullTar)
+	s.off = true
+	if got := s.run(context.Background()); got != nil || len(f.got) != 0 {
+		t.Fatalf("imported %v (calls %v) with reconcile off", got, f.got)
+	}
+	if !strings.Contains(log.String(), "reconcile is off") {
+		t.Errorf("log %q", log.String())
+	}
+	s.off = false
+	if got := s.run(context.Background()); !reflect.DeepEqual(got, []string{fullTar}) {
+		t.Fatalf("switch back on imported %v", got)
+	}
+}

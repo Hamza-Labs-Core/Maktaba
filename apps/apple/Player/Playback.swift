@@ -122,8 +122,15 @@ final class Playback {
 
     /// Play or pause what is open (the keyboard's space, the Playback menu, the controls).
     /// Pausing reports the position.
-    func togglePause() {
-        guard let p = player else { return }
+    func togglePause(from source: String = "controls") {
+        guard let p = player else {
+            Log.ui.info("playback: \(source, privacy: .public) play/pause with no player")
+            return
+        }
+        // each play and pause in the app's log: a UI test's pause that did not hold (an iPhone
+        // run of #608 played on after the tap) says there what played it again
+        let rate = p.rate, at = p.currentTime().seconds
+        Log.ui.info("playback: \(source, privacy: .public) \(rate > 0 ? "pause" : "play", privacy: .public) at \(at, privacy: .public) s")
         if p.rate > 0 {
             p.pause()
             report()
@@ -174,12 +181,10 @@ final class Playback {
     func setQuality(_ kbps: Int?) {
         guard kbps != maxBitrateKbps, let p = player else { return }
         maxBitrateKbps = kbps
-        let at = p.currentTime().seconds
-        let wasPlaying = p.rate > 0
+        let again = reopening(p, fallback: position)
         running?.cancel()
         running = Task {
-            await open(from: at.isFinite ? at : position)
-            if !wasPlaying { player?.pause() }
+            await open(from: again.at, playing: again.playing)
             guard player != nil else { return }
             await watch()
         }
@@ -301,8 +306,10 @@ final class Playback {
 
     /// Opens (or reopens) the stream at `start` seconds, through the app's stream proxy: the
     /// home's web port wants the user's token on every `/stream/` request, and AVPlayer
-    /// cannot renew one mid-video.
-    private func open(from start: Double) async {
+    /// cannot renew one mid-video. A reopen of a paused video stays paused (`playing` false):
+    /// it never plays, and `isPlaying` says so (a paused player's time observer does not tick,
+    /// so a pause after the open left it saying playing).
+    private func open(from start: Double, playing: Bool = true) async {
         guard let video else { return }
         do {
             let s = try await client.openStream(video: video.id, startSec: Int(start), maxBitrateKbps: maxBitrateKbps)
@@ -329,21 +336,8 @@ final class Playback {
             renewAt = (s.expires ?? .distantFuture).addingTimeInterval(-60)
             signedURL = url
             proxiedURL = local
-            let item = AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route))
-            let p = player ?? Self.newPlayer()
-            observe(item, of: p)
-            p.replaceCurrentItem(with: item)
-            if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
-            position = start
-            if player == nil {
-                player = p
-                observeTime(of: p)
-                startRoutes(of: p)
-                startNowPlaying()
-            }
-            ended = false
-            p.play()
-            isPlaying = true
+            await load(AVPlayerItem(url: RouteURL.video(signed: url, proxied: local, route: routes.route)),
+                       at: start, playing: playing)
         } catch is CancellationError {
             return
         } catch {
@@ -352,14 +346,48 @@ final class Playback {
         }
     }
 
+    /// Where a reopen of what `p` plays starts, and whether it plays: where it is (else
+    /// `fallback`), playing only if it was (`setQuality`'s promise, and the renew's).
+    func reopening(_ p: AVPlayer, fallback: Double) -> (at: Double, playing: Bool) {
+        let at = p.currentTime().seconds
+        return (at.isFinite ? at : fallback, p.rate > 0)
+    }
+
+    /// Puts `item` in the player at `start`, playing or not (`playing`): a paused reopen
+    /// never plays, and `isPlaying` says so from the start (a paused player's time observer
+    /// does not tick, so a pause after a play left it saying playing).
+    func load(_ item: AVPlayerItem, at start: Double, playing: Bool) async {
+        let p = player ?? Self.newPlayer()
+        observe(item, of: p)
+        p.replaceCurrentItem(with: item)
+        if start > 0 { await p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
+        position = start
+        if player == nil {
+            player = p
+            observeTime(of: p)
+            startRoutes(of: p)
+            startNowPlaying()
+        }
+        ended = false
+        Log.ui.info("playback: opened at \(start, privacy: .public) s, playing \(playing, privacy: .public)")
+        if playing { p.play() }
+        isPlaying = playing
+    }
+
     /// Every 10 s while playing: the position, so "continue watching" resumes here; a reopen
     /// where it is before the URL ends, or when the item failed (not again within 30 s of
     /// opening: then it shows why).
     private func watch() async {
+        waitingSince = nil
         while !Task.isCancelled {
             try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled, let p = player, session != nil else { return }
             if p.rate > 0 { report() }
+            if stuck(waiting: p.timeControlStatus == .waitingToPlayAtSpecifiedRate, at: .now) {
+                let at = p.currentTime().seconds
+                await open(from: at.isFinite ? at : position)
+                continue
+            }
             let failed = p.currentItem?.status == .failed
             if failed, Date.now.timeIntervalSince(openedAt) < 30 {
                 p.pause()
@@ -368,12 +396,29 @@ final class Playback {
                 return
             }
             if failed || Date.now >= renewAt {
-                let at = p.currentTime().seconds
-                let wasPlaying = p.rate > 0
-                await open(from: at.isFinite ? at : 0)
-                if !wasPlaying { player?.pause() }
+                let again = reopening(p, fallback: 0)
+                await open(from: again.at, playing: again.playing)
             }
         }
+    }
+
+    /// When the player was first seen waiting by `stuck` (nil: not waiting at the last look).
+    private var waitingSince: Date?
+
+    /// One look at the player (the 10 s watch's): whether it is `waiting` at `now`. True once
+    /// it has been waiting `WatchLogic.stuckAfter` since it was first seen waiting, and then
+    /// it starts over, for the reopen it calls for. After an audio switch on a loaded CI
+    /// simulator the player stopped at 1257 s for good, its rate 1 (PR #614's iPhone run).
+    func stuck(waiting: Bool, at now: Date) -> Bool {
+        guard waiting else {
+            waitingSince = nil
+            return false
+        }
+        let since = waitingSince ?? now
+        waitingSince = since
+        guard WatchLogic.stuck(waitingSince: since, now: now) else { return false }
+        waitingSince = nil
+        return true
     }
 
     /// Reports where it is now (best effort).
@@ -533,6 +578,7 @@ final class Playback {
         openedAt = .now
         if at.isFinite, at > 0 { p.seek(to: CMTime(seconds: at, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) }
         if wasPlaying { p.play() }
+        Log.ui.info("playback: route change reopened at \(at, privacy: .public) s, playing \(wasPlaying, privacy: .public)")
         let to = route.rawValue
         Log.ui.info("playback route: \(to, privacy: .public)")
     }
@@ -553,9 +599,9 @@ final class Playback {
 
     private func remoteHandlers() -> RemoteHandlers {
         RemoteHandlers(
-            play: { [weak self] in if self?.isPlaying == false { self?.togglePause() } },
-            pause: { [weak self] in if self?.isPlaying == true { self?.togglePause() } },
-            toggle: { [weak self] in self?.togglePause() },
+            play: { [weak self] in if self?.isPlaying == false { self?.togglePause(from: "remote play") } },
+            pause: { [weak self] in if self?.isPlaying == true { self?.togglePause(from: "remote pause") } },
+            toggle: { [weak self] in self?.togglePause(from: "remote toggle") },
             skip: { [weak self] in self?.skip(by: $0) },
             next: next == nil ? nil : { [weak self] in self?.playNext() },
             seek: { [weak self] in self?.seek(to: $0) }

@@ -1,125 +1,6 @@
 import MaktabaKit
 import SwiftUI
 
-/// A video's page as it loads (FR-18): the video (`GET /api/videos/{id}`, with the caller's
-/// `playback_state`), the caller's own marks (`GET /api/me/videos/{id}`: favorite, watched, the
-/// series), its chapters, a transcript excerpt and, in a series, the next episodes. Only the
-/// video itself is required: a 404 (or the 403 of a library this person has no access to) is
-/// `notAvailable`, since the home does not tell a hidden video from a missing one; the rest is
-/// left out when it fails. As Android's `VideoPage` (48.28).
-@MainActor @Observable
-final class VideoPage {
-    /// How many lines of the transcript the page shows.
-    static let transcriptLines = 5
-    /// How many of a series' next episodes the page offers.
-    static let nextEpisodeCount = 10
-
-    let id: String
-    private let client: APIClient
-
-    private(set) var video: VideoInfo?
-    private(set) var series: SeriesRef?
-    /// This video as its series lists it (its season and episode).
-    private(set) var episode: Episode?
-    private(set) var chapters: [Chapter] = []
-    private(set) var transcript: [TranscriptSegment] = []
-    private(set) var nextEpisodes: [Episode] = []
-    private(set) var favorite = false
-    private(set) var watched = false
-    private(set) var notAvailable = false
-    private(set) var problem: HomeFailure?
-    /// A mark the home did not take (the toggle went back).
-    var saveFailed = false
-    /// Marked watched or not since the last load: the home starts the video over either way.
-    private var startsOver = false
-
-    init(client: APIClient, id: String) {
-        self.client = client
-        self.id = id
-    }
-
-    /// Where Resume opens, in seconds: the saved position, unless watched or not started.
-    var resumeAt: Double? { watched || startsOver ? nil : video?.resumeAt }
-
-    func load() async {
-        problem = nil
-        async let detail = client.videoDetail(id)
-        async let mine = optional { try await self.client.myVideo(self.id) }
-        async let chapterList = optional { try await self.client.chapters(video: self.id) }
-        async let lines = optional { try await self.client.transcript(video: self.id, limit: Self.transcriptLines) }
-        do {
-            let v = try await detail
-            let m = await mine
-            video = v
-            notAvailable = false
-            startsOver = false
-            favorite = m?.favorite ?? false
-            watched = m?.completed ?? (v.playbackState?.completed ?? false)
-            series = m?.series
-            chapters = (await chapterList ?? []).sorted { $0.startSec < $1.startSec }
-            transcript = Array((await lines)?.segments.prefix(Self.transcriptLines) ?? [])
-            if let s = m?.series, let all = await optional({ try await self.client.episodes(series: s.id) }) {
-                let ordered = Self.ordered(all.episodes)
-                let at = ordered.firstIndex { $0.videoID == id }
-                episode = at.map { ordered[$0] }
-                nextEpisodes = at.map { Array(ordered.dropFirst($0 + 1).prefix(Self.nextEpisodeCount)) } ?? []
-            } else {
-                episode = nil
-                nextEpisodes = []
-            }
-        } catch {
-            if Task.isCancelled || error is CancellationError { return }
-            if (error as? BrowseError) == .notAvailable {
-                notAvailable = true
-            } else if video == nil {
-                problem = HomeFailure(error)
-            }
-        }
-    }
-
-    /// Favorite on or off (`POST /api/me/favorites`); the toggle goes back when the home does
-    /// not take it.
-    func toggleFavorite() async {
-        let want = !favorite
-        favorite = want
-        do {
-            try await client.markFavorite([id], want)
-        } catch {
-            favorite = !want
-            saveFailed = true
-        }
-    }
-
-    /// Watched on or off (`POST /api/me/watched`); the home starts the video over either way
-    /// (position 0), so Resume goes.
-    func toggleWatched() async {
-        let want = !watched
-        let before = startsOver
-        watched = want
-        startsOver = true
-        do {
-            try await client.markWatched([id], want)
-        } catch {
-            watched = !want
-            startsOver = before
-            saveFailed = true
-        }
-    }
-
-    /// A series' episodes by season, then episode (or absolute number), as they are watched.
-    static func ordered(_ episodes: [Episode]) -> [Episode] {
-        episodes.enumerated().sorted { a, b in
-            let x = (a.element.season ?? 0, a.element.episode ?? a.element.absoluteNumber ?? Int.max, a.offset)
-            let y = (b.element.season ?? 0, b.element.episode ?? b.element.absoluteNumber ?? Int.max, b.offset)
-            return x < y
-        }.map(\.element)
-    }
-
-    private nonisolated func optional<T: Sendable>(_ work: @Sendable () async throws -> T) async -> T? {
-        try? await work()
-    }
-}
-
 /// A video's page (`PlayerRoute.video`, FR-18): the poster at the top at its own shape, the
 /// series and episode, the title, length and date; **Resume** from `playback_state` with
 /// **Play from start**, or **Play**; **Favorite** and **Mark watched**; the description;
@@ -216,10 +97,11 @@ private struct VideoDetails: View {
                 }
                 // chapters and the transcript: left out while off on the home, and explained
                 // to an admin (51.11)
-                if caps.shown(.chapters) == .explain {
+                switch caps.place(.chapters, lines: !page.chapters.isEmpty) {
+                case .note:
                     section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
                     FeatureOffNote(.chapters, home: client.home, compact: true).padding(.horizontal, gutter)
-                } else if caps.isOn(.chapters), !page.chapters.isEmpty {
+                case .lines:
                     section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.chapters) { c in
@@ -228,11 +110,14 @@ private struct VideoDetails: View {
                                 .accessibilityIdentifier("video.chapter.\(c.seq)")
                         }
                     }
+                case .nothing:
+                    EmptyView()
                 }
-                if caps.shown(.transcripts) == .explain {
+                switch caps.place(.transcripts, lines: !page.transcript.isEmpty) {
+                case .note:
                     section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
                     FeatureOffNote(.transcripts, home: client.home, compact: true).padding(.horizontal, gutter)
-                } else if caps.isOn(.transcripts), !page.transcript.isEmpty {
+                case .lines:
                     section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.transcript) { s in
@@ -240,6 +125,8 @@ private struct VideoDetails: View {
                                 .accessibilityIdentifier("video.segment.\(s.seq)")
                         }
                     }
+                case .nothing:
+                    EmptyView()
                 }
                 if !page.nextEpisodes.isEmpty {
                     Rail(Text("Next episodes", tableName: "Video", comment: "The episodes after this one, a row's title"),

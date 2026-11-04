@@ -35,8 +35,8 @@
 #                        each asset that is not in the payload as a reproducible
 #                        <id>-<ver>-<platform>.tar.zst (tools/release/packs);
 #                        sign-and-release adds them and components-<ver>.json,
-#                        the signed index, before the checksums. A failed leg
-#                        leaves its packs out of the index; it holds nothing back.
+#                        the signed index, before the checksums. Every leg must
+#                        pass: a release never ships without a platform's packs.
 #   0. guard             the tag-order guard (_tag-guard.yml: above every
 #                        published release, on main, CI passed), which
 #                        also opens the tag's release as a DRAFT.
@@ -141,10 +141,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cloud/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cloud/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cloud
+          offline: "false"
 
       - name: Set up pnpm
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -158,8 +169,16 @@ jobs:
         uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps
         if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
@@ -257,15 +276,62 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            cmd/maktaba-server/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'cmd/maktaba-server/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api cmd/maktaba-server cmd/maktaba-launcher
+          offline: "false"
 
       - name: Download web bundle
+        id: artifact-release-web-bundle
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-web-bundle
           path: web/dist
+      - name: Wait 15s to retry the download of release-web-bundle
+        if: steps.artifact-release-web-bundle.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download web bundle (attempt 2)
+        id: artifact-release-web-bundle-2
+        if: steps.artifact-release-web-bundle.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-web-bundle
+          path: web/dist
+      - name: Wait 45s to retry the download of release-web-bundle
+        if: steps.artifact-release-web-bundle-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download web bundle (attempt 3)
+        id: artifact-release-web-bundle-3
+        if: steps.artifact-release-web-bundle-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-web-bundle
+          path: web/dist
+      - name: Check release-web-bundle downloaded
+        id: artifact-release-web-bundle-check
+        if: steps.artifact-release-web-bundle-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-web-bundle
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       # Epic 16: the license-server public key over the placeholder before any
       # build (tools/release/license-key.sh); a release without it fails.
@@ -463,17 +529,89 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - name: Download maktaba-server binaries
+        id: artifact-release-server
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-server
           path: srv
+      - name: Wait 15s to retry the download of release-server
+        if: steps.artifact-release-server.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download maktaba-server binaries (attempt 2)
+        id: artifact-release-server-2
+        if: steps.artifact-release-server.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-server
+          path: srv
+      - name: Wait 45s to retry the download of release-server
+        if: steps.artifact-release-server-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download maktaba-server binaries (attempt 3)
+        id: artifact-release-server-3
+        if: steps.artifact-release-server-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-server
+          path: srv
+      - name: Check release-server downloaded
+        id: artifact-release-server-check
+        if: steps.artifact-release-server-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-server
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download api/streaming binaries
+        id: artifact-release-bin
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-bin-*
           path: bins
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-bin-*
+        if: steps.artifact-release-bin.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download api/streaming binaries (attempt 2)
+        id: artifact-release-bin-2
+        if: steps.artifact-release-bin.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: bins
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-bin-*
+        if: steps.artifact-release-bin-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download api/streaming binaries (attempt 3)
+        id: artifact-release-bin-3
+        if: steps.artifact-release-bin-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: bins
+          merge-multiple: true
+      - name: Check release-bin-* downloaded
+        id: artifact-release-bin-check
+        if: steps.artifact-release-bin-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-bin-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Assemble archives
         env:
@@ -548,7 +686,7 @@ jobs:
       # Keep the version in step with them.
       - name: nfpm from the cache
         id: nfpm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/go/bin/nfpm
           key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
@@ -565,17 +703,89 @@ jobs:
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
 
       - name: Download maktaba-server binaries
+        id: artifact-release-server
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-server
           path: dist
+      - name: Wait 15s to retry the download of release-server
+        if: steps.artifact-release-server.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download maktaba-server binaries (attempt 2)
+        id: artifact-release-server-2
+        if: steps.artifact-release-server.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-server
+          path: dist
+      - name: Wait 45s to retry the download of release-server
+        if: steps.artifact-release-server-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download maktaba-server binaries (attempt 3)
+        id: artifact-release-server-3
+        if: steps.artifact-release-server-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-server
+          path: dist
+      - name: Check release-server downloaded
+        id: artifact-release-server-check
+        if: steps.artifact-release-server-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-server
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download api/streaming binaries
+        id: artifact-release-bin
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-bin-*
           path: dist
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-bin-*
+        if: steps.artifact-release-bin.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download api/streaming binaries (attempt 2)
+        id: artifact-release-bin-2
+        if: steps.artifact-release-bin.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: dist
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-bin-*
+        if: steps.artifact-release-bin-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download api/streaming binaries (attempt 3)
+        id: artifact-release-bin-3
+        if: steps.artifact-release-bin-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: dist
+          merge-multiple: true
+      - name: Check release-bin-* downloaded
+        id: artifact-release-bin-check
+        if: steps.artifact-release-bin-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-bin-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Build .deb and .rpm
         env:
@@ -633,6 +843,8 @@ jobs:
           # the constraints name PyTorch's index: uv export --emit-index-url needs uv 0.12+
           # (build-release.sh checks), and one uv version writes them the same every run
           version: "0.13.4"
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Build the wheel, constraints and installer archives
         env:
@@ -655,8 +867,10 @@ jobs:
   # wheelhouses today), built from the tagged commit by tools/release/packs/build.sh:
   # reproducible (the commit's time, sorted entries, zstd at one level), so a re-run builds
   # the same bytes and the signed checksums do not change. pip downloads any target's
-  # wheels, so every leg is a Linux runner. Like the Linux payloads they do not hold the
-  # release back: sign-and-release indexes the packs that built and warns about the rest.
+  # wheels, so every leg is a Linux runner. Unlike the Linux payloads they hold the release
+  # back: sign-and-release runs only when every leg passed, and the index refuses a release
+  # with any catalog pack missing (gen-components-index), so no platform ships without its
+  # packs.
   package-packs:
     name: package packs (${{ matrix.platform }})
     needs: [guard]
@@ -678,6 +892,13 @@ jobs:
             shared/go/releaseverify/go.sum
             shared/go/componentpack/go.sum
             shared/components/go.sum
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release
+          offline: "false"
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -705,7 +926,8 @@ jobs:
           path: out/*
           # zstd already: no second compression
           compression-level: 0
-          if-no-files-found: ignore
+          # every catalog platform has packs: a leg that built none failed
+          if-no-files-found: error
           retention-days: 7
 
   # The Linux server payload (Epic 39 stories 39.2, 39.10): the tree the Linux
@@ -733,11 +955,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: api/go.mod
-          cache-dependency-path: |
-            api/go.sum
-            streaming/go.sum
-            cmd/maktaba-server/go.sum
-            cmd/maktaba-launcher/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('api/go.sum', 'streaming/go.sum', 'cmd/maktaba-server/go.sum', 'cmd/maktaba-launcher/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api streaming cmd/maktaba-server cmd/maktaba-launcher cloud
+          offline: "false"
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -745,6 +977,8 @@ jobs:
           # version wrote other constraints, so the Linux payload tarball and the app's
           # own payload of one release differed (v0.3.0: 0.13.5 here, 0.13.4 there)
           version: "0.13.4"
+          # restore main's uv cache; only a push to main saves it
+          save-cache: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - uses: pnpm/action-setup@v6.0.8
         with:
@@ -754,8 +988,15 @@ jobs:
       - uses: actions/setup-node@v6.4.0
         with:
           node-version-file: web/.nvmrc
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          package-manager-cache: false
+
+      # restore only: main's entries (.github/actions/node-cache); only a push to main saves
+      - name: pnpm store
+        id: pnpm-cache
+        uses: ./.github/actions/node-cache
+        with:
+          package-manager: pnpm
+          lock-hash: ${{ hashFiles('web/pnpm-lock.yaml') }}
 
       - name: Install web deps and the build tools
         run: |
@@ -821,12 +1062,47 @@ jobs:
       - uses: actions/checkout@v6.0.2
 
       - name: Download the Linux payloads
+        id: artifact-release-linux-payload
         continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-linux-payload-*
           path: staged
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-linux-payload-*
+        if: steps.artifact-release-linux-payload.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the Linux payloads (attempt 2)
+        id: artifact-release-linux-payload-2
+        if: steps.artifact-release-linux-payload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-linux-payload-*
+          path: staged
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-linux-payload-*
+        if: steps.artifact-release-linux-payload-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the Linux payloads (attempt 3)
+        id: artifact-release-linux-payload-3
+        if: steps.artifact-release-linux-payload-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-linux-payload-*
+          path: staged
+          merge-multiple: true
+      - name: Check release-linux-payload-* downloaded
+        id: artifact-release-linux-payload-check
+        if: steps.artifact-release-linux-payload-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-linux-payload-*
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: the job goes on without it)"
 
       # the build context: x86_64/server and aarch64/server, as the Dockerfile takes them
       - name: Unpack the payloads
@@ -940,7 +1216,8 @@ jobs:
 
   # The Linux payloads do not hold the release back: a leg that failed leaves its
   # architecture out (the notes say so), the rest is published; so does the server image,
-  # which is made of them. Every other job must pass.
+  # which is made of them. Every other job must pass, every leg of package-packs among them
+  # (tools/ci/tests/test_release_packs.py keeps it so).
   sign-and-release:
     name: sign + publish release
     needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs]
@@ -948,7 +1225,8 @@ jobs:
       !cancelled() &&
       needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
       needs.build-images.result == 'success' && needs.package-archives.result == 'success' &&
-      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success'
+      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success' &&
+      needs.package-packs.result == 'success'
     runs-on: ubuntu-22.04
     # the packs are several GB to download, hash and attach
     timeout-minutes: 60
@@ -973,11 +1251,21 @@ jobs:
       - uses: actions/setup-go@v6.4.0
         with:
           go-version-file: tools/release/go.mod
-          cache-dependency-path: |
-            tools/release/go.sum
-            shared/go/releaseverify/go.sum
-            shared/go/componentpack/go.sum
-            shared/components/go.sum
+          cache: false
+
+      # restore only: main's entries (.github/actions/go-cache); only a push to main saves
+      - name: Go caches
+        id: go-cache
+        uses: ./.github/actions/go-cache
+        with:
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum', 'shared/go/componentpack/go.sum', 'shared/components/go.sum') }}
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: tools/release shared/go/releaseverify shared/go/componentpack shared/components
+          offline: "false"
 
       - name: Go modules (from the cache, verified)
         run: |
@@ -987,38 +1275,216 @@ jobs:
           done
 
       - name: Download release binaries
+        id: artifact-release-bin
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-bin-*
           path: staged
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-bin-*
+        if: steps.artifact-release-bin.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download release binaries (attempt 2)
+        id: artifact-release-bin-2
+        if: steps.artifact-release-bin.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: staged
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-bin-*
+        if: steps.artifact-release-bin-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download release binaries (attempt 3)
+        id: artifact-release-bin-3
+        if: steps.artifact-release-bin-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-bin-*
+          path: staged
+          merge-multiple: true
+      - name: Check release-bin-* downloaded
+        id: artifact-release-bin-check
+        if: steps.artifact-release-bin-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-bin-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download platform archives
+        id: artifact-release-archives
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-archives
           path: staged/archives
+      - name: Wait 15s to retry the download of release-archives
+        if: steps.artifact-release-archives.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download platform archives (attempt 2)
+        id: artifact-release-archives-2
+        if: steps.artifact-release-archives.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-archives
+          path: staged/archives
+      - name: Wait 45s to retry the download of release-archives
+        if: steps.artifact-release-archives-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download platform archives (attempt 3)
+        id: artifact-release-archives-3
+        if: steps.artifact-release-archives-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-archives
+          path: staged/archives
+      - name: Check release-archives downloaded
+        id: artifact-release-archives-check
+        if: steps.artifact-release-archives-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-archives
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download native packages
+        id: artifact-release-packages
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-packages
           path: staged/packages
+      - name: Wait 15s to retry the download of release-packages
+        if: steps.artifact-release-packages.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download native packages (attempt 2)
+        id: artifact-release-packages-2
+        if: steps.artifact-release-packages.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-packages
+          path: staged/packages
+      - name: Wait 45s to retry the download of release-packages
+        if: steps.artifact-release-packages-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download native packages (attempt 3)
+        id: artifact-release-packages-3
+        if: steps.artifact-release-packages-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-packages
+          path: staged/packages
+      - name: Check release-packages downloaded
+        id: artifact-release-packages-check
+        if: steps.artifact-release-packages-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-packages
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download web bundle
+        id: artifact-release-web-bundle
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-web-bundle
           path: staged/web-dist
+      - name: Wait 15s to retry the download of release-web-bundle
+        if: steps.artifact-release-web-bundle.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download web bundle (attempt 2)
+        id: artifact-release-web-bundle-2
+        if: steps.artifact-release-web-bundle.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-web-bundle
+          path: staged/web-dist
+      - name: Wait 45s to retry the download of release-web-bundle
+        if: steps.artifact-release-web-bundle-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download web bundle (attempt 3)
+        id: artifact-release-web-bundle-3
+        if: steps.artifact-release-web-bundle-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-web-bundle
+          path: staged/web-dist
+      - name: Check release-web-bundle downloaded
+        id: artifact-release-web-bundle-check
+        if: steps.artifact-release-web-bundle-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-web-bundle
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Download node assets
+        id: artifact-release-node
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           name: release-node
           path: staged/node
+      - name: Wait 15s to retry the download of release-node
+        if: steps.artifact-release-node.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download node assets (attempt 2)
+        id: artifact-release-node-2
+        if: steps.artifact-release-node.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-node
+          path: staged/node
+      - name: Wait 45s to retry the download of release-node
+        if: steps.artifact-release-node-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download node assets (attempt 3)
+        id: artifact-release-node-3
+        if: steps.artifact-release-node-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: release-node
+          path: staged/node
+      - name: Check release-node downloaded
+        id: artifact-release-node-check
+        if: steps.artifact-release-node-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-node
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       # none when both legs failed
       - name: Download the Linux payloads
+        id: artifact-release-linux-payload
         if: needs.package-linux-payload.result != 'skipped'
         continue-on-error: true
         uses: actions/download-artifact@v8.0.1
@@ -1026,25 +1492,131 @@ jobs:
           pattern: release-linux-payload-*
           path: staged/linux-payload
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-linux-payload-*
+        if: steps.artifact-release-linux-payload.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the Linux payloads (attempt 2)
+        id: artifact-release-linux-payload-2
+        if: steps.artifact-release-linux-payload.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-linux-payload-*
+          path: staged/linux-payload
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-linux-payload-*
+        if: steps.artifact-release-linux-payload-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the Linux payloads (attempt 3)
+        id: artifact-release-linux-payload-3
+        if: steps.artifact-release-linux-payload-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-linux-payload-*
+          path: staged/linux-payload
+          merge-multiple: true
+      - name: Check release-linux-payload-* downloaded
+        id: artifact-release-linux-payload-check
+        if: steps.artifact-release-linux-payload-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-linux-payload-*
+        run: |
+          echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: the job goes on without it)"
 
-      # none when every leg failed
+      # every leg's: a failed download fails the release
       - name: Download the component packs
-        if: needs.package-packs.result != 'skipped'
+        id: artifact-release-packs
         continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: release-packs-*
           path: staged/packs
           merge-multiple: true
+      - name: Wait 15s to retry the download of release-packs-*
+        if: steps.artifact-release-packs.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download the component packs (attempt 2)
+        id: artifact-release-packs-2
+        if: steps.artifact-release-packs.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-packs-*
+          path: staged/packs
+          merge-multiple: true
+      - name: Wait 45s to retry the download of release-packs-*
+        if: steps.artifact-release-packs-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download the component packs (attempt 3)
+        id: artifact-release-packs-3
+        if: steps.artifact-release-packs-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-packs-*
+          path: staged/packs
+          merge-multiple: true
+      - name: Check release-packs-* downloaded
+        id: artifact-release-packs-check
+        if: steps.artifact-release-packs-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: release-packs-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       # One artifact per build-images matrix leg ("digest-<svc>", each a
       # single file named "<svc>" holding "<svc> sha256:...").
       - name: Download image digests
+        id: artifact-digest
+        continue-on-error: true
         uses: actions/download-artifact@v8.0.1
         with:
           pattern: digest-*
           path: digests
           merge-multiple: true
+      - name: Wait 15s to retry the download of digest-*
+        if: steps.artifact-digest.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download image digests (attempt 2)
+        id: artifact-digest-2
+        if: steps.artifact-digest.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: Wait 45s to retry the download of digest-*
+        if: steps.artifact-digest-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download image digests (attempt 3)
+        id: artifact-digest-3
+        if: steps.artifact-digest-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: Check digest-* downloaded
+        id: artifact-digest-check
+        if: steps.artifact-digest-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: digest-*
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
+          exit 1
 
       - name: Assemble release tree
         env:
@@ -1097,15 +1669,13 @@ jobs:
           tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
               -C staged/web-dist -cf - . | gzip -n > "dist/maktaba-web-${TAG}.tar.gz"
           # The component packs (Epic 51 story 51.15): moved, not copied (several GB)
-          if [ -d staged/packs ]; then
-            find staged/packs -maxdepth 1 -type f -name '*.tar.zst*' -exec mv {} dist/ \;
-          fi
+          find staged/packs -maxdepth 1 -type f -name '*.tar.zst*' -exec mv {} dist/ \;
           ls -l dist
 
       # The signed component index (story 51.15): every pack in dist/ with its digest, size
       # and files.sha256, and every pinned model of the catalog. Before release.json, which
       # names it, and before the checksums, which sign it. The commit's time: a re-run
-      # writes the same file. A pack whose leg failed is left out with a warning.
+      # writes the same file. A catalog pack not in dist fails the release.
       - name: Write the component index
         env:
           TAG: ${{ github.ref_name }}
@@ -1364,6 +1934,13 @@ jobs:
           GOTOOLCHAIN: auto
           CGO_ENABLED: "0"
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      # this job's Go modules, retried (offline: false: see .github/actions/go-mod-download)
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: cmd/maktaba-server
+          offline: "false"
 
       - name: The release's signed set and this architecture's packs
         env:

@@ -95,20 +95,53 @@ class SayTest {
     }
 
     @Test
+    fun instancesAreNamedInWordsNotIds() {
+        assertEquals("Processing pipeline · search index", en.process("pipeline", "index"))
+        assertEquals("Processing pipeline · search index copy", en.process("pipeline", "chroma-copy"))
+        assertEquals("Processing pipeline · transcription 2", en.process("pipeline", "stt-2"))
+        assertEquals("خط المعالجة · فهرس البحث", ar.process("pipeline", "index"))
+        assertEquals("خط المعالجة · النسخ النصي 2", ar.process("pipeline", "stt-2"))
+        assertEquals("منفذ البث التلفزيوني · كهرماني", ar.process("tv-slot", "amber"))
+        for (i in listOf("index", "chroma-copy", "stt-1")) {
+            val name = ar.process("pipeline", i)
+            assertEquals("$i: $name", false, name.any { it in 'A'..'Z' || it in 'a'..'z' })
+        }
+        // an instance with no words reads as it came
+        assertEquals("Processing pipeline · levitator", en.process("pipeline", "levitator"))
+    }
+
+    @Test
     fun processesAreNamedByRoleAndSlot() {
         assertEquals("API", en.process("api", null))
         assertEquals("Live TV and streaming", en.process("streaming", ""))
         assertEquals("TV slot · amber", en.process("tv-slot", "amber"))
-        assertEquals("postgres", en.process("postgres", null))
+        // every role the supervisor runs has words; an unknown one reads as it came
+        assertEquals("Database", en.process("postgres", null))
+        assertEquals("Database copy", en.process("copy", null))
+        assertEquals("Language model server", en.process("ollama", null))
+        assertEquals("Remote access relay", en.process("relay", null))
+        assertEquals("مرحّل الوصول عن بُعد", ar.process("relay", null))
+        assertEquals("خادم النموذج اللغوي", ar.process("ollama", null))
+        assertEquals("levitator", en.process("levitator", null))
         assertEquals("Not responding", en.processState("unhealthy"))
         assertEquals("levitating", en.processState("levitating"))
         assertEquals("Standing by", en.processState(ProcessStatus(role = "tv-slot", instance = "amber", wanted = false, state = "stopped")))
         assertEquals("Stopped", en.processState(ProcessStatus(role = "api", state = "stopped")))
+        // its component is off: the home's snapshot says held, never backoff
+        assertEquals("Held: its component is off", en.processState(ProcessStatus(role = "relay", state = "held")))
         assertEquals(
             "Installing the transcription tools (40%).",
             en.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
         )
         assertEquals("something new", en.processDetail(ProcessStatus(role = "pipeline", detailCode = "brand_new", detail = "something new")))
+        assertEquals(
+            "جارٍ تثبيت أدوات التفريغ (40%).",
+            ar.processDetail(ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "venv 40%", detailParams = buildJsonObject { put("percent", 40) })),
+        )
+        // the code without its value (an older home): its English, not "(%)"
+        val bare = ProcessStatus(role = "pipeline", detailCode = "venv_building", detail = "building the pipeline's Python environment (4 of 9)")
+        assertEquals("building the pipeline's Python environment (4 of 9)", en.processDetail(bare))
+        assertEquals("building the pipeline's Python environment (4 of 9)", ar.processDetail(bare))
         assertEquals("killed by SIGKILL", en.exit("crash", -1, "SIGKILL"))
         assertEquals("exited with code 1", en.exit("crash", 1, null))
         assertEquals("stopped responding and was restarted", en.exit("hang", -1, null))
@@ -199,7 +232,8 @@ class SayTest {
         assertEquals("الإبقاء: فشل", ar.code("commit_failed"))
         assertEquals("gremlins", ar.code("gremlins"))
         assertEquals("لا يستجيب", ar.processState("unhealthy"))
-        assertEquals("منفذ البث التلفزيوني · blue: يُعاد تشغيله", ar.event(ProcessEvent(role = "tv-slot", instance = "blue", kind = "restarting")))
+        assertEquals("موقوف: مكوّنه متوقف عن العمل", ar.processState("held"))
+        assertEquals("منفذ البث التلفزيوني · أزرق: يُعاد تشغيله", ar.event(ProcessEvent(role = "tv-slot", instance = "blue", kind = "restarting")))
         assertEquals("بانتظار عامل يخدم Transcribe", ar.queueWaiting("no_worker", null, "Transcribe"))
         assertEquals("توقف برمز الخروج ١", ar.exit("crash", 1, null))
         assertEquals("١ س ٢ د", ar.duration(3725.0))

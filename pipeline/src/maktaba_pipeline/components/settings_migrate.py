@@ -23,8 +23,10 @@ wrote (``rules.read`` moves an older value in memory if it gets there first).
 :func:`watch` re-reports the Failed components every :data:`WATCH_S` seconds, so a section
 an admin saves in full (``replace``) leaves Failed within that time.
 
-The component runner (story 51.06) can call :func:`blocked` to keep a component whose
-settings failed from starting.
+Every component runner (story 51.06) reads :func:`failed_sections` and keeps the
+components :func:`blocked` names off (``settings_invalid``): a component never runs on the
+defaults. :func:`report` tells the runners on Postgres when the failed sections change (a
+reload on ``components_changed``), so the runners of every machine see it at once.
 """
 
 from __future__ import annotations
@@ -256,10 +258,22 @@ def blocked(
     return out
 
 
-async def report(db: Any, failed: Mapping[str, str], *, catalog: Catalog | None = None) -> None:
+async def _notify(db: Any) -> None:
+    """A reload on ``components_changed`` (Postgres): every runner reads the failed
+    sections again at once. SQLite has no NOTIFY: its runners see it on their next poll."""
+    if is_pg(db):
+        await db.execute(
+            "SELECT pg_notify($1, $2)", store.CHANNEL, dumps({"reload": True, "why": PART})
+        )
+
+
+async def report(
+    db: Any, failed: Mapping[str, str], *, catalog: Catalog | None = None, notify: bool = True
+) -> None:
     """The home's status part :data:`PART`: Failed with ``settings_invalid`` (params
     ``{section, error}``) for each component that owns a failed section; none otherwise
-    (the empty report clears what an earlier one said)."""
+    (the empty report clears what an earlier one said). With ``notify`` the runners are
+    told (:func:`_notify`)."""
     cat = catalog or default()
     try:
         desired, _ = await store.desired(db)
@@ -286,6 +300,8 @@ async def report(db: Any, failed: Mapping[str, str], *, catalog: Catalog | None 
             )
         )
     await store.report_status(db, store.HOME, PART, rows, catalog=cat)
+    if notify:
+        await _notify(db)
 
 
 async def run_pass(db: Any, *, catalog: Catalog | None = None) -> dict[str, str]:
@@ -294,7 +310,7 @@ async def run_pass(db: Any, *, catalog: Catalog | None = None) -> dict[str, str]
     await migrate_all(db, catalog=catalog)
     failed = await failed_sections(db)
     try:
-        await report(db, failed, catalog=catalog)
+        await report(db, failed, catalog=catalog, notify=bool(failed))
     except Exception as exc:
         if not rules._missing_table(exc):  # noqa: SLF001 - no component tables yet
             raise
@@ -315,7 +331,7 @@ async def watch(
         try:
             failed = await failed_sections(db)
             if failed != last:
-                await report(db, failed, catalog=catalog)
+                await report(db, failed, catalog=catalog, notify=last is not None or bool(failed))
                 last = failed
         except Exception:  # noqa: BLE001 - a loop that must outlive one bad round
             _log.exception("settings_watch_failed")

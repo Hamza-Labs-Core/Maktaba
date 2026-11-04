@@ -20,6 +20,8 @@
 
 _ci: &ci
   - '.github/workflows/ci.yml'
+  # the composite actions the jobs share (the Go and Node caches): a change can change any job
+  - '.github/actions/**'
 
 _make: &make
   - 'Makefile'
@@ -248,6 +250,17 @@ components:
   - 'tests/__init__.py'
   - 'tests/components/**'
   - '.github/workflows/_components.yml'
+  # the API the scenarios through the Components page's calls run (51.10 T14, 51.14 T13):
+  # the components service and routes, the Queues tile and System health
+  - 'api/go.mod'
+  - 'api/go.sum'
+  - 'api/main.go'
+  - 'api/internal/components/**'
+  - 'api/internal/handlers/components/**'
+  - 'api/internal/handlers/queues/queuehealth.go'
+  - 'api/internal/handlers/queues/snapshot.go'
+  - 'api/internal/handlers/systemstatus/**'
+  - 'api/internal/router/components_routes.go'
 
 # components-chaos on a pull request: the runner, the drain and the claims it stops
 components_chaos:
@@ -258,7 +271,7 @@ components_chaos:
   - 'pipeline/src/maktaba_pipeline/engine/sync.py'
   - 'pipeline/src/maktaba_pipeline/engine/enqueue.py'
   - 'pipeline/src/maktaba_pipeline/engine/stages/component_catchup.py'
-  - 'shared/db/migrations/0177_component_stage_gate.sql'
+  - 'shared/db/migrations/0180_component_stage_gate.sql'
   - 'tests/components/**'
   - '.github/workflows/_components.yml'
 
@@ -488,12 +501,15 @@ apple_player_ui:
 
 # ---- the developer portal (_devportal.yml) ----------------------------------------------
 
-# maktaba.dev: the portal, and every file its allow-list publishes (the developer guides
-# in docs/developers, the changelog, the OpenAPI description, the disclosure policy
+# maktaba.dev: the portal, and every file its allow-list publishes (the wiki app, its
+# English and Arabic database and the diagrams it shows, the developer guides in
+# docs/developers, the changelog, the OpenAPI description, the disclosure policy
 # security.txt is built from, the icons). devportal-deploy.yml deploys on the same paths.
 devportal:
   - *ci
   - 'web/packages/devportal/**'
+  - 'web/wiki-app/**'
+  - 'specs/diagrams/**'
   - 'docs/developers/**'
   - 'CHANGELOG.md'
   - 'CHANGELOG.ar.md'

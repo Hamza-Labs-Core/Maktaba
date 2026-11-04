@@ -63,7 +63,11 @@ func (m *appMachine) supervisorProcesses() ([]string, bool) {
 		case "starting", "unhealthy", "backoff":
 			settled = false // starting, waiting on a step, restarting
 		}
-		out = append(out, fmt.Sprintf("%s/%s wanted=%v running=%v", p.Role, p.Instance, p.Wanted, p.State == "running"))
+		row := fmt.Sprintf("%s/%s wanted=%v running=%v", p.Role, p.Instance, p.Wanted, p.State == "running")
+		if p.State == "held" {
+			row += " held" // its component is off: it runs nothing
+		}
+		out = append(out, row)
 	}
 	sort.Strings(out)
 	return out, settled && len(out) > 0
@@ -108,7 +112,7 @@ func (m *appMachine) componentsHome(db *sql.DB) componentsHome {
 	t := m.r.t
 	t.Helper()
 	h := componentsHome{Processes: m.settledProcesses(3 * time.Minute)}
-	// the catch-up stage is new with this release (slot 0175, hidden): not a stage the
+	// the catch-up stage is new with this release (slot 0178, hidden): not a stage the
 	// previous release had
 	h.Stages = stringsOf(t, db, `SELECT stage || ' enabled=' || enabled || ' reason=' || coalesce(disabled_reason, '-') ||
 		' paused=' || paused FROM job_stages WHERE stage <> 'component_catchup' ORDER BY stage`)
@@ -142,6 +146,50 @@ func diffLists(t *testing.T, what string, before, after []string) {
 	if !reflect.DeepEqual(before, after) {
 		t.Errorf("%s changed with the update:\nbefore: %s\nafter:  %s", what, strings.Join(before, "; "), strings.Join(after, "; "))
 	}
+}
+
+// keptProcesses is after's rows for the processes before had. A process new with this
+// release (the language model server built dormant for an llm that is off, story 51.04) is
+// no change to what runs today, but it must be held and not wanted: it runs nothing and
+// nothing waits on it.
+func keptProcesses(t *testing.T, before, after []string) []string {
+	t.Helper()
+	had := map[string]bool{}
+	for _, row := range before {
+		had[strings.Fields(row)[0]] = true
+	}
+	var out []string
+	for _, row := range after {
+		f := strings.Fields(row)
+		switch {
+		case had[f[0]]:
+			out = append(out, row)
+		case !strings.HasSuffix(row, " wanted=false running=false held"):
+			t.Errorf("a process new with this release must be held and not wanted: %s", row)
+		}
+	}
+	return out
+}
+
+// keptStages is after's rows for the stages before had. A stage new with this release (a
+// migration adds it: the second listen since slot 0174) is no change to what runs today,
+// but it must come in on, not off or paused.
+func keptStages(t *testing.T, before, after []string) []string {
+	t.Helper()
+	had := map[string]bool{}
+	for _, row := range before {
+		had[strings.Fields(row)[0]] = true
+	}
+	var out []string
+	for _, row := range after {
+		f := strings.Fields(row)
+		if had[f[0]] {
+			out = append(out, row)
+		} else if row != f[0]+" enabled=true reason=- paused=false" {
+			t.Errorf("job_stages: the new stage %s came in %s", f[0], row)
+		}
+	}
+	return out
 }
 
 // =====================================================================================
@@ -185,8 +233,8 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	home.assertServing(k.cur)
 
 	after := home.componentsHome(db)
-	diffLists(t, "the supervisor's processes", before.Processes, after.Processes)
-	diffLists(t, "job_stages", before.Stages, after.Stages)
+	diffLists(t, "the supervisor's processes", before.Processes, keptProcesses(t, before.Processes, after.Processes))
+	diffLists(t, "job_stages", before.Stages, keptStages(t, before.Stages, after.Stages))
 	diffLists(t, "extensions", before.Extensions, after.Extensions)
 	if before.HDHR != after.HDHR {
 		t.Errorf("hdhr_device.enabled %s -> %s", before.HDHR, after.HDHR)
@@ -220,9 +268,33 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	}
 	rows.Close()
 	cat := components.Default()
+	// an asset an enabled component needs and that is not on disk has no row (the seed
+	// records only what is there; with no row it reads as wanted and the packs runner
+	// installs it): this install's pipeline is the e2e's stand-in wheel, with no ML
+	// runtime, so runtime.ml is one
+	neededMissing := map[string]bool{}
+	for _, c := range cat.Components() {
+		if wants[c.ID] != "enabled" {
+			continue
+		}
+		for _, r := range cat.Requires(c.ID) {
+			for _, id := range r.AnyOf {
+				if d, ok := cat.Get(id); ok && d.Kind == components.KindAsset {
+					if _, has := wants[id]; !has {
+						neededMissing[id] = true
+					}
+				}
+			}
+		}
+	}
+	if _, has := wants["runtime.ml"]; has {
+		t.Errorf("runtime.ml seeded %s: this install has no ML runtime on disk", wants["runtime.ml"])
+	}
 	for _, c := range cat.Components() {
 		w, ok := wants[c.ID]
 		switch {
+		case !ok && neededMissing[c.ID]:
+			// left to the catalog default on purpose
 		case !ok:
 			t.Errorf("%s has no desired row", c.ID)
 		case !c.Switchable && w != "enabled":
@@ -317,4 +389,19 @@ func grepLines(s, sub string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// keptStages: a stage new with this release is no change when it comes in on.
+func TestKeptStages(t *testing.T) {
+	before := []string{"extract enabled=true reason=- paused=false", "transcribe enabled=false reason=operator paused=false"}
+	after := []string{"extract enabled=true reason=- paused=false", "second_listen enabled=true reason=- paused=false",
+		"transcribe enabled=false reason=operator paused=false"}
+	if got := keptStages(t, before, after); !reflect.DeepEqual(got, before) {
+		t.Fatalf("kept %v", got)
+	}
+	ft := &testing.T{}
+	keptStages(ft, before, append(after, "zz enabled=false reason=component_off paused=false"))
+	if !ft.Failed() {
+		t.Fatal("a new stage that came in off was not reported")
+	}
 }

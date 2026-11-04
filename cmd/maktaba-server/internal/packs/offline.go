@@ -314,8 +314,15 @@ func writeTar(ctx context.Context, w io.Writer, files []offlineFile, at time.Tim
 // Import installs every item of an offline file (a .tar, or a folder holding its
 // contents) as an install from the network is done, from the file. A file for another
 // version or platform is refused before anything else is read. It returns the ids
-// installed.
+// installed. p is named absolutely, with no ".." (the CLI and the package's folder make
+// it so): anything else is refused before it is opened.
 func (m *Manager) Import(ctx context.Context, p string) ([]string, error) {
+	if !filepath.IsAbs(p) {
+		return nil, wrap(ReasonInstallFailed, nil, fmt.Errorf("%q: not an absolute path", p))
+	}
+	if strings.Contains(p, "..") {
+		return nil, wrap(ReasonInstallFailed, nil, fmt.Errorf("%q: a path with a .. element in it", p))
+	}
 	if info, err := os.Stat(p); err == nil && info.IsDir() {
 		return m.importDir(ctx, p)
 	}
@@ -442,12 +449,57 @@ func (m *Manager) installFrom(ctx context.Context, dir string) ([]string, error)
 		if !slices.Contains(man.Items, id) {
 			continue
 		}
+		// an item installed already is not installed again, but the file's copy is still
+		// checked against the signed index: a damaged file says so, never "installed"
+		if m.Installed(id) {
+			if err := m.checkOfflineItem(ctx, s, dir, id); err != nil {
+				return done, fmt.Errorf("%s: %w", id, fromFile(err))
+			}
+		}
 		if err := m.install(ctx, id, s, map[string]bool{}); err != nil {
 			return done, fmt.Errorf("%s: %w", id, err)
 		}
 		done = append(done, id)
 	}
 	return done, nil
+}
+
+// checkOfflineItem checks id's files in the offline folder dir against the signed index
+// the file carries (its pack's size and sha256, or each model file's), as an install
+// would: ReasonVerifyFailed names the first that does not match.
+func (m *Manager) checkOfflineItem(ctx context.Context, s *session, dir, id string) error {
+	comp, err := m.asset(id)
+	if err != nil {
+		return err
+	}
+	v, err := m.index(ctx, id, s)
+	if err != nil {
+		return err
+	}
+	src := comp.SourceFor(m.Platform)
+	if strings.HasPrefix(src, "pack:") {
+		for i := range v.Index.Packs {
+			if p := v.Index.Packs[i]; p.ID == id && p.Platform == m.Platform {
+				if err := rv.CheckPackFiles(p, filepath.Join(dir, "packs")); err != nil {
+					return wrap(ReasonVerifyFailed, map[string]any{"name": p.Name}, err)
+				}
+				return nil
+			}
+		}
+		return fail(ReasonPackMissing, map[string]any{"component": id, "platform": m.Platform},
+			"the index lists no %s pack for %s", id, m.Platform)
+	}
+	im := m.indexModel(v, id, src)
+	if im == nil {
+		return fail(ReasonPackMissing, map[string]any{"component": id, "platform": m.Platform},
+			"the index lists no %s for %s", src, m.Platform)
+	}
+	for _, f := range im.Files {
+		if !safeRel(f.Path) || !fileMatches(filepath.Join(dir, "models", id, filepath.FromSlash(f.Path)), f) {
+			return fail(ReasonVerifyFailed, map[string]any{"name": f.Path}, "%s does not match the index", f.Path)
+		}
+	}
+	return nil
 }
 
 // offlineEntry is a name an offline file may hold.

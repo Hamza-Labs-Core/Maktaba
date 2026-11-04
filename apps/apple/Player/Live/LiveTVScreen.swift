@@ -26,6 +26,10 @@ struct LiveTVScreen: View {
         self.context = context
         _openedOff = State(initialValue: !context.session.capabilities.current.isOn(.liveTV))
     }
+    /// The launch's `-maktaba-live` was applied (once a process: the person's own taps then
+    /// stay). A scene restored from the last run brings its own `live.mode`, which wins over
+    /// the default above: on CI a guide test opened on Now after an earlier test left it there.
+    @MainActor private static var launchModeApplied = false
 
     var body: some View {
         Group {
@@ -37,6 +41,11 @@ struct LiveTVScreen: View {
         }
         // decided again each time the screen comes into view (the tab chosen again)
         .onAppear { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
+        // opened before the home first said what is on (a slow home, a launch into Live TV):
+        // that first answer decides, once; a later change leaves the open screen as it is
+        .onChange(of: context.session.capabilities.answered) { _, answered in
+            if answered { openedOff = !context.session.capabilities.current.isOn(.liveTV) }
+        }
     }
 
     /// Live TV is off on the home (story 51.11): an admin reads so, with a button to the
@@ -88,6 +97,11 @@ struct LiveTVScreen: View {
         .navigationDestination(item: $watching) { ChannelScreen(context: context, id: $0) }
         .sheet(item: Binding(get: { model.programme }, set: { model.programme = $0 })) { block in
             LiveProgrammeSheet(block: block, channel: model.channels.first { $0.id == block.channelID }) { watching = $0 }
+        }
+        .onAppear {
+            guard !Self.launchModeApplied else { return }
+            Self.launchModeApplied = true
+            if let launch = ShellLaunch.liveMode().flatMap(Mode.init(rawValue:)) { mode = launch }
         }
         .task(id: sizeClass) {
             model.hours = sizeClass == .regular ? 6 : 3

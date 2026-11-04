@@ -16,6 +16,7 @@ import (
 // reads); the runners put the numbers in each row's detail when they report:
 //
 //	restarts        the supervisor's restart count of the component's processes
+//	restarts_24h    those restarts in the last 24 h
 //	last_error      {code, at}: the last failure the runner saw (kept after it recovers)
 //	last_transition {to, seconds}: from the generation it acted on to the phase reached
 //	rss_mb          resident memory of its processes
@@ -34,6 +35,8 @@ type Health struct {
 	// Restarts is how often the supervisor restarted its processes since the supervisor
 	// started (process kinds; 0 for the others).
 	Restarts int `json:"restarts"`
+	// Restarts24h is how often they were restarted in the last 24 h.
+	Restarts24h int `json:"restarts_24h"`
 	// LastErrorCode and LastErrorAt are the last failure's reason code and time.
 	LastErrorCode string     `json:"last_error_code,omitempty"`
 	LastErrorAt   *time.Time `json:"last_error_at,omitempty"`
@@ -114,6 +117,9 @@ func healthOf(c *components.Component, rows []store.Status, phase string, instal
 		}
 		if n, ok := num(d["restarts"]); ok && n > 0 {
 			h.Restarts += int(n)
+		}
+		if n, ok := num(d["restarts_24h"]); ok && n > 0 {
+			h.Restarts24h += int(n)
 		}
 		if n, ok := num(d["rss_mb"]); ok && n >= 0 {
 			rss += int64(n)

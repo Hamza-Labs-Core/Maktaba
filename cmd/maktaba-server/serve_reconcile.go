@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/packs"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/version"
@@ -59,6 +60,9 @@ func bootConfig(cfg config.Config, log io.Writer) config.Config {
 	return out
 }
 
+// freeMB is this machine's memory a new process can have, in MB (0: not known).
+func freeMB() int64 { return int64(hostinfo.FreeMemory() >> 20) }
+
 // startComponents builds the reconciler for sup, primes its gates (before sup runs
 // anything) and runs it with the loops, and the asset half (story 51.16: packs) beside
 // it. With no reconciler the loops run as before. It returns the asset routes (their
@@ -75,7 +79,7 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 				go l.Run(ctx)
 			}
 		}
-		return &packsAdmin{ctx: ctx}
+		return &packsAdmin{ctx: ctx, sup: sup}
 	}
 	rec := supervisor.NewReconciler(sup)
 	rec.Machine = machine
@@ -83,6 +87,10 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	rec.CachePath = supervisor.CompCachePath(cfg.StateDir())
 	rec.Loops = loops
 	rec.Log = log
+	// a dormant process is checked for memory before its first start (not_enough_memory)
+	rec.FreeMB = freeMB
+	// the rows' rss_mb (story 51.14): its processes' memory, read every few minutes
+	rec.RSS = hostinfo.ProcessRSS
 	// the asset half: what a crash left is tidied before anything reads it
 	m := newPacksManager(cfg, releaseDir, log)
 	for _, did := range m.Layout.Recover(m.Version) {
@@ -110,8 +118,8 @@ func startComponents(ctx context.Context, cfg config.Config, sup *supervisor.Sup
 	go run.Run(ctx)
 	go rec.Run(ctx)
 	// story 51.17: the Linux maktaba-full package's packs, at the first start of its version
-	go importSystemPacks(ctx, m, cfg.StateDir(), log)
-	pa := &packsAdmin{ctx: ctx, m: m, r: run}
+	go importSystemPacks(ctx, m, cfg.StateDir(), rec.Off, log)
+	pa := &packsAdmin{ctx: ctx, m: m, r: run, sup: sup}
 	if st, ok := rec.Source.(*store.Store); ok {
 		pa.metrics = &supervisor.ComponentMetrics{Source: st, Machine: machine}
 	}

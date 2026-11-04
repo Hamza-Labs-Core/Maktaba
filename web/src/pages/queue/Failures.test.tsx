@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { deferred } from "../../test/deferred";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("../../lib/api", async () => {
@@ -214,6 +215,101 @@ describe("the failures page", () => {
     get.mockRejectedValue(new Error("down"));
     renderAt(<Failures />, "/queue/failures", "/queue/failures");
     expect(await screen.findByRole("alert")).toBeTruthy();
+  });
+});
+
+// A read still on its way when an item is removed or restored has the item as
+// it was: it must not bring it back once the home has the change.
+describe("the failures page, reads and changes in order", () => {
+  const without = (id: number): FailureList => ({
+    ...list,
+    items: list.items.filter((i) => i.job_id !== id),
+  });
+  const row = (label: RegExp) => screen.queryByText(label)?.closest("tr") ?? null;
+  function answering(...answers: Promise<unknown>[]) {
+    get.mockImplementation(() => answers.shift() ?? Promise.resolve(list));
+  }
+
+  it("a read that began before a removal does not bring the removed item back", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const older = deferred<FailureList>();
+    // the first read, the one after Retry (held), the one after Remove
+    answering(Promise.resolve(list), older.promise, Promise.resolve(without(9)));
+    renderAt(<Failures />, "/queue/failures", "/queue/failures");
+    await user.click(
+      within((await screen.findByText(/Lesson 2/)).closest("tr")!).getByRole("button", {
+        name: "Retry now",
+      })
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await user.click(within(row(/Lesson 1/)!).getByRole("button", { name: "Remove" }));
+    expect(post).toHaveBeenLastCalledWith("/api/queues/failures/actions", {
+      action: "remove",
+      job_ids: [9],
+    });
+    await waitFor(() => expect(row(/Lesson 1/)).toBeNull());
+
+    older.resolve(list);
+    await act(async () => {
+      await older.promise;
+    });
+    expect(row(/Lesson 1/)).toBeNull();
+    expect(row(/Lesson 2/)).not.toBeNull();
+  });
+
+  it("a read that began before a restore does not offer the restore again", async () => {
+    const user = userEvent.setup();
+    const fa = { id: "fa1", kind: "convert", state: "done", restorable: true };
+    const withFa: FailureList = {
+      ...list,
+      items: list.items.map((i) => (i.job_id === 9 ? { ...i, file_action: fa } : i)),
+    };
+    const restored: FailureList = {
+      ...list,
+      items: list.items.map((i) =>
+        i.job_id === 9 ? { ...i, file_action: { ...fa, restorable: false } } : i
+      ),
+    };
+    const older = deferred<FailureList>();
+    answering(Promise.resolve(withFa), older.promise, Promise.resolve(restored));
+    renderAt(<Failures />, "/queue/failures", "/queue/failures");
+    await user.click(
+      within((await screen.findByText(/Lesson 2/)).closest("tr")!).getByRole("button", {
+        name: "Retry now",
+      })
+    );
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await user.click(within(row(/Lesson 1/)!).getByRole("button", { name: "Restore" }));
+    expect(post).toHaveBeenLastCalledWith("/api/queues/file-actions/fa1/restore");
+    await waitFor(() =>
+      expect(within(row(/Lesson 1/)!).queryByRole("button", { name: "Restore" })).toBeNull()
+    );
+
+    older.resolve(withFa);
+    await act(async () => {
+      await older.promise;
+    });
+    expect(within(row(/Lesson 1/)!).queryByRole("button", { name: "Restore" })).toBeNull();
+  });
+
+  it("Show more read before a removal does not append its older page", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const page2 = deferred<FailureList>();
+    answering(Promise.resolve({ ...list, next: "c1" }), page2.promise, Promise.resolve(without(9)));
+    renderAt(<Failures />, "/queue/failures", "/queue/failures");
+    await user.click(await screen.findByRole("button", { name: "Show more" }));
+    expect(get).toHaveBeenCalledTimes(2);
+    await user.click(within(row(/Lesson 1/)!).getByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(row(/Lesson 1/)).toBeNull());
+
+    page2.resolve({ ...list, items: [item({ job_id: 4, label: "Lesson 4" })], next: null });
+    await act(async () => {
+      await page2.promise;
+    });
+    expect(row(/Lesson 4/)).toBeNull();
+    expect(row(/Lesson 1/)).toBeNull();
   });
 });
 

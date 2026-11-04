@@ -26,11 +26,13 @@ import (
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
-// Deferred are packs the catalog names that no recipe builds yet (tools/release/packs),
-// and why. They are not expected in a release.
-var Deferred = map[string]string{
-	"model.refine": "the CAMeL Tools dictionary is still fetched with the ML runtime (fetch_cli.py); its pack comes with 51.16",
-	"tool.ffmpeg":  "Linux uses the distribution's ffmpeg today; a static build is not pinned yet",
+// DeferredOn are packs deferred on some platforms only (id, then platform), and why.
+var DeferredOn = map[string]map[string]string{
+	"runtime.ollama": {
+		"windows-amd64": "no recipe gathers Ollama's Windows release yet",
+		"linux-amd64":   "no recipe gathers Ollama's Linux release yet",
+		"linux-arm64":   "no recipe gathers Ollama's Linux release yet",
+	},
 }
 
 // Pack is one pack a release builds.
@@ -46,18 +48,19 @@ func (p Pack) Name(version string) string {
 }
 
 // Packs are the packs the catalog asks of a release on platform ("" every platform): an
-// asset that is not in the payload, whose source there is its own pack, less Deferred.
+// asset that is not in the payload, whose source there is its own pack, less DeferredOn.
+// Each has a recipe in tools/release/packs/recipes.
 func Packs(cat *components.Catalog, platform string) []Pack {
 	var out []Pack
 	for _, c := range cat.Components() {
 		if c.Kind != components.KindAsset || c.InPayload {
 			continue
 		}
-		if _, deferred := Deferred[c.ID]; deferred {
-			continue
-		}
 		for _, p := range c.Platforms {
 			if (platform != "" && p != platform) || c.SourceFor(p) != "pack:"+c.ID {
+				continue
+			}
+			if _, deferred := DeferredOn[c.ID][p]; deferred {
 				continue
 			}
 			var req []string
@@ -110,22 +113,36 @@ type Options struct {
 	Commit    string    // the 40-hex commit the release is built from
 	Published time.Time // the commit's time: a re-run writes the same index
 	Dist      string    // the folder with the release files (the packs among them)
+	// Platform and Only narrow the index to the packs of one platform ("" every platform)
+	// and to the listed ids (none: all of them): a build of part of a release (one
+	// platform's packs in CI, the update rehearsal's tool.yt-dlp). A release sets neither.
+	Platform string
+	Only     []string
 }
+
+// ErrMissing is the error of an index whose packs are not all in dist.
+var ErrMissing = errors.New("components index: packs missing")
 
 var packFileRe = regexp.MustCompile(`\.tar\.zst(\.part[0-9]+)?$`)
 
-// Generate is the index. Missing names the packs the catalog asks for that are not in
-// dist (a failed build leg); a pack file in dist the catalog does not ask for, or one
-// whose pack.json is not what its name says, is an error.
-func Generate(o Options) (idx *rv.ComponentsIndex, missing []string, err error) {
-	idx = &rv.ComponentsIndex{
+// Generate is the index. Every pack the catalog asks for (of Platform and Only, when set)
+// must be in dist: a missing one (a failed build leg) is ErrMissing, naming each, and no
+// index is made, so a release never ships without some platform's packs. A pack file in
+// dist the catalog does not ask for, or one whose pack.json is not what its name says, is
+// an error too.
+func Generate(o Options) (*rv.ComponentsIndex, error) {
+	idx := &rv.ComponentsIndex{
 		Schema: rv.ComponentsIndexSchema, Version: o.Version, Commit: strings.ToLower(o.Commit),
 		Published: o.Published.UTC().Truncate(time.Second), Server: rv.ServerRange(o.Version),
 		Packs: []rv.IndexPack{}, Models: Models(o.Catalog),
 	}
 	idx.Expires = idx.Published.Add(rv.IndexLifetime)
-	want := Packs(o.Catalog, "")
+	want, err := wanted(o)
+	if err != nil {
+		return nil, err
+	}
 	names := map[string]bool{}
+	var missing []string
 	for _, p := range want {
 		name := p.Name(o.Version)
 		names[name] = true
@@ -135,13 +152,16 @@ func Generate(o Options) (idx *rv.ComponentsIndex, missing []string, err error) 
 			continue
 		}
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		idx.Packs = append(idx.Packs, *ip)
 	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("%w from %s: %s", ErrMissing, o.Dist, strings.Join(missing, ", "))
+	}
 	entries, err := os.ReadDir(o.Dist)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	for _, e := range entries {
 		if !packFileRe.MatchString(e.Name()) {
@@ -149,18 +169,44 @@ func Generate(o Options) (idx *rv.ComponentsIndex, missing []string, err error) 
 		}
 		base := regexp.MustCompile(`\.part[0-9]+$`).ReplaceAllString(e.Name(), "")
 		if !names[base] {
-			return nil, nil, fmt.Errorf("components index: %s is not a pack the catalog asks for", e.Name())
+			return nil, fmt.Errorf("components index: %s is not a pack the catalog asks for", e.Name())
 		}
 	}
 	// the index checks itself as a machine will
 	b, err := Marshal(idx)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	if _, err := rv.ParseComponentsIndex(b); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	return idx, missing, nil
+	return idx, nil
+}
+
+// wanted are the packs o asks for: the catalog's, narrowed by Platform and Only. An Only
+// id that is no pack of the platform is an error, not an empty index.
+func wanted(o Options) ([]Pack, error) {
+	all := Packs(o.Catalog, o.Platform)
+	if len(o.Only) == 0 {
+		return all, nil
+	}
+	var out []Pack
+	for _, id := range o.Only {
+		n := len(out)
+		for _, p := range all {
+			if p.ID == id {
+				out = append(out, p)
+			}
+		}
+		if len(out) == n {
+			where := o.Platform
+			if where == "" {
+				where = "any platform"
+			}
+			return nil, fmt.Errorf("components index: %s is not a pack of %s", id, where)
+		}
+	}
+	return out, nil
 }
 
 func readPack(dist, name string, p Pack, version string) (*rv.IndexPack, error) {

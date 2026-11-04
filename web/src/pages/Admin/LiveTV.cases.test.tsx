@@ -34,10 +34,10 @@ const apiErr = (status: number, title: string, extra: Record<string, unknown> = 
   new ApiError({ type: "about:blank", title, status, ...extra } as Problem);
 
 const info = {
-  stream_base_url: "http://192.168.1.20:8782",
-  hdhr_address: "192.168.1.20:8782",
-  xmltv_url: "http://192.168.1.20:8782/xmltv.xml",
-  m3u_url: "http://192.168.1.20:8782/lineup.m3u",
+  stream_base_url: "http://192.0.2.20:8782",
+  hdhr_address: "192.0.2.20:8782",
+  xmltv_url: "http://192.0.2.20:8782/xmltv.xml",
+  m3u_url: "http://192.0.2.20:8782/lineup.m3u",
   base_from_config: true,
   xmltv_path: "/xmltv.xml",
   m3u_path: "/lineup.m3u",
@@ -92,8 +92,8 @@ const plexStatus = {
   dizquetv_present: true,
   channels: { lineup: 3, mapped: null, in_sync: null },
   target: {
-    tuner_url: "http://192.168.1.20:8782",
-    xmltv_url: "http://192.168.1.20:8782/xmltv.xml",
+    tuner_url: "http://192.0.2.20:8782",
+    xmltv_url: "http://192.0.2.20:8782/xmltv.xml",
     source: "env",
   },
   warnings: [] as string[],
@@ -1556,7 +1556,7 @@ describe("AdminLiveTV (test-cases/admin-live-tv.md)", () => {
       );
     expect(missing).toEqual([]);
     // host stream addresses stay LTR
-    expect(screen.getByText("http://192.168.1.30:8081").tagName).toBe("BDI");
+    expect(screen.getByText("http://192.0.2.30:8081").tagName).toBe("BDI");
     // ingest URLs stay LTR
     expect(screen.getByText("rtmp://a.rtmp.youtube.com/live2")).toHaveAttribute("dir", "ltr");
   });

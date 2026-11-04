@@ -4,11 +4,11 @@ import Testing
 
 @Suite struct HomeAddress {
     @Test(arguments: [
-        ("192.168.50.177:8088", "http://192.168.50.177:8088"),
+        ("192.168.0.10:8088", "http://192.168.0.10:8088"),
         ("mac.local:8088/library", "http://mac.local:8088"),
         ("home.example.com", "https://home.example.com"),
         ("https://home.example.com/x?y=1", "https://home.example.com"),
-        ("  http://10.0.0.5:8088  ", "http://10.0.0.5:8088"),
+        ("  http://198.51.100.5:8088  ", "http://198.51.100.5:8088"),
     ])
     func normalizes(input: String, want: String) {
         #expect(Home.normalize(input)?.absoluteString == want)
@@ -24,8 +24,8 @@ import Testing
     @Test func streamSessionResolvesAgainstTheHome() throws {
         let json = #"{"session_id":"s1","mode":"transcode","manifest_url":"/stream/s1/manifest.m3u8?sig=abc","expires_at":"2026-10-25T00:00:00Z"}"#
         let s = try JSONDecoder().decode(StreamSession.self, from: Data(json.utf8))
-        let url = s.playbackURL(home: URL(string: "http://192.168.50.177:8088")!)
-        #expect(url?.absoluteString == "http://192.168.50.177:8088/stream/s1/manifest.m3u8?sig=abc")
+        let url = s.playbackURL(home: URL(string: "http://203.0.113.177:8088")!)
+        #expect(url?.absoluteString == "http://203.0.113.177:8088/stream/s1/manifest.m3u8?sig=abc")
     }
 
     @Test func directURLWins() throws {
@@ -77,16 +77,16 @@ import Testing
         let suite = "maktabakit.test.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
-        let url = URL(string: "http://192.168.50.177:8088")!
+        let url = URL(string: "http://203.0.113.177:8088")!
         let session = AppSession(app: "test", defaults: defaults)
-        session.use(Home(url: url, name: "192.168.50.177"))
+        session.use(Home(url: url, name: "203.0.113.177"))
         session.named(nil) // the home did not say
-        #expect(session.current?.name == "192.168.50.177")
+        #expect(session.current?.name == "203.0.113.177")
         session.named("Living room")
         #expect(session.current?.name == "Living room")
         #expect(session.homes.map(\.name) == ["Living room"])
         // picking the home again by its old value adds no second one
-        session.use(Home(url: url, name: "192.168.50.177"))
+        session.use(Home(url: url, name: "203.0.113.177"))
         #expect(session.homes.count == 1)
         #expect(AppSession(app: "test", defaults: defaults).homes.map(\.name) == ["Living room"])
     }
@@ -159,13 +159,13 @@ import Testing
 }
 
 @Suite struct Proxy {
-    let proxy = try! StreamProxy(client: APIClient(home: URL(string: "http://192.168.50.177:8088")!,
-                                                   tokens: TokenStore(app: "test.proxy", home: URL(string: "http://192.168.50.177:8088")!)))
+    let proxy = try! StreamProxy(client: APIClient(home: URL(string: "http://203.0.113.177:8088")!,
+                                                   tokens: TokenStore(app: "test.proxy", home: URL(string: "http://203.0.113.177:8088")!)))
 
     @Test func servesOnlyItsSecretsStreamPaths() {
         let s = proxy.secret
         #expect(proxy.remote(forTarget: "/\(s)/stream/abc/manifest.m3u8?sig=x")?.absoluteString
-            == "http://192.168.50.177:8088/stream/abc/manifest.m3u8?sig=x")
+            == "http://203.0.113.177:8088/stream/abc/manifest.m3u8?sig=x")
         #expect(proxy.remote(forTarget: "/\(s)/stream/abc/v0/seg-1.ts?sig=x")?.path() == "/stream/abc/v0/seg-1.ts")
         for refused in [
             "/stream/abc/manifest.m3u8",            // no secret: another app on the device
@@ -218,15 +218,15 @@ import Testing
         let json = #"{"code":"ABCD-1234","device_code":"secret","expires_at":"2026-10-26T12:10:00Z","verify_path":"/pair?code=ABCD-1234","interval":2}"#
         let p = try JSONDecoder().decode(DevicePairing.self, from: Data(json.utf8))
         #expect(p.code == "ABCD-1234" && p.interval == 2)
-        #expect(p.verifyURL(home: URL(string: "http://192.168.50.177:8088")!)?.absoluteString == "http://192.168.50.177:8088/pair?code=ABCD-1234")
+        #expect(p.verifyURL(home: URL(string: "http://203.0.113.177:8088")!)?.absoluteString == "http://203.0.113.177:8088/pair?code=ABCD-1234")
     }
 
     @Test(arguments: [
-        ("192.168.50.177", ["web": "8088", "role": "home"], "http://192.168.50.177:8088"),
+        ("203.0.113.177", ["web": "8088", "role": "home"], "http://203.0.113.177:8088"),
         ("MahmoudacStudio.local.", [:], "http://MahmoudacStudio.local:8080"),
         ("Mahmouds-Mac-Studio.local.local.", ["web": "8088"], "http://Mahmouds-Mac-Studio.local:8088"),
         ("box.LOCAL.local", [:], "http://box.LOCAL:8080"),
-        ("10.0.0.2", ["web": "443", "tls": "1"], "https://10.0.0.2:443"),
+        ("198.51.100.2", ["web": "443", "tls": "1"], "https://198.51.100.2:443"),
     ])
     func anAnnouncedHomesAddress(host: String, txt: [String: String], want: String) {
         #expect(HomeBrowser.homeURL(host: host, apiPort: 8080, txt: txt)?.absoluteString == want)

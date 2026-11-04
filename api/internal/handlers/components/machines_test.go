@@ -2,6 +2,7 @@ package components
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"slices"
@@ -23,7 +24,16 @@ const nodeN = "6f1c2a3b-4d5e-4f60-8a71-92b3c4d5e6f7"
 // now), its stage switches and the stage registry of every catalog stage.
 func machineFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := newFixture(t)
+	f := fixtureFrom(t, fromTemplate(t, "machines", seedMachines))
+	f.addNode(t, nodeN, "old-laptop", "approved", time.Now())
+	return f
+}
+
+// seedMachines builds the home machineFixture copies: newFixture's, with the cluster's
+// tables and every stage the catalog names.
+func seedMachines(t testing.TB, db *sql.DB) {
+	t.Helper()
+	seedHome(t, db)
 	for _, q := range []string{
 		`ALTER TABLE cluster_nodes ADD COLUMN state TEXT NOT NULL DEFAULT 'approved'`,
 		`ALTER TABLE cluster_nodes ADD COLUMN capabilities TEXT`,
@@ -31,19 +41,17 @@ func machineFixture(t *testing.T) *fixture {
 		`CREATE TABLE cluster_node_stages (node_id TEXT NOT NULL, stage TEXT NOT NULL, enabled INTEGER NOT NULL,
 			PRIMARY KEY (node_id, stage))`,
 	} {
-		if _, err := f.db.Exec(q); err != nil {
+		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%v\n%s", err, q)
 		}
 	}
 	for _, c := range components.Default().Components() {
 		for _, st := range c.Stages {
-			if _, err := f.db.Exec(`INSERT INTO job_stages (stage, label, subject_kinds, pool, lane) VALUES ($1, $1, '[]', 'cpu', 'media') ON CONFLICT DO NOTHING`, st); err != nil {
+			if _, err := db.Exec(`INSERT INTO job_stages (stage, label, subject_kinds, pool, lane) VALUES ($1, $1, '[]', 'cpu', 'media') ON CONFLICT DO NOTHING`, st); err != nil {
 				t.Fatal(err)
 			}
 		}
 	}
-	f.addNode(t, nodeN, "old-laptop", "approved", time.Now())
-	return f
 }
 
 func (f *fixture) addNode(t *testing.T, id, name, state string, seen time.Time) {

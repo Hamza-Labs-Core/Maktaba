@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 )
 
 // PGBackend is the production Backend: it reads the videos→media_info
@@ -58,9 +60,9 @@ func NewPGBackend(pool *pgxpool.Pool) *PGBackend {
 // The pool is pinged once so a misconfigured DATABASE_URL fails fast
 // at boot rather than on the first stream request.
 func ConnectPG(ctx context.Context, dsn string) (*PGBackend, *pgxpool.Pool, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	pool, err := pgpool.New(ctx, dsn, pgpool.Serve)
 	if err != nil {
-		return nil, nil, fmt.Errorf("probe: pgxpool.New: %w", err)
+		return nil, nil, fmt.Errorf("probe: pgpool.New: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()

@@ -10,11 +10,17 @@ import (
 )
 
 type fakeComponents struct {
-	rows []store.Status
-	err  error
+	rows    []store.Status
+	err     error
+	desired map[string]map[string]store.Desired // by machine
+	derr    error
 }
 
 func (f fakeComponents) Statuses(context.Context) ([]store.Status, error) { return f.rows, f.err }
+
+func (f fakeComponents) Desired(_ context.Context, machine string) (map[string]store.Desired, int64, error) {
+	return f.desired[machine], 1, f.derr
+}
 
 func compRow(machine, id, part, phase, reason string, since time.Time) store.Status {
 	s := store.Status{Machine: machine, ID: id, Part: part, Phase: phase, Since: since}
@@ -77,7 +83,7 @@ func TestComponentIssuesOrder(t *testing.T) {
 		compRow("node-b", "llm", "supervisor", "failed", "crash_loop", now),
 		compRow("home", "youtube", "pipeline", "failed", "", now),
 		compRow("home", "llm", "supervisor", "failed", "", now),
-	}, now)
+	}, now, nil)
 	got := []string{}
 	for _, f := range failed {
 		got = append(got, f.Machine+"/"+f.ID)
@@ -85,4 +91,42 @@ func TestComponentIssuesOrder(t *testing.T) {
 	if len(got) != 3 || got[0] != "home/llm" || got[1] != "home/youtube" || got[2] != "node-b/llm" {
 		t.Fatalf("order %v", got)
 	}
+}
+
+// A component turned off or held never counts, whatever a part that stopped before it
+// reported the change still says (smart search's index worker, failed or degraded at the
+// old generation); one that is on and failed does, and so does a failed asset install.
+func TestComponentsLineLeavesOutWhatIsOffOnPurpose(t *testing.T) {
+	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	rows := []store.Status{
+		compRow("home", "search.semantic", "pipeline/index", "failed", "crash_loop", now.Add(-time.Hour)),
+		compRow("home", "llm", "supervisor", "degraded", "", now.Add(-time.Hour)),
+		compRow("node-1", "classify", "pipeline", "failed", "", now.Add(-time.Hour)),
+	}
+	desired := map[string]map[string]store.Desired{
+		"home": {
+			"search.semantic": {ID: "search.semantic", Want: "installed", Generation: 4},
+			"llm":             {ID: "llm", Want: "enabled", Hold: &store.Hold{By: "admin:test"}, Generation: 2},
+		},
+		"node-1": {"classify": {ID: "classify", Want: "installed", Generation: 3}},
+	}
+	run := func(f fakeComponents) Item {
+		h := &Handler{Components: f, Now: func() time.Time { return now }}
+		return only(t, checkComponents(context.Background(), newEnv(h)))
+	}
+	want(t, run(fakeComponents{rows: rows, desired: desired}), StatusOK, "components_ok")
+
+	// on again: its failure is the item
+	on := map[string]map[string]store.Desired{"home": desired["home"], "node-1": {"classify": {ID: "classify", Want: "enabled"}}}
+	got := run(fakeComponents{rows: rows, desired: on})
+	want(t, got, StatusDegraded, "components_failed")
+	if got.Params["component"] != "classify" || got.Params["failed"] != 1 {
+		t.Fatalf("on again: %+v", got)
+	}
+	// an asset's failed install counts even when its want is absent
+	asset := []store.Status{compRow("home", "model.refine", "packs", "failed", "busy", now)}
+	want(t, run(fakeComponents{rows: asset, desired: map[string]map[string]store.Desired{
+		"home": {"model.refine": {ID: "model.refine", Want: "absent"}}}}), StatusDegraded, "components_failed")
+	// desired state that cannot be read leaves nothing out
+	want(t, run(fakeComponents{rows: rows, desired: desired, derr: errors.New("boom")}), StatusDegraded, "components_failed")
 }

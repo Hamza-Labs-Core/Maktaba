@@ -25,6 +25,11 @@ type BatchWrite struct {
 type BatchPlan struct {
 	Writes []BatchWrite
 	Bundle string
+	// AfterWrite runs inside the transaction after each row is written, with the row as
+	// it now is (nil: nothing): the API writes the component's older switch there (story
+	// 51.07's mirrors), so the two commit or roll back together. An error rolls back the
+	// whole batch.
+	AfterWrite func(ctx context.Context, tx *sql.Tx, written Desired) error
 }
 
 // SetDesiredBatch writes a batch of desired rows in one transaction, or none of them.
@@ -72,6 +77,11 @@ func (s *Store) SetDesiredBatch(ctx context.Context, plan func(current map[strin
 		after, err := s.setDesired(ctx, tx, w.Desired, w.Audit)
 		if err != nil {
 			return nil, err
+		}
+		if p.AfterWrite != nil {
+			if err := p.AfterWrite(ctx, tx, after); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, after)
 	}

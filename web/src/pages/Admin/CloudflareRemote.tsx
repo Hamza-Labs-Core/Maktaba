@@ -10,6 +10,7 @@ import { tvRemoteApi } from "../../lib/tvRemoteApi";
 import type { RemoteIntegration, RemoteTestLine, RemoteTestResult } from "../../lib/tvRemoteApi";
 import { useAction } from "../../components/queue/useAction";
 import { RemoteUsage } from "./RemoteUsage";
+import { useReadOrder } from "../../lib/readOrder";
 
 const LINE_KEYS = [
   "token",
@@ -79,26 +80,34 @@ export function CloudflareRemote({ refresh }: { refresh: number }) {
   const [failed, setFailed] = useState(false);
   const [removed, setRemoved] = useState<string | null>(null);
 
+  // A read begun before remote viewing was switched or the integration removed
+  // still has it as it was: it is dropped (lib/readOrder).
+  const order = useReadOrder();
+
   const load = useCallback(() => {
+    const ticket = order.begin();
     tvRemoteApi
       .status()
       .then((r) => {
+        if (!order.fresh(ticket)) return;
         setSt(r.integration);
         setFailed(false);
       })
-      .catch(() => setFailed(true));
-  }, []);
+      .catch(() => {
+        if (order.fresh(ticket)) setFailed(true);
+      });
+  }, [order]);
   useEffect(load, [load, refresh]);
 
   const toggle = (enabled: boolean) =>
     void action
-      .run("enable", () => tvRemoteApi.setEnabled(enabled))
+      .run("enable", () => order.saving(() => tvRemoteApi.setEnabled(enabled)))
       .then((r) => r && setSt(r.integration));
 
   const remove = () => {
     if (!window.confirm(t("cfstream.removeConfirm"))) return;
     void action
-      .run("remove", () => tvRemoteApi.remove())
+      .run("remove", () => order.saving(() => tvRemoteApi.remove()))
       .then((r) => {
         if (!r) return;
         const errors = r.errors ?? [];

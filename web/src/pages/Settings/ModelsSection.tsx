@@ -18,6 +18,7 @@ import { Select } from "@ds/components/Select/Select";
 import { api, ApiError } from "../../lib/api";
 import { useOptionalAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { useReadOrder } from "../../lib/readOrder";
 
 type ModelType = "stt" | "embedding" | "diarization";
 type Status = "active" | "downloaded" | "downloading" | "available";
@@ -63,17 +64,23 @@ export function ModelsSection() {
     }
   });
   const pollRef = useRef<number | null>(null);
+  // A poll begun before a removal or an activation still has the model as it
+  // was: it is dropped (lib/readOrder).
+  const order = useReadOrder();
 
   const load = useCallback(async () => {
+    const ticket = order.begin();
     try {
       const data = await api.get<Model[] | null>("/api/models");
+      if (!order.fresh(ticket)) return;
       // null or a non-array answer is an empty list, not a crash
       setModels(Array.isArray(data) ? data : []);
       setError(null);
     } catch (e) {
+      if (!order.fresh(ticket)) return;
       setError(e instanceof ApiError ? e.message : t("settings.models.loadError"));
     }
-  }, [t]);
+  }, [t, order]);
 
   useEffect(() => {
     void load();
@@ -98,7 +105,7 @@ export function ModelsSection() {
 
   async function act(fn: () => Promise<unknown>) {
     try {
-      await fn();
+      await order.saving(fn);
       await load();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : t("settings.models.loadError"));

@@ -69,16 +69,29 @@ type fixtureOpts struct {
 	noIndex  bool                      // a release from before 51.15
 	edit     func(*rv.ComponentsIndex) // changes to the index before signing
 	modelAlt map[string][]byte         // the model files the index lists (nil: two small ones)
+	extra    map[string][]byte         // release files by name (a pack of its own)
 }
 
 func buildPack(t *testing.T) ([]byte, componentpack.Manifest) {
 	t.Helper()
-	tree := t.TempDir()
-	files := map[string]string{
+	p, man := buildPackOf(t, "runtime.ml", map[string]string{
 		"wheels/index.json":              `{"wheels":[]}`,
 		"wheels/torch-2.4.0-py3-any.whl": "not really torch",
 		"constraints.txt":                "torch==2.4.0 --hash=sha256:" + strings.Repeat("ab", 32) + "\n",
-	}
+	})
+	return p.raw, man
+}
+
+// builtPack is a pack's bytes and its manifest.
+type builtPack struct {
+	raw []byte
+	man componentpack.Manifest
+}
+
+// buildPackOf builds id's pack of files (path: content).
+func buildPackOf(t *testing.T, id string, files map[string]string) (builtPack, componentpack.Manifest) {
+	t.Helper()
+	tree := t.TempDir()
 	for p, b := range files {
 		full := filepath.Join(tree, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -89,7 +102,7 @@ func buildPack(t *testing.T) ([]byte, componentpack.Manifest) {
 		}
 	}
 	out := t.TempDir()
-	b, err := componentpack.Build(componentpack.Options{Dir: tree, ID: "runtime.ml", Version: tVersion, Platform: tPlatform,
+	b, err := componentpack.Build(componentpack.Options{Dir: tree, ID: id, Version: tVersion, Platform: tPlatform,
 		ModTime: time.Unix(1_800_000_000, 0), Out: out})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +111,7 @@ func buildPack(t *testing.T) ([]byte, componentpack.Manifest) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return raw, b.Manifest
+	return builtPack{raw: raw, man: b.Manifest}, b.Manifest
 }
 
 func newFixture(t *testing.T, o fixtureOpts) *fixture {
@@ -151,6 +164,9 @@ func newFixture(t *testing.T, o fixtureOpts) *fixture {
 	ro := releaseverifytest.ReleaseOptions{Extra: map[string][]byte{}}
 	for _, p := range f.index.Packs {
 		ro.Extra[p.Name] = f.pack
+		if b, ok := o.extra[p.Name]; ok {
+			ro.Extra[p.Name] = b
+		}
 	}
 	if !o.noIndex {
 		ro.ComponentsIndex = ib
@@ -225,4 +241,11 @@ func (f *fixture) reqs(sub string) []string {
 func exists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// logString is the manager's log so far, read under the lock its writes take.
+func (f *fixture) logString() string {
+	f.m.logMu.Lock()
+	defer f.m.logMu.Unlock()
+	return f.log.String()
 }

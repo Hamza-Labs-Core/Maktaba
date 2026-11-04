@@ -79,6 +79,7 @@ type child struct {
 	cmd        *exec.Cmd    // the running process, nil between runs
 	tree       *procTree    // its process group / job, nil between runs
 	exits      []time.Time  // exits that led to a restart, for the crash-loop window
+	restartAt  []time.Time  // its restarts of the last 24 h (the health's restarts_24h)
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
@@ -444,6 +445,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.Args != nil {
 			cmd.Args = append([]string{cmd.Args[0]}, c.proc.Args()...)
 		}
+		base := c.basePath
+		if c.proc.Path != nil {
+			if p := c.proc.Path(); p != "" {
+				cmd.Path, cmd.Args[0], cmd.Err, base = p, p, nil, p
+			}
+		}
 		if c.proc.BeforeStart != nil {
 			c.proc.BeforeStart()
 		}
@@ -488,7 +495,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		ranWith := c.binding
-		startErr := applyBindingKept(cmd, ranWith, c.basePath, s.keptStreaming)
+		startErr := applyBindingKept(cmd, ranWith, base, s.keptStreaming)
 		switch {
 		case startErr != nil || held.path == "":
 		case c.binding == nil || c.binding.ReleaseID == "":
@@ -721,6 +728,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	s.mu.Lock()
 	c.status.Restarts++
 	c.status.LastRestartAt = &at
+	c.restartAt = append(recentRestarts(c.restartAt, at), at)
 	n := c.status.Restarts
 	s.mu.Unlock()
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),
@@ -1038,6 +1046,28 @@ func (s *Supervisor) Restart(role Role, instance string) error {
 		s.killRun(c, cmd, grace)
 	}()
 	return nil
+}
+
+// RestartComponent restarts every running process of catalog component id (an admin's
+// restart, story 51.08: POST /components/{id}/restart on the loopback admin). It answers
+// how many it restarted: 0 when none of its processes runs now (the reconciler starts
+// what the component's gate allows).
+func (s *Supervisor) RestartComponent(id string) int {
+	s.mu.Lock()
+	var procs []Process
+	for _, ch := range s.children {
+		if ch.proc.Component == id && ch.cmd != nil && ch.cmd.Process != nil {
+			procs = append(procs, ch.proc)
+		}
+	}
+	s.mu.Unlock()
+	n := 0
+	for _, p := range procs {
+		if err := s.Restart(p.Role, p.Instance); err == nil {
+			n++
+		}
+	}
+	return n
 }
 
 // Want starts (on) or stops an instance of a role (Epic 33: the TV front door

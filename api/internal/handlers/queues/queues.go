@@ -74,9 +74,14 @@ type Handler struct {
 	// CPUCount feeds the "auto" size of the cpu pool; default
 	// runtime.NumCPU.
 	CPUCount func() int
+	// LocalPath turns a path in the database's form into this machine's
+	// (libpaths.ToLocal, which this package cannot import); nil: as it is.
+	LocalPath func(string) string
 
-	libMu    sync.Mutex
-	libCache libraryCache
+	libMu sync.Mutex
+	// actCache keeps GET /api/queues/libraries/activity (one scan of the finished
+	// jobs) for a minute per window; guarded by libMu.
+	actCache map[int]activityCache
 
 	ringMu sync.Mutex
 	ring   backlogRing
@@ -135,6 +140,7 @@ func (h *Handler) mount(r chi.Router) {
 	r.Get("/api/queues", h.Snapshot)
 	r.Get("/api/queues/graph", h.Graph)
 	r.Get("/api/queues/libraries", h.Libraries)
+	r.Get("/api/queues/libraries/activity", h.LibraryActivity)
 	r.Get("/api/queues/health", h.Health)
 	r.Get("/api/queues/insights", h.Insights)
 	r.Get("/api/queues/pulse", h.Pulse)
@@ -152,6 +158,9 @@ func (h *Handler) mount(r chi.Router) {
 	r.Post("/api/libraries/{id}/youtube/sources", h.AddSource)
 	r.Patch("/api/libraries/{id}/youtube/sources/{sid}", h.PatchSource)
 	r.Delete("/api/libraries/{id}/youtube/sources/{sid}", h.DeleteSource)
+	r.Post("/api/libraries/{id}/youtube/guess", h.GuessSource)
+	r.Get("/api/queues/youtube-tartube", h.TartubeSources)
+	r.Post("/api/queues/youtube-tartube", h.ImportTartubeSources)
 	r.Get("/api/libraries/{id}/offline-summary", h.OfflineSummary)
 	r.Get("/api/queues/offline-summary", h.OfflineSummaries)
 	r.Get("/api/queues/offline-items", h.OfflineItems)
@@ -241,8 +250,11 @@ func actor(r *http.Request) string {
 }
 
 // publish emits an event on channel "jobs": durable through the bus
-// when wired, otherwise straight to the local hub.
+// when wired, otherwise straight to the local hub. Every caller has just
+// changed the queues (a pause, a pool size), so the cached snapshot is
+// marked stale first: the next read shows the change.
 func (h *Handler) publish(ctx context.Context, typ string, payload map[string]any) {
+	h.InvalidateReads()
 	if h.Events != nil {
 		_ = h.Events.Publish(ctx, "jobs", typ, payload)
 		return

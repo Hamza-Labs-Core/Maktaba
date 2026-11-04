@@ -178,6 +178,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # the wiki database is generated from the specs: a spec runs the wiki job's check
     "a spec: the wiki database's check": (["specs/epics/40-x/story.md"], {"wiki"}, {"lint": set()}),
     "a developer guide: the portal": (["docs/developers/plugins/manifest.md"], {"devportal"}, {"lint": set()}),
+    # the portal publishes the wiki, and the diagrams it shows
+    "a diagram: the wiki and the portal": (["specs/diagrams/data-flow.drawio"], {"wiki", "devportal"}, {"lint": set()}),
     "a doc the pipeline's tests read": (
         ["docs/updates.md"],
         {"unit", "integration"},

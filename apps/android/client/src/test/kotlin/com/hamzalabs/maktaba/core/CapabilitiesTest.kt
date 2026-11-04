@@ -7,6 +7,7 @@ import com.hamzalabs.maktaba.core.api.CapabilitiesAnswer
 import com.hamzalabs.maktaba.core.api.ErrorKind
 import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.core.api.capabilities
+import com.hamzalabs.maktaba.core.api.capabilitiesGate
 import com.hamzalabs.maktaba.core.api.componentsUrl
 import com.hamzalabs.maktaba.core.api.errorKind
 import com.hamzalabs.maktaba.core.session.AppSession
@@ -208,6 +209,24 @@ class CapabilitiesTest {
         s.refreshCapabilities()
         assertEquals(Capabilities.AllOn, s.capabilities.value)
         assertTrue("nothing is asked", asked.isEmpty())
+    }
+
+    /** The app's build says the switch (`-Pmaktaba.capabilitiesGate`): on unless it says off. */
+    @Test
+    fun theBuildSwitchIsTheAppsBuildSetting() = runBlocking {
+        for (off in listOf("off", "OFF", "no", "false", "0", " off ")) assertFalse(off, capabilitiesGate(off))
+        for (on in listOf(null, "", "on", "yes", "true", "1")) assertTrue("$on", capabilitiesGate(on))
+
+        answer = { json(200, ADMIN) }
+        val s = signedIn(gate = capabilitiesGate("off"))
+        assertFalse(s.capabilitiesGate)
+        s.refreshCapabilities()
+        assertEquals(Capabilities.AllOn, s.capabilities.value)
+        assertTrue("nothing is asked", asked.isEmpty())
+
+        val t = signedIn(gate = capabilitiesGate(""))
+        t.refreshCapabilities()
+        assertTrue("unset: on, and the home's answer is read", t.capabilities.value.explains(Feature.LIVE_TV))
     }
 
     // ---------- T14: an older app's error path ----------
