@@ -710,6 +710,95 @@ describe("Components page (story 51.10)", () => {
     expect(drawer).toHaveTextContent("version 0.9.1");
     expect(drawer).toHaveTextContent(/Turned off · maya/);
   });
+
+  it("the drawer names what a component waits for, in English and Arabic", async () => {
+    get.mockImplementation((url: string) => {
+      if (url === "/api/components") return Promise.resolve(structuredClone(list));
+      if (url === "/api/components/llm")
+        return Promise.resolve({
+          ...detailOf("llm"),
+          machines: [
+            {
+              machine: "home",
+              phase: "waiting",
+              observed_generation: 2,
+              parts: [
+                {
+                  machine: "home",
+                  id: "llm",
+                  part: "supervisor",
+                  phase: "waiting",
+                  // the supervisor says what it waits on only in its params
+                  conditions: [
+                    {
+                      type: "RequirementsMet",
+                      status: "unknown",
+                      params: { component: "model.llm.qwen2_5-7b" },
+                      changed_at: "2026-11-03T09:00:00Z",
+                      generation: 2,
+                    },
+                  ],
+                  observed_generation: 2,
+                  since: "2026-11-03T09:00:00Z",
+                  updated_at: "2026-11-03T09:00:00Z",
+                },
+                {
+                  machine: "home",
+                  id: "llm",
+                  part: "pipeline",
+                  phase: "waiting",
+                  // the API's rule: its files are not on this machine
+                  conditions: [
+                    {
+                      type: "RequirementsMet",
+                      status: "false",
+                      reason: "requirement_missing:runtime.ml",
+                      params: { component: "runtime.ml" },
+                      changed_at: "2026-11-03T09:00:00Z",
+                      generation: 2,
+                    },
+                  ],
+                  observed_generation: 2,
+                  since: "2026-11-03T09:00:00Z",
+                  updated_at: "2026-11-03T09:00:00Z",
+                },
+              ],
+            },
+          ],
+        } satisfies ComponentDetail);
+      return Promise.reject(new Error(`unmocked GET ${url}`));
+    });
+    for (const [locale, details, title, waiting, missing] of [
+      [
+        "en",
+        "Details of Language model",
+        "Language model",
+        /What it needs is running: not known yet · waiting for Qwen 2\.5 \(7B\)/,
+        /What it needs is running: no · Waits for Machine learning runtime, which is not on this machine yet\./,
+      ],
+      [
+        "ar",
+        "تفاصيل النموذج اللغوي",
+        "النموذج اللغوي",
+        /بانتظار نموذج Qwen 2\.5/,
+        /ينتظر بيئة تعلّم الآلة، وهو غير موجود على هذا الجهاز بعد\./,
+      ],
+    ] as const) {
+      localStorage.setItem("mkt:locale", locale);
+      const user = userEvent.setup();
+      const { unmount } = open();
+      await screen.findByRole("heading", {
+        name: (locale === "ar" ? AR : EN)["components.page.title"],
+      });
+      await waitFor(() => expect(document.querySelector("[data-component]")).not.toBeNull());
+      await user.click(within(row("llm")).getByRole("button", { name: details }));
+      const drawer = await screen.findByRole("dialog", { name: title });
+      expect(await within(drawer).findByText(waiting)).toBeInTheDocument();
+      expect(within(drawer).getByText(missing)).toBeInTheDocument();
+      unmount();
+    }
+    localStorage.removeItem("mkt:locale");
+  });
 });
 
 async function axeBoth(render: () => Promise<{ container: HTMLElement; unmount: () => void }>) {

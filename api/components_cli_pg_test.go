@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
 	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
 // T12: on the running server's database, `components list --json` answers what
@@ -75,5 +77,26 @@ func TestComponentsCLIOnPostgres(t *testing.T) {
 	}
 	if d, _ := s.Store.DesiredOf(context.Background(), "youtube"); d.Want != catalog.WantInstalled || d.Hold == nil {
 		t.Fatalf("youtube after disable %+v", d)
+	}
+}
+
+// The CLI's preview shows the phase a component has now on the left of the arrow (what
+// `components list` says), not the one the desired state alone gives it: Smart search
+// really waits, so turning it off reads waiting -> off.
+func TestComponentsCLIPreviewFromIsActual(t *testing.T) {
+	db, _ := clustertest.ScratchDB(t)
+	s := components.NewService(db)
+	if err := s.Store.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{ID: "search.semantic",
+		Phase: catalog.PhaseWaiting, Conditions: []store.Condition{
+			{Type: catalog.CondRequirementsMet, Status: "unknown", Params: map[string]any{"component": "runtime.ml"}}}}}); err != nil {
+		t.Fatal(err)
+	}
+	c, out, _ := cli(nil, false, "")
+	c.svc = s
+	if code := runCLI(c, "disable", "search.semantic"); code != exitComponentsNeedYes {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	if !strings.Contains(out.String(), "search.semantic: waiting -> off") {
+		t.Fatalf("preview: %s", out)
 	}
 }
