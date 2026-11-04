@@ -419,6 +419,56 @@ func TestSettleWaitsForMissingFiles(t *testing.T) {
 	}
 }
 
+// Smart search turned off while its model is missing: the supervisor stops the index
+// worker at once, and that worker's row stays at the old generation, waiting on the
+// model. The component reads off (the stale part reads the gate's phase), not waiting;
+// a part that reported the new generation keeps what it said, and an on gate leaves a
+// stale row as it is.
+func TestAnOffComponentReadsOffWhateverItsStalePartsSay(t *testing.T) {
+	rows := allOn()
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantInstalled, Generation: 4}
+	missing := func(id string) bool { return id == "model.embedder" }
+	g := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if g.on || g.phase != components.PhaseOff || g.gen != 4 {
+		t.Fatalf("gate: %+v", g)
+	}
+	in := []store.Status{
+		{ID: "search.semantic", Part: "supervisor", Phase: components.PhaseOff, ObservedGeneration: 4,
+			Conditions: []store.Condition{{Type: components.CondReady, Status: "false"}}},
+		{ID: "search.semantic", Part: "pipeline", Phase: components.PhaseOff, ObservedGeneration: 4},
+		{ID: "search.semantic", Part: "pipeline/index", Phase: components.PhaseWaiting, ObservedGeneration: 3,
+			Conditions: []store.Condition{
+				{Type: components.CondRequirementsMet, Status: "unknown", Params: map[string]any{"component": "model.embedder"}},
+				{Type: components.CondReady, Status: "false"}}},
+	}
+	roll, reason, settled, _ := statusOn(in, g, true)
+	if roll.Phase != components.PhaseOff || reason != "" {
+		t.Fatalf("rollup: %s %q (%+v)", roll.Phase, reason, settled)
+	}
+	if in[2].Phase != components.PhaseWaiting {
+		t.Fatalf("settle changed its input: %+v", in[2])
+	}
+	// a part at the new generation that still drains is what the component shows
+	draining := slices.Clone(in)
+	draining[1].Phase = components.PhaseDraining
+	if roll, _, _, _ := statusOn(draining, g, true); roll.Phase != components.PhaseDraining {
+		t.Fatalf("draining part: %s", roll.Phase)
+	}
+	// held: the stale part reads stopped, held
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled,
+		Hold: &store.Hold{By: "admin:test"}, Generation: 5}
+	hg := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if roll, reason, _, _ := statusOn(in, hg, true); roll.Phase != components.PhaseStopped || reason != "held" {
+		t.Fatalf("held: %s %q", roll.Phase, reason)
+	}
+	// on again: a stale row is the part's own word until it reports
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled, Generation: 6}
+	og := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if roll, _, _, _ := statusOn(in, og, true); roll.Phase != components.PhaseWaiting {
+		t.Fatalf("on: %s", roll.Phase)
+	}
+}
+
 // The install route's rule: a switchable asset the home wants is asked again unless the
 // home has it on disk or is installing it; a failed install is asked again (Retry).
 func TestInstallAgain(t *testing.T) {
