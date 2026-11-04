@@ -29,6 +29,7 @@ import com.hamzalabs.maktaba.core.api.setPinnedLibraries
 import com.hamzalabs.maktaba.core.api.videoFacets
 import com.hamzalabs.maktaba.core.api.videoPage
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.player.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 // What the Libraries section's screens hold (FR-14 to FR-17): plain state over the browse client
@@ -115,12 +116,19 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
         this.tab = tab
     }
 
-    suspend fun loadLibraries() = loading(signedOut, "player libraries", { problem = it }) {
-        val all = client.librarySummaries()
-        order = all.map { it.id }
-        libraries = pinnedFirst(all, order)
-        problem = null
-        librariesLoaded = true
+    /** The order of the libraries' reads and the pins: a read older than a pin is dropped. */
+    private val pinOrder = ReadOrder()
+
+    suspend fun loadLibraries() {
+        val ticket = pinOrder.begin()
+        loading(signedOut, "player libraries", { if (pinOrder.fresh(ticket)) problem = it }) {
+            val all = client.librarySummaries()
+            if (!pinOrder.fresh(ticket)) return@loading
+            order = all.map { it.id }
+            libraries = pinnedFirst(all, order)
+            problem = null
+            librariesLoaded = true
+        }
     }
 
     /** The Series tab's next page, null once the home sent a short one. */
@@ -170,7 +178,7 @@ class LibrariesState(private val client: ApiClient, private val signedOut: () ->
         val pins = togglePins(before, id)
         libraries = pinnedFirst(withPins(before, pins), order)
         loading(signedOut, "player pin", { libraries = before; problem = it }) {
-            val saved = client.setPinnedLibraries(pins)
+            val saved = pinOrder.saving { client.setPinnedLibraries(pins) }
             libraries = pinnedFirst(withPins(libraries, saved.libraryIds), order)
         }
     }

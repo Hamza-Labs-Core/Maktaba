@@ -20,6 +20,9 @@ import mockwebserver3.RecordedRequest
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher as CallDispatcher
 import org.junit.rules.ExternalResource
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * A home for the Player's UI tests (NFR-19): an OkHttp MockWebServer that answers the API
@@ -86,6 +89,43 @@ class FakeHome : ExternalResource() {
         routes[path] = respond
     }
 
+    /**
+     * A read held on the home: the next ask of a path is answered (as the home had it when
+     * asked) only once [release]d, so a test can change the list while that read is in flight.
+     * The asks after it are answered at once. One still held is let go when the test ends.
+     */
+    class Held internal constructor() {
+        internal val holding = AtomicBoolean(true)
+        private val asked = CountDownLatch(1)
+        private val released = CountDownLatch(1)
+
+        /** The held read has been asked (it waits for [release]). */
+        val wasAsked: Boolean get() = asked.count == 0L
+
+        /** Waits (off the main thread) until the held read is asked. */
+        fun awaitAsked() = check(asked.await(10, TimeUnit.SECONDS)) { "the held read was never asked" }
+
+        fun release() = released.countDown()
+
+        internal fun hold() {
+            asked.countDown()
+            released.await(20, TimeUnit.SECONDS)
+        }
+    }
+
+    private val held = mutableListOf<Held>()
+
+    /** Answers [path] with [respond], the next ask held until the [Held] is released. */
+    fun hold(path: String, respond: (RecordedRequest) -> MockResponse): Held {
+        val h = Held()
+        synchronized(held) { held += h }
+        answer(path) { r ->
+            if (h.holding.getAndSet(false)) h.hold()
+            respond(r)
+        }
+        return h
+    }
+
     override fun before() {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -103,6 +143,7 @@ class FakeHome : ExternalResource() {
     }
 
     override fun after() {
+        synchronized(held) { held.forEach { it.release() } }
         scope.cancel()
         server.close()
     }

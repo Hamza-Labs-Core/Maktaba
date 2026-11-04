@@ -133,6 +133,47 @@ class HomeScreenTest {
     }
 
     @Test
+    fun notInterestedWhileHomeIsReadAgainKeepsTheCardOut() {
+        showFull()
+        compose.settledUntil(5_000) { count("/api/recommendations") == 1 }
+        // read again (pull to refresh): the recommendations answered as the home has them when asked, held
+        val held = home.hold("/api/recommendations") { FakeHome.json(HomeFixtures.RECS) }
+        compose.onNodeWithTag("home-rows").performTouchInput { swipeDown() }
+        compose.settledUntil(5_000) { held.wasAsked }
+
+        val card = inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_1}")
+        compose.onNode(card).performTouchInput { longClick() }
+        waitForTag("menu-not-interested")
+        compose.onNodeWithTag("menu-not-interested").performClick()
+        compose.settledUntil(5_000) { count("/api/recommendations/items/${HomeFixtures.REC_1}", "DELETE") == 1 && compose.onAllNodes(card).fetchSemanticsNodes().isEmpty() }
+
+        held.release()
+        // the held read answered: the home has nothing more under way
+        compose.registerIdlingResource(home.idling)
+        compose.waitForIdle()
+        assertTrue("the card dismissed while Home was read again stays out", compose.onAllNodes(card).fetchSemanticsNodes().isEmpty())
+        compose.onNode(inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_2}")).assertExists()
+    }
+
+    @Test
+    fun aRefusedNotInterestedPutsTheCardBackInItsPlace() {
+        HomeFixtures.install(home)
+        home.answer("/api/recommendations/items/${HomeFixtures.REC_1}") { FakeHome.json("""{"title":"boom"}""", code = 500) }
+        compose.setHome(home)
+        waitForTag("row-$KEY_FROM_LIBRARY")
+        val card = inRow(KEY_FOR_YOU, "card-${HomeFixtures.REC_1}")
+        compose.onNode(card).performTouchInput { longClick() }
+        waitForTag("menu-not-interested")
+        compose.onNodeWithTag("menu-not-interested").performClick()
+        compose.settledUntil(5_000) { count("/api/recommendations/items/${HomeFixtures.REC_1}", "DELETE") == 1 }
+        compose.registerIdlingResource(home.idling)
+        compose.waitForIdle()
+        compose.onNode(card).assertExists()
+        val left = { tag: String -> compose.onNode(inRow(KEY_FOR_YOU, tag)).fetchSemanticsNode().boundsInRoot.left }
+        assertTrue("back before the card after it", left("card-${HomeFixtures.REC_1}") < left("card-${HomeFixtures.REC_2}"))
+    }
+
+    @Test
     fun theNextLaunchShowsTheKeptRowsBeforeTheHomeAnswers() {
         val launch = mutableIntStateOf(0)
         HomeFixtures.install(home)

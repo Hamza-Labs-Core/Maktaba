@@ -17,6 +17,7 @@ import com.hamzalabs.maktaba.core.api.searchSuggestions
 import com.hamzalabs.maktaba.core.api.searchTitles
 import com.hamzalabs.maktaba.core.api.searchTranscripts
 import com.hamzalabs.maktaba.core.diagnostics.AppLog
+import com.hamzalabs.maktaba.player.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 /** How long typing rests before the field asks for suggestions. */
@@ -90,7 +91,16 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
         quietly("search suggest") { suggestions = client.searchSuggestions(q) }
     }
 
-    suspend fun loadRecent() = quietly("search recent") { recent = client.recentSearches() }
+    /** The order of the recent searches' reads and their removals: a read older than one is dropped. */
+    private val recentOrder = ReadOrder()
+
+    suspend fun loadRecent() {
+        val ticket = recentOrder.begin()
+        quietly("search recent") {
+            val r = client.recentSearches()
+            if (recentOrder.fresh(ticket)) recent = r
+        }
+    }
 
     /**
      * Runs [q] as typed (the client trims it; nothing else changes, so Arabic is sent as is) in
@@ -154,13 +164,13 @@ class SearchModel(private val client: ApiClient, private val signedOut: () -> Un
 
     /** Forgets one recent search on the home, then here. */
     suspend fun forget(r: RecentSearch) = quietly("search forget") {
-        client.forgetRecentSearch(r.searchId)
+        recentOrder.saving { client.forgetRecentSearch(r.searchId) }
         recent = recent.filter { it.searchId != r.searchId }
     }
 
     /** Forgets every recent search on the home, then here. */
     suspend fun clearRecent() = quietly("search clear") {
-        client.clearRecentSearches()
+        recentOrder.saving { client.clearRecentSearches() }
         recent = emptyList()
     }
 

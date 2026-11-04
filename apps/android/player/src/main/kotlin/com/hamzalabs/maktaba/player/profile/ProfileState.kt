@@ -19,6 +19,7 @@ import com.hamzalabs.maktaba.core.api.playlist
 import com.hamzalabs.maktaba.core.api.playlists
 import com.hamzalabs.maktaba.core.api.signInSessions
 import com.hamzalabs.maktaba.core.api.watchHistory
+import com.hamzalabs.maktaba.player.ReadOrder
 import kotlinx.coroutines.CancellationException
 
 /** A list a page shows: loading, its rows, or why it could not be read. */
@@ -79,11 +80,24 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
     var revalidating: Boolean by mutableStateOf(false)
         private set
 
-    private suspend fun <T> reread(current: Load<T>, block: suspend () -> T): Load<T> {
-        if (current !is Load.Ready) return attempt(block)
+    /** The order of the history's reads (the first page, Load more) and its removals. */
+    private val historyOrder = ReadOrder()
+    /** The order of the sessions' reads and their sign-outs. */
+    private val sessionsOrder = ReadOrder()
+
+    /**
+     * Reads [current]'s list with [block]: its answer, or null when it is dropped (a newer
+     * answer, or a change, came first: see [ReadOrder]; its failure is not shown either). A list
+     * nothing changes on screen reads in an order of its own each time, so is never dropped.
+     */
+    private suspend fun <T> reread(current: Load<T>, order: ReadOrder = ReadOrder(), block: suspend () -> T): Load<T>? {
+        val ticket = order.begin()
+        if (current !is Load.Ready) return attempt(block).takeIf { order.fresh(ticket) }
         revalidating = true
         try {
-            return when (val r = attempt(block)) {
+            val r = attempt(block)
+            if (!order.fresh(ticket)) return null
+            return when (r) {
                 is Load.Failed -> current.also { problem = r.failure }
                 else -> r
             }
@@ -93,37 +107,61 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
     }
 
     suspend fun loadHistory() {
-        history = reread(history) { client.watchHistory(limit = PAGE).also { historyMore = it.size == PAGE } }
+        reread(history, historyOrder) { client.watchHistory(limit = PAGE) }?.let { r ->
+            if (r is Load.Ready) historyMore = r.value.size == PAGE
+            history = r
+        }
     }
 
+    /** The next page of history, after the rows shown when it is answered. */
     suspend fun moreHistory() {
         val shown = (history as? Load.Ready)?.value ?: return
-        runCatchingApi { client.watchHistory(offset = shown.size, limit = PAGE) }?.let { more ->
-            historyMore = more.size == PAGE
-            history = Load.Ready(shown + more.filter { m -> shown.none { it.videoId == m.videoId } })
+        val ticket = historyOrder.begin()
+        val r = attempt { client.watchHistory(offset = shown.size, limit = PAGE) }
+        // a removal since (or a newer read) makes the offset wrong: dropped
+        if (!historyOrder.fresh(ticket)) return
+        when (r) {
+            is Load.Failed -> problem = r.failure
+            is Load.Ready -> {
+                val now = (history as? Load.Ready)?.value ?: return
+                historyMore = r.value.size == PAGE
+                history = Load.Ready(now + r.value.filter { m -> now.none { it.videoId == m.videoId } })
+            }
+            Load.Loading -> Unit
         }
     }
 
     /** Removes [entry] from the history at once; puts it back if the home refuses. */
     suspend fun forget(entry: HistoryEntry) {
         val before = (history as? Load.Ready)?.value ?: return
+        val at = before.indexOfFirst { it.videoId == entry.videoId }
         history = Load.Ready(before.filterNot { it.videoId == entry.videoId })
-        if (runCatchingApi { client.forgetHistory(entry.videoId) } == null) history = Load.Ready(before)
+        val done = historyOrder.saving { runCatchingApi { client.forgetHistory(entry.videoId) } }
+        val now = (history as? Load.Ready)?.value ?: return
+        history = Load.Ready(
+            if (done != null) {
+                now.filterNot { it.videoId == entry.videoId }
+            } else if (now.none { it.videoId == entry.videoId }) {
+                now.toMutableList().apply { add(at.coerceIn(0, size), entry) }
+            } else {
+                now
+            },
+        )
     }
 
     suspend fun loadSessions() {
-        sessions = reread(sessions) { client.signInSessions() }
+        reread(sessions, sessionsOrder) { client.signInSessions() }?.let { sessions = it }
     }
 
     /** Signs [session] out; it leaves the list once the home has done it. */
     suspend fun endSession(session: SignInSession) {
-        runCatchingApi { client.endSignInSession(session.id) } ?: return
+        sessionsOrder.saving { runCatchingApi { client.endSignInSession(session.id) } } ?: return
         val now = (sessions as? Load.Ready)?.value ?: return
         sessions = Load.Ready(now.filterNot { it.id == session.id })
     }
 
     suspend fun loadPlaylists() {
-        playlists = reread(playlists) { client.playlists() }
+        reread(playlists) { client.playlists() }?.let { playlists = it }
     }
 
     /** The playlist [playlist] holds (another one's rows are never shown for this one). */
@@ -134,14 +172,14 @@ class ProfileState(private val client: ApiClient, private val signedOut: () -> U
             playlistId = id
             playlist = Load.Loading
         }
-        playlist = reread(playlist) { client.playlist(id) }
+        reread(playlist) { client.playlist(id) }?.let { playlist = it }
     }
 
     /** The first video of playlist [id], to play it from the start (null: empty, or it failed). */
     suspend fun firstOf(id: String): String? = runCatchingApi { client.playlist(id) }?.items?.firstOrNull()?.id
 
     suspend fun loadFavorites() {
-        favorites = reread(favorites) { client.favorites().also { favoritesNext = it.next }.items }
+        reread(favorites) { client.favorites().also { favoritesNext = it.next }.items }?.let { favorites = it }
     }
 
     suspend fun moreFavorites() {
