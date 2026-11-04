@@ -45,6 +45,10 @@ build fails when the two differ.
   app's language with its plural, so the Arabic no longer puts the number at the wrong end, and
   each sample message keeps its own direction. The Arabic bar label for Needs attention is
   «انتباه», the same word as the screen's title «ما يحتاج إلى انتباه».
+- **Apple Player: a quality change while paused stays paused.** Choosing a quality reopened
+  the video and played it for a moment before pausing it again, and the controls then said
+  it was playing. A paused video now reopens at the new quality paused, and the controls say
+  so.
 - **Test data is neutral.** The Android, Android TV, Apple and web tests and their screenshot
   references use an invented home ("Maktaba Home"), addresses from the documentation ranges
   (192.0.2.x, 198.51.100.x, 203.0.113.x) or `.local` names, and an invented media path.

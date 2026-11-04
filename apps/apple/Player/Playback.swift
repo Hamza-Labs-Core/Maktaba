@@ -178,8 +178,7 @@ final class Playback {
         let wasPlaying = p.rate > 0
         running?.cancel()
         running = Task {
-            await open(from: at.isFinite ? at : position)
-            if !wasPlaying { player?.pause() }
+            await open(from: at.isFinite ? at : position, playing: wasPlaying)
             guard player != nil else { return }
             await watch()
         }
@@ -301,8 +300,10 @@ final class Playback {
 
     /// Opens (or reopens) the stream at `start` seconds, through the app's stream proxy: the
     /// home's web port wants the user's token on every `/stream/` request, and AVPlayer
-    /// cannot renew one mid-video.
-    private func open(from start: Double) async {
+    /// cannot renew one mid-video. A reopen of a paused video stays paused (`playing` false):
+    /// it never plays, and `isPlaying` says so (a paused player's time observer does not tick,
+    /// so a pause after the open left it saying playing).
+    private func open(from start: Double, playing: Bool = true) async {
         guard let video else { return }
         do {
             let s = try await client.openStream(video: video.id, startSec: Int(start), maxBitrateKbps: maxBitrateKbps)
@@ -342,8 +343,8 @@ final class Playback {
                 startNowPlaying()
             }
             ended = false
-            p.play()
-            isPlaying = true
+            if playing { p.play() }
+            isPlaying = playing
         } catch is CancellationError {
             return
         } catch {
@@ -376,8 +377,7 @@ final class Playback {
             if failed || Date.now >= renewAt {
                 let at = p.currentTime().seconds
                 let wasPlaying = p.rate > 0
-                await open(from: at.isFinite ? at : 0)
-                if !wasPlaying { player?.pause() }
+                await open(from: at.isFinite ? at : 0, playing: wasPlaying)
             }
         }
     }
