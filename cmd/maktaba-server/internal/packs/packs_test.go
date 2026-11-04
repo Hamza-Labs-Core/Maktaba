@@ -621,6 +621,35 @@ func TestOfflineFileAndImport(t *testing.T) {
 	}
 }
 
+// A damaged offline file imported over the same release already installed fails its check
+// (verify_failed, naming the item) instead of answering installed; the good file still
+// imports over it, and a damaged model file is caught the same way.
+func TestImportOverTheSameReleaseStillChecksTheFile(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	var buf bytes.Buffer
+	if _, err := f.m.MakeOffline(context.Background(), &buf, OfflineRequest{Components: []string{"model.whisper-turbo"}}); err != nil {
+		t.Fatalf("%v\n%s", err, f.log.String())
+	}
+	g := newFixture(t, fixtureOpts{})
+	g.m.Net, g.m.Trusted = nil, f.m.Trusted
+	if _, err := g.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatalf("%v\n%s", err, g.log.String())
+	}
+	for _, prefix := range []string{"packs/", "models/"} {
+		ids, err := g.m.ImportFrom(context.Background(), bytes.NewReader(tamper(t, buf.Bytes(), prefix)))
+		wantReason(t, err, ReasonVerifyFailed)
+		if prefix == "packs/" && len(ids) != 0 {
+			t.Fatalf("a damaged pack over the installed one answered %v installed", ids)
+		}
+		if !g.m.Installed("runtime.ml") || !g.m.Installed("model.whisper-turbo") {
+			t.Fatalf("%s: the installed release was touched", prefix)
+		}
+	}
+	if ids, err := g.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes())); err != nil || len(ids) != 2 {
+		t.Fatalf("the good file again: %v %v", ids, err)
+	}
+}
+
 // tamper flips a byte of the first entry under prefix.
 func tamper(t *testing.T, b []byte, prefix string) []byte {
 	t.Helper()
