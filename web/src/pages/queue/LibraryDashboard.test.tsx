@@ -32,6 +32,7 @@ vi.mock("../../lib/api", async () => {
 vi.mock("../../lib/ws", () => ({ subscribe: hub.subscribe }));
 
 import { LibraryDashboard } from "./LibraryDashboard";
+import { LIBRARIES_SLOW_MS, LIBRARIES_TIMEOUT_MS } from "../../components/libdash/useLibraryBoard";
 import { renderPage, memberUser } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 import { axeViolations } from "../../test/axe";
@@ -262,6 +263,57 @@ describe("LibraryDashboard", () => {
     fail = false;
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(tiles()).toHaveLength(1));
+  });
+
+  it("a read that never answers is not an endless Loading: slow, then failed, with Try again", async () => {
+    // the live home: GET /api/queues/libraries took 18-34 s or never answered
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let answer = false;
+      open({
+        "/api/queues/libraries": () => (answer ? { items: [calm] } : new Promise(() => {})), // never settles
+      });
+      expect(await screen.findByText("Loading…")).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LIBRARIES_SLOW_MS + 100);
+      });
+      expect(screen.getByText("This is taking longer than usual.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(LIBRARIES_TIMEOUT_MS);
+      });
+      expect(screen.getByText("The libraries could not be read. Try again.")).toBeInTheDocument();
+      expect(screen.queryByText("Loading…")).toBeNull();
+      answer = true;
+      await act(async () => {
+        screen.getByRole("button", { name: "Try again" }).click();
+      });
+      await waitFor(() => expect(tiles()).toHaveLength(1));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a refresh that fails keeps the tiles and says so, with Try again", async () => {
+    let fail = false;
+    open({
+      "/api/queues/libraries": () =>
+        fail ? Promise.reject(new Error("500")) : { items: [lectures, stories, calm] },
+    });
+    await waitFor(() => expect(tiles()).toHaveLength(3));
+    fail = true;
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(
+      await screen.findByText("The libraries could not be refreshed. Showing what was last loaded.")
+    ).toBeInTheDocument();
+    expect(tiles()).toHaveLength(3);
+    fail = false;
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByText("The libraries could not be refreshed. Showing what was last loaded.")
+      ).toBeNull()
+    );
   });
 
   it("is the admins' page: a member sees the admins-only message and nothing is read", async () => {

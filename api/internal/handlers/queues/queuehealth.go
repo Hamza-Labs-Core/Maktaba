@@ -174,8 +174,11 @@ SELECT wf.stage, COALESCE(wf.data->>'cause', ''), COALESCE(wf.data->>'class', ''
  GROUP BY 1, 2, 3`
 
 const windowDoneSQL = `
-SELECT d.stage, count(*) FROM processing_jobs d
- WHERE d.state = 'done' AND d.finished_at > $1 GROUP BY d.stage`
+SELECT s.stage, c.n
+  FROM job_stages s
+  CROSS JOIN LATERAL (SELECT count(*) AS n FROM processing_jobs d
+                       WHERE d.stage = s.stage AND d.state = 'done' AND d.finished_at > $1) c
+ WHERE c.n > 0`
 
 const parkedSQL = `
 SELECT j.stage, j.parked_on, count(*), dh.healthy, dh.message, dh.since

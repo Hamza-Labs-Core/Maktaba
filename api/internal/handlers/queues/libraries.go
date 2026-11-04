@@ -10,15 +10,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 )
 
-// libraryCacheTTL is how long GET /api/queues/libraries may be served
-// from memory (plan-06-11 §8.1: "cached 5 s").
-const libraryCacheTTL = 5 * time.Second
-
-type libraryCache struct {
-	at    time.Time
-	items []LibraryQueueRow
-}
-
 const (
 	librariesSQL = `SELECT id::text, name FROM libraries ORDER BY name`
 
@@ -28,14 +19,33 @@ const (
 SELECT library_id::text, count(*) FROM series_seasons
  WHERE retired_at IS NULL AND library_id IS NOT NULL GROUP BY library_id`
 
-	libraryStageCountsSQL = `
+	// libraryDoneSQL: the subjects done per library and stage, from the
+	// summary the processing_jobs triggers keep (slot 0175): one row per
+	// (library, stage, subject), however many times the subject ran, so the
+	// count no longer reads the jobs' history (count(DISTINCT subject_id)
+	// over every done row was a full scan of 3M+ rows).
+	libraryDoneSQL = `
+SELECT library_id::text, stage, count(*), max(last_at)
+  FROM processing_done_subjects
+ GROUP BY library_id, stage`
+
+	// libraryLiveSQL: the live rows only (processing_jobs_live_idx).
+	libraryLiveSQL = `
 SELECT library_id::text, stage,
-       count(DISTINCT subject_id) FILTER (WHERE state = 'done'),
        count(*) FILTER (WHERE state IN ('claimed','running','resuming')),
        count(*) FILTER (WHERE state IN ('pending','paused')),
-       max(COALESCE(finished_at, created_at))
+       max(created_at)
   FROM processing_jobs
- WHERE library_id IS NOT NULL
+ WHERE state IN ('pending','claimed','running','resuming','paused') AND library_id IS NOT NULL
+ GROUP BY library_id, stage`
+
+	// libraryEndedSQL: when a row last failed or was cancelled (the done rows'
+	// times are in the summary, the live rows' in libraryLiveSQL). The
+	// retention keeps these rows 90 days, so the read follows recent failures.
+	libraryEndedSQL = `
+SELECT library_id::text, stage, max(COALESCE(finished_at, created_at))
+  FROM processing_jobs
+ WHERE state IN ('failed','cancelled') AND library_id IS NOT NULL
  GROUP BY library_id, stage`
 
 	libraryFailedSQL = `
@@ -43,11 +53,12 @@ WITH f AS (
     SELECT DISTINCT subject_kind, subject_id, stage
       FROM processing_jobs WHERE state = 'failed' AND library_id IS NOT NULL
 ), latest AS (
-    SELECT DISTINCT ON (j.subject_kind, j.subject_id, j.stage)
-           j.library_id, j.stage, j.state
-      FROM processing_jobs j
-      JOIN f ON f.subject_kind = j.subject_kind AND f.subject_id = j.subject_id AND f.stage = j.stage
-     ORDER BY j.subject_kind, j.subject_id, j.stage, j.id DESC
+    SELECT l.library_id, l.stage, l.state
+      FROM f
+      CROSS JOIN LATERAL (
+           SELECT j.library_id, j.stage, j.state FROM processing_jobs j
+            WHERE j.subject_kind = f.subject_kind AND j.subject_id = f.subject_id AND j.stage = f.stage
+            ORDER BY j.id DESC LIMIT 1) l
 )
 SELECT library_id::text, stage, count(*) FROM latest WHERE state = 'failed' GROUP BY library_id, stage`
 )
@@ -76,29 +87,18 @@ type stageCountVal struct {
 	last                   *time.Time
 }
 
-// Libraries implements GET /api/queues/libraries.
+// Libraries implements GET /api/queues/libraries, from the shared read
+// cache (readcache.go): fresh for libraryCacheTTL, then served stale while
+// one rebuild runs.
 func (h *Handler) Libraries(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
 		return
 	}
-	now := h.now()
-	h.libMu.Lock()
-	if h.libCache.items != nil && now.Sub(h.libCache.at) < libraryCacheTTL {
-		items := h.libCache.items
-		h.libMu.Unlock()
-		common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": visibleLibraryRows(principal.FromContext(r.Context()), items)})
-		return
-	}
-	h.libMu.Unlock()
-
-	items, err := h.buildLibraryRows(r.Context())
+	items, err := h.reads().libraries.Get(r.Context(), h.now(), h.buildLibraryRows)
 	if err != nil {
 		writeErr(w, r, "libraries", err)
 		return
 	}
-	h.libMu.Lock()
-	h.libCache = libraryCache{at: now, items: items}
-	h.libMu.Unlock()
 	common.WriteJSON(w, r, http.StatusOK, map[string]any{"items": visibleLibraryRows(principal.FromContext(r.Context()), items)})
 }
 
@@ -136,6 +136,24 @@ func (h *Handler) countsByLibrary(ctx context.Context, q string) (map[string]int
 	return out, rows.Err()
 }
 
+// scanStageRows runs q, whose rows are library_id, stage and then dest's
+// columns, and calls each with every row's key once dest holds its values.
+func (h *Handler) scanStageRows(ctx context.Context, q string, dest []any, each func(stageCountKey)) error {
+	rows, err := h.DB.QueryContext(ctx, q)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k stageCountKey
+		if err := rows.Scan(append([]any{&k.lib, &k.stage}, dest...)...); err != nil {
+			return err
+		}
+		each(k)
+	}
+	return rows.Err()
+}
+
 func (h *Handler) buildLibraryRows(ctx context.Context) ([]LibraryQueueRow, error) {
 	stages, err := h.loadStages(ctx)
 	if err != nil {
@@ -151,26 +169,41 @@ func (h *Handler) buildLibraryRows(ctx context.Context) ([]LibraryQueueRow, erro
 	}
 
 	counts := map[stageCountKey]*stageCountVal{}
-	crows, err := h.DB.QueryContext(ctx, libraryStageCountsSQL)
-	if err != nil {
-		return nil, err
-	}
-	for crows.Next() {
-		var k stageCountKey
-		var v stageCountVal
-		var last sql.NullTime
-		if err := crows.Scan(&k.lib, &k.stage, &v.done, &v.running, &v.pending, &last); err != nil {
-			crows.Close()
-			return nil, err
+	val := func(k stageCountKey) *stageCountVal {
+		v := counts[k]
+		if v == nil {
+			v = &stageCountVal{}
+			counts[k] = v
 		}
-		v.last = nullTimePtr(last)
-		counts[k] = &v
+		return v
 	}
-	if err := crows.Err(); err != nil {
-		crows.Close()
+	later := func(v *stageCountVal, t sql.NullTime) {
+		if t.Valid && (v.last == nil || t.Time.After(*v.last)) {
+			at := t.Time
+			v.last = &at
+		}
+	}
+	var n, running, pending int
+	var last sql.NullTime
+	if err := h.scanStageRows(ctx, libraryDoneSQL, []any{&n, &last}, func(k stageCountKey) {
+		v := val(k)
+		v.done = n
+		later(v, last)
+	}); err != nil {
 		return nil, err
 	}
-	crows.Close()
+	if err := h.scanStageRows(ctx, libraryLiveSQL, []any{&running, &pending, &last}, func(k stageCountKey) {
+		v := val(k)
+		v.running, v.pending = running, pending
+		later(v, last)
+	}); err != nil {
+		return nil, err
+	}
+	if err := h.scanStageRows(ctx, libraryEndedSQL, []any{&last}, func(k stageCountKey) {
+		later(val(k), last)
+	}); err != nil {
+		return nil, err
+	}
 
 	failed := map[stageCountKey]int{}
 	frows, err := h.DB.QueryContext(ctx, libraryFailedSQL)
