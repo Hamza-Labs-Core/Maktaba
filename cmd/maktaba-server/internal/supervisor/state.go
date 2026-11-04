@@ -82,7 +82,8 @@ type ProbeInfo struct {
 type ChildStatus struct {
 	Role     Role   `json:"role"`
 	Instance string `json:"instance,omitempty"`
-	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby).
+	// Wanted: an on-demand process asked for (tv-slot amber; a stopped standby). An
+	// always-on process that is held (Blocked, no pid) is not wanted until its gate opens.
 	Wanted        bool       `json:"wanted"`
 	State         State      `json:"state"`
 	PID           int        `json:"pid,omitempty"`
@@ -220,6 +221,12 @@ func (s *Supervisor) snapshot(llm *llmserver.Status, ff *ffmpeg.Report) Snapshot
 		if st.Blocked && st.PID == 0 {
 			// its component is off: nothing restarts or loops until the gate opens
 			st.State, st.NextRestartAt, st.CrashLoop = StateHeld, nil, false
+			if !c.proc.OnDemand {
+				// and an always-on process is not wanted until it opens: nothing waits on
+				// it (an update's checks, healthyFor, the health page); it starts once the
+				// gate opens (c.wanted is kept). An on-demand one keeps whether it was asked for.
+				st.Wanted = false
+			}
 		}
 		out.Processes = append(out.Processes, st)
 	}

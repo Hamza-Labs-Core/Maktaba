@@ -878,6 +878,10 @@ func TestSnapshotComponent(t *testing.T) {
 	if !got[RoleOllama].Blocked || got[RoleOllama].State != StateHeld || got[RoleAPI].Blocked {
 		t.Fatalf("a dormant process starts blocked: %+v", got)
 	}
+	// held, it is not wanted: an update's checks and the health page never wait on it
+	if got[RoleOllama].Wanted || !got[RoleAPI].Wanted {
+		t.Fatalf("a held process reads wanted: %+v", got)
+	}
 }
 
 // A process whose component is turned off between two restarts reads held, not backoff:
@@ -900,7 +904,7 @@ func TestSnapshotHeldNotBackoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := proc(s.Snapshot(), RoleRelay)
-	if st.State != StateHeld || st.NextRestartAt != nil || st.CrashLoop || !st.Blocked {
+	if st.State != StateHeld || st.NextRestartAt != nil || st.CrashLoop || !st.Blocked || st.Wanted {
 		t.Fatalf("held off: %+v", st)
 	}
 	if api := proc(s.Snapshot(), RoleAPI); api.State == StateHeld {
@@ -909,7 +913,7 @@ func TestSnapshotHeldNotBackoff(t *testing.T) {
 	if err := s.Allow(RoleRelay, "", true); err != nil {
 		t.Fatal(err)
 	}
-	if st := proc(s.Snapshot(), RoleRelay); st.State != StateBackoff {
+	if st := proc(s.Snapshot(), RoleRelay); st.State != StateBackoff || !st.Wanted {
 		t.Fatalf("allowed again: %+v", st)
 	}
 }
