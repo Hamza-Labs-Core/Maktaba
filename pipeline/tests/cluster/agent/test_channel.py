@@ -549,7 +549,7 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
         await until(lambda: bool(agent.last_error) and len(written) >= 2, timeout=15)
         assert not agent.connected
         shutdown.set()  # the worker stops: one last frame, final values
-        await asyncio.sleep(0.2)
+        await until(lambda: any(x.get("final") for x in written), timeout=15)
     ran = time.monotonic() - began
     files.stop()
     path = next((tmp_path / "10.1.1.1" / "metrics").glob("*/w.jsonl"))

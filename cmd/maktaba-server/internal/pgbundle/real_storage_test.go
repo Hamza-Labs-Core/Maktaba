@@ -9,9 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
-
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/storage"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // TestRealStorageMove moves a real cluster (a scratch one in a temp dir) to

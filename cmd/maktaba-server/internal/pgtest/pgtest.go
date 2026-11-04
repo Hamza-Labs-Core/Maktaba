@@ -16,9 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
-
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // Programs is the Postgres install the tests run (MAKTABA_TEST_PG_BIN); the test is
