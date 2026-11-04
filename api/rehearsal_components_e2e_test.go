@@ -63,7 +63,11 @@ func (m *appMachine) supervisorProcesses() ([]string, bool) {
 		case "starting", "unhealthy", "backoff":
 			settled = false // starting, waiting on a step, restarting
 		}
-		out = append(out, fmt.Sprintf("%s/%s wanted=%v running=%v", p.Role, p.Instance, p.Wanted, p.State == "running"))
+		row := fmt.Sprintf("%s/%s wanted=%v running=%v", p.Role, p.Instance, p.Wanted, p.State == "running")
+		if p.State == "held" {
+			row += " held" // its component is off: it runs nothing
+		}
+		out = append(out, row)
 	}
 	sort.Strings(out)
 	return out, settled && len(out) > 0
@@ -144,6 +148,29 @@ func diffLists(t *testing.T, what string, before, after []string) {
 	}
 }
 
+// keptProcesses is after's rows for the processes before had. A process new with this
+// release (the language model server built dormant for an llm that is off, story 51.04) is
+// no change to what runs today, but it must be held and not wanted: it runs nothing and
+// nothing waits on it.
+func keptProcesses(t *testing.T, before, after []string) []string {
+	t.Helper()
+	had := map[string]bool{}
+	for _, row := range before {
+		had[strings.Fields(row)[0]] = true
+	}
+	var out []string
+	for _, row := range after {
+		f := strings.Fields(row)
+		switch {
+		case had[f[0]]:
+			out = append(out, row)
+		case !strings.HasSuffix(row, " wanted=false running=false held"):
+			t.Errorf("a process new with this release must be held and not wanted: %s", row)
+		}
+	}
+	return out
+}
+
 // keptStages is after's rows for the stages before had. A stage new with this release (a
 // migration adds it: the second listen since slot 0174) is no change to what runs today,
 // but it must come in on, not off or paused.
@@ -206,7 +233,7 @@ func TestUpdateRehearsal12NoBehaviourChange(t *testing.T) {
 	home.assertServing(k.cur)
 
 	after := home.componentsHome(db)
-	diffLists(t, "the supervisor's processes", before.Processes, after.Processes)
+	diffLists(t, "the supervisor's processes", before.Processes, keptProcesses(t, before.Processes, after.Processes))
 	diffLists(t, "job_stages", before.Stages, keptStages(t, before.Stages, after.Stages))
 	diffLists(t, "extensions", before.Extensions, after.Extensions)
 	if before.HDHR != after.HDHR {
