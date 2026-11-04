@@ -297,6 +297,193 @@ class Rig:
         return path
 
 
+# -- the real API (stories 51.08, 51.10, 51.14) ---------------------------------------
+
+#: the API binary built from the commit (the components-live job builds it: go build ./api)
+API_BIN = os.environ.get("MAKTABA_COMPONENTS_API_BIN", "")
+OWNER, OWNER_PASS = "owner", "components-live-owner-pass"
+
+
+def _free_port() -> int:
+    import socket
+
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+class ApiError(Exception):
+    def __init__(self, status: int, body: str) -> None:
+        super().__init__(f"{status}: {body[:500]}")
+        self.status = status
+        self.body = body
+
+
+@dataclass
+class Api:
+    """The real API (``maktaba-api serve``) on the rig's database, and an admin signed in
+    on it as the web app is: its cookies, and the ``X-Maktaba-CSRF`` header echoing
+    ``mkt_csrf`` on every mutating call (web/src/lib/api.ts)."""
+
+    url: str
+    admin_url: str
+    proc: subprocess.Popen[bytes]
+    log: Path
+    opener: Any = None
+    jar: Any = None
+
+    def stop(self, timeout: float = 30.0) -> None:
+        if self.proc.poll() is None:
+            self.proc.send_signal(signal.SIGTERM)
+            try:
+                self.proc.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+
+    def _csrf(self) -> str:
+        for c in self.jar or []:
+            if c.name == "mkt_csrf":
+                return str(c.value)
+        return ""
+
+    def call(self, method: str, path: str, body: Any = None) -> Any:
+        """One call as the web app makes it; the decoded JSON (ApiError on a refusal)."""
+        import urllib.error
+        import urllib.request
+
+        data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(self.url + path, data=data, method=method)  # noqa: S310
+        req.add_header("Accept", "application/json")
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        if method not in ("GET", "HEAD"):
+            req.add_header("X-Maktaba-CSRF", self._csrf())
+        try:
+            with self.opener.open(req, timeout=10) as resp:
+                raw = resp.read()
+        except urllib.error.HTTPError as e:
+            raise ApiError(e.code, e.read().decode("utf-8", "replace")) from None
+        return json.loads(raw) if raw else None
+
+    def get(self, path: str) -> Any:
+        return self.call("GET", path)
+
+    def text(self, url: str) -> str:
+        """A plain GET of a full URL (the admin port's /metrics)."""
+        import urllib.request
+
+        with urllib.request.urlopen(url, timeout=10) as resp:  # noqa: S310 - our own server
+            return str(resp.read().decode("utf-8"))
+
+    def sign_in(self, timeout: float = 90.0) -> None:
+        import http.cookiejar
+        import urllib.request
+
+        self.jar = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(self.jar))
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                self.call("POST", "/api/auth/login", {"username": OWNER, "password": OWNER_PASS})
+                return
+            except (ApiError, OSError) as e:
+                if self.proc.poll() is not None:
+                    raise RuntimeError(f"the API exited: see {self.log}") from e
+                if time.monotonic() > deadline:
+                    raise TimeoutError(f"no sign-in on the API after {timeout}s: {e}") from e
+            time.sleep(0.5)
+
+    # -- what the Components page calls (web/src/lib/componentsApi.ts) -------------
+
+    def component(self, cid: str) -> dict[str, Any]:
+        """``componentsApi.show``: the detail, health and status parts among it."""
+        out: dict[str, Any] = self.get(f"/api/components/{cid}")
+        return out
+
+    def set_want(self, cid: str, want: str) -> float:
+        """A toggle on the page: ``componentsApi.list`` for the row's generation,
+        ``componentsApi.preview`` (nothing to confirm in these scenarios), then
+        ``componentsApi.setWant``; the time the PUT was answered."""
+        rows = self.get("/api/components")["components"]
+        row = next(c for c in rows if c["id"] == cid)
+        preview = self.call(
+            "POST", "/api/components/preview", {"changes": [{"id": cid, "want": want}]}
+        )
+        assert not preview["refused"], preview
+        self.call("PUT", f"/api/components/{cid}", {"want": want, "generation": row["generation"]})
+        return time.time()
+
+
+def api_env(base: dict[str, str], home: Path, url: str, port: int, admin: int) -> dict[str, str]:
+    """The API's environment: ``base`` without a ``MAKTABA_*``, ``XDG_*``, ``HOME`` or
+    ``DATABASE_URL`` of its own, every key and folder under ``home``, no update checks,
+    no discovery, and the pipeline and streaming at a dead address."""
+    env = {
+        k: v
+        for k, v in base.items()
+        if not k.startswith(("MAKTABA_", "XDG_")) and k not in ("HOME", "DATABASE_URL")
+    }
+    env.update(
+        {
+            "HOME": str(home),
+            # the rig's database URL has no query (rig.database); the CI Postgres has no TLS
+            "DATABASE_URL": url if "sslmode=" in url else url + "?sslmode=disable",
+            "MAKTABA_HTTP_ADDR": f"127.0.0.1:{port}",
+            "MAKTABA_ADMIN_ADDR": f"127.0.0.1:{admin}",
+            "MAKTABA_DATA_DIR": str(home / "data"),
+            "MAKTABA_SECRETS_KEY": str(home / "secrets.key"),
+            "MAKTABA_HOME_AGENT_KEY": str(home / "agent.key"),
+            "MAKTABA_HOME_CLUSTER_KEY": str(home / "cluster.key"),
+            "MAKTABA_NODE_CONFIG": str(home / "node.json"),
+            "MAKTABA_CLUSTER_DIR": str(home / "cluster"),
+            "MAKTABA_ARCHIVE_DIR": str(home / "archive"),
+            "MAKTABA_STREAM_SIGNING_KEY": str(home / "stream-signing.key"),
+            "MAKTABA_PIPELINE_ADDR": DEAD_API_URL.removeprefix("http://"),
+            "MAKTABA_STREAMING_ADDR": DEAD_API_URL.removeprefix("http://"),
+            "MAKTABA_UPDATE_DISABLE": "1",
+            "MAKTABA_DISCOVERY_MDNS": "0",
+            "MAKTABA_HSTS": "0",
+            "MAKTABA_HEALTH_WARM": "0s",
+            "MAKTABA_LOG_FORMAT": "json",
+        }
+    )
+    return env
+
+
+def start_api(url: str, name: str = "api") -> Api:
+    """The API built from the commit, on the rig's database, with an admin (adduser) and
+    a home of its own under the logs' ``home/<name>`` (api_env); its log ``<name>.log``."""
+    if not API_BIN:
+        raise RuntimeError("MAKTABA_COMPONENTS_API_BIN is not set (go build -o <bin> ./api)")
+    LOGS.mkdir(parents=True, exist_ok=True)
+    home = LOGS / "home" / name
+    home.mkdir(parents=True, exist_ok=True)
+    port, admin = _free_port(), _free_port()
+    env = api_env(dict(os.environ), home, url, port, admin)
+    pw = home / "owner.pw"
+    pw.write_text(OWNER_PASS + "\n", encoding="utf-8")
+    add = subprocess.run(  # noqa: S603 - our own binary
+        [API_BIN, "adduser", "--password-file", str(pw), OWNER],
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+    if add.returncode != 0:
+        raise RuntimeError(f"adduser: {add.stdout!r} {add.stderr!r}")
+    log = LOGS / f"{name}.log"
+    proc = subprocess.Popen(  # noqa: S603 - our own binary
+        [API_BIN, "serve"], stdout=log.open("ab"), stderr=subprocess.STDOUT, env=env, cwd=str(home)
+    )
+    api = Api(f"http://127.0.0.1:{port}", f"http://127.0.0.1:{admin}", proc, log)
+    try:
+        api.sign_in()
+    except BaseException:
+        api.stop()
+        raise
+    return api
+
+
 def time_now() -> Any:
     from datetime import UTC, datetime
 

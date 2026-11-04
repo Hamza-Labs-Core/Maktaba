@@ -54,12 +54,18 @@ func TestPacksEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	idx, missing, err := Generate(Options{Catalog: components.Default(), Version: version,
-		Commit: strings.Repeat("0a", 20), Published: pub, Dist: dist})
+	// the one platform build.sh built here (MAKTABA_PACKS_PLATFORM, linux-amd64 by default):
+	// every pack of it must be there
+	platform := os.Getenv("MAKTABA_PACKS_PLATFORM")
+	if platform == "" {
+		platform = "linux-amd64"
+	}
+	idx, err := Generate(Options{Catalog: components.Default(), Version: version,
+		Commit: strings.Repeat("0a", 20), Published: pub, Dist: dist, Platform: platform})
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("%d packs in %s (%d of other platforms not built here)", len(idx.Packs), dist, len(missing))
+	t.Logf("%d packs of %s in %s", len(idx.Packs), platform, dist)
 	if len(idx.Packs) == 0 {
 		t.Fatal("no packs were built")
 	}
