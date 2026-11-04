@@ -41,16 +41,19 @@ const (
 	ReasonOfflineWrongPlat    = "offline_wrong_platform"
 	ReasonPacksDisabled       = "packs_disabled"
 	ReasonPackMissing         = "pack_missing"
-	ReasonInstallFailed       = "install_failed"
-	ReasonBusy                = "busy"
-	ReasonPlatform            = "platform_unsupported"
-	ReasonRequiredBy          = "required_by"
+	// ReasonPackNotPublished: the release has none of its signed files yet (a version not
+	// published, or not with its packs): the install fails until it is; name is the asset.
+	ReasonPackNotPublished = "pack_not_published"
+	ReasonInstallFailed    = "install_failed"
+	ReasonBusy             = "busy"
+	ReasonPlatform         = "platform_unsupported"
+	ReasonRequiredBy       = "required_by"
 )
 
 // Reasons is every reason code this package reports (the catalog must list each).
 var Reasons = []string{ReasonIndexMissing, ReasonIndexExpired, ReasonIndexWrongVersion, ReasonIndexReplayed,
 	ReasonVerifyFailed, ReasonDownloadFailed, ReasonDiskSpace, ReasonUnpackRefused, ReasonOfflineWrongVersion,
-	ReasonOfflineWrongPlat, ReasonPacksDisabled, ReasonPackMissing, ReasonInstallFailed, ReasonBusy,
+	ReasonOfflineWrongPlat, ReasonPacksDisabled, ReasonPackMissing, ReasonPackNotPublished, ReasonInstallFailed, ReasonBusy,
 	ReasonPlatform, ReasonRequiredBy}
 
 // Detail codes of an install's steps (components.detail.<code> in the web's words).

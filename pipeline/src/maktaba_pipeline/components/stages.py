@@ -9,7 +9,8 @@ cannot run on a machine is already kept off by its ``unavailable()`` check. A co
 with no desired row follows today's behaviour (on), so a home that was never seeded
 (51.03) changes nothing. Core components (``switchable = false``) are always on.
 
-A closed gate is ``off`` (not enabled, or a requirement off: ``dependency_off``) or
+A closed gate is ``off`` (not enabled, or a requirement off: ``dependency_off``, or its
+settings could not be moved to this release's shape: ``settings_invalid``, story 51.13) or
 ``held`` (an admin stopped it, or a requirement is held). For the stages of a stage
 group:
 
@@ -21,7 +22,7 @@ group:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,6 +34,7 @@ __all__ = [
     "HELD",
     "OFF",
     "ON",
+    "SETTINGS_INVALID",
     "Gate",
     "extension_name",
     "gates",
@@ -44,6 +46,8 @@ __all__ = [
 ON = "on"
 OFF = "off"
 HELD = "held"
+#: the reason of a component whose settings section could not be moved (story 51.13)
+SETTINGS_INVALID = "settings_invalid"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +57,8 @@ class Gate:
     #: the desired ``want`` ("" when the component has no row: today's behaviour)
     want: str = ""
     generation: int = 0
-    #: why it is closed beyond its own want: "" | "held" | "dependency_off"
+    #: why it is closed beyond its own want: "" | "held" | "dependency_off" |
+    #: "settings_invalid"
     reason: str = ""
     params: dict[str, Any] = field(default_factory=dict)
 
@@ -96,9 +101,15 @@ def _own(c: Component, d: Desired | None) -> Gate:
     return Gate(c.id, ON, want=d.want, generation=d.generation)
 
 
-def gates(desired: Mapping[str, Desired], cat: Catalog | None = None) -> dict[str, Gate]:
+def gates(
+    desired: Mapping[str, Desired],
+    cat: Catalog | None = None,
+    blocked: Mapping[str, Sequence[tuple[str, str]]] | None = None,
+) -> dict[str, Gate]:
     """Every component's gate from ``desired`` (one machine's merged desired state),
-    requirements first."""
+    requirements first. ``blocked`` (``settings_migrate.blocked``: component -> its failed
+    sections) keeps a component that would be on off with ``settings_invalid``: it never
+    runs on the defaults (story 51.13), and what requires it waits (``dependency_off``)."""
     cat = cat or default()
     out: dict[str, Gate] = {}
     for cid in cat.order():
@@ -106,6 +117,17 @@ def gates(desired: Mapping[str, Desired], cat: Catalog | None = None) -> dict[st
         if c is None:
             continue
         g = _own(c, desired.get(cid))
+        failed = (blocked or {}).get(cid)
+        if g.open and c.switchable and failed:
+            section, error = failed[0]
+            g = Gate(
+                cid,
+                OFF,
+                want=g.want,
+                generation=g.generation,
+                reason=SETTINGS_INVALID,
+                params={"section": section, "error": error},
+            )
         if g.open and c.switchable:
             for group in cat.requires(cid):
                 have = [out[r] for r in group if r in out]

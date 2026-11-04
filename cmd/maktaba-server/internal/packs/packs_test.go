@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -247,6 +248,49 @@ func TestFullHomeCountsAsInstalled(t *testing.T) {
 		if row.ID == "runtime.ml" && (row.Phase != components.PhaseOff || row.Conditions[0].Status != "true") {
 			t.Fatalf("runtime.ml's row: %+v", row)
 		}
+	}
+}
+
+// A release whose signed files are not there (not published yet) is pack_not_published
+// naming the asset, not a download cut short (download_failed); the row says so.
+func TestAReleaseNotPublishedIsSaidSo(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	delete(f.served, rv.ChecksumsFile)
+	err := f.m.Install(context.Background(), "runtime.ml", nil)
+	if ReasonOf(err) != ReasonPackNotPublished || ParamsOf(err)["name"] != "runtime.ml" {
+		t.Fatalf("install from a release not published: %v (%s %v)", err, ReasonOf(err), ParamsOf(err))
+	}
+	r := &Runner{M: f.m, Machine: store.Home}
+	for _, row := range r.Rows() {
+		if row.ID == "runtime.ml" && (row.Phase != components.PhaseFailed || row.Reason() != ReasonPackNotPublished) {
+			t.Fatalf("runtime.ml's row: %+v", row)
+		}
+	}
+	// the catalog lists it (its words, components.reason.pack_not_published)
+	if !slices.Contains(components.Default().Reasons, ReasonPackNotPublished) {
+		t.Fatal("the catalog does not list pack_not_published")
+	}
+}
+
+// Story 51.14: an installed pack's row carries its folder's size on disk (disk_mb); an
+// asset from before packs (no folder) carries none, the catalog's size stands for it.
+func TestInstalledPackRowCarriesItsDiskSize(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	r := &Runner{M: f.m, Machine: store.Home}
+	if err := f.m.Install(context.Background(), "runtime.ml", nil); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(f.m.Layout.Dir("runtime.ml"), f.m.Layout.Current("runtime.ml"))
+	if err := os.WriteFile(filepath.Join(dir, "big.bin"), make([]byte, 3<<20), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.m.OnDisk = func(id string) bool { return id == "tool.yt-dlp" }
+	got := map[string]any{}
+	for _, row := range r.Rows() {
+		got[row.ID] = row.Detail["disk_mb"]
+	}
+	if got["runtime.ml"] != int64(4) || got["tool.yt-dlp"] != nil {
+		t.Fatalf("disk_mb runtime.ml %v (want 4: 3 MB and the pack's files), tool.yt-dlp %v", got["runtime.ml"], got["tool.yt-dlp"])
 	}
 }
 
@@ -574,6 +618,35 @@ func TestOfflineFileAndImport(t *testing.T) {
 	wantReason(t, err, ReasonVerifyFailed)
 	if k.m.Installed("runtime.ml") {
 		t.Fatal("a changed pack was installed")
+	}
+}
+
+// A damaged offline file imported over the same release already installed fails its check
+// (verify_failed, naming the item) instead of answering installed; the good file still
+// imports over it, and a damaged model file is caught the same way.
+func TestImportOverTheSameReleaseStillChecksTheFile(t *testing.T) {
+	f := newFixture(t, fixtureOpts{})
+	var buf bytes.Buffer
+	if _, err := f.m.MakeOffline(context.Background(), &buf, OfflineRequest{Components: []string{"model.whisper-turbo"}}); err != nil {
+		t.Fatalf("%v\n%s", err, f.log.String())
+	}
+	g := newFixture(t, fixtureOpts{})
+	g.m.Net, g.m.Trusted = nil, f.m.Trusted
+	if _, err := g.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes())); err != nil {
+		t.Fatalf("%v\n%s", err, g.log.String())
+	}
+	for _, prefix := range []string{"packs/", "models/"} {
+		ids, err := g.m.ImportFrom(context.Background(), bytes.NewReader(tamper(t, buf.Bytes(), prefix)))
+		wantReason(t, err, ReasonVerifyFailed)
+		if prefix == "packs/" && len(ids) != 0 {
+			t.Fatalf("a damaged pack over the installed one answered %v installed", ids)
+		}
+		if !g.m.Installed("runtime.ml") || !g.m.Installed("model.whisper-turbo") {
+			t.Fatalf("%s: the installed release was touched", prefix)
+		}
+	}
+	if ids, err := g.m.ImportFrom(context.Background(), bytes.NewReader(buf.Bytes())); err != nil || len(ids) != 2 {
+		t.Fatalf("the good file again: %v %v", ids, err)
 	}
 }
 

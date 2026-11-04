@@ -1833,7 +1833,7 @@
       "gated": false,
       "group": "runtimes",
       "id": "runtime.ollama",
-      "in_payload": true,
+      "in_payload": false,
       "kind": "asset",
       "licence": "",
       "loops": [],
@@ -1854,9 +1854,7 @@
       "settings": [],
       "since": "0.3.66",
       "source": "pack:runtime.ollama",
-      "sources": {
-        "darwin-arm64": "payload:ollama"
-      },
+      "sources": {},
       "stages": [],
       "stop_grace_s": 0,
       "switchable": true,
@@ -2373,6 +2371,7 @@
     "offline_wrong_platform",
     "packs_disabled",
     "pack_missing",
+    "pack_not_published",
     "install_failed",
     "busy",
     "not_configured"

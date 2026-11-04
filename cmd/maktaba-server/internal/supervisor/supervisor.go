@@ -123,6 +123,14 @@ type Process struct {
 	// Dormant: built though today's server.toml leaves it out, so it starts only when
 	// the component's desired state enables it (its gate starts closed: Allow).
 	Dormant bool
+	// Path, when set, is the program looked up again before each start (a dormant
+	// process whose binary comes with a pack installed after the boot: runtime.ollama's
+	// ollama); "" keeps Cmd's.
+	Path func() string
+	// Present, when set, says whether the program is on this machine now: the reconciler
+	// keeps a component whose processes all lack theirs off with not_in_payload (story
+	// 51.04 §5). nil: it is there.
+	Present func() bool
 }
 
 // graceFor is how long p has to stop once asked: grace, or its own StopGrace when
@@ -434,6 +442,10 @@ func pythonFor(opts Options) string {
 	}
 	return pythonExecutable(opts.ReleaseDir)
 }
+
+// PipelinePython is the interpreter the pipeline runs with for opts (pythonFor): what the
+// asset checks look in (componentseed.Disk.Python).
+func PipelinePython(opts Options) string { return pythonFor(opts) }
 
 // PipelineOwnEnv says whether the pipeline runs the environment built from this
 // release's own wheel (a plain server's <release>/venv, the desktop app's venv from its

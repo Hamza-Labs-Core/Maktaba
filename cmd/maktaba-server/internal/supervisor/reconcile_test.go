@@ -294,6 +294,17 @@ type fakeAssets map[string]bool
 
 func (f fakeAssets) Installed(id string) bool { return f[id] }
 
+// failingAssets are assets whose install failed (AssetFailures).
+type failingAssets struct {
+	fakeAssets
+	failed map[string]string
+}
+
+func (f failingAssets) Failed(id string) (string, map[string]any, bool) {
+	why, ok := f.failed[id]
+	return why, map[string]any{"name": "m.bin"}, ok && !f.fakeAssets[id]
+}
+
 // Story 51.16: a pack asset a component requires keeps it waiting until it is installed;
 // a model never does; with no desired row for the asset (before the seed) nothing waits.
 func TestReconcileWaitsForAPackAsset(t *testing.T) {
@@ -344,6 +355,33 @@ since = "0.4.0"
 	passWith(r, d)
 	if got := tab.takeCalls(); !slices.Equal(got, []string{"stt=true"}) {
 		t.Fatalf("calls %v: stt opens once the pack is in (the model never blocks)", got)
+	}
+	// open, but its model is not here: it says it waits on it, never running
+	reqOf := func() (string, store.Condition) {
+		row, _ := st.row("stt")
+		for _, c := range row.Conditions {
+			if c.Type == components.CondRequirementsMet {
+				return row.Phase, c
+			}
+		}
+		return row.Phase, store.Condition{}
+	}
+	if ph, c := reqOf(); ph != components.PhaseWaiting || c.Status != "unknown" || c.Params["component"] != "model.x" {
+		t.Fatalf("stt %s %+v, want waiting on model.x", ph, c)
+	}
+	// its install failed: that reason, naming the model
+	failing := failingAssets{fakeAssets: assets, failed: map[string]string{"model.x": "download_failed"}}
+	r.Assets = failing
+	passWith(r, d)
+	if ph, c := reqOf(); ph != components.PhaseWaiting || c.Status != "false" || c.Reason != "download_failed" ||
+		c.Params["component"] != "model.x" {
+		t.Fatalf("stt %s %+v, want waiting on model.x's failed install", ph, c)
+	}
+	// the model in: running
+	assets["model.x"] = true
+	passWith(r, d)
+	if ph, c := reqOf(); ph != components.PhaseRunning || c.Status != "true" {
+		t.Fatalf("stt %s %+v, want running", ph, c)
 	}
 	// no desired row for the pack: today's behaviour
 	tab2 := &fakeTable{}
@@ -424,6 +462,86 @@ func TestReconcileMemoryAtStartOnly(t *testing.T) {
 	}
 	if row, _ := st.row("a"); row.Reason() != "not_enough_memory" {
 		t.Fatalf("a %+v", row)
+	}
+}
+
+// Story 51.14: a process component's row carries its memory (rss_mb, read every 5 min, a
+// few MB either way not rewritten) and its restarts of the last 24 h (restarts_24h).
+func TestReconcileRowsCarryMemoryAndRestartsOfADay(t *testing.T) {
+	cat := testCatalog(t, procComp("a", "fake/a*", "", ""))
+	tab := &fakeTable{}
+	tab.add("a", "a1", false)
+	tab.add("a", "a2", false)
+	tab.procs[0].PID, tab.procs[1].PID = 101, 102
+	tab.procs[0].Restarts, tab.procs[0].Restarts24h = 9, 2
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	now := time.Date(2026, 11, 3, 9, 0, 0, 0, time.UTC)
+	r.Now = func() time.Time { return now }
+	mem := map[int]uint64{101: 300 << 20, 102: 200 << 20}
+	reads := 0
+	r.RSS = func(pids []int) map[int]uint64 {
+		reads++
+		out := map[int]uint64{}
+		for _, p := range pids {
+			if b, ok := mem[p]; ok {
+				out[p] = b
+			}
+		}
+		return out
+	}
+	d := map[string]store.Desired{"a": want("a", "enabled", 1)}
+	passWith(r, d)
+	row, _ := st.row("a")
+	if row.Detail["rss_mb"] != int64(500) || row.Detail["restarts_24h"] != 2 || row.Detail["restarts"] != 9 {
+		t.Fatalf("detail %v", row.Detail)
+	}
+	// a minute later: not read again; five minutes later a few MB more: not rewritten
+	mem[101] = 310 << 20
+	now = now.Add(time.Minute)
+	passWith(r, d)
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if row, _ := st.row("a"); reads != 2 || row.Detail["rss_mb"] != int64(500) {
+		t.Fatalf("%d reads, rss %v", reads, row.Detail["rss_mb"])
+	}
+	// a real change is written at the next read
+	mem[101] = 900 << 20
+	now = now.Add(5 * time.Minute)
+	passWith(r, d)
+	if row, _ := st.row("a"); row.Detail["rss_mb"] != int64(1100) {
+		t.Fatalf("rss %v, want 1100", row.Detail["rss_mb"])
+	}
+	// the restarts of a day: one older than 24 h is not counted
+	at := now.Add(-25 * time.Hour)
+	if got := recentRestarts([]time.Time{at, now.Add(-time.Hour), now}, now); len(got) != 2 {
+		t.Fatalf("restarts of the last 24 h %v", got)
+	}
+}
+
+// A dormant process whose program is not on this machine (ollama before its pack) waits,
+// enabled, with not_in_payload, and starts once the program is there.
+func TestReconcileProgramNotHereWaits(t *testing.T) {
+	cat := testCatalog(t, procComp("a", "fake/a", "", ""))
+	tab := &fakeTable{}
+	tab.add("a", "a", true)
+	tab.procs[0].Missing = true
+	st := &fakeStore{}
+	r, _ := newTestReconciler(cat, tab, st)
+	d := map[string]store.Desired{"a": want("a", "enabled", 1)}
+	passWith(r, d)
+	if got := tab.takeCalls(); len(got) != 0 {
+		t.Fatalf("calls %v: a's program is not here, it stays closed", got)
+	}
+	if row, _ := st.row("a"); row.Phase != components.PhaseWaiting || row.Reason() != "not_in_payload" {
+		t.Fatalf("a %+v", row)
+	}
+	tab.mu.Lock()
+	tab.procs[0].Missing = false
+	tab.mu.Unlock()
+	passWith(r, d)
+	if got := tab.takeCalls(); !slices.Equal(got, []string{"a=true"}) {
+		t.Fatalf("calls %v: a's program came, it starts", got)
 	}
 }
 

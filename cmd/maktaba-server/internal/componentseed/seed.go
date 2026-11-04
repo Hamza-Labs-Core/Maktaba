@@ -122,15 +122,17 @@ func Plan(cat *components.Catalog, f Facts) map[string]string {
 		out[c.ID] = w
 	}
 	keepRequirementsOn(cat, out)
-	keepAssetsWanted(cat, out)
+	unsetNeededAssets(cat, out)
 	return out
 }
 
-// keepAssetsWanted seeds installed (wanted on this home) the asset an enabled component
-// needs when none of its requirement is on disk yet: today the stage runs and fetches its
-// runtime or model on first use (a fresh home, one that never transcribed), so seeding it
-// absent would turn the stage off. The first of an "any:" group that runs here is taken.
-func keepAssetsWanted(cat *components.Catalog, out map[string]string) {
+// unsetNeededAssets leaves with no desired row the asset an enabled component needs when
+// none of its requirement is on disk yet: today the stage runs and fetches its runtime or
+// model on first use (a fresh home, one that never transcribed), so seeding it absent would
+// turn the stage off, and seeding it installed would say it is there when it is not (the
+// packs runner would download it at the first boot and the workers wait for it). With no
+// row it follows today's behaviour. The first of an "any:" group that runs here is taken.
+func unsetNeededAssets(cat *components.Catalog, out map[string]string) {
 	platform := Platform()
 	for _, c := range cat.Components() {
 		if out[c.ID] != components.WantEnabled {
@@ -154,7 +156,7 @@ func keepAssetsWanted(cat *components.Catalog, out map[string]string) {
 				}
 			}
 			if !met && pick != "" {
-				out[pick] = components.WantInstalled
+				delete(out, pick)
 			}
 		}
 	}

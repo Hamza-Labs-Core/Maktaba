@@ -181,6 +181,33 @@ async def test_a_full_save_takes_the_component_out_of_failed(db: Database) -> No
     assert cfg.tries == 3
 
 
+# the runners of every machine hear of a failed section at once (a reload on
+# components_changed), not only on their next desired-state change
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("v2")
+async def test_a_failed_section_tells_the_runners(db: Database) -> None:
+    if not is_pg(db):
+        pytest.skip("SQLite has no NOTIFY: its runners poll")
+    heard: asyncio.Queue[str] = asyncio.Queue()
+    conn = await db.acquire_listener()
+    try:
+        await conn.add_listener(store.CHANNEL, lambda *a: heard.put_nowait(str(a[-1])))
+        assert await settings_migrate.run_pass(db) == {}
+        await asyncio.sleep(0.2)
+        assert heard.empty()  # nothing failed: nothing said
+
+        def boom(old: dict[str, Any]) -> dict[str, Any]:
+            raise ValueError("cannot read relisten_tries")
+
+        settings.register_migration(_TranscriptionV2, 1, boom)
+        await _put(db, "rules.transcription", {"relisten_tries": 9})
+        assert set(await settings_migrate.run_pass(db)) == {"transcription"}
+        payload = await asyncio.wait_for(heard.get(), timeout=5)
+        assert store.parse_notify(payload).reload
+    finally:
+        await conn.close()
+
+
 @pytest.mark.asyncio
 async def test_same_major_and_no_value_need_nothing(db: Database) -> None:
     await _put(db, "rules.planner", {"dawn_quran": False})

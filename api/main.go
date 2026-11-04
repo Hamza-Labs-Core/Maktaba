@@ -326,7 +326,7 @@ func runServe() error {
 	// with handler or readiness pools.
 	// Epic 51 story 51.05: the background loops start and stop with their catalog
 	// component. Until the home's database is read every component is on, as before.
-	loops := components.NewRunner(logger)
+	loops := components.NewRunnerFor(logger, nodeMachine(nodeCfg))
 	// the Cloudflare Stream integration is the home API's alone (no stage, no loop): its
 	// component's status row is the API's
 	if !nodeCfg.Enabled {
@@ -443,7 +443,7 @@ func runServe() error {
 	// machines' mutual TLS beside plain HTTP (nil: plain HTTP only)
 	var homeLinkSrv *homeLink
 	if nodeCfg.Enabled {
-		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, logger)
+		rt, closeNode, err := mountNode(r, nodeCfg, statsDataDir, loops, logger)
 		if err != nil {
 			return err
 		}

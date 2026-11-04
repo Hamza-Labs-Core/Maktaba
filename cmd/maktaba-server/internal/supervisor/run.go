@@ -79,6 +79,7 @@ type child struct {
 	cmd        *exec.Cmd    // the running process, nil between runs
 	tree       *procTree    // its process group / job, nil between runs
 	exits      []time.Time  // exits that led to a restart, for the crash-loop window
+	restartAt  []time.Time  // its restarts of the last 24 h (the health's restarts_24h)
 	killReason string       // set before the supervisor kills the child
 	failed     bool         // in a crash loop (state failed or retrying from it)
 	onceFails  int          // a job's (Process.Once) failed runs in a row
@@ -444,6 +445,12 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		if c.proc.Args != nil {
 			cmd.Args = append([]string{cmd.Args[0]}, c.proc.Args()...)
 		}
+		base := c.basePath
+		if c.proc.Path != nil {
+			if p := c.proc.Path(); p != "" {
+				cmd.Path, cmd.Args[0], cmd.Err, base = p, p, nil, p
+			}
+		}
 		if c.proc.BeforeStart != nil {
 			c.proc.BeforeStart()
 		}
@@ -488,7 +495,7 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 		var info ExitInfo
 		survive := s.survivalLocked(c)
 		ranWith := c.binding
-		startErr := applyBindingKept(cmd, ranWith, c.basePath, s.keptStreaming)
+		startErr := applyBindingKept(cmd, ranWith, base, s.keptStreaming)
 		switch {
 		case startErr != nil || held.path == "":
 		case c.binding == nil || c.binding.ReleaseID == "":
@@ -721,6 +728,7 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 	s.mu.Lock()
 	c.status.Restarts++
 	c.status.LastRestartAt = &at
+	c.restartAt = append(recentRestarts(c.restartAt, at), at)
 	n := c.status.Restarts
 	s.mu.Unlock()
 	s.emit(Event{Role: c.proc.Role, Instance: c.proc.Instance, Kind: EventRestarting, DelaySec: delay.Seconds(),

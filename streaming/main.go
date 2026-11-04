@@ -221,9 +221,12 @@ func runServe() error {
 			"event", "shutdown_loops_stopped")
 		closeStores()
 	}()
+	// Epic 51 story 51.05: the loops start and stop with their component, a joined
+	// machine's by its own desired state (the home's with its overrides)
 	if !nodeMode {
-		// Epic 51 story 51.05: the home's loops start and stop with their component
-		startComponents(bg, pool, logger)
+		startComponents(bg, pool, "", logger)
+	} else if node.NodeID != "" {
+		startComponents(bg, pool, node.NodeID, logger)
 	}
 	if nodeMode {
 		// story 31.3: a node's share map is its own cluster map (buildNodeTV)

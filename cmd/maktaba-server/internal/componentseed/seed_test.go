@@ -83,7 +83,7 @@ func TestPlanRules(t *testing.T) {
 		{"analytics always", func(*Facts) {}, "analytics", "enabled"},
 		{"updates always", func(*Facts) {}, "updates.auto", "enabled"},
 		{"asset on disk", func(f *Facts) { f.Assets["model.whisper-turbo"] = true }, "model.whisper-turbo", "installed"},
-		{"asset not on disk, an enabled stage needs it", func(*Facts) {}, "model.whisper-turbo", "installed"},
+		{"asset not on disk, an enabled stage needs it: no row", func(*Facts) {}, "model.whisper-turbo", ""},
 		{"asset not on disk, another of the group taken", func(*Facts) {}, "model.whisper-large-v3", "absent"},
 		{"asset not on disk, its stages off", func(f *Facts) {
 			f.OperatorOff = map[string]bool{"index": true, "chapter_infer": true, "topic_assign": true, "topic_recluster": true}
@@ -99,7 +99,8 @@ func TestPlanRules(t *testing.T) {
 			t.Errorf("%s: %s = %q, want %q", c.name, c.id, got[c.id], c.want)
 		}
 	}
-	// every component has a want, and no asset is ever enabled
+	// every component has a want (but an asset an enabled stage needs and nothing fetched:
+	// no row), and no asset is ever enabled
 	f := today()
 	for id := range f.Assets {
 		delete(f.Assets, id)
@@ -107,7 +108,7 @@ func TestPlanRules(t *testing.T) {
 	plan := Plan(cat, f)
 	for _, c := range cat.Components() {
 		w, ok := plan[c.ID]
-		if !ok {
+		if !ok && c.Kind != components.KindAsset {
 			t.Errorf("%s has no want", c.ID)
 		}
 		if c.Kind == components.KindAsset && w == components.WantEnabled {
@@ -172,6 +173,7 @@ func TestAssetsOnDisk(t *testing.T) {
 	}
 	touch(filepath.Join(state, "venv", bin, "python"+exe))
 	touch(filepath.Join(state, "venv", bin, "yt-dlp"+exe))
+	touch(filepath.Join(sitePackages(filepath.Join(state, "venv")), "faster_whisper", "__init__.py"))
 	touch(filepath.Join(state, "models", "huggingface", "hub", "models--intfloat--multilingual-e5-small", "snapshots", "abc", "config.json"))
 	touch(filepath.Join(state, "models", "ollama", "manifests", "registry.ollama.ai", "library", "qwen2.5", "7b"))
 	got := Assets(components.Default(), Disk{Config: cfg, Platform: "linux-amd64", Ollama: true,
@@ -182,6 +184,117 @@ func TestAssetsOnDisk(t *testing.T) {
 		if got[id] != want {
 			t.Errorf("%s on disk = %v, want %v", id, got[id], want)
 		}
+	}
+}
+
+// sitePackages is a venv's site-packages on this OS.
+func sitePackages(venv string) string {
+	if runtime.GOOS == "windows" {
+		return filepath.Join(venv, "Lib", "site-packages")
+	}
+	return filepath.Join(venv, "lib", "python3.12", "site-packages")
+}
+
+// touchFile writes a small file at p, its folders first.
+func touchFile(t *testing.T, p string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte("x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// fakePython is an interpreter at <root>/bin/python (Scripts\python.exe on Windows) with
+// the modules given in its site-packages.
+func fakePython(t *testing.T, root string, modules ...string) string {
+	t.Helper()
+	py := venvBin(root, "python")
+	touchFile(t, py)
+	for _, m := range modules {
+		touchFile(t, filepath.Join(sitePackages(root), m, "__init__.py"))
+	}
+	return py
+}
+
+// A named interpreter (MAKTABA_PYTHON, [pipeline] python) with an empty environment is
+// not the ML runtime, nor yt-dlp: only what its environment holds counts.
+func TestAssetsNamedPythonCountsOnlyItsEnvironment(t *testing.T) {
+	cfg := dataDir(t)
+	py := fakePython(t, filepath.Join(t.TempDir(), "py"))
+	cfg.Pipeline.Python = py
+	env := func(k string) string {
+		if k == "MAKTABA_PYTHON" {
+			return py
+		}
+		return ""
+	}
+	got := Assets(components.Default(), Disk{Config: cfg, Platform: "linux-amd64", Python: py, Getenv: env})
+	for _, id := range []string{"runtime.ml", "model.refine", "tool.yt-dlp"} {
+		if got[id] {
+			t.Errorf("%s on disk with an empty interpreter", id)
+		}
+	}
+	full := fakePython(t, filepath.Join(t.TempDir(), "full"), "mlx_whisper", "yt_dlp")
+	got = Assets(components.Default(), Disk{Config: cfg, Platform: "linux-amd64", Python: full, Getenv: env})
+	for _, id := range []string{"runtime.ml", "model.refine", "tool.yt-dlp"} {
+		if !got[id] {
+			t.Errorf("%s not found in the interpreter's environment", id)
+		}
+	}
+}
+
+// yt-dlp is found where the pipeline runs it: its interpreter's yt_dlp module (not only a
+// yt-dlp script in two venvs), or MAKTABA_YTDLP's program when that is set.
+func TestAssetsYtDlpWhereThePipelineRunsIt(t *testing.T) {
+	cfg := dataDir(t)
+	py := fakePython(t, filepath.Join(t.TempDir(), "release-venv"), "yt_dlp")
+	none := func(string) string { return "" }
+	if !Assets(components.Default(), Disk{Config: cfg, Python: py, Getenv: none})["tool.yt-dlp"] {
+		t.Fatal("the interpreter's yt_dlp module was not found")
+	}
+	bare := fakePython(t, filepath.Join(t.TempDir(), "bare"))
+	prog := filepath.Join(t.TempDir(), "yt-dlp")
+	touchFile(t, prog)
+	set := func(k string) string {
+		if k == "MAKTABA_YTDLP" {
+			return prog + " --no-color"
+		}
+		return ""
+	}
+	if !Assets(components.Default(), Disk{Config: cfg, Python: bare, Getenv: set})["tool.yt-dlp"] {
+		t.Fatal("MAKTABA_YTDLP's program was not taken")
+	}
+	missing := func(k string) string {
+		if k == "MAKTABA_YTDLP" {
+			return filepath.Join(t.TempDir(), "gone", "yt-dlp")
+		}
+		return ""
+	}
+	if Assets(components.Default(), Disk{Config: cfg, Python: py, Getenv: missing})["tool.yt-dlp"] {
+		t.Fatal("a MAKTABA_YTDLP that is not there counted as yt-dlp")
+	}
+}
+
+// The seed records only what is on disk: an asset an enabled stage needs and nothing has
+// fetched yet gets no row (today's behaviour, the stage fetches it on first use), never
+// "installed", which would download it at the first boot and keep the workers waiting.
+func TestPlanNeverSaysInstalledForWhatIsNotOnDisk(t *testing.T) {
+	plan := Plan(components.Default(), today())
+	for id, w := range plan {
+		c, _ := components.Default().Get(id)
+		if c.Kind == components.KindAsset && w == components.WantInstalled {
+			t.Errorf("%s seeded installed with nothing on disk", id)
+		}
+	}
+	if _, ok := plan["runtime.ml"]; ok {
+		t.Errorf("runtime.ml seeded %q: an enabled stage needs it and it is not on disk (want no row)", plan["runtime.ml"])
+	}
+	f := today()
+	f.Assets["runtime.ml"] = true
+	if w := Plan(components.Default(), f)["runtime.ml"]; w != components.WantInstalled {
+		t.Errorf("runtime.ml on disk seeded %q", w)
 	}
 }
 
@@ -318,8 +431,10 @@ func TestHomeSeedsOnce(t *testing.T) {
 			t.Errorf("%s = %q, want %q", id, d[id].Want, want)
 		}
 	}
-	if len(d) != len(components.Default().IDs()) {
-		t.Errorf("%d rows for %d components", len(d), len(components.Default().IDs()))
+	for _, id := range components.Default().IDs() {
+		if c, _ := components.Default().Get(id); d[id].Want == "" && c.Kind != components.KindAsset {
+			t.Errorf("%s has no row", id)
+		}
 	}
 	m, _ := st.Meta(ctx)
 	if !m.Seeded() || m.Bundle != "full" || m.SeededRelease != "0.3.67" || m.TomlImported["tv.slots"] != "on" {

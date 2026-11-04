@@ -76,6 +76,25 @@ func (l Layout) Current(id string) string {
 	return name
 }
 
+// StateLayout is the components folder of a state root (<state>/components).
+func StateLayout(stateDir string) Layout { return Layout{Root: filepath.Join(stateDir, "components")} }
+
+// CurrentPath is sub inside the folder the component's current pointer names, "" when
+// the component is not installed or sub is not there (the roles that run a pack's files,
+// ffmpeg from tool.ffmpeg and the refine stage's database from model.refine, fall back
+// to their own lookup then).
+func (l Layout) CurrentPath(id string, sub ...string) string {
+	cur := l.Current(id)
+	if cur == "" {
+		return ""
+	}
+	p := filepath.Join(append([]string{l.Dir(id), cur}, sub...)...)
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
+}
+
 // SetCurrent writes the pointer atomically (layout.WriteFileAtomic, as the launcher
 // layout's current).
 func (l Layout) SetCurrent(id, folder string) error {

@@ -99,7 +99,7 @@ func generate(t *testing.T, dist string) ([]byte, *rv.ComponentsIndex) {
 }
 
 // The catalog's packs: an asset not in the payload whose source is its own pack, on each
-// of its platforms; payload assets and models left out.
+// of its platforms; payload assets, models and runtime.ollama off the Mac (DeferredOn) left out.
 func TestPacks(t *testing.T) {
 	got := map[string]bool{}
 	for _, p := range Packs(components.Default(), "") {
@@ -107,14 +107,14 @@ func TestPacks(t *testing.T) {
 	}
 	for _, want := range []string{"runtime.ml darwin-arm64", "runtime.ml windows-amd64", "runtime.ml linux-amd64",
 		"runtime.ml linux-arm64", "tool.yt-dlp linux-amd64", "model.refine darwin-arm64", "model.refine windows-amd64",
-		"tool.ffmpeg linux-amd64", "tool.ffmpeg linux-arm64"} {
+		"tool.ffmpeg linux-amd64", "tool.ffmpeg linux-arm64", "runtime.ollama darwin-arm64"} {
 		if !got[want] {
 			t.Errorf("no pack %s", want)
 		}
 	}
 	for k := range got {
 		id, plat, _ := strings.Cut(k, " ")
-		if id == "runtime.ollama" || strings.HasPrefix(id, "model.whisper") || (id == "tool.ffmpeg" && !strings.HasPrefix(plat, "linux-")) {
+		if (id == "runtime.ollama" && plat != "darwin-arm64") || strings.HasPrefix(id, "model.whisper") || (id == "tool.ffmpeg" && !strings.HasPrefix(plat, "linux-")) {
 			t.Errorf("unexpected pack %s", k)
 		}
 	}

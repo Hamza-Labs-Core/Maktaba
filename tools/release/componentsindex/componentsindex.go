@@ -26,6 +26,15 @@ import (
 	rv "github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
 
+// DeferredOn are packs deferred on some platforms only (id, then platform), and why.
+var DeferredOn = map[string]map[string]string{
+	"runtime.ollama": {
+		"windows-amd64": "no recipe gathers Ollama's Windows release yet",
+		"linux-amd64":   "no recipe gathers Ollama's Linux release yet",
+		"linux-arm64":   "no recipe gathers Ollama's Linux release yet",
+	},
+}
+
 // Pack is one pack a release builds.
 type Pack struct {
 	ID       string
@@ -39,8 +48,8 @@ func (p Pack) Name(version string) string {
 }
 
 // Packs are the packs the catalog asks of a release on platform ("" every platform): an
-// asset that is not in the payload, whose source there is its own pack. Each has a recipe
-// in tools/release/packs/recipes.
+// asset that is not in the payload, whose source there is its own pack, less DeferredOn.
+// Each has a recipe in tools/release/packs/recipes.
 func Packs(cat *components.Catalog, platform string) []Pack {
 	var out []Pack
 	for _, c := range cat.Components() {
@@ -49,6 +58,9 @@ func Packs(cat *components.Catalog, platform string) []Pack {
 		}
 		for _, p := range c.Platforms {
 			if (platform != "" && p != platform) || c.SourceFor(p) != "pack:"+c.ID {
+				continue
+			}
+			if _, deferred := DeferredOn[c.ID][p]; deferred {
 				continue
 			}
 			var req []string

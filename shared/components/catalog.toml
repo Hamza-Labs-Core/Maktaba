@@ -47,8 +47,8 @@ reasons = ["dependency_off", "licence_missing", "platform_unsupported", "not_eno
            # installs, removals and offline files (story 51.16)
            "index_missing", "index_expired", "index_wrong_version", "index_replayed",
            "download_failed", "disk_space", "unpack_refused", "offline_wrong_version",
-           "offline_wrong_platform", "packs_disabled", "pack_missing", "install_failed", "busy",
-           "not_configured"]
+           "offline_wrong_platform", "packs_disabled", "pack_missing", "pack_not_published",
+           "install_failed", "busy", "not_configured"]
 
 # GET /api/capabilities answers these words (README §4.12). chapters and
 # recommendations have no component behind them yet and always answer "on".
@@ -574,10 +574,10 @@ kind       = "asset"
 group      = "runtimes"
 title_key  = "components.runtime.ollama.title"
 desc_key   = "components.runtime.ollama.desc"
+# a pack (the Mac's: Ollama's release binaries, tools/release/packs/recipes); the Mac's
+# full payload carries it too, and there it counts as installed without the pack
 source     = "pack:runtime.ollama"
-# carried in the Mac's full payload; a pack elsewhere
-sources    = { darwin-arm64 = "payload:ollama" }
-in_payload = true
+in_payload = false
 platforms  = ["darwin-arm64", "windows-amd64", "linux-amd64", "linux-arm64"]
 bundles    = ["full"]
 since      = "0.3.66"

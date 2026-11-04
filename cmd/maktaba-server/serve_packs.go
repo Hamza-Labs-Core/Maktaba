@@ -105,7 +105,8 @@ func (d *diskAssets) onDisk(id string) bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.have == nil || time.Since(d.at) > 5*time.Second {
-		have := componentseed.Assets(components.Default(), componentseed.Disk{Config: d.cfg, ReleaseDir: d.releaseDir, Ollama: d.ollama})
+		have := componentseed.Assets(components.Default(), componentseed.Disk{Config: d.cfg, ReleaseDir: d.releaseDir, Ollama: d.ollama,
+			Python: supervisor.PipelinePython(supervisor.Options{Config: d.cfg, ReleaseDir: d.releaseDir})})
 		venvs := []string{filepath.Join(d.cfg.StateDir(), "venv")}
 		if d.releaseDir != "" {
 			venvs = append(venvs, filepath.Join(d.releaseDir, "venv"))
@@ -137,7 +138,7 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 	}
 	trust := &rv.RootStore{Dir: filepath.Join(cfg.Server.DataDir, "sigstore")}
 	home := hfHome(cfg)
-	net := packs.NewNet(id.Repo(), nil)
+	net := packs.NewNet(id.Repo(), nil).WithEnv(os.Getenv)
 	net.Token = func() string {
 		if t := strings.TrimSpace(os.Getenv("HF_TOKEN")); t != "" {
 			return t
@@ -161,10 +162,12 @@ func newPacksManager(cfg config.Config, releaseDir string, log io.Writer) *packs
 		Identity:  id,
 		Watermark: rv.IndexWatermarkPath(cfg.StateDir()),
 		HFHub:     filepath.Join(home, "hub"),
-		FreeDisk:  hostinfo.FreeDisk,
-		OnDisk:    disk.onDisk,
-		Disabled:  !cfg.Components.PacksOn(),
-		Log:       log,
+		// the language models go where the bundled server keeps them
+		OllamaModels: llmserver.Planned(cfg, "").Models,
+		FreeDisk:     hostinfo.FreeDisk,
+		OnDisk:       disk.onDisk,
+		Disabled:     !cfg.Components.PacksOn(),
+		Log:          log,
 	}
 	v := &packVenv{cfg: cfg, m: m, log: log}
 	m.Prepare = map[string]packs.PrepareFunc{"runtime.ml": v.prepare, "tool.yt-dlp": v.prepare}
