@@ -57,6 +57,13 @@ func componentTables(t *testing.T, db *sql.DB) {
 // writes its desired row and one audit row with the device, and a failure writes neither.
 func TestHDHRSwitchIsTheComponent(t *testing.T) {
 	db, srv := newServer(t, "")
+	// the audit names the admin as the components routes do: the user's name
+	if _, err := db.Exec(`CREATE TABLE users (id TEXT PRIMARY KEY, username TEXT NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO users (id, username) VALUES ('a', 'maya')`); err != nil {
+		t.Fatal(err)
+	}
 	want := func(w string, audits int) {
 		t.Helper()
 		var got string
@@ -77,8 +84,25 @@ func TestHDHRSwitchIsTheComponent(t *testing.T) {
 	}
 	want(comps.WantInstalled, 2)
 	var by string
-	if err := db.QueryRow(`SELECT updated_by FROM components WHERE id = 'livetv.hdhomerun'`).Scan(&by); err != nil || by != "a" {
-		t.Fatalf("updated_by %q (%v), want the admin", by, err)
+	if err := db.QueryRow(`SELECT updated_by FROM components WHERE id = 'livetv.hdhomerun'`).Scan(&by); err != nil || by != "maya" {
+		t.Fatalf("updated_by %q (%v), want the admin's name", by, err)
+	}
+	// the same value again writes nothing: no audit row, no new generation
+	gen := func() int64 {
+		t.Helper()
+		var g int64
+		if err := db.QueryRow(`SELECT generation FROM components WHERE id = 'livetv.hdhomerun'`).Scan(&g); err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	before := gen()
+	if code, _ := do(t, srv, "PATCH", "/api/tv/hdhr", `{"enabled":false}`, admin); code != 200 {
+		t.Fatalf("disable again: %d", code)
+	}
+	want(comps.WantInstalled, 2)
+	if after := gen(); after != before {
+		t.Fatalf("generation %d -> %d on a no-op", before, after)
 	}
 	// a rename is not a switch: no component change
 	if code, _ := do(t, srv, "PATCH", "/api/tv/hdhr", `{"friendly_name":"Den"}`, admin); code != 200 {

@@ -256,6 +256,57 @@ func TestSettingsSaveKeepsTheComponentsSwitch(t *testing.T) {
 	}
 }
 
+// The same enabled again writes nothing (no audit row, no new generation), and the audit
+// row names the admin as the components routes do: by is the user's name.
+func TestPutExtensionNoOpAndAuditForm(t *testing.T) {
+	r, db := extRouter(t)
+	for i := 0; i < 2; i++ {
+		if rec := extCall(t, r, extAdmin(), "PUT", "/api/extensions/plex", map[string]any{"enabled": false}); rec.Code != http.StatusOK {
+			t.Fatalf("%d %s", rec.Code, rec.Body.String())
+		}
+	}
+	d, err := components.New(db).DesiredOf(context.Background(), "ext.plex")
+	if err != nil || d.Generation != 1 {
+		t.Fatalf("ext.plex %+v (%v): a no-op moved the generation", d, err)
+	}
+	var n int
+	var by, source string
+	if err := db.QueryRow(`SELECT count(*), max(payload->>'by'), max(actor_source) FROM audit_log
+		WHERE category = 'components' AND target_id = 'ext.plex'`).Scan(&n, &by, &source); err != nil || n != 1 {
+		t.Fatalf("%d audit rows (%v)", n, err)
+	}
+	if by != "ext-admin" || source != "web" {
+		t.Fatalf("audit by %q from %q, want the admin's name from web", by, source)
+	}
+}
+
+// Removing the Cloudflare integration turns the extension off through its component, in
+// one transaction with its audit row: the two switches never disagree.
+func TestClearExtensionTurnsTheComponentOff(t *testing.T) {
+	_, db := extRouter(t)
+	if _, err := components.SetDesired(context.Background(), components.New(db),
+		store.Desired{ID: "ext.cloudflare_stream", Want: comps.WantEnabled}, store.Audit{By: "admin", Action: "component.enable"}); err != nil {
+		t.Fatal(err)
+	}
+	h := &Handler{DB: db}
+	ctx := principal.WithPrincipal(context.Background(), extAdmin())
+	if err := h.ClearExtension(ctx, "cloudflare_stream"); err != nil {
+		t.Fatal(err)
+	}
+	var on bool
+	if err := db.QueryRow(`SELECT enabled FROM extensions WHERE name = 'cloudflare_stream'`).Scan(&on); err != nil || on {
+		t.Fatalf("extensions.enabled %v (%v)", on, err)
+	}
+	if d, _ := components.New(db).DesiredOf(context.Background(), "ext.cloudflare_stream"); d.Want != comps.WantInstalled {
+		t.Fatalf("ext.cloudflare_stream %+v", d)
+	}
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM audit_log WHERE target_id = 'ext.cloudflare_stream'
+		AND action = 'component.disable' AND actor_user_id::text = $1`, extAdminID).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("%d audit rows (%v)", n, err)
+	}
+}
+
 // A save of settings alone for a built-in extension with no row yet starts the row as its
 // component's desired state says.
 func TestSettingsSaveNewRowFollowsTheComponent(t *testing.T) {
