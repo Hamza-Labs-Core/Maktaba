@@ -88,9 +88,12 @@ from ..engine.stages._leftovers import library_name
 from ..engine.stages._tagging import season_tags_digest, video_tags_digest
 from ..engine.stages.content_hash import PENDING, is_pending
 from ..engine.stages.thumb_small import THUMB_SMALL_VERSION, small_path, staged_path
+from ..log import get_logger
 from ..thumbnail.dhash import DHASH_VERSION, FRAMES_VERSION
 
 __all__ = ["ImportReport", "main", "run_import"]
+
+_log = get_logger()
 
 MTIME_SLOP_S = 2.0
 LINK_CONFIDENCE = {
@@ -146,6 +149,11 @@ class ImportReport:
     books: int = 0
     series_books: int = 0
     episode_tags: int = 0
+    #: a cache folder whose channel another library already holds (youtube_channels keeps
+    #: one library per channel): "<folder> (<channel>): source added to its library, off"
+    youtube_shared: list[str] = field(default_factory=list)
+    #: matched cache folders with no channel recorded: no source (the owner adds one)
+    youtube_no_channel: list[str] = field(default_factory=list)
     #: synthetic job rows not written yet, and the newest imported row per subject + stage
     _job_rows: list[tuple[Any, ...]] = field(default_factory=list, repr=False)
     _imported: dict[tuple[str, str, str], tuple[Any, Any]] | None = field(default=None, repr=False)
@@ -183,6 +191,13 @@ class ImportReport:
             got = ", ".join(f"{k} {n}" for k, n in sorted(self.settings_imported.items()))
             out.append(f"rules imported: {got or 'none'}")
             out.extend(f"  rule skipped: {why}" for why in self.settings_skipped)
+        if self.youtube_shared or self.youtube_no_channel:
+            out.append(
+                f"YouTube: {len(self.youtube_shared)} folders share a channel another library"
+                f" holds, {len(self.youtube_no_channel)} folders name no channel"
+            )
+            out.extend(f"  shared channel: {x}" for x in self.youtube_shared[:50])
+            out.extend(f"  no channel: {x}" for x in self.youtube_no_channel[:50])
         if self.thumbs_copied or self.thumbs_present or self.thumbs_missing:
             verb = "copied" if self.applied else "to copy"
             out.append(
@@ -523,7 +538,7 @@ async def _import(
         match[path] = (vid, lib)
     report.matched = len(match)
 
-    await _youtube(db, cache, files, match)
+    await _youtube(db, cache, files, match, report)
     await _signals(db, cache, files, match)
     await _links(db, files, match)
     await _analyze(db)  # detect's writer reads videos and episodes per library
@@ -751,22 +766,51 @@ def _d(db: Any, s: str | None) -> Any:
 
 
 async def _youtube(
-    db: Any, cache: sqlite3.Connection, files: dict[str, Any], match: dict[str, Any]
+    db: Any,
+    cache: sqlite3.Connection,
+    files: dict[str, Any],
+    match: dict[str, Any],
+    report: ImportReport | None = None,
 ) -> None:
     wanted_ids = {files[p]["youtube_id"] for p in match if files[p]["youtube_id"]}
     lib_of_folder: dict[str, UUID] = {}
     for p, (_, lib) in match.items():
         lib_of_folder.setdefault(files[p]["folder"], lib)
+    rep = report if report is not None else ImportReport(applied=False)
     if _has(cache, "folders"):
-        for f in cache.execute("SELECT * FROM folders WHERE channel_id IS NOT NULL"):
+        for f in cache.execute("SELECT * FROM folders"):
             lib = lib_of_folder.get(f["folder"])
             if lib is None:
                 continue
-            await db.execute(
+            if not f["channel_id"]:
+                rep.youtube_no_channel.append(str(f["folder"]))
+                _log.info("mediaintel_folder_without_channel", folder=f["folder"], library=str(lib))
+                continue
+            url = f["channel_url"] or f"https://www.youtube.com/channel/{f['channel_id']}"
+            held = await db.fetch(
                 "INSERT INTO youtube_channels (channel_id, library_id, url, title, status, fetched_at)"
-                " VALUES ($1,$2,$3,$4,'ok',$5) ON CONFLICT (channel_id) DO NOTHING",
-                f["channel_id"], uid(lib), f["channel_url"] or f"https://www.youtube.com/channel/{f['channel_id']}",
-                f["channel"], to_ts(db, now()),
+                " VALUES ($1,$2,$3,$4,'ok',$5) ON CONFLICT (channel_id) DO NOTHING RETURNING channel_id",
+                f["channel_id"], uid(lib), url, f["channel"], to_ts(db, now()),
+            )  # fmt: skip
+            if held:
+                continue
+            owner = await db.fetchrow(
+                "SELECT library_id FROM youtube_channels WHERE channel_id = $1", f["channel_id"]
+            )
+            if owner is not None and str(owner["library_id"]) == str(lib):
+                continue  # this library's already (an import run again)
+            # another library holds the channel: this one gets its own source of it, off,
+            # instead of none (youtube_sources is per library)
+            await db.execute(
+                "INSERT INTO youtube_sources (library_id, kind, url, external_id, mode, added_at)"
+                " VALUES ($1, 'channel', $2, $3, 'off', $4)"
+                " ON CONFLICT (library_id, kind, external_id) DO NOTHING",
+                uid(lib), url, f["channel_id"], to_ts(db, now()),
+            )  # fmt: skip
+            rep.youtube_shared.append(f"{f['folder']} ({f['channel_id']})")
+            _log.info(
+                "mediaintel_channel_shared", folder=f["folder"], channel_id=f["channel_id"],
+                library=str(lib), holder=str(owner["library_id"]) if owner else None,
             )  # fmt: skip
     if not _has(cache, "yt_videos"):
         return

@@ -34,7 +34,17 @@ See [How a conversion decides](/help/processing#convert-decides).
 
 ### YouTube sources {#youtube-sources}
 
+Each card says where the library stands with YouTube, such as **YouTube: 1 source · off** or **YouTube: 3 sources · 1 on**. A library with one source has its **Downloads** switch right there: turning it on brings the source back in the mode it had when it was last on, or **New uploads and back catalogue** the first time.
+
+A library with no source shows **Add YouTube source**, which opens the dialog below. **Look for its channel** reads the YouTube ids in the library's file names (`… #<id>.mp4`, `… [<id>].mp4`) and its `.info.json` files, and matches them with what Maktaba already knows of YouTube; it asks YouTube nothing. When it finds one, the card says **Looks like channel …**, and **Add as source** adds it, off. When another library already follows that channel, or a library with a source has a name like this one's, the card says so and offers **Merge into …** (see [Merge](#merge)).
+
 Click **YouTube sources…** on a library's card to see the YouTube channels and playlists it follows, add one by its link, turn one on or off, and set how it downloads. It is the same dialog as **YouTube sources…** in the library's menu on the Processing page. The channels a library already had start **Off**: nothing downloads until you set a source to **New uploads and back catalogue** or **New uploads only**. See [YouTube sources](/help/processing#youtube-sources) for the modes and options.
+
+### Import from Tartube {#tartube}
+
+**Import from Tartube…** at the top of the page makes the YouTube sources of every library at once from Tartube's records. The path of Tartube's database (`tartube.db`) or its JSON export is filled in when Maktaba finds one beside the library folders; change it if it is elsewhere, then press **Import**.
+
+Each channel and playlist Tartube downloads into a folder that is a library's folder becomes a source of that library, **off**, and every video Tartube downloaded there counts as downloaded, so it is never fetched again. Running it again changes nothing that is already there, and a source a library already has keeps its mode. The report lists what was **Added (off)**, what was **Already there**, what was **Skipped** and why (a search page, another site such as x.com, a link that is no channel or playlist), and the Tartube channels with no library: **Not in Maktaba yet**. No library is made: add one for its folder, then import again.
 
 ### Scan {#scan}
 

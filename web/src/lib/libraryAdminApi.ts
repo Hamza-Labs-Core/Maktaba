@@ -46,6 +46,40 @@ export interface RootConflict {
   other_count: number;
 }
 
+/** A library's one YouTube source, for its card's switch. */
+export interface YouTubeSourceBrief {
+  id: string;
+  kind: "channel" | "playlist";
+  external_id: string;
+  url: string;
+  mode: "off" | "new_and_backfill" | "new_only";
+  last_on_mode: "new_and_backfill" | "new_only" | null;
+}
+
+/** The channel a library with no source looks like (POST …/youtube/guess). */
+export interface YouTubeGuess {
+  kind: "channel" | "playlist" | null;
+  external_id: string | null;
+  url: string | null;
+  title: string | null;
+  evidence: "info_json" | "filename" | null;
+  sample_youtube_id: string | null;
+  ids_found: number;
+  ids_matched: number;
+  looked_at: string;
+  followed_by: { id: string; name: string }[];
+}
+
+/** A library's YouTube on its card. */
+export interface LibraryYouTube {
+  sources: number;
+  on: number;
+  /** the source, when it has exactly one */
+  source: YouTubeSourceBrief | null;
+  /** only for a library with no source */
+  guess: YouTubeGuess | null;
+}
+
 export interface ManagedLibrary {
   id: string;
   name: string;
@@ -57,6 +91,8 @@ export interface ManagedLibrary {
   last_scan: LastScan | null;
   scanning: boolean;
   conflicts: RootConflict[];
+  /** absent from an older API */
+  youtube?: LibraryYouTube;
 }
 
 export interface ConflictMember {

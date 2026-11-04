@@ -36,6 +36,10 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The MediaIntel import says what it does not seed.** A folder whose YouTube channel another
+  library already holds now gets that channel as a source of its own (off) and is listed, and a
+  folder with no channel id is listed and logged, instead of both being passed over in silence.
+
 - **The home's database no longer runs out of connections.** The API's background jobs (the
   update check, the health samples, housekeeping) failed now and then with Postgres error
   53300 ("remaining connection slots are reserved"): the bundled Postgres allowed its default
@@ -110,6 +114,26 @@ build fails when the two differ.
   update: see `docs/security/advisories/2026-11-01-linux-tcp-uaf.md` (English and Arabic).
 
 ### Added
+
+- **Every YouTube source has an on/off switch, and Manage libraries shows each library's
+  YouTube.** In YouTube sources… each channel or playlist, off or on, has its **Downloads**
+  switch; turning it on brings it back in the mode it had when it was last on (kept per source),
+  or new uploads and the back catalogue the first time, and the mode list shows only while it is
+  on. Each card on Manage libraries says where its library stands, such as "YouTube: 1 source ·
+  off", with the switch right there for a library with one source, **YouTube sources…** for one
+  with several and **Add YouTube source** for one with none, all from the page's one read. For a
+  library with no source, **Look for its channel** reads the YouTube ids in its file names and
+  `.info.json` files and matches them with what Maktaba already knows (no network), then offers
+  **Add as source**, off; a library whose channel another library already follows, or whose name
+  is like one with a source, offers to merge into it. **Import from Tartube…** at the top of the
+  page makes every library's sources from Tartube's database or export at once (the path filled
+  in when one is found beside the library folders): each channel or playlist whose Tartube folder
+  is a library's folder becomes a source of that library, off, what Tartube downloaded counts as
+  downloaded, a source a library has keeps its mode, and the report lists what was added, what
+  was there, what was skipped (x.com, YouTube searches) and the Tartube channels with no library
+  yet; no library is made. Only admins can change a source, enforced by the API. New
+  `POST /api/libraries/{id}/youtube/guess`, `GET` and `POST /api/queues/youtube-tartube`, the
+  PATCH `on` field and the `youtube_tartube` stage, in English and Arabic.
 
 - **Maktaba Remote for iPad on TestFlight.** Every release tag now uploads the iPad Remote
   (`Maktaba Remote iPad`, `com.hamzalabs.maktaba.remote.tablet`) to TestFlight beside the
