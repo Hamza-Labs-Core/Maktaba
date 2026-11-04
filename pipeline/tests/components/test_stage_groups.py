@@ -303,16 +303,57 @@ async def test_t06_a_job_ignoring_the_flag_is_force_paused_and_cancelled(db: Dat
 
 @pytest.mark.asyncio
 async def test_t07_other_stages_and_other_workers_are_untouched(db: Database) -> None:
+    # one job of the drained stage on this worker ignores the flag, so the drain runs to its
+    # deadline and force-pauses: neither the ask nor the force-pause may touch the others
     lib = await make_library(db)
+    straggler = await _running(db, "transcribe", await make_video(db, lib))
     other_stage = await _running(db, "thumbnail", await make_video(db, lib))
     other_worker = await _running(db, "transcribe", await make_video(db, lib), worker="w-other")
-    got = await drain_stages(
-        db, worker_id=WORKER, stages={"transcribe"}, grace_sec=0.1, poll_sec=0.02
+    others = (other_stage, other_worker)
+    flagged: list[int] = []
+
+    async def watch_the_others() -> None:
+        # the flag must never reach them, not only be clear at the end
+        while True:
+            for job_id in others:
+                if (await _job(db, job_id))["pause_requested"]:
+                    flagged.append(job_id)
+            await asyncio.sleep(0.01)
+
+    watcher = asyncio.create_task(watch_the_others())
+    cancelled: list[set[str]] = []
+
+    def cancel(stages: Any) -> int:
+        cancelled.append(set(stages))
+        return 1
+
+    try:
+        got = await drain_stages(
+            db,
+            worker_id=WORKER,
+            stages={"transcribe"},
+            grace_sec=0.3,
+            poll_sec=0.02,
+            cancel=cancel,
+        )
+    finally:
+        watcher.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await watcher
+    assert got == {"cooperative": 0, "forced": 1}
+    assert cancelled == [{"transcribe"}]
+    row = await _job(db, straggler)
+    assert (row["state"], row["paused_reason"], row["claimed_by"]) == (
+        "paused",
+        "component_off",
+        None,
     )
-    assert got == {"cooperative": 0, "forced": 0}
-    for job_id in (other_stage, other_worker):
+    assert flagged == []
+    for job_id in others:
         row = await _job(db, job_id)
         assert (row["state"], bool(row["pause_requested"])) == ("running", False)
+        assert row["paused_reason"] is None and row["paused_at_sec"] is None
+        assert row["claimed_by"] == ("w-other" if job_id == other_worker else WORKER)
 
 
 @pytest.mark.asyncio
