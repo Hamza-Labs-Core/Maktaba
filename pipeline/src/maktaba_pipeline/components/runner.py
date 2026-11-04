@@ -92,6 +92,9 @@ PIPELINE_LOOPS: dict[str, str] = {
 #: the home's stage gates are written by one worker at a time
 LEADER_KEY = "components_stage_gates"
 
+#: how long the last read and report at close may take (each), so a stop is never held up
+FINAL_REPORT_S = 2.0
+
 LoopFn = Callable[[asyncio.Event], Coroutine[Any, Any, None]]
 
 _ACTIVE: ComponentRunner | None = None
@@ -722,9 +725,30 @@ class ComponentRunner:
 
     # -- the end ---------------------------------------------------------------
 
+    async def _report_final(self) -> None:
+        """Before the process goes: read desired state once more and report this part's
+        rows from it when a gate moved since the last pass. The supervisor stops a process
+        whose component was just turned off or held, often before this runner's pass saw
+        the change; without this its rows would stay at the old generation (waiting or
+        running) while it no longer runs, and nothing else writes them. Bounded by
+        :data:`FINAL_REPORT_S`; a failure leaves the rows as they were."""
+        if not self.reconcile or self.revision < 0:
+            return
+        try:
+            desired, _rev = await asyncio.wait_for(self._desired(), FINAL_REPORT_S)
+            fresh = gates(desired, self.catalog, self.settings_blocked)
+            if fresh == self.gates:
+                return
+            self.gates = fresh
+            await asyncio.wait_for(self._report(), FINAL_REPORT_S)
+        except Exception as exc:  # noqa: BLE001 - going anyway: the rows stay as they were
+            _log.warning("components_final_report_failed", error=f"{type(exc).__name__}: {exc}")
+
     async def close(self) -> None:
-        """Stop every loop it started (each within its grace) and every drain."""
+        """Report what desired state now makes of this part (:meth:`_report_final`), then
+        stop every loop it started (each within its grace) and every drain."""
         global _ACTIVE
+        await self._report_final()
         for lp in self.loops.values():
             if lp.stop is not None:
                 lp.stop.set()

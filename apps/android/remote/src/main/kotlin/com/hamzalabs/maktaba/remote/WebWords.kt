@@ -314,6 +314,19 @@ internal object WebWords {
         "relay" to R.string.w_health_processes_role_relay,
     )
 
+    /** `health.processes.instance.*` (stt-<n> is w_health_processes_instance_stt with its number) */
+    val processInstance: Map<String, Int> = mapOf(
+        "index" to R.string.w_health_processes_instance_index,
+        "chroma-copy" to R.string.w_health_processes_instance_chroma_copy,
+    )
+
+    /** `tvchanges.slots.color.*`: a TV slot's instance */
+    val slotColor: Map<String, Int> = mapOf(
+        "blue" to R.string.w_tvchanges_slots_color_blue,
+        "green" to R.string.w_tvchanges_slots_color_green,
+        "amber" to R.string.w_tvchanges_slots_color_amber,
+    )
+
     /** `setup.starting.detail.*` */
     val processDetail: Map<String, Template> = mapOf(
         "db_waiting" to Template(R.string.w_setup_starting_detail_db_waiting),

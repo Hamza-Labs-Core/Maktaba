@@ -361,6 +361,9 @@ describe("LibraryAdmin", () => {
       expect(document.documentElement.getAttribute("dir")).toBe("rtl");
       expect(screen.getByRole("navigation", { name: "أقسام هذه المكتبة" })).toBeInTheDocument();
       expect(screen.getByRole("region", { name: "نظرة عامة" })).toBeInTheDocument();
+      // the queues' stage titles in Arabic, never the API's English label
+      await waitFor(() => expect(screen.getAllByText("الربط").length).toBeGreaterThan(0));
+      expect(screen.queryByText("Link")).toBeNull();
     } finally {
       localStorage.removeItem("mkt:locale");
     }

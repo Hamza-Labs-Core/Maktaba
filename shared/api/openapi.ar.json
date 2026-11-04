@@ -1946,8 +1946,8 @@
       "ar": "الترخيص الذي يحتاجه هذا المكوّن غير موجود (`licence_missing`)."
     },
     "/paths/~1components~1{id}~1install/post/responses/409/description": {
-      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
-      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
+      "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...), or installing is turned off on this machine and the asset is not on its disk (`packs_disabled`: offline mode). Nothing was written.",
+      "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها)، أو لأن التثبيت متوقف على هذا الجهاز والملف غير موجود على قرصه (`packs_disabled`: وضع عدم الاتصال). ولم يُكتب شيء."
     },
     "/paths/~1components~1{id}~1stop/parameters/0/description": {
       "en": "The component's id in the catalog.",

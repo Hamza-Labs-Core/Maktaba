@@ -15,6 +15,7 @@ import { bidiIsolate, useI18n } from "../../lib/i18n";
 import { libraryAdminApi, problemMessage, type ManageResponse } from "../../lib/libraryAdminApi";
 import { forgetAnswers, VIDEO_ANSWERS } from "../../lib/pageCache";
 import { queueApi } from "../../lib/queueApi";
+import { useTitledStages } from "../../lib/stageWords";
 import type { FailureItem, LibraryQueueRow, OfflineSummary, StageInfo } from "../../lib/queueApi";
 import { AdminGate } from "../../components/AdminGate";
 import { ScanNow } from "../LibraryBrowser";
@@ -85,7 +86,9 @@ function LibraryAdminInner() {
   const [rows, setRows] = useState<LibraryQueueRow[]>([]);
   const [queuesState, setQueuesState] = useState<QueueReadState>("loading");
   const queuesSeq = useRef(0);
-  const [stages, setStages] = useState<StageInfo[]>([]);
+  const [rawStages, setStages] = useState<StageInfo[]>([]);
+  // the stages' labels in the reader's language (lib/stageWords)
+  const stages = useTitledStages(rawStages);
   const [summary, setSummary] = useState<OfflineSummary | null>(null);
   const [activity, setActivity] = useState<Activity | undefined>(undefined);
   const [failures, setFailures] = useState<{ items: FailureItem[]; total: number } | null>(null);

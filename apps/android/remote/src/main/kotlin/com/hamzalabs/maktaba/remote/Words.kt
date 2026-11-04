@@ -135,10 +135,17 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
 
     // ---------- processes ----------
 
-    /** A process's name: its role's, and a TV slot's colour (blue, green, amber). */
+    /** A process's name: its role's, and its instance's: a TV slot's colour, a pipeline worker's words. */
     fun process(role: String, instance: String?): String {
         val name = WebWords.processRole[role]?.let { w.text(it) } ?: role
-        return if (instance.isNullOrEmpty()) name else "$name · $instance"
+        return if (instance.isNullOrEmpty()) name else "$name · ${instance(role, instance)}"
+    }
+
+    /** An instance's words (search index, transcription 2, blue); one with no words shows as sent. */
+    private fun instance(role: String, instance: String): String {
+        if (role == "tv-slot") return WebWords.slotColor[instance]?.let { w.text(it) } ?: instance
+        Regex("^stt-(\\d+)$").find(instance)?.let { return w.text(R.string.w_health_processes_instance_stt, it.groupValues[1]) }
+        return WebWords.processInstance[instance]?.let { w.text(it) } ?: instance
     }
 
     fun process(p: ProcessStatus): String = process(p.role, p.instance)

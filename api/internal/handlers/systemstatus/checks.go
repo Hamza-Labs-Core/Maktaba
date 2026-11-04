@@ -243,11 +243,17 @@ func checkPipeline(ctx context.Context, e *env) []Item {
 	return one(it)
 }
 
-// processState maps the supervisor's process states.
-func processState(state string, crashLoop bool) (string, string) {
+// processState maps the supervisor's process states. A process its component keeps
+// from running (state held, or blocked: its gate is closed because the component is off,
+// held or waits on what it requires) does what its desired state says: ok, not
+// degraded, as the Components line counts off, stopped and waiting. One that should run
+// and does not (stopped, exited, restarting) stays degraded.
+func processState(state string, crashLoop, blocked bool) (string, string) {
 	switch {
 	case crashLoop:
 		return StatusDown, "process_crash_loop"
+	case state == "held" || blocked:
+		return StatusOK, "process_held"
 	case state == "running":
 		return StatusOK, "process_running"
 	case state == "failed":
@@ -265,6 +271,7 @@ func processState(state string, crashLoop bool) (string, string) {
 var processReasons = map[string]string{
 	"process_crash_loop": "Keeps exiting soon after it starts.",
 	"process_running":    "Running.",
+	"process_held":       "Not running: its component is off, held or waiting for what it needs.",
 	"process_failed":     "Could not be kept running.",
 	"process_starting":   "Starting.",
 	"process_unhealthy":  "Running but not responding.",
@@ -275,10 +282,16 @@ var processReasons = map[string]string{
 func checkProcesses(ctx context.Context, e *env) []Item {
 	var doc struct {
 		Processes []struct {
-			Role      string `json:"role"`
+			Role string `json:"role"`
+			// Instance names one of a role's several processes (the pipeline's index
+			// worker, stt-1); empty for a role with one
+			Instance  string `json:"instance"`
 			State     string `json:"state"`
 			Restarts  int    `json:"restarts"`
 			CrashLoop bool   `json:"crash_loop"`
+			// Blocked: its component's gate is closed (the supervisor's ChildStatus)
+			Blocked   bool   `json:"blocked"`
+			Component string `json:"component"`
 			// fractional seconds, as the supervisor's state reports them
 			UptimeSec float64 `json:"uptime_sec"`
 		} `json:"processes"`
@@ -296,10 +309,22 @@ func checkProcesses(ctx context.Context, e *env) []Item {
 	}
 	out := []Item{}
 	for _, p := range doc.Processes {
-		it := base("process:"+p.Role, GroupServices, KindProcess, p.Role)
-		st, code := processState(p.State, p.CrashLoop)
+		// one item per process: a role's instances each get their own id and name
+		id, name := p.Role, p.Role
+		if p.Instance != "" {
+			id = p.Role + "-" + p.Instance
+			name = p.Role + " " + p.Instance
+		}
+		it := base("process:"+id, GroupServices, KindProcess, name)
+		st, code := processState(p.State, p.CrashLoop, p.Blocked)
 		it.set(st, code, map[string]any{"role": p.Role, "restarts": p.Restarts}, processReasons[code])
-		it.Details = map[string]any{"state": p.State, "restarts": p.Restarts, "uptime_seconds": int64(p.UptimeSec)}
+		it.Details = map[string]any{"role": p.Role, "state": p.State, "restarts": p.Restarts, "uptime_seconds": int64(p.UptimeSec)}
+		if p.Instance != "" {
+			it.Details["instance"] = p.Instance
+		}
+		if p.Component != "" {
+			it.Details["component"] = p.Component
+		}
 		out = append(out, it)
 	}
 	return out
@@ -538,6 +563,10 @@ func checkStreamingHosts(ctx context.Context, e *env) []Item {
 
 // ---------- dependencies ----------
 
+// llmOff is the pipeline's message for a model section on the bundled server while the
+// language model component is off (engine/watchers.py LLM_OFF).
+const llmOff = "llm_off"
+
 const dependenciesSQL = `SELECT name, healthy, message, checked_at, since FROM dependency_health ORDER BY name`
 
 func checkDependencies(ctx context.Context, e *env) []Item {
@@ -569,6 +598,10 @@ func checkDependencies(ctx context.Context, e *env) []Item {
 		p := map[string]any{"detail": msg.String}
 		age := e.now.Sub(checked.t)
 		switch {
+		case !healthy && strings.HasPrefix(name, "dependency:model:") && msg.String == llmOff:
+			// the bundled model server while the language model is off: off on purpose
+			// (its jobs wait parked until it is on)
+			it.set(StatusOK, "dependency_llm_off", p, "Off: the language model is turned off.")
 		case !healthy:
 			if since.ok {
 				p["since_seconds"] = secs(e.now.Sub(since.t))

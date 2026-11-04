@@ -419,6 +419,72 @@ func TestSettleWaitsForMissingFiles(t *testing.T) {
 	}
 }
 
+// Smart search turned off while its model is missing: the supervisor stops the index
+// worker at once, and that worker's row stays at the old generation, waiting on the
+// model. The component reads off (the stale part reads the gate's phase), not waiting;
+// a part that reported the new generation keeps what it said, and an on gate leaves a
+// stale row as it is.
+func TestAnOffComponentReadsOffWhateverItsStalePartsSay(t *testing.T) {
+	rows := allOn()
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantInstalled, Generation: 4}
+	missing := func(id string) bool { return id == "model.embedder" }
+	g := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if g.on || g.phase != components.PhaseOff || g.gen != 4 {
+		t.Fatalf("gate: %+v", g)
+	}
+	in := []store.Status{
+		{ID: "search.semantic", Part: "supervisor", Phase: components.PhaseOff, ObservedGeneration: 4,
+			Conditions: []store.Condition{{Type: components.CondReady, Status: "false"}}},
+		{ID: "search.semantic", Part: "pipeline", Phase: components.PhaseOff, ObservedGeneration: 4},
+		{ID: "search.semantic", Part: "pipeline/index", Phase: components.PhaseWaiting, ObservedGeneration: 3,
+			Conditions: []store.Condition{
+				{Type: components.CondRequirementsMet, Status: "unknown", Params: map[string]any{"component": "model.embedder"}},
+				{Type: components.CondReady, Status: "false"}}},
+	}
+	roll, reason, settled, _ := statusOn(in, g, true)
+	if roll.Phase != components.PhaseOff || reason != "" {
+		t.Fatalf("rollup: %s %q (%+v)", roll.Phase, reason, settled)
+	}
+	if in[2].Phase != components.PhaseWaiting {
+		t.Fatalf("settle changed its input: %+v", in[2])
+	}
+	// a part at the new generation that still drains is what the component shows
+	draining := slices.Clone(in)
+	draining[1].Phase = components.PhaseDraining
+	if roll, _, _, _ := statusOn(draining, g, true); roll.Phase != components.PhaseDraining {
+		t.Fatalf("draining part: %s", roll.Phase)
+	}
+	// and so is one still at the old generation: it is stopping, not stale (the API's
+	// loops drain before they report off; components-live T14)
+	oldDrain := slices.Clone(in)
+	oldDrain[2].Phase, oldDrain[2].Conditions = components.PhaseDraining, nil
+	if roll, _, _, _ := statusOn(oldDrain, g, true); roll.Phase != components.PhaseDraining {
+		t.Fatalf("draining part at the old generation: %s", roll.Phase)
+	}
+	// a part alone at the old generation keeps its word: nothing has acted on the change
+	// yet (analytics' API loops still run until they report; components-live T14)
+	alone := []store.Status{{ID: "analytics", Part: "api", Phase: components.PhaseRunning, ObservedGeneration: 3,
+		Conditions: []store.Condition{{Type: components.CondReady, Status: "true"}}}}
+	if roll, _, _, _ := statusOn(alone, g, true); roll.Phase != components.PhaseRunning {
+		t.Fatalf("a part alone at the old generation: %s", roll.Phase)
+	}
+	// held: the stale part reads stopped, held
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled,
+		Hold: &store.Hold{By: "admin:test"}, Generation: 5}
+	hg := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	held := slices.Clone(in)
+	held[0].Phase, held[0].ObservedGeneration = components.PhaseStopped, 5 // the supervisor acted
+	if roll, reason, _, _ := statusOn(held, hg, true); roll.Phase != components.PhaseStopped || reason != "held" {
+		t.Fatalf("held: %s %q", roll.Phase, reason)
+	}
+	// on again: a stale row is the part's own word until it reports
+	rows["search.semantic"] = store.Desired{ID: "search.semantic", Want: components.WantEnabled, Generation: 6}
+	og := gatesOn(components.Default(), rows, nil, missing)["search.semantic"]
+	if roll, _, _, _ := statusOn(in, og, true); roll.Phase != components.PhaseWaiting {
+		t.Fatalf("on: %s", roll.Phase)
+	}
+}
+
 // The install route's rule: a switchable asset the home wants is asked again unless the
 // home has it on disk or is installing it; a failed install is asked again (Retry).
 func TestInstallAgain(t *testing.T) {
@@ -448,6 +514,53 @@ func TestInstallAgain(t *testing.T) {
 	} {
 		if got := InstallAgain(c.d); got != c.want {
 			t.Errorf("%s: %v, want %v", name, got, c.want)
+		}
+	}
+}
+
+// With packs off (offline mode) an install of an asset not on the home's disk is refused
+// 409 packs_disabled, its want absent or wanted, failed or busy; an asset on disk (its
+// Installed condition, or the supervisor's progress), another kind, and packs on are not.
+func TestInstallRefusedWithPacksOff(t *testing.T) {
+	asset := func(want string) Detail {
+		return Detail{View: View{ID: "runtime.ml", Kind: components.KindAsset, Switchable: true, Want: want}}
+	}
+	onDisk := asset(components.WantEnabled)
+	onDisk.Machines = []MachineView{{Machine: store.Home, Parts: []store.Status{{ID: "runtime.ml", Phase: components.PhaseOff,
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	progressOnDisk := asset(components.WantAbsent)
+	progressOnDisk.Progress = &InstallProgress{Installed: true}
+	elsewhere := asset(components.WantEnabled) // on a worker only: not the home's disk
+	elsewhere.Machines = []MachineView{{Machine: "7f1c9e1e-0000-4000-8000-000000000001", Parts: []store.Status{{ID: "runtime.ml",
+		Conditions: []store.Condition{{Type: components.CondInstalled, Status: "true"}}}}}}
+	failed := asset(components.WantEnabled)
+	failed.Progress = &InstallProgress{Phase: components.PhaseFailed, Reason: "download_failed"}
+	notAsset := asset(components.WantAbsent)
+	notAsset.Kind = "stages"
+	for name, c := range map[string]struct {
+		d       Detail
+		off     bool
+		refused bool
+	}{
+		"absent":           {asset(components.WantAbsent), true, true},
+		"wanted":           {asset(components.WantEnabled), true, true},
+		"failed":           {failed, true, true},
+		"on a worker only": {elsewhere, true, true},
+		"on disk":          {onDisk, true, false},
+		"progress on disk": {progressOnDisk, true, false},
+		"not an asset":     {notAsset, true, false},
+		"packs on":         {asset(components.WantAbsent), false, false},
+	} {
+		err := InstallRefused(c.d, c.off)
+		if !c.refused {
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			continue
+		}
+		r, ok := AsRefusal(err)
+		if !ok || r.Code != CodePacksDisabled || r.Status != http.StatusConflict || r.ID != "runtime.ml" {
+			t.Errorf("%s: %v", name, err)
 		}
 	}
 }

@@ -3,7 +3,10 @@
 // collate in Arabic order), the activity series, the charts' words and tables,
 // the stage list's folding, the tile and the Queues page's attention panel.
 import { describe, it, expect, vi } from "vitest";
-import { screen, within } from "@testing-library/react";
+import { renderHook, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { I18nProvider } from "../../lib/i18n";
+import { queueApi } from "../../lib/queueApi";
 import userEvent from "@testing-library/user-event";
 import { renderAt } from "../../test/queueHarness";
 import { axeViolations } from "../../test/axe";
@@ -17,7 +20,7 @@ import {
   sortLibraries,
   youtubeState,
 } from "./health";
-import { activityById, activityOf } from "./useLibraryBoard";
+import { activityById, activityOf, useLibraryBoard } from "./useLibraryBoard";
 import { ActivityChart, StatusBar } from "./charts";
 import { StageChart, stageNeedsWork } from "./StageChart";
 import { LibraryTile, libraryPath, ringState } from "./LibraryTile";
@@ -373,5 +376,29 @@ describe("LibrariesAttention", () => {
     unmount();
     renderAt(<LibrariesAttention rows={[done("a", "Kids")]} />, "/queue");
     expect(screen.getByText("All 1 libraries are up to date.")).toBeInTheDocument();
+  });
+});
+
+describe("useLibraryBoard", () => {
+  it("gives the stages' labels in the reader's language", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    const spies = [
+      vi.spyOn(queueApi, "libraries").mockResolvedValue({ items: librariesFixture }),
+      vi.spyOn(queueApi, "offlineSummaries").mockResolvedValue({ items: [] } as never),
+      vi.spyOn(queueApi, "libraryActivity").mockResolvedValue({ days: [], libraries: [] } as never),
+      vi.spyOn(queueApi, "snapshot").mockResolvedValue(snapshotFixture),
+    ];
+    try {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <I18nProvider>{children}</I18nProvider>
+      );
+      const { result } = renderHook(() => useLibraryBoard(), { wrapper });
+      await waitFor(() => expect(result.current.stages.length).toBeGreaterThan(0));
+      const probe = result.current.stages.find((s) => s.stage === "probe");
+      expect(probe?.label).toBe("المدة"); // the API sent "Length"
+    } finally {
+      spies.forEach((s) => s.mockRestore());
+      localStorage.removeItem("mkt:locale");
+    }
   });
 });

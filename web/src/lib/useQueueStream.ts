@@ -3,7 +3,8 @@
 // stream as the fallback.
 //
 //   useQueuesSnapshot()  GET /api/queues once, then the hub's `queues`
-//                        topic (pushed as it changes). While the socket is
+//                        topic (pushed as it changes), its stages' labels in
+//                        the reader's language. While the socket is
 //                        down or missing: the 2 s `queues.snapshot` SSE
 //                        stream, and only if that is silent for 10 s we
 //                        poll /api/queues every 5 s, until a snapshot
@@ -15,7 +16,9 @@
 //                        jobs running now with the machine they run on.
 //   useWorkers()         the hub's `workers` topic, else GET /api/workers
 //                        every 30 s.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useI18n } from "./i18n";
+import { titledSnapshot } from "./stageWords";
 import type { JobEvent } from "./clusterApi";
 import { useReadOrder } from "./readOrder";
 import { socketFallback, useSocketTopic, type HubMessage } from "./clusterSocket";
@@ -133,8 +136,13 @@ export function useQueuesSnapshot(): SnapshotState {
     };
   }, [sse]);
 
+  // each stage's label in the reader's language (lib/stageWords), never the graph's English
+  // for a stage that has words
+  const { t } = useI18n();
+  const titled = useMemo(() => titledSnapshot(t, snapshot), [t, snapshot]);
+
   return {
-    snapshot,
+    snapshot: titled,
     error,
     polling,
     reload: () => void fetchOnce.current(),

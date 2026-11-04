@@ -60,14 +60,9 @@ func upStatements(sqlText string) []string {
 }
 
 // sqliteDB is a fresh SQLite file with slot 0178's twin.
-func sqliteDB(t *testing.T) *sql.DB {
+// schema creates the base tables and 0178's components tables in db.
+func schema(t testing.TB, db *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "c.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { _ = db.Close() })
 	for _, s := range strings.Split(base, ";\n") {
 		if strings.TrimSpace(s) == "" {
 			continue
@@ -85,7 +80,6 @@ func sqliteDB(t *testing.T) *sql.DB {
 			t.Fatalf("0178: %v\n%s", err, s)
 		}
 	}
-	return db
 }
 
 type fixture struct {
@@ -101,9 +95,24 @@ type fixture struct {
 // livetv.inprocess (off: it conflicts with livetv.slots) and cloud.relay (off).
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	db := sqliteDB(t)
+	return fixtureFrom(t, fromTemplate(t, "home", seedHome))
+}
+
+// fixtureFrom is a fixture over db.
+func fixtureFrom(t *testing.T, db *sql.DB) *fixture {
+	t.Helper()
 	f := &fixture{db: db, st: store.New(db), licence: true}
-	_, err := f.st.SetDesiredBatch(context.Background(), func(map[string]store.Desired, int64) (store.BatchPlan, error) {
+	f.auditBase = f.audits(t)
+	f.r = f.router()
+	return f
+}
+
+// seedHome builds the home newFixture copies: the schema, and every switchable
+// component's desired row as the seed writes it.
+func seedHome(t testing.TB, db *sql.DB) {
+	t.Helper()
+	schema(t, db)
+	_, err := store.New(db).SetDesiredBatch(context.Background(), func(map[string]store.Desired, int64) (store.BatchPlan, error) {
 		var p store.BatchPlan
 		for _, c := range components.Default().Components() {
 			if !c.Switchable {
@@ -121,9 +130,6 @@ func newFixture(t *testing.T) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.auditBase = f.audits(t)
-	f.r = f.router()
-	return f
 }
 
 func (f *fixture) router() chi.Router {

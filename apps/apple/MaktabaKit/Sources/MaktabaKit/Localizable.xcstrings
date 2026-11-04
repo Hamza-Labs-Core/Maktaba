@@ -1728,6 +1728,57 @@
         }
       }
     },
+    "health.processes.instance.chroma-copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "search index copy"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نقل فهرس البحث"
+          }
+        }
+      }
+    },
+    "health.processes.instance.index" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "search index"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فهرس البحث"
+          }
+        }
+      }
+    },
+    "health.processes.instance.stt" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "transcription {n}"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "النسخ النصي {n}"
+          }
+        }
+      }
+    },
     "health.processes.role.copy" : {
       "extractionState" : "manual",
       "localizations" : {

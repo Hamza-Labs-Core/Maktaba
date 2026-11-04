@@ -166,11 +166,30 @@ export function ProcessesCard() {
   );
 }
 
-function roleName(t: (k: string) => string, role: string, instance?: string): string {
+type Words = (k: string, vars?: Record<string, string | number>) => string;
+
+/**
+ * An instance's words: the index worker, the search index copy, a transcription worker
+ * (stt-2: its number) and a TV slot's colour. One with no words shows as the supervisor
+ * named it.
+ */
+export function instanceName(t: Words, role: string, instance: string): string {
+  const stt = /^stt-(\d+)$/.exec(instance);
+  if (stt) return t("health.processes.instance.stt", { n: stt[1]! });
+  const key =
+    role === "tv-slot"
+      ? `tvchanges.slots.color.${instance}`
+      : `health.processes.instance.${instance}`;
+  const v = t(key);
+  return v === key ? instance : v;
+}
+
+/** A process's name: its role's words, and its instance's when the role has several. */
+export function roleName(t: Words, role: string, instance?: string): string {
   const key = `health.processes.role.${role}`;
   const v = t(key);
   const name = v === key ? role : v;
-  return instance ? `${name} · ${instance}` : name;
+  return instance ? `${name} · ${instanceName(t, role, instance)}` : name;
 }
 
 /** A process's identity: its role, and its instance when the role has several. */

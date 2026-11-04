@@ -8,6 +8,7 @@ import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { queueApi } from "../../lib/queueApi";
 import { useReadOrder } from "../../lib/readOrder";
+import { titledStage } from "../../lib/stageWords";
 import type {
   JobRef,
   LibraryQueueRow,
@@ -123,7 +124,9 @@ export function QueueDetail() {
   useThrottledReload(load, stream.finishedTick);
 
   // Live values from the 2 s snapshot win over the one-off REST detail.
-  const info = snapshot?.stages.find((s) => s.stage === stage) ?? detail?.info;
+  const info =
+    snapshot?.stages.find((s) => s.stage === stage) ??
+    (detail?.info ? titledStage(t, detail.info) : undefined);
   const summary = snapshot?.queues.find((q) => q.stage === stage) ?? detail?.summary;
   const pool = snapshot?.pools.find((p) => p.pool === info?.pool);
   const stageLabel = useMemo(() => {
