@@ -54,6 +54,10 @@ var copyReviewed = []string{
 	"youtube_downloads", "youtube_sources",
 	// slot 0172: each stage's and pool's place in the fair share of claims (numbers only)
 	"claim_shares",
+	// slot 0175: the subjects with a done job per library and stage, derived from the
+	// copied processing_jobs (ids and times only); copied so a replica's library rows
+	// read the same as the home's
+	"processing_done_subjects",
 }
 
 // Every table of a migrated database is either reviewed as copied or left out.
