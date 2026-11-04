@@ -159,6 +159,10 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(wait(timeout: 10) { !self.app.tabBars.buttons["Live TV"].exists }, "no Live TV tab")
         XCTAssertTrue(app.tabBars.buttons["Libraries"].exists)
         XCTAssertTrue(app.tabBars.buttons["Search"].exists)
+        // Home: no On now row, and no failed row for the channels' 409 with Retry
+        XCTAssertTrue(element("home.row.continue").waitForExistence(timeout: 20), "Home; the home saw \(home.seen)")
+        XCTAssertTrue(wait(timeout: 10) { !self.element("home.row.live").exists }, "no On now row")
+        XCTAssertFalse(element("home.row.retry").exists, "no failed row")
         shot("tv-live-off-viewer")
     }
 

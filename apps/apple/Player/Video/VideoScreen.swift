@@ -97,10 +97,11 @@ private struct VideoDetails: View {
                 }
                 // chapters and the transcript: left out while off on the home, and explained
                 // to an admin (51.11)
-                if caps.shown(.chapters) == .explain {
+                switch caps.place(.chapters, lines: !page.chapters.isEmpty) {
+                case .note:
                     section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
                     FeatureOffNote(.chapters, home: client.home, compact: true).padding(.horizontal, gutter)
-                } else if caps.isOn(.chapters), !page.chapters.isEmpty {
+                case .lines:
                     section(Text("Chapters", tableName: "Video", comment: "A video's chapters, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.chapters) { c in
@@ -109,11 +110,14 @@ private struct VideoDetails: View {
                                 .accessibilityIdentifier("video.chapter.\(c.seq)")
                         }
                     }
+                case .nothing:
+                    EmptyView()
                 }
-                if caps.shown(.transcripts) == .explain {
+                switch caps.place(.transcripts, lines: !page.transcript.isEmpty) {
+                case .note:
                     section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
                     FeatureOffNote(.transcripts, home: client.home, compact: true).padding(.horizontal, gutter)
-                } else if caps.isOn(.transcripts), !page.transcript.isEmpty {
+                case .lines:
                     section(Text("From the transcript", tableName: "Video", comment: "A few lines of a video's transcript, a heading"))
                     VStack(spacing: 0) {
                         ForEach(page.transcript) { s in
@@ -121,6 +125,8 @@ private struct VideoDetails: View {
                                 .accessibilityIdentifier("video.segment.\(s.seq)")
                         }
                     }
+                case .nothing:
+                    EmptyView()
                 }
                 if !page.nextEpisodes.isEmpty {
                     Rail(Text("Next episodes", tableName: "Video", comment: "The episodes after this one, a row's title"),

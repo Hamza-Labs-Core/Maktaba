@@ -83,6 +83,22 @@ public struct Capabilities: Equatable, Sendable {
         isOn(f) ? .on : isAdmin ? .explain : .hidden
     }
 
+    /// What a video's page shows where a feature's lines go (chapters, the transcript): the
+    /// lines while it is on and there are some, an admin's note while it is off, else nothing.
+    public enum Place: Equatable, Sendable { case lines, note, nothing }
+
+    public func place(_ f: Feature, lines: Bool) -> Place {
+        switch shown(f) {
+        case .on: lines ? .lines : .nothing
+        case .explain: .note
+        case .hidden: .nothing
+        }
+    }
+
+    /// Search by meaning is off and this is an admin: the line under the search field says
+    /// the search is by words only (a viewer just gets the words' results).
+    public var wordsOnlyLine: Bool { shown(.semanticSearch) == .explain }
+
     /// The parts that are off, each once (an admin's answer; empty for anyone else). An entry
     /// that names no component counts as one part.
     public var offComponents: Set<String> {

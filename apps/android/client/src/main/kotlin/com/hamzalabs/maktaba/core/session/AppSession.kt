@@ -2,7 +2,6 @@ package com.hamzalabs.maktaba.core.session
 
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
-import com.hamzalabs.maktaba.core.api.CAPABILITIES_GATE
 import com.hamzalabs.maktaba.core.api.Capabilities
 import com.hamzalabs.maktaba.core.api.CapabilitiesAnswer
 import com.hamzalabs.maktaba.core.api.capabilities
@@ -121,8 +120,11 @@ class AppSession(
     val now: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
     progressState: MutableStateFlow<ConnectProgress?> = MutableStateFlow(null),
-    /** Story 51.11's build switch: off, [capabilities] stays every feature on. */
-    private val capabilitiesGate: Boolean = CAPABILITIES_GATE,
+    /**
+     * Story 51.11's build switch ([com.hamzalabs.maktaba.core.api.capabilitiesGate] of the app's
+     * build; on when the app does not say): off, [capabilities] stays every feature on.
+     */
+    val capabilitiesGate: Boolean = true,
 ) {
     sealed interface Phase {
         data object ChoosingHome : Phase

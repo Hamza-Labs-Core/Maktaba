@@ -1,5 +1,7 @@
 package com.hamzalabs.maktaba.tv
 
+import android.app.Application
+import android.content.Intent
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -32,6 +34,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.Base64
 import java.util.Collections
@@ -119,6 +122,34 @@ class SignedInAppTest {
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("Live TV is off on this home.") }
         compose.onNodeWithTag("feature-turn-on").assertExists()
         assertTrue(shows("Turn it on in Components"))
+    }
+
+    /** The admin's line on the Live TV tab: its button opens the home's Components page in the browser. */
+    @Test
+    fun theAdminsButtonOpensComponents() {
+        features.value = Capabilities(off = setOf(Feature.LIVE_TV), admin = true)
+        signedIn()
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Live TV") }
+        compose.onNodeWithText("Live TV").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Turn it on in Components") }
+        compose.onNodeWithTag("feature-turn-on").performSemanticsAction(SemanticsActions.OnClick)
+        val started = requireNotNull(shadowOf(ApplicationProvider.getApplicationContext<Application>()).nextStartedActivity)
+        assertEquals(Intent.ACTION_VIEW, started.action)
+        assertEquals(server.url("/settings/components").toString(), started.dataString)
+        assertFalse("nothing asks for channels while Live TV is off", "/api/channels/now" in paths)
+    }
+
+    /** The same line in Arabic. */
+    @Test
+    @Config(qualifiers = "ar-w960dp-h540dp-xhdpi")
+    fun theAdminsLineInArabic() {
+        features.value = Capabilities(off = setOf(Feature.LIVE_TV), admin = true)
+        signedIn()
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("البث المباشر") }
+        compose.onNodeWithText("البث المباشر").performSemanticsAction(SemanticsActions.RequestFocus)
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("البث المباشر متوقف على الجهاز الرئيسي.") }
+        assertTrue(shows("شغّل من صفحة المكوّنات"))
+        compose.onNodeWithTag("feature-off-${Feature.LIVE_TV}").assertExists()
     }
 
     @Test
