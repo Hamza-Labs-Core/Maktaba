@@ -142,6 +142,52 @@ func (p *polite) fn(ctx context.Context) error {
 	return nil
 }
 
+// Each stop and each start of a loop is logged once, with its component and why: a
+// start from off (enabled), a stop with the gate's reason (off, held).
+func TestStopAndStartAreLogged(t *testing.T) {
+	clk := newClock()
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	logged := func(event, reason string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, line := range strings.Split(buf.String(), "\n") {
+			if strings.Contains(line, "event="+event) && strings.Contains(line, "component=livetv") &&
+				strings.Contains(line, "reason="+reason+" ") {
+				n++
+			}
+		}
+		return n
+	}
+	r := newRunner(t, clk, func(o *Options) {
+		o.Logger = slog.New(slog.NewTextHandler(lockedWriter{&mu, &buf}, nil))
+	})
+	var p polite
+	r.Declare("tvchange_controller", p.fn)
+	eventually(t, "the loop to start", func() bool { return p.starts.Load() == 1 })
+	if n := logged("components_loop_started", "enabled"); n != 1 {
+		t.Fatalf("%d start lines", n)
+	}
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv")})
+	eventually(t, "the loop to return", func() bool { return p.stops.Load() == 1 })
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv")}) // the same again: nothing new
+	if n := logged("components_loop_stopped", components.PhaseOff); n != 1 {
+		t.Fatalf("%d stop lines (off)", n)
+	}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv")})
+	eventually(t, "the loop to start again", func() bool { return p.starts.Load() == 2 })
+	held := enabled("livetv")
+	held.Hold = &store.Hold{By: "maya"}
+	r.Apply(map[string]store.Desired{"livetv": held})
+	eventually(t, "the loop to return again", func() bool { return p.stops.Load() == 2 })
+	if logged("components_loop_started", "enabled") != 2 || logged("components_loop_stopped", "held") != 1 {
+		mu.Lock()
+		defer mu.Unlock()
+		t.Fatalf("log:\n%s", buf.String())
+	}
+}
+
 // T01: disabling cancels the loop's context; it returns; the component is Off.
 func TestDisableStopsTheLoop(t *testing.T) {
 	clk := newClock()

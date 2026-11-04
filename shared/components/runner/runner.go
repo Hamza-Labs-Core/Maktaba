@@ -504,11 +504,23 @@ func GatesAt(cat *components.Catalog, desired map[string]store.Desired, noReconc
 func (r *Runner) apply() {
 	gates := *r.gates.Load()
 	for _, l := range r.loops {
-		want := gates[l.comp].on && !r.closed
+		g := gates[l.comp]
+		want := g.on && !r.closed
 		switch {
 		case want && !l.alive && !l.waiting && !l.exited:
+			// a start from off is logged once; a restart after a crash is logged by ended
+			if l.state == stateOff {
+				r.log.Info("components: a loop starts", "host", r.host, "loop", l.name, "component", l.comp,
+					"reason", "enabled", "event", "components_loop_started")
+			}
 			r.start(l)
 		case !want && l.alive && !l.stopping:
+			reason := stopReason(g)
+			if r.closed {
+				reason = "shutdown"
+			}
+			r.log.Info("components: a loop stops", "host", r.host, "loop", l.name, "component", l.comp,
+				"reason", reason, "event", "components_loop_stopped")
 			r.stop(l)
 		case !want && !l.alive:
 			// off: forget the crashes, a pending restart and a one-shot's exit
@@ -519,6 +531,18 @@ func (r *Runner) apply() {
 			l.state, l.reason = stateOff, ""
 		}
 	}
+}
+
+// stopReason is why a gate is closed: its reason (held, dependency_off,
+// licence_missing), or its phase (off) when it has none.
+func stopReason(g gate) string {
+	if g.reason != "" {
+		return g.reason
+	}
+	if g.phase != "" {
+		return g.phase
+	}
+	return components.PhaseOff
 }
 
 func (r *Runner) start(l *loop) {
