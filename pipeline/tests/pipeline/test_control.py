@@ -172,3 +172,37 @@ async def test_force_pause_listener_payload_is_string() -> None:
         await listener.stop()
     # Sanity: the JSON the bus sent contains the id.
     assert json.dumps({"id": 13}) == '{"id": 13}'
+
+
+class _Listener:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def add_listener(self, _channel: str, _cb: object) -> None:
+        return None
+
+    async def remove_listener(self, _channel: str, _cb: object) -> None:
+        return None
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class _PgDB(FakeDB):
+    def __init__(self) -> None:
+        super().__init__(dialect="postgres")
+        self.listener = _Listener()
+
+    async def acquire_listener(self) -> _Listener:
+        return self.listener
+
+
+@pytest.mark.asyncio
+async def test_force_pause_listener_closes_its_connection_on_stop() -> None:
+    """Its LISTEN connection is its own (outside the pool): stop closes it."""
+    db = _PgDB()
+    listener = ForcePauseListener(db)
+    listener.start()
+    await listener.wait_ready()
+    await listener.stop()
+    assert db.listener.closed

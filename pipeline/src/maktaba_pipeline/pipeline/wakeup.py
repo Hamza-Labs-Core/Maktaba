@@ -199,6 +199,10 @@ class PgListenWakeup:
                 await listener.remove_listener(self._channel, _on_notify)
                 for extra in self._extra:
                     await listener.remove_listener(extra, _on_notify)
+            with contextlib.suppress(Exception):
+                # its own connection, outside the pool: closed here, not whenever the
+                # garbage collector aborts it
+                await listener.close()
 
     async def aclose(self) -> None:
         self._stop.set()

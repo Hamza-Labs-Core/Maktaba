@@ -248,3 +248,27 @@ async def test_a_transaction_cancelled_in_its_commit_ends_before_it_returns(
     finally:
         gate.set()
         await db.close()
+
+
+@pytest.mark.asyncio
+async def test_the_postgres_pool_is_capped_and_lets_idle_connections_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every program's pools share the home's max_connections: this worker's has a cap
+    and closes a connection unused for PG_POOL_IDLE_SEC."""
+    import maktaba_pipeline.runtime as runtime_mod
+
+    seen: dict[str, Any] = {}
+
+    class _Asyncpg:
+        @staticmethod
+        async def create_pool(dsn: str, **kw: Any) -> object:
+            seen.update(kw, dsn=dsn)
+            return object()
+
+    monkeypatch.setattr(runtime_mod, "_import_asyncpg", lambda: _Asyncpg)
+    db = await Database.connect("postgresql://maktaba@127.0.0.1:1/maktaba?sslmode=disable")
+    assert db.dialect == "postgres"
+    assert seen["max_size"] == runtime_mod.PG_POOL_MAX
+    assert seen["max_inactive_connection_lifetime"] == runtime_mod.PG_POOL_IDLE_SEC
+    assert 0 < seen["min_size"] <= seen["max_size"]

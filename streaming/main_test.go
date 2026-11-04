@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 )
 
 func TestBuildChecks_NoPeers(t *testing.T) {
@@ -148,4 +151,22 @@ func getJSON(t *testing.T, url string) map[string]any {
 		t.Fatalf("decode %s: %v", url, err)
 	}
 	return out
+}
+
+// The home's database away at start (lazy): the streaming service's pool still opens,
+// with its own cap, not one connection per CPU.
+func TestBuildProbeStoresCapsThePool(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://maktaba@127.0.0.1:1/maktaba?sslmode=disable&connect_timeout=2")
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	_, _, pool, up, closeFn := buildProbeStores(context.Background(), logger, true)
+	defer closeFn()
+	if pool == nil || up {
+		t.Fatalf("pool %v up %v: want a pool, home down", pool, up)
+	}
+	if got := pool.Config().MaxConns; got != pgpool.Serve {
+		t.Fatalf("MaxConns = %d, want %d", got, pgpool.Serve)
+	}
+	if got := pool.Config().MaxConnIdleTime; got != pgpool.IdleTime {
+		t.Fatalf("MaxConnIdleTime = %v, want %v", got, pgpool.IdleTime)
+	}
 }
