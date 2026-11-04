@@ -65,6 +65,7 @@ func newServer(t *testing.T, base string) (*sql.DB, http.Handler) {
 	)`); err != nil {
 		t.Fatal(err)
 	}
+	componentTables(t, db) // slot 0178: the tuner switch is a component
 	r := chi.NewRouter()
 	(&Handler{DB: db, PublicBaseURL: base, DefaultStreamPort: "8782", Now: testNow}).Mount(r)
 	return db, r

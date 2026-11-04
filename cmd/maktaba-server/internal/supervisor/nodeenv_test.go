@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
 func envMap(env []string) map[string]string {
@@ -81,6 +82,46 @@ func TestPipelineFullNodeEnv(t *testing.T) {
 	cfg.Server.Role = "home"
 	if m := envMap(childEnvOK(RolePipeline, cfg)); m["MAKTABA_NODE"] != "" || m["MAKTABA_DATABASE_URL"] != "postgresql://local/ignored" {
 		t.Fatalf("forced home got node env: %v", m)
+	}
+}
+
+// A home's pipeline (and its transcription workers) reaches its api for the cluster agent
+// at [server] listen's port on loopback, not the agent's :8080 default; a node gets none
+// (its agent dials the home from node.json), and an operator's own is kept.
+func TestHomePipelineGetsTheAPIListenForItsAgent(t *testing.T) {
+	t.Setenv("MAKTABA_ROLE", "")
+	t.Setenv("MAKTABA_API_URL", "")
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	var cfg config.Config
+	cfg.Server.Listen = "0.0.0.0:8088"
+	cfg.Pipeline.Instances = 1
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; got != "http://127.0.0.1:8088" {
+		t.Fatalf("MAKTABA_API_URL = %q, want http://127.0.0.1:8088", got)
+	}
+	procs, err := BuildPipelineInstances(Options{Config: cfg})
+	if err != nil || len(procs) != 1 {
+		t.Fatalf("instances: %v (%d)", err, len(procs))
+	}
+	if got := envMap(procs[0].Cmd.Env)["MAKTABA_API_URL"]; got != "http://127.0.0.1:8088" {
+		t.Fatalf("worker MAKTABA_API_URL = %q", got)
+	}
+	cfg.Server.Listen = ""
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; got != "http://127.0.0.1:"+ports.APIPublic.PortString() {
+		t.Fatalf("no listen: MAKTABA_API_URL = %q", got)
+	}
+	nodeConfig = func() config.NodeConfig {
+		return config.NodeConfig{NodeID: "6f1c9a2e-0000-4000-8000-000000000001",
+			DatabaseURL: "postgres://node@home:5432/maktaba", Home: config.HomeRef{URL: "http://home:8080"}}
+	}
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; ok {
+		t.Fatalf("a node's pipeline got MAKTABA_API_URL = %q", v)
+	}
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	t.Setenv("MAKTABA_API_URL", "http://own:9000")
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_API_URL"]; ok {
+		t.Fatalf("overrode the operator's MAKTABA_API_URL with %q", v)
 	}
 }
 
@@ -224,6 +265,42 @@ func TestChildEnvStateDirs(t *testing.T) {
 	t.Setenv("MAKTABA_CHROMA_DIR", "/own/chroma")
 	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_CHROMA_DIR"]; ok {
 		t.Fatalf("overrode the operator's chroma dir with %q", v)
+	}
+}
+
+// Epic 51: the pipeline's refine stage reads CAMeL Tools' database from the installed
+// model.refine pack (CAMELTOOLS_DATA at its camel_tools/); without the pack nothing is
+// set (the pipeline keeps <model cache>/camel_tools), and an operator's own is kept.
+func TestPipelineEnvPointsCamelToolsAtTheRefinePack(t *testing.T) {
+	prev := nodeConfig
+	t.Cleanup(func() { nodeConfig = prev })
+	nodeConfig = func() config.NodeConfig { return config.NodeConfig{} }
+	t.Setenv("CAMELTOOLS_DATA", "")
+	var cfg config.Config
+	cfg.Server.DataDir = filepath.Join(t.TempDir(), "data")
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["CAMELTOOLS_DATA"]; ok {
+		t.Fatalf("no pack: CAMELTOOLS_DATA = %q", v)
+	}
+	dir := filepath.Join(cfg.StateDir(), "components", "model.refine")
+	data := filepath.Join(dir, "1.2.0_abc", "camel_tools")
+	if err := os.MkdirAll(filepath.Join(data, "data"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "current"), []byte("1.2.0_abc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := envMap(childEnvOK(RolePipeline, cfg))["CAMELTOOLS_DATA"]; got != data {
+		t.Fatalf("CAMELTOOLS_DATA = %q, want the pack's %s", got, data)
+	}
+	if got := envMap(childEnvOK(RolePipeline, cfg))["MAKTABA_COMPONENTS_DIR"]; got != filepath.Join(cfg.StateDir(), "components") {
+		t.Fatalf("MAKTABA_COMPONENTS_DIR = %q (the pipeline finds tool.ffmpeg there)", got)
+	}
+	if v, ok := envMap(childEnvOK(RoleAPI, cfg))["CAMELTOOLS_DATA"]; ok {
+		t.Fatalf("the api gets CAMELTOOLS_DATA = %q", v)
+	}
+	t.Setenv("CAMELTOOLS_DATA", "/own/camel")
+	if v, ok := envMap(childEnvOK(RolePipeline, cfg))["CAMELTOOLS_DATA"]; ok {
+		t.Fatalf("overrode the operator's CAMELTOOLS_DATA with %q", v)
 	}
 }
 

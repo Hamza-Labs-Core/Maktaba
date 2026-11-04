@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/queues"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/systemstatus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/tv"
@@ -42,6 +43,9 @@ func MountStatus(r chi.Router, d StatusDeps) *systemstatus.Handler {
 		Queues:        &queues.Handler{DB: d.DB},
 		TVCluster:     cluster,
 		TV:            &tv.Handler{DB: d.DB, Secrets: d.Secrets},
+	}
+	if d.DB != nil {
+		h.Components = components.New(d.DB)
 	}
 	h.Mount(r)
 	return h

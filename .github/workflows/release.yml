@@ -31,6 +31,12 @@
 #                        dependency constraints from uv.lock, and the node
 #                        installer archives (maktaba-node-<ver>.tar.gz /
 #                        .zip) that install that wheel with no checkout.
+#   5c. package-packs    the component packs (Epic 51 story 51.15): per platform,
+#                        each asset that is not in the payload as a reproducible
+#                        <id>-<ver>-<platform>.tar.zst (tools/release/packs);
+#                        sign-and-release adds them and components-<ver>.json,
+#                        the signed index, before the checksums. Every leg must
+#                        pass: a release never ships without a platform's packs.
 #   0. guard             the tag-order guard (_tag-guard.yml: above every
 #                        published release, on main, CI passed), which
 #                        also opens the tag's release as a DRAFT.
@@ -50,6 +56,12 @@
 #                        is never rewritten: a re-run only adds missing
 #                        files, and every output is deterministic (the
 #                        commit's time, sorted archives).
+#   7. package-linux-full  the Linux maktaba-full .deb/.rpm (Epic 51 story
+#                        51.17): per architecture, the release's runtime.ml and
+#                        tool.yt-dlp packs as a verified offline file
+#                        (maktaba-server release-offline), split into packages
+#                        under 2 GiB (tools/release/linux-app/full-package.sh),
+#                        attached to the release after it is signed.
 #
 # Signing identity: keyless cosign via the workflow's OIDC token
 # (`id-token: write`). No long-lived private key, no repo secret to
@@ -836,6 +848,67 @@ jobs:
           path: out/*
           retention-days: 7
 
+  # The component packs (Epic 51 story 51.15, README §4.9): the files an asset component
+  # needs on one platform that the payload does not carry (runtime.ml's and tool.yt-dlp's
+  # wheelhouses today), built from the tagged commit by tools/release/packs/build.sh:
+  # reproducible (the commit's time, sorted entries, zstd at one level), so a re-run builds
+  # the same bytes and the signed checksums do not change. pip downloads any target's
+  # wheels, so every leg is a Linux runner. Unlike the Linux payloads they hold the release
+  # back: sign-and-release runs only when every leg passed, and the index refuses a release
+  # with any catalog pack missing (gen-components-index), so no platform ships without its
+  # packs.
+  package-packs:
+    name: package packs (${{ matrix.platform }})
+    needs: [guard]
+    if: needs.guard.outputs.published != 'true'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [darwin-arm64, windows-amd64, linux-amd64, linux-arm64]
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: tools/release/go.mod
+          cache-dependency-path: |
+            tools/release/go.sum
+            shared/go/releaseverify/go.sum
+            shared/go/componentpack/go.sum
+            shared/components/go.sum
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          # the uv package-node writes the release's constraints with: the same pins
+          version: "0.13.4"
+
+      # runtime.ml's wheels are a few GB on Linux and Windows (torch): room for the
+      # wheels and the pack beside them
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - name: Build the packs
+        env:
+          TAG: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git log -1 --pretty=%ct)" \
+            tools/release/packs/build.sh --version "${TAG#v}" --platform "${PLATFORM}" --out out
+
+      - name: Upload the packs
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: release-packs-${{ matrix.platform }}
+          path: out/*
+          # zstd already: no second compression
+          compression-level: 0
+          # every catalog platform has packs: a leg that built none failed
+          if-no-files-found: error
+          retention-days: 7
+
   # The Linux server payload (Epic 39 stories 39.2, 39.10): the tree the Linux
   # app carries in usr/share/maktaba/server, as a tarball for a machine
   # without a desktop (install.sh --app) and for its updates (checked
@@ -1115,22 +1188,29 @@ jobs:
 
   # The Linux payloads do not hold the release back: a leg that failed leaves its
   # architecture out (the notes say so), the rest is published; so does the server image,
-  # which is made of them. Every other job must pass.
+  # which is made of them. Every other job must pass, every leg of package-packs among them
+  # (tools/ci/tests/test_release_packs.py keeps it so).
   sign-and-release:
     name: sign + publish release
-    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload]
+    needs: [build-artifacts, build-server, build-images, build-server-image, package-archives, package-nfpm, package-node, package-linux-payload, package-packs]
     if: >-
       !cancelled() &&
       needs.build-artifacts.result == 'success' && needs.build-server.result == 'success' &&
       needs.build-images.result == 'success' && needs.package-archives.result == 'success' &&
-      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success'
+      needs.package-nfpm.result == 'success' && needs.package-node.result == 'success' &&
+      needs.package-packs.result == 'success'
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    # the packs are several GB to download, hash and attach
+    timeout-minutes: 60
     permissions:
       contents: write   # gh release create
       id-token: write   # keyless cosign OIDC
     steps:
       - uses: actions/checkout@v6.0.2
+
+      # the packs (several GB) are staged, then copied into dist/
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
 
       - name: Install cosign
         uses: sigstore/cosign-installer@v3.10.0
@@ -1150,12 +1230,12 @@ jobs:
         id: go-cache
         uses: ./.github/actions/go-cache
         with:
-          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum') }}
+          go-sum-hash: ${{ hashFiles('tools/release/go.sum', 'shared/go/releaseverify/go.sum', 'shared/go/componentpack/go.sum', 'shared/components/go.sum') }}
 
       - name: Go modules (from the cache, verified)
         run: |
           set -euo pipefail
-          for m in tools/release shared/go/releaseverify; do
+          for m in tools/release shared/go/releaseverify shared/go/componentpack; do
             ( cd "$m" && go mod download && go mod verify )
           done
 
@@ -1412,6 +1492,14 @@ jobs:
         run: |
           echo "::warning::the artifact $ARTIFACT never downloaded after 3 attempts (optional here: the job goes on without it)"
 
+      # every leg's: a failed download fails the release
+      - name: Download the component packs
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: release-packs-*
+          path: staged/packs
+          merge-multiple: true
+
       # One artifact per build-images matrix leg ("digest-<svc>", each a
       # single file named "<svc>" holding "<svc> sha256:...").
       - name: Download image digests
@@ -1508,7 +1596,24 @@ jobs:
           # sorted names, the commit's time, no owner; gzip without a name or time).
           tar --sort=name --mtime="@${sde}" --owner=0 --group=0 --numeric-owner \
               -C staged/web-dist -cf - . | gzip -n > "dist/maktaba-web-${TAG}.tar.gz"
+          # The component packs (Epic 51 story 51.15): moved, not copied (several GB)
+          find staged/packs -maxdepth 1 -type f -name '*.tar.zst*' -exec mv {} dist/ \;
           ls -l dist
+
+      # The signed component index (story 51.15): every pack in dist/ with its digest, size
+      # and files.sha256, and every pinned model of the catalog. Before release.json, which
+      # names it, and before the checksums, which sign it. The commit's time: a re-run
+      # writes the same file. A catalog pack not in dist fails the release.
+      - name: Write the component index
+        env:
+          TAG: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        working-directory: tools/release
+        run: |
+          set -euo pipefail
+          go run ./cmd/gen-components-index --version "${TAG#v}" --commit "${SHA}" \
+            --published "$(git log -1 --format=%cI "${SHA}")" --dist ../../dist
+          cat "../../dist/components-${TAG#v}.json"
 
       # Fill the Homebrew formula template with this release's version and the SHA-256 of
       # each macOS archive, as a release asset (signed with the rest). packages.yml commits
@@ -1578,7 +1683,7 @@ jobs:
           set -euo pipefail
           prev=()
           if [ -f prev-release.json ]; then prev=(--previous ../../prev-release.json); fi
-          ( cd tools/release && go run ./cmd/gen-release-json --check ../../dist/release.json --repo ../.. "${prev[@]}" )
+          ( cd tools/release && go run ./cmd/gen-release-json --check ../../dist/release.json --repo ../.. --dist ../../dist "${prev[@]}" )
           ( cd shared/go/releaseverify && MAKTABA_RELEASE_BUILD=1 go test -run TestEmbeddedRootAge -count=1 . )
 
       # Before the checksums: release-manifest.json (the images' digests) is signed with the rest.
@@ -1707,3 +1812,92 @@ jobs:
           NOTES="${notes}" tools/release/release-assets.sh ensure "${TAG}"
           tools/release/release-assets.sh upload "${TAG}" dist/*
           tools/release/release-assets.sh publish "${TAG}"
+
+  # The Linux maktaba-full package (Epic 51 story 51.17): per architecture, this release's
+  # runtime.ml and tool.yt-dlp packs as the offline file maktaba-server release-offline makes
+  # from the release's files (each verified against the signed checksums.txt and the
+  # component index, as a home verifies them), packed by full-package.sh into maktaba-full
+  # (Depends: maktaba >= this version) and its maktaba-full-dataN parts (.deb and .rpm, each
+  # under GitHub's 2 GiB). They are not in checksums.txt: what they install is the offline
+  # file, which the server verifies again, file for file, at its first start
+  # (serve_systempacks.go). A failed leg holds nothing back: the release has the packs, and a
+  # Full home downloads them.
+  package-linux-full:
+    name: package maktaba-full (${{ matrix.arch }})
+    needs: [sign-and-release]
+    if: ${{ !cancelled() && needs.sign-and-release.result == 'success' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    permissions:
+      contents: write   # release-assets.sh upload
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64, platform: linux-amd64 }
+          - { arch: aarch64, platform: linux-arm64 }
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      # the packs, the offline file, its folder and the packages: several times the packs
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: cmd/maktaba-server/go.mod
+          cache-dependency-path: cmd/maktaba-server/go.sum
+
+      # the nfpm package-nfpm restores (keep the version in step with it)
+      - name: nfpm from the cache
+        id: nfpm-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/nfpm
+          key: nfpm-v2.46.3-static-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install nfpm
+        if: steps.nfpm-cache.outputs.cache-hit != 'true'
+        env:
+          GOTOOLCHAIN: auto
+          CGO_ENABLED: "0"
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.46.3
+
+      - name: The release's signed set and this architecture's packs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          ver="${TAG#v}"
+          mkdir -p rel/packs
+          gh release download "${TAG}" --dir rel \
+            --pattern checksums.txt --pattern checksums.txt.sigstore.json --pattern release.json \
+            --pattern "components-${ver}.json"
+          gh release download "${TAG}" --dir rel/packs \
+            --pattern "runtime.ml-${ver}-${PLATFORM}.tar.zst*" --pattern "tool.yt-dlp-${ver}-${PLATFORM}.tar.zst*"
+          ls -l rel rel/packs
+
+      - name: Build maktaba-full
+        env:
+          TAG: ${{ github.ref_name }}
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/go/bin:$PATH"
+          ver="${TAG#v}"
+          ( cd cmd/maktaba-server && CGO_ENABLED=0 go build -o "$RUNNER_TEMP/maktaba-server" . )
+          off="$RUNNER_TEMP/maktaba-offline-${ver}-${PLATFORM}-full.tar"
+          "$RUNNER_TEMP/maktaba-server" release-offline --release-dir rel --version "${ver}" \
+            --platform "${PLATFORM}" --out "${off}"
+          rm -rf rel/packs # the offline file holds them now: room for the packages
+          tools/release/linux-app/full-package.sh --version "${TAG}" --arch "${ARCH}" --offline "${off}" --out out
+          rm -f "${off}"
+
+      - name: Attach maktaba-full to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: tools/release/release-assets.sh upload "${TAG}" out/*

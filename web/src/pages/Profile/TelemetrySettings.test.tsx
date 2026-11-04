@@ -119,6 +119,22 @@ describe("TelemetrySettings", () => {
     expect(post).toHaveBeenCalledWith("/api/telemetry/server/forget", {});
   });
 
+  // Epic 51 story 51.14 T12: what is sent lists the bundle and the components, in both languages
+  it("lists the bundle and the components in what is sent", async () => {
+    renderSection(true);
+    const block = await screen.findByTestId("server-usage-data");
+    expect(block).toHaveTextContent(
+      "Which bundle the server is based on and which of its components are on"
+    );
+  });
+
+  it("lists the bundle and the components in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    renderSection(true);
+    const block = await screen.findByTestId("server-usage-data");
+    expect(block).toHaveTextContent("الحزمة التي يقوم عليها الخادم، والمكوّنات المشغّلة فيه");
+  });
+
   it("says when the server's configuration turns usage data off", async () => {
     get.mockResolvedValue(serverStatus(false, false));
     renderSection(true);

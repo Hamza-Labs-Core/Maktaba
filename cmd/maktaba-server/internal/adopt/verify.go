@@ -164,7 +164,8 @@ func serverUp(ctx context.Context, cfg config.Config) error {
 	for _, c := range snap.Processes {
 		switch {
 		case c.State == supervisor.StateRunning && !c.CrashLoop:
-		case (c.State == supervisor.StateExited || c.State == supervisor.StateStopped) && !c.Wanted:
+		case (c.State == supervisor.StateExited || c.State == supervisor.StateStopped ||
+			c.State == supervisor.StateHeld) && !c.Wanted:
 		default:
 			name := string(c.Role)
 			if c.Instance != "" {

@@ -12,8 +12,13 @@
 #   next/   this commit as the release after it (version PREV+3; the same API: a payload
 #           that ships one more migration, REV+2, is a release whose API refuses the
 #           database it migrated, the rehearsal's injected health failure)
+#   after/  this commit as the release after that (version PREV+4, the same API: a release
+#           that passes after a rollback, scenario 13)
+#   packs/<version>/   this commit's tool.yt-dlp pack of each of cur, next and after for
+#           this machine's platform, and its components-<version>.json (story 51.18)
 #   versions.env   PREV, FAILED (PREV+1: the newer release the scenario of the live Mac's
-#           state has rolled back from), CUR, NEXT, REV (this commit's newest migration)
+#           state has rolled back from), CUR, NEXT, AFTER, PLATFORM (the packs'), REV (this
+#           commit's newest migration)
 #
 # usage: build.sh --prev-src DIR --prev-version X.Y.Z --cur-src DIR --out DIR
 #   --prev-src   a checkout of the previous release's tag (git worktree add DIR vX.Y.Z)
@@ -46,6 +51,7 @@ major="${BASH_REMATCH[1]}" minor="${BASH_REMATCH[2]}" patch="${BASH_REMATCH[3]}"
 failed="$major.$minor.$((patch + 1))"
 cur="$major.$minor.$((patch + 2))"
 next="$major.$minor.$((patch + 3))"
+after="$major.$minor.$((patch + 4))"
 
 # the newest migration slot of a tree (the four digits of its newest NNNN_*.sql)
 newest_slot() {
@@ -87,12 +93,42 @@ build() {
 build "$prev_src" "$out/prev" "$prev_version" 0
 build "$cur_src" "$out/cur" "$cur" $((rev + 1))
 build "$cur_src" "$out/next" "$next" $((rev + 1))
+# story 51.18 (scenario 13): a release after the failing one that passes. It carries the
+# failing release's migration too (rev+2, kept by the rollback: afterSpec), so it knows it
+build "$cur_src" "$out/after" "$after" $((rev + 2))
+
+# story 51.18 (scenarios 13, 14): this commit's tool.yt-dlp pack for this machine's
+# platform, built by the release's own pack build for each of this commit's versions,
+# with the index gen-components-index makes of it (the harness signs it with the release:
+# it sets the commit and the times the fake release has). A tree without the pack build
+# (a proof run of a tree from before it) has none: scenarios 13 and 14 then cannot run.
+platform="$(go env GOOS)-$(go env GOARCH)"
+if [ -f "$cur_src/tools/release/packs/build.sh" ]; then
+    export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$cur_src" log -1 --pretty=%ct 2>/dev/null || date +%s)}"
+    for v in "$cur" "$next" "$after"; do
+        echo "build.sh: the tool.yt-dlp pack of $v ($platform)"
+        bash "$cur_src/tools/release/packs/build.sh" --version "$v" --platform "$platform" --only tool.yt-dlp \
+            --out "$out/packs/$v"
+        # --platform and --only: the index of the one pack built here (a missing pack of
+        # the release is an error; this kit builds one); a tree from before the two flags
+        # left the others out with a warning
+        only=(--platform "$platform" --only tool.yt-dlp)
+        grep -q '"only"' "$cur_src/tools/release/cmd/gen-components-index/main.go" || only=()
+        (cd "$cur_src/tools/release" && GOTOOLCHAIN=local go run ./cmd/gen-components-index --version "$v" \
+            --commit 0000000000000000000000000000000000000000 --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --dist "$out/packs/$v" ${only[@]+"${only[@]}"})
+    done
+else
+    echo "build.sh: $cur_src has no pack build: no packs in the kit"
+fi
 
 cat >"$out/versions.env" <<EOF
 PREV=$prev_version
 FAILED=$failed
 CUR=$cur
 NEXT=$next
+AFTER=$after
+PLATFORM=$platform
 REV=$rev
 PREV_COMMIT=$(git -C "$prev_src" rev-parse HEAD 2>/dev/null || echo unknown)
 CUR_COMMIT=$(git -C "$cur_src" rev-parse HEAD 2>/dev/null || echo unknown)

@@ -67,6 +67,17 @@ SemanticSearchFn = Callable[[str, int, list[str], list[str]], Awaitable[list[dic
 MAX_SEMANTIC_K = 200
 
 
+#: the in-band error of Embed and SemanticSearch while ``search.semantic`` is off (Epic 51,
+#: story 51.06): the API answers as it does with no index, and does not retry
+SEMANTIC_OFF = "component_off:search.semantic"
+
+
+def _semantic_on() -> bool:
+    from .components.runner import gate_open
+
+    return gate_open("search.semantic")
+
+
 def _identity_serializer(value: bytes) -> bytes:
     return value
 
@@ -164,6 +175,8 @@ class PipelineService:
         self._plan_preview = plan_preview
 
     async def embed(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not _semantic_on():
+            return {"error": SEMANTIC_OFF}
         text = payload.get("text")
         if not isinstance(text, str) or not text:
             raise ValueError("embed: text is required")
@@ -173,6 +186,8 @@ class PipelineService:
         return {"vector": list(vector)}
 
     async def semantic_search(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not _semantic_on():
+            return {"error": SEMANTIC_OFF}
         q = payload.get("q")
         if not isinstance(q, str) or not q.strip():
             raise ValueError("semantic_search: q is required")

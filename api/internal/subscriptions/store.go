@@ -77,6 +77,29 @@ type Store struct {
 	// store in-memory only — the original behaviour, retained for
 	// tests and the no-DB dev path.
 	persist LicensePersistence
+
+	// onChange hear every change of the applied license or its standing (OnChange).
+	onChange []func()
+}
+
+// OnChange adds f, called after every change of the applied license or its standing: an
+// apply, a refresh's new license, a take-up of one another process recorded, a
+// revocation, a lock, a new revocation list (Epic 51 story 51.19: the components'
+// desired rows publish what the license allows). f runs on the caller's goroutine,
+// after the store's lock is released.
+func (s *Store) OnChange(f func()) {
+	s.mu.Lock()
+	s.onChange = append(s.onChange, f)
+	s.mu.Unlock()
+}
+
+func (s *Store) changed() {
+	s.mu.RLock()
+	fs := append([]func(){}, s.onChange...)
+	s.mu.RUnlock()
+	for _, f := range fs {
+		f()
+	}
 }
 
 // NewStore creates a Store seeded with the free tier.
@@ -116,9 +139,10 @@ func (s *Store) Now() time.Time {
 // the free tier. It clears any lock (tests and the no-DB path).
 func (s *Store) Set(e *Entitlements) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.license = e
 	s.lockReason = ""
+	s.mu.Unlock()
+	s.changed()
 }
 
 // Current returns the effective entitlement. nil means free tier: no
@@ -197,6 +221,7 @@ func (s *Store) SetLicense(ctx context.Context, lic *License, ent *Entitlements)
 	s.mu.Lock()
 	s.license, s.raw, s.lockReason = ent, lic, ""
 	s.mu.Unlock()
+	defer s.changed()
 	return s.saveState(ctx)
 }
 
@@ -224,6 +249,7 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 		s.mu.Lock()
 		s.license, s.raw = nil, nil
 		s.mu.Unlock()
+		s.changed()
 		return true, nil
 	}
 	if rec.LicenseID == cur {
@@ -236,6 +262,7 @@ func (s *Store) ReloadActive(ctx context.Context, v *Verifier) (bool, error) {
 	s.mu.Lock()
 	s.license, s.raw, s.lockReason = ent, lic, ""
 	s.mu.Unlock()
+	s.changed()
 	return true, nil
 }
 
@@ -251,6 +278,7 @@ func (s *Store) Revoke(ctx context.Context) error {
 	s.mu.Lock()
 	s.license, s.raw, s.lockReason = nil, nil, ""
 	s.mu.Unlock()
+	defer s.changed()
 	return s.saveState(ctx)
 }
 
@@ -261,6 +289,7 @@ func (s *Store) Lock(ctx context.Context, reason string) error {
 	s.mu.Lock()
 	s.lockReason = reason
 	s.mu.Unlock()
+	defer s.changed()
 	return s.saveState(ctx)
 }
 
@@ -274,6 +303,7 @@ func (s *Store) SetRevocations(ctx context.Context, list *RevocationList, raw st
 	s.mu.Lock()
 	s.revoked, s.revocationsRaw, s.revocationsAt = ids, raw, at.UTC()
 	s.mu.Unlock()
+	defer s.changed()
 	return s.saveState(ctx)
 }
 

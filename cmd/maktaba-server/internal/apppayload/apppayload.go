@@ -41,7 +41,13 @@ type Payload struct {
 		SHA256            string `json:"sha256"`
 		ConstraintsSHA256 string `json:"constraints_sha256"`
 	} `json:"pipeline"`
+	// Flavour is "full" or "core" (story 51.17: the Mac's Core dmg leaves out ollama);
+	// empty, a payload from before, is full.
+	Flavour string `json:"flavour,omitempty"`
 }
+
+// Core reports whether the payload is the core flavour.
+func (p Payload) Core() bool { return strings.TrimSpace(p.Flavour) == "core" }
 
 // PostgresMajor is the bundled Postgres's major version ("16" of "16.15.0").
 func (p Payload) PostgresMajor() string {

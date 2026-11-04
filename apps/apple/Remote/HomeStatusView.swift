@@ -19,6 +19,19 @@ struct HomeStatusView: View {
                     LabeledContent("Release", value: v)
                 }
                 LabeledContent("Signed in as", value: user.username)
+                // the parts switched off on the home, with the way to the Components page (51.11)
+                let off = model.session.capabilities.current.offComponents.count
+                if off > 0, let home = model.session.client?.home {
+                    Link(destination: Capabilities.componentsPage(home)) {
+                        Label {
+                            Text(verbatim: FeatureWords.partsOff(off))
+                        } icon: {
+                            Image(systemName: "poweroff")
+                        }
+                        .foregroundStyle(Color.brass)
+                    }
+                    .accessibilityIdentifier("home.partsOff")
+                }
             }
             Section("Running work") {
                 NavigationLink {

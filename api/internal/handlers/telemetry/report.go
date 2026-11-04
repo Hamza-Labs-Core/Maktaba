@@ -6,11 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/client"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
 // ServerReport is the home's report of a day (contract: Maktaba Cloud's
@@ -28,6 +30,12 @@ type ServerReport struct {
 	Apps        []AppUse       `json:"apps"`
 	Features    map[string]any `json:"features"`
 	Errors      []ErrorCount   `json:"errors"`
+	// Bundle and Components (Epic 51 story 51.14): the home's bundle (full, core,
+	// worker, custom) and the sorted catalog ids it has enabled. Never an id the
+	// catalog does not have (a third-party extension's name could identify a person),
+	// never a count, a machine or a name. Left out when the home has no component rows.
+	Bundle     string   `json:"bundle,omitempty"`
+	Components []string `json:"components,omitempty"`
 }
 
 // AppUse is one app on one platform over the last week, from Epic 44's
@@ -113,6 +121,7 @@ func (r *Reporter) Build(ctx context.Context, now time.Time, peek bool) ServerRe
 		Features:    r.features(ctx),
 		Errors:      []ErrorCount{},
 	}
+	rep.Bundle, rep.Components = r.components(ctx)
 	if rep.Machines == "" || rep.Machines == "0" {
 		rep.Machines = "1" // a home with no machines added is one machine
 	}
@@ -192,6 +201,48 @@ func (r *Reporter) apps(ctx context.Context, now time.Time) []AppUse {
 			People: Range(people[app]), Requests: Range(requests), Errors: Range(errs)})
 	}
 	return out
+}
+
+// components is the home's bundle and the switchable catalog components it has on: a
+// row with want enabled, or no row (the runners run a component with no row). Ids the
+// catalog does not have are left out. A home with no rows yet (never seeded), or whose
+// tables cannot be read, reports neither.
+func (r *Reporter) components(ctx context.Context) (string, []string) {
+	cat := components.Default()
+	rows, err := r.DB.QueryContext(ctx, `SELECT id, want FROM components`)
+	if err != nil {
+		r.logger().Debug("telemetry: the components cannot be read", "err", err, "event", "telemetry_report_components")
+		return "", nil
+	}
+	want := map[string]string{}
+	for rows.Next() {
+		var id, w string
+		if rows.Scan(&id, &w) == nil {
+			want[id] = w
+		}
+	}
+	err = rows.Err()
+	_ = rows.Close()
+	if err != nil || len(want) == 0 {
+		return "", nil
+	}
+	var bundle sql.NullString
+	_ = r.DB.QueryRowContext(ctx, `SELECT bundle FROM component_meta`).Scan(&bundle)
+	b := ""
+	if slices.Contains([]string{"full", "core", "worker", "custom"}, bundle.String) {
+		b = bundle.String
+	}
+	out := []string{}
+	for _, c := range cat.Components() {
+		if !c.Switchable {
+			continue
+		}
+		if w, ok := want[c.ID]; !ok || w == components.WantEnabled {
+			out = append(out, c.ID)
+		}
+	}
+	sort.Strings(out)
+	return b, out
 }
 
 // FeatureCounts are the report's feature counts (ranges) and what each

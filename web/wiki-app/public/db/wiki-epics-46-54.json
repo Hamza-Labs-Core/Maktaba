@@ -990,14 +990,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-48-native-players"
+        "epic-48-native-players",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/48-native-players/README.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "android-player-components",
@@ -1503,14 +1506,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-48-native-players"
+        "epic-48-native-players",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/48-native-players/README.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "android-tv-live-tv",
@@ -2875,14 +2881,17 @@
       "related": [
         "epic-51-configurable-components",
         "entity-chapters",
-        "entity-transcripts"
+        "entity-transcripts",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-01-catalog.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [
         "chapters",
         "transcripts"
@@ -2905,14 +2914,17 @@
       ],
       "related": [
         "epic-51-configurable-components",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-02-state-tables.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -2933,14 +2945,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-51-configurable-components"
+        "epic-51-configurable-components",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-03-seed-from-today.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "seed-from-today"
@@ -2959,14 +2974,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-51-configurable-components"
+        "epic-51-configurable-components",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-04-supervisor-reconciler.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "supervisor-reconciler"
@@ -2985,14 +3003,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-51-configurable-components"
+        "epic-51-configurable-components",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-05-go-loop-runner.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "go-loop-runner"
@@ -3012,7 +3033,8 @@
       ],
       "related": [
         "epic-51-configurable-components",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-06-pipeline-stage-groups.md",
@@ -3020,7 +3042,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /queues",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -3045,7 +3068,8 @@
         "ep-get-queues",
         "ep-get-extensions",
         "ep-put-extensions-name",
-        "ep-post-extensions-name-test"
+        "ep-post-extensions-name-test",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-07-extensions.md",
@@ -3056,7 +3080,8 @@
         "GET /queues",
         "GET /extensions",
         "PUT /extensions/{name}",
-        "POST /extensions/{name}/test"
+        "POST /extensions/{name}/test",
+        "GET /components"
       ],
       "db_tables": [
         "audit_log"
@@ -3080,7 +3105,16 @@
       "related": [
         "epic-51-configurable-components",
         "entity-audit_log",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-components",
+        "ep-post-components-preview",
+        "ep-post-components-apply",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-stop",
+        "ep-post-components-id-start",
+        "ep-post-components-id-restart"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-08-admin-api-cli.md",
@@ -3088,7 +3122,16 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /queues",
+        "GET /components",
+        "POST /components/preview",
+        "POST /components/apply",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/stop",
+        "POST /components/{id}/start",
+        "POST /components/{id}/restart"
       ],
       "db_tables": [
         "audit_log"
@@ -3115,7 +3158,9 @@
         "entity-transcripts",
         "ep-get-search",
         "ep-post-search",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-capabilities",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-09-capabilities.md",
@@ -3125,7 +3170,9 @@
       "api_endpoints": [
         "GET /search",
         "POST /search",
-        "GET /ws"
+        "GET /ws",
+        "GET /capabilities",
+        "GET /components"
       ],
       "db_tables": [
         "chapters",
@@ -3150,7 +3197,9 @@
       "related": [
         "epic-51-configurable-components",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-components",
+        "ep-post-components-preview"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-10-components-page.md",
@@ -3159,7 +3208,9 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /components",
+        "POST /components/preview"
       ],
       "db_tables": [],
       "metadata": {
@@ -3184,7 +3235,9 @@
         "entity-transcripts",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-capabilities",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-11-clients.md",
@@ -3194,7 +3247,9 @@
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
-        "GET /ws"
+        "GET /ws",
+        "GET /capabilities",
+        "GET /components"
       ],
       "db_tables": [
         "chapters",
@@ -3218,14 +3273,25 @@
       ],
       "related": [
         "epic-51-configurable-components",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-get-components",
+        "ep-post-components-preview",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-12-per-machine.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "POST /components/preview",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -3249,7 +3315,12 @@
         "epic-51-configurable-components",
         "entity-audit_log",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-components",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-settings-reset"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-13-settings.md",
@@ -3258,7 +3329,12 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /components",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/settings/reset"
       ],
       "db_tables": [
         "audit_log"
@@ -3283,7 +3359,8 @@
         "epic-51-configurable-components",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-14-health.md",
@@ -3293,7 +3370,8 @@
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
-        "GET /queues"
+        "GET /queues",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -3313,14 +3391,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-51-configurable-components"
+        "epic-51-configurable-components",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-15-packs-index.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "packs-index"
@@ -3339,14 +3420,31 @@
         "phase-5"
       ],
       "related": [
-        "epic-51-configurable-components"
+        "epic-51-configurable-components",
+        "ep-get-components",
+        "ep-post-components-offline",
+        "ep-get-components-offline-name",
+        "ep-post-components-import",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-install"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-16-install-remove.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "POST /components/offline",
+        "GET /components/offline/{name}",
+        "POST /components/import",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/install"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "install-remove"
@@ -3366,14 +3464,21 @@
       ],
       "related": [
         "epic-51-configurable-components",
-        "entity-libraries"
+        "entity-libraries",
+        "ep-get-components",
+        "ep-get-components-bundles",
+        "ep-post-components-bundle"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-17-bundles.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "GET /components/bundles",
+        "POST /components/bundle"
+      ],
       "db_tables": [
         "libraries"
       ],
@@ -3394,14 +3499,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-51-configurable-components"
+        "epic-51-configurable-components",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-18-update-rehearsal.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "update-rehearsal"
@@ -3421,14 +3529,23 @@
       ],
       "related": [
         "epic-51-configurable-components",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-get-components",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id"
       ],
       "files": {
         "story": "specs/epics/51-configurable-components/story-51-19-licence.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -3768,7 +3885,8 @@
         "ep-get-videos-id",
         "ep-patch-videos-id",
         "ep-delete-videos-id",
-        "ep-get-videos-id-segments"
+        "ep-get-videos-id-segments",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/52-transcript-word-review/story-52-12-fix-from-transcript.md",
@@ -3780,7 +3898,8 @@
         "GET /videos/{id}",
         "PATCH /videos/{id}",
         "DELETE /videos/{id}",
-        "GET /videos/{id}/segments"
+        "GET /videos/{id}/segments",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -3834,7 +3953,8 @@
         "ep-delete-libraries-id",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/52-transcript-word-review/story-52-14-settings-and-health.md",
@@ -3849,7 +3969,8 @@
         "DELETE /libraries/{id}",
         "GET /settings",
         "PUT /settings",
-        "GET /queues"
+        "GET /queues",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -4031,14 +4152,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-06-status-strip.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "status-strip"
@@ -4057,14 +4181,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-07-fault-rehearsal.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "fault-rehearsal"
@@ -4172,7 +4299,8 @@
         "epic-53-logs-errors-reports",
         "entity-audit_log",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-11-admin-pages.md",
@@ -4181,7 +4309,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /components"
       ],
       "db_tables": [
         "audit_log"
@@ -4203,14 +4332,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-12-dashboards.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "dashboards"
@@ -4281,14 +4413,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-15-report-a-problem.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "report-a-problem"
@@ -4359,14 +4494,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-capabilities"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-01-manifest-package.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "manifest-package"
@@ -4524,14 +4662,17 @@
       ],
       "related": [
         "epic-54-plugins",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-07-lifecycle.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -4556,7 +4697,8 @@
         "entity-audit_log",
         "entity-libraries",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-08-grants-roles.md",
@@ -4565,7 +4707,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /components"
       ],
       "db_tables": [
         "audit_log",
@@ -4614,14 +4757,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-10-file-install.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "file-install"
@@ -4811,14 +4957,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-17-catalog-kill-switch.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "catalog-kill-switch"
@@ -4889,14 +5038,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-20-panels.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "panels"
@@ -4915,14 +5067,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-capabilities"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-21-local-compute.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "local-compute"
@@ -4967,14 +5122,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-23-native-runner.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "native-runner"
@@ -5092,14 +5250,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-27-layout-packaging.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "layout-packaging"
@@ -5354,7 +5515,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-queues"
+        "ep-get-queues",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-36-wave9-core.md",
@@ -5362,7 +5524,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /queues",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {

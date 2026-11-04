@@ -3,6 +3,7 @@
 //	/ws/jobs
 //	/ws/library/{id}
 //	/ws/playback/{video_id}
+//	/ws/home                 home-wide events, open to every signed-in user (story 51.09)
 //
 // Plus the SSE fallback for blocked-WebSocket networks (AC-6).
 //
@@ -166,6 +167,14 @@ func canReadLibrary(p *principal.Principal, libraryID string) bool {
 	return p != nil && (p.IsAdmin || p.AccessAllLibraries || p.HasLibrary(libraryID))
 }
 
+// HomeChannel carries the home-wide events every signed-in user may hear (Epic 51 story
+// 51.09). Its events hold no internals: capabilities_changed carries only the ETag of
+// GET /api/capabilities, which each client then reads with its own role.
+const HomeChannel = "home"
+
+// EventCapabilitiesChanged is HomeChannel's event for a new capabilities answer.
+const EventCapabilitiesChanged = "capabilities_changed"
+
 // DefaultHeartbeat is the SSE keep-alive comment interval.
 const DefaultHeartbeat = 30 * time.Second
 
@@ -183,6 +192,7 @@ func (h *Handler) heartbeat(ctx context.Context) time.Duration {
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/ws/jobs", h.serveSSE("jobs"))
 	r.Get("/ws/queues", h.serveSSE("queues"))
+	r.Get("/ws/home", h.serveSSE(HomeChannel))
 	r.Get("/ws/library/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := chi.URLParam(r, "id")
 		// a library the caller cannot read is not found (no stream)

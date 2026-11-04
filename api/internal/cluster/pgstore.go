@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -238,7 +239,23 @@ func (s *PGStore) DeleteNode(ctx context.Context, id string) error {
 	}
 	// its streaming host row goes too (placements on it cascade; best effort)
 	_, _ = s.DB.ExecContext(ctx, `DELETE FROM streaming_hosts WHERE host_id = $1 AND role = 'node'`, id)
+	// and its component status rows (best effort: housekeeping prunes what is left)
+	_, _ = s.DB.ExecContext(ctx, `DELETE FROM component_status WHERE machine = $1`, id)
 	return nil
+}
+
+// PruneComponentStatus implements Store. A status row's machine is "home" or a node's
+// id; a node deleted while its row could not be pruned, or one that reported after its
+// delete, leaves rows no machine owns, which the component pages would show forever.
+func (s *PGStore) PruneComponentStatus(ctx context.Context) (int64, error) {
+	res, err := s.DB.ExecContext(ctx, `
+DELETE FROM component_status
+ WHERE machine <> 'home'
+   AND machine NOT IN (SELECT CAST(id AS TEXT) FROM cluster_nodes)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // SetStages implements Store.
@@ -248,7 +265,23 @@ func (s *PGStore) SetStages(ctx context.Context, id string, stages map[string]*b
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	for stage, on := range stages {
+	if err := SetStagesTx(ctx, tx, id, stages); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetStagesTx is SetStages inside the caller's transaction (Epic 51 story 51.12: a
+// machine's component override writes its stage switches with it). The caller commits.
+func SetStagesTx(ctx context.Context, tx *sql.Tx, id string, stages map[string]*bool) error {
+	names := make([]string, 0, len(stages))
+	for stage := range stages {
+		names = append(names, stage)
+	}
+	sort.Strings(names) // one order for every writer: no two transactions wait on each other
+	for _, stage := range names {
+		on := stages[stage]
+		var err error
 		if on == nil {
 			_, err = tx.ExecContext(ctx, `DELETE FROM cluster_node_stages WHERE node_id = $1 AND stage = $2`, id, stage)
 		} else {
@@ -264,7 +297,7 @@ ON CONFLICT (node_id, stage) DO UPDATE SET enabled = EXCLUDED.enabled`, id, stag
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // Stages implements Store.

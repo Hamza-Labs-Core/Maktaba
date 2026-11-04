@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 )
 
 // background owns the long-running goroutines `serve` and `slot` start (the
@@ -18,6 +20,9 @@ type background struct {
 
 	mu    sync.Mutex
 	stops []func()
+
+	// runner is the home's component runner (components.go); nil elsewhere.
+	runner *runner.Runner
 }
 
 func newBackground(parent context.Context) *background {

@@ -25,7 +25,9 @@ type Listener = (ev: ServerEvent) => void;
 
 const BASE = (import.meta.env.VITE_API_BASE ?? "") as string;
 
-export type Channel = "jobs" | "queues" | `library/${string}` | `playback/${string}`;
+// "home": home-wide events every signed-in user hears (Epic 51 story 51.09:
+// capabilities_changed {etag})
+export type Channel = "jobs" | "queues" | "home" | `library/${string}` | `playback/${string}`;
 
 class Subscription {
   private es: EventSource | null = null;

@@ -1,0 +1,243 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
+)
+
+// fakeComponents answers the CLI like the service, and records what it applied.
+type fakeComponents struct {
+	preview components.Preview
+	applied []components.Request
+	actors  []components.Actor
+	refuse  error
+	// imported and records are what the import and offline commands recorded
+	imported []string
+	records  []string
+}
+
+func (f *fakeComponents) List(context.Context) (components.ListView, error) {
+	return components.ListView{Revision: 3, Bundle: components.BundleLine{Base: "full", Minus: []string{"youtube"}},
+		Components: []components.View{{ID: "llm", Group: "processing", Want: catalog.WantEnabled, Phase: catalog.PhaseRunning}}}, nil
+}
+
+func (f *fakeComponents) Show(_ context.Context, id string) (components.Detail, error) {
+	kind := "stages"
+	if strings.HasPrefix(id, "runtime.") {
+		kind = catalog.KindAsset
+	}
+	return components.Detail{View: components.View{ID: id, Kind: kind, Want: catalog.WantEnabled, Switchable: true}}, nil
+}
+
+func (f *fakeComponents) Preview(context.Context, components.Request) (components.Preview, error) {
+	return f.preview, nil
+}
+
+func (f *fakeComponents) Apply(_ context.Context, req components.Request, a components.Actor) (components.Result, error) {
+	if f.refuse != nil {
+		return components.Result{}, f.refuse
+	}
+	f.applied = append(f.applied, req)
+	f.actors = append(f.actors, a)
+	return components.Result{Changed: []store.Desired{{ID: req.Changes[0].ID, Want: req.Changes[0].Want, Generation: 2}}}, nil
+}
+
+func (f *fakeComponents) Imported(_ context.Context, ids []string, _ string, a components.Actor) (components.Result, error) {
+	f.imported = append(f.imported, ids...)
+	f.actors = append(f.actors, a)
+	return components.Result{Changed: []store.Desired{}}, nil
+}
+
+func (f *fakeComponents) Record(_ context.Context, _ components.Actor, action, _ string, _ map[string]any) error {
+	f.records = append(f.records, action)
+	return nil
+}
+
+func cli(f *fakeComponents, tty bool, stdin string) (*componentsCLI, *bytes.Buffer, *bytes.Buffer) {
+	var out, errOut bytes.Buffer
+	c := &componentsCLI{in: strings.NewReader(stdin), out: &out, errOut: &errOut, tty: tty, user: "maya", wait: func(time.Duration) {}}
+	if f != nil {
+		c.svc = f
+	}
+	return c, &out, &errOut
+}
+
+func runCLI(c *componentsCLI, argv ...string) int {
+	flags, args := splitComponentsArgs(argv)
+	c.values = componentsValues(argv)
+	return c.run(context.Background(), flags, args)
+}
+
+func llmOff() *fakeComponents {
+	return &fakeComponents{preview: components.Preview{Effects: []components.Effect{
+		{ID: "llm", From: catalog.PhaseRunning, To: catalog.PhaseOff},
+		{ID: "classify", From: catalog.PhaseRunning, To: catalog.PhaseDegraded, Reason: "want_missing:llm"}}}}
+}
+
+// T11: a write with no terminal and no --yes refuses with exit 2 and changes nothing.
+func TestComponentsCLINeedsYesWithoutATerminal(t *testing.T) {
+	f := llmOff()
+	c, out, errOut := cli(f, false, "")
+	if code := runCLI(c, "disable", "llm"); code != exitComponentsNeedYes {
+		t.Fatalf("exit %d", code)
+	}
+	if len(f.applied) != 0 || !strings.Contains(errOut.String(), "--yes") || !strings.Contains(out.String(), "classify: running -> degraded") {
+		t.Fatalf("applied %v; out %q; err %q", f.applied, out, errOut)
+	}
+}
+
+// install of a wanted asset that is not on this home writes its row again (the packs
+// runner installs from the new generation), as the OS user; a component that is on and
+// not an asset is installed already, nothing applied.
+func TestComponentsCLIInstallAsksAgainForAMissingAsset(t *testing.T) {
+	f := &fakeComponents{}
+	c, _, _ := cli(f, false, "")
+	if code := runCLI(c, "install", "runtime.ml"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if len(f.applied) != 1 || !f.applied[0].Changes[0].Again || f.applied[0].Changes[0].Want != catalog.WantEnabled ||
+		f.actors[0] != (components.Actor{By: "maya", Source: "cli"}) {
+		t.Fatalf("applied %+v as %+v", f.applied, f.actors)
+	}
+	f = &fakeComponents{}
+	c, out, _ := cli(f, false, "")
+	if code := runCLI(c, "install", "llm"); code != 0 || len(f.applied) != 0 || !strings.Contains(out.String(), "installed already") {
+		t.Fatalf("exit %d, applied %+v: %s", code, f.applied, out)
+	}
+}
+
+// --yes (after the id, too) applies, as the OS user with actor source cli.
+func TestComponentsCLIYesApplies(t *testing.T) {
+	f := llmOff()
+	c, out, _ := cli(f, false, "")
+	if code := runCLI(c, "disable", "llm", "--yes"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if len(f.applied) != 1 || f.applied[0].Changes[0].Want != catalog.WantInstalled ||
+		f.actors[0] != (components.Actor{By: "maya", Source: "cli"}) || !strings.Contains(out.String(), "Done.") {
+		t.Fatalf("applied %+v as %+v: %s", f.applied, f.actors, out)
+	}
+	f = llmOff()
+	c, _, _ = cli(f, false, "")
+	if code := runCLI(c, "enable", "livetv.inprocess", "--with-conflicts", "--yes"); code != 0 || !f.applied[0].WithConflicts {
+		t.Fatalf("with-conflicts: %d %+v", code, f.applied)
+	}
+}
+
+// On a terminal it asks; anything but y changes nothing.
+func TestComponentsCLIAsks(t *testing.T) {
+	f := llmOff()
+	c, out, _ := cli(f, true, "n\n")
+	if code := runCLI(c, "disable", "llm"); code != exitComponentsFailed || len(f.applied) != 0 || !strings.Contains(out.String(), "Continue? [y/N]") {
+		t.Fatalf("exit %d, applied %v: %s", code, f.applied, out)
+	}
+	c, _, _ = cli(f, true, "y\n")
+	if code := runCLI(c, "disable", "llm"); code != 0 || len(f.applied) != 1 {
+		t.Fatalf("yes: exit %d, applied %v", code, f.applied)
+	}
+}
+
+// A stop is a hold with no end; start needs no question.
+func TestComponentsCLIStopStart(t *testing.T) {
+	f := &fakeComponents{}
+	c, _, _ := cli(f, false, "")
+	if code := runCLI(c, "stop", "youtube", "--yes"); code != 0 || f.applied[0].Changes[0].Hold == nil || !*f.applied[0].Changes[0].Hold {
+		t.Fatalf("stop: %d %+v", code, f.applied)
+	}
+	if code := runCLI(c, "start", "youtube"); code != 0 || *f.applied[1].Changes[0].Hold {
+		t.Fatalf("start: %d %+v", code, f.applied)
+	}
+}
+
+// A refusal, a preview refusal, an unknown command or flag, and what waits for packs exit 1.
+func TestComponentsCLIRefusals(t *testing.T) {
+	f := &fakeComponents{preview: components.Preview{Refused: []components.Refusal{
+		{Code: components.CodeRequiredBy, Detail: "required", RequiredBy: []string{"transcription"}}}}}
+	c, _, errOut := cli(f, false, "")
+	if code := runCLI(c, "remove", "runtime.ml", "--yes"); code != exitComponentsFailed || len(f.applied) != 0 ||
+		!strings.Contains(errOut.String(), "transcription") {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	for _, argv := range [][]string{{"frob", "x"}, {"list", "--loud"}, {"enable"}, {"remove", "youtube", "--purge", "--yes"}} {
+		c, _, _ := cli(&fakeComponents{}, false, "")
+		if code := runCLI(c, argv...); code != exitComponentsFailed {
+			t.Errorf("%v: exit %d", argv, code)
+		}
+	}
+}
+
+// Story 51.19: `components enable cloud.relay` on a free home is refused with the plan it
+// needs and the plan the home is on; nothing is applied.
+func TestComponentsCLILicenceRefusal(t *testing.T) {
+	f := &fakeComponents{preview: components.Preview{Refused: []components.Refusal{{ID: "cloud.relay",
+		Code: components.CodeLicence, Detail: "cloud.relay needs the cloud_relay licence", Licence: "cloud_relay", Tier: "free"}}}}
+	c, _, errOut := cli(f, false, "")
+	if code := runCLI(c, "enable", "cloud.relay", "--yes"); code != exitComponentsFailed || len(f.applied) != 0 {
+		t.Fatalf("exit %d, applied %v", code, f.applied)
+	}
+	if !strings.Contains(errOut.String(), "Refused (licence_missing)") ||
+		!strings.Contains(errOut.String(), "Needs the Home plan. This home is on Free.") {
+		t.Fatalf("output: %s", errOut)
+	}
+}
+
+// list prints the table and the bundle line; bundle with no name prints the line.
+func TestComponentsCLIList(t *testing.T) {
+	c, out, _ := cli(&fakeComponents{}, false, "")
+	if code := runCLI(c, "list"); code != 0 || !strings.Contains(out.String(), "llm") ||
+		!strings.Contains(out.String(), "Based on full, minus youtube.") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+	c, out, _ = cli(&fakeComponents{}, false, "")
+	if code := runCLI(c, "list", "--json"); code != 0 || !strings.Contains(out.String(), `"revision": 3`) {
+		t.Fatalf("json: %d %s", code, out)
+	}
+}
+
+// With the server's database not answering, the CLI says so in one line and exits 3.
+func TestComponentsCLIServerNotRunning(t *testing.T) {
+	code := runComponents([]string{"list", "--dsn", "postgres://x:x@127.0.0.1:1/x?sslmode=disable&connect_timeout=1"})
+	if code != exitComponentsNotRunning {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+// restart asks first (no terminal and no --yes: exit 2, nothing restarted), then
+// restarts as the OS user with actor source cli; a refusal is exit 1 with its code.
+func TestComponentsCLIRestart(t *testing.T) {
+	var asked []string
+	var actors []components.Actor
+	restart := func(_ context.Context, id string, a components.Actor) (int, error) {
+		if id == "youtube" {
+			return 0, &components.Refusal{Code: components.CodeNotRestartable, Detail: "youtube is a stages"}
+		}
+		asked, actors = append(asked, id), append(actors, a)
+		return 2, nil
+	}
+	c, _, errOut := cli(nil, false, "")
+	c.restart = restart
+	if code := runCLI(c, "restart", "transcription"); code != exitComponentsNeedYes || len(asked) != 0 {
+		t.Fatalf("no --yes: exit %d, restarted %v: %s", code, asked, errOut)
+	}
+	c, out, _ := cli(nil, false, "")
+	c.restart = restart
+	if code := runCLI(c, "restart", "transcription", "--yes"); code != 0 || len(asked) != 1 ||
+		actors[0] != (components.Actor{By: "maya", Source: "cli"}) || !strings.Contains(out.String(), "restarted 2") {
+		t.Fatalf("exit %d, %v as %v: %s", code, asked, actors, out)
+	}
+	c, _, errOut = cli(nil, true, "y\n")
+	c.restart = restart
+	if code := runCLI(c, "restart", "youtube"); code != exitComponentsFailed || !strings.Contains(errOut.String(), "not_restartable") {
+		t.Fatalf("refused: exit %d: %s", code, errOut)
+	}
+	if code := runCLI(c, "restart"); code != exitComponentsFailed {
+		t.Fatalf("no id: exit %d", code)
+	}
+}

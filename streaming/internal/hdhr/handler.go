@@ -46,6 +46,9 @@ type Handler struct {
 	// Viewings, when set, records each tuner stream (Epic 44 story 44.4): a
 	// viewing from its start to its end, and the lease for the tuner page.
 	Viewings TunerViewings
+	// Gate wraps discover.json and lineup.json: 409 component_off while
+	// livetv.hdhomerun is off (Epic 51; nil: no gate).
+	Gate func(http.Handler) http.Handler
 
 	leases *leaseRegistry
 }
@@ -64,9 +67,13 @@ func New(repo Repo, streamer Streamer) *Handler {
 
 // Mount wires the HDHomeRun routes onto the streaming mux.
 func (h *Handler) Mount(r chi.Router) {
-	r.Get("/discover.json", h.Discover)
+	gated := r
+	if h.Gate != nil {
+		gated = r.With(h.Gate)
+	}
+	gated.Get("/discover.json", h.Discover)
 	r.Get("/device.xml", h.DeviceXML)
-	r.Get("/lineup.json", h.Lineup)
+	gated.Get("/lineup.json", h.Lineup)
 	r.Get("/lineup_status.json", h.LineupStatus)
 	r.Get("/lineup.post", h.LineupPost)
 	r.Post("/lineup.post", h.LineupPost)

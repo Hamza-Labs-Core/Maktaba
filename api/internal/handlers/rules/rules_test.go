@@ -371,7 +371,7 @@ func TestPatch_AuthAndSection(t *testing.T) {
 		want int
 	}{
 		{"non-admin forbidden", user, "/api/rules/planner", http.StatusForbidden},
-		{"anonymous forbidden", nil, "/api/rules/planner", http.StatusForbidden},
+		{"anonymous must sign in", nil, "/api/rules/planner", http.StatusUnauthorized},
 		{"unknown section", admin, "/api/rules/nope", http.StatusNotFound},
 		{"admin ok", admin, "/api/rules/groups", http.StatusOK},
 	}
@@ -446,12 +446,14 @@ func TestPatch_RowsMayLeaveOutDefaultedColumnsButNotNullThem(t *testing.T) {
 	}
 }
 
-// The rules are the home admins' to read too (the API enforces roles).
+// The rules are the home admins' to read too (the API enforces roles): no sign-in is
+// 401, anyone else 403.
 func TestReadIsAdminOnly(t *testing.T) {
 	_, srv := newServer(t)
-	for _, p := range []*principal.Principal{nil, user} {
-		if code, _ := do(t, srv, http.MethodGet, "/api/rules", "", p); code != http.StatusForbidden {
-			t.Errorf("GET /api/rules as %v: %d, want 403", p, code)
-		}
+	if code, _ := do(t, srv, http.MethodGet, "/api/rules", "", nil); code != http.StatusUnauthorized {
+		t.Errorf("GET /api/rules signed out: %d, want 401", code)
+	}
+	if code, _ := do(t, srv, http.MethodGet, "/api/rules", "", user); code != http.StatusForbidden {
+		t.Errorf("GET /api/rules as a viewer: %d, want 403", code)
 	}
 }

@@ -6,6 +6,7 @@
 // reads as a sentence and names no path.
 import { ApiError } from "./api";
 import { classifyError, type AppErrorKind } from "./errorKind";
+import { featureOffText } from "./featureWords";
 
 /** A kind, plus "offline": the browser itself has no network. */
 export type UserErrorKind = AppErrorKind | "offline";
@@ -49,6 +50,8 @@ export function plainDetail(detail: unknown): detail is string {
  * (pairing: "a sign-in through Maktaba Cloud cannot sign in a device").
  */
 export function inputDetail(e: unknown, opts: { refusals?: boolean } = {}): string | null {
+  // the home's sentence for it is English: componentOffText has the words
+  if (e instanceof ApiError && e.problem.code === "component_off") return null;
   if (
     e instanceof ApiError &&
     (INPUT_STATUSES.has(e.status) || (opts.refusals === true && e.status === 403)) &&
@@ -60,7 +63,37 @@ export function inputDetail(e: unknown, opts: { refusals?: boolean } = {}): stri
   return null;
 }
 
-/** The sentence a screen shows for a failed call. */
-export function errorText(e: unknown, t: T): string {
-  return inputDetail(e) ?? t(`error.kind.${userErrorKind(e)}`);
+/** A word's translation, or "" when the dictionary has none. */
+function word(t: T, key: string): string {
+  const w = t(key);
+  return w && w !== key ? w : "";
+}
+
+/**
+ * A 409 `component_off` (Epic 51: the part of the home that route needs is turned
+ * off) in the app's words, with the part's name: never the home's English detail.
+ * The name is the feature's (story 51.09: `components.feature.<feature>`), else the
+ * component's title, else its id. An admin is told where to turn it on
+ * (`error.kind.offAdmin` after the sentence); with no name at all it is `error.kind.off`.
+ * null for any other error.
+ */
+export function componentOffText(e: unknown, t: T, opts: { admin?: boolean } = {}): string | null {
+  if (!(e instanceof ApiError) || e.status !== 409 || e.problem.code !== "component_off")
+    return null;
+  const id = typeof e.problem.component === "string" ? e.problem.component : "";
+  const feature = typeof e.problem.feature === "string" ? e.problem.feature : "";
+  // a feature reads as its own sentence (lib/featureWords); a component through
+  // the frame whose head noun agrees ("The {component} component is off")
+  let off = "";
+  if (feature && word(t, `components.feature.${feature}`)) off = featureOffText(feature, t);
+  else if (id)
+    off = t("error.componentOff", { component: word(t, `components.${id}.title`) || id });
+  if (!off) return t("error.kind.off");
+  if (opts.admin) return t("error.kind.offAdmin", { off });
+  return off;
+}
+
+/** The sentence a screen shows for a failed call (admin: component_off says where to turn it on). */
+export function errorText(e: unknown, t: T, opts: { admin?: boolean } = {}): string {
+  return componentOffText(e, t, opts) ?? inputDetail(e) ?? t(`error.kind.${userErrorKind(e)}`);
 }

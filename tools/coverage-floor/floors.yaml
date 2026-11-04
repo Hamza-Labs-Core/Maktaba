@@ -33,6 +33,7 @@ shared/tracing/go:   71    # measured 71.3
 shared/errrpt/go:    85    # measured 85.8
 shared/testtier/go:  43    # measured 43.2
 shared/go/releaseverify: 50  # measured 50.9 (2026-10-19, story 35.1)
+shared/components:   74    # measured 76.3 (2026-11-03, the catalog and the store; no Postgres)
 shared/go/ports:     95    # measured 95.2 (2026-10-31, the port registry)
 
 # --- Go tooling modules ---

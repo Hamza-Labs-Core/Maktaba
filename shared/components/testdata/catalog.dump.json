@@ -1,0 +1,2381 @@
+{
+  "components": [
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.postgres.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.postgres",
+      "in_payload": false,
+      "kind": "process",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "postgres/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": false,
+      "title_key": "components.core.postgres.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.api.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.api",
+      "in_payload": false,
+      "kind": "process+loop",
+      "licence": "",
+      "loops": [
+        "api:process_recorder",
+        "api:license_refresher",
+        "api:license_reload",
+        "api:eventbus_run",
+        "api:eventbus_pruner",
+        "api:idempotency_sweep",
+        "api:jwt_key_reaper",
+        "api:queues_snapshots",
+        "api:sharepath_reload",
+        "api:browse_rowcache_listen"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "api/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.audit",
+        "rules.storage",
+        "rules.system_health",
+        "rules.search"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": false,
+      "title_key": "components.core.api.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.streaming.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.streaming",
+      "in_payload": false,
+      "kind": "process+loop",
+      "licence": "",
+      "loops": [
+        "streaming:watchdog",
+        "streaming:cache_gc",
+        "streaming:session_reaper",
+        "streaming:vod_purge",
+        "streaming:share_map"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "streaming/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": false,
+      "title_key": "components.core.streaming.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.pipeline.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.pipeline",
+      "in_payload": false,
+      "kind": "stages+process+loop",
+      "licence": "",
+      "loops": [
+        "pipeline:worker-hb",
+        "pipeline:stage-selection",
+        "pipeline:reconciler",
+        "pipeline:pruner",
+        "pipeline:audio-cache-sweep",
+        "pipeline:claim-lease",
+        "pipeline:index-close"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "pipeline/",
+        "pipeline/chroma-copy"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "scan",
+        "probe",
+        "content_hash",
+        "thumb_hash",
+        "link",
+        "fingerprint",
+        "style_sample",
+        "fp_gate",
+        "access_check",
+        "storage_canonicalize",
+        "categorize",
+        "component_catchup"
+      ],
+      "stop_grace_s": 5,
+      "switchable": false,
+      "title_key": "components.core.pipeline.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.node.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.node",
+      "in_payload": false,
+      "kind": "process+loop",
+      "licence": "",
+      "loops": [
+        "api:node_agent_feed",
+        "api:node_check_role",
+        "api:node_db_watch",
+        "api:node_keep_home_seen",
+        "api:node_link_client",
+        "api:node_report",
+        "api:node_report_loop",
+        "api:node_resolver_watch",
+        "api:node_schema_guard",
+        "api:nodedb_when_up",
+        "api:cluster_copies",
+        "api:clusterauth_node_read",
+        "streaming:node_tv_checks"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "copy/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": false,
+      "title_key": "components.core.node.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.updates.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.updates",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:updates_health_sampler",
+        "api:update_disconnect_machines"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": false,
+      "title_key": "components.core.updates.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.core.switchover.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "core",
+      "id": "core.switchover",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:switchover_resume",
+        "api:switchover_keep_standbys",
+        "api:switchover_finish",
+        "api:switchover_run",
+        "api:switchover_after_cancel",
+        "api:switchover_retry_thaw"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": false,
+      "title_key": "components.core.switchover.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.media.thumbnails.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "media",
+      "id": "media.thumbnails",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "thumbnail",
+        "thumb_small",
+        "chapter_thumbs"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.media.thumbnails.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.library.convert.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "library",
+      "id": "library.convert",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "convert_mp4"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.library.convert.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core"
+      ],
+      "conflicts": [],
+      "desc_key": "components.library.dedup.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "library",
+      "id": "library.dedup",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "dedup_scan",
+        "dedup_apply",
+        "trash_purge",
+        "file_restore"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.library.dedup.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.library.repair.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "library",
+      "id": "library.repair",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.repair"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "repair_broken"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.library.repair.title",
+      "wants": [
+        "tool.yt-dlp"
+      ]
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.transcription.desc",
+      "drain": {
+        "checkpoint": true,
+        "grace_s": 120
+      },
+      "features": [
+        "transcripts"
+      ],
+      "gated": false,
+      "group": "processing",
+      "id": "transcription",
+      "in_payload": false,
+      "kind": "stages+process",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "pipeline/stt-*"
+      ],
+      "requires": [
+        [
+          "runtime.ml"
+        ],
+        [
+          "model.whisper-turbo",
+          "model.whisper-large-v3",
+          "model.whisper-medium"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "preferred",
+        "ram_mb": 6000
+      },
+      "settings": [
+        "rules.transcription",
+        "toml:transcription.workers"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "extract",
+        "transcribe",
+        "second_listen"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.transcription.title",
+      "wants": [
+        "model.cohere-arabic"
+      ]
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.subtitles.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "subtitles"
+      ],
+      "gated": false,
+      "group": "processing",
+      "id": "subtitles",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "transcription"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "subtitle_gen"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.subtitles.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.search.semantic.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "semantic_search"
+      ],
+      "gated": false,
+      "group": "processing",
+      "id": "search.semantic",
+      "in_payload": false,
+      "kind": "stages+process",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "pipeline/index"
+      ],
+      "requires": [
+        [
+          "runtime.ml"
+        ],
+        [
+          "model.embedder"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "toml:pipeline.index_worker"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "index",
+        "chapter_infer",
+        "topic_assign",
+        "topic_recluster"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.search.semantic.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.classify.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "processing",
+      "id": "classify",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.detect",
+        "rules.tag",
+        "rules.tagcheck",
+        "rules.books",
+        "rules.display_titles",
+        "rules.groups"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "detect",
+        "tag",
+        "check_tags",
+        "check_clips",
+        "display_title",
+        "books",
+        "topic_collections",
+        "promo_links",
+        "clip_groups",
+        "rate_style",
+        "review_pages"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.classify.title",
+      "wants": [
+        "llm"
+      ]
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.enrich.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "processing",
+      "id": "enrich",
+      "in_payload": false,
+      "kind": "stages+loop",
+      "licence": "",
+      "loops": [
+        "api:enrichment_auto_accept"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.enrich"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "enrich"
+      ],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.enrich.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.llm.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "processing",
+      "id": "llm",
+      "in_payload": false,
+      "kind": "process",
+      "licence": "",
+      "loops": [],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "ollama/"
+      ],
+      "requires": [
+        [
+          "runtime.ollama"
+        ],
+        [
+          "model.llm.qwen2_5-7b"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "preferred",
+        "ram_mb": 6000
+      },
+      "settings": [
+        "toml:llm.enabled",
+        "toml:llm.models"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.llm.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.youtube.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "youtube"
+      ],
+      "gated": false,
+      "group": "integrations",
+      "id": "youtube",
+      "in_payload": false,
+      "kind": "stages",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "tool.yt-dlp"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.exactdates"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "youtube_sync",
+        "youtube_fetch",
+        "youtube_backfill",
+        "youtube_tartube",
+        "exact_dates"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.youtube.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.ext.plex.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "plex"
+      ],
+      "gated": false,
+      "group": "integrations",
+      "id": "ext.plex",
+      "in_payload": false,
+      "kind": "extension",
+      "licence": "",
+      "loops": [],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.plexlive"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "plex_index",
+        "plex_collection",
+        "plex_groups",
+        "plex_livetv"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.ext.plex.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.ext.dizquetv.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "integrations",
+      "id": "ext.dizquetv",
+      "in_payload": false,
+      "kind": "extension",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "livetv"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.dizquetv"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "dizquetv_show",
+        "dizquetv_channels",
+        "dizquetv_audit"
+      ],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.ext.dizquetv.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.ext.cloudflare_stream.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "integrations",
+      "id": "ext.cloudflare_stream",
+      "in_payload": false,
+      "kind": "extension",
+      "licence": "",
+      "loops": [],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "livetv"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.ext.cloudflare_stream.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.livetv.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "live_tv"
+      ],
+      "gated": false,
+      "group": "livetv",
+      "id": "livetv",
+      "in_payload": false,
+      "kind": "stages+loop",
+      "licence": "",
+      "loops": [
+        "api:tvchange_controller",
+        "api:tvremote_controller",
+        "api:tvremote_publisher",
+        "api:tvremote_health_sampler",
+        "pipeline:channel-topup",
+        "streaming:tv_heartbeat",
+        "streaming:placement_listen",
+        "streaming:channel_sweeper",
+        "streaming:push_relay",
+        "streaming:viewings"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.planner",
+        "rules.tv",
+        "rules.tv_output",
+        "rules.tv_strip",
+        "rules.tv_simulcast",
+        "rules.tv_remote",
+        "rules.tv_cluster"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "plan_channels",
+        "write_channels"
+      ],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.livetv.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [
+        "livetv.inprocess"
+      ],
+      "desc_key": "components.livetv.slots.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "live_tv"
+      ],
+      "gated": false,
+      "group": "livetv",
+      "id": "livetv.slots",
+      "in_payload": false,
+      "kind": "stages+process+loop",
+      "licence": "",
+      "loops": [
+        "streaming:slots_frontdoor",
+        "streaming:slots_ops"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "tv-slot/*"
+      ],
+      "requires": [
+        [
+          "livetv"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.tv_staging",
+        "toml:tv.slots"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [
+        "tv_stage",
+        "tv_swap",
+        "tv_gc",
+        "tv_rollback"
+      ],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.livetv.slots.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [
+        "livetv.slots"
+      ],
+      "desc_key": "components.livetv.inprocess.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "live_tv"
+      ],
+      "gated": false,
+      "group": "livetv",
+      "id": "livetv.inprocess",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "streaming:channel_engine",
+        "streaming:channel_fences"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "livetv"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.livetv.inprocess.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.livetv.hdhomerun.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "livetv",
+      "id": "livetv.hdhomerun",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "streaming:hdhr_ssdp"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "livetv"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.livetv.hdhomerun.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.cloud.link.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "remote_access"
+      ],
+      "gated": false,
+      "group": "system",
+      "id": "cloud.link",
+      "in_payload": false,
+      "kind": "process",
+      "licence": "",
+      "loops": [],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [
+        "relay/"
+      ],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "toml:cloud.enabled"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.cloud.link.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.cloud.relay.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [
+        "remote_access"
+      ],
+      "gated": false,
+      "group": "system",
+      "id": "cloud.relay",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "cloud_relay",
+      "loops": [
+        "api:cloudlink_reporter"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "cloud.link"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.relay"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.cloud.relay.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.cluster.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "cluster",
+      "id": "cluster",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:cluster_housekeeping",
+        "api:cluster_hub",
+        "api:home_link",
+        "api:cluster_push_database",
+        "api:cluster_ensure_access",
+        "api:pairing_sweep",
+        "pipeline:health",
+        "pipeline:cluster-agent"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.cluster"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.cluster.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.discovery.mdns.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "cluster",
+      "id": "discovery.mdns",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "supervisor:mdns"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.discovery.mdns.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core"
+      ],
+      "conflicts": [],
+      "desc_key": "components.queue_health.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "queue_health",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "pipeline:queue-health"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.queue_health"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.queue_health.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core"
+      ],
+      "conflicts": [],
+      "desc_key": "components.analytics.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "analytics",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:watch_reaper",
+        "api:usage_counter"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.analytics.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.telemetry.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "telemetry",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:telemetry_sender"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.telemetry.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core"
+      ],
+      "conflicts": [],
+      "desc_key": "components.backups.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "backups",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "supervisor:backups"
+      ],
+      "placement": "home",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "toml:backups.nightly"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.backups.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "core",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.updates.auto.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "system",
+      "id": "updates.auto",
+      "in_payload": false,
+      "kind": "loop",
+      "licence": "",
+      "loops": [
+        "api:update_checker",
+        "api:updates_discoverer",
+        "api:updates_scheduler",
+        "api:updates_driver"
+      ],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [
+        "rules.updates"
+      ],
+      "since": "0.3.66",
+      "source": "",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 5,
+      "switchable": true,
+      "title_key": "components.updates.auto.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.runtime.ml.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "runtimes",
+      "id": "runtime.ml",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "pack:runtime.ml",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.runtime.ml.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.runtime.ollama.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "runtimes",
+      "id": "runtime.ollama",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "pack:runtime.ollama",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.runtime.ollama.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.model.whisper-turbo.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.whisper-turbo",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "hf:dropbox-dash/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "sources": {
+        "darwin-arm64": "hf:mlx-community/whisper-large-v3-turbo@a4aaeec0636e6fef84abdcbe3544cb2bf7e9f6fb"
+      },
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.whisper-turbo.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.model.whisper-large-v3.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.whisper-large-v3",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "hf:Systran/faster-whisper-large-v3@edaa852ec7e145841d8ffdb056a99866b5f0a478",
+      "sources": {
+        "darwin-arm64": "hf:mlx-community/whisper-large-v3-mlx@49e6aa286ad60c14352c404340ded53710378a11"
+      },
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.whisper-large-v3.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.model.whisper-medium.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.whisper-medium",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "hf:Systran/faster-whisper-medium@08e178d48790749d25932bbc082711ddcfdfbc4f",
+      "sources": {
+        "darwin-arm64": "hf:mlx-community/whisper-medium-mlx@7fc08c4eac4c316526498f147dfdee6f6303f975"
+      },
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.whisper-medium.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.model.cohere-arabic.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": true,
+      "group": "models",
+      "id": "model.cohere-arabic",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "hf:CohereLabs/cohere-transcribe-arabic-07-2026@c3e911b42149bf7a1e53d5cef9878aee87515a23",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.cohere-arabic.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.model.refine.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.refine",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "pack:model.refine",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.refine.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.model.embedder.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.embedder",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ml"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "hf:intfloat/multilingual-e5-small@614241f622f53c4eeff9890bdc4f31cfecc418b3",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.embedder.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full"
+      ],
+      "conflicts": [],
+      "desc_key": "components.model.llm.qwen2_5-7b.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "models",
+      "id": "model.llm.qwen2_5-7b",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [
+        [
+          "runtime.ollama"
+        ]
+      ],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "ollama:qwen2.5:7b@sha256:845dbda0ea48ed749caafd9e6037047aa19acfcfd82e704d7ca97d631a0b697e",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.model.llm.qwen2_5-7b.title",
+      "wants": []
+    },
+    {
+      "bundles": [
+        "full",
+        "worker"
+      ],
+      "conflicts": [],
+      "desc_key": "components.tool.yt-dlp.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "tools",
+      "id": "tool.yt-dlp",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "darwin-arm64",
+        "windows-amd64",
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "pack:tool.yt-dlp",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.tool.yt-dlp.title",
+      "wants": []
+    },
+    {
+      "bundles": [],
+      "conflicts": [],
+      "desc_key": "components.tool.ffmpeg.desc",
+      "drain": {
+        "checkpoint": false,
+        "grace_s": 30
+      },
+      "features": [],
+      "gated": false,
+      "group": "tools",
+      "id": "tool.ffmpeg",
+      "in_payload": false,
+      "kind": "asset",
+      "licence": "",
+      "loops": [],
+      "placement": "any",
+      "platforms": [
+        "linux-amd64",
+        "linux-arm64"
+      ],
+      "processes": [],
+      "requires": [],
+      "resources": {
+        "disk_mb": 0,
+        "gpu": "",
+        "ram_mb": 0
+      },
+      "settings": [],
+      "since": "0.3.66",
+      "source": "pack:tool.ffmpeg",
+      "sources": {},
+      "stages": [],
+      "stop_grace_s": 0,
+      "switchable": true,
+      "title_key": "components.tool.ffmpeg.title",
+      "wants": []
+    }
+  ],
+  "features": [
+    "live_tv",
+    "transcripts",
+    "subtitles",
+    "semantic_search",
+    "chapters",
+    "youtube",
+    "plex",
+    "remote_access",
+    "recommendations"
+  ],
+  "order": [
+    "core.postgres",
+    "core.api",
+    "core.streaming",
+    "core.pipeline",
+    "core.node",
+    "core.updates",
+    "core.switchover",
+    "media.thumbnails",
+    "library.convert",
+    "library.dedup",
+    "library.repair",
+    "runtime.ml",
+    "model.whisper-turbo",
+    "model.whisper-large-v3",
+    "model.whisper-medium",
+    "transcription",
+    "subtitles",
+    "model.embedder",
+    "search.semantic",
+    "classify",
+    "enrich",
+    "runtime.ollama",
+    "model.llm.qwen2_5-7b",
+    "llm",
+    "tool.yt-dlp",
+    "youtube",
+    "ext.plex",
+    "livetv",
+    "ext.dizquetv",
+    "ext.cloudflare_stream",
+    "livetv.slots",
+    "livetv.inprocess",
+    "livetv.hdhomerun",
+    "cloud.link",
+    "cloud.relay",
+    "cluster",
+    "discovery.mdns",
+    "queue_health",
+    "analytics",
+    "telemetry",
+    "backups",
+    "updates.auto",
+    "model.cohere-arabic",
+    "model.refine",
+    "tool.ffmpeg"
+  ],
+  "phases": [
+    "not_installed",
+    "installing",
+    "removing",
+    "off",
+    "stopped",
+    "waiting",
+    "starting",
+    "running",
+    "degraded",
+    "draining",
+    "failed"
+  ],
+  "reasons": [
+    "dependency_off",
+    "licence_missing",
+    "platform_unsupported",
+    "not_enough_memory",
+    "verify_failed",
+    "crash_loop",
+    "held",
+    "stop_timeout",
+    "settings_invalid",
+    "env_override",
+    "boot_flag",
+    "reconcile_off",
+    "not_in_payload",
+    "component_off",
+    "component_held",
+    "required_by",
+    "toml_superseded",
+    "index_missing",
+    "index_expired",
+    "index_wrong_version",
+    "index_replayed",
+    "download_failed",
+    "disk_space",
+    "unpack_refused",
+    "offline_wrong_version",
+    "offline_wrong_platform",
+    "packs_disabled",
+    "pack_missing",
+    "pack_not_published",
+    "install_failed",
+    "busy",
+    "not_configured",
+    "offline_verify_failed"
+  ],
+  "schema": 1
+}

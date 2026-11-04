@@ -59,13 +59,15 @@ const (
 	// KindHostAccess: can the server read the library folders (macOS's
 	// Full Disk Access, a share that is not mounted).
 	KindHostAccess = "host_access"
+	// KindComponents: the components that failed or stay degraded (Epic 51).
+	KindComponents = "components"
 )
 
 // Kinds lists every kind (the help coverage test).
 var Kinds = []string{
 	KindAPI, KindPostgres, KindStreaming, KindPipeline, KindProcess, KindWorkers, KindWorker,
 	KindStreamingHost, KindDependency, KindPlexLiveTV, KindQueues, KindTVChannels, KindTVChange,
-	KindTVSlot, KindTVTuner, KindHostAccess,
+	KindTVSlot, KindTVTuner, KindHostAccess, KindComponents,
 }
 
 // Item is one part of Maktaba on the page.

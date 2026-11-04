@@ -52,7 +52,7 @@ func TestEveryWaitingReasonHasHelp(t *testing.T) {
 	reasons := []WaitingReason{
 		WaitDisabled, WaitNotConfigured, WaitPausedAll, WaitPaused, WaitAwaitingReview,
 		WaitNoWorker, WaitPoolFull, WaitDebouncing, WaitBackoff, WaitServiceRetrying,
-		WaitUpstream, WaitIdle,
+		WaitUpstream, WaitIdle, WaitComponentOff, WaitComponentHeld,
 	}
 	for _, locale := range []string{"en", "ar"} {
 		have := helpAnchors(t, locale, "processing")

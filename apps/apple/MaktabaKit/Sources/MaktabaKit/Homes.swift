@@ -171,6 +171,9 @@ public final class AppSession {
     /// The "Through Maktaba Cloud" sheet is up (the home picker opens it; it stays up while
     /// the chosen home is reached and signed in to).
     public var choosingThroughCloud = false
+    /// What the signed-in home says is on (story 51.11): every feature on until it answers,
+    /// asked again on every sign-in, here and at another home.
+    public let capabilities: CapabilitiesStore
 
     public var signedIn: Bool {
         if case .signedIn = phase { true } else { false }
@@ -200,8 +203,9 @@ public final class AppSession {
 
     public init(app: String, defaults: UserDefaults = .standard, probe: HomeProbe = HomeProbe(), asksHomes: Bool = true,
                 homeSession: URLSession = .shared, cloudSession: URLSession? = nil, clock: ConnectClock = .system,
-                discovery: (any HomeDiscovering)? = nil) {
+                discovery: (any HomeDiscovering)? = nil, capabilities: CapabilitiesStore? = nil) {
         self.app = app
+        self.capabilities = capabilities ?? CapabilitiesStore()
         self.discovery = discovery ?? BonjourDiscovery.forThisApp()
         self.clock = clock
         self.defaults = defaults
@@ -237,6 +241,8 @@ public final class AppSession {
         let home = remember(home)
         current = home
         defaults.set(home.url, forKey: "home")
+        // another home's answer is not this one's
+        capabilities.reset()
         let tokens = TokenStore(app: app, home: home.url)
         client = APIClient(home: home.url, tokens: tokens, session: homeSession)
         phase = .signingIn
@@ -506,6 +512,7 @@ public final class AppSession {
         restoreProblem = nil
         restoring = false
         phase = .choosingHome
+        capabilities.reset()
         defaults.removeObject(forKey: "home")
     }
 
@@ -544,6 +551,7 @@ public final class AppSession {
         restoreProblem = nil
         publish(nil)
         phase = .signingIn
+        capabilities.reset()
     }
 
     /// A screen saw `APIError.signedOut`: back to signing in (through the cloud at once when
@@ -553,6 +561,7 @@ public final class AppSession {
         restoreProblem = nil
         publish(nil)
         phase = .signingIn
+        capabilities.reset()
         Task { await signInQuietlyThroughCloud() }
     }
 
@@ -723,6 +732,11 @@ public final class AppSession {
         publish(nil)
         named(me.homeName)
         phase = .signedIn(me.user)
+        // what this home has on, asked at once and every 5 minutes (story 51.11)
+        if let client {
+            capabilities.use(client)
+            capabilities.start()
+        }
     }
 
     /// The current home's name, as the home says it (nil: it did not say, so the name

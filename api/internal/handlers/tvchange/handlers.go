@@ -62,6 +62,13 @@ func New(db *sql.DB, ctl *core.Controller) *Handler {
 
 // Mount wires the routes.
 func (h *Handler) Mount(r chi.Router) {
+	h.MountTV(r)
+	h.mountAutoUpdate(r)
+}
+
+// MountTV attaches the admin's /api/tv/* routes alone (Epic 51: they answer 409
+// component_off while Live TV is off; the update driver's internal routes do not).
+func (h *Handler) MountTV(r chi.Router) {
 	r.Get("/api/tv/changes", h.List)
 	r.Post("/api/tv/changes", h.Create)
 	r.Get("/api/tv/changes/{id}", h.Get)
@@ -76,9 +83,11 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/tv/rollback", h.RollbackPoint)
 	r.Get("/api/tv/slots", h.Slots)
 	r.Get("/api/tv/releases", h.Releases)
-	h.mountAutoUpdate(r)
 	mountPage(r, h)
 }
+
+// MountInternal attaches the update driver's /internal/updates/tv-change routes.
+func (h *Handler) MountInternal(r chi.Router) { h.mountAutoUpdate(r) }
 
 func admin(w http.ResponseWriter, r *http.Request) (*principal.Principal, bool) {
 	p := principal.FromContext(r.Context())

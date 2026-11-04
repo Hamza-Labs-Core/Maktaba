@@ -18,9 +18,10 @@
 
 ## 1. Why
 
-Requirement: today every worker and feature starts right away. Each one must instead be driven
-by config or settings, so it can be stopped and started, enabled and disabled, with server
-bundles that ship with or without components, and components that can be added later.
+Every worker and feature runs as soon as it is installed. The requirement (2026-11-03): all of
+them are driven by config and settings, so each can be enabled or disabled and started or
+stopped; servers come in bundles, with and without components; and components can be added
+later.
 
 Today a new install starts everything it can: transcription workers, the index worker, the
 LLM server, Live TV slots, YouTube sync, the cluster hub, the relay agent and about 40
@@ -587,7 +588,7 @@ Sources in [research.md](research.md) §2.
 | # | Call | Rejected, and why |
 |---|---|---|
 | H1 | **Desired state in Postgres, actual state per machine with conditions.** | *Everything in `server.toml`*: not live, not per-cluster, not editable from the web. *A `phase` column only*: loses the reason, can't show "running but degraded". *etcd / a new store*: one more thing to run on a home. |
-| H2 | **Enable and Stop are two controls. A hold persists across restarts** until Start. There are no timed holds. | *systemd's "stop lasts until reboot"*: an update restarts the server, so "stop transcription" would undo itself at 3 a.m. *One switch*: both controls are required. *Timed holds (1 hour, tonight, until tomorrow 06:00)*: the only choice is "until I turn it on" (§13, decision 2); fewer choices, and no time zones to get wrong. |
+| H2 | **Enable and Stop are two controls. A hold persists across restarts** until Start. There are no timed holds. | *systemd's "stop lasts until reboot"*: an update restarts the server, so "stop transcription" would undo itself at 3 a.m. *One switch*: both controls are required. *Timed holds (1 hour, tonight, until tomorrow 06:00)*: a hold lasts until Start (§13, decision 2); fewer choices, and no time zones to get wrong. |
 | H3 | **Disabling a requirement keeps the dependents' wish; they wait.** | *Cascade-disable the dependents* (systemd `Requires=` stop): turning one thing back on would mean finding and re-ticking five others. *Refuse while dependents are on*: annoying for a temporary stop. Refusal is kept only for remove. |
 | H4 | **Disable = stop claiming, drain, force-pause what is left, keep the queue, don't feed; enable = resume + catch-up.** | *Keep enqueueing and park everything*: a home with transcription off for months would grow millions of parked rows. *Cancel queued jobs*: loses work and history. *Fail in-flight jobs*: pollutes Epic 40's failure classes. |
 | H5 | **First-party components and packs are versioned with the server.** No third-party store in this epic. | *Independent component versions*: a compatibility matrix for each pair, and the update rehearsal would have to cover every mix. *A public store*: needs review, signing for others, and support. Epic 54 adds third-party plugins and a store on this model. |
