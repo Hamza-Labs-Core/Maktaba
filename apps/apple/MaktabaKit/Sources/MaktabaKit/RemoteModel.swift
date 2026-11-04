@@ -1,52 +1,63 @@
-import MaktabaKit
-import SwiftUI
+import Foundation
+import Observation
 
 /// The home as the Remote sees it, for every screen: what needs attention, the processing
 /// queue and its running jobs, the libraries, the machines, the updates, the processes.
 /// Read every 15 s while the app is open and after each action. Each action is one the home checks itself (its admins only): the app hides
-/// nothing as a guard.
+/// nothing as a guard. The Remote app (iPhone, iPad) shows it.
 @MainActor @Observable
-final class RemoteModel {
-    let session: AppSession
-    let client: APIClient
+public final class RemoteModel {
+    public let session: AppSession
+    public let client: APIClient
 
-    private(set) var attention: [FailureGroup] = []
-    private(set) var queue: QueueSnapshot?
-    private(set) var libraries: [Library] = []
-    private(set) var cluster: ClusterOverview?
-    private(set) var running: [RunningJob] = []
-    private(set) var updates: UpdatesOverview?
+    public private(set) var attention: [FailureGroup] = []
+    public private(set) var queue: QueueSnapshot?
+    public private(set) var libraries: [Library] = []
+    public private(set) var cluster: ClusterOverview?
+    public private(set) var running: [RunningJob] = []
+    public private(set) var updates: UpdatesOverview?
     /// The run the Updates screen shows (the one under way, else the last), with its steps.
-    private(set) var updateRun: UpdateRunView?
-    private(set) var processes: ProcessesDoc?
+    public private(set) var updateRun: UpdateRunView?
+    public private(set) var processes: ProcessesDoc?
     /// Why the running work (updates, processes, running jobs) could not be read, by part:
     /// an older home may not have one; the other screens are not held up by it.
-    private(set) var statusProblems: [StatusPart: String] = [:]
-    private(set) var loaded = false
+    public private(set) var statusProblems: [StatusPart: String] = [:]
+    public private(set) var loaded = false
     /// Why the last read or action did not work (nil once one works again).
-    var problem: String?
+    public var problem: String?
     /// What is under way: a group, a stage, a library, a machine, or "all".
-    private(set) var busy: Set<String> = []
+    public private(set) var busy: Set<String> = []
     /// Libraries whose scan the home took, for a moment's "Scan started".
-    private(set) var scanned: Set<String> = []
+    public private(set) var scanned: Set<String> = []
+    /// Bumped as each action starts and once its save is answered. A read that began before
+    /// then was answered before the save, so it is dropped: applied, it would put the old
+    /// state back on screen (a pause, a machine's join) while the home has the new one.
+    private var actions = 0
 
-    init(session: AppSession, client: APIClient) {
+    public init(session: AppSession, client: APIClient) {
         self.session = session
         self.client = client
     }
 
-    var retryable: [FailureGroup] { attention.filter { $0.action == "retry" } }
-    var asking: [Machine] { cluster?.nodes.filter { $0.group == .asking } ?? [] }
-    var attentionCount: Int { attention.reduce(0) { $0 + $1.count } }
+    public var retryable: [FailureGroup] { attention.filter { $0.action == "retry" } }
+    public var asking: [Machine] { cluster?.nodes.filter { $0.group == .asking } ?? [] }
+    public var attentionCount: Int { attention.reduce(0) { $0 + $1.count } }
 
     // MARK: reading
 
-    func load() async {
+    public func load() async {
+        let seen = actions
         async let a = read { try await self.client.needsAttention() }
         async let q = read { try await self.client.queues() }
         async let l = read { try await self.client.libraries() }
         async let c = read { try await self.client.cluster() }
         let (attention, queue, libraries, cluster) = await (a, q, l, c)
+        // an action since the read began: it was answered before the save, and the action
+        // reads again itself (the running work below is read now, after it)
+        guard actions == seen else {
+            await loadStatus()
+            return
+        }
         if let attention { self.attention = attention }
         if let queue { self.queue = queue }
         if let libraries { self.libraries = libraries }
@@ -94,7 +105,7 @@ final class RemoteModel {
     }
 
     /// Reads every 15 s until the task ends.
-    func poll() async {
+    public func poll() async {
         while !Task.isCancelled {
             await load()
             try? await Task.sleep(for: .seconds(15))
@@ -129,6 +140,7 @@ final class RemoteModel {
         busy.insert(key)
         defer { busy.remove(key) }
         var ok = true
+        actions += 1
         do {
             try await f()
             problem = nil
@@ -136,29 +148,30 @@ final class RemoteModel {
             fail(error)
             ok = false
         }
+        actions += 1
         await load()
         return ok
     }
 
-    func retry(_ groups: [FailureGroup]) async {
+    public func retry(_ groups: [FailureGroup]) async {
         await act(groups.count == 1 ? groups[0].id : "all") {
             for g in groups { try await client.retry(stage: g.stage, cause: g.cause) }
         }
     }
 
-    func setPaused(_ row: QueueRow, _ paused: Bool) async {
+    public func setPaused(_ row: QueueRow, _ paused: Bool) async {
         await act(row.id) { try await client.setPaused(stage: row.id, paused) }
     }
 
-    func setPausedAll(_ paused: Bool) async {
+    public func setPausedAll(_ paused: Bool) async {
         await act("all") { try await client.setPausedAll(paused) }
     }
 
-    func failures(stage: String) async -> [FailureGroup]? {
+    public func failures(stage: String) async -> [FailureGroup]? {
         await read { try await self.client.failures(stage: stage) }
     }
 
-    func scan(_ library: Library) async {
+    public func scan(_ library: Library) async {
         if await act(library.id, { try await client.scan(library: library.id) }) {
             scanned.insert(library.id)
             Task {
@@ -168,16 +181,17 @@ final class RemoteModel {
         }
     }
 
-    func setAcceptJoins(_ open: Bool) async {
+    public func setAcceptJoins(_ open: Bool) async {
         await act("joins") { try await client.setAcceptJoins(open) }
     }
 
     /// Approves with the code the machine shows; nil when it worked, else why not (the
     /// sheet says it and stays open).
-    func approve(_ machine: Machine, code: String) async -> ApproveFailure? {
+    public func approve(_ machine: Machine, code: String) async -> ApproveFailure? {
         busy.insert(machine.id)
         defer { busy.remove(machine.id) }
         var failure: ApproveFailure?
+        actions += 1
         do {
             try await client.approve(machine: machine.id, code: code)
         } catch APIError.signedOut {
@@ -185,20 +199,21 @@ final class RemoteModel {
         } catch {
             failure = ApproveFailure(error)
         }
+        actions += 1
         await load()
         return failure
     }
 
-    func reject(_ machine: Machine) async {
+    public func reject(_ machine: Machine) async {
         await act(machine.id) { try await client.reject(machine: machine.id) }
     }
 
-    func revoke(_ machine: Machine) async {
+    public func revoke(_ machine: Machine) async {
         await act(machine.id) { try await client.revoke(machine: machine.id) }
     }
 }
 
 /// A part of the running work the Remote reads on its own.
-enum StatusPart: String, Sendable {
+public enum StatusPart: String, Sendable {
     case updates, updateRun, processes, running
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgtest"
 )
 
@@ -84,5 +85,18 @@ func TestPGLookup_HasAudio(t *testing.T) {
 	}
 	if r := look("known"); r.AudioCodec != "aac" || r.AudioChannels != 6 {
 		t.Errorf("known after the backfill: %q/%d, want aac/6 untouched", r.AudioCodec, r.AudioChannels)
+	}
+}
+
+// ConnectPG's pool has the streaming service's cap, not one connection per CPU.
+func TestConnectPG_CapsThePool(t *testing.T) {
+	dsn, _ := pgtest.ScratchDB(t)
+	_, pool, err := ConnectPG(context.Background(), dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if got := pool.Config().MaxConns; got != pgpool.Serve {
+		t.Fatalf("MaxConns = %d, want %d", got, pgpool.Serve)
 	}
 }

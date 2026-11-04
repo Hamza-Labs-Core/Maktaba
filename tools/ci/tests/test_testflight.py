@@ -1,7 +1,8 @@
 """testflight.yml uploads the iPhone, iPad, Mac and Apple TV apps, each in its own leg.
 
 Every `v*` tag archives, signs and uploads Maktaba Player (iPhone), Maktaba Player iPad,
-Maktaba Remote (iOS), Maktaba Player Mac (macOS) and Maktaba TV (tvOS) to App Store Connect.
+Maktaba Remote (iPhone), Maktaba Remote iPad, Maktaba Player Mac (macOS) and Maktaba TV (tvOS)
+to App Store Connect.
 Each is its own matrix leg with fail-fast off, so one app's failed upload (its App Store
 Connect record not made yet, say) leaves the others' alone. Each leg archives for its scheme's
 own platform, from a scheme apps/apple/project.yml archives in Release, and every uploaded app
@@ -9,7 +10,8 @@ declares ITSAppUsesNonExemptEncryption NO (no export-compliance question on ever
 The Mac app's entitlements (its sandbox, which the Mac App Store requires) are signed into the
 unsigned archive for the export to keep, it has an App Store category, and its app icon has
 every Mac size. The Apple TV app has the layered icon, the App Store icon and both Top Shelf
-images App Store Connect requires of a tvOS app.
+images App Store Connect requires of a tvOS app. Every uploaded app is also compiled on pull
+requests by .github/workflows/_apple-apps.yml, so a tag never archives an app CI never built.
 """
 
 from __future__ import annotations
@@ -36,6 +38,9 @@ SDKS = {"iOS": "iphoneos", "macOS": "macosx", "tvOS": "appletvos"}
 TV_ASSETS = ROOT / "apps/tv/tvos/MaktabaTV/Resources/Assets.xcassets"
 APPLE = ROOT / "apps/apple"
 STEPS = {s.get("name"): s for s in UPLOAD["steps"]}
+APPLE_CI = yaml.safe_load(
+    (ROOT / ".github/workflows/_apple-apps.yml").read_text(encoding="utf-8")
+)["jobs"]
 
 
 def _settings(target: dict[str, Any]) -> dict[str, Any]:
@@ -77,8 +82,21 @@ def test_every_app_is_in_the_matrix_once() -> None:
         "Maktaba Player Mac",
         "Maktaba Player iPad",
         "Maktaba Remote",
+        "Maktaba Remote iPad",
         "Maktaba TV",
     ]
+
+
+def test_every_uploaded_app_is_built_on_pull_requests() -> None:
+    # the Apple apps job's plain builds, and the schemes the Player's UI tests build
+    run = next(
+        s["run"] for s in APPLE_CI["apple-apps"]["steps"] if s.get("name") == "Build the apps"
+    )
+    built = {line.split('"')[1] for line in run.splitlines() if line.strip().startswith('build "')}
+    ui_legs = APPLE_CI["player-ui-build"]["strategy"]["matrix"]["include"]
+    built |= {leg["scheme"] for leg in ui_legs}
+    for leg in LEGS:
+        assert leg["scheme"] in built, leg
 
 
 def test_one_app_failing_leaves_the_others() -> None:

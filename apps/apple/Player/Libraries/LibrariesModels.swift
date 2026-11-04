@@ -5,37 +5,6 @@ import SwiftUI
 // browse client (48.6), so the screens only draw it. Every route already scopes to the
 // caller's libraries on the home; nothing here filters by role.
 
-/// Why a page has nothing to show.
-enum LoadProblem: Equatable {
-    /// 404 (or the video routes' 403): gone, or not shared with this person.
-    case notAvailable
-    /// Anything else: the list's error screen, with Try again.
-    case failed(HomeFailure)
-}
-
-/// Runs `block` the way every screen of the section loads: signed out goes back to signing
-/// in, a cancel (the screen went away, the query changed) is nothing, anything else is kept
-/// as the problem to show (never the raw answer).
-@MainActor
-func loading(_ what: StaticString, signedOut: () -> Void, problem: (LoadProblem) -> Void,
-             _ block: () async throws -> Void) async {
-    do {
-        try await block()
-    } catch {
-        if case APIError.signedOut = error {
-            signedOut()
-            return
-        }
-        guard !Log.isCancellation(error) else { return }
-        Log.failure(what, error)
-        if case BrowseError.notAvailable = error {
-            problem(.notAvailable)
-        } else {
-            problem(.failed(HomeFailure(error)))
-        }
-    }
-}
-
 /// The pictures of the section: a video's poster on the home (`?size=small` for a card; the
 /// cache adds the token, to the home's own `/api/` only).
 enum LibraryArt {
@@ -244,85 +213,5 @@ final class LibraryModel {
             seriesNext = page.next
             seriesLoaded = true
         }
-    }
-}
-
-// MARK: a series (FR-17)
-
-@MainActor @Observable
-final class SeriesModel {
-    private let client: APIClient
-    private let signedOut: () -> Void
-    let id: String
-
-    private(set) var series: SeriesSummary?
-    private(set) var seasons: [SeriesSeason] = []
-    /// Continue: its next episode.
-    private(set) var next: Episode?
-    /// The chosen season.
-    var season: Int?
-    private(set) var loaded = false
-    var problem: LoadProblem?
-    /// A watched mark the home did not take (the page says so; the marks stay as they were).
-    var markFailed = false
-    /// Episodes whose watched mark was changed here (the home's answer is read on the next load).
-    private var marks: [String: Bool] = [:]
-
-    init(client: APIClient, id: String, signedOut: @escaping () -> Void) {
-        self.client = client
-        self.id = id
-        self.signedOut = signedOut
-    }
-
-    func load() async {
-        await loading("player series page", signedOut: signedOut, problem: { problem = $0; loaded = true }) {
-            async let summary = client.series(id)
-            async let doc = client.episodes(series: id)
-            let (s, d) = try await (summary, doc)
-            series = s
-            seasons = d.seasons
-            next = d.nextEpisode
-            marks = [:]
-            // the season of Continue's episode, else the first
-            if season == nil || !d.seasons.contains(where: { $0.season == season }) {
-                season = d.seasons.first { $0.episodes.contains { $0.videoID == d.nextEpisode?.videoID } }?.season
-                    ?? d.seasons.first?.season
-            }
-            problem = nil
-            loaded = true
-        }
-    }
-
-    /// The chosen season's episodes.
-    var episodes: [Episode] {
-        (seasons.first { $0.season == season } ?? seasons.first)?.episodes ?? []
-    }
-
-    func watched(_ e: Episode) -> Bool { marks[e.videoID] ?? e.watched }
-
-    func progress(_ e: Episode) -> Double {
-        if let m = marks[e.videoID] { return m ? 1 : 0 }
-        return e.progress
-    }
-
-    /// Every episode of the chosen season is watched.
-    var seasonWatched: Bool { !episodes.isEmpty && episodes.allSatisfy(watched) }
-
-    /// How many episodes of the series are watched, with this page's marks.
-    var watchedCount: Int { seasons.flatMap(\.episodes).filter(watched).count }
-    var episodeCount: Int { seasons.reduce(0) { $0 + $1.episodes.count } }
-
-    /// Marks `ids` watched or not (`POST /api/me/watched`), then shows them so.
-    func mark(_ ids: [String], watched: Bool) async {
-        guard !ids.isEmpty else { return }
-        await loading("player mark watched", signedOut: signedOut, problem: { _ in markFailed = true }) {
-            _ = try await client.markWatched(ids, watched)
-            for id in ids { marks[id] = watched }
-        }
-    }
-
-    /// Marks every episode of the chosen season watched (or not, when all already are).
-    func markSeason() async {
-        await mark(episodes.map(\.videoID), watched: !seasonWatched)
     }
 }

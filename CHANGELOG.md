@@ -36,6 +36,17 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The home's database no longer runs out of connections.** The API's background jobs (the
+  update check, the health samples, housekeeping) failed now and then with Postgres error
+  53300 ("remaining connection slots are reserved"): the bundled Postgres allowed its default
+  100 connections, while the streaming service and each TV slot opened one connection per
+  CPU (28 on a 28-core Mac) and a full node's pool on the home's database had no cap. The
+  bundled Postgres now allows 300 connections, the streaming service's pools have a cap (10,
+  6 for a TV slot, 4 on a machine's copy) and let an idle connection go after a minute, a full
+  node opens at most 4 connections of its own on the home's database, and a pipeline worker
+  lets an idle connection go after a minute and closes its LISTEN connections when it stops.
+  The new limit applies from the next update, which restarts the database.
+
 - **Apple TV live TV: a buffering stall shows the banner, and the banner keeps a bottom-corner
   logo clear. The Player's Home builds its rows as the TV does.** A stall (AVPlayer waiting for
   data, or its stall notice) did not change the playback phase, so the channel banner did not
@@ -50,6 +61,12 @@ build fails when the two differ.
   tapped.** Coming back to a video's page reads it again behind the page shown; a tap on
   Favorite or Mark watched before that read came back was saved, but the read then put the old
   state back on screen. The page now keeps what was tapped since the read began.
+- **The same fix everywhere else a page is read again while you change it.** On iPhone, iPad
+  and Mac, Favorite and Mark watched on a video's page, and a series' watched marks (on Android
+  too); on the web, the library grid's Mark watched and Add to favorites; in Maktaba Remote on
+  iPhone, iPad and Android, Pause, Resume, Machines may ask to join and Drain. A change made while the
+  page's read was on its way stays on screen as the home has it, instead of the old state
+  coming back.
 
 - **A Windows or Linux machine with an NVIDIA GPU reports it, and says why it does or does not
   transcribe.** Its capability report looked for the GPU only through `pynvml`, which no
@@ -97,6 +114,10 @@ build fails when the two differ.
   a smaller download; Worker, for a joined machine), the bundle can be changed later, and a
   component added later downloads as a signed pack, or from an offline file for a home without
   internet. `[components] reconcile = off` in `server.toml` leaves everything as it is.
+- **Maktaba Remote for iPad on TestFlight.** Every release tag now uploads the iPad Remote
+  (`Maktaba Remote iPad`, `com.hamzalabs.maktaba.remote.tablet`) to TestFlight beside the
+  other five Apple apps, and pull requests build it in the Apple apps check.
+
 - **A library dashboard and a page for each library.** Processing > Library dashboard
   (`/queue/libraries`, admins) shows one tile per library: overall progress as a gauge, done,
   running, waiting and failed as a bar, the last two weeks' finished jobs as a small chart, and

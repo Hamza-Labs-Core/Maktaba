@@ -7,12 +7,13 @@
 #   Maktaba Player        com.hamzalabs.maktaba.player          iOS (iPhone)
 #   Maktaba Player iPad   com.hamzalabs.maktaba.player.tablet   iOS (iPad)
 #   Maktaba Player Mac    com.hamzalabs.maktaba.player.mac      macOS (Mac App Store)
-#   Maktaba Remote        com.hamzalabs.maktaba.remote          iOS
+#   Maktaba Remote        com.hamzalabs.maktaba.remote          iOS (iPhone)
+#   Maktaba Remote iPad   com.hamzalabs.maktaba.remote.tablet   iOS (iPad)
 #   Maktaba TV            com.hamzalabs.maktaba.tv              tvOS
 #
 # Each app is its own matrix leg (fail-fast off): one app's failed upload (say, its App Store
 # Connect record is not made yet) leaves the others' uploads alone.
-# tools/ci/tests/test_testflight.py keeps the five apps in the matrix.
+# tools/ci/tests/test_testflight.py keeps the six apps in the matrix.
 #
 # SIGNING: Xcode's automatic, cloud-managed signing with the App Store Connect API key
 # (APPLE_API_KEY_P8 / APPLE_API_KEY_ID / APPLE_API_ISSUER, the key desktop-release.yml
@@ -34,7 +35,7 @@
 # is dropped, App Store versions are numbers only), by hand the latest tag's. Every upload
 # gets a new, higher build number: the UTC date and time (YYYYMMDD.HHMMSS).
 #
-# One-time, by the owner: the five apps' records in App Store Connect (an app record cannot be
+# One-time, by the owner: the six apps' records in App Store Connect (an app record cannot be
 # made through the API), and the owner as an internal tester. See docs/testflight.md.
 name: TestFlight
 
@@ -81,6 +82,7 @@ jobs:
             sdk: macosx
             entitlements: apps/apple/Player/Player-Mac.entitlements
           - { scheme: Maktaba Remote, destination: generic/platform=iOS, sdk: iphoneos }
+          - { scheme: Maktaba Remote iPad, destination: generic/platform=iOS, sdk: iphoneos }
           # the Apple TV app (apps/tv/tvos/MaktabaTV): the same archive, export and upload
           - { scheme: Maktaba TV, destination: generic/platform=tvOS, sdk: appletvos }
     env:

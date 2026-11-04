@@ -129,6 +129,9 @@ class ForcePauseListener:
         finally:
             with contextlib.suppress(Exception):
                 await listener.remove_listener(JOBS_FORCE_PAUSE, _on_notify)
+            with contextlib.suppress(Exception):
+                # its own connection, outside the pool (acquire_listener)
+                await listener.close()
 
     async def _run_pubsub(self) -> None:
         queue = await self._bus.subscribe(JOBS_FORCE_PAUSE)

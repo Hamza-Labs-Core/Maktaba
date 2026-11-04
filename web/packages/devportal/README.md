@@ -22,6 +22,7 @@ has no backend, no KV and no secrets. Every request goes through the Worker, whi
 | Path                                           | What                                             | From                                                         |
 | ---------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
 | `/`                                            | the landing page, English and Arabic             | `scripts/build.mjs`, `scripts/strings.mjs`                   |
+| `/apps/`                                       | the apps: one page each, with screenshots        | `scripts/apps.mjs`, `static/assets/apps/`                    |
 | `/wiki/`, `/ar/wiki/`                          | the wiki: every epic, story and plan, no mockups | `web/wiki-app` (its allow-list, `WIKI_ALLOW` in `build.mjs`) |
 | `/plugins/`                                    | building plugins: guides                         | `docs/developers/plugins/` (the list in `build.mjs`)         |
 | `/contributing/`                               | working on Maktaba: guides                       | `docs/developers/contributing/`                              |
@@ -82,8 +83,31 @@ unpublished file goes to GitHub, or nowhere if the file is internal.
 The build then runs `scripts/scan.mjs` over `dist/` and fails on any finding. The scan looks
 for home paths (`/Users/…`), the Claude trail, audits, private and tailnet IP ranges,
 personal `.local` and `.ts.net` names, private keys, cloud and API tokens, JWTs, secret
-assignments and Cloudflare account ids. CI runs it again, and `src/site.test.ts` checks the
-scan against samples and runs it on the built site.
+assignments and Cloudflare account ids. It reads every file's name and path too (plain
+letters, digits and `. _ - / @` only, and the same rules), and every image's metadata: an
+image may carry no EXIF or XMP (they can name the machine, the person or the place), and the
+text of a PNG's text chunks goes through the same rules. CI runs it again, and
+`src/site.test.ts` checks the scan against samples and runs it on the built site.
+
+### The Apps pages
+
+`/apps/` and one page per app (`/apps/player/`, `/apps/remote/`, `/apps/tv/`,
+`/apps/server/`, `/apps/web/`) come from `scripts/apps.mjs`: every text is written there in
+English and Arabic, and the parity check fails the build when one is missing, the Arabic is
+not Arabic or a screenshot has no image. The screenshots are WebP files in
+`static/assets/apps/`, `<name>-en.webp` and `<name>-ar.webp` (a page shows its own
+language's, or the one language it was taken in), dark, without metadata (`cwebp -metadata
+none`), at most 100 KB each. They are taken on test data only:
+
+- the Apple apps: the screenshots the CI UI tests write (`player-ui-tests-*`, `tv-ui-tests`,
+  the Mac run's attachments), against `MockHome`; the Remote's from `StatusUITests` on a
+  throwaway simulator;
+- Android: the Roborazzi references in `apps/android/*/src/test/screenshots/`, leaving out
+  any whose fixture shows a person's name, a LAN address or a media path;
+- the web app and the big screen: a scratch branch stack (its own Postgres, `HOME`,
+  `MAKTABA_CLUSTER_DIR` and `MAKTABA_ARCHIVE_DIR`) seeded with invented libraries.
+
+Look at every image before adding it: the scan cannot read the pixels.
 
 ## Build and preview locally
 

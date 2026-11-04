@@ -14,7 +14,7 @@
 | البث | Go | أصل HLS وDASH. تحويل الترميز وإعادة التغليف عبر FFmpeg، وخدمة النطاقات، والترجمات المصاحبة، وصور المعاينة، وقنوات التلفاز المباشر. |
 | خط المعالجة | Python | الماسح، والفحص، واستخراج الصوت، والتفريغ النصي عبر Whisper (MLX أو faster-whisper أو OpenAI)، والتضمينات، والفهرسة، وتمييز المتحدثين. يستهلك طابور المهام. |
 | الويب | React وTypeScript وVite | تطبيق الويب (تطبيق ويب تقدّمي PWA) ودليل المستخدم المدمج في `/help`. تعرضه تطبيقات الخادم المكتبية. |
-| التطبيقات الأصلية | Swift وKotlin | Maktaba Player وMaktaba Remote (iPhone وiPad وMac وAndroid)، وMaktaba TV (Apple TV وAndroid TV)، والمشغّل لنظامي Windows وLinux. |
+| التطبيقات الأصلية | Swift وKotlin | Maktaba Player (iPhone وiPad وMac وAndroid وWindows وLinux)، وMaktaba Remote (iPhone وiPad وAndroid)، وMaktaba TV (Apple TV وAndroid TV). |
 | مُرحِّل السحابة (اختياري) | Go | طبقة مستضافة للوصول عن بُعد: الهوية، وربط الخوادم، ومُرحِّل HTTP عبر نفق WSS، وتوزيع الإشعارات. موجود في `cloud/`. |
 
 تجمع `maktaba-server` الواجهة البرمجية والبث وواجهة الويب في ملف تنفيذي واحد لعمليات

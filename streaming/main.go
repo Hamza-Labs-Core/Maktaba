@@ -42,6 +42,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/handlers"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/httpx"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pathmap"
+	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/pgpool"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/probe"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/procattr"
 	"github.com/Hamza-Labs-Core/Maktaba/streaming/internal/server"
@@ -652,7 +653,7 @@ func buildProbeStores(ctx context.Context, logger *slog.Logger, lazy bool) (prob
 	up := true
 	backend, pool, err := probe.ConnectPG(ctx, dsn)
 	if err != nil && lazy {
-		if pool, err = pgxpool.New(context.Background(), dsn); err == nil {
+		if pool, err = pgpool.New(context.Background(), dsn, pgpool.Serve); err == nil {
 			logger.Warn("probe: the home's database does not answer; starting on this machine's copy of it",
 				"event", "probe_pg_down_at_start")
 			backend, up = probe.NewPGBackend(pool), false
