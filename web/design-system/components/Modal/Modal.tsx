@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { clsx } from "../internal/clsx";
 import { useFieldId } from "../internal/useId";
+import { useLabels } from "../internal/labels";
 import { useFocusTrap } from "../internal/useFocusTrap";
 import { useInertBackground } from "../internal/useInertBackground";
 import { usePortalHost } from "../internal/usePortalHost";
@@ -34,6 +35,7 @@ export function Modal({
   className,
 }: ModalProps) {
   const ref = useFocusTrap<HTMLDivElement>(open, onClose);
+  const labels = useLabels();
   const titleId = useFieldId();
   const host = usePortalHost(open, "modal");
 
@@ -69,7 +71,12 @@ export function Modal({
           <h2 className="mk-modal__title" id={titleId}>
             {title}
           </h2>
-          <button type="button" className="mk-overlay__close" aria-label="Close" onClick={onClose}>
+          <button
+            type="button"
+            className="mk-overlay__close"
+            aria-label={labels.close}
+            onClick={onClose}
+          >
             <svg viewBox="0 0 16 16" width={16} height={16} aria-hidden="true">
               <path
                 d="M4 4l8 8M12 4l-8 8"
