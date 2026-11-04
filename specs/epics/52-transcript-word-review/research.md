@@ -17,7 +17,7 @@
 | Whisper is over-confident in noise (10-20% of wrong tokens above 0.7); temperature scaling cut calibration error by 58% | Calibrate per language and model (52.2). Raw probability is used only to rank |
 | A CHI 2025 study (36 people): confidence highlighting alone "neither improved correction efficiency nor was perceived as helpful" | No confidence colour wash. One word at a time, from several signals, each flag showing its reasons (52.11) |
 | A word list over-flags Arabic (clitics, inflection) | CAMeL Tools' analyser decides "known"; Hunspell (Ayaspell) only suggests (52.4) |
-| CAMeL Tools code is MIT, but its morphology databases are **GPL v2**; Ayaspell is GPL/LGPL/MPL; Farasa is **research-only**; Qalsadi is GPL | Packs fetch dictionary data at install time and never bundle it in the app (as `ensure_camel_data` does today). Farasa is not used |
+| CAMeL Tools code is MIT, but its morphology databases are **GPL v2**; Ayaspell is GPL/LGPL/MPL; Farasa is **research-only**; Qalsadi is GPL | Dictionary data is never bundled in the app payload: each language's data ships as its own first-party Epic 51 pack (`lang.*`, story 52.16) with its `NOTICE`, and CAMeL's DB stays the `model.refine` asset. Farasa is not used |
 | An empty CAMeL analysis list is not documented as "unknown" | 52.4 tests it on a known/unknown word list before relying on it |
 | NFKC folds presentation forms but does not remove harakat | Mark stripping is the pack's `key()`, not Unicode normalisation (52.3, 52.4) |
 | UAX #29 is a tailorable default; Chinese, Japanese, Thai, Lao, Khmer and Burmese need dictionary breaking (ICU has it) | The fallback pack uses ICU word breaks, so those languages work without their own pack (52.3) |

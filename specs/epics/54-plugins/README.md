@@ -1,8 +1,9 @@
 # Epic 54: Plugins: new functions from the queue, with no internet, from a Maktaba store
 
-> **Status:** spec (2026-11-03; decisions applied in §14; first-party plugins added in
-> §15). **Builds on:** [Epic 51](../51-configurable-components/README.md)
-> (components, desired and actual state, drain without lost work, signed packs, offline import),
+> **Status:** spec (2026-11-03; decisions applied in §14; first-party plugins added in §15;
+> rebased on Epic 51 as built, §4.11). **Builds on:** [Epic 51](../51-configurable-components/README.md)
+> (the component catalog `shared/components/catalog.toml`, desired and actual state, the
+> runners, drain without lost work, the admin API, capabilities, signed packs, offline import),
 > [Epic 6](../06-job-queue/README.md) (the queue), [Epic 40](../40-queue-health/README.md)
 > (failure classes and parking), [Epic 53](../53-logs-errors-reports/README.md) (logs, health and
 > problem reports per component), [Epic 16](../16-subscriptions/README.md) (the licence grace
@@ -173,8 +174,9 @@ pipeline worker (Python)                      plugin host: maktaba-plugind (Rust
 - **The pipeline still owns the queue.** Claiming, pools, retries, failure classes, drain and
   parking are unchanged. A plugin stage is a `StageDef` with `extension = "plugin:<id>"` and a
   handler that forwards the job to the plugin host and maps the answer to a `StageResult`.
-- **The plugin host owns the sandbox.** It is one supervised process per home (`plugins.host`,
-  an Epic 51 `process` component). Each job gets a fresh Wasmtime store. A trap, a deadline or
+- **The plugin host owns the sandbox.** It is one supervised process per home: role
+  `plugins`, catalog component `plugins.host` (`kind = "process+loop"`, on demand, 54.02,
+  54.37 §4). Each job gets a fresh Wasmtime store. A trap, a deadline or
   a memory cap ends that job, not the host.
 - **The API owns the rules.** It mints the invocation token from the grants *it* stores (never
   from what the pipeline or the host says), and checks the token, the grant, the library scope
@@ -330,20 +332,26 @@ limits.
 ### 4.8 Lifecycle, on Epic 51
 
 Each installed plugin is an Epic 51 component of a new kind, **`plugin`**, with id
-`plugin.<plugin id>`. It is not in the static `catalog.toml`: the catalog gains *dynamic
-entries* read from `plugin_installs` (story 54.07). Everything else is Epic 51's:
+`plugin.<plugin id>`. Epic 51's catalog is embedded per release and has no run-time entries, so
+this epic adds them (story 54.37): entries derived from the manifest, read from
+`plugin_installs`, merged into the catalog every runner and the API use. Its files live under
+`<state>/plugins/` on Epic 51's packs layout code (story 54.38). Everything else is Epic 51's
+(the routes are `PUT /api/components/plugin.<id>`, `/stop`, `/start`, `DELETE`, and
+`preview`/`apply`; `/api/plugins/*` writes the same rows, 54.08):
 
 | Action | What happens |
 |---|---|
-| **Install** | verify signatures and revocation (§6.3) → validate manifest → audit the component's imports against its capabilities → AOT-compile (`.cwasm`, cached) → unpack to `<data>/plugins/<id>/<version>_<digest>/` → grants dialog → `want = installed` |
+| **Install** | verify signatures and revocation (§6.3) → validate manifest → audit the component's imports against its capabilities → AOT-compile (`.cwasm`, cached) → the supervisor unpacks to `<state>/plugins/<id>/<version>_<sha12>/` and writes `current` (54.38) → grants dialog → `want = installed` |
 | **Enable** | `want = enabled`. The plugin loader adds its stages and edges at the next graph sync (≤ 2 s via `NOTIFY`), `job_stages` rows appear with `extension = 'plugin:<id>'`, workers claim. Existing items are *not* back-filled unless the admin ticks "Run on my existing library" (a catch-up, Epic 51 §4.5). |
-| **Disable / hold** | Epic 51 §4.5: stop claiming ≤ 2 s, drain ≤ the plugin's `timeout_s` (capped at 120 s), force-pause the rest, keep the queue, don't feed. An admin's disable also sets **keep off** for the plugin id (§6.3): no update, restore or reinstall turns it back on; only an admin does. |
+| **Disable / hold** | Epic 51 §4.5: stop claiming ≤ 2 s, drain ≤ the plugin's `timeout_s` (capped at 120 s), force-pause the rest, keep the queue, don't feed. Disable is `want = installed`; hold is Epic 51's hold (until Start; there is no restart route). An admin's disable also sets **keep off** for the plugin id (§6.3): no update, restore or reinstall turns it back on; only an admin does. |
 | **Update** | the new version installs beside the old one, grants are compared (more → *Waiting* `grants_needed`), the old version drains, the `current` pointer switches, stage versions decide what reruns. The previous version is kept for rollback. |
 | **Rollback** | switch back to the kept version. Refused when the kept version's `data_version` is lower than the data's, unless the admin chooses "roll back and clear this plugin's data". |
-| **Uninstall** | `want = absent`: drain, remove stages (their queued jobs are deleted, the only time jobs are dropped, and the dialog says how many), delete files. Data, attributed writes and settings are kept unless "Also remove what it wrote" (purge, Epic 51 §4.7): purge deletes `plugin_data`, artifacts, and reverts attributed writes it made that no one changed since. |
+| **Uninstall** | `want = absent`: drain, remove stages (their queued jobs are deleted, the only time jobs are dropped, and the dialog says how many), delete files. Data, attributed writes and settings are kept unless "Also remove what it wrote" (purge, Epic 51 §4.7; Epic 51's `DELETE …?purge=true` resets `rules.*` sections only, and 54.07 extends it to the plugin's data and writes): purge deletes `plugin_data`, artifacts, and reverts attributed writes it made that no one changed since. |
 
-The plugin host itself is a first-party `process` component, `plugins.host`, enabled only
-while at least one plugin is enabled (so a home without plugins runs no extra process).
+The plugin host itself is a first-party component, `plugins.host`, in the Full and Core
+bundles, whose process runs only on demand: while at least one plugin is enabled and passes
+its gates (54.37 §4). A home without plugins runs no extra process. An admin can switch
+`plugins.host` off as a master switch for all third-party code.
 
 ### 4.9 Crash isolation, health and logs
 
@@ -352,9 +360,11 @@ while at least one plugin is enabled (so a home without plugins runs no extra pr
   `transient` (one retry; plugin stages have `max_attempts = 2`); `plugin_memory`,
   `plugin_capability`, `plugin_scope` and `plugin_quota` are `item_permanent`; a held or revoked
   plugin is `dependency:plugin`, so its jobs wait without spending attempts.
-- **A circuit breaker** holds a plugin (Epic 51 hold, reason `plugin_crash_loop`) after 5
-  traps in 10 minutes or more than 50 % failures over the last 20 jobs, and tells admins. It
-  stays held until an admin starts it.
+- **A circuit breaker** holds a plugin after 5 traps in 10 minutes or more than 50 % failures
+  over the last 20 jobs, and tells admins. The API sets the Epic 51 hold
+  (`hold_by = "plugin-breaker"`); Epic 51 holds carry no reason, so the runner reports the
+  plugin `stopped` with reason `plugin_crash_loop` (54.09). It stays held until an admin
+  starts it.
 - **If the host process dies**, the supervisor restarts it with Epic 51's backoff. Jobs in
   flight go back to the queue without counting an attempt, as the shutdown drain does today.
   The pipeline worker never imports plugin code, so it cannot be crashed by one.
@@ -381,6 +391,30 @@ while at least one plugin is enabled (so a home without plugins runs no extra pr
 - Every Maktaba string is in `en.json` and `ar.json` together (and Android `values-ar`, Apple
   String Catalogs). Plugin strings come from the plugin's own `i18n/en.json` and `i18n/ar.json`,
   both required for store listing.
+
+### 4.11 Epic 51 as built: what this epic uses, and what it adds
+
+Epic 51 is built (`shared/components/`, `api/internal/components/`,
+`api/internal/handlers/components/`, `api/internal/router/p51.go`,
+`cmd/maktaba-server/internal/supervisor`, `cmd/maktaba-server/internal/packs`,
+`pipeline/src/maktaba_pipeline/components/`). This epic uses it as it is where it fits, and
+says plainly where it does not:
+
+| Need | Epic 51 gives | This epic adds |
+|---|---|---|
+| A component per plugin | a catalog fixed per release (`catalog.toml`, `go:embed` plus the pipeline's copy; unknown fields and kinds refused; the `catalog` CI job) | the `plugin` kind and run-time entries from `plugin_installs`, merged into every consumer (**54.37**) |
+| Desired and actual state | `components`, `component_overrides`, `component_status`, `component_meta` (migrations 0178–0181); `NOTIFY components_changed`; `store.Watcher` | nothing: plugin rows are ordinary rows keyed `plugin.<id>` |
+| Switching | `PUT /api/components/{id}` (`want` `enabled` / `installed` / `absent`), `POST …/stop` and `…/start` (a hold until Start), `DELETE`, `POST /api/components/preview` and `/apply` (contract: `shared/api/openapi.yaml`, tag Components); audit `component.enable`, `.disable`, `.remove`, `.hold`, `.release`; CLI `maktaba-server components …` | `/api/plugins/*` writing the same rows (54.08); keep-off (54.07). There is no restart route in either |
+| Gates | `runner.Gates`: want, hold, requirements, licence flag | grants, compatibility, revocation, unreviewed policy and entitlement gates (54.37 §3) |
+| Reason codes | `reasons` in `catalog.toml`, refused by `store.ReportStatus` when unknown; words `components.reason.<code>` | twelve new codes with en and ar words (54.37 §3) |
+| A process that runs only when needed | a process runs while its component is enabled | `on_demand` components: `plugins.host`, `core.plugin_runners` (54.37 §4) |
+| Files on disk | `packs.Layout` (`current` pointer, `.lock`, staging, `Recover`), `componentpack.Unpack`, for `kind = asset` packs verified against the release index | the same code under `<state>/plugins/`, a `.mkplugin` head and a per-plugin `Recover` (**54.38**) |
+| Signing | the release Sigstore identity over `checksums.txt` and `components-<version>.json` (exact server version, first-party assets only) | the store's own keys and revocation list (54.14), separate code; first-party plugin packages checked against `checksums.txt` (54.22) |
+| Licence | one existing flag of `api/internal/flags/declarations.go` per component | none: paid plugins are gated by store entitlements, reason `entitlement_missing` (54.19) |
+| Settings | `rules.<section>` with `rules_version.<section>`, `SCHEMA_VERSION` and `register_migration`; `POST /api/components/{id}/settings/reset` | `plugins.<id>` and `plugins_version.<id>`, reset by the same route (54.11) |
+| Clients | `GET /api/capabilities` (nine fixed `features`), `capabilities_changed` on `/ws/home`, `409 component_off` | one more feature, `plugin_panels` (54.20) |
+| Bundles | `bundles` per component (`full`, `core`, `worker`), `GET /api/components/bundles`, `POST /api/components/bundle` | nothing; no bundle turns a third-party plugin on |
+| Kill switch | `[components] reconcile = "off"` in `server.toml` | the same switch stops plugin runners acting |
 
 ## 5. The "no internet" guarantee
 
@@ -586,8 +620,8 @@ records and refunds owned by the store.
 
 - **Payment processor and seller of record: open, decided at Phase 3.** The store resells
   third-party products, which many sellers of record restrict (Paddle among them), so every
-  candidate must confirm in writing that it allows plugin resale, and that it does not run on
-  Stripe, before it is chosen. Models and non-Stripe candidates:
+  candidate must confirm in writing that it allows plugin resale before it is chosen. Models
+  and candidates:
   1. **A merchant of record sells for the store** (Paddle, FastSpring, 2Checkout), and the
      store pays developers their 85 % monthly;
   2. **The store as seller** with a marketplace payment provider (Adyen for Platforms, PayPal's
@@ -603,8 +637,9 @@ records and refunds owned by the store.
 - **Entitlement:** the store signs a plugin entitlement with its own entitlement key (listed
   in `store-keys.json` under the plugin root), bound to the store's home id and the home's
   store key (31 days, refreshed daily, the same grace numbers as Epic 16's licences). The home
-  checks it offline and never calls Maktaba Cloud for it. A lapsed entitlement holds the plugin (Epic 51 *Waiting*
-  `licence_missing`), never deletes data. With candidate 3 the developer's licence key is
+  checks it offline and never calls Maktaba Cloud for it. A lapsed entitlement makes the
+  plugin *Waiting* `entitlement_missing` (a gate of 54.37; Epic 51's licence gating covers
+  existing licence flags only), never deletes data. With candidate 3 the developer's licence key is
   checked instead, offline, against a public key the developer registered with the store.
 - **Plugins never handle payment.** No capability touches money; a plugin cannot show a
   price, a paywall or a link.
@@ -634,13 +669,13 @@ records and refunds owned by the store.
 | F5 | `maktaba-plugind` runs under the OS sandbox of §5.3 on macOS, Linux and Windows, or does not run. |
 | F6 | Every plugin API call is checked server-side for token, capability, subject and library scope, and quota; refusals are logged and counted. |
 | F7 | Admins grant capabilities and libraries at install; an update that asks for more waits for approval; a revoked grant applies on the next call. |
-| F8 | Each plugin is an Epic 51 component: install, enable, disable, hold, update, rollback, uninstall, purge, with no job lost by disable or update. |
+| F8 | Each plugin is an Epic 51 component (`plugin.<id>`, kind `plugin`, 54.37): install, enable, disable, hold, update, rollback, uninstall, purge, through `/api/plugins/*` and Epic 51's `/api/components/*` alike, with no job lost by disable or update. |
 | F9 | A crashing plugin fails only its jobs; the circuit breaker holds it; the host restarts without losing jobs. |
 | F10 | Each plugin has its own logs (Epic 53), health and counters on the Plugins page. |
 | F11 | Plugins install from a file offline; files without a store signature need the admin opt-in and show "Unreviewed". |
 | F12 | The store is a service independent of Maktaba Cloud (own accounts, database, deploy and hostname `plugins.maktaba.tv`, all on Cloudflare, no VPS), with store accounts (email verification, MFA required for developers, passkeys for reviewers and store admins, re-auth for sensitive actions, server-side roles), signing keys per developer account, submission, automated checks, human review, countersigning, a signed catalog and a signed revocation list. |
 | F13 | Homes fetch the catalog, packages and revocation list through the home server, straight from the store's CDN and never through Maktaba Cloud, honour `disable` revocations within one fetch, and refuse expired or rolled-back lists. |
-| F14 | Paid plugins (Phase 3) are bought on `plugins.maktaba.tv` by a home linked to a store account, through the store's own payment provider chosen at Phase 3 (never Stripe, separate from cloud billing); the developer gets 85 %, Maktaba 15 %; the home checks a store-signed entitlement offline. |
+| F14 | Paid plugins (Phase 3) are bought on `plugins.maktaba.tv` by a home linked to a store account, through the store's own payment provider chosen at Phase 3 (separate from cloud billing); the developer gets 85 %, Maktaba 15 %; the home checks a store-signed entitlement offline. |
 | F15 | Ratings and reports, with moderation by store reviewers. |
 | F16 | All `/api/plugins/*` routes are admin-only with role tests; viewers see plugin outputs and the panels of installed plugins, only for subjects their library access allows. |
 | F17 | SDK, templates and a local harness with a mock plugin API for Rust, JS/TS, Python and TinyGo; docs on maktaba.dev. |
@@ -650,7 +685,7 @@ records and refunds owned by the store.
 | F21 | First-party plugins reach the database only through named statements registered from their release-signed package, with scope arguments bound by the API from the token and a per-plugin Postgres role limited to the tables the manifest lists. |
 | F22 | Each stage moves with a per-stage switch (`job_stages.impl`) that drains, flips and resumes without losing or rerunning a job, and flips back the same way. |
 | F23 | CI proves for every stage that the plugin writes the same rows and files, returns the same result and computes the same fingerprints as the in-process code, and that the graph assembled from manifests equals the golden graph. |
-| F24 | Each first-party plugin is its Epic 51 component; bundles are sets of first-party plugins; desired state and settings carry over unchanged. |
+| F24 | Each first-party plugin implements the stages of one existing Epic 51 component, which keeps its id and kind (§15.7); bundles, desired state and settings carry over unchanged. |
 
 ### 7.2 Non-functional: the numbers
 
@@ -767,14 +802,15 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | H11 | **Unreviewed install is allowed, off by default, behind a re-authenticated admin opt-in, and marked everywhere.** | *Never allow it*: kills development, offline sharing and private plugins; the sandbox does not depend on review. *Allow silently*: Obsidian learned to start in Restricted Mode. |
 | H12 | **Third-party plugin stages run on the home only in this epic** (first-party ones keep their placement, §15.4). | *Any machine*: each node would need its own host, plugin API endpoint and token minting, and media handles across machines. Later, on the same model. |
 | H13 | **Heavy compute is a host service, not plugin code.** | *Let plugins bring ML runtimes*: impossible in Wasm today (no NumPy/torch), huge packages, and duplicates what Maktaba already runs. |
-| H14 | **85/15 split; the payment provider and seller of record are chosen at Phase 3, never Stripe; payouts sit behind a provider-agnostic interface.** | *70/30*: high for a small ecosystem. *No paid plugins*: the owner asked for them; developers need a reason to maintain plugins (Plex's lesson). *Stripe Connect*: ruled out (no Stripe, ever). *Choosing a seller of record now*: many restrict resale of third-party products; it needs written confirmation first. |
-| H15 | **English and Arabic strings are required for store listing.** | *English only*: the product is Arabic-first; a plugin that can't name itself in Arabic would show English in an RTL UI. Developers may use machine translation; the listing says so (owner decision 2026-11-03). |
+| H14 | **85/15 split; the payment provider and seller of record are chosen at Phase 3; payouts sit behind a provider-agnostic interface.** | *70/30*: high for a small ecosystem. *No paid plugins*: paid plugins are a requirement; developers need a reason to maintain plugins (Plex's lesson). *Choosing a seller of record now*: many restrict resale of third-party products; it needs written confirmation first. |
+| H15 | **English and Arabic strings are required for store listing.** | *English only*: the product is Arabic-first; a plugin that can't name itself in Arabic would show English in an RTL UI. Developers may use machine translation; the listing says so (decided 2026-11-03). |
 | H16 | **First-party plugins run as native Python in supervised runners, behind the same manifest, dispatch and plugin API, with a trusted capability set.** | *Compile first-party stages to Wasm and run them in `maktaba-plugind`*: they need torch, MLX, faster-whisper, ffmpeg, yt-dlp and the GPU, none of which run in WASI today (§2), and N5's 2× would cost hours on transcription. *Keep them in-process and call it a plugin*: no boundary at all, a back door by another name. *One process per plugin*: fifteen Python interpreters on every home; runner groups give the same boundary at a fraction of the memory. |
 | H17 | **The database is reached through named statements and per-plugin Postgres roles, not a typed Go endpoint per write and not a database login.** | *A typed Go endpoint for every write*: rewriting about 780 Python SQL statements in Go, two languages for every change, years of work. *A database login per plugin*: no per-call check, no token scope, any SQL a bug produces. Named statements keep the SQL where it is reviewed today and let the API check every call. |
 | H18 | **First-party plugins move with the server version; they are not updated through the store.** | *Store updates for first-party plugins*: the trusted interfaces follow the schema, which follows the server; a separately updated plugin would need cross-version statement compatibility and its own rehearsal. A fix ships as a server release. |
 | H19 | **Exact stage names, equal fingerprints, a per-stage switch.** | *New `tv.maktaba.*` stage names*: every queue row, output hash and `job_events` row would need rewriting, and every subject would rerun. *A big-bang move*: one failure would roll back all 56 stages. |
 | H20 | **The migration proves identity, not similarity.** | *Tolerances on outputs*: drift would compound across the graph; deterministic fakes plus a seeded CPU model make exact comparison possible. |
-| H21 | **One first-party plugin per Epic 51 component.** | *One plugin per stage*: 56 components, against Epic 51's "a component is a feature, not a stage" (51 H11). *One plugin for everything*: nothing could be turned off. |
+| H21 | **One first-party plugin per Epic 51 component that owns stages; the component keeps its id and kind.** | *One plugin per stage*: 56 components, against Epic 51's "a component is a feature, not a stage" (51 H11). *One plugin for everything*: nothing could be turned off. *Turn those components into kind `plugin`*: the kind says how a machine runs a component (51 §4.1), and `core.pipeline`, `transcription`, `search.semantic`, `enrich`, `livetv` and `livetv.slots` also own processes and loops that do not move. |
+| H23 | **Third-party plugins are run-time catalog entries of a new kind, not catalog edits.** | *Ship each plugin in `catalog.toml`*: a release per plugin. *Read plugins as `extension` components*: `extension` means a first-party integration with an `extensions` row (51.07), and its gates know nothing of grants, revocation or entitlements. |
 | H22 | **The store is a separate service on Cloudflare (Workers, D1, Durable Objects, R2), with its own accounts, hostname and payments, sharing nothing with Maktaba Cloud.** | *A part of the cloud API* (the first draft): shared accounts, database and uptime, so a cloud outage would stop store sign-in and purchases and a store incident would sit inside the relay. *A separate service on the cloud's Hetzner nodes*: still a shared failure domain and a VPS to run. *Cloud accounts for developers*: developers are not relay customers. *Store review on `admin.maktaba.tv`*: ties review to the cloud's SSO and nodes. *Cloudflare Access for admin pages*: a second identity system; the store's own passkey sign-in is enough and stays in one audit trail. |
 
 ## 12. Stories
@@ -782,28 +818,28 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | # | Story | Phase | Depends on |
 |---|---|---|---|
 | 54.01 | [The manifest and the package](story-54-01-manifest-package.md) | 1 | — |
-| 54.02 | [The plugin host: Wasmtime, the WIT world and limits](story-54-02-plugin-host.md) | 1 | 54.01 |
+| 54.02 | [The plugin host: Wasmtime, the WIT world and limits](story-54-02-plugin-host.md) | 1 | 54.01, Epic 51 (51.01, 51.04) |
 | 54.03 | [The OS sandbox and the egress tests](story-54-03-os-sandbox.md) | 1 | 54.02 |
 | 54.04 | [The plugin API: tokens, capabilities and scope](story-54-04-plugin-api.md) | 1 | 54.01 |
 | 54.05 | [Media handles and host services](story-54-05-media-handles.md) | 1 | 54.02, 54.04 |
 | 54.06 | [Plugin stages in the queue: events, schedules, dispatch](story-54-06-queue-stages.md) | 1 | 54.02, 54.04 |
-| 54.07 | [Plugins are Epic 51 components](story-54-07-lifecycle.md) | 1 | 54.01, 54.06, Epic 51 (51.02, 51.06, 51.16) |
+| 54.07 | [Plugins are Epic 51 components](story-54-07-lifecycle.md) | 1 | 54.01, 54.06, 54.37, 54.38, Epic 51 (51.02, 51.06, 51.08, 51.13, 51.18) |
 | 54.08 | [Grants, ratings and roles](story-54-08-grants-roles.md) | 1 | 54.04, 54.07 |
-| 54.09 | [Crash isolation, health, logs and quotas](story-54-09-isolation-health.md) | 1 | 54.02, 54.07, Epic 53 (53.01, 53.02) |
-| 54.10 | [Install from a file and the unreviewed opt-in](story-54-10-file-install.md) | 1 | 54.07, 54.08 |
+| 54.09 | [Crash isolation, health, logs and quotas](story-54-09-isolation-health.md) | 1 | 54.02, 54.07, 54.37, Epic 51 (51.04, 51.14), Epic 53 (53.01, 53.02) |
+| 54.10 | [Install from a file and the unreviewed opt-in](story-54-10-file-install.md) | 1 | 54.07, 54.08, 54.38 |
 | 54.11 | [Settings pages declared as data](story-54-11-settings.md) | 1 | 54.07, Epic 51 (51.13) |
 | 54.12 | [SDK, templates, test harness and docs](story-54-12-sdk-harness.md) | 1 | 54.02, 54.04 |
 | 54.13 | [The admin Plugins page](story-54-13-plugins-page.md) | 1 | 54.08, 54.09, 54.10, 54.11 |
 | 54.14 | [Signing, the trust root and the revocation list](story-54-14-signing-trust.md) | 2 | 54.01 |
 | 54.15 | [The store service, store accounts and linking a home](story-54-15-store-service.md) | 2 | 54.14 |
 | 54.16 | [Automated checks and human review](story-54-16-review.md) | 2 | 54.03, 54.12, 54.15 |
-| 54.17 | [The home's catalog, updates and the kill switch](story-54-17-catalog-kill-switch.md) | 2 | 54.07, 54.14, 54.15 |
+| 54.17 | [The home's catalog, updates and the kill switch](story-54-17-catalog-kill-switch.md) | 2 | 54.07, 54.14, 54.15, 54.37, Epic 51 (51.05) |
 | 54.18 | [Store browser, listing pages, ratings and reports](story-54-18-store-browser.md) | 2 | 54.13, 54.17 |
-| 54.19 | [Paid plugins](story-54-19-paid-plugins.md) | 3 | 54.15, 54.18 |
-| 54.20 | [Panels declared as data, in every app](story-54-20-panels.md) | 3 | 54.06, 54.13, Epic 51 (51.11) |
-| 54.21 | [Local compute: embeddings and the language model](story-54-21-local-compute.md) | 3 | 54.04, Epic 51 (`llm`, `search.semantic`) |
-| 54.22 | [First-party plugins: the trusted manifest and release signing](story-54-22-trusted-manifest.md) | 4 | 54.01, Epic 51 (51.15) |
-| 54.23 | [The native plugin runner](story-54-23-native-runner.md) | 4 | 54.02, 54.22 |
+| 54.19 | [Paid plugins](story-54-19-paid-plugins.md) | 3 | 54.15, 54.18, 54.37 |
+| 54.20 | [Panels declared as data, in every app](story-54-20-panels.md) | 3 | 54.06, 54.13, Epic 51 (51.09, 51.11) |
+| 54.21 | [Local compute: embeddings and the language model](story-54-21-local-compute.md) | 3 | 54.04, 54.37, Epic 51 (components `llm`, `search.semantic`) |
+| 54.22 | [First-party plugins: the trusted manifest and release signing](story-54-22-trusted-manifest.md) | 4 | 54.01, 54.37, Epic 51 (51.15) |
+| 54.23 | [The native plugin runner](story-54-23-native-runner.md) | 4 | 54.02, 54.22, 54.37, Epic 51 (51.01, 51.04) |
 | 54.24 | [Named statements and per-plugin database roles](story-54-24-statement-registry.md) | 4 | 54.04, 54.22 |
 | 54.25 | [The graph from manifests and the per-stage switch](story-54-25-graph-and-switch.md) | 4 | 54.06, 54.23, 54.24 |
 | 54.26 | [The parity proof](story-54-26-parity.md) | 4 | 54.25 |
@@ -817,10 +853,17 @@ wave is one release with its stages flipped at update and a per-stage switch bac
 | 54.34 | [Wave 7: live TV](story-54-34-wave7-livetv.md) | 4 | 54.33 |
 | 54.35 | [Wave 8: Plex and dizqueTV through the service door](story-54-35-wave8-plex-dizquetv.md) | 4 | 54.34 |
 | 54.36 | [Wave 9: the core stages, and removing the in-process path](story-54-36-wave9-core.md) | 4 | 54.35 |
+| 54.37 | [The component catalog takes plugin entries](story-54-37-catalog-plugin-entries.md) | 1 | 54.01, Epic 51 (51.01, 51.02, 51.04, 51.05, 51.06, 51.08, 51.09) |
+| 54.38 | [Plugin files on disk, on Epic 51's packs code](story-54-38-plugin-files.md) | 1 | 54.01, 54.37, Epic 51 (51.15, 51.16) |
+
+54.37 and 54.38 cover what Epic 51 does not provide: its catalog is fixed per release with no
+run-time entries, and its packs code installs only first-party `asset` packs verified against
+the release index (§4.11).
 
 ```mermaid
 graph LR
   S01[54.01 manifest] --> S02[54.02 host]
+  E51r[Epic 51: 51.01 51.04] --> S02
   S01 --> S04[54.04 plugin API]
   S01 --> S14[54.14 signing]
   S02 --> S03[54.03 OS sandbox]
@@ -828,16 +871,25 @@ graph LR
   S04 --> S05
   S02 --> S06[54.06 queue stages]
   S04 --> S06
+  S01 --> S37[54.37 catalog plugin entries]
+  E51a[Epic 51: 51.01 51.02 51.04 51.05 51.06 51.08 51.09] --> S37
+  S37 --> S38[54.38 plugin files]
+  E51p[Epic 51: 51.15 51.16] --> S38
   S06 --> S07[54.07 lifecycle]
-  E51[Epic 51: 51.02 51.06 51.16] --> S07
+  S37 --> S07
+  S38 --> S07
+  E51[Epic 51: 51.13 51.18] --> S07
   S04 --> S08[54.08 grants]
   S07 --> S08
   S02 --> S09[54.09 isolation]
   S07 --> S09
+  S37 --> S09
   E53[Epic 53: 53.01 53.02] --> S09
   S07 --> S10[54.10 file install]
   S08 --> S10
+  S38 --> S10
   S07 --> S11[54.11 settings]
+  E51s[Epic 51: 51.13] --> S11
   S02 --> S12[54.12 SDK]
   S04 --> S12
   S08 --> S13[54.13 Plugins page]
@@ -855,13 +907,18 @@ graph LR
   S17 --> S18
   S15 --> S19[54.19 paid]
   S18 --> S19
+  S37 --> S19
   S06 --> S20[54.20 panels]
   S13 --> S20
+  E51c[Epic 51: 51.09 51.11] --> S20
   S04 --> S21[54.21 local compute]
+  S37 --> S21
   S01 --> S22[54.22 trusted manifest]
+  S37 --> S22
   E51b[Epic 51: 51.01 51.15 51.17] --> S22
   S02 --> S23[54.23 native runner]
   S22 --> S23
+  S37 --> S23
   S04 --> S24[54.24 statements + roles]
   S22 --> S24
   S06 --> S25[54.25 graph + switch]
@@ -884,8 +941,8 @@ graph LR
   S35 --> S36[54.36 wave 9]
 ```
 
-**Parallel tracks.** 54.01 first. Then 54.02, 54.04 and 54.14 in parallel (Rust host, Go
-API, signing library). After 54.02 + 54.04: 54.03, 54.05, 54.06 and 54.12 in parallel. The
+**Parallel tracks.** 54.01 first. Then 54.02, 54.04, 54.14 and 54.37 in parallel (Rust host,
+Go API, signing library, the catalog's plugin entries); 54.38 follows 54.37. After 54.02 + 54.04: 54.03, 54.05, 54.06 and 54.12 in parallel. The
 store track (54.15, 54.16) can start once 54.14 lands, alongside the rest of Phase 1. The
 first-party track (Phase 4) starts with 54.22 after 54.01; 54.23 and 54.24 run in parallel
 (Python runner, Go registry); 54.27 can run alongside them. The waves are serial on purpose:
@@ -899,10 +956,10 @@ each needs the previous one green in a tagged release.
 | `plugins-api` | PRs touching `api/internal/plugins/` | capability, scope and quota tests for every interface; role tests for every `/api/plugins/*` route |
 | `plugins-e2e` | PRs touching the pipeline plugin loader, the host or the API | a sample plugin per SDK language installed, granted, run on fixture media, updated, rolled back, disabled under load (0 lost jobs), uninstalled with purge |
 | `plugins-fuzz` (nightly, CI only) | nightly | `cargo fuzz` of host function argument decoding and the manifest and package parsers |
-| `store` | PRs touching `store/`, `shared/plugins/` or `api/internal/plugins/storelink/` | in Miniflare (local Workers, D1, Durable Objects, R2): store accounts, MFA, re-auth, role tests, home linking, submission, checks, countersigning, catalog and revocation signing, expiry and anti-rollback, ratings, reports, entitlements, payouts against a fake `PaymentProvider`; no import from `cloud/`; no Stripe; no live Cloudflare, email or payment calls. Weekly: restore drill from a D1 export fixture |
+| `store` | PRs touching `store/`, `shared/plugins/` or `api/internal/plugins/storelink/` | in Miniflare (local Workers, D1, Durable Objects, R2): store accounts, MFA, re-auth, role tests, home linking, submission, checks, countersigning, catalog and revocation signing, expiry and anti-rollback, ratings, reports, entitlements, payouts against a fake `PaymentProvider`; no import from `cloud/`; no payment SDK or host outside the allowlist (54.19 T07); no live Cloudflare, email or payment calls. Weekly: restore drill from a D1 export fixture |
 | `store-deploy` | tags `store-v*`, after `store` passed on that commit | D1 migrations, then gradual `wrangler deploy` with the org Cloudflare secrets |
-| `components-chaos` (Epic 51) | as Epic 51 | gains plugin stages in its 100 flips |
-| `catalog` (Epic 51) | as Epic 51 | plugin reason codes and capability words have English and Arabic |
+| `components-chaos` (Epic 51, `.github/workflows/_components.yml`) | as Epic 51 | gains plugin stages in its 100 flips |
+| `catalog` (Epic 51, `.github/workflows/_lint.yml`) | as Epic 51 | the twelve plugin reason codes and the `plugin_panels` feature have English and Arabic; no static `plugin` entry; each first-party `stages` list equals its manifest (54.27) |
 | `plugins-parity` (§15.8) | PRs touching `plugins/first-party/`, `plugins/sdk/python/`, the runner, the statement registry or `pipeline/src/maktaba_pipeline/engine/`; nightly for all stages | each migrated stage writes the same rows and files, returns the same result and fingerprints as in-process; N16, N17, N19 |
 | `graph-golden` | PRs touching a first-party manifest or `engine/graph.py` | the graph from manifests equals `shared/plugins/graph.golden.json` |
 | `plugins-trusted` | PRs touching `shared/plugins/`, the runner, `api/internal/plugins/` | every refusal of §15.6 and §15.10: unsigned `[trusted]`, wrong version, unregistered statement, forged scope argument, table outside the role |
@@ -916,9 +973,7 @@ Items 1 and 3–9 are decided. Open: the payment provider (item 2, at Phase 3), 
 email provider (item 10) and the isolated check runner (item 11).
 
 1. **Revenue split: decided.** Developer 85 %, Maktaba 15 % of each paid plugin sale.
-2. **Seller of record and payment processor: decide at Phase 3.** No Stripe, ever (no Stripe,
-   Stripe Connect, Stripe Tax or Stripe-owned services such as Lemon Squeezy). Known
-   constraint: the store resells third-party products, which many sellers of record restrict
+2. **Seller of record and payment processor: decide at Phase 3.** Known constraint: the store resells third-party products, which many sellers of record restrict
    (Paddle among them), so candidates must confirm resale in writing. Candidates: Paddle as
    seller with Maktaba paying developers monthly; Maktaba as seller with a marketplace payment
    provider such as Adyen for Platforms (Maktaba files tax); developers sell directly and
@@ -945,7 +1000,7 @@ email provider (item 10) and the isolated check runner (item 11).
    store host, with the store's own sign-in and no Cloudflare Access (§6.0, §6.1, H22,
    stories 54.15 and 54.19).
 10. **Email provider for the store: open.** Cloudflare's Email Service (sending) if it is
-    available on the account when the store is built, otherwise a non-Stripe provider such as
+    available on the account when the store is built, otherwise another provider such as
     Amazon SES or Postmark (story 54.15 §1).
 11. **Isolated check runner: open, after a spike.** Cloudflare Containers if its limits and
     maturity fit and the plugin sandbox profile applies inside it; otherwise a CI runner job
@@ -988,10 +1043,15 @@ Read from the code on 2026-11-03 (`pipeline/src/maktaba_pipeline/engine/graph.py
   failures and their actions, and a few routes that enqueue a named stage
   (`/api/libraries/{id}/convert` → `convert_mp4`, `dedup-scan` → `dedup_scan`, the YouTube
   refresh, backfill and retry routes). None runs stage code.
-- **Epic 51** groups the stages into components (story 51.01 §2): `core.pipeline` (not
-  switchable) and the switchable `media.thumbnails`, `library.convert`, `library.dedup`,
-  `library.repair`, `transcription`, `subtitles`, `search.semantic`, `classify`, `enrich`,
-  `youtube`, `livetv`, `livetv.slots`, `ext.plex` and `ext.dizquetv`.
+- **Epic 51** groups the stages into components in `shared/components/catalog.toml`:
+  `core.pipeline` (`stages+process+loop`, not switchable; its stages are the eleven of
+  core-media below plus the engine's `component_catchup`) and the switchable
+  `media.thumbnails`, `library.convert`, `library.dedup`, `library.repair`, `subtitles`,
+  `classify`, `youtube` (all `stages`), `transcription` and `search.semantic`
+  (`stages+process`), `enrich` and `livetv` (`stages+loop`), `livetv.slots`
+  (`stages+process+loop`), and `ext.plex` and `ext.dizquetv` (`extension`). The assets they
+  need are components too: `runtime.ml`, `runtime.ollama`, the `model.*` entries,
+  `tool.yt-dlp` and, on Linux, `tool.ffmpeg`.
 
 ### 15.2 Stage by stage
 
@@ -999,28 +1059,31 @@ One first-party plugin per Epic 51 component, so the component an admin turns on
 the plugin, and the bundles (§15.7) need no new words. Ids are under `tv.maktaba.`, reserved
 for Maktaba (T13).
 
-| Plugin | Epic 51 component | Stages | Pools kept | What it needs beyond the plugin API (§15.4) | Wave |
+| Plugin | Epic 51 component (kind) | Stages | Pools kept | What it needs beyond the plugin API (§15.4) | Wave |
 |---|---|---|---|---|---|
-| `tv.maktaba.core-media` (always on) | `core.pipeline` | `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`, `access_check`, `storage_canonicalize`, `categorize` | `nas_read`, `cpu` | read library files; run `ffprobe`, `ffmpeg`, `fpcalc` | 9 |
-| `tv.maktaba.thumbnails` | `media.thumbnails` | `thumbnail`, `thumb_small`, `chapter_thumbs` | `nas_read` | read library files; write the thumbnail folders; `ffmpeg` | 2 |
-| `tv.maktaba.convert` | `library.convert` | `convert_mp4` | `convert` | read and write library files; `ffmpeg` | 5 |
-| `tv.maktaba.dedup` | `library.dedup` | `dedup_scan`, `dedup_apply`, `trash_purge`, `file_restore` | `nas_read`, `nas_write` | read and write library files and the file trash | 5 |
-| `tv.maktaba.repair` | `library.repair` | `repair_broken` | `repairs` | write library files; `yt-dlp`; network to YouTube | 6 |
-| `tv.maktaba.transcription` | `transcription` | `extract`, `transcribe` | `nas_read`, `gpu` | read library files; the GPU; Whisper and refine models; `ffmpeg`; network only to a remote speech-to-text URL if one is configured; its own runner (replaces today's `pipeline/stt-N` processes) | 3 |
-| `tv.maktaba.subtitles` | `subtitles` | `subtitle_gen` | `nas_write` | write subtitle files next to videos | 2 |
-| `tv.maktaba.semantic-search` | `search.semantic` | `index`, `chapter_infer`, `topic_assign`, `topic_recluster` | `cpu` | the embedding model; write the vector index folder | 3 |
-| `tv.maktaba.classify` | `classify` | `detect`, `tag`, `check_tags`, `check_clips`, `display_title`, `books`, `topic_collections`, `promo_links`, `clip_groups`, `rate_style`, `review_pages` | `cpu`, `lookup`, `reports` | the language model through `compute.llm` (54.21); network to the encyclopedia (`ar.wikipedia.org`, `books`); write review pages | 1 (leaf stages), 4 (the rest) |
-| `tv.maktaba.enrich` | `enrich` | `enrich` | `lookup` | `compute.llm`; network to the metadata providers it is configured for | 4 |
-| `tv.maktaba.youtube` | `youtube` | `youtube_sync`, `youtube_fetch`, `youtube_backfill`, `exact_dates` | `network_yt` | write library files; `yt-dlp`; network to YouTube | 6 |
-| `tv.maktaba.livetv` | `livetv` | `plan_channels`, `write_channels` | `cpu` | write the channel files streaming reads | 7 |
-| `tv.maktaba.livetv-slots` | `livetv.slots` | `tv_stage`, `tv_swap`, `tv_gc`, `tv_rollback` | `cpu` | the TV slot release folders | 7 |
-| `tv.maktaba.plex` | `ext.plex` | `plex_index`, `plex_collection`, `plex_groups`, `plex_livetv` | `network_plex` | Plex through the service door (story 31.R); never the token | 8 |
-| `tv.maktaba.dizquetv` | `ext.dizquetv` | `dizquetv_show`, `dizquetv_channels`, `dizquetv_audit` | `network_tv`, `audits` | dizqueTV through the service door | 8 |
+| `tv.maktaba.core-media` (always on) | `core.pipeline` (`stages+process+loop`, not switchable) | `scan`, `probe`, `content_hash`, `thumb_hash`, `link`, `fingerprint`, `style_sample`, `fp_gate`, `access_check`, `storage_canonicalize`, `categorize` | `nas_read`, `cpu` | read library files; run `ffprobe`, `ffmpeg`, `fpcalc` | 9 |
+| `tv.maktaba.thumbnails` | `media.thumbnails` (`stages`) | `thumbnail`, `thumb_small`, `chapter_thumbs` | `nas_read` | read library files; write the thumbnail folders; `ffmpeg` | 2 |
+| `tv.maktaba.convert` | `library.convert` (`stages`) | `convert_mp4` | `convert` | read and write library files; `ffmpeg` | 5 |
+| `tv.maktaba.dedup` | `library.dedup` (`stages`) | `dedup_scan`, `dedup_apply`, `trash_purge`, `file_restore` | `nas_read`, `nas_write` | read and write library files and the file trash | 5 |
+| `tv.maktaba.repair` | `library.repair` (`stages`, wants `tool.yt-dlp`) | `repair_broken` | `repairs` | write library files; `yt-dlp`; network to YouTube | 6 |
+| `tv.maktaba.transcription` | `transcription` (`stages+process`; requires `runtime.ml` and one `model.whisper-*`, wants `model.cohere-arabic`) | `extract`, `transcribe` | `nas_read`, `gpu` | read library files; the GPU; Whisper and refine models; `ffmpeg`; network only to a remote speech-to-text URL if one is configured; its own runner (`plugin-runner/ml-*` replaces today's `pipeline/stt-*` processes in the catalog) | 3 |
+| `tv.maktaba.subtitles` | `subtitles` (`stages`, requires `transcription`) | `subtitle_gen` | `nas_write` | write subtitle files next to videos | 2 |
+| `tv.maktaba.semantic-search` | `search.semantic` (`stages+process`; requires `runtime.ml`, `model.embedder`) | `index`, `chapter_infer`, `topic_assign`, `topic_recluster` | `cpu` | the embedding model; write the vector index folder | 3 |
+| `tv.maktaba.classify` | `classify` (`stages`, wants `llm`) | `detect`, `tag`, `check_tags`, `check_clips`, `display_title`, `books`, `topic_collections`, `promo_links`, `clip_groups`, `rate_style`, `review_pages` | `cpu`, `lookup`, `reports` | the language model through `compute.llm` (54.21); network to the encyclopedia (`ar.wikipedia.org`, `books`); write review pages | 1 (leaf stages), 4 (the rest) |
+| `tv.maktaba.enrich` | `enrich` (`stages+loop`; the loop stays) | `enrich` | `lookup` | `compute.llm`; network to the metadata providers it is configured for | 4 |
+| `tv.maktaba.youtube` | `youtube` (`stages`, requires `tool.yt-dlp`) | `youtube_sync`, `youtube_fetch`, `youtube_backfill`, `exact_dates` | `network_yt` | write library files; `yt-dlp`; network to YouTube | 6 |
+| `tv.maktaba.livetv` | `livetv` (`stages+loop`; the loops stay) | `plan_channels`, `write_channels` | `cpu` | write the channel files streaming reads | 7 |
+| `tv.maktaba.livetv-slots` | `livetv.slots` (`stages+process+loop`; `tv-slot/*` and the loops stay) | `tv_stage`, `tv_swap`, `tv_gc`, `tv_rollback` | `cpu` | the TV slot release folders | 7 |
+| `tv.maktaba.plex` | `ext.plex` (`extension`) | `plex_index`, `plex_collection`, `plex_groups`, `plex_livetv` | `network_plex` | Plex through the service door (story 31.R); never the token | 8 |
+| `tv.maktaba.dizquetv` | `ext.dizquetv` (`extension`, requires `livetv`) | `dizquetv_show`, `dizquetv_channels`, `dizquetv_audit` | `network_tv`, `audits` | dizqueTV through the service door | 8 |
 
-Not moved: Cloudflare Stream (no stage; it stays an `ext.*` settings component), Epic 51's
-`component_catchup` (an engine stage), Epic 52's language packs (assets, not stages), and every
-loop (Epic 51 `loop` components: the watcher, channel top-up, enrichment auto-accept, the
-queue-health watchers and the rest). They are not queue stages.
+Not moved: `ext.cloudflare_stream` (an `extension` with no stage), Epic 51's
+`component_catchup` (an engine stage of `core.pipeline`), Epic 52's language packs (assets, not
+stages), every process that is not a stage runner (`pipeline/index`'s query server, `tv-slot/*`,
+`ollama/`, `relay/`), and every loop, wherever the catalog lists it (the `loop` components such
+as `queue_health` and `livetv.inprocess`, and the loops of `core.pipeline`, of `enrich`
+(`api:enrichment_auto_accept`) and of `livetv` (`pipeline:channel-topup`, the TV
+controllers)). They are not queue stages.
 
 ### 15.3 What stays in the core, what moves out
 
@@ -1093,6 +1156,13 @@ need no network, since `compute.llm` goes through the API). Each plugin still ha
 own token, database role, logs (`service = plugin.tv.maktaba.<name>`, Epic 53) and health. A
 crash restarts the group's runner with Epic 51's backoff; jobs in flight go back to the queue
 without spending an attempt (§4.9).
+
+Each runner is a supervisor process (role `plugin-runner`), so Epic 51 needs it in exactly one
+catalog component (`catalog_roles_test.go`): `plugin-runner/ml-*` belongs to `transcription`,
+`plugin-runner/index` to `search.semantic`, and the shared groups (`light`, `net`,
+`service`, `fp`) to a new core component, `core.plugin_runners` (`switchable = false`), whose
+processes run on demand: a group runs only while a component it serves is enabled (54.23,
+54.37 §4).
 
 **Fingerprints and per-worker checks.** A stage's input and output fingerprints, its
 `still_current` and its `unavailable` check move into the plugin package as exports. Every
@@ -1190,23 +1260,31 @@ existing rules forms keep drawing them, and nothing is copied (§15.10).
   serves a `tv.maktaba.*` package.
 - **Signing.** `files.json` of each first-party package is listed in the release's signed
   `checksums.txt`, so the release's Sigstore identity (Epic 51 H6) covers it; that, not the
-  store key, is what makes `[trusted]` count. The API and the runner honour `[trusted]` only
+  store key, is what makes `[trusted]` count. They ride in the payload, so they are not packs
+  and `components-<version>.json` does not list them (its entries are asset packs and models). The API and the runner honour `[trusted]` only
   when the package's digest is in the running release's verified checksums **and** its
   version equals the server's; otherwise the package is refused (`plugin_trusted_unsigned`).
   Developer builds trust a developer index only through the existing `-tags e2etrust` build.
 
 ### 15.7 Epic 51 components and bundles
 
-- Each first-party plugin **is** its Epic 51 component: the catalog entry of kind `stages` (or
-  `stages+process`) becomes kind `plugin` with `first_party = true` and the same id, so desired
-  state, bundles, licence gates and per-machine choices carry over with no change. `core.pipeline`
-  maps to `tv.maktaba.core-media` with `switchable = false`.
-- The catalog check "every stage belongs to exactly one component" (51.01) reads the stage list
-  from the first-party manifests.
-- **Bundles are plugin sets.** Full: every first-party plugin. Core: core-media, thumbnails,
-  convert, dedup. Worker machine: the plugins the home chooses for it, among those with
-  `placement:any`. Custom: ticked by the admin. The bundle table of Epic 51 §4.8 is unchanged;
-  only what its rows point at changes.
+- Each first-party plugin **implements** the stages of one existing Epic 51 component, which
+  keeps its id, its kind, its processes and loops, its `requires` / `wants` and its `bundles`.
+  The catalog entry gains one field, `plugin = "tv.maktaba.<name>"` (54.27 §3), so desired
+  state, bundles, licence gates and per-machine overrides
+  (`PUT /api/components/{id}/machines/{node}`, 51.12) carry over with no change.
+  `core.pipeline` (not switchable) gains `plugin = "tv.maktaba.core-media"` and keeps
+  `component_catchup`. The `plugin` kind (54.37) is for third-party plugins only (H21, H23).
+- Whether a stage runs in-process or in a runner is `job_stages.impl` (§15.9), not a
+  component state: the pipeline runner (51.06) gates a component's stages the same way either
+  way, and the Components page shows the same switch.
+- The catalog check "every stage belongs to exactly one component" (51.01) keeps reading
+  `catalog.toml`; the `catalog` job also checks each `stages` list equals its manifest's.
+- **Bundles are the catalog's `bundles` field**, unchanged: `full` (today's Maktaba), `core`
+  (`core.*`, `media.thumbnails`, `library.convert`, `library.dedup`, `discovery.mdns`,
+  `queue_health`, `analytics`, `backups`, `updates.auto`), `worker` (the pipeline components a
+  cluster machine takes), and `custom` at setup (`shared/components/bundles.go`). Only what the
+  stage rows point at changes.
 
 ### 15.8 Proving each stage is identical
 

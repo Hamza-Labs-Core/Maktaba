@@ -1,6 +1,6 @@
 # Story 54.10 — Install from a file and the unreviewed opt-in
 
-> Epic 54 · Phase 1 · Depends on: 54.07, 54.08 · Needed by: 54.13
+> Epic 54 · Phase 1 · Depends on: 54.07, 54.08, 54.38 · Needed by: 54.13
 
 ## Why
 
@@ -33,9 +33,11 @@ Before Phase 2 ships, every file is unreviewed. The dialog says so.
     install plugins from people you trust."
   - ar: «الإضافات غير المراجَعة لم تفحصها مكتبة. لا تستطيع الوصول إلى الإنترنت ولا رؤية ملفاتك، لكنها قد تكتب بيانات خاطئة أو تُبطئ الجهاز الرئيسي. لا تثبّت إلا إضافات من أشخاص تثق بهم.»
 - `PUT /api/plugins/policy {allow_unreviewed: true}` is admin-only, re-auth-checked, audited.
-- **Turning it off** holds every unreviewed and development plugin (Epic 51 hold, reason
-  `unreviewed_disallowed`), drained, data kept. Turning it on again does not start them; the
-  admin starts each.
+- **Turning it off** stops every unreviewed and development plugin, drained, data kept: they
+  wait on the gate `unreviewed_disallowed` (54.37 §3), and the API also sets an Epic 51 hold
+  on each (`hold_by = "unreviewed-policy"`, audit `component.hold`). Turning it on again lifts
+  the gate but not the hold; the admin starts each (`POST /api/components/plugin.<id>/start`
+  or the plugin route).
 
 ### 3. Installing an unreviewed file
 
@@ -57,7 +59,11 @@ never kept after the CLI stops unless `--keep`. The dev loop uses the same host 
 ### 5. CLI parity
 
 `maktaba-server plugins list|show|install|enable|disable|start|stop|update|rollback|remove|grants|dev|policy`
-call the same admin routes (Epic 51 F16 pattern), for headless homes.
+call the same admin routes, for headless homes, the way `maktaba-server components …` passes
+through to `maktaba-api components …` (`api/components_cli.go`, Epic 51 F16): the same flags
+(`--yes`, `--json`, `--dsn`), the preview and `Continue? [y/N]` before a write, and the same
+exit codes (0 ok, 1 refusal, 2 a write with no terminal and no `--yes`, 3 no database).
+`maktaba-server components enable plugin.<id>` works too.
 
 ## Acceptance criteria
 
@@ -113,7 +119,7 @@ call the same admin routes (Epic 51 F16 pattern), for headless homes.
 |---|---|
 | `api/internal/handlers/plugins/policy.go` (new) | §2. |
 | `api/internal/plugins/install.go` | Review level from signatures; refuse when disallowed. |
-| `cmd/maktaba-server/cmd/plugins.go` (new) | §4, §5. |
+| `api/plugins_cli.go` (new), `cmd/maktaba-server/` pass-through beside `components` | §4, §5. |
 | `web/src/pages/Admin/Plugins/InstallFromFile.tsx` (new, with 54.13) | Dialog, typed confirmation. |
 | `web/src/components/UnreviewedBadge.tsx` (new) | Badge used on every screen. |
 | `web/src/i18n/{en,ar}.json` | Strings, together. |
@@ -132,4 +138,4 @@ Release rollback; installed unreviewed plugins stay on disk, unused.
 
 ### Dependencies
 
-54.07 (install), 54.08 (routes and roles).
+54.07 (install), 54.08 (routes and roles), 54.38 (the files). Epic 51 51.08 (the CLI pattern).

@@ -1,7 +1,8 @@
 # Story 52.04 — Arabic language pack
 
-> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6, 52.15
-> Installed as an Epic 51 component (`langpack-ar`).
+> Epic 52 · Phase 1 · Depends on: 52.3, 52.16 · Needed by: 52.6, 52.15
+> Code in the pipeline package; data in the Epic 51 asset `lang.ar` (Ayaspell) plus the existing
+> `model.refine` (CAMeL morphology DB), both from `shared/components/catalog.toml`.
 
 ## Why
 
@@ -73,11 +74,17 @@ Every answer of this pack is deterministic: the same token, data files (`data_sh
 
 ### 6. Data and licences
 
-- CAMeL Tools (MIT) and its MSA morphology DB: already fetched by `model_dirs.ensure_camel_data`.
-- Ayaspell Hunspell `ar` dictionary: from the LibreOffice dictionaries repository. Its licence is
-  checked and recorded in the pack's `NOTICE` before shipping (GPL/LGPL/MPL tri-licence, data
-  only, loaded at run time, not linked).
-- Both live in the pack's data folder. `data_sha256` pins them.
+- CAMeL Tools (MIT, in the `stt` extra that `runtime.ml` installs) and its MSA morphology DB:
+  the existing catalog asset `model.refine` (`source = "pack:model.refine"`), today fetched by
+  `model_dirs.ensure_camel_data`. Nothing new: `review.words` lists `model.refine` in `wants`, so
+  a home without it (a Core home, no `runtime.ml`) runs the pack without the analyser (criterion 8)
+  and `review.words` shows *Degraded* (`want_missing:model.refine`).
+- Ayaspell Hunspell `ar` dictionary: the new asset `lang.ar` (`source = "pack:lang.ar"`, recipe
+  `tools/release/packs/recipes/lang.ar.sh`, 52.16), from the LibreOffice dictionaries repository
+  at a pinned commit. Its licence is checked and recorded in the pack's `NOTICE` before shipping
+  (GPL/LGPL/MPL tri-licence, data only, loaded at run time, not linked).
+- The pack finds its files with `components.packs.pack_dir("lang.ar")` (52.16). `data_sha256`
+  (52.3) pins them.
 
 ## Acceptance criteria
 
@@ -108,7 +115,7 @@ Every answer of this pack is deterministic: the same token, data files (`data_sh
   rebuilds folded caches, the same rule as today; check Epic 49's `maktaba_search` config agrees).
 - `pipeline/src/maktaba_pipeline/stt/cohere.py`: `dictionary()` reuses the pack's loaded analyser,
   so the process holds one copy.
-- `pipeline/src/maktaba_pipeline/model_dirs.py`: `ensure_language_pack_data("ar")`.
+- No download code: the data arrives as the `lang.ar` pack (52.16).
 
 ### Tests
 
@@ -122,8 +129,8 @@ Every answer of this pack is deterministic: the same token, data files (`data_sh
 ### Rollout
 
 - Loaded only by `word_check`. The analyser is already in memory on transcribing machines.
-- Back out: disable the pack in `language_packs`. Arabic falls back to the fallback pack (no
-  dictionary flags).
+- Back out: `maktaba-server components remove lang.ar` (or `DELETE /api/components/lang.ar`;
+  an asset is on disk or not, it has no "off"). Arabic falls back to the fallback pack (no dictionary flags).
 
 ## Edge cases
 

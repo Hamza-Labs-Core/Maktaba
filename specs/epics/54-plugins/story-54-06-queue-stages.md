@@ -44,7 +44,7 @@ number. Each plugin's `resources.concurrency` caps its share inside it, enforced
 
 1. `POST /internal/plugins/invocations {job_id}` (54.04). A refusal (`plugin_disabled`,
    `plugin_revoked`, `grants_needed`) returns a `StageResult` with outcome `waiting_inputs` and
-   no attempt counted; the component runner (54.07) will already have stopped claiming.
+   no attempt counted; the pipeline component runner (Epic 51.06, for `plugin.*` entries 54.07) will already have stopped claiming.
 2. Send `Run` to the host over `<data>/run/plugind.sock` with the token, limits from the
    manifest (clamped by the admin's caps), settings and the job's checkpoint.
 3. Relay `Progress` to `ctx` (the Queues page shows %).
@@ -170,4 +170,5 @@ stages today).
 
 ### Dependencies
 
-54.02 (host), 54.04 (minting). Epic 51 51.06 for stage-group gating (54.07 builds on both).
+54.02 (host), 54.04 (minting). Epic 51 51.06 for stage-group gating
+(`pipeline/src/maktaba_pipeline/components/runner.py`, `stages.py`; 54.07 builds on both).

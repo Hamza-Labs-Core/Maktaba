@@ -20,7 +20,8 @@ Go logger does at 60 KB today).
 |---|---|---|---|
 | `ts` | RFC 3339 UTC, ms | yes | |
 | `level` | `debug` `info` `warn` `error` `fatal` | yes | `fatal` = the process is about to exit (panic, uncaught exception) |
-| `service` | string | yes | the component: `api`, `streaming`, `pipeline`, `supervisor`, `logs`, `postgres`, `desktop`, `web`, `apple.player`, `apple.remote`, `apple.tv`, `android.player`, `android.remote`, `android.tv`, `cloud.api`, `cloud.relay`, `cloud.worker`, `cloudlink` |
+| `service` | string | yes | the process or app: `api`, `streaming`, `pipeline`, `supervisor`, `logs`, `postgres`, `desktop`, `web`, `apple.player`, `apple.remote`, `apple.tv`, `android.player`, `android.remote`, `android.tv`, `cloud.api`, `cloud.relay`, `cloud.worker`, `cloudlink` |
+| `component` | string | servers, when known | the Epic 51 catalog id the line comes from (`transcription`, `livetv.slots`, `core.api`, …; [`shared/components/catalog.toml`](../../../shared/components/catalog.toml)). A stage's line takes `ByStage(stage)`, a loop's `ByLoop(host, name)`, a process's `ByProcess(role, instance)` (`shared/components/catalog.go`; Python `maktaba_pipeline.components.catalog`). Never on cloud or client lines. |
 | `msg` | snake_case event name | yes | a constant, never runtime data (`make lint-log` already enforces this in Go; the same lint joins Python) |
 | `version`, `env` | string | yes (servers) | as today |
 | `node` | string | yes (servers) | the machine id (home or joined machine; cloud node A/B/W) |
@@ -114,6 +115,7 @@ Old lines in rings and in `server.log` still carry `user_id` until they age out;
 | T04 | unit (Go, Python) | the same key and id | hash in both | equal |
 | T05 | lint (CI) | Python sources | `lint-log` rule | f-strings and `%` in `msg` fail |
 | T06 | unit (Apple, Android) | write 3,000 lines | read the ring file | ≤ 1 MB, newest kept |
+| T07 | unit (Go, Python) | a stage job, a declared loop, a supervised process | log a line from each | `component` is the catalog's owner (`ByStage`, `ByLoop`, `ByProcess`); an id not in the catalog fails |
 
 ## Edge cases
 
@@ -132,7 +134,8 @@ Old lines in rings and in `server.log` still carry `user_id` until they age out;
 |---|---|
 | `shared/log/schema/line.schema.json`, `examples/` (new) | §1. |
 | `shared/redact/rules.json`, `cases.json` (new) | §2. |
-| `shared/log/go/redact.go`, `logger.go`, `ctx.go` | Load the shared rules (embed); `user_h`; `node`; `err.*` fields. |
+| `shared/log/go/redact.go`, `logger.go`, `ctx.go` | Load the shared rules (embed); `user_h`; `node`; `err.*` fields; `component` from the context. |
+| `shared/components/runner/runner.go` (`Declare`), `pipeline/src/maktaba_pipeline/components/runner.py` | Put the loop's or stage's catalog id in the logger's context. |
 | `shared/log/go/userhash.go` (new) | HMAC, key loading. |
 | `api/internal/middleware/slog_logger.go` | `user_h` instead of `user_id`. |
 | `cmd/maktaba-server/cmd_setup.go` (the setup step that makes the home's other keys) | Make `log.key` at first start. |
@@ -160,4 +163,5 @@ Revert; the old fields come back. Lines written meanwhile still parse (the schem
 
 ### Dependencies
 
-None. Needed by 53.02, 53.08, 53.14, 53.17.
+Epic 51's catalog and its loaders (51.01, built) for the `component` field. Needed by 53.02,
+53.08, 53.14, 53.17.

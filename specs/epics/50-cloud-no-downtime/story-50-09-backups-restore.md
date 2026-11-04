@@ -42,7 +42,7 @@ Hetzner-wide loss still leaves one:
 |---|---|
 | `MAKTABA_CLOUD_TOKEN_SECRET` | every access token and resume ticket stops working; users sign in again |
 | Entitlement signing key (`secrets/entitlement.key`) | homes can't verify new entitlements; after 7 days cloud features stop on every home until each home trusts a new key. **The worst one to lose.** |
-| Payment provider secret and webhook secret (provider TBD, not Stripe) | billing stops until new ones are made at the provider |
+| Payment provider secret and webhook secret (provider TBD) | billing stops until new ones are made at the provider |
 | OAuth client secrets, APNs key, FCM service account | sign-in with Google/Apple and push stop until replaced |
 | pgBackRest repo passphrases | the backups can't be read |
 | etcd CA key, Hetzner and Cloudflare tokens | can be made again; listed so a rebuild knows them |

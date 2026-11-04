@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 54,
-    "stories": 634,
+    "stories": 640,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -6051,6 +6051,15 @@
       "plan_files": []
     },
     {
+      "id": "50.35",
+      "epic": 50,
+      "num": "35",
+      "slug": "remote-access-capability",
+      "title": "الوصول عن بُعد مُشغَّل متى كان أيّ مسار عن بُعد مُشغَّلًا",
+      "story_file": "specs/epics/50-cloud-no-downtime/story-50-35-remote-access-capability.md",
+      "plan_files": []
+    },
+    {
       "id": "51.01",
       "epic": 51,
       "num": "01",
@@ -6357,6 +6366,24 @@
       "plan_files": []
     },
     {
+      "id": "52.16",
+      "epic": 52,
+      "num": "16",
+      "slug": "language-components",
+      "title": "مراجعة الكلمات وحزم اللغة في فهرس المكوّنات",
+      "story_file": "specs/epics/52-transcript-word-review/story-52-16-language-components.md",
+      "plan_files": []
+    },
+    {
+      "id": "52.17",
+      "epic": 52,
+      "num": "17",
+      "slug": "new-component-defaults",
+      "title": "المكوّنات التي يضيفها إصدار لاحق تبدأ كما تقول الحزمة",
+      "story_file": "specs/epics/52-transcript-word-review/story-52-17-new-component-defaults.md",
+      "plan_files": []
+    },
+    {
       "id": "53.01",
       "epic": 53,
       "num": "01",
@@ -6507,6 +6534,15 @@
       "slug": "cloud-observability",
       "title": "السحابة على النموذج نفسه، تغذّي الملحمة 50",
       "story_file": "specs/epics/53-logs-errors-reports/story-53-17-cloud-observability.md",
+      "plan_files": []
+    },
+    {
+      "id": "53.18",
+      "epic": 53,
+      "num": "18",
+      "slug": "catalog-entries",
+      "title": "أجزاء الملحمة 53 في فهرس المكوّنات",
+      "story_file": "specs/epics/53-logs-errors-reports/story-53-18-catalog-entries.md",
       "plan_files": []
     },
     {
@@ -6831,6 +6867,24 @@
       "slug": "wave9-core",
       "title": "الموجة 9: المراحل الأساسية، وإزالة المسار داخل العملية",
       "story_file": "specs/epics/54-plugins/story-54-36-wave9-core.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.37",
+      "epic": 54,
+      "num": "37",
+      "slug": "catalog-plugin-entries",
+      "title": "كتالوج المكوّنات يقبل مدخلات الإضافات",
+      "story_file": "specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md",
+      "plan_files": []
+    },
+    {
+      "id": "54.38",
+      "epic": 54,
+      "num": "38",
+      "slug": "plugin-files",
+      "title": "ملفات الإضافات على القرص، على شيفرة الحزم في الملحمة 51",
+      "story_file": "specs/epics/54-plugins/story-54-38-plugin-files.md",
       "plan_files": []
     }
   ],

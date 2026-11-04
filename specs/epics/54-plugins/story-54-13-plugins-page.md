@@ -21,7 +21,7 @@ link to the web page in Phase 1; they show plugin health in their existing compo
 
 A list of cards, one per plugin: icon, name (plugin's strings in the admin's language),
 developer, version, badges (Unreviewed, Development, Update available, Incompatible), rating
-(1–6, with a tooltip of why), phase and reason (Epic 51 words), jobs today / failed today.
+(1–6, with a tooltip of why), phase and reason (Epic 51's `components.phase.<phase>` and `components.reason.<code>` words), jobs today / failed today.
 
 The plugin's page:
 

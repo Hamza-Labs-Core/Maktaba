@@ -6,9 +6,13 @@
 
 A home must be able to tell, offline, three things about a plugin file: who made it, that
 Maktaba reviewed this exact file, and that Maktaba has not since withdrawn it. Epic 51's packs
-are signed by the release workflow's Sigstore identity, which means "built by Maktaba from
-Maktaba's commit". A third-party plugin is neither, so plugins need their own, small chain of
-trust (README H9), and a revocation list that cannot be frozen or rolled back.
+are listed in the release's signed `components-<version>.json` and `checksums.txt`, verified
+against the release workflow's Sigstore identity (`shared/go/releaseverify/components.go`,
+`VerifyComponentsIndex`), valid for exactly one server version, for first-party assets only.
+That means "built by Maktaba from Maktaba's commit". A third-party plugin is neither, so
+plugins need their own, small chain of trust (README H9), and a revocation list that cannot be
+frozen or rolled back. It is separate code: nothing here reads or writes the component index,
+and the index never lists a plugin.
 
 ## Description
 

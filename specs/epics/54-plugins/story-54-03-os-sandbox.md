@@ -16,8 +16,9 @@ proves it in CI on every OS with native code that tries to get out and must fail
 
 `maktaba-plugind` applies its sandbox in `main()` after opening its two unix sockets and its
 cache folder, and **before** reading any plugin. If any required step fails it exits with code
-78 and `sandbox_unavailable:<step>`; the supervisor reports `plugins.host` *Failed* with that
-reason, and no plugin runs.
+78 and `sandbox_unavailable:<step>`; the supervisor reports `plugins.host` *Failed* with
+reason `sandbox_unavailable` (an Epic 51 reason code, added by 54.37; the step goes in the
+condition's `params`), and no plugin runs.
 
 ### 2. macOS
 
@@ -140,7 +141,7 @@ compiles it.
 | T03 | CI (ubuntu-24.04) | userns blocked | start | Degraded `sandbox_partial`; T01 passes |
 | T04 | unit (rust, linux) | seccomp filter | decode BPF program | socket families other than AF_UNIX → EPERM |
 | T05 | unit (rust) | each OS, sandbox step fails (injected) | start | exit 78, `sandbox_unavailable:<step>` |
-| T06 | integration (go, supervisor) | host exits 78 | supervise | component *Failed*, reason shown, no restart loop beyond Epic 51's limit |
+| T06 | integration (go, supervisor) | host exits 78 | supervise | `plugins.host` *Failed* `sandbox_unavailable`, no restart (exit 78 is not retried; any other crash stops at Epic 51's limit with `crash_loop`) |
 | T07 | CI (4 OS) | hostile components inside sandboxed host | run | as 54.02 T02–T04 |
 | T08 | lint | `plugind.sb` | grep | no `allow network` rule except the unix-socket literal |
 

@@ -2286,14 +2286,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-50-cloud-no-downtime"
+        "epic-50-cloud-no-downtime",
+        "ep-get-capabilities"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-13-apps-ride-out-outage.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /capabilities"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "apps-ride-out-outage"
@@ -2331,21 +2334,24 @@
       "title": "Direct remote access, like Plex",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.15 — Direct remote access, like Plex\n\n> Epic 50 · Phase 1b · Depends on: 50.01 · Needed by: — (recommended before launch, doesn't\n> gate it; used by 50.13 when present)\n\n## Why\n\nMost homes reach the outside world only through the relay, so a relay outage is total for\nthem, and every relayed byte costs us traffic. Plex sends most remote play **directly**: the\nserver opens a port on the router by itself (UPnP or NAT-PMP), plex.tv checks it from outside,\nand each server has its own certificate so the direct path is HTTPS\n([research.md](research.md) §2).\n\nOurs today: the home list can g",
+      "content": "# Story 50.15 — Direct remote access, like Plex\n\n> Epic 50 · Phase 1b · Depends on: 50.01, 50.35, Epic 51 (built), Epic 52.17 (rows for new\n> component ids) · Needed by: — (recommended before launch, doesn't gate it; used by 50.13 when\n> present)\n\n## Why\n\nMost homes reach the outside world only through the relay, so a relay outage is total for\nthem, and every relayed byte costs us traffic. Plex sends most remote play **directly**: the\nserver opens a port on the router by itself (UPnP or NAT-PMP), plex.tv checks it from outside,\nand each server has its own certificate so the direct path is HTTP",
       "tags": [
         "story",
         "50-cloud-no-downtime",
         "phase-5"
       ],
       "related": [
-        "epic-50-cloud-no-downtime"
+        "epic-50-cloud-no-downtime",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-15-direct-remote.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "direct-remote"
@@ -2445,14 +2451,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-50-cloud-no-downtime"
+        "epic-50-cloud-no-downtime",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-19-plans-relay-billing.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "plans-relay-billing"
@@ -2464,7 +2473,7 @@
       "title": "The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.20 — The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing\n\n> Epic 50 · Phase B · Depends on: 50.19 · Needed by: 50.26, the broadcasting gate (README §14.11)\n\n## Why\n\nBroadcasting to people outside the home costs Maktaba things remote play doesn't:\n\n- always-on uploads to the edge (about $7–14 a channel a month);\n- viewer-hours;\n- moderation and legal exposure.\n\nThe plans of 50.19 have no place for it. README §14.4 proposes two things:\n\n- **guest sharing** inside Pro;\n- a **Broadcaster** add-on on top of Pro.\n\nBoth follow decision 4's rules: an allowance, then",
+      "content": "# Story 50.20 — The Broadcaster tier and guest sharing: plans, viewer-hour metering, billing\n\n> Epic 50 · Phase B · Depends on: 50.19, Epic 51 (51.19 licence gating, built) · Needed by: 50.22, 50.26, the\n> broadcasting gate (README §14.11)\n\n## Why\n\nBroadcasting to people outside the home costs Maktaba things remote play doesn't:\n\n- always-on uploads to the edge (about $7–14 a channel a month);\n- viewer-hours;\n- moderation and legal exposure.\n\nThe plans of 50.19 have no place for it. README §14.4 proposes two things:\n\n- **guest sharing** inside Pro;\n- a **Broadcaster** add-on on top of Pro.\n\nBo",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2519,7 +2528,7 @@
       "title": "The home's broadcaster: publish, ladder at home, uplink and encoder checks",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.22 — The home's broadcaster: publish, ladder at home, uplink and encoder checks\n\n> Epic 50 · Phase B · Depends on: 50.21, Epic 34.1 (public flag), Epic 34.3 (public mux, slates)\n> · Needed by: 50.23, 50.25, 50.29\n\n## Why\n\nThe edge (50.21) takes segments. Something on the home must:\n\n- choose what to publish;\n- keep the channel encoding 24/7 while it is published;\n- make the lower renditions;\n- upload every segment once;\n- tell the publisher, before publishing, whether their uplink and encoders can carry it.\n\nEverything that decides **what airs** stays here on the home, under the pub",
+      "content": "# Story 50.22 — The home's broadcaster: publish, ladder at home, uplink and encoder checks\n\n> Epic 50 · Phase B · Depends on: 50.20 (the `broadcast` licence flag), 50.21, Epic 34.1 (public\n> flag), Epic 34.3 (public mux, slates), Epic 51 (built), Epic 52.17 (rows for new component ids)\n> · Needed by: 50.23, 50.25, 50.29\n\n## Why\n\nThe edge (50.21) takes segments. Something on the home must:\n\n- choose what to publish;\n- keep the channel encoding 24/7 while it is published;\n- make the lower renditions;\n- upload every segment once;\n- tell the publisher, before publishing, whether their uplink and e",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2529,7 +2538,8 @@
         "epic-50-cloud-no-downtime",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-ws"
+        "ep-get-ws",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/50-cloud-no-downtime/story-50-22-home-broadcaster.md",
@@ -2539,7 +2549,8 @@
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
-        "GET /ws"
+        "GET /ws",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -2864,6 +2875,39 @@
       "db_tables": [],
       "metadata": {
         "slug": "cloudflare-deploys"
+      }
+    },
+    {
+      "id": "story-50.35",
+      "type": "story",
+      "title": "Remote access is on when any remote path is on",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.35 — Remote access is on when any remote path is on\n\n> Epic 50 · Phase 1b · Depends on: Epic 51 (51.09 capabilities, 51.19 licence gating; built) ·\n> Needed by: 50.15\n\n## Why\n\nApps ask the home `GET /api/capabilities` which features are on (Epic 51 story 51.09), and hide\nthe ones that are off from viewers (51.11). The rule as built\n(`api/internal/components/features.go`): a feature is on when **every** component that lists it\nis on. The one exception is a conflicts pair that both list it (`livetv.slots`,\n`livetv.inprocess`), where either is enough.\n\n`remote_access` is listed by `clo",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime",
+        "ep-get-ws",
+        "ep-get-capabilities",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-35-remote-access-capability.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /ws",
+        "GET /capabilities",
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "remote-access-capability"
       }
     },
     {
@@ -3619,21 +3663,24 @@
       "title": "The language pack contract, registry and fallback pack",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.03 — The language pack contract, registry and fallback pack\n\n> Epic 52 · Phase 1 · Depends on: — · Needed by: 52.4, 52.5, 52.6\n\n## Why\n\nRequirement: support every language, with languages added as add-ons. Today the only language knowledge is Arabic-specific and scattered:\n`text/arabic.py` (folding), `stt/cohere.py` (the CAMeL dictionary), `classify/quran.py`. A word\nchecker built on those would be Arabic forever. This story defines one contract every language\nplugs into, a registry that finds installed packs, and a fallback that gives *any* language\nsomething useful on day one.\n\n##",
+      "content": "# Story 52.03 — The language pack contract, registry and fallback pack\n\n> Epic 52 · Phase 1 · Depends on: — · Needed by: 52.4, 52.5, 52.6, 52.16\n\n## Why\n\nRequirement: support every language, with languages added as add-ons. Today the only language knowledge is Arabic-specific and scattered:\n`text/arabic.py` (folding), `stt/cohere.py` (the CAMeL dictionary), `classify/quran.py`. A word\nchecker built on those would be Arabic forever. This story defines one contract every language\nplugs into, a registry that finds installed packs, and a fallback that gives *any* language\nsomething useful on day o",
       "tags": [
         "story",
         "52-transcript-word-review",
         "phase-5"
       ],
       "related": [
-        "epic-52-transcript-word-review"
+        "epic-52-transcript-word-review",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/52-transcript-word-review/story-52-03-language-pack-contract.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "language-pack-contract"
@@ -3645,21 +3692,24 @@
       "title": "Arabic language pack",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.04 — Arabic language pack\n\n> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6, 52.15\n> Installed as an Epic 51 component (`langpack-ar`).\n\n## Why\n\nMost of the library is Arabic, and Arabic is where a word list fails. One stem takes hundreds\nof forms through prefixes (و، ف، ب، ك، ل، ال، س), suffixes (ه، ها، هم، كم، نا…) and inflection.\n«وسيكتبونها» is a correct word that no plain list holds. The pipeline already has what solves\nthis: the CAMeL Tools MSA morphological analyser (`stt/cohere.py` `dictionary()`, data\n`morphology-db-msa-r13`) and Arabic folding (`text/arabic.py`). T",
+      "content": "# Story 52.04 — Arabic language pack\n\n> Epic 52 · Phase 1 · Depends on: 52.3, 52.16 · Needed by: 52.6, 52.15\n> Code in the pipeline package; data in the Epic 51 asset `lang.ar` (Ayaspell) plus the existing\n> `model.refine` (CAMeL morphology DB), both from `shared/components/catalog.toml`.\n\n## Why\n\nMost of the library is Arabic, and Arabic is where a word list fails. One stem takes hundreds\nof forms through prefixes (و، ف، ب، ك، ل، ال، س), suffixes (ه، ها، هم، كم، نا…) and inflection.\n«وسيكتبونها» is a correct word that no plain list holds. The pipeline already has what solves\nthis: the CAMeL T",
       "tags": [
         "story",
         "52-transcript-word-review",
         "phase-5"
       ],
       "related": [
-        "epic-52-transcript-word-review"
+        "epic-52-transcript-word-review",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/52-transcript-word-review/story-52-04-arabic-pack.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "arabic-pack"
@@ -3671,7 +3721,7 @@
       "title": "English language pack",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.05 — English language pack\n\n> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6\n> Installed as an Epic 51 component (`langpack-en`). Deterministic Hunspell checks only (README §8,\n> decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English\n> has its own pack for its tokenizer rules (contractions, possessives, acronyms).\n\n## Why\n\nEnglish is the library's second language, both in English talks and inside Arabic lectures\n(code-switching, PR #556's two-track files). English needs no morphology engine. Hunspell's affix\nrules cover its inflectio",
+      "content": "# Story 52.05 — English language pack\n\n> Epic 52 · Phase 1 · Depends on: 52.3, 52.16 · Needed by: 52.6\n> Code in the pipeline package; data in the Epic 51 asset `lang.en` (52.16). Deterministic\n> Hunspell checks only (decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English\n> has its own pack for its tokenizer rules (contractions, possessives, acronyms).\n\n## Why\n\nEnglish is the library's second language, both in English talks and inside Arabic lectures\n(code-switching, PR #556's two-track files). English needs no morphology engine. Hunspell's affix\nrules",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3697,7 +3747,7 @@
       "title": "`word_check`: flags, names and old transcripts",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.06 — `word_check`: flags, names and old transcripts\n\n> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5 · Needed by: 52.8, 52.14, 52.15\n\n## Why\n\nThis is the queue job that reviews each transcript and saves the location of every word that is\nnot in the dictionary, looks wrong or has low confidence, for a person to review. It turns 52.1's evidence and the packs' knowledge into\n`word_flags` rows: where the word is, why it is suspect, how sure we are, and what it might be.\nIt runs on the CPU, so it can run again whenever the packs, the vocabulary or the thresholds\nchange, wi",
+      "content": "# Story 52.06 — `word_check`: flags, names and old transcripts\n\n> Epic 52 · Phase 1 · Depends on: 52.1, 52.2, 52.3, 52.4, 52.5, 52.16, 52.17 · Needed by: 52.8, 52.14, 52.15\n> Epic 51 component: `review.words` (kind `stages`, owns `word_check`).\n\n## Why\n\nThis is the queue job that reviews each transcript and saves the location of every word that is\nnot in the dictionary, looks wrong or has low confidence, for a person to review. It turns 52.1's evidence and the packs' knowledge into\n`word_flags` rows: where the word is, why it is suspect, how sure we are, and what it might be.\nIt runs on the CP",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3706,7 +3756,7 @@
       "related": [
         "epic-52-transcript-word-review",
         "entity-speakers",
-        "ep-get-queues"
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/52-transcript-word-review/story-52-06-word-check-stage.md",
@@ -3714,7 +3764,7 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /queues"
+        "GET /components"
       ],
       "db_tables": [
         "speakers"
@@ -3821,7 +3871,7 @@
       "title": "Vocabulary: learning from fixes",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.10 — Vocabulary: learning from fixes\n\n> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)\n\n## Why\n\nA lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times\nunless the system learns it. Each fix must count. This story turns fixes into a\nvocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second\nlisten and new transcriptions spell it right. It never re-transcribes the library\nby itself.\n\n## Description\n\n### 1. Tables (slot 0173+)\n\n- `vocabulary (id, scope 'home'",
+      "content": "# Story 52.10 — Vocabulary: learning from fixes\n\n> Epic 52 · Phase 3 · Depends on: 52.9 · Needed by: — (52.7, which used its glossary, is removed)\n\n## Why\n\nA lecturer's name, a book's title or a place mentioned in 300 lectures will be flagged 300 times\nunless the system learns it. Each fix must count. This story turns fixes into a\nvocabulary. The vocabulary stops re-flagging, finds the same word elsewhere, and helps the second\nlisten and new transcriptions spell it right. It never re-transcribes the library\nby itself.\n\n## Description\n\n### 1. Tables (slot 0184+)\n\n- `vocabulary (id, scope 'home'",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -3938,7 +3988,7 @@
       "title": "Settings, thresholds, budget and queue health",
       "epic": "52-transcript-word-review",
       "phase": 5,
-      "content": "# Story 52.14 — Settings, thresholds, budget and queue health\n\n> Epic 52 · Phase 2 · Depends on: 52.6 · Needed by: 52.11\n\n## Why\n\nHow many words a person is asked to check is a trade-off. Too many and the queue is ignored; too\nfew and mistakes stay. That trade-off belongs to the owner, per library: a Quran library, a\nlecture library and an English documentary library want different settings. The new stages also\nhave to show their health like every other queue (Epic 40), and must not slow transcription on the\nhome Mac.\n\n## Description\n\n### 1. The library setting `word_review`\n\nIt is stored in t",
+      "content": "# Story 52.14 — Settings, thresholds, budget and queue health\n\n> Epic 52 · Phase 2 · Depends on: 52.6, 52.16 · Needed by: 52.11\n> Epic 51: `review.words` owns `rules.word_review` (51.13); its health is 51.14's.\n\n## Why\n\nHow many words a person is asked to check is a trade-off. Too many and the queue is ignored; too\nfew and mistakes stay. That trade-off is the admin's, per library: a Quran library, a\nlecture library and an English documentary library want different settings. The new stages also\nhave to show their health like every other queue (Epic 40), and must not slow transcription on the\nho",
       "tags": [
         "story",
         "52-transcript-word-review",
@@ -4004,6 +4054,87 @@
       }
     },
     {
+      "id": "story-52.16",
+      "type": "story",
+      "title": "Word review and language packs in the component catalog",
+      "epic": "52-transcript-word-review",
+      "phase": 5,
+      "content": "# Story 52.16 — Word review and language packs in the component catalog\n\n> Epic 52 · Phase 1 · Depends on: 52.3, Epic 51 (51.01 catalog, 51.15 packs and the index,\n> 51.16 install and remove, 51.18 updates carry packs) · Needed by: 52.4, 52.5, 52.6, 52.14\n\n## Why\n\n## Description\n\n### 1. The catalog entries\n\nAdded to `shared/components/catalog.toml` (and its pipeline copy), with the fields the loaders\naccept. `since` is the first release that carries the entry.\n\n```toml\n[[component]]\nid        = \"review.words\"\nkind      = \"stages\"\ngroup     = \"processing\"\ntitle_key = \"components.review.words.ti",
+      "tags": [
+        "story",
+        "52-transcript-word-review",
+        "phase-5"
+      ],
+      "related": [
+        "epic-52-transcript-word-review",
+        "ep-get-capabilities",
+        "ep-get-components",
+        "ep-post-components-preview",
+        "ep-post-components-apply",
+        "ep-post-components-offline",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-install"
+      ],
+      "files": {
+        "story": "specs/epics/52-transcript-word-review/story-52-16-language-components.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /capabilities",
+        "GET /components",
+        "POST /components/preview",
+        "POST /components/apply",
+        "POST /components/offline",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/install"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "language-components"
+      }
+    },
+    {
+      "id": "story-52.17",
+      "type": "story",
+      "title": "Components a later release adds start as the bundle says",
+      "epic": "52-transcript-word-review",
+      "phase": 5,
+      "content": "# Story 52.17 — Components a later release adds start as the bundle says\n\n> Epic 52 · Phase 1 · Depends on: Epic 51 (51.03 seed, 51.17 bundles, 51.18 update rehearsal) ·\n> Needed by: 52.6 (the release that ships `review.words`)\n\n## Why\n\nEpic 51 writes the desired rows **once**. `store.Seed` (`shared/components/store/seed.go`) runs\nonly while `component_meta.seeded_at` is NULL, and `componentseed.Plan`\n(`cmd/maktaba-server/internal/componentseed/seed.go`) gives every catalog id of that release a\nwant. An id that a later release adds has no row on a home that is already seeded, and **no row\nread",
+      "tags": [
+        "story",
+        "52-transcript-word-review",
+        "phase-5"
+      ],
+      "related": [
+        "epic-52-transcript-word-review",
+        "entity-audit_log",
+        "ep-get-ws",
+        "ep-get-capabilities",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/52-transcript-word-review/story-52-17-new-component-defaults.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /ws",
+        "GET /capabilities",
+        "GET /components"
+      ],
+      "db_tables": [
+        "audit_log"
+      ],
+      "metadata": {
+        "slug": "new-component-defaults"
+      }
+    },
+    {
       "id": "story-53.1",
       "type": "story",
       "title": "One log line for every part",
@@ -4016,14 +4147,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-01-log-schema.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "log-schema"
@@ -4035,7 +4169,7 @@
       "title": "The log keeper: every component's log on disk",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.02 — The log keeper: every component's log on disk\n\n> Epic 53 · Phase 1 · Depends on: 53.01 · Needed by: 53.04, 53.09, 53.17\n\n## Why\n\nToday every child inherits the supervisor's stderr and launchd writes the whole tree into one\n`server.log` (50 MB, one `.1` copy). A chatty pipeline pushes a crash of the API out of the file\nwithin hours, and the in-memory rings die with their process. Logs must be on disk, per\ncomponent, capped, and written by something that needs nothing else running (README D1).\n\n## Description\n\n### 1. Capture\n\nThe supervisor gives each child its own stdout and std",
+      "content": "# Story 53.02 — The log keeper: every component's log on disk\n\n> Epic 53 · Phase 1 · Depends on: 53.01 · Needed by: 53.04, 53.09, 53.17\n\n## Why\n\nToday every child inherits the supervisor's stderr and launchd writes the whole tree into one\n`server.log` (50 MB, one `.1` copy). A chatty pipeline pushes a crash of the API out of the file\nwithin hours, and the in-memory rings die with their process. Logs must be on disk, per\nservice, capped, and written by something that needs nothing else running (README D1). Each\nline also names the Epic 51 component it comes from, so an admin can read one compon",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4061,7 +4195,7 @@
       "title": "The home's status, without the API or the database",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.03 — The home's status, without the API or the database\n\n> Epic 53 · Phase 1 · Depends on: — · Needed by: 53.04, 53.05, 53.06, 53.07\n\n## Why\n\nSystem health (`/admin/health`) is the right page, but it is behind the API, which is behind\nPostgres. When either fails, nobody can see what failed, and every app just says \"can't load\".\nThe supervisor already knows each child's state (`/processes` on its loopback admin port). That\nknowledge needs a public, minimal, always-on form.\n\n## Description\n\n### 1. `GET /status.json` on the web port\n\nServed by the supervisor itself (not proxied), no si",
+      "content": "# Story 53.03 — The home's status, without the API or the database\n\n> Epic 53 · Phase 1 · Depends on: 53.18, Epic 51 (51.04 reconciler, built) · Needed by: 53.04, 53.05, 53.06, 53.07\n\n## Why\n\nSystem health (`/admin/health`) is the right page, but it is behind the API, which is behind\nPostgres. When either fails, nobody can see what failed, and every app just says \"can't load\".\nThe supervisor already knows each child's state (`/processes` on its loopback admin port). That\nknowledge needs a public, minimal, always-on form.\n\n## Description\n\n### 1. `GET /status.json` on the web port\n\nServed by the",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4069,14 +4203,25 @@
       ],
       "related": [
         "epic-53-logs-errors-reports",
-        "entity-transcripts"
+        "entity-transcripts",
+        "ep-get-components",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-stop"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-03-status-endpoint.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/stop"
+      ],
       "db_tables": [
         "transcripts"
       ],
@@ -4098,14 +4243,27 @@
       ],
       "related": [
         "epic-53-logs-errors-reports",
-        "entity-audit_log"
+        "entity-audit_log",
+        "ep-get-components",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-stop",
+        "ep-post-components-id-restart"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-04-recovery-console.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/stop",
+        "POST /components/{id}/restart"
+      ],
       "db_tables": [
         "audit_log"
       ],
@@ -4119,21 +4277,30 @@
       "title": "Safe mode and crash-loop cut-offs",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.05 — Safe mode and crash-loop cut-offs\n\n> Epic 53 · Phase 1 · Depends on: 53.03 · Needed by: 53.07\n\n## Why\n\nThe supervisor already backs off a crashing child (1 s doubling to 60 s) and marks it `failed`\nafter 5 exits in 10 minutes, then retries every 5 minutes. Two gaps remain:\n\n- **The supervisor itself** runs under launchd, which restarts it at most every 10 s **forever**\n  with no cut-off and no reason shown. The launcher rolls back a boot loop of a *new* version,\n  but a supervisor that crashes on the current version just loops.\n- **There is no way to start with less.** When a w",
+      "content": "# Story 53.05 — Safe mode and crash-loop cut-offs\n\n> Epic 53 · Phase 1 · Depends on: 53.03, Epic 51 (51.04) · Needed by: 53.07\n\n## Why\n\nThe supervisor already backs off a crashing child (1 s doubling to 60 s) and marks it `failed`\nafter 5 exits in 10 minutes, then retries every 5 minutes. Two gaps remain:\n\n- **The supervisor itself** runs under launchd, which restarts it at most every 10 s **forever**\n  with no cut-off and no reason shown. The launcher rolls back a boot loop of a *new* version,\n  but a supervisor that crashes on the current version just loops.\n- **There is no way to start with",
       "tags": [
         "story",
         "53-logs-errors-reports",
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-05-safe-mode.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "safe-mode"
@@ -4145,7 +4312,7 @@
       "title": "A status strip in every app",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.06 — A status strip in every app\n\n> Epic 53 · Phase 1 · Depends on: 53.03 · Needed by: 53.07, Epic 50.11\n\n## Why\n\nWhen streaming is down, a user sees a spinning player and thinks the app is broken. When the\ncloud relay is slow, the same. The web has an offline banner (`web/src/components/OfflineBanner.tsx`,\n#384) and Epic 50.11 planned a cloud banner in every app. One strip, fed by both the home's\n`/status.json` (53.03) and the cloud's `summary.json` (50.11), tells people the truth in one\nplace.\n\n## Description\n\n### 1. One strip, three sources, one priority\n\n| Priority | Source | Sh",
+      "content": "# Story 53.06 — A status strip in every app\n\n> Epic 53 · Phase 1 · Depends on: 53.03, Epic 51 (51.09 capabilities, 51.11 clients; built) · Needed by: 53.07, Epic 50.11\n\n## Why\n\nWhen streaming is down, a user sees a spinning player and thinks the app is broken. When the\ncloud relay is slow, the same. The web has an offline banner (`web/src/components/OfflineBanner.tsx`,\n#384) and Epic 50.11 planned a cloud banner in every app. One strip, fed by both the home's\n`/status.json` (53.03) and the cloud's `summary.json` (50.11), tells people the truth in one\nplace.\n\n## Description\n\n### 1. One strip, t",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4153,6 +4320,9 @@
       ],
       "related": [
         "epic-53-logs-errors-reports",
+        "entity-transcripts",
+        "ep-get-ws",
+        "ep-get-capabilities",
         "ep-get-components"
       ],
       "files": {
@@ -4161,9 +4331,13 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /ws",
+        "GET /capabilities",
         "GET /components"
       ],
-      "db_tables": [],
+      "db_tables": [
+        "transcripts"
+      ],
       "metadata": {
         "slug": "status-strip"
       }
@@ -4174,7 +4348,7 @@
       "title": "The fault rehearsal in CI",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.07 — The fault rehearsal in CI\n\n> Epic 53 · Phase 1 · Depends on: 53.03, 53.04, 53.05, 53.06 · Needed by: release gate\n\n## Why\n\nThe rule since the 2026-10-28 outages: failure paths are proven in CI before they reach\nthe Mac. The update rehearsal does that for updates. Nothing yet kills\nthe API or Postgres and checks the UI still loads. \"No crash breaks everything\" is a promise only a\ntest can keep.\n\n## Description\n\n### 1. The harness\n\n`.github/workflows/fault-rehearsal.yml`, verdict job **fault-rehearsal**, built on the update\nrehearsal's kit (`tools/rehearsal/build.sh`, `postgres.s",
+      "content": "# Story 53.07 — The fault rehearsal in CI\n\n> Epic 53 · Phase 1 · Depends on: 53.03, 53.04, 53.05, 53.06 · Needed by: release gate\n\n## Why\n\nThe rule since the 2026-10-28 outages: failure paths are proven in CI before they reach the\nMac. The update rehearsal does that for updates. Nothing yet kills\nthe API or Postgres and checks the UI still loads. That one crash never takes the UI down is a\npromise only a test can keep.\n\n## Description\n\n### 1. The harness\n\n`.github/workflows/fault-rehearsal.yml`, verdict job **fault-rehearsal**, built on the update\nrehearsal's kit (`tools/rehearsal/build.sh`, `",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4229,7 +4403,7 @@
       "title": "Log index, search and live tail",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.09 — Log index, search and live tail\n\n> Epic 53 · Phase 2 · Depends on: 53.02 · Needed by: 53.10, 53.11, 53.12, 53.13\n\n## Why\n\nSegments (53.02) keep everything but can only be read by time. Admins need to type a word, pick a\ncomponent and a level, follow one request, and watch lines arrive. The viewer today polls three\n10,000-line rings.\n\n## Description\n\n### 1. The `logs` role\n\nA new child role, `maktaba-server logs` (same binary, its own process, README D3), supervised like\nthe others (backoff, cut-off, `/healthz`, `/readyz`). It listens on loopback only\n(`127.0.0.1:<logs port>`, a",
+      "content": "# Story 53.09 — Log index, search and live tail\n\n> Epic 53 · Phase 2 · Depends on: 53.02, 53.18 · Needed by: 53.10, 53.11, 53.12, 53.13\n\n## Why\n\nSegments (53.02) keep everything but can only be read by time. Admins need to type a word, pick a\nservice or an Epic 51 component and a level, follow one request, and watch lines arrive. The viewer today polls three\n10,000-line rings.\n\n## Description\n\n### 1. The `logs` role\n\nA new child role, `maktaba-server logs` (same binary, its own process, README D3), supervised like\nthe others (backoff, cut-off, `/healthz`, `/readyz`). It listens on loopback onl",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4238,7 +4412,8 @@
       "related": [
         "epic-53-logs-errors-reports",
         "ep-get-search",
-        "ep-post-search"
+        "ep-post-search",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-09-log-index.md",
@@ -4247,7 +4422,8 @@
       },
       "api_endpoints": [
         "GET /search",
-        "POST /search"
+        "POST /search",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -4325,7 +4501,7 @@
       "title": "Dashboards and home analytics",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.12 — Dashboards and home analytics\n\n> Epic 53 · Phase 2 · Depends on: 53.09 · Needed by: 53.13\n\n## Why\n\nThe services export Prometheus metrics (`/metrics` on the API admin port with the supervisor's\nupdate metrics; the pipeline's own exporter), but nothing keeps their history. The queue tiles\n(Epic 40) show now, not last week. Plex puts bandwidth, resources and history behind Plex Pass and\npeople still install Tautulli. Maktaba needs its dashboards built in.\n\n## Description\n\n### 1. Rollups (README D9)\n\nThe `logs` role scrapes every local `/metrics` endpoint every **15 s** (API, stre",
+      "content": "# Story 53.12 — Dashboards and home analytics\n\n> Epic 53 · Phase 2 · Depends on: 53.09, Epic 51 (51.14 component metrics, built) · Needed by: 53.13\n\n## Why\n\nThe services export Prometheus metrics (`/metrics` on the API admin port with the supervisor's\nupdate metrics; the pipeline's own exporter), but nothing keeps their history. The queue tiles\n(Epic 40) show now, not last week. Plex puts bandwidth, resources and history behind Plex Pass and\npeople still install Tautulli. Maktaba needs its dashboards built in.\n\n## Description\n\n### 1. Rollups (README D9)\n\nThe `logs` role scrapes every local `/m",
       "tags": [
         "story",
         "53-logs-errors-reports",
@@ -4435,21 +4611,24 @@
       "title": "Reports and errors to Maktaba",
       "epic": "53-logs-errors-reports",
       "phase": 5,
-      "content": "# Story 53.16 — Reports and errors to Maktaba\n\n> Epic 53 · Phase 4 · Depends on: 53.15, 53.17 · Needed by: —\n\n## Why\n\nA problem the home's admin can't fix (a bug in Maktaba) should reach the developers with the\nevidence, not as a forum post. The cloud already receives **anonymous** error groups from homes\nthat opted in to usage data (Epic 16.7, `telemetry_error_groups`), but nothing with enough detail\nto fix a bug, and nothing a person chose to send.\n\n## Description\n\n### 1. Two levels, two consents\n\n| What | Leaves the home when | Identity at Maktaba | Kept |\n|---|---|---|---|\n| **Anonymous er",
+      "content": "# Story 53.16 — Reports and errors to Maktaba\n\n> Epic 53 · Phase 4 · Depends on: 53.15, 53.17, 53.18 · Needed by: —\n\n## Why\n\nA problem the home's admin can't fix (a bug in Maktaba) should reach the developers with the\nevidence, not as a forum post. The cloud already receives **anonymous** error groups from homes\nthat opted in to usage data (Epic 16.7, `telemetry_error_groups`), but nothing with enough detail\nto fix a bug, and nothing a person chose to send.\n\n## Description\n\n### 1. Two levels, two consents\n\n| What | Leaves the home when | Identity at Maktaba | Kept |\n|---|---|---|---|\n| **Anony",
       "tags": [
         "story",
         "53-logs-errors-reports",
         "phase-5"
       ],
       "related": [
-        "epic-53-logs-errors-reports"
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/53-logs-errors-reports/story-53-16-reports-to-maktaba.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "reports-to-maktaba"
@@ -4479,6 +4658,35 @@
       "db_tables": [],
       "metadata": {
         "slug": "cloud-observability"
+      }
+    },
+    {
+      "id": "story-53.18",
+      "type": "story",
+      "title": "Epic 53's parts in the component catalog",
+      "epic": "53-logs-errors-reports",
+      "phase": 5,
+      "content": "# Story 53.18 — Epic 53's parts in the component catalog\n\n> Epic 53 · Phase 1 · Depends on: Epic 51 (51.01 catalog, 51.04 reconciler, 51.05 Go loops;\n> built), Epic 52.17 (rows for ids a later release adds) · Needed by: 53.03, 53.05, 53.09, 53.16\n\n## Why\n\nEpic 51 puts every supervised process and every background loop in one catalog,\n[`shared/components/catalog.toml`](../../../shared/components/catalog.toml). CI keeps it that way:\nthe `catalog` job (`make catalog-check`), `cmd/maktaba-server/internal/supervisor/catalog_roles_test.go`\n(every supervisor role/instance matches exactly one componen",
+      "tags": [
+        "story",
+        "53-logs-errors-reports",
+        "phase-5"
+      ],
+      "related": [
+        "epic-53-logs-errors-reports",
+        "ep-get-components"
+      ],
+      "files": {
+        "story": "specs/epics/53-logs-errors-reports/story-53-18-catalog-entries.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "catalog-entries"
       }
     },
     {
@@ -4523,14 +4731,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-02-plugin-host.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "plugin-host"
@@ -4633,7 +4844,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-extensions"
+        "ep-get-extensions",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-06-queue-stages.md",
@@ -4641,7 +4853,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /extensions"
+        "GET /extensions",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -4654,7 +4867,7 @@
       "title": "Plugins are Epic 51 components",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.07 — Plugins are Epic 51 components\n\n> Epic 54 · Phase 1 · Depends on: 54.01, 54.06, Epic 51 (51.02, 51.06, 51.16) · Needed by:\n> 54.08, 54.09, 54.10, 54.11, 54.17\n\n## Why\n\nEpic 51 already gives Maktaba one way to install, enable, disable, hold, update, roll back and\nremove a part, with a drain that never loses a job, status per machine, an admin API with role\ntests, and a Components page. A second lifecycle for plugins would duplicate all of it and\ndisagree with it. This story makes each installed plugin an Epic 51 component, and adds only\nwhat third-party code needs: dynamic catal",
+      "content": "# Story 54.07 — Plugins are Epic 51 components\n\n> Epic 54 · Phase 1 · Depends on: 54.01, 54.06, 54.37, 54.38, Epic 51 (51.02, 51.06, 51.08,\n> 51.13, 51.18) · Needed by: 54.08, 54.09, 54.10, 54.11, 54.17\n\n## Why\n\nEpic 51 already gives Maktaba one way to install, enable, disable, hold, update, roll back and\nremove a part, with a drain that never loses a job, status per machine, an admin API with role\ntests, and a Components page. A second lifecycle for plugins would duplicate all of it and\ndisagree with it. This story makes each installed plugin an Epic 51 component, and adds only\nwhat third-par",
       "tags": [
         "story",
         "54-plugins",
@@ -4663,7 +4876,12 @@
       "related": [
         "epic-54-plugins",
         "entity-audit_log",
-        "ep-get-components"
+        "ep-get-settings",
+        "ep-put-settings",
+        "ep-get-components",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-07-lifecycle.md",
@@ -4671,7 +4889,12 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /settings",
+        "PUT /settings",
+        "GET /components",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}"
       ],
       "db_tables": [
         "audit_log"
@@ -4698,7 +4921,15 @@
         "entity-libraries",
         "ep-get-settings",
         "ep-put-settings",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-post-components-preview",
+        "ep-post-components-apply",
+        "ep-post-components-import",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-install",
+        "ep-post-components-id-restart"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-08-grants-roles.md",
@@ -4708,7 +4939,15 @@
       "api_endpoints": [
         "GET /settings",
         "PUT /settings",
-        "GET /components"
+        "GET /components",
+        "POST /components/preview",
+        "POST /components/apply",
+        "POST /components/import",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/install",
+        "POST /components/{id}/restart"
       ],
       "db_tables": [
         "audit_log",
@@ -4724,21 +4963,24 @@
       "title": "Crash isolation, health, logs and quotas",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.09 — Crash isolation, health, logs and quotas\n\n> Epic 54 · Phase 1 · Depends on: 54.02, 54.07, Epic 53 (53.01, 53.02) · Needed by: 54.13\n\n## Why\n\nA plugin written by someone else will crash, hang, loop, or log a gigabyte a day. None of that\nmay take the pipeline down, hide a core failure, or leave the owner guessing which plugin is to\nblame. Epic 53 gives every component its logs and health; this story gives every plugin its\nown, plus a circuit breaker so a broken plugin stops itself instead of filling the failing-items\npage.\n\n## Description\n\n### 1. Isolation, layer by layer\n\n| Fail",
+      "content": "# Story 54.09 — Crash isolation, health, logs and quotas\n\n> Epic 54 · Phase 1 · Depends on: 54.02, 54.07, 54.37, Epic 51 (51.04, 51.14), Epic 53 (53.01,\n> 53.02) · Needed by: 54.13\n\n## Why\n\nA plugin written by someone else will crash, hang, loop, or log a gigabyte a day. None of that\nmay take the pipeline down, hide a core failure, or leave the owner guessing which plugin is to\nblame. Epic 53 gives every component its logs and health; this story gives every plugin its\nown, plus a circuit breaker so a broken plugin stops itself instead of filling the failing-items\npage.\n\n## Description\n\n### 1. ",
       "tags": [
         "story",
         "54-plugins",
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-09-isolation-health.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "isolation-health"
@@ -4750,7 +4992,7 @@
       "title": "Install from a file and the unreviewed opt-in",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.10 — Install from a file and the unreviewed opt-in\n\n> Epic 54 · Phase 1 · Depends on: 54.07, 54.08 · Needed by: 54.13\n\n## Why\n\nHomes are often offline, and developers need to try their own plugins before any store exists.\nPlex's lesson (Epic 51 H9) is that \"only from our servers\" fails offline homes. But a file from\nanywhere is exactly how bad code arrives. The answer: a file installs the same way as a store\ndownload when it carries the store's signature; anything else needs a deliberate admin opt-in\nand is marked \"Unreviewed\" wherever it appears. The sandbox, grants and quotas do n",
+      "content": "# Story 54.10 — Install from a file and the unreviewed opt-in\n\n> Epic 54 · Phase 1 · Depends on: 54.07, 54.08, 54.38 · Needed by: 54.13\n\n## Why\n\nHomes are often offline, and developers need to try their own plugins before any store exists.\nPlex's lesson (Epic 51 H9) is that \"only from our servers\" fails offline homes. But a file from\nanywhere is exactly how bad code arrives. The answer: a file installs the same way as a store\ndownload when it carries the store's signature; anything else needs a deliberate admin opt-in\nand is marked \"Unreviewed\" wherever it appears. The sandbox, grants and quot",
       "tags": [
         "story",
         "54-plugins",
@@ -4788,7 +5030,8 @@
       "related": [
         "epic-54-plugins",
         "ep-get-settings",
-        "ep-put-settings"
+        "ep-put-settings",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-11-settings.md",
@@ -4797,7 +5040,8 @@
       },
       "api_endpoints": [
         "GET /settings",
-        "PUT /settings"
+        "PUT /settings",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -4867,21 +5111,24 @@
       "title": "Signing, the trust root and the revocation list",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.14 — Signing, the trust root and the revocation list\n\n> Epic 54 · Phase 2 · Depends on: 54.01 · Needed by: 54.15, 54.17\n\n## Why\n\nA home must be able to tell, offline, three things about a plugin file: who made it, that\nMaktaba reviewed this exact file, and that Maktaba has not since withdrawn it. Epic 51's packs\nare signed by the release workflow's Sigstore identity, which means \"built by Maktaba from\nMaktaba's commit\". A third-party plugin is neither, so plugins need their own, small chain of\ntrust (README H9), and a revocation list that cannot be frozen or rolled back.\n\n## Descrip",
+      "content": "# Story 54.14 — Signing, the trust root and the revocation list\n\n> Epic 54 · Phase 2 · Depends on: 54.01 · Needed by: 54.15, 54.17\n\n## Why\n\nA home must be able to tell, offline, three things about a plugin file: who made it, that\nMaktaba reviewed this exact file, and that Maktaba has not since withdrawn it. Epic 51's packs\nare listed in the release's signed `components-<version>.json` and `checksums.txt`, verified\nagainst the release workflow's Sigstore identity (`shared/go/releaseverify/components.go`,\n`VerifyComponentsIndex`), valid for exactly one server version, for first-party assets only",
       "tags": [
         "story",
         "54-plugins",
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-14-signing-trust.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "signing-trust"
@@ -4950,7 +5197,7 @@
       "title": "The home's catalog, updates and the kill switch",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.17 — The home's catalog, updates and the kill switch\n\n> Epic 54 · Phase 2 · Depends on: 54.07, 54.14, 54.15 · Needed by: 54.18\n\n## Why\n\nThe home server, not any plugin, talks to the store: it fetches the signed catalog, downloads\npackages, offers updates, and above all honours the revocation list so a plugin Maktaba\nwithdraws for malware stops in every home within minutes. This is the server reaching the\ninternet on its own behalf, straight to the store's CDN (`plugins-cdn.maktaba.tv`, 54.15), with\nsignatures, not the channel, deciding what is trusted. Nothing here goes through Makt",
+      "content": "# Story 54.17 — The home's catalog, updates and the kill switch\n\n> Epic 54 · Phase 2 · Depends on: 54.07, 54.14, 54.15, 54.37, Epic 51 (51.05) · Needed by: 54.18\n\n## Why\n\nThe home server, not any plugin, talks to the store: it fetches the signed catalog, downloads\npackages, offers updates, and above all honours the revocation list so a plugin Maktaba\nwithdraws for malware stops in every home within minutes. This is the server reaching the\ninternet on its own behalf, straight to the store's CDN (`plugins-cdn.maktaba.tv`, 54.15), with\nsignatures, not the channel, deciding what is trusted. Nothin",
       "tags": [
         "story",
         "54-plugins",
@@ -5005,21 +5252,24 @@
       "title": "Paid plugins",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, the Phase 3 payment provider decision · Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider account and seller-of-record choice, its own payouts, tax records and\nrefunds, and its own signed entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home calls the ",
+      "content": "# Story 54.19 — Paid plugins\n\n> Epic 54 · Phase 3 · Depends on: 54.15, 54.18, 54.37, the Phase 3 payment provider decision ·\n> Needed by: —\n\n## Why\n\nDevelopers maintain what pays (Plex's plugins faded partly because nobody was paid to keep\nthem working). Both free and paid plugins are required. The store sells them **on its own**:\nits own payment provider account and seller-of-record choice, its own payouts, tax records and\nrefunds, and its own signed entitlements that homes check offline. Nothing here uses Maktaba\nCloud's billing (Epic 50.19), its licence issuer or its accounts, and no home c",
       "tags": [
         "story",
         "54-plugins",
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-19-paid-plugins.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "paid-plugins"
@@ -5039,6 +5289,8 @@
       ],
       "related": [
         "epic-54-plugins",
+        "ep-get-ws",
+        "ep-get-capabilities",
         "ep-get-components"
       ],
       "files": {
@@ -5047,6 +5299,8 @@
         "mockups": []
       },
       "api_endpoints": [
+        "GET /ws",
+        "GET /capabilities",
         "GET /components"
       ],
       "db_tables": [],
@@ -5060,7 +5314,7 @@
       "title": "Local compute: embeddings and the language model",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.21 — Local compute: embeddings and the language model\n\n> Epic 54 · Phase 3 · Depends on: 54.04, Epic 51 (`llm`, `search.semantic`) · Needed by: —\n\n## Why\n\nMany good plugin ideas need a model: group videos by topic, write a summary from a transcript,\nsuggest tags in Arabic. A WebAssembly plugin cannot bring torch (research §3.2), and shipping a\nmodel per plugin would be huge and duplicate what the home already runs. Maktaba already runs\nan embedding model (semantic search) and a local language model (ollama, the `llm` component).\nPlugins may ask those, on the home, and never anything",
+      "content": "# Story 54.21 — Local compute: embeddings and the language model\n\n> Epic 54 · Phase 3 · Depends on: 54.04, 54.37, Epic 51 (components `llm`, `search.semantic`) ·\n> Needed by: 54.31\n\n## Why\n\nMany good plugin ideas need a model: group videos by topic, write a summary from a transcript,\nsuggest tags in Arabic. A WebAssembly plugin cannot bring torch (research §3.2), and shipping a\nmodel per plugin would be huge and duplicate what the home already runs. Maktaba already runs\nan embedding model (semantic search) and a local language model (ollama, the `llm` component).\nPlugins may ask those, on the ",
       "tags": [
         "story",
         "54-plugins",
@@ -5068,7 +5322,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-capabilities"
+        "ep-get-capabilities",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-21-local-compute.md",
@@ -5076,7 +5331,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /capabilities"
+        "GET /capabilities",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -5089,21 +5345,24 @@
       "title": "First-party plugins: the trusted manifest and release signing",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.22 — First-party plugins: the trusted manifest and release signing\n\n> Epic 54 · Phase 4 · Depends on: 54.01, Epic 51 (51.15) · Needed by: 54.23, 54.24, 54.27\n\n## Why\n\nMaktaba's own stages are to be plugins on the same interface as third-party ones\n(README §15). They need rights no third-party plugin may have: their own SQL, library files,\nffmpeg, the GPU, sometimes the network. Those rights must be **declared**, **reviewed**, and\n**unlockable only by Maktaba's release signature**, or \"first-party\" becomes a back door any\npackage could claim.\n\n## Description\n\n### 1. The manifest sche",
+      "content": "# Story 54.22 — First-party plugins: the trusted manifest and release signing\n\n> Epic 54 · Phase 4 · Depends on: 54.01, 54.37, Epic 51 (51.15) · Needed by: 54.23, 54.24, 54.27\n\n## Why\n\nMaktaba's own stages are to be plugins on the same interface as third-party ones\n(README §15). They need rights no third-party plugin may have: their own SQL, library files,\nffmpeg, the GPU, sometimes the network. Those rights must be **declared**, **reviewed**, and\n**unlockable only by Maktaba's release signature**, or \"first-party\" becomes a back door any\npackage could claim.\n\n## Description\n\n### 1. The manife",
       "tags": [
         "story",
         "54-plugins",
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-22-trusted-manifest.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "trusted-manifest"
@@ -5115,7 +5374,7 @@
       "title": "The native plugin runner",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.23 — The native plugin runner\n\n> Epic 54 · Phase 4 · Depends on: 54.02, 54.22 · Needed by: 54.25\n\n## Why\n\nMaktaba's own stages need torch, MLX, faster-whisper, ffmpeg, yt-dlp and the GPU, which cannot\nrun as WebAssembly today (README §2, H16). They still must run outside the queue worker, with\nno database login and no secrets, behind the same dispatch messages as third-party plugins, so\nthe queue worker treats every plugin the same and imports no stage code.\n\n## Description\n\n### 1. The process\n\n`maktaba-plugin-runner` is a Python entry point in the pipeline venv\n(`python -m maktaba_",
+      "content": "# Story 54.23 — The native plugin runner\n\n> Epic 54 · Phase 4 · Depends on: 54.02, 54.22, 54.37, Epic 51 (51.01, 51.04) · Needed by: 54.25\n\n## Why\n\nMaktaba's own stages need torch, MLX, faster-whisper, ffmpeg, yt-dlp and the GPU, which cannot\nrun as WebAssembly today (README §2, H16). They still must run outside the queue worker, with\nno database login and no secrets, behind the same dispatch messages as third-party plugins, so\nthe queue worker treats every plugin the same and imports no stage code.\n\n## Description\n\n### 1. The process\n\n`maktaba-plugin-runner` is a Python entry point in the pip",
       "tags": [
         "story",
         "54-plugins",
@@ -5251,7 +5510,9 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-components"
+        "ep-get-components",
+        "ep-get-components-bundles",
+        "ep-post-components-bundle"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-27-layout-packaging.md",
@@ -5259,7 +5520,9 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /components"
+        "GET /components",
+        "GET /components/bundles",
+        "POST /components/bundle"
       ],
       "db_tables": [],
       "metadata": {
@@ -5331,14 +5594,17 @@
         "phase-5"
       ],
       "related": [
-        "epic-54-plugins"
+        "epic-54-plugins",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-30-wave3-transcription-search.md",
         "plan": null,
         "mockups": []
       },
-      "api_endpoints": [],
+      "api_endpoints": [
+        "GET /components"
+      ],
       "db_tables": [],
       "metadata": {
         "slug": "wave3-transcription-search"
@@ -5486,7 +5752,8 @@
       ],
       "related": [
         "epic-54-plugins",
-        "ep-get-extensions"
+        "ep-get-extensions",
+        "ep-get-components"
       ],
       "files": {
         "story": "specs/epics/54-plugins/story-54-35-wave8-plex-dizquetv.md",
@@ -5494,7 +5761,8 @@
         "mockups": []
       },
       "api_endpoints": [
-        "GET /extensions"
+        "GET /extensions",
+        "GET /components"
       ],
       "db_tables": [],
       "metadata": {
@@ -5507,7 +5775,7 @@
       "title": "Wave 9: the core stages, and removing the in-process path",
       "epic": "54-plugins",
       "phase": 5,
-      "content": "# Story 54.36 — Wave 9: the core stages, and removing the in-process path\n\n> Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —\n\n## Why\n\nThe last wave moves the stages every home always runs (scan, probe and the identity stages),\nthen deletes what made the migration safe: the in-process handlers, `CORE_MODULES` and the\nswitch. After it, the pipeline worker is the queue engine plus dispatch, and every stage is a\nplugin (README §15.3, F19).\n\n## Description\n\n### 1. The stages\n\nAll in **`tv.maktaba.core-media`** (`switchable = false`, the `core.pipeline` component),\nrunner group `light`:\n\n| Stag",
+      "content": "# Story 54.36 — Wave 9: the core stages, and removing the in-process path\n\n> Epic 54 · Phase 4 · Depends on: 54.35 · Needed by: —\n\n## Why\n\nThe last wave moves the stages every home always runs (scan, probe and the identity stages),\nthen deletes what made the migration safe: the in-process handlers, `CORE_MODULES` and the\nswitch. After it, the pipeline worker is the queue engine plus dispatch, and every stage is a\nplugin (README §15.3, F19).\n\n## Description\n\n### 1. The stages\n\nAll in **`tv.maktaba.core-media`**, the plugin of the `core.pipeline` component (kind\n`stages+process+loop`, `switchabl",
       "tags": [
         "story",
         "54-plugins",
@@ -5530,6 +5798,84 @@
       "db_tables": [],
       "metadata": {
         "slug": "wave9-core"
+      }
+    },
+    {
+      "id": "story-54.37",
+      "type": "story",
+      "title": "The component catalog takes plugin entries",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.37 — The component catalog takes plugin entries\n\n> Epic 54 · Phase 1 · Depends on: 54.01, Epic 51 (51.01, 51.02, 51.04, 51.05, 51.06, 51.08,\n> 51.09) · Needed by: 54.07, 54.38, 54.17, 54.19\n\n## Why\n\nEpic 51's catalog is fixed per release. `shared/components/catalog.toml` is embedded in the Go\nbinaries (`shared/components/catalog.go`, `go:embed`) and copied byte for byte into the\npipeline (`pipeline/src/maktaba_pipeline/components/catalog.toml`, `make catalog-sync`). Both\nloaders refuse an unknown field, a kind outside `process | stages | loop | extension | asset`\n(or a `+` join of t",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-components",
+        "ep-post-components-bundle",
+        "ep-post-components-import",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id",
+        "ep-post-components-id-install"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-37-catalog-plugin-entries.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components",
+        "POST /components/bundle",
+        "POST /components/import",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}",
+        "POST /components/{id}/install"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "catalog-plugin-entries"
+      }
+    },
+    {
+      "id": "story-54.38",
+      "type": "story",
+      "title": "Plugin files on disk, on Epic 51's packs code",
+      "epic": "54-plugins",
+      "phase": 5,
+      "content": "# Story 54.38 — Plugin files on disk, on Epic 51's packs code\n\n> Epic 54 · Phase 1 · Depends on: 54.01, 54.37, Epic 51 (51.15, 51.16) · Needed by: 54.07,\n> 54.10, 54.17\n\n## Why\n\nEpic 51 already puts components on disk safely: `cmd/maktaba-server/internal/packs` keeps one\nfolder per component under `<state>/components/<id>/`, each version in\n`<version>_<sha12>/`, an atomically written `current` pointer file (no symlinks, for\nWindows), a `.lock` across processes, `.partial/` for resumable downloads, `.staging-*`\nfolders and `.removing` markers, and `Layout.Recover` at boot. `shared/go/componentp",
+      "tags": [
+        "story",
+        "54-plugins",
+        "phase-5"
+      ],
+      "related": [
+        "epic-54-plugins",
+        "ep-get-components",
+        "ep-post-components-offline",
+        "ep-get-components-id",
+        "ep-put-components-id",
+        "ep-delete-components-id"
+      ],
+      "files": {
+        "story": "specs/epics/54-plugins/story-54-38-plugin-files.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [
+        "GET /components",
+        "POST /components/offline",
+        "GET /components/{id}",
+        "PUT /components/{id}",
+        "DELETE /components/{id}"
+      ],
+      "db_tables": [],
+      "metadata": {
+        "slug": "plugin-files"
       }
     }
   ]

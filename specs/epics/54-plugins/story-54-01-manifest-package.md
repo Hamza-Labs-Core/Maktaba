@@ -15,7 +15,9 @@ in one schema, with one validator per language generated from it.
 
 ### 1. The package
 
-A `.mkplugin` file is a `tar` archive compressed with zstd (the same format as Epic 51 packs),
+A `.mkplugin` file is a `tar` archive compressed with zstd (the same container as Epic 51
+packs, `shared/go/componentpack`; its head is `manifest.toml` and `files.json` instead of a
+pack's `pack.json` and `files.sha256`, 54.38),
 holding:
 
 | Path | Required | What |
@@ -137,7 +139,7 @@ with each other or with core stages (core names never start with `p_`; a lint in
 | `shared/plugins/manifest.schema.json` (new) | The schema. |
 | `shared/plugins/capabilities.toml`, `shared/plugins/events.toml` (new) | The two lists. |
 | `shared/plugins/testdata/manifests/` (new) | Corpus. |
-| `shared/go/pluginmanifest/` (new module) | Parse, validate, normalise, unpack (safe tar.zst reader shared with Epic 51's pack unpacker if it has landed). |
+| `shared/go/pluginmanifest/` (new module) | Parse, validate, normalise. Unpacking is `componentpack.UnpackPlugin` (54.38), on the rules of Epic 51's `componentpack.Unpack`. |
 | `plugind/crates/manifest/` (new) | Rust validator (`jsonschema` crate + rules). |
 | `pipeline/src/maktaba_pipeline/plugins/manifest.py` (new) | Python validator. |
 | `tools/plugin-sdk/js/manifest.ts` (new) | TypeScript validator. |
@@ -161,5 +163,5 @@ Remove the modules; no data.
 
 ### Dependencies
 
-None. Shares the safe unpacker with Epic 51 story 51.16 if that lands first; otherwise this
-story writes it and 51.16 reuses it.
+None. The safe unpacker already exists (`shared/go/componentpack/unpack.go`, Epic 51 51.15);
+54.38 adds the plugin head to it.

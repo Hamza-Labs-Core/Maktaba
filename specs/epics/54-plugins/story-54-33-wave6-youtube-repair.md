@@ -65,7 +65,8 @@ stay and keep enqueueing the same stage names.
 
 ## Edge cases
 
-- **YouTube changes and `yt-dlp` needs an update**: unchanged, an Epic 51 asset update.
+- **YouTube changes and `yt-dlp` needs an update**: unchanged, a server release with a new
+  `tool.yt-dlp` pack (first-party packs move with the server version, Epic 51 51.15).
 - **A host YouTube adds** (a new CDN name): the nightly T02 fails, and the fix is a reviewed
   manifest edit.
 

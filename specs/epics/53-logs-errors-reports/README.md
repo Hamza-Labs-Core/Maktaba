@@ -7,8 +7,9 @@
 > [Epic 29](../29-analytics/README.md) / [Epic 44](../44-viewing-analytics/README.md)
 > (analytics), [Epic 40](../40-queue-health/README.md) (queue health), and the error audits
 > (PR #291, PRs #378–#387). **Works with:** [Epic 50](../50-cloud-no-downtime/README.md)
-> (cloud monitoring, status page, incidents: see §9 for who owns what) and Epic 51
-> (configurable components, §10). **Research:** [research.md](research.md).
+> (cloud monitoring, status page, incidents: see §9 for who owns what) and
+> [Epic 51](../51-configurable-components/README.md) (configurable components, as built: the
+> catalog, desired and actual state, the runners; §10). **Research:** [research.md](research.md).
 > **Wiki:** [epic-53-logs-errors-reports.md](../../../docs/wiki/epics/epic-53-logs-errors-reports.md).
 > **Decisions:** the open questions were answered on 2026-11-03 (§12).
 
@@ -73,7 +74,7 @@ From [research.md](research.md) §1 (the code on `main` at `7aa1af482`):
 
 ### Not in this epic
 
-- Alerting to the owner's phone for the *cloud* (Epic 50.10 owns paging). Home alerts here are
+- Paging a phone for the *cloud* (Epic 50.10 owns paging). Home alerts here are
   in-app notifications and the existing notifications table, not pages.
 - Distributed tracing UI (spans, flame graphs). We keep W3C ids and the optional OTLP export
   (Epic 21.3); a trace view is a later epic.
@@ -86,8 +87,8 @@ From [research.md](research.md) §1 (the code on `main` at `7aa1af482`):
 | ID | Requirement | Story |
 |---|---|---|
 | F1 | One log line schema for Go, Python, Swift, Kotlin, TypeScript and the cloud, checked by a shared conformance test. User and home ids hashed. | 53.01 |
-| F2 | The supervisor captures each child's output, tags it, and writes capped, rotated segment files per component, independent of Postgres. | 53.02 |
-| F3 | A status endpoint served by the supervisor, without the API or Postgres: one state per component. | 53.03 |
+| F2 | The supervisor captures each child's output, tags it, and writes capped, rotated segment files per service (supervised process), independent of Postgres. Each line names its Epic 51 component. | 53.02 |
+| F3 | A status endpoint served by the supervisor, without the API or Postgres: one state per status group, built from Epic 51 catalog ids. | 53.03 |
 | F4 | A recovery console served by the supervisor: logs from files, component states, restart, safe mode, roll back, diagnostics download; admin sign-in that works without Postgres and the API. | 53.04 |
 | F5 | Safe mode (one start, minimal parts) and crash-loop cut-offs for every child and for the supervisor itself. | 53.05 |
 | F6 | A status strip in every app (web, desktop, Apple, Android, TV) when a part of the home, or the cloud (Epic 50.11), is down. | 53.06 |
@@ -136,7 +137,7 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 
 ### 4.4 Privacy
 
-- **Crash reports to the home are opt-in** (decided 2026-11-03): off by default, asked
+- **Crash reports to the home are opt-in** (decided 2026-11-03, §12): off by default, asked
   once during each app's initial setup with two equal buttons, and a Settings → Privacy switch
   afterwards (53.14). Crashes stay on the device until the person says yes.
 - **The home is the boundary.** Logs, crash reports and problem reports stay on the home unless
@@ -177,7 +178,7 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
    │ capture: each child's stdout/stderr → tag → segment files (53.02)           │
    │ children: postgres · api · streaming · pipeline workers · logs (new) · …    │
    ▼                                                                             │
- <data>/logs/segments/<component>/<yyyymmdd-hh>.ndjson.zst   (always written) ◄──┘
+ <data>/logs/segments/<service>/<yyyymmdd-hh>.ndjson.zst     (always written) ◄──┘
    │ tailed by
    ▼
  logs role  maktaba-server logs   (crash-isolated child, 53.09)
@@ -196,13 +197,13 @@ Measured on the home Mac class (Apple silicon, 16 GB) and in CI by 53.13 and 53.
 | D1 | **Logs are always written to files first**, by the supervisor that owns the pipes; the index is built from the files. | Services writing straight to a database. | A file write needs nothing else running. If the index, the API or Postgres is down, nothing is lost and the console can still read the files. |
 | D2 | **The index is a separate SQLite file (`logs.db`, FTS5), owned by a `logs` child role**, not tables in the library Postgres. | Postgres partitions + pg_trgm (the research agent's pick); Loki + Prometheus + Grafana; self-hosted Sentry or GlitchTip. | Search must work when Postgres is down (G1). Logs in Postgres would also go into every backup, the cluster copy's logical replication (every full node, Epic 37) and the update rehearsal's dumps, and would add write load to the database that serves playback. SQLite via `modernc.org/sqlite` is already in `cmd/maktaba-server` and pure Go (`CGO_ENABLED=0` builds keep working). Loki alone needs ~1.5–4 GB; Sentry 16 GB; both are more processes to supervise. |
 | D3 | **The index is a child role, not goroutines in the supervisor.** | Index inside the supervisor. | A panic or a corrupt index file must not take down the process that serves the UI. The supervisor stays small: capture, status, console. |
-| D4 | **Auth without Postgres:** the console accepts (a) a **recovery pass**: a 7-day JWT the API gives signed-in admins while it is up, in an `HttpOnly` cookie scoped to `/recovery` (the web's normal session is an opaque id checked in Postgres, so it can't be used), or a Remote app's JWT access token; both checked with the API's JWKS public keys cached on disk (as streaming already does, `streaming/internal/auth/jwks.go`), with a revocation file the API writes on demotion; or (b) a one-time link the Mac app's tray asks the supervisor for over its loopback admin port. | A separate console password; no auth on the LAN; extending the web session to work without Postgres. | No new secret for the owner to keep. A viewer never gets a pass. A pass opens only `/recovery`, expires, and is revoked without Postgres. |
+| D4 | **Auth without Postgres:** the console accepts (a) a **recovery pass**: a 7-day JWT the API gives signed-in admins while it is up, in an `HttpOnly` cookie scoped to `/recovery` (the web's normal session is an opaque id checked in Postgres, so it can't be used), or a Remote app's JWT access token; both checked with the API's JWKS public keys cached on disk (as streaming already does, `streaming/internal/auth/jwks.go`), with a revocation file the API writes on demotion; or (b) a one-time link the Mac app's tray asks the supervisor for over its loopback admin port. | A separate console password; no auth on the LAN; extending the web session to work without Postgres. | No new secret for the admin to keep. A viewer never gets a pass. A pass opens only `/recovery`, expires, and is revoked without Postgres. |
 | D5 | **Client crash and report uploads use a subset of the Sentry envelope format**, written by our own small senders. | The Sentry SDKs; Crashlytics; ACRA's format. | A standard, documented framing (stock SDKs can point at the home if a power user wants), without pulling an SDK with its own telemetry, and with no Google dependency. |
 | D6 | **tvOS uses PLCrashReporter**; iOS, iPadOS and macOS use MetricKit (already in the app); Android uses `CrashLog` (already) plus `ApplicationExitInfo` for ANRs and native crashes. | Crashlytics everywhere; KSCrash (tvOS support only in a 2026 beta). | MetricKit has no tvOS. PLCrashReporter supports tvOS 12+ and is MIT-licensed. |
 | D7 | **One id per request: `X-Request-Id` (UUIDv7)**, made by the client per user action, carried as `request_id` everywhere; W3C `traceparent` only when OTLP export is on. | Trace ids everywhere. | The id already exists in the API and the logger; adding it to clients, the pipeline and streaming closes the gap with the least new code. |
 | D8 | **Error fingerprint = the cloud's existing one** (`telemetry_error_groups`: source, app, scrubbed message, first own frame), extended with the component and the error code. | A new algorithm. | The same error has the same fingerprint at the home and in the cloud, so a forwarded group joins its anonymous twin. |
-| D9 | **Metric history = 1-minute rollups in `logs.db`** scraped from the existing `/metrics` endpoints by the `logs` role; 7 days at 1 min, 30 days at 1 h (retention decided 2026-11-03). | Prometheus; storing every sample. | Dashboards need trends, not raw series; ~200 series × 1,440 a day is a few MB, inside `logs.db`'s share of the cap. |
-| D10 | **Safe mode is one start**, like Home Assistant's: Postgres, API, web only. A crash-looping child stops at its cut-off and raises a repair item. | Endless retries; stopping everything. | The project rule: recovery is automatic or one click, never a terminal. |
+| D9 | **Metric history = 1-minute rollups in `logs.db`** scraped from the existing `/metrics` endpoints by the `logs` role; 7 days at 1 min, 30 days at 1 h (retention decided 2026-11-03, §12). | Prometheus; storing every sample. | Dashboards need trends, not raw series; ~200 series × 1,440 a day is a few MB, inside `logs.db`'s share of the cap. |
+| D10 | **Safe mode is one start**, like Home Assistant's: `core.postgres`, `core.api`, `core.updates`, the web and `logs.index` only (Epic 51 catalog ids), with desired state untouched. A crash-looping child stops at its cut-off and raises a repair item. | Endless retries; stopping everything. | The project rule: recovery is automatic or one click, never a terminal. |
 
 ### 5.3 Performance budget (home Mac)
 
@@ -257,21 +258,22 @@ tool for history, and anything that needs a 16 GB monitoring stack at home.
 |---|---|---|---|
 | 53.01 | [One log line for every part](story-53-01-log-schema.md) | 1 | — |
 | 53.02 | [The log keeper: every component's log on disk](story-53-02-log-keeper.md) | 1 | 53.01 |
-| 53.03 | [The home's status, without the API or the database](story-53-03-status-endpoint.md) | 1 | — |
+| 53.03 | [The home's status, without the API or the database](story-53-03-status-endpoint.md) | 1 | 53.18, Epic 51 (51.04) |
 | 53.04 | [The recovery console](story-53-04-recovery-console.md) | 1 | 53.02, 53.03 |
-| 53.05 | [Safe mode and crash-loop cut-offs](story-53-05-safe-mode.md) | 1 | 53.03 |
-| 53.06 | [A status strip in every app](story-53-06-status-strip.md) | 1 | 53.03 |
+| 53.05 | [Safe mode and crash-loop cut-offs](story-53-05-safe-mode.md) | 1 | 53.03, Epic 51 (51.04) |
+| 53.06 | [A status strip in every app](story-53-06-status-strip.md) | 1 | 53.03, Epic 51 (51.09, 51.11) |
 | 53.07 | [The fault rehearsal in CI](story-53-07-fault-rehearsal.md) | 1 | 53.03, 53.04, 53.05, 53.06 |
 | 53.08 | [One request id from the app to the last process](story-53-08-request-ids.md) | 2 | 53.01 |
-| 53.09 | [Log index, search and live tail](story-53-09-log-index.md) | 2 | 53.02 |
+| 53.09 | [Log index, search and live tail](story-53-09-log-index.md) | 2 | 53.02, 53.18 |
 | 53.10 | [Error groups](story-53-10-error-groups.md) | 2 | 53.09 |
 | 53.11 | [Admin Logs and Errors pages](story-53-11-admin-pages.md) | 2 | 53.08, 53.09, 53.10 |
-| 53.12 | [Dashboards and home analytics](story-53-12-dashboards.md) | 2 | 53.09 |
+| 53.12 | [Dashboards and home analytics](story-53-12-dashboards.md) | 2 | 53.09, Epic 51 (51.14) |
 | 53.13 | [Performance budget and load test](story-53-13-performance.md) | 2 | 53.09, 53.12 |
 | 53.14 | [Crash reports from every app](story-53-14-crash-reports.md) | 3 | 53.01, 53.10 |
 | 53.15 | [Report a problem](story-53-15-report-a-problem.md) | 3 | 53.08, 53.14 |
-| 53.16 | [Reports and errors to Maktaba](story-53-16-reports-to-maktaba.md) | 4 | 53.15, 53.17 |
+| 53.16 | [Reports and errors to Maktaba](story-53-16-reports-to-maktaba.md) | 4 | 53.15, 53.17, 53.18 |
 | 53.17 | [The cloud on the same model, feeding Epic 50](story-53-17-cloud-observability.md) | 4 | 53.01, 53.02, 53.10 |
+| 53.18 | [Epic 53's parts in the component catalog](story-53-18-catalog-entries.md) | 1 | Epic 51 (51.01, 51.04, 51.05) |
 
 ```mermaid
 graph LR
@@ -302,12 +304,22 @@ graph LR
   S14 --> S15
   S15 --> S16[53.16 to Maktaba]
   S17 --> S16
+  S18[53.18 catalog entries] --> S03
+  S18 --> S09
+  S18 --> S16
+  E51_01[Epic 51.01 catalog] --> S18
+  E51_04[Epic 51.04 reconciler] --> S18
+  E51_04 --> S03
+  E51_04 --> S05
+  E51_05[Epic 51.05 Go loops] --> S18
+  E51_09[Epic 51.09 capabilities, 51.11 clients] --> S06
+  E51_14[Epic 51.14 health, metrics] --> S12
   S17 --> E50_10[Epic 50.10 monitoring]
   S06 --> E50_11[Epic 50.11 status page banner]
 ```
 
-Work that can start at once, in parallel: **53.01 and 53.03**. Then 53.02, 53.05, 53.06 and
-53.08. 53.07 builds its harness early: each scenario is listed in its expected-failures file
+Work that can start at once, in parallel: **53.01 and 53.18** (Epic 51 is built). Then 53.02,
+53.03, 53.05, 53.06 and 53.08. 53.07 builds its harness early: each scenario is listed in its expected-failures file
 until its story merges, as the update rehearsal does.
 
 ## 9. Epic 50: who owns what
@@ -332,18 +344,52 @@ The DAG edges: 53.17 → 50.10 (metrics and logs to watch) and 53.06 → 50.11 (
 
 ## 10. Epic 51: configurable components
 
-Epic 51 makes the home's parts configurable (which components run, where). This epic does not
-redesign that. It asks one thing of every component, whatever Epic 51 calls it:
+Epic 51 is built ([README](../51-configurable-components/README.md)). Every pipeline stage,
+supervised process and background loop belongs to exactly one component in
+[`shared/components/catalog.toml`](../../../shared/components/catalog.toml); the `catalog` CI
+job fails when code and the file drift apart. This epic builds on that model, and does not
+redesign it.
 
-- it **logs** with the 53.01 schema to stdout/stderr, with `service` set to its component name;
+**What this epic uses, as built:**
+
+| Epic 51 part | Where | Used by |
+|---|---|---|
+| Catalog ids and kinds (`core.postgres`, `core.api`, `core.streaming`, `core.pipeline`, `transcription`, `search.semantic`, `livetv.slots`, …) | `shared/components/catalog.go` (`Default`, `ByProcess`, `ByStage`, `ByLoop`) | 53.01 (`component` field), 53.03 (status groups), 53.11 (filters) |
+| The supervisor's reconciler and its desired-state cache `<state>/state/components.json`, read without Postgres | `cmd/maktaba-server/internal/supervisor/reconcile.go`, `compcache.go` | 53.03 (`off`), 53.04, 53.05 |
+| Actual state: `component_status` rows, phases and reason codes (`crash_loop`, `held`, `boot_flag`, `reconcile_off`, …) | migration `0178_components.sql`, `shared/components/store` | 53.03, 53.05, 53.11 |
+| Health on `GET /api/components` and `/{id}` (`health.restarts`, `last_error_code`, `stale`) and the supervisor's `maktaba_component_up`, `maktaba_component_restarts_total`, `maktaba_component_transition_seconds` | `api/internal/components/health.go` (story 51.14) | 53.04, 53.12 |
+| Admin routes: `PUT /api/components/{id}`, `POST /api/components/{id}/stop` and `/start` (a hold until start) | `api/internal/handlers/components`; contract in `shared/api/openapi.yaml` (tag Components) | 53.04, 53.05 (links, never a second switch) |
+| `GET /api/capabilities` and `capabilities_changed` on `/ws/home`; `409 component_off` | `api/internal/handlers/components/capabilities.go` (story 51.09) | 53.06 (off is not down) |
+| The `[components] reconcile = "off"` kill switch | `cmd/maktaba-server/internal/config/config.go` | 53.05, 53.07 |
+
+**The rules this epic adds for every component:**
+
+- it **logs** with the 53.01 schema to stdout/stderr: `service` is the process, `component` is
+  its catalog id (53.01 §1);
 - it answers **`/healthz`** (alive) and, where it has one, **`/readyz`** (ready), as the children
   do today;
-- it declares a **status mapping** (53.03): what its probe failing means to users (which
-  features stop) and the banner key to show.
+- **off is not down.** A component whose desired state is `installed`, `absent` or held is `off`
+  in `/status.json`, raises no banner and no repair item; only a component that should run and
+  doesn't is `degraded` or `down` (53.03).
 
-Until Epic 51 lands, the supervisor's role list is the registry, and 53.03 keeps the mapping
-in a table in the supervisor. When Epic 51's component descriptor exists, the mapping moves
-into it as two fields (`status.features`, `status.banner`); nothing else changes.
+**What Epic 51 does not provide, and where it is added:**
+
+- The `logs` role (53.09) is a new supervised process and 53.16 adds a new API loop. Neither is in
+  the catalog, so the `catalog` job and `catalog_roles_test.go` would fail. **53.18** adds
+  `logs.index` and `reports.share` to the catalog.
+- The catalog has no status group or banner field, and its loaders refuse unknown fields. The
+  status mapping stays a table in the supervisor (`statusmap.go`), keyed by catalog id, with a
+  test that every process component maps to exactly one status group (**53.18**).
+- There is no restart route (`POST /api/components/{id}/restart` is not mounted) and no timed
+  hold. The recovery console's **Restart** is a supervisor restart of a process for this boot
+  only; it never writes desired state (53.04).
+- Safe mode needs a way to keep components off for one boot without writing desired state. The
+  reconciler does this only for its own loops (`--no-mdns`, reason `boot_flag`) and always runs
+  `core.*`. 53.05 adds a boot-wide forced-off set to the reconciler and the runners, reported
+  with the same reason and `{"flag": "--safe-mode"}`.
+- Ids a later release adds have no desired row on a seeded home, and no row reads as on. 52.17
+  gives them rows as the home's bundle says; 53.18 relies on it for `reports.share` (off by
+  default).
 
 ## 11. Rollout
 

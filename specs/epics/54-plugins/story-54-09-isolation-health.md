@@ -1,6 +1,7 @@
 # Story 54.09 — Crash isolation, health, logs and quotas
 
-> Epic 54 · Phase 1 · Depends on: 54.02, 54.07, Epic 53 (53.01, 53.02) · Needed by: 54.13
+> Epic 54 · Phase 1 · Depends on: 54.02, 54.07, 54.37, Epic 51 (51.04, 51.14), Epic 53 (53.01,
+> 53.02) · Needed by: 54.13
 
 ## Why
 
@@ -17,8 +18,8 @@ page.
 | Fails | Contained by | Effect |
 |---|---|---|
 | A plugin job traps, times out, hits memory | the job's Wasmtime store (54.02) | that job fails with its cause (54.06); the host continues |
-| The host process crashes or is killed | supervisor (Epic 51 process component) | restart with backoff; in-flight jobs requeued with no attempt counted (54.06 §3) |
-| The host crash-loops | Epic 51's restart limit | `plugins.host` *Failed*; every plugin *Waiting* `dependency_off:plugins.host`; core stages unaffected |
+| The host process crashes or is killed | supervisor (the `plugins.host` process component, 51.04) | restart with backoff; in-flight jobs requeued with no attempt counted (54.06 §3) |
+| The host crash-loops | Epic 51's restart limit | `plugins.host` *Failed* `crash_loop`; every plugin *Waiting* `dependency_off` (the API shows `dependency_off:plugins.host`); core stages unaffected |
 | A plugin floods the API | token bucket (54.04) | refused calls; breaker counts them |
 | A plugin floods logs | host rate limit (§3) | lines dropped with a counter |
 | A plugin fills its data quota | API quota | `plugin_quota`; breaker counts |
@@ -33,11 +34,16 @@ Kept by the pipeline's plugin dispatcher (one place sees every result), persiste
 - **Trip** when, for one plugin, ≥ 5 `plugin_trap`/`plugin_timeout`/`plugin_memory` in 10
   minutes, or > 50 % of its last 20 jobs failed for any plugin cause, or ≥ 50 API refusals in 10
   minutes.
-- **Action:** an Epic 51 **hold** on `plugin.<id>` with reason `plugin_crash_loop` (drain, keep
-  queue), an in-app notice to admins ("{plugin} stopped itself after repeated errors"), an
-  Epic 53 error group.
-- **Reset:** only by an admin pressing Start (the hold has no `until`). Pressing Start clears the
-  window.
+- **Action:** an Epic 51 **hold** on `plugin.<id>` (drain, keep queue), an in-app notice to
+  admins ("{plugin} stopped itself after repeated errors"), an Epic 53 error group. Only the
+  API writes desired state (Epic 51 H13; the pipeline's login reads the component tables
+  only), so the dispatcher asks it: `POST /internal/plugins/{id}/breaker` (machine auth), and
+  the API sets the hold with `hold_by = "plugin-breaker"` and audit action `component.hold`.
+  An Epic 51 hold has no reason field, so the pipeline runner reports the held plugin
+  `stopped` with reason `plugin_crash_loop` (54.37 §3) instead of `held` while
+  `plugin_health.tripped` is set.
+- **Reset:** only by an admin pressing Start (`POST /api/components/plugin.<id>/start` or the
+  plugin route; the hold has no end time). Pressing Start clears the window.
 
 ### 3. Logs
 
@@ -54,7 +60,10 @@ Kept by the pipeline's plugin dispatcher (one place sees every result), persiste
 
 ### 4. Health
 
-Per plugin in `component_status` (Epic 51) and `plugin_health`:
+Per plugin in `component_status` (Epic 51, part `pipeline` for the stage group and part
+`plugins` for its files) and `plugin_health`. Epic 51.14's `health` block on
+`GET /api/components/plugin.<id>` (`since`, `last_error_code`, `last_error_at`, `version`)
+reads the same rows; the plugin counters below are this story's:
 
 | Field | Source |
 |---|---|

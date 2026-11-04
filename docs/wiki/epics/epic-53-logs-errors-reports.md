@@ -1,12 +1,12 @@
 # Epic 53 — Logs, errors and problem reports, and a UI that never goes dark
 
 > **Status:** spec (2026-11-03). **Source:** [`specs/epics/53-logs-errors-reports/`](../../../specs/epics/53-logs-errors-reports/README.md).
-> **Anchors:** [Epic 21](epic-21-observability.md) (the loggers and probes it builds on) · [Epic 50](epic-50-cloud-no-downtime.md) (cloud monitoring, status page, incidents) · [research](../../../specs/epics/53-logs-errors-reports/research.md) · [`docs/troubleshooting-logs.md`](../../troubleshooting-logs.md) · [`docs/audits/errors-logging-crashes.md`](../../audits/errors-logging-crashes.md).
+> **Anchors:** [Epic 21](epic-21-observability.md) (the loggers and probes it builds on) · [Epic 50](epic-50-cloud-no-downtime.md) (cloud monitoring, status page, incidents) · [Epic 51](epic-51-configurable-components.md) (the component catalog and its runners, built) · [research](../../../specs/epics/53-logs-errors-reports/research.md) · [`docs/troubleshooting-logs.md`](../../troubleshooting-logs.md) · [`docs/audits/errors-logging-crashes.md`](../../audits/errors-logging-crashes.md).
 
 ## Goal
 
-Requirement: every part of the server is reportable, and no crash may break everything or make
-the UI unreachable.
+Every part of the home, the apps and the cloud must be reportable, and no crash in one part may
+take the UI down with it.
 
 Today the admin's tools for finding out what went wrong (Logs, System health) need the API and
 Postgres, the parts most likely to have failed. All processes share one 50 MB `server.log`.
@@ -32,8 +32,9 @@ Crashes stay on the devices, and nobody can report a problem. This epic covers f
 
 ## Key decisions
 
-- **Logs go to files first.** The supervisor captures each child's output into per-component
-  hourly segments, capped and rotated. Nothing else has to be running.
+- **Logs go to files first.** The supervisor captures each child's output into per-service
+  hourly segments, capped and rotated. Nothing else has to be running. Each line names its
+  Epic 51 component (`component`, a catalog id).
 - **The search index is a separate SQLite file** (FTS5) owned by a crash-isolated `logs` role.
   It is not in the library Postgres, so search works when Postgres is down, and logs stay out of
   backups and the cluster copy. Rejected:
@@ -44,10 +45,15 @@ Crashes stay on the devices, and nobody can report a problem. This epic covers f
   - Sign-in: a 7-day recovery pass the API gives admins while it is up, checked against cached
     JWKS keys, or a one-time link from the Mac's tray.
   - Actions: restart, safe mode, roll back, restore, download diagnostics.
-- **Safe mode** (Home Assistant's idea) runs Postgres, the API and the web for one start.
+- **Safe mode** (Home Assistant's idea) runs `core.postgres`, `core.api`, `core.updates`, the
+  web and `logs.index` for one start. Every other component reports `off` with Epic 51's
+  `boot_flag` reason; desired state is never written.
   Crash-loop cut-offs now cover the supervisor itself: the launcher shows a "can't start" page.
 - **One status strip in every app**, fed by the home's `/status.json` and the cloud's
   `summary.json` (Epic 50.11).
+- **Off is not down.** `/status.json`'s groups are sets of Epic 51 catalog ids. A component an
+  admin turned off or held is `off`: no banner, no repair item. Switched-off features are
+  Epic 51's capabilities to show (51.11), not the strip's.
 - **Crash and report uploads use the Sentry envelope format** with our own senders:
   - no Google SDKs;
   - PLCrashReporter on tvOS, because MetricKit doesn't cover it;
@@ -68,12 +74,13 @@ The open questions were answered:
 2. Retention: **shorter**. Logs 7 days, errors 30, reports 90, at most 1 GB in all, adjustable
    by an admin (53.02, 53.09–53.13, 53.15).
 3. Screenshots in reports: **offered, off by default, shown in the preview** (53.15, 53.16).
-- **A fault rehearsal in CI** kills each part and checks the UI, the banner and the console. It
-  gates releases like the update rehearsal.
+
+Also: **a fault rehearsal in CI** kills each part and checks the UI, the banner and the
+console. It gates releases like the update rehearsal.
 
 ## Phases
 
-1. **Never in the dark:** 53.01–53.07.
+1. **Never in the dark:** 53.01–53.07, and 53.18 (the catalog entries).
 2. **See everything:** 53.08–53.13 (request ids, index, error groups, admin pages, dashboards,
    performance).
 3. **People can tell us:** 53.14–53.15 (crash reports, Report a problem).
@@ -101,9 +108,24 @@ The open questions were answered:
 | 53.15 | [Report a problem](../../../specs/epics/53-logs-errors-reports/story-53-15-report-a-problem.md) | 3 |
 | 53.16 | [Reports and errors to Maktaba](../../../specs/epics/53-logs-errors-reports/story-53-16-reports-to-maktaba.md) | 4 |
 | 53.17 | [The cloud on the same model, feeding Epic 50](../../../specs/epics/53-logs-errors-reports/story-53-17-cloud-observability.md) | 4 |
+| 53.18 | [Epic 53's parts in the component catalog](../../../specs/epics/53-logs-errors-reports/story-53-18-catalog-entries.md) | 1 |
 
 The dependency graph is in the [epic README](../../../specs/epics/53-logs-errors-reports/README.md#8-stories).
-53.01 and 53.03 can start at once.
+53.01 and 53.18 can start at once.
+
+## With Epic 51
+
+Epic 51 is built. This epic uses its catalog ids, the supervisor's reconciler and its
+desired-state cache (no Postgres needed), its reason codes, its health and metrics, and its
+capabilities. What 51 does not provide is added here:
+
+- **53.18** adds `logs.index` (the `logs` role, kind `process`) and `reports.share` (the
+  forwarder loop, kind `loop`, requires `cloud.link`, off by default) to the catalog, and a test
+  that every process component maps to one status group.
+- **53.05** adds a boot-wide forced-off set to the reconciler for safe mode. 51 forces only the
+  supervisor's own loops, and it always runs `core.*`.
+- The console's **Restart** is the supervisor's own, for this boot only. 51 has no restart
+  route and no timed hold.
 
 ## With Epic 50
 

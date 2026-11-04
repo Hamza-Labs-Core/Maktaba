@@ -147,8 +147,8 @@ Grants are cached per plugin and invalidated by `NOTIFY plugin_grants_changed`. 
 | `api/internal/plugins/tokens.go`, `grants_cache.go`, `scope.go`, `quota.go` (new) | §2, §5, §6. |
 | `api/internal/plugins/pluginapi/server.go`, `routes_*.go` (new) | Unix socket listener and §3 routes, generated types from WIT. |
 | `api/internal/handlers/plugins/invocations.go` (new) | Mint and end routes, machine-only. |
-| `api/internal/router/p54_plugins.go` (new) | Wire routes; start the UDS listener when the plugins component is enabled. |
-| `shared/db/migrations/NNNN_plugins_api.sql` + `.sqlite.sql` (next free slot; 0173+ are claimed by Epics 51/52) | `plugin_data`, `plugin_writes`, `plugin_invocations`. |
+| `api/internal/router/p54_plugins.go` (new) | Wire routes, beside `MountP51` (`api/internal/router/p51.go`); start the UDS listener when `plugins.host` is enabled. |
+| `shared/db/migrations/NNNN_plugins_api.sql` + `.sqlite.sql` (next free slot, 0184; Epic 51 uses 0178–0181) | `plugin_data`, `plugin_writes`, `plugin_invocations`. |
 | `api/internal/plugins/*_test.go`, `api/internal/handlers/plugins/invocations_test.go` (new) | T01–T12. |
 
 ### Tests
@@ -158,7 +158,8 @@ Grants are cached per plugin and invalidated by `NOTIFY plugin_grants_changed`. 
 
 ### Rollout
 
-Dark: the socket opens only when the `plugins.host` component is enabled (54.07).
+Dark: the socket opens only while `plugins.host` is enabled (its desired row, read with Epic
+51's `store.Watcher`, which follows `NOTIFY components_changed`).
 
 ### Rollback
 

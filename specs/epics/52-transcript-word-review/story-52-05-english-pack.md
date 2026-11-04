@@ -1,8 +1,8 @@
 # Story 52.05 — English language pack
 
-> Epic 52 · Phase 1 · Depends on: 52.3 · Needed by: 52.6
-> Installed as an Epic 51 component (`langpack-en`). Deterministic Hunspell checks only (README §8,
-> decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English
+> Epic 52 · Phase 1 · Depends on: 52.3, 52.16 · Needed by: 52.6
+> Code in the pipeline package; data in the Epic 51 asset `lang.en` (52.16). Deterministic
+> Hunspell checks only (decision 3, 2026-11-03: no LLM judge). Other languages use 52.3's generic Hunspell pack; English
 > has its own pack for its tokenizer rules (contractions, possessives, acronyms).
 
 ## Why
@@ -77,7 +77,8 @@ LibreOffice `en_US`/`en_GB` dictionaries (SCOWL licence, permissive) in the pack
 
 - `pipeline/src/maktaba_pipeline/language_packs/en/__init__.py`, `pack.py`, `acronyms.txt`,
   `transliterations.txt`, `samples.txt`, `NOTICE` (new).
-- `pipeline/src/maktaba_pipeline/model_dirs.py`: data fetch for `en`.
+- `tools/release/packs/recipes/lang.en.sh` (52.16): SCOWL `en_US` and `en_GB` `.aff`/`.dic` at a
+  pinned commit, with `NOTICE`. The pack reads them through `components.packs.pack_dir("lang.en")`.
 
 ### Tests
 
@@ -89,7 +90,8 @@ LibreOffice `en_US`/`en_GB` dictionaries (SCOWL licence, permissive) in the pack
 
 ### Rollout
 
-Same as 52.4. Back out: disable `en`. English runs fall back to the fallback pack.
+Same as 52.4. Back out: `maktaba-server components remove lang.en`. English runs fall back to
+the fallback pack.
 
 ## Edge cases
 

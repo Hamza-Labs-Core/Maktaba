@@ -55,16 +55,42 @@ plugins/
 
 ### 3. Components and bundles
 
-- `shared/components/catalog.toml`: each first-party plugin's component entry (`transcription`,
-  `classify`…) keeps its id and becomes `kind = "plugin"`, `first_party = true`,
-  `plugin = "tv.maktaba.<name>"`; its `stages` list is read from the manifest. `core.pipeline`'s
-  stages map to `tv.maktaba.core-media` with `switchable = false`.
-- 51.01's check "every stage belongs to exactly one component" reads stages from the manifests.
-- Bundles (Epic 51 §4.8) are unchanged in meaning: Full = every first-party plugin; Core =
-  core-media, thumbnails, convert, dedup; Worker = those with `placement:any` the home picks;
-  Custom = the admin's ticks. 51.17's `bundle-size` budget counts the packages.
-- The desired-state rows (Epic 51 `components` and `component_overrides`) are keyed by component
-  id, so nothing moves.
+- `shared/components/catalog.toml`: each component that owns stages keeps its id, **its
+  kind** and its `processes` and `loops`, and gains one field, `plugin = "tv.maktaba.<name>"`
+  (both loaders, `shared/components/catalog.go` and
+  `pipeline/src/maktaba_pipeline/components/catalog.py`, learn it, since they refuse an
+  unknown field). Kinds stay because a kind says how the machine runs the component (51
+  §4.1), and a stage's implementation (`job_stages.impl`, 54.25) does not change that: the
+  pipeline runner (51.06) gates the stages the same way either way. The `plugin` kind of 54.37
+  is for third-party entries only.
+
+| Catalog id | Kind (unchanged) | `plugin` |
+|---|---|---|
+| `core.pipeline` (not switchable) | `stages+process+loop` | `tv.maktaba.core-media` (every stage but `component_catchup`, which stays an engine stage) |
+| `media.thumbnails` | `stages` | `tv.maktaba.thumbnails` |
+| `library.convert` | `stages` | `tv.maktaba.convert` |
+| `library.dedup` | `stages` | `tv.maktaba.dedup` |
+| `library.repair` | `stages` | `tv.maktaba.repair` |
+| `transcription` | `stages+process` | `tv.maktaba.transcription` |
+| `subtitles` | `stages` | `tv.maktaba.subtitles` |
+| `search.semantic` | `stages+process` | `tv.maktaba.semantic-search` |
+| `classify` | `stages` | `tv.maktaba.classify` |
+| `enrich` | `stages+loop` | `tv.maktaba.enrich` (the loop `api:enrichment_auto_accept` stays in the API) |
+| `youtube` | `stages` | `tv.maktaba.youtube` |
+| `livetv` | `stages+loop` | `tv.maktaba.livetv` (its loops stay) |
+| `livetv.slots` | `stages+process+loop` | `tv.maktaba.livetv-slots` (the `tv-slot/*` processes and its loops stay) |
+| `ext.plex` | `extension` | `tv.maktaba.plex` |
+| `ext.dizquetv` | `extension` | `tv.maktaba.dizquetv` |
+
+- The `stages` list stays in `catalog.toml`. The `catalog` job gains a check that it equals
+  the plugin manifest's `[[stage]]` names, so 51.01's "every stage belongs to exactly one
+  component" keeps reading one file.
+- Bundles are the catalog's `bundles` field (`full`, `core`, `worker`; `custom` at setup,
+  `shared/components/bundles.go`), unchanged: this story moves code, not switches.
+  `GET /api/components/bundles` and `POST /api/components/bundle` answer as before. 51.17's
+  `bundle-size` budget counts the packages.
+- The desired-state rows (Epic 51 `components` and `component_overrides`) are keyed by
+  component id, so nothing moves.
 
 ### 4. Ownership and CI
 
@@ -109,7 +135,7 @@ plugin's `i18n`.
 | T01 | CI (release dry run) | build all packages | verify checksums and trust | 15 packages, all trusted |
 | T02 | CI | import-linter contracts | planted cross-plugin import | fails |
 | T03 | CI | path filters | PR touching one plugin | only its job runs |
-| T04 | unit (py, go) | catalog with `kind = plugin` | load | same component ids, stages from manifests, each stage owned once |
+| T04 | unit (py, go) | catalog with `plugin` fields | load, `make catalog-check` | same ids and kinds; each `stages` list equals its manifest's; each stage owned once |
 | T05 | CI (`bundle-size`) | Core payload | footprint | within budget |
 | T06 | integration (PG) | desired state from the previous release | update | unchanged |
 
@@ -142,7 +168,7 @@ Lands with empty plugin folders except the manifests of wave 1 (stages still `in
 
 ### Rollback
 
-Release rollback; the catalog's old kinds are read by older releases.
+Release rollback. Kinds and ids do not change, so an older release's embedded catalog agrees with the desired-state rows.
 
 ### Dependencies
 

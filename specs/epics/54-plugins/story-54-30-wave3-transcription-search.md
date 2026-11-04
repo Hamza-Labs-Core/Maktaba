@@ -26,12 +26,15 @@ Runner groups: `ml` (own process, transcription) and `index` (own process, seman
 
 ### 2. Processes
 
-- The supervisor's `pipeline/stt-N` instances become `plugins.runner.ml` instances: same count,
+- The supervisor's `pipeline/stt-N` instances become `plugin-runner/ml-N` instances, and the
+  `transcription` entry in `shared/components/catalog.toml` changes its `processes` from
+  `pipeline/stt-*` to `plugin-runner/ml-*` in the same PR (51.01's role check): same count,
   same `MAKTABA_STT_SLOT` slot names, same `stt.*` metrics series, same pinned stage
   (`transcribe`), so dashboards and Epic 53 health keep their history.
 - `pipeline/index` keeps its gRPC semantic query server (the `search.semantic` process
-  component, used by the API's search); only its queue work moves to `plugins.runner.index`.
-  Both load the embedder; Epic 51's `search.semantic` component starts both.
+  component, used by the API's search); only its queue work moves to `plugin-runner/index`.
+  Both load the embedder; Epic 51's `search.semantic` component (`processes =
+  ["pipeline/index", "plugin-runner/index"]`) starts both.
 - Batching: the `ml` runner keeps today's `stt/batched.py` behaviour (54.23 §5); the `gpu` pool
   size is still the batch.
 - Crash recovery: today's `stt/crash_recovery.py` and `pause_resume.py` checkpoints become the
@@ -82,7 +85,7 @@ index state).
 | T02 | parity | CPU `tiny` model, 3 clips | transcribe both paths | byte-identical |
 | T03 | integration (py) | `ml` runner, fake backend | 32 jobs | one batch |
 | T04 | integration (PG, py) | drain mid-file | resume | from checkpoint |
-| T05 | unit (go) | supervisor | `stt-N` → `plugins.runner.ml` | same slots, env, metrics names |
+| T05 | unit (go) | supervisor | `stt-N` → `plugin-runner/ml-N` | same slots, env, metrics names; each instance in exactly one catalog component |
 | T06 | integration (CI only) | `ml` sandbox with and without the remote URL | connect | denied / allowed to that host only (recording proxy) |
 | T07 | update rehearsal scenario 16.3 | mid-transcription | update and rollback | no job lost or restarted from zero |
 | T08 | unit (`fp-transcription`, `fp-semantic-search`) | moved tests | run | green |
@@ -105,6 +108,7 @@ index state).
 | `plugins/first-party/transcription/`, `plugins/first-party/semantic-search/` (new) | §1–§5; `stt/`, `audio/`, `search/` move. |
 | `pipeline/src/maktaba_pipeline/handlers.py`, `engine/graph.py`, `stages/` | Remove moved code after one release; §4. |
 | `cmd/maktaba-server/internal/supervisor/instances.go`, `stt*.go` | §2. |
+| `shared/components/catalog.toml` (and its pipeline copy, `make catalog-sync`) | `transcription` processes `plugin-runner/ml-*`; `search.semantic` gains `plugin-runner/index`. |
 | `pipeline/src/maktaba_pipeline/grpc_server.py` | Stays; imports the search read side from the plugin's public module via `_lib` (no stage code). |
 | `shared/db/migrations/` | Roles; `impl = plugin` for the six. |
 | `tests/update_rehearsal/scenario_16_3_wave3.*` | T07. |
