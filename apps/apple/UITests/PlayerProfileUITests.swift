@@ -14,11 +14,14 @@ import XCTest
 /// is shown, not opened). The theme is not forced dark here, so the stored choice is the one
 /// the app reads.
 final class PlayerProfileUITests: PlayerUITestCase {
-    private func launchProfile(_ language: String = "en", extra: [String] = []) {
+    /// `page`: a Profile page the launch opens on (`-maktaba-profile`), `shows` one of its
+    /// elements, waited for in place of the first screen.
+    private func launchProfile(_ language: String = "en", extra: [String] = [], page: String? = nil,
+                               shows: String = "screen.profile") {
         launch(language, sections: ["libraries", "profile"], section: "profile", theme: nil,
-               extra: ["-maktaba-record-opens"] + extra)
+               extra: ["-maktaba-record-opens"] + (page.map { ["-maktaba-profile", $0] } ?? []) + extra)
         signIn()
-        XCTAssertTrue(element("screen.profile").waitForExistence(timeout: 15), "the Profile")
+        XCTAssertTrue(element(shows).waitForExistence(timeout: 15), "the Profile (\(page ?? "first screen"))")
     }
 
     // MARK: theme (FR-29)
@@ -207,23 +210,23 @@ final class PlayerProfileUITests: PlayerUITestCase {
         XCTAssertTrue(about.label.contains("Maktaba Player"))
     }
 
+    /// Each page opens at launch (`-maktaba-profile`), not from a tap on its row: the audit is
+    /// of the page, and its row's tap is driven by testHistoryRemovesOneItem and
+    /// testSessionsSignsOneOut. A run on #626 lost that tap below the app: the
+    /// simulator's backboardd attached XCTest's one-tap digitizer twice (the only "unknown
+    /// digitizer" in the shard's 97 taps), kept the touch-down on one copy, skipped the lift
+    /// on the other ("didn't see a previous touch down"), and cancelled the touch when the
+    /// digitizer went; the Profile, idle and still for 19 s, never got the tap's end.
     func testAccessibilityAudit() throws {
-        try auditPage("profile") {}
-        try auditPage("history") {
-            self.scrollUntil(self.element("profile.history"))
-            XCTAssertTrue(self.tapUntil(self.element("profile.history"), shows: self.element("history.v2")), "the history")
-        }
-        try auditPage("sessions") {
-            self.scrollUntil(self.element("profile.sessions"))
-            XCTAssertTrue(self.tapUntil(self.element("profile.sessions"), shows: self.element("session.sess-1")), "the sessions")
-        }
+        try auditPage("profile", shows: "screen.profile")
+        try auditPage("history", page: "history", shows: "history.v2")
+        try auditPage("sessions", page: "sessions", shows: "session.sess-1")
     }
 
     /// One page's audit in a launch of its own, then its Dynamic Type (`assertTextScales`, in
-    /// the same launch): `open` opens the page from the Profile.
-    private func auditPage(_ name: String, _ open: @escaping () -> Void) throws {
-        launchProfile()
-        open()
+    /// the same launch): the launch opens on `page` (nil: the first screen) and waits for `shows`.
+    private func auditPage(_ name: String, page: String? = nil, shows: String) throws {
+        launchProfile(page: page, shows: shows)
         var found: [String] = []
         // every issue of the screen in one failure, with the element it is on (the audit
         // itself stops at the first and names only its class)

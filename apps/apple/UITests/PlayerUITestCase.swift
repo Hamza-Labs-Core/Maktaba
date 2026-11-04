@@ -562,19 +562,6 @@ class PlayerUITestCase: XCTestCase {
     }
 
     /// Swipes up until `e` is on screen and can be tapped (a few swipes at most).
-    /// A row tapped until `page` shows, three taps at most: on a loaded runner a tap on a still
-    /// Profile row was dropped (an iPhone run of #626: the Sessions row tapped, the Profile
-    /// unchanged for 10 s, its recording still), as a field's tap is (`focus`). True once it shows.
-    @discardableResult
-    func tapUntil(_ row: XCUIElement, shows page: XCUIElement, timeout: TimeInterval = 10) -> Bool {
-        for _ in 1 ... 3 {
-            waitUntilStill(row, timeout: 5)
-            row.tap()
-            if page.waitForExistence(timeout: timeout) { return true }
-        }
-        return page.exists
-    }
-
     func scrollUntil(_ e: XCUIElement) {
         for _ in 0 ..< 8 where !(e.exists && e.isHittable) { app.swipeUp(velocity: .slow) }
     }
