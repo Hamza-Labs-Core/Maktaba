@@ -23,9 +23,15 @@ type Key struct {
 	// imported is the value the seed records (component_meta.toml_imported), as the code
 	// reads the key today (an absent key: its default)
 	imported func(config.Config) string
-	// says is the want the file's value asks of Component; ok false when the value asks
-	// nothing ([llm] enabled = "auto", an empty [llm] url)
-	says func(config.Config) (want string, ok bool)
+	// says is the want the file's value asks of Component, with the machine's facts; ok
+	// false when the value asks nothing ([llm] enabled = "auto", an empty [llm] url,
+	// [cloud] enabled with nothing to link with)
+	says func(Facts) (want string, ok bool)
+}
+
+// byConfig is a says that reads only the file.
+func byConfig(fn func(config.Config) (string, bool)) func(Facts) (string, bool) {
+	return func(f Facts) (string, bool) { return fn(f.Config) }
 }
 
 // Name is "section.key".
@@ -42,7 +48,7 @@ func onOff(on bool) string {
 var Keys = []Key{
 	{"tv", "slots", "livetv.slots",
 		func(c config.Config) string { return onOff(c.TV.SlotsOn()) },
-		func(c config.Config) (string, bool) { return want(c.TV.SlotsOn()), true }},
+		byConfig(func(c config.Config) (string, bool) { return want(c.TV.SlotsOn()), true })},
 	{"llm", "enabled", "llm",
 		func(c config.Config) string {
 			if m := strings.ToLower(strings.TrimSpace(c.LLM.Enabled)); m != "" {
@@ -50,7 +56,7 @@ var Keys = []Key{
 			}
 			return "auto"
 		},
-		func(c config.Config) (string, bool) {
+		byConfig(func(c config.Config) (string, bool) {
 			switch strings.ToLower(strings.TrimSpace(c.LLM.Enabled)) {
 			case "off":
 				return components.WantInstalled, true
@@ -58,7 +64,7 @@ var Keys = []Key{
 				return components.WantEnabled, true
 			}
 			return "", false
-		}},
+		})},
 	// whether a url is set, never the url (it may carry a login)
 	{"llm", "url", "llm",
 		func(c config.Config) string {
@@ -67,24 +73,35 @@ var Keys = []Key{
 			}
 			return "unset"
 		},
-		func(c config.Config) (string, bool) {
+		byConfig(func(c config.Config) (string, bool) {
 			if strings.TrimSpace(c.LLM.URL) != "" {
 				return components.WantEnabled, true
 			}
 			return "", false
-		}},
+		})},
+	// enabled = true runs the relay only with something to link with (a credential, or a
+	// claim code and slug) on a home (supervisor.RelayWanted, the seed's rule): without
+	// it the key asks nothing, as the seed wrote cloud.link installed
 	{"cloud", "enabled", "cloud.link",
 		func(c config.Config) string { return strconv.FormatBool(c.Cloud.Enabled) },
-		func(c config.Config) (string, bool) { return want(c.Cloud.Enabled), true }},
+		func(f Facts) (string, bool) {
+			if !f.Config.Cloud.Enabled {
+				return components.WantInstalled, true
+			}
+			if !f.Relay {
+				return "", false
+			}
+			return components.WantEnabled, true
+		}},
 	{"server", "mdns", "discovery.mdns",
 		func(c config.Config) string { return onOff(c.Server.MDNSOn()) },
-		func(c config.Config) (string, bool) { return want(c.Server.MDNSOn()), true }},
+		byConfig(func(c config.Config) (string, bool) { return want(c.Server.MDNSOn()), true })},
 	{"backups", "nightly", "backups",
 		func(c config.Config) string { return onOff(c.Backups.NightlyOn()) },
-		func(c config.Config) (string, bool) { return want(c.Backups.NightlyOn()), true }},
+		byConfig(func(c config.Config) (string, bool) { return want(c.Backups.NightlyOn()), true })},
 	{"telemetry", "enabled", "telemetry",
 		func(c config.Config) string { return onOff(c.Telemetry.On()) },
-		func(c config.Config) (string, bool) { return want(c.Telemetry.On()), true }},
+		byConfig(func(c config.Config) (string, bool) { return want(c.Telemetry.On()), true })},
 }
 
 // Imported is what the seed records of the imported keys (component_meta.toml_imported).
@@ -180,7 +197,8 @@ var secretKeys = map[string]bool{"llm.url": true}
 
 // Superseded compares each imported key the file sets with its component's desired
 // state. desired is the home's (store.Desired); a component with no row is not compared.
-func Superseded(raw []byte, cfg config.Config, desired map[string]store.Desired) []Finding {
+// f is the machine's facts at this boot (what [cloud] enabled can run).
+func Superseded(raw []byte, f Facts, desired map[string]store.Desired) []Finding {
 	lines := Lines(raw, Keys)
 	var out []Finding
 	for _, k := range Keys {
@@ -188,7 +206,7 @@ func Superseded(raw []byte, cfg config.Config, desired map[string]store.Desired)
 		if !set {
 			continue
 		}
-		says, ok := k.says(cfg)
+		says, ok := k.says(f)
 		d, have := desired[k.Component]
 		if !ok || !have || d.Want == says {
 			continue

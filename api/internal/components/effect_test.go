@@ -54,18 +54,16 @@ func refusalOf(t *testing.T, err error, code string, status int) Refusal {
 
 func want(id, w string) Change { return Change{ID: id, Want: w} }
 
-// T01: turning a requirement off sends what requires it to waiting and what wants it to
-// degraded; their wants stay.
+// T01: turning a component off sends what wants it to degraded; its requirements and
+// their wants stay.
 func TestEffectOfTurningARequirementOff(t *testing.T) {
-	p, err := planOf(t, allOn(), Request{Changes: []Change{want("runtime.ollama", components.WantInstalled)}}, nil)
+	p, err := planOf(t, allOn(), Request{Changes: []Change{want("llm", components.WantInstalled)}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for id, w := range map[string]Effect{
-		"runtime.ollama":       {To: components.PhaseOff},
-		"llm":                  {To: components.PhaseWaiting, Reason: "dependency_off:runtime.ollama"},
-		"model.llm.qwen2_5-7b": {To: components.PhaseWaiting, Reason: "dependency_off:runtime.ollama"},
-		"classify":             {To: components.PhaseDegraded, Reason: "want_missing:llm"},
+		"llm":      {To: components.PhaseOff},
+		"classify": {To: components.PhaseDegraded, Reason: "want_missing:llm"},
 	} {
 		e, ok := effectOf(p, id)
 		if !ok || e.To != w.To || e.Reason != w.Reason || e.From != components.PhaseRunning {
@@ -75,7 +73,10 @@ func TestEffectOfTurningARequirementOff(t *testing.T) {
 	if _, ok := effectOf(p, "transcription"); ok {
 		t.Error("an unrelated component is listed")
 	}
-	if len(p.writes) != 1 || p.writes[0].Desired.ID != "runtime.ollama" || p.writes[0].Audit.Action != "component.disable" {
+	if _, ok := effectOf(p, "runtime.ollama"); ok {
+		t.Error("a requirement of what goes off is listed")
+	}
+	if len(p.writes) != 1 || p.writes[0].Desired.ID != "llm" || p.writes[0].Audit.Action != "component.disable" {
 		t.Fatalf("writes %+v: only the change itself, the dependents keep their wish", p.writes)
 	}
 	if p.preview.DrainS < components.DefaultStopGraceS {
@@ -93,9 +94,9 @@ func TestRemoveRefusedWhileRequired(t *testing.T) {
 			t.Errorf("required_by %v lacks %s", r.RequiredBy, id)
 		}
 	}
-	// two Whisper models on: either can go, not both
+	// two Whisper models on disk: either can go, not both
 	rows := allOn()
-	rows = with(rows, "model.whisper-medium", components.WantInstalled)
+	rows = with(rows, "model.whisper-medium", components.WantAbsent)
 	if _, err := planOf(t, rows, Request{Changes: []Change{want("model.whisper-turbo", components.WantAbsent)}}, nil); err != nil {
 		t.Fatalf("another enabled Whisper model is there: %v", err)
 	}
@@ -278,5 +279,48 @@ func TestNoRowIsOn(t *testing.T) {
 	g = gates(components.Default(), with(allOn(), "transcription", components.WantAbsent))
 	if g["transcription"].phase != components.PhaseNotInstalled || g["subtitles"].phase != components.PhaseWaiting {
 		t.Fatalf("absent: %+v %+v", g["transcription"], g["subtitles"])
+	}
+}
+
+// An asset has no run: installed (on disk) it meets what requires it, as enabled does.
+// The seed leaves assets installed, so a home where everything runs previews from
+// running, not waiting; removing one is refused while it is required, and a bundle
+// neither counts an installed asset as missing nor turns it on again.
+func TestInstalledAssetMeetsRequirements(t *testing.T) {
+	rows := allOn()
+	for _, c := range components.Default().Components() {
+		if c.Switchable && c.Kind == components.KindAsset {
+			rows = with(rows, c.ID, components.WantInstalled)
+		}
+	}
+	g := gates(components.Default(), rows)
+	for _, id := range []string{"llm", "transcription", "search.semantic", "classify", "runtime.ollama"} {
+		if g[id].phase != components.PhaseRunning || g[id].reason != "" {
+			t.Errorf("%s: %+v, want running", id, g[id])
+		}
+	}
+	p, err := planOf(t, rows, Request{Changes: []Change{want("llm", components.WantInstalled)}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := effectOf(p, "llm"); !ok || e.From != components.PhaseRunning || e.To != components.PhaseOff {
+		t.Fatalf("llm: %+v (listed %v)", e, ok)
+	}
+	_, err = planOf(t, rows, Request{Changes: []Change{want("runtime.ollama", components.WantAbsent)}}, nil)
+	if r := refusalOf(t, err, CodeRequiredBy, http.StatusConflict); !slices.Contains(r.RequiredBy, "llm") {
+		t.Fatalf("required_by %v", r.RequiredBy)
+	}
+	s := &Service{Catalog: components.Default()}
+	d := s.diffOf(rows, "full", false)
+	for _, id := range append(append([]string{}, d.Enable...), d.Disable...) {
+		if c, _ := components.Default().Get(id); c.Kind == components.KindAsset {
+			t.Errorf("bundle full changes the installed asset %s", id)
+		}
+	}
+	line := s.bundleLine(&snapshot{rows: rows})
+	for _, id := range line.Minus {
+		if c, _ := components.Default().Get(id); c.Kind == components.KindAsset {
+			t.Errorf("bundle line names the installed asset %s missing", id)
+		}
 	}
 }

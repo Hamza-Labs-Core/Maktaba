@@ -45,8 +45,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secrets"
-	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
-	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/ports"
 )
 
@@ -478,17 +476,9 @@ func (h *Handler) writeDevice(r *http.Request, sets []string, args []any, enable
 		return err
 	}
 	if enabled != nil {
-		d := store.Desired{ID: hdhrComponent, Want: comps.WantInstalled}
-		action := "component.disable"
-		if *enabled {
-			d.Want, action = comps.WantEnabled, "component.enable"
-		}
-		by, user := "admin", ""
-		if p := principal.FromContext(ctx); p != nil && p.UserID != "" {
-			by, user = p.UserID, p.UserID
-		}
-		if _, err := components.New(h.DB).SetDesiredTx(ctx, tx, d,
-			store.Audit{By: by, ActorUserID: user, ActorSource: "admin", Action: action}); err != nil {
+		// its hold kept; the same enabled again writes nothing
+		if _, err := components.Switch(ctx, components.New(h.DB), tx, hdhrComponent, *enabled,
+			components.AdminAudit(ctx, tx)); err != nil {
 			return fmt.Errorf("the HDHomeRun component: %w", err)
 		}
 	}

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	comps "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
@@ -100,12 +101,24 @@ func SetDesiredTx(ctx context.Context, s *store.Store, tx *sql.Tx, d store.Desir
 	if err != nil {
 		return store.Desired{}, err
 	}
-	if m, ok := Mirrors[d.ID]; ok {
-		if err := m.Write(ctx, tx, after.Want == comps.WantEnabled); err != nil {
-			return store.Desired{}, fmt.Errorf("components: the mirror of %s: %w", d.ID, err)
-		}
+	if err := writeMirror(ctx, tx, after); err != nil {
+		return store.Desired{}, err
 	}
 	return after, nil
+}
+
+// writeMirror writes the older switch of the row as written (after), inside tx. A
+// component with no mirror is left alone. The batch writes of Service.Apply (PUT, apply,
+// a bundle) call it for each row, as store.BatchPlan.AfterWrite.
+func writeMirror(ctx context.Context, tx *sql.Tx, after store.Desired) error {
+	m, ok := Mirrors[after.ID]
+	if !ok {
+		return nil
+	}
+	if err := m.Write(ctx, tx, after.Want == comps.WantEnabled); err != nil {
+		return fmt.Errorf("components: the mirror of %s: %w", after.ID, err)
+	}
+	return nil
 }
 
 // SetDesired is SetDesiredTx in a transaction of its own.
@@ -124,7 +137,9 @@ func SetDesired(ctx context.Context, s *store.Store, d store.Desired, a store.Au
 
 // Switch turns component id on (want enabled) or off (want installed) inside tx, keeping
 // its hold, and writes the mirror: what an older switch's route (PUT
-// /api/extensions/{name}) calls when it changes enabled.
+// /api/extensions/{name}, the TV settings) calls when it changes enabled. A row that
+// already has that want is left as it is: no audit row, no new generation (the mirror is
+// the caller's, already written).
 func Switch(ctx context.Context, s *store.Store, tx *sql.Tx, id string, enabled bool, a store.Audit) (store.Desired, error) {
 	d := store.Desired{ID: id, Want: comps.WantInstalled}
 	if enabled {
@@ -135,6 +150,9 @@ func Switch(ctx context.Context, s *store.Store, tx *sql.Tx, id string, enabled 
 		return store.Desired{}, err
 	}
 	if cur != nil {
+		if cur.Want == d.Want {
+			return *cur, nil
+		}
 		d.Hold = cur.Hold
 	}
 	if a.Action == "" {
@@ -146,23 +164,51 @@ func Switch(ctx context.Context, s *store.Store, tx *sql.Tx, id string, enabled 
 	return SetDesiredTx(ctx, s, tx, d, a)
 }
 
-// desiredIn reads id's hold inside tx (nil: no row).
+// desiredIn reads id's want, hold and generation inside tx (nil: no row).
 func desiredIn(ctx context.Context, tx *sql.Tx, id string) (*store.Desired, error) {
 	var by sql.NullString
 	var at sql.NullString
-	err := tx.QueryRowContext(ctx, `SELECT hold_by, CAST(hold_at AS TEXT) FROM components WHERE id = $1`, id).Scan(&by, &at)
+	var want string
+	var gen int64
+	err := tx.QueryRowContext(ctx, `SELECT want, generation, hold_by, CAST(hold_at AS TEXT) FROM components WHERE id = $1`, id).
+		Scan(&want, &gen, &by, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	d := &store.Desired{ID: id}
+	d := &store.Desired{ID: id, Want: want, Generation: gen}
 	if by.Valid && at.Valid {
 		t, _ := parseTime(at.String)
 		d.Hold = &store.Hold{By: by.String, At: t}
 	}
 	return d, nil
+}
+
+// AdminAudit is the audit of a change the signed-in admin of ctx makes through an older
+// switch's route, in the components routes' form: by is the user's name (user:<id> when
+// it cannot be read, admin with no user), actor_source web (remote through a cloud link).
+func AdminAudit(ctx context.Context, q interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}) store.Audit {
+	a := store.Audit{By: "admin", ActorSource: "web"}
+	p := principal.FromContext(ctx)
+	if p == nil {
+		return a
+	}
+	if p.ViaCloud() {
+		a.ActorSource = "remote"
+	}
+	if p.UserID == "" {
+		return a
+	}
+	a.By, a.ActorUserID = "user:"+p.UserID, p.UserID
+	var name string
+	if err := q.QueryRowContext(ctx, `SELECT username FROM users WHERE CAST(id AS TEXT) = $1`, p.UserID).Scan(&name); err == nil && name != "" {
+		a.By = name
+	}
+	return a
 }
 
 // timeLayouts are how Postgres (CAST AS TEXT) and SQLite (the drivers' text) write a time.

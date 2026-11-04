@@ -288,6 +288,9 @@ type packsAdmin struct {
 	// metrics are this machine's component metrics on /metrics (story 51.14); nil
 	// without a reconciler.
 	metrics *supervisor.ComponentMetrics
+	// sup restarts a component's processes (POST /components/{id}/restart, story
+	// 51.08); nil: the route answers 503.
+	sup restarter
 
 	mu      sync.Mutex
 	offline map[string]*offlineJob
@@ -308,6 +311,11 @@ func (a *packsAdmin) authorized(r *http.Request) bool {
 	return a.token != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+a.token)) == 1
 }
 
+// restarter is the supervisor as the restart route uses it.
+type restarter interface {
+	RestartComponent(id string) int
+}
+
 // adminHandler adds /components/ to base.
 func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 	mux := http.NewServeMux()
@@ -317,11 +325,16 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		rest := strings.TrimPrefix(r.URL.Path, "/components/")
+		// a restart is the processes', not the packs': it works with no reconciler
+		if id, ok := strings.CutSuffix(rest, "/restart"); ok {
+			a.postRestart(w, r, id)
+			return
+		}
 		if a.m == nil {
 			writeConfigJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "components_unavailable"})
 			return
 		}
-		rest := strings.TrimPrefix(r.URL.Path, "/components/")
 		switch {
 		case rest == "offline" && r.Method == http.MethodPost:
 			a.postOffline(w, r)
@@ -350,6 +363,24 @@ func (a *packsAdmin) adminHandler(base http.Handler) http.Handler {
 		}
 	})
 	return mux
+}
+
+// postRestart restarts component id's running processes: {id, restarted} (0: none of
+// them runs now).
+func (a *packsAdmin) postRestart(w http.ResponseWriter, r *http.Request, id string) {
+	if id == "" || strings.Contains(id, "..") || strings.ContainsAny(id, `/\`) {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method", http.StatusMethodNotAllowed)
+		return
+	}
+	if a.sup == nil {
+		writeConfigJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "components_unavailable"})
+		return
+	}
+	writeConfigJSON(w, http.StatusOK, map[string]any{"id": id, "restarted": a.sup.RestartComponent(id)})
 }
 
 func reasonJSON(err error) map[string]any {

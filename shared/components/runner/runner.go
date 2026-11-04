@@ -157,11 +157,13 @@ type loop struct {
 	stuck    bool // still running past its grace
 	waiting  bool // a restart is scheduled
 	exited   bool // returned nil while wanted
-	state    string
-	reason   string
-	restarts int
-	crashes  []time.Time
-	epoch    int // moves on every start and every reset: an older timer does nothing
+	// restarting: an admin's restart stopped it, so it starts again once it returns
+	restarting bool
+	state      string
+	reason     string
+	restarts   int
+	crashes    []time.Time
+	epoch      int // moves on every start and every reset: an older timer does nothing
 }
 
 // Runner runs one process's declared loops.
@@ -189,6 +191,12 @@ type Runner struct {
 	// licWake is when a published licence next ends (zero: none): the gates are computed
 	// again then, so a component stops on time whether or not the API answers.
 	licWake time.Time
+	// unknown are the desired rows' ids this release's catalog does not know (a newer
+	// release wrote them before a rollback), each logged once: they are ignored, and the
+	// desired state is read again on every change and every poll.
+	unknown map[string]bool
+	// served are components this process serves with no loop (Serve): each has a row.
+	served []string
 }
 
 // New is a runner for o.Host. Its gates start on (the database is not read yet): a loop
@@ -270,6 +278,82 @@ func (r *Runner) On(id string) bool {
 	return ok && g.on
 }
 
+// Restart cancels each running loop of component id and starts it again once it
+// returns (an admin's restart, story 51.08); a loop of id that does not run while its
+// gate is open (a crash's backoff, a one-shot that ended) starts at once. It answers how
+// many loops it restarted or started: 0 when id has no loop here, or it is off (not
+// wanted, held, a requirement off).
+func (r *Runner) Restart(id string) int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed || !(*r.gates.Load())[id].on {
+		return 0
+	}
+	n := 0
+	for _, l := range r.loops {
+		if l.comp != id {
+			continue
+		}
+		switch {
+		case l.alive && !l.stopping:
+			l.restarting = true
+			r.log.Info("components: a loop stops", "host", r.host, "loop", l.name, "component", l.comp,
+				"reason", "restart", "event", "components_loop_stopped")
+			r.stop(l)
+			n++
+		case !l.alive:
+			l.epoch++ // a pending backoff timer does nothing now
+			l.waiting, l.exited, l.crashes = false, false, nil
+			r.log.Info("components: a loop starts", "host", r.host, "loop", l.name, "component", l.comp,
+				"reason", "restart", "event", "components_loop_started")
+			r.start(l)
+			n++
+		}
+	}
+	r.notify()
+	return n
+}
+
+// Hosts are the hosts that run c's loops, as the catalog names them (api, streaming,
+// pipeline, supervisor), in its order.
+func Hosts(c *components.Component) []string {
+	var out []string
+	for _, l := range c.Loops {
+		host, _, _ := strings.Cut(l, ":")
+		if !slices.Contains(out, host) {
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+// Host is the host this runner runs loops for (api, streaming, ...).
+func (r *Runner) Host() string {
+	if r == nil {
+		return ""
+	}
+	return r.host
+}
+
+// Serve has this runner report a status row for component id, which this process serves
+// in its request handlers with no loop of its own (the API's ext.cloudflare_stream: every
+// Cloudflare call is the API's). Its phase follows its gate: running while it is on,
+// else off, stopped or waiting as its desired state says.
+func (r *Runner) Serve(id string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !slices.Contains(r.served, id) {
+		r.served = append(r.served, id)
+	}
+	r.notify()
+}
+
 // Declared are the loop names declared so far, sorted.
 func (r *Runner) Declared() []string {
 	if r == nil {
@@ -295,6 +379,17 @@ func (r *Runner) Apply(desired map[string]store.Desired) {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	for id := range desired {
+		if _, ok := r.cat.Get(id); ok || r.unknown[id] {
+			continue
+		}
+		if r.unknown == nil {
+			r.unknown = map[string]bool{}
+		}
+		r.unknown[id] = true
+		r.log.Warn("components: a desired row names a component this release does not know; it is ignored",
+			"host", r.host, "component", id, "event", "component_unknown")
+	}
 	r.desired = desired
 	r.computeGates()
 	r.apply()
@@ -504,11 +599,28 @@ func GatesAt(cat *components.Catalog, desired map[string]store.Desired, noReconc
 func (r *Runner) apply() {
 	gates := *r.gates.Load()
 	for _, l := range r.loops {
-		want := gates[l.comp].on && !r.closed
+		g := gates[l.comp]
+		want := g.on && !r.closed
 		switch {
 		case want && !l.alive && !l.waiting && !l.exited:
+			// a start from off is logged once; a restart after a crash is logged by ended
+			if l.state == stateOff {
+				reason := "enabled"
+				if l.restarting {
+					reason = "restart"
+				}
+				r.log.Info("components: a loop starts", "host", r.host, "loop", l.name, "component", l.comp,
+					"reason", reason, "event", "components_loop_started")
+			}
+			l.restarting = false
 			r.start(l)
 		case !want && l.alive && !l.stopping:
+			reason := stopReason(g)
+			if r.closed {
+				reason = "shutdown"
+			}
+			r.log.Info("components: a loop stops", "host", r.host, "loop", l.name, "component", l.comp,
+				"reason", reason, "event", "components_loop_stopped")
 			r.stop(l)
 		case !want && !l.alive:
 			// off: forget the crashes, a pending restart and a one-shot's exit
@@ -519,6 +631,18 @@ func (r *Runner) apply() {
 			l.state, l.reason = stateOff, ""
 		}
 	}
+}
+
+// stopReason is why a gate is closed: its reason (held, dependency_off,
+// licence_missing), or its phase (off) when it has none.
+func stopReason(g gate) string {
+	if g.reason != "" {
+		return g.reason
+	}
+	if g.phase != "" {
+		return g.phase
+	}
+	return components.PhaseOff
 }
 
 func (r *Runner) start(l *loop) {
@@ -652,7 +776,7 @@ func rank(state string) int {
 }
 
 // Statuses are the status rows this runner reports now: one per component with a
-// declared loop, in catalog order.
+// declared loop or served (Serve), in catalog order.
 func (r *Runner) Statuses() []store.Status {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -669,11 +793,22 @@ func (r *Runner) statuses() []store.Status {
 	var out []store.Status
 	for _, id := range r.cat.Order() {
 		ls := byComp[id]
-		if len(ls) == 0 {
+		served := len(ls) == 0 && slices.Contains(r.served, id)
+		if len(ls) == 0 && !served {
 			continue
 		}
 		g := gates[id]
-		worst, exited := ls[0], true
+		var worst *loop
+		exited := !served
+		if served {
+			// no loop: it runs while its gate is open
+			worst = &loop{state: stateOff}
+			if g.on {
+				worst.state = stateRunning
+			}
+		} else {
+			worst = ls[0]
+		}
 		detail := map[string]any{}
 		for _, l := range ls {
 			if rank(l.state) > rank(worst.state) {
@@ -733,7 +868,10 @@ func (r *Runner) statuses() []store.Status {
 			conds = append(conds, lic)
 		}
 		conds = append(conds, req, ready)
-		det := map[string]any{"loops": detail}
+		det := map[string]any{}
+		if !served {
+			det["loops"] = detail
+		}
 		if exited && phase == components.PhaseOff && g.on {
 			det["exited"] = true
 		}

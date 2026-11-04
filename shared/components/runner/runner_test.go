@@ -142,6 +142,79 @@ func (p *polite) fn(ctx context.Context) error {
 	return nil
 }
 
+// Each stop and each start of a loop is logged once, with its component and why: a
+// start from off (enabled), a stop with the gate's reason (off, held).
+func TestStopAndStartAreLogged(t *testing.T) {
+	clk := newClock()
+	var buf bytes.Buffer
+	var mu sync.Mutex
+	logged := func(event, reason string) int {
+		mu.Lock()
+		defer mu.Unlock()
+		n := 0
+		for _, line := range strings.Split(buf.String(), "\n") {
+			if strings.Contains(line, "event="+event) && strings.Contains(line, "component=livetv") &&
+				strings.Contains(line, "reason="+reason+" ") {
+				n++
+			}
+		}
+		return n
+	}
+	r := newRunner(t, clk, func(o *Options) {
+		o.Logger = slog.New(slog.NewTextHandler(lockedWriter{&mu, &buf}, nil))
+	})
+	var p polite
+	r.Declare("tvchange_controller", p.fn)
+	eventually(t, "the loop to start", func() bool { return p.starts.Load() == 1 })
+	if n := logged("components_loop_started", "enabled"); n != 1 {
+		t.Fatalf("%d start lines", n)
+	}
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv")})
+	eventually(t, "the loop to return", func() bool { return p.stops.Load() == 1 })
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv")}) // the same again: nothing new
+	if n := logged("components_loop_stopped", components.PhaseOff); n != 1 {
+		t.Fatalf("%d stop lines (off)", n)
+	}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv")})
+	eventually(t, "the loop to start again", func() bool { return p.starts.Load() == 2 })
+	held := enabled("livetv")
+	held.Hold = &store.Hold{By: "maya"}
+	r.Apply(map[string]store.Desired{"livetv": held})
+	eventually(t, "the loop to return again", func() bool { return p.stops.Load() == 2 })
+	if logged("components_loop_started", "enabled") != 2 || logged("components_loop_stopped", "held") != 1 {
+		mu.Lock()
+		defer mu.Unlock()
+		t.Fatalf("log:\n%s", buf.String())
+	}
+}
+
+// An admin's restart (story 51.08) cancels the running loop and starts it again once it
+// returns; it does nothing for a component that is off or has no loop here.
+func TestRestart(t *testing.T) {
+	clk := newClock()
+	r := newRunner(t, clk)
+	var p polite
+	r.Declare("tvchange_controller", p.fn)
+	eventually(t, "the loop to start", func() bool { return p.starts.Load() == 1 })
+	if n := r.Restart("livetv"); n != 1 {
+		t.Fatalf("restarted %d loops", n)
+	}
+	eventually(t, "the loop to start again", func() bool { return p.stops.Load() == 1 && p.starts.Load() == 2 })
+	eventually(t, "Running", func() bool { return statusOf(r, "livetv").Phase == components.PhaseRunning })
+	if n := r.Restart("youtube"); n != 0 {
+		t.Fatalf("a component with no loop here: %d", n)
+	}
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv")})
+	eventually(t, "the loop to return", func() bool { return p.stops.Load() == 2 })
+	if n := r.Restart("livetv"); n != 0 || p.starts.Load() != 2 {
+		t.Fatalf("a component that is off restarted %d loops", n)
+	}
+	hd, _ := components.Default().Get("livetv.hdhomerun")
+	if h := Hosts(hd); len(h) != 1 || h[0] != "streaming" || r.Host() != "api" {
+		t.Fatalf("hosts %v, runner %q", h, r.Host())
+	}
+}
+
 // T01: disabling cancels the loop's context; it returns; the component is Off.
 func TestDisableStopsTheLoop(t *testing.T) {
 	clk := newClock()
@@ -450,4 +523,68 @@ func TestBound(t *testing.T) {
 	}()
 	cancel()
 	<-done
+}
+
+// A desired row whose id this release's catalog does not know (story 51.02: a newer
+// release wrote it before a rollback) is ignored and logged component_unknown once, not
+// on every pass.
+func TestUnknownComponentLoggedOnce(t *testing.T) {
+	var mu sync.Mutex
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(lockedWriter{&mu, &buf}, nil))
+	r := newRunner(t, newClock(), func(o *Options) { o.Logger = logger })
+	desired := map[string]store.Desired{"livetv": enabled("livetv"), "from.the.future": enabled("from.the.future")}
+	for i := 0; i < 3; i++ {
+		r.Apply(desired)
+	}
+	r.Apply(map[string]store.Desired{"from.the.future": installed("from.the.future"), "also.new": enabled("also.new")})
+	mu.Lock()
+	defer mu.Unlock()
+	out := buf.String()
+	if n := strings.Count(out, "component=from.the.future event=component_unknown"); n != 1 {
+		t.Fatalf("from.the.future logged %d times:\n%s", n, out)
+	}
+	if !strings.Contains(out, "also.new") || strings.Contains(out, "component=livetv event=component_unknown") {
+		t.Fatalf("log:\n%s", out)
+	}
+}
+
+// A component the process serves with no loop (Serve: the API's ext.cloudflare_stream)
+// has a status row like a loop's: running while its gate is open, off, stopped or
+// waiting as its desired state says, with no loops in its detail.
+func TestServedComponentHasARow(t *testing.T) {
+	r := newRunner(t, newClock())
+	r.Serve("ext.cloudflare_stream")
+	r.Serve("ext.cloudflare_stream") // twice: one row
+	n := 0
+	for _, s := range r.Statuses() {
+		if s.ID == "ext.cloudflare_stream" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d rows", n)
+	}
+	s := statusOf(r, "ext.cloudflare_stream")
+	if s.Phase != components.PhaseRunning || s.Detail["loops"] != nil {
+		t.Fatalf("before the desired state is read: %+v", s)
+	}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv"), "ext.cloudflare_stream": installed("ext.cloudflare_stream")})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseOff || s.ObservedGeneration != 2 {
+		t.Fatalf("installed: %+v", s)
+	}
+	held := enabled("ext.cloudflare_stream")
+	held.Hold = &store.Hold{By: "maya"}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv"), "ext.cloudflare_stream": held})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseStopped {
+		t.Fatalf("held: %+v", s)
+	}
+	r.Apply(map[string]store.Desired{"livetv": installed("livetv"), "ext.cloudflare_stream": enabled("ext.cloudflare_stream")})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseWaiting || s.Reason() != "dependency_off" {
+		t.Fatalf("livetv off: %+v", s)
+	}
+	r.Apply(map[string]store.Desired{"livetv": enabled("livetv"), "ext.cloudflare_stream": enabled("ext.cloudflare_stream")})
+	if s := statusOf(r, "ext.cloudflare_stream"); s.Phase != components.PhaseRunning {
+		t.Fatalf("enabled: %+v", s)
+	}
 }

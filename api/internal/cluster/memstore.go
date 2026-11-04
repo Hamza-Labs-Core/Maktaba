@@ -297,6 +297,9 @@ func (m *MemoryStore) Workers(_ context.Context) ([]NodeWorker, error) {
 	return append([]NodeWorker{}, m.workers...), nil
 }
 
+// PruneComponentStatus implements Store: the memory store keeps no component status.
+func (m *MemoryStore) PruneComponentStatus(context.Context) (int64, error) { return 0, nil }
+
 // ClearSealed implements Store.
 func (m *MemoryStore) ClearSealed(_ context.Context, cutoff time.Time) error {
 	m.mu.Lock()

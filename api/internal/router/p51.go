@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/ws/eventbus"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
+	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
 
@@ -44,6 +45,9 @@ type P51Deps struct {
 	// Packs is this machine's pack installer (nil: the supervisor named by
 	// MAKTABA_SUPERVISOR_URL and MAKTABA_SUPERVISOR_TOKEN_FILE, if any).
 	Packs *componentsh.Packs
+	// Loops is the API's Go-loop runner: an admin's restart of a loop component whose
+	// loops run in the API cancels and starts them (nil: such a restart is refused).
+	Loops *runner.Runner
 }
 
 // MountP51 mounts the components' admin routes and GET /api/capabilities (nil DB:
@@ -74,7 +78,7 @@ func MountP51(r chi.Router, d P51Deps) *components.Service {
 	if pk == nil {
 		pk = componentsh.PacksFromEnv()
 	}
-	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger, Packs: pk}
+	h := &componentsh.Handler{Service: s, DB: d.DB, Logger: d.Logger, Packs: pk, Loops: d.Loops}
 	h.Mount(r)
 
 	caps := d.Capabilities

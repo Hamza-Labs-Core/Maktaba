@@ -1698,8 +1698,8 @@
       "ar": "عرض المكوّنات"
     },
     "/paths/~1components/get/description": {
-      "en": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, and the home's bundle.",
-      "ar": "كل مكوّنات الكتالوج بترتيبها: ما ينبغي أن يعمل (`want` والإيقاف المؤقت)، وما يعمل فعلًا على كل جهاز (`phase` و`reason`)، وما يحتاجه كل مكوّن وما يحتاج إليه، وحزمة الجهاز الرئيسي."
+      "en": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason's message fills in, absent when it has none), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home's bundle.",
+      "ar": "كل مكوّنات الكتالوج بترتيبها: ما ينبغي أن يعمل (`want` والإيقاف المؤقت)، وما يعمل فعلًا على كل جهاز (`phase` و`reason`، و`reason_params`: القيم التي تملأ بها رسالةُ السبب فراغاتها، ولا تظهر إن لم تكن لها قيم)، وما يحتاجه كل مكوّن وما يحتاج إليه، والإعدادات التي يملكها (`settings` كما يسردها الكتالوج: `rules.<section>` و`toml:<key>` و`ext:<name>`)، وحزمة الجهاز الرئيسي."
     },
     "/paths/~1components/get/responses/200/description": {
       "en": "The components.",
@@ -2005,6 +2005,38 @@
       "en": "Refused: the change breaks a rule of the catalog (`code`: `not_switchable`, `required_by`, `conflicts`, `stale_generation`, `component_off`, ...). Nothing was written.",
       "ar": "رُفض الطلب لأن التغيير يخالف قاعدة من قواعد الكتالوج (`code`: `not_switchable` أو `required_by` أو `conflicts` أو `stale_generation` أو `component_off`، وغيرها). ولم يُكتب شيء."
     },
+    "/paths/~1components~1{id}~1restart/parameters/0/description": {
+      "en": "The component's id in the catalog.",
+      "ar": "معرّف المكوّن في الكتالوج."
+    },
+    "/paths/~1components~1{id}~1restart/post/summary": {
+      "en": "Restart a component",
+      "ar": "إعادة تشغيل مكوّن"
+    },
+    "/paths/~1components~1{id}~1restart/post/description": {
+      "en": "Restarts a running component: its processes through this machine's supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.",
+      "ar": "يعيد تشغيل مكوّن يعمل: عملياته عبر المشرف على هذا الجهاز، وحلقاته في الواجهة البرمجية تُلغى ثم تبدأ من جديد. ولا تتغير الحالة المطلوبة، وتُسجَّل إعادة التشغيل باسم `component.restart`."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/200/description": {
+      "en": "The component after the restart, with `restarted`: how many of its processes and loops started again.",
+      "ar": "المكوّن بعد إعادة التشغيل، ومعه `restarted`: عدد عملياته وحلقاته التي بدأت من جديد."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/202/description": {
+      "en": "None of its processes runs now: the supervisor starts them (`restarted` is 0).",
+      "ar": "لا تعمل أي من عملياته الآن، والمشرف يشغّلها (`restarted` قيمته 0)."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/403/description": {
+      "en": "Admin only.",
+      "ar": "للمشرفين وحدهم."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/409/description": {
+      "en": "Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.",
+      "ar": "رُفض الطلب (`code`): `not_restartable` (مراحل أو إضافة أو ملف، أو حلقات تعمل في خدمة أخرى)، أو `not_running` (متوقف أو موقوف مؤقتًا، أو ينتظر ما يحتاج إليه)، أو `not_switchable` (جزء من الخادم). ولم يُعَد تشغيل شيء."
+    },
+    "/paths/~1components~1{id}~1restart/post/responses/503/description": {
+      "en": "This server runs under no supervisor, or the supervisor does not answer.",
+      "ar": "هذا الخادم لا يعمل تحت مشرف، أو أن المشرف لا يجيب."
+    },
     "/paths/~1components~1{id}~1settings~1reset/parameters/0/description": {
       "en": "The component's id in the catalog.",
       "ar": "معرّف المكوّن في الكتالوج."
@@ -2200,6 +2232,10 @@
     "/paths/~1queues~1youtube-tartube/post/responses/422/description": {
       "en": "A path that is not an absolute path to Tartube's .json export or its .db.",
       "ar": "مسار ليس مسارًا مطلقًا إلى تصدير Tartube بصيغة .json أو إلى ملف .db."
+    },
+    "/components/schemas/QueueJobRef/properties/components/description": {
+      "en": "A `component_catchup` job: the components it catches up, from its payload. Absent on every other job.",
+      "ar": "في مهمة `component_catchup`: المكوّنات التي تلحق بها، من حمولة المهمة. ولا تظهر في أي مهمة أخرى."
     }
   }
 }

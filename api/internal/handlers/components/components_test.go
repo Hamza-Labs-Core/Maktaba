@@ -37,6 +37,10 @@ CREATE TABLE job_stages (stage TEXT PRIMARY KEY, label TEXT NOT NULL, subject_ki
 CREATE TABLE processing_jobs (id INTEGER PRIMARY KEY, stage TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');
 CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL,
 	updated_at TEXT NOT NULL DEFAULT (datetime('now')), updated_by TEXT);
+CREATE TABLE extensions (name TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0,
+	settings TEXT NOT NULL DEFAULT '{}', updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')));
+CREATE TABLE hdhr_device (id INTEGER PRIMARY KEY DEFAULT 1, device_id TEXT NOT NULL DEFAULT '',
+	enabled INTEGER NOT NULL DEFAULT 0);
 `
 
 func upStatements(sqlText string) []string {
@@ -269,13 +273,13 @@ func TestPreviewChangesNothing(t *testing.T) {
 	f := newFixture(t)
 	rev := f.revision(t)
 	var p svc.Preview
-	decode(t, f.do("POST", "/api/components/preview", `{"changes":[{"id":"runtime.ollama","want":"installed"}]}`, admin()), 200, &p)
+	decode(t, f.do("POST", "/api/components/preview", `{"changes":[{"id":"llm","want":"installed"}]}`, admin()), 200, &p)
 	found := map[string]svc.Effect{}
 	for _, e := range p.Effects {
 		found[e.ID] = e
 	}
-	if found["llm"].To != components.PhaseWaiting || found["llm"].Reason != "dependency_off:runtime.ollama" ||
-		found["classify"].To != components.PhaseDegraded {
+	if found["llm"].From != components.PhaseRunning || found["llm"].To != components.PhaseOff ||
+		found["classify"].To != components.PhaseDegraded || found["classify"].Reason != "want_missing:llm" {
 		t.Fatalf("effects %+v", p.Effects)
 	}
 	if f.revision(t) != rev || f.audits(t) != 0 {
@@ -472,6 +476,73 @@ func TestList(t *testing.T) {
 		if c.ID == "model.embedder" && c.InstallSizeMB <= 0 {
 			t.Fatalf("embedder size %d", c.InstallSizeMB)
 		}
+	}
+}
+
+// Each component carries settings: the catalog's list, verbatim (the page's Settings
+// link reads it); a component that owns none answers [], never null.
+func TestListAndShowCarrySettings(t *testing.T) {
+	f := newFixture(t)
+	want := []any{"rules.transcription", "toml:transcription.workers"}
+	var l struct {
+		Components []map[string]any `json:"components"`
+	}
+	decode(t, f.do("GET", "/api/components", "", admin()), 200, &l)
+	seen := 0
+	for _, c := range l.Components {
+		got, ok := c["settings"].([]any)
+		if !ok {
+			t.Fatalf("%v: settings %#v", c["id"], c["settings"])
+		}
+		cat, _ := components.Default().Get(c["id"].(string))
+		if len(got) != len(cat.Settings) {
+			t.Fatalf("%v: settings %v, catalog %v", c["id"], got, cat.Settings)
+		}
+		if c["id"] == "transcription" {
+			seen++
+			if !slices.Equal(got, want) {
+				t.Fatalf("transcription settings %v", got)
+			}
+		}
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	if got, _ := one["settings"].([]any); seen != 1 || !slices.Equal(got, want) {
+		t.Fatalf("show: settings %v (listed %d)", one["settings"], seen)
+	}
+}
+
+// The reason's params ride with it, as text, on the component and on each machine: the
+// page fills components.reason.<reason> from them.
+func TestReasonParams(t *testing.T) {
+	f := newFixture(t)
+	if err := f.st.ReportStatus(context.Background(), store.Home, "supervisor", []store.Status{{
+		Machine: store.Home, ID: "transcription", Part: "supervisor", Phase: components.PhaseFailed,
+		Conditions: []store.Condition{
+			{Type: "Ready", Status: "true"},
+			{Type: "Started", Status: "false", Reason: "settings_invalid", Params: map[string]any{"name": "release", "holder_pid": 4242}},
+		}}}); err != nil {
+		t.Fatal(err)
+	}
+	var one map[string]any
+	decode(t, f.do("GET", "/api/components/transcription", "", admin()), 200, &one)
+	want := map[string]any{"name": "release", "holder_pid": "4242"}
+	got, _ := one["reason_params"].(map[string]any)
+	if one["reason"] != "settings_invalid" || len(got) != 2 || got["name"] != want["name"] || got["holder_pid"] != want["holder_pid"] {
+		t.Fatalf("component: reason %v, params %v", one["reason"], one["reason_params"])
+	}
+	machines, _ := one["machines"].([]any)
+	if len(machines) != 1 {
+		t.Fatalf("machines %v", one["machines"])
+	}
+	if mp, _ := machines[0].(map[string]any)["reason_params"].(map[string]any); mp["name"] != "release" {
+		t.Fatalf("machine params %v", machines[0])
+	}
+	// no reason, no params
+	var llm map[string]any
+	decode(t, f.do("GET", "/api/components/llm", "", admin()), 200, &llm)
+	if _, has := llm["reason_params"]; has {
+		t.Fatalf("llm %v", llm["reason_params"])
 	}
 }
 

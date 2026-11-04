@@ -402,7 +402,7 @@ func TestTomlSupersededHidesURL(t *testing.T) {
 	raw := []byte("[llm]\nurl = \"http://user:pw@10.0.0.2:11434\"\n")
 	var cfg config.Config
 	cfg.LLM.URL = "http://user:pw@10.0.0.2:11434"
-	found := Superseded(raw, cfg, map[string]store.Desired{"llm": {Want: components.WantInstalled}})
+	found := Superseded(raw, Facts{Config: cfg}, map[string]store.Desired{"llm": {Want: components.WantInstalled}})
 	if len(found) != 1 || found[0].Key != "llm.url" || found[0].Value != "set" {
 		t.Fatalf("findings %+v", found)
 	}
@@ -410,6 +410,41 @@ func TestTomlSupersededHidesURL(t *testing.T) {
 	LogSuperseded(&log, "server.toml", found)
 	if strings.Contains(log.String(), "pw@") {
 		t.Fatalf("log carries the url: %s", log.String())
+	}
+}
+
+// [cloud] enabled = true with nothing to link with (no credential, no claim) runs no
+// relay, so the seed wrote cloud.link installed: the next boot reports nothing (story
+// 51.13). With a claim the relay is wanted and a cloud.link turned off is superseded;
+// enabled = false asks installed.
+func TestTomlCloudWithoutClaimNotSuperseded(t *testing.T) {
+	db := sqliteHome(t)
+	st := store.New(db)
+	path, cfg := writeToml(t, t.TempDir(), "[cloud]\nenabled = true\n")
+	var log bytes.Buffer
+	for i := 0; i < 2; i++ { // the seed's boot, then a later one
+		if err := home(st, path, cfg, &log, nil).Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if d, _ := st.DesiredOf(ctx, "cloud.link"); d.Want != components.WantInstalled {
+		t.Fatalf("cloud.link seeded %+v", d)
+	}
+	if strings.Contains(log.String(), "toml_key_superseded") {
+		t.Fatalf("a false toml_key_superseded:\n%s", log.String())
+	}
+	if rows, _ := st.StatusOf(ctx, "cloud.link"); len(rows) != 0 {
+		t.Fatalf("status rows %+v", rows)
+	}
+	raw := []byte("[cloud]\nenabled = true\n")
+	off := map[string]store.Desired{"cloud.link": {Want: components.WantInstalled}}
+	if found := Superseded(raw, Facts{Config: cfg, Relay: true}, off); len(found) != 1 || found[0].Says != components.WantEnabled {
+		t.Fatalf("claimed: %+v", found)
+	}
+	var none config.Config
+	on := map[string]store.Desired{"cloud.link": {Want: components.WantEnabled}}
+	if found := Superseded([]byte("[cloud]\nenabled = false\n"), Facts{Config: none}, on); len(found) != 1 || found[0].Says != components.WantInstalled {
+		t.Fatalf("enabled = false: %+v", found)
 	}
 }
 

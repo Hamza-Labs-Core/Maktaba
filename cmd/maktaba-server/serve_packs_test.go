@@ -231,3 +231,34 @@ func packsIdle(t *testing.T, m *packs.Manager, id string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+type fakeRestarter struct{ asked []string }
+
+func (f *fakeRestarter) RestartComponent(id string) int {
+	f.asked = append(f.asked, id)
+	return 2
+}
+
+// POST /components/{id}/restart asks the supervisor to restart the component's
+// processes, behind the token, with or without a reconciler; no supervisor is 503.
+func TestPacksRestartRoute(t *testing.T) {
+	f := &fakeRestarter{}
+	h := (&packsAdmin{token: "tok", sup: f}).adminHandler(http.NotFoundHandler())
+	if code, _ := packsCall(t, h, http.MethodPost, "/components/transcription/restart", ""); code != http.StatusForbidden {
+		t.Fatalf("no token: %d", code)
+	}
+	code, out := packsCall(t, h, http.MethodPost, "/components/transcription/restart", "tok")
+	if code != http.StatusOK || out["restarted"] != float64(2) || len(f.asked) != 1 || f.asked[0] != "transcription" {
+		t.Fatalf("%d %v %v", code, out, f.asked)
+	}
+	if code, _ := packsCall(t, h, http.MethodGet, "/components/transcription/restart", "tok"); code != http.StatusMethodNotAllowed {
+		t.Fatalf("GET: %d", code)
+	}
+	if code, _ := packsCall(t, h, http.MethodPost, "/components/../restart", "tok"); code == http.StatusOK {
+		t.Fatalf("a bad id: %d", code)
+	}
+	none := (&packsAdmin{token: "tok"}).adminHandler(http.NotFoundHandler())
+	if code, _ := packsCall(t, none, http.MethodPost, "/components/transcription/restart", "tok"); code != http.StatusServiceUnavailable {
+		t.Fatalf("no supervisor: %d", code)
+	}
+}

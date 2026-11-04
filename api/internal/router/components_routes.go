@@ -2,9 +2,12 @@ package router
 
 // Which component each route needs (Epic 51 story 51.09). A route whose component is off
 // answers 409 component_off. Only routes that need the running part are mapped: the
-// guide and what is on now, tuning a channel, a YouTube search, a Plex sign-in. Settings
-// and configuration routes stay core, so an admin can prepare a feature before turning
-// it on. TestEveryRouteHasComponent fails when a newly mounted route is in neither list.
+// guide and what is on now, tuning a channel, a YouTube search. Settings, setup and
+// configuration routes stay core, so an admin can prepare a feature before turning it
+// on: the Plex sign-in is setup (story 51.07 §5), so it works whatever ext.plex's state.
+// A role refusal comes before component_off: a caller the route refuses anyway gets its
+// 401 or 403, never a 409 naming a component. TestEveryRouteHasComponent fails when a
+// newly mounted route is in neither list.
 
 import (
 	"net/http"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
@@ -19,11 +23,13 @@ import (
 
 // componentRule maps routes to a component: Exact is "METHOD /pattern", Prefix every
 // pattern under it (any method). Component "" is core: the route never answers
-// component_off.
+// component_off. Admin marks a route only an admin may call: anyone else gets 403 before
+// the component is looked at (TestComponentOffRoleFirst checks it against the handlers).
 type componentRule struct {
 	Exact     string
 	Prefix    string
 	Component string
+	Admin     bool
 }
 
 type componentTable []componentRule
@@ -36,14 +42,10 @@ var ComponentRoutes = componentTable{
 	{Exact: "GET /api/channels/{id}/guide", Component: "livetv"},
 	{Exact: "GET /api/channels/playlist.m3u", Component: "livetv"},
 	{Exact: "GET /api/channels/xmltv", Component: "livetv"},
-	{Exact: "GET /api/tv/onair", Component: "livetv"},
+	{Exact: "GET /api/tv/onair", Component: "livetv", Admin: true},
 	{Exact: "POST /api/tv/remote/tune", Component: "livetv"},
 	// YouTube: the search's "From YouTube" (yt-dlp)
 	{Exact: "GET /api/search/youtube", Component: "youtube"},
-	// Plex: signing in to Plex
-	{Exact: "POST /api/extensions/plex/signin", Component: "ext.plex"},
-	{Exact: "GET /api/extensions/plex/signin/{id}", Component: "ext.plex"},
-	{Exact: "POST /api/extensions/plex/signin/{id}/use", Component: "ext.plex"},
 }
 
 // CoreRoutes never answer component_off: every other route family. A route family
@@ -68,7 +70,8 @@ var CoreRoutes = componentTable{
 	{Prefix: "/api/settings"}, {Prefix: "/api/rules"},
 	// search answers keyword results when semantic search is off (no 409)
 	{Prefix: "/api/search"},
-	// Live TV's and the extensions' configuration (channels, rules, Plex's settings).
+	// Live TV's and the extensions' configuration (channels, rules, Plex's settings and
+	// its sign-in, the extensions' connection tests).
 	// /api/tv/changes, rollback, slots and releases answer component_off themselves,
 	// after their admin check (middleware.RequireComponent, story 51.05).
 	{Prefix: "/api/channels"}, {Prefix: "/api/filler/"}, {Prefix: "/api/tv/"}, {Prefix: "/api/extensions"},
@@ -84,21 +87,27 @@ func (r componentRule) matches(method, pattern string) bool {
 // ComponentOf is the component a route needs ("" for core) and whether either list
 // names it. Exact rules win over prefixes.
 func ComponentOf(method, pattern string) (string, bool) {
+	r, ok := ruleOf(method, pattern)
+	return r.Component, ok
+}
+
+// ruleOf is the rule that names a route (exact rules first) and whether there is one.
+func ruleOf(method, pattern string) (componentRule, bool) {
 	for _, t := range []componentTable{ComponentRoutes, CoreRoutes} {
 		for _, r := range t {
 			if r.Exact != "" && r.matches(method, pattern) {
-				return r.Component, true
+				return r, true
 			}
 		}
 	}
 	for _, t := range []componentTable{ComponentRoutes, CoreRoutes} {
 		for _, r := range t {
 			if r.Exact == "" && r.matches(method, pattern) {
-				return r.Component, true
+				return r, true
 			}
 		}
 	}
-	return "", false
+	return componentRule{}, false
 }
 
 // ComponentOff answers 409 component_off (middleware.ComponentOff, 51.05's problem) on a
@@ -125,7 +134,8 @@ func ComponentOff(caps *components.Capabilities) func(http.Handler) http.Handler
 				method = http.MethodGet
 			}
 			pattern := rctx.Routes.Find(chi.NewRouteContext(), method, r.URL.Path)
-			comp, _ := ComponentOf(method, pattern)
+			rule, _ := ruleOf(method, pattern)
+			comp := rule.Component
 			if comp == "" {
 				next.ServeHTTP(w, r)
 				return
@@ -133,6 +143,19 @@ func ComponentOff(caps *components.Capabilities) func(http.Handler) http.Handler
 			feature, off := s.ComponentOff(comp)
 			if !off {
 				next.ServeHTTP(w, r)
+				return
+			}
+			// the role first: a caller the route refuses gets that answer, not a 409
+			// that tells it which part of the home is off. No one signed in reaches
+			// here only past the auth gate's allowlist (no gated route is on it): the
+			// handler refuses it as it always does.
+			p := principal.FromContext(r.Context())
+			if p == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			if rule.Admin && !p.IsAdmin {
+				httperror.Write(w, r, httperror.Forbidden("", "admin-only"))
 				return
 			}
 			e := mw.ComponentOff(comp)

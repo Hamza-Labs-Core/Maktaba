@@ -239,7 +239,23 @@ func (s *PGStore) DeleteNode(ctx context.Context, id string) error {
 	}
 	// its streaming host row goes too (placements on it cascade; best effort)
 	_, _ = s.DB.ExecContext(ctx, `DELETE FROM streaming_hosts WHERE host_id = $1 AND role = 'node'`, id)
+	// and its component status rows (best effort: housekeeping prunes what is left)
+	_, _ = s.DB.ExecContext(ctx, `DELETE FROM component_status WHERE machine = $1`, id)
 	return nil
+}
+
+// PruneComponentStatus implements Store. A status row's machine is "home" or a node's
+// id; a node deleted while its row could not be pruned, or one that reported after its
+// delete, leaves rows no machine owns, which the component pages would show forever.
+func (s *PGStore) PruneComponentStatus(ctx context.Context) (int64, error) {
+	res, err := s.DB.ExecContext(ctx, `
+DELETE FROM component_status
+ WHERE machine <> 'home'
+   AND machine NOT IN (SELECT CAST(id AS TEXT) FROM cluster_nodes)`)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // SetStages implements Store.

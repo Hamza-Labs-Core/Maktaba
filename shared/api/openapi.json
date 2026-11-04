@@ -6236,7 +6236,7 @@
           "Components"
         ],
         "summary": "List the components",
-        "description": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`), what it needs and what needs it, and the home's bundle.",
+        "description": "Every component of the catalog in its order: what should run (`want`, a hold), what does on each machine (`phase`, `reason`, and `reason_params`: the values the reason's message fills in, absent when it has none), what it needs and what needs it, the settings it owns (`settings`, as the catalog lists them: `rules.<section>`, `toml:<key>`, `ext:<name>`), and the home's bundle.",
         "responses": {
           "200": {
             "description": "The components.",
@@ -7284,6 +7284,93 @@
           }
         },
         "operationId": "startComponent"
+      }
+    },
+    "/components/{id}/restart": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string"
+          },
+          "description": "The component's id in the catalog."
+        }
+      ],
+      "post": {
+        "tags": [
+          "Components"
+        ],
+        "summary": "Restart a component",
+        "description": "Restarts a running component: its processes through this machine's supervisor, its loops in the API cancelled and started again. The desired state does not change; the restart is recorded as `component.restart`.",
+        "responses": {
+          "200": {
+            "description": "The component after the restart, with `restarted`: how many of its processes and loops started again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "None of its processes runs now: the supervisor starts them (`restarted` is 0).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin only.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "description": "Refused (`code`): `not_restartable` (stages, an extension or an asset, or loops that run in another service), `not_running` (off or stopped, or waiting for what it requires), `not_switchable` (part of the server). Nothing was restarted.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "This server runs under no supervisor, or the supervisor does not answer.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "operationId": "restartComponent"
       }
     },
     "/components/{id}/settings/reset": {
@@ -10022,6 +10109,13 @@
               "null"
             ],
             "additionalProperties": true
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "A `component_catchup` job: the components it catches up, from its payload. Absent on every other job."
           }
         }
       },

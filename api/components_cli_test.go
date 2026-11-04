@@ -188,3 +188,36 @@ func TestComponentsCLIServerNotRunning(t *testing.T) {
 		t.Fatalf("exit %d", code)
 	}
 }
+
+// restart asks first (no terminal and no --yes: exit 2, nothing restarted), then
+// restarts as the OS user with actor source cli; a refusal is exit 1 with its code.
+func TestComponentsCLIRestart(t *testing.T) {
+	var asked []string
+	var actors []components.Actor
+	restart := func(_ context.Context, id string, a components.Actor) (int, error) {
+		if id == "youtube" {
+			return 0, &components.Refusal{Code: components.CodeNotRestartable, Detail: "youtube is a stages"}
+		}
+		asked, actors = append(asked, id), append(actors, a)
+		return 2, nil
+	}
+	c, _, errOut := cli(nil, false, "")
+	c.restart = restart
+	if code := runCLI(c, "restart", "transcription"); code != exitComponentsNeedYes || len(asked) != 0 {
+		t.Fatalf("no --yes: exit %d, restarted %v: %s", code, asked, errOut)
+	}
+	c, out, _ := cli(nil, false, "")
+	c.restart = restart
+	if code := runCLI(c, "restart", "transcription", "--yes"); code != 0 || len(asked) != 1 ||
+		actors[0] != (components.Actor{By: "maya", Source: "cli"}) || !strings.Contains(out.String(), "restarted 2") {
+		t.Fatalf("exit %d, %v as %v: %s", code, asked, actors, out)
+	}
+	c, _, errOut = cli(nil, true, "y\n")
+	c.restart = restart
+	if code := runCLI(c, "restart", "youtube"); code != exitComponentsFailed || !strings.Contains(errOut.String(), "not_restartable") {
+		t.Fatalf("refused: exit %d: %s", code, errOut)
+	}
+	if code := runCLI(c, "restart"); code != exitComponentsFailed {
+		t.Fatalf("no id: exit %d", code)
+	}
+}
