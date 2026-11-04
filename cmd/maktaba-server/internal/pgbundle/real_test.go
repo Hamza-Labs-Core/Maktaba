@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"errors"
 	"io"
-	"net"
 	"net/url"
 	"os"
 	"os/exec"
@@ -15,6 +14,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 
 	"github.com/lib/pq"
 )
@@ -44,12 +45,7 @@ func TestRealPostgres(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("postgres refuses to run as root")
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	port := testport.Free(t)
 	root, err := os.MkdirTemp("", "mkpg") // short: the unix socket path is limited
 	if err != nil {
 		t.Fatal(err)
@@ -154,12 +150,7 @@ func TestRealUpdateDumpAndRestore(t *testing.T) {
 	if os.Geteuid() == 0 {
 		t.Skip("postgres refuses to run as root")
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	port := testport.Free(t)
 	root, err := os.MkdirTemp("", "mkpg")
 	if err != nil {
 		t.Fatal(err)

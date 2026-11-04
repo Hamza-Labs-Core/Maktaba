@@ -3,12 +3,13 @@ package pgbundle
 import (
 	"context"
 	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
 // WatchReach against a real server (on loopback: the restart it asks for is the test's,
@@ -25,12 +26,7 @@ func TestWatchReachFollowsTheCluster(t *testing.T) {
 	if testing.Short() {
 		t.Skip("runs a Postgres server")
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	port := testport.Free(t)
 	root, err := os.MkdirTemp("", "mkreach") // short: the unix socket path is limited
 	if err != nil {
 		t.Fatal(err)

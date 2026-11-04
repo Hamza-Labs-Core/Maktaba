@@ -8,7 +8,7 @@ import contextlib
 import json
 import random
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -531,17 +531,23 @@ async def test_files_continue_while_the_home_is_down_and_a_final_frame(tmp_path:
     shutdown = asyncio.Event()
     agent = make_agent(hub, node_key=key, files=files, collector=collector, metrics_every=0.05,
                        metrics_file_sec=0.1)  # fmt: skip
+    written: list[dict[str, Any]] = []
+    write = files.write
+
+    def spy(stream: str, record: Mapping[str, Any]) -> None:
+        if stream == "metrics":
+            written.append(dict(record))
+        write(stream, record)
+
+    files.write = spy  # type: ignore[method-assign]
     began = time.monotonic()
     async with running(agent, shutdown):
         # a refused connection is reported at once on Linux and macOS, after ~2 s on
-        # Windows (it retries the SYN): wait for the first failure, and for a few
-        # metrics lines, not a fixed time
-        await asyncio.sleep(0.35)
-        for _ in range(200):
-            if agent.last_error:
-                break
-            await asyncio.sleep(0.05)
-        assert not agent.connected and agent.last_error
+        # Windows (it retries the SYN); a metrics frame is collected on a worker thread,
+        # which a loaded runner can hold for a few hundred ms: wait for the first failure
+        # and for two regular lines in the file, not a fixed time
+        await until(lambda: bool(agent.last_error) and len(written) >= 2, timeout=15)
+        assert not agent.connected
         shutdown.set()  # the worker stops: one last frame, final values
         await asyncio.sleep(0.2)
     ran = time.monotonic() - began
